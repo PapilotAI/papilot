@@ -1,0 +1,35 @@
+{
+  "name": "papilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.22.0" },
+  "scripts": {
+    "dev": "tsx watch src/server/main.ts",
+    "start": "tsx src/server/main.ts",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "setup:review": "npm --prefix vendor/latex-review ci && npm --prefix vendor/latex-review run build",
+    "demo": "tsx scripts/demo.ts",
+    "service:install": "tsx scripts/service.ts install",
+    "service:stop": "tsx scripts/service.ts stop"
+  },
+  "dependencies": {
+    "@fastify/compress": "^9.2.2",
+    "@fastify/static": "^10.1.7",
+    "@openai/codex": "0.164.0",
+    "fastify": "^5.12.7",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}

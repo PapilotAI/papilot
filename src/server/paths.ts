@@ -1,0 +1,10 @@
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+export const DATA = path.resolve(process.env.PAPILOT_DATA || path.join(ROOT, '.papilot'));
+export const ENGINE = path.resolve(process.env.PAPILOT_REVIEW_ENGINE || path.join(ROOT, 'vendor/latex-review'));
+export const PORT = Number(process.env.PAPILOT_PORT || 4317);
+export const PUBLIC_ORIGIN = process.env.PAPILOT_PUBLIC_ORIGIN || '';
+export const OWNER = process.env.PAPILOT_TAILSCALE_LOGIN || '';
+export const CODEX = process.env.PAPILOT_CODEX_BIN || (fs.existsSync(path.join(ROOT, 'node_modules/.bin/codex')) ? path.join(ROOT, 'node_modules/.bin/codex') : 'codex');

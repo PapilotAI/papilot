@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.papilot/
+.env
+.DS_Store
+vendor/latex-review/node_modules/
+vendor/latex-review/dist/
+vendor/latex-review/.cache/
+test-results/
