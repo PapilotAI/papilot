@@ -1,20 +1,33 @@
-import { StrictMode, useCallback, useEffect, useRef, useState } from 'react';
+import { StrictMode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { PendingRequest, Snapshot, Task, TimelineItem } from '../shared.ts';
+import { ComposerDraft } from './composer.ts';
+import { ReadRequest, canStreamUpdates } from './refresh.ts';
+import { browserStorage } from './storage.ts';
+import { ReviewFrame } from './review-frame.tsx';
+import { keepDialogFocus } from './focus.ts';
+import { DeleteTaskDialog } from './task-dialog.tsx';
 import './style.css';
 
 let token = '';
 const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), b => b.toString(16).padStart(2, '0')).join('');
-async function api<T = any>(route: string, body?: unknown): Promise<T> {
-  const response = await fetch('/api' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Papilot-Token': token }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const value = await response.json(); if (!response.ok) throw new Error(value.error || '请求失败'); return value;
+async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const timeout = AbortSignal.timeout(body === undefined ? 15000 : 30000);
+  try { const response = await fetch('/api' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Papilot-Token': token }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+    const value = await response.json(); if (!response.ok) throw new Error(value.error || 'Request failed. Please try again.'); return value;
+  }
+  catch (error) {
+    if (timeout.aborted) throw new Error(body === undefined ? 'The connection is taking too long. Check your network and try again.' : 'The request timed out and may still be processing. Check the task status before retrying.');
+    throw error;
+  }
 }
-const statusNames: Record<string, string> = { idle: '就绪', queued: '排队中', running: 'Codex 正在修改', waiting_input: '需要你的回复', building: '生成 PDF 审阅', reviewing: '等待审阅', interrupted: '已暂停', failed: '需要处理' };
+const statusNames: Record<string, string> = { idle: 'Ready', queued: 'Queued', running: 'Codex is editing', waiting_input: 'Needs your reply', building: 'Building PDF review', reviewing: 'Ready for review', interrupted: 'Paused', failed: 'Needs attention', uncertain: 'Check task status', deleting: 'Deleting task' };
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const paths: Record<string, React.ReactNode> = {
     plus: <path d="M12 5v14M5 12h14"/>, send: <><path d="m4 11 16-7-7 16-2-9-7-0Z"/><path d="m11 11 9-7"/></>,
     paper: <><path d="M14 3H5v18h14V8l-5-5Z"/><path d="M14 3v6h5M8 13h8M8 17h5"/></>,
     arrow: <path d="M5 12h14m-6-6 6 6-6 6"/>, close: <path d="m6 6 12 12M6 18 18 6"/>,
+    trash: <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></>,
     pause: <><path d="M8 5v14M16 5v14"/></>, external: <><path d="M14 3h7v7m0-7L10 14"/><path d="M10 4H4v16h16v-6"/></>,
     menu: <path d="M4 6h16M4 12h16M4 18h16"/>, check: <path d="m5 12 4 4L19 6"/>,
     sidebar: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></>,
@@ -23,109 +36,111 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.paper}</svg>;
 }
-function Status({ task }: { task: Task }) { return <span className={`status ${task.status}`}><i/>{task.status === 'reviewing' && task.review?.state === 'done' ? '审阅完成' : statusNames[task.status] || task.status}</span>; }
-function time(timestamp: number) { return new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }); }
+function Status({ task }: { task: Task }) { return <span className={`status ${task.status}`}><i/>{task.status === 'reviewing' && task.review?.state === 'done' ? 'Review complete' : statusNames[task.status] || task.status}</span>; }
+function time(timestamp: number) { return new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }); }
 
-// The embedded viewer shares our origin. Keep its decision controls, but remove
-// navigation and the task title that the workspace already provides.
-function compactReviewFrame(event: React.SyntheticEvent<HTMLIFrameElement>, scale: number) {
-  const doc = event.currentTarget.contentDocument;
-  if (!doc || doc.getElementById('papilot-embed-style')) return;
-  doc.documentElement.style.setProperty('--pdf-reading-scale', String(scale));
-  const style = doc.createElement('style'); style.id = 'papilot-embed-style';
-  style.textContent = `
-    .bar{display:flex;min-height:36px;padding:3px 12px;gap:12px;flex-wrap:nowrap}
-    .bar .overview-link,.bar .identity h1{display:none}
-    .bar .identity{flex:1;flex-direction:row;gap:6px}
-    .bar .identity span,.bar .meter,.bar .ghost{font-size:11px}
-    .bar .meter{display:flex;order:initial;width:auto}
-    .bar .bar-end{margin-left:0;gap:6px}
-    .bar .ghost{padding:3px 8px}
-    .bar .ghost.round{width:25px;height:25px;padding:0}
-    #paper{--paper-top:10px;padding-top:10px}
-    .part-title{font-size:16px;margin:5px 0 10px}
-    @media(max-width:680px){
-      .bar{min-height:44px}.bar .ghost{min-height:36px;font-size:12px}.bar .ghost.round{width:36px;height:36px}
-      .bar .identity span,.bar .meter{font-size:12px}
-      .change-map{display:none}.review-body>#paper{padding-right:6px;padding-bottom:40px}
-      .change-head{padding:8px}.change-head .change-where{min-width:0;overflow-wrap:anywhere}
-      .change-head .actions{gap:0;box-shadow:none}.change-head .actions button{min-height:44px;padding:6px;font-size:12px}
-      .change-head .actions .nav{min-width:32px;padding:4px}.change-head .position{min-width:26px;font-size:10px}
-      .change-head .link{min-height:36px;padding:6px}.change-head .dock{margin:0}
-      .side,.context{overflow-x:auto;overscroll-behavior-x:contain}
-      .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-reading-scale,1));max-width:none}
-      .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;bottom:8px;transform:none;max-height:calc(100% - 16px);overflow:auto}
-      .composer textarea{font-size:16px;max-height:min(140px,30vh)}.composer button{min-height:44px}
-    }
-    @media(max-width:420px){.bar{gap:7px;padding-inline:8px}.bar .meter{font-size:10px}}
-  `;
-  doc.head.append(style);
-}
 
-function RequestCard({ request, onDone }: { request: PendingRequest; onDone: () => void }) {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+
+function RequestCard({ request, answerDrafts, onDone }: { request: PendingRequest; answerDrafts: Map<string, Record<string, string>>; onDone: () => void }) {
+  const [answers, updateAnswers] = useState<Record<string, string>>(() => answerDrafts.get(request.id) || {});
+  function setAnswers(next: Record<string, string>) { answerDrafts.set(request.id, next); updateAnswers(next); }
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const questions = request.method.endsWith('requestUserInput') ? request.params.questions || [] : [];
-  async function respond(decision?: string) { setBusy(true); setError(''); try { await api('/requests/' + request.id, { decision, answers }); onDone(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
-  return <div className="request-card"><h3>{questions.length ? 'Codex 需要补充信息' : '请确认这次操作'}</h3>
-    {questions.map((q: any) => <label className="question" key={q.id}><span>{q.question || q.header}</span>{q.options?.length > 0 && <div className="answer-options">{q.options.map((option: any) => <button type="button" className={answers[q.id] === option.label ? 'selected' : ''} key={option.label} onClick={() => setAnswers({ ...answers, [q.id]: option.label })}>{option.label}{option.description && <small>{option.description}</small>}</button>)}</div>}<input aria-label={q.question || q.header} placeholder="也可以直接输入你的回答" value={answers[q.id] || ''} onChange={e => setAnswers({ ...answers, [q.id]: e.target.value })}/></label>)}
-    {!questions.length && <><p>{request.params.reason || 'Codex 请求执行以下操作。'}</p><pre>{request.params.command || (request.params.permissions ? JSON.stringify(request.params.permissions, null, 2) : request.params.grantRoot || '应用文件修改')}</pre></>}
-    {error && <p className="inline-error">{error}</p>}<div className="button-row">{!questions.length && <button disabled={busy} className="button secondary" onClick={() => void respond('decline')}>拒绝</button>}<button disabled={busy} className="button primary" onClick={() => void respond(questions.length ? undefined : 'accept')}>{busy ? '正在提交…' : questions.length ? '回复 Codex' : '允许这次操作'}</button></div>
+  async function respond(decision?: string) { setBusy(true); setError(''); try { await api('/requests/' + request.id, { decision, answers }); answerDrafts.delete(request.id); onDone(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
+  return <div className="request-card"><h3>{questions.length ? 'Codex needs your input' : 'Approve this action'}</h3>
+    {questions.map((q: any) => <fieldset className="question" key={q.id}><legend>{q.question || q.header}</legend>{q.options?.length > 0 && <div className="answer-options">{q.options.map((option: any) => <button type="button" disabled={busy} aria-pressed={answers[q.id] === option.label} className={answers[q.id] === option.label ? 'selected' : ''} key={option.label} onClick={() => setAnswers({ ...answers, [q.id]: option.label })}>{option.label}{option.description && <small>{option.description}</small>}</button>)}</div>}<input disabled={busy} aria-label={q.question || q.header} placeholder="Or type your own answer" value={answers[q.id] || ''} onChange={e => setAnswers({ ...answers, [q.id]: e.target.value })}/></fieldset>)}
+    {!questions.length && <><p>{request.params.reason || 'Codex is requesting permission for this action.'}</p><pre>{request.params.command || (request.params.permissions ? JSON.stringify(request.params.permissions, null, 2) : request.params.grantRoot || 'Apply file changes')}</pre></>}
+    {error && <p className="inline-error" role="alert">{error}</p>}<div className="button-row">{!questions.length && <button disabled={busy} className="button secondary" onClick={() => void respond('decline')}>Decline</button>}<button disabled={busy || questions.some((q: any) => !answers[q.id]?.trim())} className="button primary" onClick={() => void respond(questions.length ? undefined : 'accept')}>{busy ? 'Submitting…' : questions.length ? 'Reply to Codex' : 'Allow this action'}</button></div>
   </div>;
 }
 
-function Activity({ task, items, requests, refresh, reportError, onCollapse }: { task: Task; items: TimelineItem[]; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; onCollapse: () => void }) {
-  const key = 'papilot:draft:' + task.id;
-  const [draft, setDraft] = useState(() => localStorage.getItem(key) || '');
-  const [sending, setSending] = useState(false);
-  const requestKey = useRef(uuid());
+function Activity({ task, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, onCollapse }: { task: Task; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; onCollapse: () => void }) {
+  const { text: draft, sending } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
   const scroller = useRef<HTMLDivElement>(null);
   const shouldFollow = useRef(true);
-  useEffect(() => { if (shouldFollow.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }, [items, requests]);
-  async function submit(text: string) {
-    if (!text.trim() || sending) return; setSending(true);
-    try { await api('/tasks/' + task.id + '/messages', { text: text.trim(), requestKey: requestKey.current }); setDraft(''); localStorage.removeItem(key); requestKey.current = uuid(); shouldFollow.current = true; refresh(); }
-    catch (e) { reportError(e); } finally { setSending(false); }
+  const [following, setFollowing] = useState(true);
+  function latest() { shouldFollow.current = true; setFollowing(true); if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }
+  useEffect(() => { if (shouldFollow.current) latest(); }, [items, requests]);
+  useEffect(() => {
+    if (!scroller.current) return;
+    const observer = new ResizeObserver(() => { if (shouldFollow.current) latest(); });
+    observer.observe(scroller.current); return () => observer.disconnect();
+  }, []);
+  async function submit(source: 'draft' | 'feedback') {
+    if (composer.sending || ['uncertain', 'deleting'].includes(task.status)) return;
+    const pending = composer.submit(source, message => api('/tasks/' + task.id + '/messages', message));
+    try { if (await pending) { shouldFollow.current = true; refresh(); } }
+    catch (e) { reportError(e); }
   }
   const active = ['running', 'queued', 'waiting_input'].includes(task.status);
   const comments = task.review?.counts?.commented || 0;
-  return <section id="conversation-panel" className="activity-panel" aria-label="Codex 对话"><div className="panel-heading"><span className="codex-label">Codex <span className="model-label" title={task.model || '沿用本机 Codex 默认模型'}>{task.model || '默认模型'}</span></span><button className="icon-button collapse-conversation" aria-label="收起对话" title="收起对话" onClick={onCollapse}><Icon name="close" size={15}/></button></div>
-    <div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; } }}>
-      {items.map(item => item.type === 'user' || item.type === 'assistant' ? <article key={item.id} className={'message ' + item.type}><div className="message-meta"><span>{item.type === 'user' ? '你' : 'Codex'}</span><time>{time(item.createdAt)}</time></div><div className="message-body">{item.text}</div></article> : <details key={item.id} className="tool-item"><summary><span className="tool-dot">{item.status === 'completed' ? '✓' : '·'}</span><span>{item.type === 'command' ? item.text || '运行命令' : item.type === 'files' ? '修改文件' : item.text || '执行工具'}</span></summary>{item.type === 'files' ? <pre>{item.text}</pre> : item.detail && <pre>{item.detail}</pre>}</details>)}
-      {requests.map(r => <RequestCard key={r.id} request={r} onDone={refresh}/>)}
-      {task.status === 'running' && <div className="working"><span/><span/><span/><small>Codex 正在处理任务</small></div>}
-      {task.status === 'queued' && <p className="muted">任务已保存，等待可用的 Codex 执行槽位。</p>}
-      {task.error && <div className="task-error"><strong>这一步需要处理</strong><p>{task.error}</p></div>}
-    </div>
-    <div className="composer-wrap">{comments > 0 && <button className="feedback-button" disabled={sending} onClick={() => void submit('请根据本轮审阅中的批注继续修改。保留已经接受的内容，不要重新引入已经拒绝的修改。')}><Icon name="sparkle" size={16}/>{comments} 条批注已保存 · 交给 Codex 修改<Icon name="arrow" size={15}/></button>}
-      <form className="composer" onSubmit={e => { e.preventDefault(); void submit(draft); }}><textarea aria-label="给 Codex 的修改意见" placeholder={active ? '补充下一轮要求…' : '提出进一步的修改意见…'} value={draft} onChange={e => { setDraft(e.target.value); localStorage.setItem(key, e.target.value); requestKey.current = uuid(); }} onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void submit(draft); } }}/><div className="composer-footer"><span>{active ? '意见会加入下一轮' : '会同时带上新的审阅反馈'}</span><button aria-label="发送修改意见" disabled={!draft.trim() || sending} className="send-button" type="submit"><Icon name="send" size={18}/></button></div></form>
+  return <section id="conversation-panel" className="activity-panel" aria-label="Codex conversation"><div className="panel-heading"><span className="codex-label">Codex <span className="model-label" title={task.model || 'Use the default Codex model on this host'}>{task.model || 'Default model'}</span></span><button className="icon-button collapse-conversation" aria-label="Hide conversation" title="Hide conversation" onClick={onCollapse}><Icon name="close" size={15}/></button></div>
+    <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); } }}>
+      {loading && <p className="muted" role="status">Loading conversation…</p>}
+      {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary" onClick={retry}>Retry conversation</button></div>}
+      {items.map(item => item.type === 'user' || item.type === 'assistant' ? <article key={item.id} className={'message ' + item.type}><div className="message-meta"><span>{item.type === 'user' ? 'You' : 'Codex'}</span><time>{time(item.createdAt)}</time></div><div className="message-body">{item.text}</div></article> : <details key={item.id} className="tool-item"><summary><span className="tool-dot">{item.status === 'completed' ? '✓' : '·'}</span><span>{item.type === 'command' ? item.text || 'Run command' : item.type === 'files' ? 'File changes' : item.text || 'Run tool'}</span></summary>{item.type === 'files' ? <pre>{item.text}</pre> : item.detail && <pre>{item.detail}</pre>}</details>)}
+      {requests.map(r => <RequestCard key={r.id} request={r} answerDrafts={answerDrafts} onDone={refresh}/>)}
+      {task.status === 'running' && <div className="working"><span/><span/><span/><small>Codex is working on this task</small></div>}
+      {task.status === 'queued' && <p className="muted">Task saved. Waiting for an available Codex session.</p>}
+      {task.error && <div className="task-error"><strong>This step needs attention</strong><p>{task.error}</p></div>}
+    </div>{!following && <button className="jump-latest" onClick={latest}>Latest messages ↓</button>}</div>
+    <div className="composer-wrap">{comments > 0 && <button className="feedback-button" disabled={sending || ['uncertain', 'deleting'].includes(task.status)} onClick={() => void submit('feedback')}><Icon name="sparkle" size={16}/><span>{comments} saved {comments === 1 ? 'comment' : 'comments'} · Send to Codex</span><Icon name="arrow" size={15}/></button>}
+      <form className="composer" onSubmit={e => { e.preventDefault(); void submit('draft'); }}><textarea aria-label="Instructions for Codex" maxLength={20000} placeholder={active ? 'Add instructions for the next turn…' : 'Describe the next revision…'} value={draft} onChange={e => composer.edit(e.target.value)} onKeyDown={e => { if (!e.nativeEvent.isComposing && (e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void submit('draft'); } }}/><div className="composer-footer"><span>{task.status === 'deleting' ? 'This task is being deleted' : task.status === 'uncertain' ? 'Check task status before sending' : sending ? 'Sending…' : active ? 'Queued for the next turn' : 'Includes new review feedback'}</span><button aria-label="Send instructions" title="Send instructions (⌘/Ctrl+Enter)" disabled={!draft.trim() || sending || ['uncertain', 'deleting'].includes(task.status)} className="send-button" type="submit"><Icon name="send" size={18}/></button></div></form>
     </div>
   </section>;
 }
 
 function App() {
   const [state, setState] = useState<Snapshot | null>(null);
-  const [selected, setSelected] = useState(localStorage.getItem('papilot:task') || '');
+  const [selected, setSelected] = useState(browserStorage.getItem('papilot:task') || '');
   const [projectId, setProjectId] = useState('');
-  const [items, setItems] = useState<TimelineItem[]>([]);
+  const [timeline, setTimeline] = useState<{ taskId: string; items: TimelineItem[] }>({ taskId: '', items: [] });
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState({ taskId: '', message: '' });
+  const snapshotRef = useRef<Snapshot | null>(null);
+  const timelineCache = useRef(new Map<string, TimelineItem[]>());
+  const composers = useRef(new Map<string, ComposerDraft>());
+  const answerDrafts = useRef(new Map<string, Record<string, string>>());
+  const [snapshotRequest] = useState(() => new ReadRequest<Snapshot & { csrf: string }>());
+  const [timelineRequest] = useState(() => new ReadRequest<{ items: TimelineItem[] }>());
   const [online, setOnline] = useState(true), [error, setError] = useState('');
+  const [connectionError, setConnectionError] = useState('');
+  const sidebarRef = useRef<HTMLElement>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [modal, setModal] = useState<'project' | 'task' | null>(null);
+  const modalRef = useRef<HTMLDialogElement>(null);
+  const modalOpener = useRef<HTMLElement | null>(null);
+  const formTaskId = useRef(uuid());
   const [busy, setBusy] = useState(false), [sidebar, setSidebar] = useState(false);
-  const [sidebarVisible, setSidebarVisible] = useState(() => localStorage.getItem('papilot:sidebar') !== 'hidden');
+  const actionRequests = useRef(new Set<string>());
+  const [pendingActions, setPendingActions] = useState(new Set<string>());
+  const [sidebarVisible, setSidebarVisible] = useState(() => browserStorage.getItem('papilot:sidebar') !== 'hidden');
   const [layout, setLayout] = useState<'split' | 'review' | 'conversation'>(() => {
-    const saved = localStorage.getItem('papilot:layout');
+    const saved = browserStorage.getItem('papilot:layout');
     return saved === 'review' || saved === 'conversation' ? saved : 'split';
   });
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 900px)').matches);
   const [mobileTab, setMobileTab] = useState('review');
   const [pdfScale, setPdfScale] = useState(1);
-  const reviewFrame = useRef<HTMLIFrameElement>(null);
   const [form, setForm] = useState({ title: '', instructions: '', path: '', name: '', model: '' });
   const selectedRef = useRef(selected); selectedRef.current = selected;
   const loaded = useRef(false);
-  useEffect(() => { localStorage.setItem('papilot:sidebar', sidebarVisible ? 'visible' : 'hidden'); }, [sidebarVisible]);
-  useEffect(() => { localStorage.setItem('papilot:layout', layout); }, [layout]);
-  useEffect(() => { reviewFrame.current?.contentDocument?.documentElement.style.setProperty('--pdf-reading-scale', String(pdfScale)); }, [pdfScale, selected]);
+  useEffect(() => {
+    const dialog = modalRef.current;
+    if (!modal || !dialog) return;
+    if (!dialog.open) dialog.showModal();
+    dialog.querySelector('input')?.focus();
+    return () => { dialog.close(); if (modalOpener.current?.isConnected) modalOpener.current.focus(); };
+  }, [modal]);
+  useEffect(() => {
+    if (!narrow || !sidebar) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const panel = sidebarRef.current;
+    (panel?.querySelector<HTMLElement>('[aria-current="page"]') || panel?.querySelector<HTMLElement>('button'))?.focus();
+    return () => { if (opener?.isConnected && opener.getClientRects().length) opener.focus(); };
+  }, [narrow, sidebar]);
+  useEffect(() => { browserStorage.setItem('papilot:sidebar', sidebarVisible ? 'visible' : 'hidden'); }, [sidebarVisible]);
+  useEffect(() => { browserStorage.setItem('papilot:layout', layout); }, [layout]);
   useEffect(() => {
     const viewport = window.visualViewport;
     const sync = () => {
@@ -144,67 +159,143 @@ function App() {
     media.addEventListener('change', change); return () => media.removeEventListener('change', change);
   }, []);
   const reportError = useCallback((e: unknown) => setError(e instanceof Error ? e.message : String(e)), []);
-  const refresh = useCallback(async () => {
+  const refreshTimeline = useCallback(async (selection: string) => {
+    if (selectedRef.current === selection && !timelineCache.current.has(selection)) setItemsLoading(true);
     try {
-      const next = await api<Snapshot & { csrf: string }>('/state'); token = next.csrf; setState(next); setOnline(true);
+      await timelineRequest.run(selection, signal => api('/tasks/' + selection + '/items', undefined, signal), timeline => {
+        timelineCache.current.delete(selection);
+        timelineCache.current.set(selection, timeline.items);
+        // Bound the in-memory history cache while retaining quick back-and-forth navigation.
+        if (timelineCache.current.size > 8) timelineCache.current.delete(timelineCache.current.keys().next().value!);
+        if (selectedRef.current === selection) { setTimeline({ taskId: selection, items: timeline.items }); setTimelineError({ taskId: selection, message: '' }); }
+      });
+    } catch (e) { if (selectedRef.current === selection) setTimelineError({ taskId: selection, message: e instanceof Error ? e.message : String(e) }); }
+    finally { if (selectedRef.current === selection) setItemsLoading(false); }
+  }, [timelineRequest]);
+  const refresh = useCallback(async (fresh = false) => {
+    try {
+      if (fresh) snapshotRequest.cancel();
+      await snapshotRequest.run('state', signal => api('/state', undefined, signal), next => {
+        const selection = selectedRef.current;
+        const removed = snapshotRef.current?.tasks.find(t => t.id === selection && !next.tasks.some(nextTask => nextTask.id === selection));
+        if (removed) setProjectId(removed.projectId);
+        token = next.csrf; snapshotRef.current = next; setState(next); setOnline(true); setConnectionError('');
+        for (const id of composers.current.keys()) if (!next.tasks.some(t => t.id === id)) { composers.current.delete(id); timelineCache.current.delete(id); browserStorage.removeItem('papilot:draft:' + id); }
+        setDeleteTarget(current => current && !next.tasks.some(t => t.id === current.id) ? null : current);
+        for (const id of answerDrafts.current.keys()) if (!next.requests.some(r => r.id === id)) answerDrafts.current.delete(id);
+        if (selection && !next.tasks.some(t => t.id === selection)) setSelected('');
+        if (!loaded.current) { loaded.current = true; if (!selection && next.tasks.length) setSelected(next.tasks[next.tasks.length - 1].id); }
+      });
       const selection = selectedRef.current;
-      if (selection) { const timeline = await api<{ items: TimelineItem[] }>('/tasks/' + selection + '/items'); if (selectedRef.current === selection) setItems(timeline.items); }
-      if (!loaded.current) { loaded.current = true; if (!selection && next.tasks.length) setSelected(next.tasks[next.tasks.length - 1].id); }
-    } catch (e) { setOnline(false); if (!loaded.current) reportError(e); }
-  }, [reportError]);
-  useEffect(() => { void refresh(); const events = new EventSource('/api/events'); events.addEventListener('change', () => void refresh()); events.onerror = () => setOnline(false); events.onopen = () => setOnline(true); const timer = setInterval(() => void refresh(), 10000); return () => { events.close(); clearInterval(timer); }; }, [refresh]);
-  useEffect(() => { localStorage.setItem('papilot:task', selected); setItems([]); void refresh(); }, [selected, refresh]);
+      if (!document.hidden && selection && snapshotRef.current?.tasks.some(t => t.id === selection)) await refreshTimeline(selection);
+    } catch (e) { setOnline(false); setConnectionError(e instanceof Error ? e.message : String(e)); }
+  }, [snapshotRequest, refreshTimeline]);
+  useEffect(() => {
+    let generation = 0, timer: ReturnType<typeof setTimeout> | undefined;
+    let events: EventSource | undefined;
+    const protocol = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.nextHopProtocol || '';
+    function start() {
+      const cycle = ++generation;
+      clearTimeout(timer); events?.close(); events = undefined;
+      if (document.hidden || !navigator.onLine) { snapshotRequest.cancel(); timelineRequest.cancel(); if (!navigator.onLine) { setOnline(false); setConnectionError('You are offline. Your draft is kept in this browser.'); } return; }
+      if (canStreamUpdates(protocol)) {
+        events = new EventSource('/api/events');
+        events.addEventListener('change', () => { if (cycle === generation) void refresh(); });
+      }
+      async function poll() {
+        await refresh();
+        if (cycle !== generation) return;
+        const busy = snapshotRef.current?.tasks.some(t => ['running', 'waiting_input', 'queued', 'building'].includes(t.status));
+        timer = setTimeout(() => void poll(), events?.readyState === EventSource.OPEN ? 10000 : busy ? 1000 : 2500);
+      }
+      void poll();
+    }
+    start();
+    document.addEventListener('visibilitychange', start);
+    window.addEventListener('online', start);
+    window.addEventListener('offline', start);
+    return () => { generation++; clearTimeout(timer); events?.close(); snapshotRequest.cancel(); timelineRequest.cancel(); document.removeEventListener('visibilitychange', start); window.removeEventListener('online', start); window.removeEventListener('offline', start); };
+  }, [refresh, snapshotRequest, timelineRequest]);
+  useEffect(() => {
+    browserStorage.setItem('papilot:task', selected);
+    setTimeline({ taskId: selected, items: timelineCache.current.get(selected) || [] });
+    setItemsLoading(Boolean(selected && !timelineCache.current.has(selected)));
+    if (selected && snapshotRef.current?.tasks.some(t => t.id === selected)) void refreshTimeline(selected);
+    return () => timelineRequest.cancel();
+  }, [selected, refreshTimeline, timelineRequest]);
   useEffect(() => { if (!projectId && state?.projects.length) setProjectId(state.projects[0].id); }, [state, projectId]);
   const task = state?.tasks.find(t => t.id === selected);
-  const fullPdfUrl = task?.review?.round ? `/api/tasks/${task.id}/pdf?round=${task.review.round}` : '';
+  if (task && !composers.current.has(task.id)) composers.current.set(task.id, new ComposerDraft('papilot:draft:' + task.id, browserStorage, uuid));
+  const fullPdfUrl = task?.status !== 'deleting' && task?.review?.round ? `/api/tasks/${task.id}/pdf?round=${task.review.round}` : '';
   const project = state?.projects.find(p => p.id === (task?.projectId || projectId));
   const tasks = state?.tasks.filter(t => !project || t.projectId === project.id) || [];
   const running = state?.tasks.filter(t => ['running', 'waiting_input', 'building'].includes(t.status)).length || 0;
-  function newTask(instructions = '', title = '') { setForm({ title, instructions, path: '', name: '', model: '' }); setModal(state?.projects.length ? 'task' : 'project'); }
+  function openForm(kind: 'project' | 'task') { modalOpener.current = document.activeElement as HTMLElement | null; formTaskId.current = uuid(); setError(''); setForm({ title: '', instructions: '', path: '', name: '', model: '' }); setModal(kind); }
+  function newTask() { openForm(state?.projects.length ? 'task' : 'project'); }
   async function saveForm(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError('');
     try {
       if (modal === 'project') { const p = await api('/projects', { path: form.path, name: form.name }); setProjectId(p.id); setSelected(''); }
-      else { const t = await api('/tasks', { projectId: project?.id || projectId, title: form.title, instructions: form.instructions, model: form.model, id: uuid() }); setSelected(t.id); setMobileTab('conversation'); setLayout('split'); }
-      setModal(null); await refresh();
+      else { const t = await api('/tasks', { projectId: project?.id || projectId, title: form.title, instructions: form.instructions, model: form.model, id: formTaskId.current }); setSelected(t.id); setMobileTab('conversation'); setLayout('split'); }
+      setModal(null); setSidebar(false); await refresh(true);
     } catch (e) { reportError(e); } finally { setBusy(false); }
   }
-  async function action(route: string) { try { await api(route, {}); await refresh(); } catch (e) { reportError(e); } }
+  async function action(route: string) {
+    const key = route.startsWith('/tasks/') ? route.split('/').slice(0, 3).join('/') : route;
+    if (actionRequests.current.has(key)) return;
+    actionRequests.current.add(key); setPendingActions(new Set(actionRequests.current));
+    try { await api(route, {}); await refresh(true); } catch (e) { reportError(e); }
+    finally { actionRequests.current.delete(key); setPendingActions(new Set(actionRequests.current)); }
+  }
+  const taskActionBusy = Boolean(task && pendingActions.has('/tasks/' + task.id));
+  function taskDeleted(id: string) {
+    const removed = snapshotRef.current?.tasks.find(t => t.id === id); if (removed) setProjectId(removed.projectId);
+    browserStorage.removeItem('papilot:draft:' + id); composers.current.delete(id); timelineCache.current.delete(id);
+    setDeleteTarget(null);
+    if (selectedRef.current === id) setSelected('');
+    setState(previous => previous ? { ...previous, tasks: previous.tasks.filter(t => t.id !== id), requests: previous.requests.filter(r => r.taskId !== id) } : previous);
+    void refresh(true);
+  }
+
   const sidebarExpanded = narrow ? sidebar : sidebarVisible;
   return <div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
-    <aside id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label="论文与任务"><div className="sidebar-brand"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setSidebar(false); }}><span>Papilot</span></a><button className="icon-button" aria-label="收起任务列表" title="收起任务列表" onClick={() => narrow ? setSidebar(false) : setSidebarVisible(false)}><Icon name="sidebar" size={17}/></button></div>
-      <div className="sidebar-section"><span>论文</span><button className="icon-button" aria-label="添加论文" title="添加论文" onClick={() => { setForm({ title: '', instructions: '', path: '', name: '', model: '' }); setModal('project'); }}><Icon name="plus" size={16}/></button></div>
-      {state?.projects.length ? <select aria-label="论文项目" className="project-select" value={project?.id || projectId} onChange={e => { setProjectId(e.target.value); setSelected(''); }}>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select> : <button className="add-project" onClick={() => setModal('project')}><Icon name="paper"/>添加论文</button>}
-      <button className="button new-task" onClick={() => newTask()}><Icon name="plus" size={16}/>新建任务</button>
-      <div className="sidebar-section task-label"><span>任务</span><span className="count">{tasks.length}</span></div>
-      <nav className="task-list" aria-label="任务列表">{tasks.length ? [...tasks].reverse().map(t => <button key={t.id} className={'task-link ' + (t.id === selected ? 'active' : '')} onClick={() => { setSelected(t.id); setSidebar(false); }}><div className="task-link-top"><span>{t.title}</span>{t.review?.counts?.pending ? <b>{t.review.counts.pending}</b> : null}</div><Status task={t}/></button>) : <div className="task-list-empty">暂无任务</div>}</nav>
-      <div className="sidebar-bottom"><div className="host-status"><span className={'connection-dot ' + (online ? 'connected' : '')}/><span>Mac mini</span><span className="host-state">{online ? '已连接' : '重连中'}</span></div>{running > 0 && <div className="host-caption">{running} 个任务进行中</div>}</div>
+    <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label="Papers and tasks"><div className="sidebar-brand"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setSidebar(false); }}><span>Papilot</span></a><button className="icon-button" aria-label="Hide task list" title="Hide task list" onClick={() => narrow ? setSidebar(false) : setSidebarVisible(false)}><Icon name="sidebar" size={17}/></button></div>
+      <div className="sidebar-section"><span>Paper</span><button className="icon-button" aria-label="Add paper" title="Add paper" disabled={!state} onClick={() => openForm('project')}><Icon name="plus" size={16}/></button></div>
+      {state?.projects.length ? <select aria-label="Paper project" className="project-select" value={project?.id || projectId} onChange={e => { setProjectId(e.target.value); setSelected(''); }}>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select> : <button className="add-project" disabled={!state} onClick={() => openForm('project')}><Icon name="paper"/>Add paper</button>}
+      <button className="button new-task" disabled={!state} onClick={() => newTask()}><Icon name="plus" size={16}/>New task</button>
+      <div className="sidebar-section task-label"><span>Tasks</span><span className="count">{tasks.length}</span></div>
+      <nav className="task-list" aria-label="Task list">{tasks.length ? [...tasks].reverse().map(t => <button key={t.id} aria-current={t.id === selected ? 'page' : undefined} className={'task-link ' + (t.id === selected ? 'active' : '')} onClick={() => { setSelected(t.id); setSidebar(false); }}><div className="task-link-top"><span>{t.title}</span>{t.review?.counts?.pending ? <b>{t.review.counts.pending}</b> : null}</div><Status task={t}/></button>) : <div className="task-list-empty">No tasks yet</div>}</nav>
+      <div className="sidebar-bottom"><div className="host-status"><span className={'connection-dot ' + (online ? 'connected' : '')}/><span>Host</span><span className="host-state">{!state ? 'Connecting…' : online ? 'Connected' : 'Reconnecting'}</span></div>{running > 0 && <div className="host-caption">{running} {running === 1 ? 'active task' : 'active tasks'}</div>}</div>
     </aside>
-    {sidebar && narrow && <button className="sidebar-scrim" aria-label="关闭任务列表" onClick={() => setSidebar(false)}/>}
-    <main className="main"><header className="topbar">
-      <button className="icon-button sidebar-toggle" aria-label={sidebarExpanded ? '收起任务列表' : '展开任务列表'} title={sidebarExpanded ? '收起任务列表' : '展开任务列表'} aria-expanded={sidebarExpanded} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(v => !v) : setSidebarVisible(v => !v)}><Icon name="sidebar"/></button>
+    {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label="Close task list" onClick={() => setSidebar(false)}/>}
+    <main className="main" inert={narrow && sidebar}><header className="topbar">
+      <button className="icon-button sidebar-toggle" aria-label={sidebarExpanded ? 'Hide task list' : 'Show task list'} title={sidebarExpanded ? 'Hide task list' : 'Show task list'} aria-expanded={sidebarExpanded} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(v => !v) : setSidebarVisible(v => !v)}><Icon name="sidebar"/></button>
       <div className="breadcrumb"><span className="project-name" title={project?.name}>{project?.name || 'Papilot'}</span>{task && <><span className="slash">/</span><h1 title={task.title}>{task.title}</h1></>}</div>
       {task && <><div className="toolbar-status"><Status task={task}/></div><div className="toolbar-actions">
-        {fullPdfUrl && <a className="button secondary compact full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" title={`打开第 ${task.review?.round} 轮修改后的完整 PDF，可在浏览器中下载`}><Icon name="paper" size={15}/>完整 PDF</a>}
-        {['running', 'waiting_input', 'queued'].includes(task.status) ? <button className="button secondary compact task-action" onClick={() => void action('/tasks/' + task.id + '/interrupt')}><Icon name="pause" size={14}/><span>暂停</span></button> : <button className="button secondary compact task-action" title="生成审阅" aria-label="生成审阅" disabled={task.status === 'building'} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="paper" size={14}/><span>生成审阅</span></button>}
-        {task.review?.round ? <a className="icon-button external-review" aria-label="在新窗口打开审阅" title="在新窗口打开审阅" href={`/review/${task.projectId}/?task=${task.name}`} target="_blank" rel="noreferrer"><Icon name="external" size={16}/></a> : null}
-        <div className="panel-switches" aria-label="面板布局">
-          <button className={'panel-toggle ' + (layout !== 'conversation' ? 'active' : '')} aria-label={layout === 'conversation' ? '展开 PDF 审阅' : '收起 PDF 审阅'} title={layout === 'conversation' ? '展开 PDF 审阅' : '收起 PDF 审阅'} aria-expanded={layout !== 'conversation'} aria-controls="review-panel" onClick={() => setLayout(layout === 'conversation' ? 'split' : 'conversation')}><Icon name="paper" size={15}/><span>审阅</span></button>
-          <button className={'panel-toggle ' + (layout !== 'review' ? 'active' : '')} aria-label={layout === 'review' ? '展开对话' : '收起对话'} title={layout === 'review' ? '展开对话' : '收起对话'} aria-expanded={layout !== 'review'} aria-controls="conversation-panel" onClick={() => setLayout(layout === 'review' ? 'split' : 'review')}><Icon name="conversation" size={15}/><span>对话</span>{state?.requests.some(r => r.taskId === task.id) && <i className="attention-dot"/>}</button>
+        {fullPdfUrl && <a className="button secondary compact full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" title={`Open the full PDF after round ${task.review?.round}; download it from the browser viewer`}><Icon name="paper" size={15}/>Full PDF</a>}
+        {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>Retry deletion</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}>Check status</button> : ['running', 'waiting_input', 'queued'].includes(task.status) ? <button className="button secondary compact task-action" aria-label="Pause task" title="Pause task" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/interrupt')}><Icon name="pause" size={14}/><span>Pause</span></button> : <button className="button secondary compact task-action" title="Build review" aria-label="Build review" disabled={task.status === 'building' || taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="paper" size={14}/><span>Build review</span></button>}
+        {task.status !== 'deleting' && <button className="icon-button" aria-label="Delete task" title="Delete task" onClick={() => setDeleteTarget(task)}><Icon name="trash" size={16}/></button>}
+        {task.status !== 'deleting' && task.review?.round ? <a className="icon-button external-review" aria-label="Open review in a new window" title="Open review in a new window" href={`/review/${task.projectId}/?task=${task.name}`} target="_blank" rel="noreferrer"><Icon name="external" size={16}/></a> : null}
+        <div className="panel-switches" aria-label="Panel layout">
+          <button className={'panel-toggle ' + (layout !== 'conversation' ? 'active' : '')} aria-label={layout === 'conversation' ? 'Show PDF review' : 'Hide PDF review'} title={layout === 'conversation' ? 'Show PDF review' : 'Hide PDF review'} aria-expanded={layout !== 'conversation'} aria-controls="review-panel" onClick={() => setLayout(layout === 'conversation' ? 'split' : 'conversation')}><Icon name="paper" size={15}/><span>Review</span></button>
+          <button className={'panel-toggle ' + (layout !== 'review' ? 'active' : '')} aria-label={layout === 'review' ? 'Show conversation' : 'Hide conversation'} title={layout === 'review' ? 'Show conversation' : 'Hide conversation'} aria-expanded={layout !== 'review'} aria-controls="conversation-panel" onClick={() => setLayout(layout === 'review' ? 'split' : 'review')}><Icon name="conversation" size={15}/><span>Conversation</span>{state?.requests.some(r => r.taskId === task.id) && <i className="attention-dot"/>}</button>
         </div>
       </div></>}
     </header>
-      {error && <div role="alert" className="error-banner"><span>{error}</span><button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}
-      {state && (!state.runtime.connected || !state.runtime.authenticated) && <div className="runtime-banner"><span>{state.runtime.error || '正在连接 Codex…'}</span><button onClick={() => void action('/reconnect')}>重新连接</button></div>}
+      {state && !online && <div className="connection-banner" role="status"><span>Connection lost. Showing the last update; your draft is kept.</span><button onClick={() => void refresh(true)}>Retry connection</button></div>}
+      {error && <div role="alert" className="error-banner"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}
+      {state && (!state.runtime.connected || !state.runtime.authenticated) && <div className="runtime-banner"><span>{state.runtime.error || 'Connecting to Codex…'}</span><button disabled={pendingActions.has('/reconnect')} onClick={() => void action('/reconnect')}>{pendingActions.has('/reconnect') ? 'Connecting…' : 'Reconnect'}</button></div>}
       {task ? <div className="task-workspace">
-        <div className="mobile-tabs"><button aria-pressed={mobileTab === 'review'} className={mobileTab === 'review' ? 'active' : ''} onClick={() => setMobileTab('review')}>审阅 {task.review?.counts?.pending ? `· ${task.review.counts.pending}` : ''}</button><button aria-pressed={mobileTab === 'conversation'} className={mobileTab === 'conversation' ? 'active' : ''} onClick={() => setMobileTab('conversation')}>对话{state?.requests.some(r => r.taskId === task.id) ? ' · 待回复' : ''}</button><Status task={task}/>{mobileTab === 'review' && <select className="reading-scale" aria-label="PDF 阅读缩放" value={pdfScale} onChange={e => setPdfScale(Number(e.target.value))}><option value={1}>100%</option><option value={1.5}>150%</option><option value={2}>200%</option><option value={3}>300%</option></select>}</div>
-        <div className={`task-grid layout-${layout} show-${mobileTab}`}><section id="review-panel" className="review-panel" aria-label="PDF 审阅">
-          {task.review?.round ? <iframe ref={reviewFrame} key={task.id} title={`${task.title} PDF 差异审阅`} src={`/review/${task.projectId}/?task=${task.name}`} onLoad={e => compactReviewFrame(e, pdfScale)} className="review-frame"/> : <div className="review-placeholder"><Icon name="paper" size={28}/><h2>{task.status === 'building' ? '正在生成 PDF 审阅…' : '暂无审阅'}</h2><p>{task.status === 'building' ? '编译完成后自动显示。' : 'Codex 完成修改后，这里会显示 PDF 差异。'}</p></div>}
-          {task.status === 'building' && task.review?.round ? <div className="build-overlay"><span className="spinner"/>正在生成下一轮审阅</div> : null}
-        </section><Activity key={task.id} task={task} items={items} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh()} reportError={reportError} onCollapse={() => setLayout('review')}/></div>
-      </div> : <div className="welcome"><h1>{project?.name || '论文工作台'}</h1><p className="welcome-copy">{project ? '选择已有任务，或创建一个 Codex 修改任务。' : '添加 Mac mini 上的 LaTeX 仓库，再创建修改任务。'}</p><button className="button primary" onClick={() => newTask()}><Icon name="plus"/>{project ? '新建任务' : '添加论文'}</button></div>}
+        <div className="mobile-tabs"><button aria-pressed={mobileTab === 'review'} className={mobileTab === 'review' ? 'active' : ''} onClick={() => setMobileTab('review')}>Review {task.review?.counts?.pending ? `· ${task.review.counts.pending}` : ''}</button><button aria-label={state?.requests.some(r => r.taskId === task.id) ? 'Conversation (reply needed)' : 'Conversation'} aria-pressed={mobileTab === 'conversation'} className={mobileTab === 'conversation' ? 'active' : ''} onClick={() => setMobileTab('conversation')}>Conversation{state?.requests.some(r => r.taskId === task.id) && <i className="attention-dot" aria-hidden="true"/>}</button><Status task={task}/>{mobileTab === 'review' && <select className="reading-scale" aria-label="PDF reading zoom" value={pdfScale} onChange={e => setPdfScale(Number(e.target.value))}><option value={1}>100%</option><option value={1.5}>150%</option><option value={2}>200%</option><option value={3}>300%</option></select>}</div>
+        <div className={`task-grid layout-${layout} show-${mobileTab}`}><section id="review-panel" className="review-panel" aria-label="PDF review">
+          {task.review?.round && ['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) ? <div className="review-mode-hint" role="status">{task.status === 'uncertain' ? 'Check task status before accepting, rejecting, or undoing changes.' : task.status === 'building' ? 'A new review is building. You can still read and comment on this round.' : 'You can read and comment. Pause this task to accept, reject, or undo changes.'}</div> : null}
+          {task.status === 'deleting' ? <div className="review-placeholder"><h2>Deletion is in progress</h2><p>This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} scale={pdfScale}/> : <div className="review-placeholder"><Icon name="paper" size={28}/><h2>{task.status === 'building' ? 'Building PDF review…' : 'No review yet'}</h2><p>{task.status === 'building' ? 'The review will appear when the build finishes.' : 'PDF changes will appear here after Codex finishes editing.'}</p></div>}
+          {task.status === 'building' && task.review?.round ? <div className="build-overlay"><span className="spinner"/>Building the next review round</div> : null}
+        </section><Activity key={task.id} task={task} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} onCollapse={() => setLayout('review')}/></div>
+      </div> : !state ? <div className="welcome"><h1>Opening your workspace</h1><p className="welcome-copy" role="status">{connectionError || 'Connecting to your papers and tasks…'}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>Retry connection</button>}</div> : <div className="welcome"><h1>{project?.name || 'Your paper workspace'}</h1><p className="welcome-copy">{project ? 'Select a task or create a new editing task for Codex.' : 'Add a LaTeX repository from this host, then create an editing task.'}</p><button className="button primary" onClick={() => newTask()}><Icon name="plus"/>{project ? 'New task' : 'Add paper'}</button></div>}
     </main>
-    {modal && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close icon-button" aria-label="关闭" disabled={busy} onClick={() => setModal(null)}><Icon name="close"/></button><h2 id="modal-title">{modal === 'task' ? '新建 Codex 任务' : '添加论文项目'}</h2>{modal === 'project' && <p className="modal-description">选择 Mac mini 上已有的 LaTeX Git 仓库。</p>}<form onSubmit={e => void saveForm(e)}>{modal === 'project' ? <><label>论文名称<input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="例如：我的论文"/></label><label>Mac mini 上的仓库路径<input required value={form.path} onChange={e => setForm({ ...form, path: e.target.value })} placeholder="/Users/chen/papers/my-paper"/></label><p className="field-hint">仓库需要已有一次 Git 提交，并能通过 latexmk 编译。</p></> : <><label>任务标题<input autoFocus required maxLength={120} placeholder="例如：精简引言的背景介绍" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}/></label><label>希望 Codex 做什么？<textarea required rows={5} placeholder="具体说明修改范围、希望保留的内容，以及完成标准…" value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })}/></label><label>Codex 模型<select value={form.model} onChange={e => setForm({ ...form, model: e.target.value })}><option value="">沿用本机 Codex 默认配置</option>{state?.runtime.models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label><p className="field-hint">论文：{project?.name} · 修改会先进入审阅，不会自动合入主稿。</p></>}{error && <p className="inline-error">{error}</p>}<button disabled={busy} className="button primary modal-submit" type="submit">{busy ? '正在准备…' : modal === 'task' ? '创建并启动 Codex' : '添加论文'}<Icon name="arrow" size={17}/></button></form></section></div>}
+    {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
+    {modal && <dialog ref={modalRef} onKeyDown={keepDialogFocus} className="modal-backdrop" aria-labelledby="modal-title" onCancel={e => { e.preventDefault(); if (!busy) setModal(null); }} onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section className="modal"><button className="modal-close icon-button" aria-label="Close" disabled={busy} onClick={() => setModal(null)}><Icon name="close"/></button><h2 id="modal-title">{modal === 'task' ? 'New Codex task' : 'Add a paper project'}</h2>{modal === 'project' && <p className="modal-description">Choose an existing LaTeX Git repository on this host.</p>}<form onSubmit={e => void saveForm(e)}>{modal === 'project' ? <><label>Paper name (optional)<input autoFocus maxLength={120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. My research paper"/></label><label>Repository path on this host<input required maxLength={4000} value={form.path} onChange={e => setForm({ ...form, path: e.target.value })} placeholder="/Users/you/papers/my-paper"/></label><p className="field-hint">The repository needs at least one Git commit and must compile with latexmk.</p></> : <><label>Task title<input autoFocus required maxLength={120} placeholder="e.g. Shorten the introduction" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}/></label><label>What should Codex do?<textarea required maxLength={20000} rows={5} placeholder="Describe the scope, what to preserve, and how to judge the result…" value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })}/></label><label>Codex model<select value={form.model} onChange={e => setForm({ ...form, model: e.target.value })}><option value="">Use the default Codex configuration on this host</option>{state?.runtime.models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label><p className="field-hint">Paper: {project?.name} · Changes go through review before entering the manuscript.</p></>}{error && <p className="inline-error" role="alert">{error}</p>}<button disabled={busy} className="button primary modal-submit" type="submit">{busy ? 'Preparing…' : modal === 'task' ? 'Create and start Codex' : 'Add paper'}<Icon name="arrow" size={17}/></button></form></section></dialog>}
   </div>;
 }
 

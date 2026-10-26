@@ -64,6 +64,6 @@ while addressing the new request.
 }
 const store = new Store(path.join(DATA, 'papilot.sqlite'));
 const workspace = new Workspace(store);
-const project = await workspace.addProject(folder, '示例论文 · Small Steps');
+const project = await workspace.addProject(folder, 'Example paper · Small Steps');
 console.log(JSON.stringify({ project, note: 'Example ready. Create a task in the web UI to run real Codex.' }, null, 2));
 store.close();

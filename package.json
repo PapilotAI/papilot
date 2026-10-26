@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.22.0" },
+  "engines": {
+    "node": ">=22.22.0"
+  },
   "scripts": {
     "dev": "tsx watch src/server/main.ts",
     "start": "tsx src/server/main.ts",
@@ -13,7 +15,8 @@
     "setup:review": "npm --prefix vendor/latex-review ci && npm --prefix vendor/latex-review run build",
     "demo": "tsx scripts/demo.ts",
     "service:install": "tsx scripts/service.ts install",
-    "service:stop": "tsx scripts/service.ts stop"
+    "service:stop": "tsx scripts/service.ts stop",
+    "test:ui": "npm run build && node scripts/check-ui.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^9.2.2",

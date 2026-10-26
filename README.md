@@ -1,34 +1,54 @@
 # Papilot
 
-A personal TypeScript workspace for real Codex sessions and LaTeX PDF review, running on your Mac mini. React/Vite frontend, Fastify backend, SQLite persistence, and the official Codex app-server over stdio.
+A personal workspace for editing LaTeX papers with Codex and reviewing the resulting PDF changes. Run it on your host computer and continue from a desktop, tablet, or phone.
+
+- Give each editing task an isolated Git worktree and a persistent Codex conversation.
+- Compare PDF changes, accept or reject edits, and send review feedback into the next turn.
+- Keep tasks and messages across browser sessions, with up to two Codex tasks running concurrently.
+
+The interface, built-in messages, and documentation are in English. Codex also defaults to English updates and questions. Your manuscript, project names, comments, and conversation history retain their original language.
+
+Built with TypeScript, React/Vite, Fastify, SQLite, and the official Codex app-server over stdio.
 
 ## Run
 
-Requires Node 22.22+ (Node 24 LTS recommended), Git, a working TeX installation with `latexmk` and `synctex`, and a signed-in Codex account on the host.
+Requires Node.js 22.22+, Git, a working TeX installation with `latexmk` and `synctex`, and a signed-in Codex account on the host.
 
 ```sh
-npm install
+npm ci
 npm run setup:review
 npm run build
-npm run demo
 npm start
 ```
 
-Open `http://127.0.0.1:4317`. The demo creates a separate example Git repository under `.papilot/example-paper`; it does not modify an existing manuscript. Create a task to run real Codex, or add your own repository by its absolute path on the host. Custom root documents can use `.latex-review.json` as documented in `vendor/latex-review/docs/reference.md`.
+Open [Papilot](http://127.0.0.1:4317). Select **Add paper** and enter the path to a LaTeX Git repository on the host. The repository must have at least one commit and compile with `latexmk`. Custom root documents can use `.latex-review.json` as described in the [review engine reference](vendor/latex-review/docs/reference.md).
+
+To try a sample first, run `npm run demo`. It registers a separate example Git repository under `.papilot/example-paper` without changing an existing manuscript. Start an editing task from the interface when you are ready to run Codex.
 
 The bundled Codex CLI uses the host's normal Codex login/configuration. To sign in, run `./node_modules/.bin/codex login` on the host. No API key is stored by Papilot. Model selection defaults to the host's configured Codex model.
 
 ## Workflow
 
-The toolbar controls the task sidebar, PDF review, and Codex conversation panels. Collapse either content panel for a full-width view; desktop layout choices are saved in this browser. On phones, switch between review and conversation tabs. The review zoom menu enlarges PDF strips; swipe a strip horizontally to read the enlarged content. The layout follows the visual viewport when the keyboard opens. Checked in Chrome device simulation at 320 × 568 and 390 × 844: task drawer, review/conversation switching, 200% reading zoom, comment placement, and unsent draft preservation. iOS/Android keyboard and touch behavior still need real-device validation.
+1. Select **New task**, describe the revision, and optionally choose a Codex model.
+2. Follow the conversation and answer any Codex questions or permission requests. Extra tasks queue when both execution slots are occupied.
+3. When Codex finishes, Papilot builds the PDF review automatically. Accept, reject, or comment on individual changes in the viewer.
+4. Use **Send to Codex** to submit saved review comments, or write further instructions in the conversation panel. Both actions include new review feedback.
 
-Use **完整 PDF** to open the entire manuscript from the selected review round, after the task’s changes. This is a complete build, even when the diff used a partial build. It includes pending changes from that round, so it is not the accepted main manuscript. The browser PDF viewer supports reading, zooming and downloading. The endpoint also accepts `version=before` and `download=1`.
+The toolbar controls the task sidebar, PDF review, and conversation panels. Collapse either content panel for a full-width view; desktop layout choices are saved in this browser. On phones, switch between **Review** and **Conversation**. The review zoom menu enlarges PDF strips; swipe horizontally to read enlarged content. Real-device keyboard and touch behavior still needs validation on iOS and Android.
 
-Each task gets a review-engine worktree and a persistent Codex thread. Codex edits the worktree; Papilot automatically publishes the PDF review when the turn ends. Accept/reject/comment in the embedded viewer. Use the conversation panel to send saved feedback back to the same Codex thread. You can run two tasks concurrently; extra tasks queue.
+Conversation drafts are saved per task in this browser. Sending review comments preserves an unsent draft, and text entered while a message is sending stays in the composer. Switching tasks preserves pending submissions and unfinished Codex answers. If browser storage is unavailable, the workspace remains usable and drafts stay in the current tab until it closes or reloads. Use **Command+Enter** on macOS or **Ctrl+Enter** elsewhere to send instructions. Project and task dialogs keep keyboard focus inside the form; **Escape** closes them when no submission is in progress.
 
-Review acceptance updates the manuscript's working tree without committing. Git conflicts are surfaced by the review engine; they are not automatically overwritten. Pause a running task before accepting/rejecting/undoing its changes. Acceptance is a manuscript decision, distinct from a Codex command permission request.
+The mobile task drawer keeps keyboard focus inside it and closes with **Escape**, returning focus to its opener. Long conversations follow new messages until you scroll up; **Latest messages** returns to the bottom. Connection loss is shown above the workspace even when the sidebar is hidden. Failed conversation and PDF review loads offer their own retry controls, so your instruction draft stays in place.
 
-Messages and queued runs are saved in `.papilot/papilot.sqlite`. Closing the browser does not stop a run. After a process restart, in-flight work is marked interrupted and can be continued; already queued follow-up messages are retained. Reconnecting after an uncertain request does not promise exactly-once execution of arbitrary Codex commands.
+To remove a task, select it and use **Delete task** (the trash icon in the toolbar). The confirmation defaults to **Cancel** and explains the permanent removal of its Papilot conversation, worktree, PDF review files, and unaccepted edits and comments. Accepted manuscript changes and other tasks stay in place, but the deleted task's review decisions can no longer be undone. Pause active or queued work first, wait for PDF builds, and resolve uncertain actions before deleting. If cleanup is interrupted, the task stays reserved as **Deleting task**; use **Retry deletion** to confirm cleanup. The review engine owns the file removal. Codex host history and the engine's internal bookkeeping are managed separately.
+
+Use **Full PDF** to open the entire manuscript from the selected review round, after the task’s changes. This is a complete build, even when the diff used a partial build. It includes pending changes from that round, so it is not the accepted main manuscript. The browser PDF viewer supports reading, zooming and downloading. The endpoint also accepts `version=before` and `download=1`.
+
+Review acceptance updates the manuscript's working tree without committing. Git conflicts are surfaced by the review engine; they are not automatically overwritten. Pause a running or queued task before accepting/rejecting/undoing its changes, and wait for any PDF build to finish. You can still read and add comments while Codex works. Acceptance is a manuscript decision, distinct from a Codex command permission request.
+
+If a Codex start request or a review write has an uncertain outcome, the task displays **Check status**. Further editing and manuscript decisions remain blocked until that action is reconciled. Checking a review write retries its original action ID, so it cannot apply a second decision or undo a different action. Pausing a queued message preserves feedback that has not yet reached Codex.
+
+Messages and queued runs are saved in `.papilot/papilot.sqlite`. Closing the browser does not stop a run. After a process restart, confirmed in-flight turns are marked interrupted and can be continued; already queued follow-up messages are retained. Uncertain operations remain reserved until their outcome is checked. Reconnecting after an uncertain request does not promise exactly-once execution of arbitrary Codex commands.
 
 ## Remote access with Tailscale
 
@@ -52,13 +72,26 @@ npm run service:install
 tailscale serve --bg --http=8081 http://127.0.0.1:4317
 ```
 
-The initial Mac mini deployment uses this mode because its ACME connection is reset by the upstream network. The browser-to-server connection is protected by Tailscale, rather than browser HTTPS. Browser secure-context-only conveniences such as the original viewer's clipboard button may be unavailable; native text selection/copy remains available.
+With HTTP Serve, the connection is protected by Tailscale rather than browser HTTPS. Browser features that require a secure context, such as the viewer's clipboard button, may be unavailable; native text selection and copying remain available.
 
-The current deployment is **http://100.92.130.21:8081/**, restricted to the owner's Tailscale identity. It uses the private IP to avoid sending the MagicDNS hostname through a browser's external proxy. Tailscale 1.98's HTTP handler appends the tailnet suffix to bare hosts, so its Serve config includes `100.92.130.21.basa-tailor.ts.net:8081` as an alias for the same loopback backend. The previous Serve configuration is saved at `.papilot/tailscale-serve-before-ip.json`; the existing HTTPS 443 service is preserved. When reinstalling this deployment, set `PAPILOT_PUBLIC_ORIGIN=http://100.92.130.21:8081` and keep the configured owner identity.
+If you use a private Tailscale IP instead of a MagicDNS hostname, set `PAPILOT_PUBLIC_ORIGIN` to the exact URL you open in the browser and configure the matching Serve host. Keep the same origin and owner identity when reinstalling the service. Preserve any other Serve endpoints already running on the host.
 
 The launchd user agent starts after login, restarts the service on exit, and uses `caffeinate -i` to prevent idle system sleep while Papilot runs. A full reboot still requires the account to log in. Run `npm run service:stop` to stop it. Logs are in `.papilot/service.log` and `.papilot/service.error.log`.
 
-Optional environment variables: `PAPILOT_PORT` (4317), `PAPILOT_DATA`, `PAPILOT_CODEX_BIN`, `PAPILOT_REVIEW_ENGINE`, `PAPILOT_PUBLIC_ORIGIN`, `PAPILOT_TAILSCALE_LOGIN`. Keep the same remote variables when reinstalling the service.
+For SSH access without Tailscale, run `ssh -N -L 4317:127.0.0.1:4317 user@your-host` on the computer running your browser, keep that terminal open, and visit `http://localhost:4317`.
+
+The workspace uses short, non-overlapping polling on HTTP/1 connections so multiple tabs cannot exhaust the browser's connection pool with permanent event streams. HTTP/2 and HTTP/3 connections use event streams. Hidden workspace tabs pause their status refreshes and update when reopened; task switches cancel obsolete conversation requests. If upgrading from an older frontend leaves pages loading indefinitely, close the old Papilot tabs and reopen the workspace.
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PAPILOT_PORT` | `4317` | Local HTTP port; the server binds to `127.0.0.1`. |
+| `PAPILOT_DATA` | `.papilot` in the project root | SQLite state and generated example project. |
+| `PAPILOT_CODEX_BIN` | Bundled Codex CLI, then `codex` on `PATH` | Codex executable used by the backend. |
+| `PAPILOT_REVIEW_ENGINE` | `vendor/latex-review` | Review engine directory. |
+| `PAPILOT_PUBLIC_ORIGIN` | Unset | Exact remote browser origin, including scheme and port. |
+| `PAPILOT_TAILSCALE_LOGIN` | Unset | Tailscale login allowed to access the remote workspace. |
 
 ## Development and validation
 
@@ -66,9 +99,18 @@ Optional environment variables: `PAPILOT_PORT` (4317), `PAPILOT_DATA`, `PAPILOT_
 npm run typecheck
 npm test
 npm run build
+npm run test:ui
 ```
 
-`npm run dev` watches the TypeScript backend; rebuild the frontend after changes. The initial version deliberately reuses the existing review viewer, including its lazy images and immutable assets. Full section-level JSON pagination and text-layer virtualization remain future work.
+`npm run dev` watches the TypeScript backend. After frontend changes, run `npm run build` and reload the browser; the server serves rebuilt assets without a restart. Backend changes require a restart, which interrupts active turns, so wait for running tasks to finish first. To develop alongside an existing instance, use a different `PAPILOT_PORT` and `PAPILOT_DATA` directory.
+
+The automated tests cover restart recovery, access restrictions, review proxy routes, Codex RPC, worktree reservations, stale events, uncertain-operation recovery, rebuilt frontend assets, and draft preservation during feedback, retries, and concurrent editing.
+
+`npm run test:ui` uses Playwright from the review engine's development dependencies (installed by `npm run setup:review`) and an installed Chrome browser. Set `PAPILOT_BROWSER_CHANNEL` to use another installed Playwright browser channel. It exercises English copy, keyboard focus, mobile layouts, request failures, navigation during submission, stale snapshots, unanswered Codex requests, blocked browser storage, connection recovery, long conversations, and task deletion confirmation and retries. It saves screenshots in `test-results`. Browser checks use an isolated local server and simulated task data; they do not start real Codex runs or modify manuscripts. Backend deletion tests also exercise the actual review engine against a disposable Git repository, checking that accepted manuscript content and another task's worktree survive cleanup.
+
+Codex recovery uses the bundled CLI's generated protocol definitions and the [official app-server protocol](https://developers.openai.com/codex/app-server). It matches the pending message identity before adopting a turn and never treats a transport timeout as proof that a turn stopped.
+
+The app reuses the existing review viewer, including its lazy images and immutable assets. Full section-level JSON pagination and text-layer virtualization remain future work.
 
 `scripts/verify-demo.ts --allow-example-writes` is an opt-in integration check for the generated sample only. After two real Codex tasks and a reviewer-requested second round, it checks conflict rejection, accepted changes from independent worktrees, undo, and proxied SVG delivery. Its safety check requires the exact `.papilot/example-paper` project and the recorded smoke-test task IDs; it will not run against an arbitrary manuscript.
 

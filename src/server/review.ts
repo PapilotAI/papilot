@@ -10,6 +10,14 @@ export function reviewClient(root: string): Promise<ReviewClient> {
 }
 export const taskRoute = (name: string) => `/api/tasks/${encodeURIComponent(name)}`;
 
+export function confirmedReviewResponse(status: number, value: unknown, task: string): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as Record<string, unknown>;
+  if (status === 400 || status === 409) return typeof result.error === 'string';
+  return status >= 200 && status < 300 && result.task === task && typeof result.csrf === 'string' && typeof result.closed === 'boolean'
+    && result.decisions !== null && typeof result.decisions === 'object' && !Array.isArray(result.decisions);
+}
+
 export function allowedReviewRoute(route: string, method: string): boolean {
   if (route.includes('..') || route.includes('\\')) return false;
   if (method === 'GET') return route === '/' || /^\/(assets|fonts)\/[\w./-]+$/.test(route) || /^\/files\/[a-z0-9-]+\/\d+\/[\w.-]+\.(svg|png)$/.test(route) || /^\/api\/tasks(?:\/[a-z0-9-]+(?:\/(?:state|rounds\/\d+))?)?$/.test(route);
