@@ -1,5 +1,6 @@
 import { StrictMode, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
+import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import type { AgentId, Annotation, GitDiff, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { ComposerDraft, sendsMessage, taskTitle } from './composer.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
@@ -97,14 +98,57 @@ function CopyButton({ text }: { text: string }) {
   return <button type="button" className="message-action" aria-label={copied ? 'Copied' : 'Copy message'} onClick={() => void copy()}><Icon name={copied ? 'check' : 'copy'} size={14}/><span>{copied ? 'Copied' : 'Copy'}</span></button>;
 }
 
-function TimelineEntry({ item, agent }: { item: TimelineItem; agent: string }) {
-  if (item.type === 'user') return <article className="message user" aria-label={`You, ${time(item.createdAt)}`}><div className="message-body" title={time(item.createdAt)}>{item.text}</div></article>;
+// Commands arrive wrapped in the login shell that ran them, and files with
+// absolute paths; the chat shows the command itself and paths in the task.
+const shellCommand = (text: string) => text.match(/^\/bin\/(?:ba|z)?sh -lc (['"])([\s\S]*)\1$/)?.[2] ?? text;
+const taskPath = (file: string, root: string) => root && file.startsWith(root + '/') ? file.slice(root.length + 1) : file;
+const editedFiles = (item: TimelineItem, root: string) => item.text.split('\n').filter(Boolean).map(file => taskPath(file, root));
+const toolState = (item: TimelineItem) => item.status === 'inProgress' ? 'running' : item.status && item.status !== 'completed' ? 'failed' : '';
+
+// A first message built from PDF notes shows the notes, not the instructions around them.
+function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[] }) {
+  return <article className="message user notes-message" aria-label={`You, ${time(item.createdAt)}`}><div className="message-body" title={time(item.createdAt)}>
+    <div className="sent-notes-head"><Icon name="notes" size={14}/>{notes.length === 1 ? 'Note on the PDF' : `${notes.length} notes on the PDF`}</div>
+    <ol className="sent-notes">{notes.map((note, index) => <li key={index}>
+      <span className="sent-note-where">{note.where}</span>
+      {note.quote ? <blockquote>{note.quote}</blockquote> : <span className="sent-note-region">Marked region</span>}
+      <p>{note.comment}</p>
+    </li>)}</ol>
+  </div></article>;
+}
+
+function TimelineEntry({ item, agent, root }: { item: TimelineItem; agent: string; root: string }) {
+  if (item.type === 'user') {
+    const notes = readNotesInstructions(item.text);
+    if (notes) return <NotesMessage item={item} notes={notes}/>;
+    return <article className="message user" aria-label={`You, ${time(item.createdAt)}`}><div className="message-body" title={time(item.createdAt)}>{item.text}</div></article>;
+  }
   if (item.type === 'assistant') return <article className="message assistant" aria-label={`${agent}, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
-  const files = item.type === 'files' ? item.text.split('\n').filter(Boolean) : [];
-  const label = item.type === 'command' ? item.text || 'Run command' : item.type === 'files' ? (files.length === 1 ? `Edited ${files[0]}` : `Edited ${files.length} files`) : item.text || 'Run tool';
-  const detail = item.type === 'files' ? item.text : item.detail;
-  const state = item.status === 'inProgress' ? 'running' : item.status && item.status !== 'completed' ? 'failed' : '';
+  const files = item.type === 'files' ? editedFiles(item, root) : [];
+  const label = item.type === 'command' ? shellCommand(item.text) || 'Run command' : item.type === 'files' ? (files.length === 1 ? `Edited ${files[0]}` : `Edited ${files.length} files`) : item.text || 'Run tool';
+  const detail = item.type === 'files' ? files.join('\n') : item.detail;
+  const state = toolState(item);
   return <details className={'tool-item ' + state}><summary><Icon name={item.type === 'command' ? 'terminal' : item.type === 'files' ? 'diff' : 'tool'} size={14}/><span className="tool-label">{label}</span>{state === 'running' ? <span className="spinner" aria-label="Running"/> : state && <span className="tool-status">{item.status === 'declined' ? 'Declined' : 'Failed'}</span>}</summary>{detail && <pre>{detail}</pre>}</details>;
+}
+
+// Consecutive commands, edits and tool calls fold into one line that opens to the list.
+function ToolGroup({ items, agent, root }: { items: TimelineItem[]; agent: string; root: string }) {
+  const commands = items.filter(item => item.type === 'command').length, edits = items.filter(item => item.type === 'files');
+  const files = [...new Set(edits.flatMap(item => editedFiles(item, root)))], tools = items.length - commands - edits.length;
+  const running = items.some(item => toolState(item) === 'running'), failed = items.filter(item => toolState(item) === 'failed').length;
+  const parts = [commands ? `ran ${commands} ${commands === 1 ? 'command' : 'commands'}` : '', files.length ? (files.length === 1 ? `edited ${files[0]}` : `edited ${files.length} files`) : '', tools ? `used ${tools} ${tools === 1 ? 'tool' : 'tools'}` : ''].filter(Boolean).join(', ');
+  return <details className="tool-group"><summary><Icon name={commands ? 'terminal' : files.length ? 'diff' : 'tool'} size={14}/><span className="tool-group-label">{parts[0].toUpperCase() + parts.slice(1)}</span>{running ? <span className="spinner" aria-label="Running"/> : failed ? <span className="tool-status">{failed} failed</span> : null}<Icon name="chevronDown" size={13}/></summary>
+    <div className="tool-group-items">{items.map(item => <TimelineEntry key={item.id} item={item} agent={agent} root={root}/>)}</div>
+  </details>;
+}
+
+function timelineEntries(items: TimelineItem[]) {
+  const entries: TimelineItem[][] = [];
+  for (const item of items) {
+    const tool = item.type !== 'user' && item.type !== 'assistant', last = entries[entries.length - 1];
+    if (tool && last && last[0].type !== 'user' && last[0].type !== 'assistant') last.push(item); else entries.push([item]);
+  }
+  return entries;
 }
 
 function Activity({ task, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing, openReview }: { task: Task; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void }) {
@@ -133,7 +177,7 @@ function Activity({ task, composer, answerDrafts, items, loading, loadError, ret
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); } }}><div className="thread">
       {loading && <p className="muted" role="status">Loading conversation…</p>}
       {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary compact" onClick={retry}>Retry conversation</button></div>}
-      {items.map(item => <TimelineEntry key={item.id} item={item} agent={agentName(task)}/>)}
+      {timelineEntries(items).map(entry => entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agentName(task)} root={task.worktree}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agentName(task)} root={task.worktree}/>)}
       {requests.map(r => <RequestCard key={r.id} request={r} agent={agentName(task)} answerDrafts={answerDrafts} onDone={refresh}/>)}
       {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>{agentName(task)} is working on this task</div>}
       {task.status === 'queued' && <p className="muted">Task saved. Waiting for an available {agentName(task)} session.</p>}

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { anchor, annotationTask, gitCommit, gitDiff, gitRemote, gitStatus, parseStatus, parseSynctex, settleLines, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
+import { readNotesInstructions } from '../src/notes.ts';
 import type { Annotation } from '../src/shared.ts';
 
 test('Git status parsing keeps branch counts, renames, untracked files and line counts', () => {
@@ -64,6 +65,18 @@ test('PDF notes become one task that quotes each marked region and its source', 
   const many = annotationTask([note('Shorten.'), note('Redraw this figure.', { quote: '', source: { file: 'figures.tex', lines: [5, 5] }, page: 3 })]);
   assert.equal(many.title, 'Address 2 PDF notes');
   assert.match(many.instructions, /2\. Page 4 · figures\.tex line 5\n   Marked region: a figure, equation or other non-text area\n   Note: Redraw this figure\./);
+});
+
+test('the chat reads PDF notes back from the message that carried them', () => {
+  const note = (comment: string, extra: Partial<Annotation> = {}): Annotation => ({ id: comment, projectId: 'p', key: 'k', page: 0, rect: [0, 0, 1, 1], comment, quote: 'Small Steps, Clearer Papers', source: { file: 'main.tex', lines: [10, 10], excerpt: '\\title{Small Steps}\n```' }, createdAt: 1, ...extra });
+  const notes = [note('标题改一下'), note('Redraw this.\n\n2. Keep the axes.\n   Note: the legend too.', { quote: '', source: null, page: 2 }), note('Say "why".', { quote: 'two\nlines', source: { file: 'intro.tex', lines: [3, 5] } })];
+  assert.deepEqual(readNotesInstructions(annotationTask(notes).instructions), [
+    { where: 'Page 1 · main.tex line 10', quote: 'Small Steps, Clearer Papers', comment: '标题改一下' },
+    { where: 'Page 3', quote: '', comment: 'Redraw this.\n\n2. Keep the axes.\n   Note: the legend too.' },
+    { where: 'Page 1 · intro.tex lines 3–5', quote: 'two\nlines', comment: 'Say "why".' },
+  ]);
+  assert.equal(readNotesInstructions('Explain the operator more precisely.'), null);
+  assert.equal(readNotesInstructions(annotationTask([note('x')]).instructions.replace('   Note: ', '   Comment: ')), null);
 });
 
 test('source excerpts keep the marked lines and shorten long ranges', () => {

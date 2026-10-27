@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { ENGINE } from './paths.ts';
 import type { Annotation, GitStatus, ManuscriptBuild } from '../shared.ts';
+import { notesInstructions } from '../notes.ts';
 
 type Rect = [number, number, number, number];
 
@@ -149,12 +150,7 @@ export function parseSynctex(output: string) {
 export function annotationTask(notes: Annotation[]) {
   const first = notes[0].comment.split('\n').find(line => line.trim())?.trim() || 'Address a PDF note';
   const title = notes.length === 1 ? (first.length > 80 ? first.slice(0, 79).replace(/\s+\S*$/, '') + '…' : first) : `Address ${notes.length} PDF notes`;
-  const items = notes.map((note, index) => {
-    const where = [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : ''].filter(Boolean).join(' · ');
-    const source = note.source?.excerpt ? ['   LaTeX source of the marked region:', '   ```latex', ...note.source.excerpt.split('\n').map(line => '   ' + line), '   ```'] : [];
-    return [`${index + 1}. ${where}`, ...source, note.quote ? `   PDF text: "${note.quote}"` : '   Marked region: a figure, equation or other non-text area', `   Note: ${note.comment.trim().replace(/\n/g, '\n   ')}`].join('\n');
-  });
-  return { title, instructions: `Revise the manuscript according to these notes the author marked on the compiled PDF. SyncTeX mapped each marked region to the LaTeX file and lines that produced it; the PDF text is what the author saw. Read the current source before editing, and change only what the notes ask for.\n\n${items.join('\n\n')}` };
+  return { title, instructions: notesInstructions(notes) };
 }
 
 // The LaTeX the marked region came from, read from the exact tree that was

@@ -662,6 +662,33 @@ try {
   console.log('PASS: A slow review becomes visible when it finishes without requiring a reload');
 
 
+  // A task made from PDF notes shows the notes, and the agent's work folds into one line.
+  const notesPrompt = 'Revise the manuscript according to these notes the author marked on the compiled PDF. SyncTeX mapped each marked region to the LaTeX file and lines that produced it; the PDF text is what the author saw. Read the current source before editing, and change only what the notes ask for.\n\n1. Page 1 · main.tex line 10\n   LaTeX source of the marked region:\n   ```latex\n   \\title{Small Steps}\n   ```\n   PDF text: "Small Steps, Clearer Papers"\n   Note: Make the title plainer.';
+  history = [
+    { id: 'notes', taskId: task.id, type: 'user', text: notesPrompt, createdAt: 1 },
+    { id: 'cmd-1', taskId: task.id, type: 'command', text: "/bin/zsh -lc 'cat main.tex'", detail: '\\title{Small Steps}', status: 'completed', createdAt: 2 },
+    { id: 'cmd-2', taskId: task.id, type: 'command', text: "/bin/zsh -lc 'git status --short'", status: 'completed', createdAt: 3 },
+    { id: 'edit', taskId: task.id, type: 'files', text: `${task.worktree}/main.tex`, status: 'completed', createdAt: 4 },
+    { id: 'done', taskId: task.id, type: 'assistant', text: 'Changed the title.', createdAt: 5 },
+    { id: 'cmd-3', taskId: task.id, type: 'command', text: "/bin/zsh -lc 'latexmk -pdf main.tex'", status: 'inProgress', createdAt: 6 },
+  ];
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  const sentNotes = page.locator('.notes-message');
+  await sentNotes.waitFor();
+  assert.equal(await sentNotes.locator('.sent-notes-head').innerText(), 'Note on the PDF');
+  assert.equal(await sentNotes.locator('.sent-note-where').innerText(), 'Page 1 · main.tex line 10');
+  assert.equal(await sentNotes.locator('blockquote').innerText(), 'Small Steps, Clearer Papers');
+  assert.equal(await sentNotes.locator('p').innerText(), 'Make the title plainer.');
+  assert.doesNotMatch(await page.locator('.thread').innerText(), /SyncTeX|```/);
+  const work = page.locator('.tool-group');
+  assert.equal(await work.count(), 1);
+  assert.equal(await page.locator('.tool-group > summary').innerText(), 'Ran 2 commands, edited main.tex');
+  assert.equal(await work.locator('.tool-item').first().isVisible(), false);
+  await page.locator('.tool-group > summary').click();
+  assert.deepEqual(await work.locator('.tool-label').allInnerTexts(), ['cat main.tex', 'git status --short', 'Edited main.tex']);
+  assert.equal(await page.locator('.thread > .tool-item .tool-label').innerText(), 'latexmk -pdf main.tex');
+  console.log('PASS: Notes sent from the PDF read as notes, and consecutive commands fold into one line with task paths');
+
   history = Array.from({ length: 120 }, (_, i) => ({ id: `history-${i}`, taskId: task.id, type: 'assistant', text: `Message ${i}: A detailed review of the argument.`, createdAt: i + 1 }));
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.getByText('Message 119: A detailed review of the argument.', { exact: true }).waitFor();
