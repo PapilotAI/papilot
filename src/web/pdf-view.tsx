@@ -31,6 +31,17 @@ const percent = ([x0, y0, x1, y1]: Rect): React.CSSProperties => ({ left: `${x0 
 const bounds = (rects: Rect[]): Rect => [Math.min(...rects.map(r => r[0])), Math.min(...rects.map(r => r[1])), Math.max(...rects.map(r => r[2])), Math.max(...rects.map(r => r[3]))];
 const zooms = [{ value: 'page-width', label: 'Fit width' }, { value: 'page-fit', label: 'Fit page' }, ...[0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map(scale => ({ value: String(scale), label: `${scale * 100}%` }))];
 
+// A note covers whole words: a drag that starts or ends inside a word takes
+// all of it, so the quote is readable and the highlight matches it. Returns
+// the widened range and the word pieces it added at each end.
+function wholeWords(selected: Range) {
+  const range = selected.cloneRange(), letter = /[\p{L}\p{N}]/u, start = range.startContainer, end = range.endContainer;
+  let before = '', after = '';
+  if (start.nodeType === Node.TEXT_NODE) { const text = start.textContent || ''; let at = range.startOffset; while (at > 0 && letter.test(text[at - 1])) at--; before = text.slice(at, range.startOffset); range.setStart(start, at); }
+  if (end.nodeType === Node.TEXT_NODE) { const text = end.textContent || ''; let at = range.endOffset; while (at < text.length && letter.test(text[at])) at++; after = text.slice(range.endOffset, at); range.setEnd(end, at); }
+  return { range, before, after };
+}
+
 // Number tags sit in the page margin level with the first marked line, on the
 // side nearer the mark, so they never cover text; tags on one line step outwards.
 function tagSpots(firsts: Rect[]) {
@@ -189,13 +200,14 @@ export const PdfView = forwardRef<PdfHandle, {
     const select = () => {
       const current = document.getSelection();
       if (!current || current.isCollapsed || !current.rangeCount) { setSelection(null); return; }
-      const range = current.getRangeAt(0), node = range.startContainer, element = node instanceof Element ? node : node.parentElement;
+      const { range, before, after } = wholeWords(current.getRangeAt(0)), node = range.startContainer, element = node instanceof Element ? node : node.parentElement;
       const pageDiv = element?.closest<HTMLElement>('.page');
       if (!pageDiv || !box.contains(pageDiv)) { setSelection(null); return; }
       const frame = pageDiv.getBoundingClientRect();
       const rects = mergeLines(Array.from(range.getClientRects()).filter(r => r.width > 1 && r.height > 1 && r.top >= frame.top - 1 && r.bottom <= frame.bottom + 1)
         .map(r => [unit((r.left - frame.left) / frame.width), unit((r.top - frame.top) / frame.height), unit((r.right - frame.left) / frame.width), unit((r.bottom - frame.top) / frame.height)] as Rect));
-      const quote = current.toString().replace(/\s+/g, ' ').trim();
+      // The selection's own text keeps pdf.js's line breaks as spaces.
+      const quote = (before + current.toString() + after).replace(/\s+/g, ' ').trim();
       setSelection(rects.length && quote ? { page: Number(pageDiv.dataset.pageNumber) - 1, rects, quote } : null);
     };
     const selectionChange = () => { clearTimeout(timer); timer = setTimeout(select, 120); };

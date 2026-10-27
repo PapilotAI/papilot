@@ -219,10 +219,12 @@ try {
     const span = page.locator('.textLayer span').filter({ hasText: 'Fixture sentence' }).first();
     await span.scrollIntoViewIfNeeded();
     const box = await span.boundingBox();
-    await page.mouse.move(box.x + 1, box.y + box.height / 2);
+    // Start inside "Fixture"; the note still takes the whole word.
+    await page.mouse.move(box.x + 14, box.y + box.height / 2);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 6 });
     await page.mouse.up();
+    assert.doesNotMatch(await page.evaluate(() => document.getSelection().toString()), /^F/);
     await page.getByRole('button', { name: 'Add note', exact: true }).click();
     const note = page.getByRole('textbox', { name: 'Note for the agent' });
     assert.equal(await note.evaluate(el => el === document.activeElement), true);
