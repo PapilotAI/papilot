@@ -33,12 +33,17 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      # Rebuilding the man-db index takes minutes after apt installs, so skip it.
       - name: Install FFmpeg
-        run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg)
+        run: |
+          command -v ffmpeg && exit
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg
       - run: node scripts/build-site.mjs
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
