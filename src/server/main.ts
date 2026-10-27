@@ -11,6 +11,7 @@ import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson,
 import { authorize } from './security.ts';
 import { fullPaperPdf } from './pdf.ts';
 import { Manuscripts, annotationTask, gitCommit, gitDiff, gitRemote, gitStatus } from './manuscript.ts';
+import type { AgentId } from '../shared.ts';
 
 const store = new Store(path.join(DATA, 'papilot.sqlite'));
 const workspace = new Workspace(store);
@@ -40,12 +41,13 @@ app.get('/api/events', (request, reply) => {
 });
 app.post('/api/reconnect', async () => { await workspace.connect(); return workspace.runtime; });
 // Codex names reasoning efforts with short lowercase words (low, medium, xhigh).
+const agent = (value: unknown): AgentId => value === 'claude' || value === 'antigravity' ? value : 'codex';
 const effort = (value: unknown) => typeof value === 'string' && /^[a-z]{1,16}$/.test(value) ? value : undefined;
 const string = (value: unknown, name: string, max = 20000) => { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
 app.post('/api/projects', async request => { const b = request.body as any; return workspace.addProject(string(b.path, 'Repository path', 4000), b.name ? string(b.name, 'Paper name', 120) : undefined); });
 app.post('/api/tasks', async request => {
   const b = request.body as any;
-  return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: string(b.instructions, 'Instructions'), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort) });
+  return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: string(b.instructions, 'Instructions'), agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort) });
 });
 app.get<{ Params: { id: string } }>('/api/tasks/:id/items', request => { store.task(request.params.id); return { items: store.items(request.params.id) }; });
 app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string } }>('/api/tasks/:id/pdf', async (request, reply) => {
@@ -113,7 +115,7 @@ app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', async
   const notes = store.annotations(project.id).filter(note => !note.taskId);
   if (!notes.length) throw new Error('Mark a region on the PDF and add a note first.');
   const { title, instructions } = annotationTask(notes);
-  const task = await workspace.createTask({ id, projectId: project.id, title, instructions, model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort) });
+  const task = await workspace.createTask({ id, projectId: project.id, title, instructions, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort) });
   for (const note of notes) store.saveAnnotation({ ...note, taskId: task.id });
   return task;
 });

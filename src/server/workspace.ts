@@ -6,8 +6,9 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { Store } from './store.ts';
 import { Codex, RpcResponseError } from './codex.ts';
+import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, type AgentRuntime } from './agents.ts';
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
-import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage } from '../shared.ts';
+import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -32,9 +33,15 @@ export function accountUsage(response: any): Usage | null {
 }
 const BUSY = new Set(['running', 'waiting_input', 'building', 'uncertain', 'deleting']);
 
+const AGENTS: AgentId[] = ['codex', 'claude', 'antigravity'];
+const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [] });
+
 export class Workspace extends EventEmitter {
-  runtime: RuntimeStatus = { connected: false, authenticated: false, account: null, error: null, models: [] };
-  requests = new Map<string, PendingRequest & { rpcId: string | number }>();
+  // Each task runs on one agent; `runtime` is Codex's status, kept for older clients.
+  runtimes: Record<AgentId, RuntimeStatus> = { codex: blankRuntime(), claude: blankRuntime(), antigravity: blankRuntime() };
+  runtime = this.runtimes.codex;
+  agents: Record<AgentId, AgentRuntime>;
+  requests = new Map<string, PendingRequest & { rpcId: string | number; agent: AgentId }>();
   private active = new Map<string, Run>();
   private loaded = new Set<string>();
   private preparing = new Set<string>();
@@ -49,41 +56,54 @@ export class Workspace extends EventEmitter {
   private liveItems = new Map<string, TimelineItem>();
   private flushTimer: NodeJS.Timeout | null = null;
   private connecting: Promise<void> | null = null;
-  private usageTimer: NodeJS.Timeout | null = null;
-  constructor(public store: Store, public codex = new Codex(), private concurrency = 2, private connectReview = reviewClient) {
+  private usageTimers = new Map<AgentId, NodeJS.Timeout>();
+  constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
+    this.agents = { codex, claude: others.claude || new ClaudeAgent(), antigravity: others.antigravity || new AntigravityAgent() };
     store.on('change', () => this.emit('change'));
-    codex.on('notification', message => void this.notification(message).catch(e => console.error('Codex event:', errorText(e))));
-    codex.on('request', message => this.serverRequest(message));
-    codex.on('disconnected', e => {
-      this.runtime.connected = false; this.runtime.error = errorText(e); this.loaded.clear(); this.requests.clear(); this.earlyCompletions.clear(); this.earlyRequests.clear();
-      for (const [taskId, run] of this.active) {
-        this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
-        this.store.updateTask(taskId, { status: 'interrupted', turnId: null, error: 'Codex disconnected. You can resume the same task.' });
-      }
-      this.active.clear(); this.emit('change');
-    });
+    for (const id of AGENTS) {
+      const agent = this.agents[id];
+      agent.on('notification', message => void this.notification(message, id).catch(e => console.error(`${AGENT_NAMES[id]} event:`, errorText(e))));
+      agent.on('request', message => this.serverRequest(message, id));
+      agent.on('disconnected', e => this.disconnected(id, e));
+    }
   }
-  snapshot(): Snapshot { return { version: '0.1.0', projects: this.store.projects(), tasks: this.store.tasks(), requests: [...this.requests.values()].map(({ rpcId: _, ...r }) => r), runtime: this.runtime }; }
+  private agentOf(task: Task): AgentId { return task.agent && AGENTS.includes(task.agent) ? task.agent : 'codex'; }
+  private disconnected(id: AgentId, e: unknown) {
+    this.runtimes[id].connected = false; this.runtimes[id].error = errorText(e);
+    for (const [key, request] of this.requests) if (request.agent === id) this.requests.delete(key);
+    for (const [taskId, run] of this.active) {
+      const task = this.store.task(taskId);
+      if (this.agentOf(task) !== id) continue;
+      if (task.threadId) this.loaded.delete(task.threadId);
+      this.earlyCompletions.delete(taskId); this.earlyRequests.delete(taskId); this.active.delete(taskId);
+      this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
+      this.store.updateTask(taskId, { status: 'interrupted', turnId: null, error: `${AGENT_NAMES[id]} disconnected. You can resume the same task.` });
+    }
+    if (id === 'codex') this.loaded.clear();
+    this.emit('change');
+  }
+  snapshot(): Snapshot { return { version: '0.1.0', projects: this.store.projects(), tasks: this.store.tasks(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
   async connect() {
     if (this.connecting) return this.connecting;
-    this.connecting = (async () => {
-      try {
-        await this.codex.start();
-        const account = await this.codex.request('account/read', { refreshToken: false });
-        this.runtime.connected = true;
-        this.runtime.authenticated = Boolean(account.account) || account.requiresOpenaiAuth === false;
-        this.runtime.account = account.account?.email || account.account?.type || (this.runtime.authenticated ? 'Local Codex configuration' : null);
-        this.runtime.error = this.runtime.authenticated ? null : 'Sign in to Codex on this host, then select Reconnect.';
-        try {
-          const models = await this.codex.request('model/list', {}, 20000);
-          this.runtime.models = (models.data || []).map(agentModel);
-        } catch { /* Tasks can still use the account's configured default model. */ }
-        await this.readUsage();
-      } catch (e) { this.runtime.error = errorText(e); this.runtime.connected = false; }
-      this.emit('change'); this.schedule();
-    })().finally(() => { this.connecting = null; });
+    this.connecting = Promise.all(AGENTS.map(id => this.connectAgent(id))).then(() => { this.emit('change'); this.schedule(); }).finally(() => { this.connecting = null; });
     return this.connecting;
+  }
+  private async connectAgent(id: AgentId) {
+    const agent = this.agents[id], runtime = this.runtimes[id], name = AGENT_NAMES[id];
+    try {
+      await agent.start();
+      const account = await agent.request('account/read', { refreshToken: false });
+      runtime.connected = true;
+      runtime.authenticated = Boolean(account.account) || account.requiresOpenaiAuth === false;
+      runtime.account = account.account?.email || account.account?.type || (runtime.authenticated ? `Local ${name} configuration` : null);
+      runtime.error = runtime.authenticated ? null : `Sign in to ${name} on this host, then select Reconnect.`;
+      try {
+        const models = await agent.request('model/list', {}, 20000);
+        runtime.models = (models.data || []).map(agentModel);
+      } catch { /* Tasks can still use the account's configured default model. */ }
+      await this.readUsage(id);
+    } catch (e) { runtime.error = errorText(e); runtime.connected = false; }
   }
   async addProject(input: string, name?: string) {
     const expanded = input.startsWith('~/') ? path.join(process.env.HOME!, input.slice(2)) : input;
@@ -97,7 +117,7 @@ export class Workspace extends EventEmitter {
     const project = { id: randomUUID(), name: name?.trim() || path.basename(root), path: root, createdAt: Date.now() };
     this.store.saveProject(project); return project;
   }
-  async createTask(input: { projectId: string; title: string; instructions: string; model?: string; effort?: string; id: string }) {
+  async createTask(input: { projectId: string; title: string; instructions: string; agent?: AgentId; model?: string; effort?: string; id: string }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     const existing = this.store.tasks().find(t => t.id === input.id); if (existing) return existing;
@@ -108,7 +128,7 @@ export class Workspace extends EventEmitter {
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
       const info = await client.post('/api/tasks', { name, title: input.title });
       const task: Task = { id: input.id, projectId: project.id, name, title: input.title, instructions: input.instructions,
-        worktree: info.worktree, threadId: null, turnId: null, model: input.model || null, effort: input.effort || null, status: 'idle',
+        worktree: info.worktree, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.saveTask(task);
       await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false);
@@ -160,16 +180,18 @@ export class Workspace extends EventEmitter {
     setImmediate(() => { this.queued = false; void this.drain(); });
   }
   private async drain() {
-    if (!this.codex.ready || !this.runtime.authenticated || this.closing) return;
+    if (this.closing) return;
     for (const run of this.store.runs().filter(r => r.status === 'queued')) {
       if (this.active.size >= this.concurrency) break;
+      const agent = this.agentOf(this.store.task(run.taskId));
+      if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) continue;
       if (this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || BUSY.has(this.store.task(run.taskId).status)) continue;
       this.active.set(run.taskId, run);
       void this.startRun(run).catch(e => this.failRun(run, e));
     }
   }
   private instructions(task: Task) {
-    return `You are the official Codex agent running inside Papilot, a paper editing and review workspace.
+    return `You are ${this.agentOf(task) === 'codex' ? 'the official Codex agent' : AGENT_NAMES[this.agentOf(task)]} running inside Papilot, a paper editing and review workspace.
 Your task is already created. Your editable working directory is ${task.worktree}.
 Original task: ${task.instructions}
 Only edit this isolated task worktree. Never edit the manuscript checkout, other task worktrees, or Papilot's own source/state. Never commit, push, stash, or accept/reject/undo review decisions.
@@ -179,26 +201,27 @@ You may run tools in the task worktree to inspect and validate your changes. If 
   }
   private async startRun(run: Run) {
     let task = this.store.task(run.taskId);
+    const agent = this.agents[this.agentOf(task)], name = AGENT_NAMES[this.agentOf(task)];
     this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id);
     this.store.saveRun({ ...run, status: 'running' });
     this.store.updateTask(task.id, { status: 'running', turnId: null, error: null });
     if (!task.threadId || !this.loaded.has(task.threadId)) {
       const options = { cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', developerInstructions: this.instructions(task), ...(task.model ? { model: task.model } : {}) };
       const result = task.threadId
-        ? await this.codex.request('thread/resume', { ...options, threadId: task.threadId, excludeTurns: true })
-        : await this.codex.request('thread/start', options);
+        ? await agent.request('thread/resume', { ...options, threadId: task.threadId, excludeTurns: true })
+        : await agent.request('thread/start', options);
       if (this.active.get(task.id)?.id !== run.id) return;
       task = this.store.updateTask(task.id, { threadId: result.thread.id, model: result.model || task.model });
       this.loaded.add(result.thread.id);
     }
     this.store.updateTask(task.id, { pendingRunId: run.id });
     let result: any;
-    try { result = await this.codex.request('turn/start', { threadId: task.threadId, input: [{ type: 'text', text: run.prompt }], cwd: task.worktree, clientUserMessageId: run.id, ...(task.effort ? { effort: task.effort } : {}) }); }
+    try { result = await agent.request('turn/start', { threadId: task.threadId, input: [{ type: 'text', text: run.prompt }], cwd: task.worktree, clientUserMessageId: run.id, ...(task.effort ? { effort: task.effort } : {}) }); }
     catch (error) {
       if (this.active.get(task.id)?.id !== run.id) return;
       if (error instanceof RpcResponseError) throw error;
       this.store.saveRun({ ...run, status: 'uncertain' });
-      this.store.updateTask(task.id, { status: 'uncertain', error: 'Codex did not confirm whether this turn started. Select Check status before continuing. ' + errorText(error) });
+      this.store.updateTask(task.id, { status: 'uncertain', error: `${name} did not confirm whether this turn started. Select Check status before continuing. ` + errorText(error) });
       return;
     }
     if (this.active.get(task.id)?.id !== run.id) return;
@@ -209,8 +232,8 @@ You may run tools in the task worktree to inspect and validate your changes. If 
     const requests = this.earlyRequests.get(task.id) || [];
     const completion = this.earlyCompletions.get(task.id)?.get(result.turn.id);
     this.earlyRequests.delete(task.id); this.earlyCompletions.delete(task.id);
-    for (const request of requests) this.serverRequest(request);
-    if (completion) await this.notification(completion);
+    for (const request of requests) this.serverRequest(request, this.agentOf(task));
+    if (completion) await this.notification(completion, this.agentOf(task));
   }
   private failRun(run: Run, error: unknown) {
     if (this.active.get(run.taskId)?.id !== run.id) return;
@@ -233,18 +256,18 @@ You may run tools in the task worktree to inspect and validate your changes. If 
     this.liveItems.set(id, item);
     this.flushTimer ??= setTimeout(() => this.flush(), 350);
   }
-  // Usage is shown on the new-task page. Codex reports changes after turns;
-  // read the full snapshot again rather than merging its sparse updates.
-  async readUsage() {
-    try { this.runtime.usage = accountUsage(await this.codex.request('account/rateLimits/read', { excludeResetCreditDetails: true }, 20000)); }
-    catch { this.runtime.usage = null; }
+  // Usage is shown on the new-task page. Agents report changes after turns;
+  // read the full snapshot again rather than merging their sparse updates.
+  async readUsage(id: AgentId = 'codex') {
+    try { this.runtimes[id].usage = accountUsage(await this.agents[id].request('account/rateLimits/read', { excludeResetCreditDetails: true }, 20000)); }
+    catch { this.runtimes[id].usage = null; }
     this.emit('change');
   }
-  private async notification(message: any) {
+  private async notification(message: any, agent: AgentId = 'codex') {
     const p = message.params || {}, method = message.method;
     if (method === 'account/rateLimits/updated') {
-      if (this.usageTimer) clearTimeout(this.usageTimer);
-      this.usageTimer = setTimeout(() => { this.usageTimer = null; void this.readUsage(); }, 1500);
+      clearTimeout(this.usageTimers.get(agent));
+      this.usageTimers.set(agent, setTimeout(() => { this.usageTimers.delete(agent); void this.readUsage(agent); }, 1500));
       return;
     }
     const task = this.store.tasks().find(t => t.threadId === p.threadId);
@@ -263,6 +286,7 @@ You may run tools in the task worktree to inspect and validate your changes. If 
       if (item.type === 'commandExecution') { entry.type = 'command'; entry.detail = String(item.aggregatedOutput || previous?.detail || '').slice(-40000); }
       if (item.type === 'fileChange') { entry.type = 'files'; entry.text = (item.changes || []).map((change: any) => change.path).join('\n'); }
       if (item.type === 'mcpToolCall') { entry.type = 'tool'; entry.text = `${item.server} / ${item.tool}`; }
+      if (item.type === 'toolCall') entry.type = 'tool';
       if (entry.text || entry.detail) this.store.saveItem(entry);
     } else if (method === 'serverRequest/resolved') {
       const buffered = this.earlyRequests.get(task.id);
@@ -291,22 +315,22 @@ You may run tools in the task worktree to inspect and validate your changes. If 
       if (status === 'completed') await this.publish(task.id, true);
     } else if (method === 'error' && !p.willRetry) {
       if (!this.active.has(task.id) || (eventTurn && !task.turnId)) return;
-      this.store.updateTask(task.id, { error: p.error?.message || 'Codex encountered an error.' });
+      this.store.updateTask(task.id, { error: p.error?.message || `${AGENT_NAMES[agent]} encountered an error.` });
     }
   }
-  private serverRequest(message: any) {
-    const task = this.store.tasks().find(t => t.threadId === message.params?.threadId);
+  private serverRequest(message: any, agent: AgentId = 'codex') {
+    const task = this.store.tasks().find(t => t.threadId === message.params?.threadId), runtime = this.agents[agent];
     const allowed = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval', 'item/tool/requestUserInput'];
-    if (!task || !this.active.has(task.id) || !allowed.includes(message.method)) { this.codex.reject(message.id, 'This request is not supported or its turn is no longer active.'); return; }
-    if (message.params?.turnId && task.turnId && message.params.turnId !== task.turnId) { this.codex.reject(message.id, 'This turn is no longer active.'); return; }
+    if (!task || this.agentOf(task) !== agent || !this.active.has(task.id) || !allowed.includes(message.method)) { runtime.reject(message.id, 'This request is not supported or its turn is no longer active.'); return; }
+    if (message.params?.turnId && task.turnId && message.params.turnId !== task.turnId) { runtime.reject(message.id, 'This turn is no longer active.'); return; }
     if (!task.turnId && message.params?.turnId) {
       const pending = this.earlyRequests.get(task.id) || [];
       if (pending.length < 32) { pending.push(message); this.earlyRequests.set(task.id, pending); }
-      else this.codex.reject(message.id, 'Too many pending requests.');
+      else runtime.reject(message.id, 'Too many pending requests.');
       return;
     }
     const id = randomUUID();
-    this.requests.set(id, { id, taskId: task.id, rpcId: message.id, method: message.method, params: message.params, createdAt: Date.now() });
+    this.requests.set(id, { id, taskId: task.id, rpcId: message.id, agent, method: message.method, params: message.params, createdAt: Date.now() });
     this.store.updateTask(task.id, { status: 'waiting_input' });
   }
   answer(id: string, input: { decision?: string; answers?: Record<string, string> }) {
@@ -325,7 +349,7 @@ You may run tools in the task worktree to inspect and validate your changes. If 
         ? { permissions: input.decision === 'accept' ? request.params.permissions : {}, scope: 'turn' }
         : { decision: input.decision };
     }
-    this.codex.respond(request.rpcId, response);
+    this.agents[request.agent].respond(request.rpcId, response);
     this.requests.delete(id);
     if (![...this.requests.values()].some(r => r.taskId === request.taskId)) this.store.updateTask(request.taskId, { status: 'running' });
   }
@@ -337,8 +361,8 @@ You may run tools in the task worktree to inspect and validate your changes. If 
     for (const run of this.store.runs().filter(r => r.taskId === taskId && r.status === 'queued')) this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
     void this.refresh(taskId);
     if (this.active.has(taskId)) {
-      if (!task.turnId) throw new Error('Codex is starting. Try pausing again in a moment.');
-      await this.codex.request('turn/interrupt', { threadId: task.threadId, turnId: task.turnId });
+      if (!task.turnId) throw new Error(`${AGENT_NAMES[this.agentOf(task)]} is starting. Try pausing again in a moment.`);
+      await this.agents[this.agentOf(task)].request('turn/interrupt', { threadId: task.threadId, turnId: task.turnId });
     } else if (task.status === 'uncertain') throw new Error('Check the task status before pausing this turn.');
     else this.store.updateTask(taskId, { status: 'interrupted' });
   }
@@ -348,25 +372,26 @@ You may run tools in the task worktree to inspect and validate your changes. If 
     if (task.status !== 'uncertain') return task;
     if (task.pendingReview) return this.reconcileReview(task);
     const run = this.active.get(taskId) || this.store.runs().find(r => r.id === task.pendingRunId && r.taskId === taskId);
-    if (!run || !task.threadId) throw new Error('The pending turn could not be identified. Reconnect Codex and check again.');
-    const { thread } = await this.codex.request('thread/read', { threadId: task.threadId, includeTurns: true }, 20000);
+    const name = AGENT_NAMES[this.agentOf(task)];
+    if (!run || !task.threadId) throw new Error(`The pending turn could not be identified. Reconnect ${name} and check again.`);
+    const { thread } = await this.agents[this.agentOf(task)].request('thread/read', { threadId: task.threadId, includeTurns: true }, 20000);
     if (this.store.task(taskId).status !== 'uncertain') return this.store.task(taskId);
     const turn = thread.turns?.find((turn: any) => turn.id === task.turnId || turn.items?.some((item: any) => item.type === 'userMessage' && item.clientId === run.id));
-    if (!turn) throw new Error('Codex has not confirmed this turn yet. Check again in a moment.');
+    if (!turn) throw new Error(`${name} has not confirmed this turn yet. Check again in a moment.`);
     const completion = this.earlyCompletions.get(taskId)?.get(turn.id);
     this.earlyCompletions.delete(taskId);
     this.active.set(taskId, run);
     this.store.updateTask(taskId, { turnId: turn.id, pendingRunId: null, error: null, feedbackCursor: Math.max(task.feedbackCursor, run.feedbackCursor || 0) });
     if (completion) {
-      await this.notification(completion);
+      await this.notification(completion, this.agentOf(task));
     } else if (turn.status === 'inProgress' && thread.status?.type !== 'notLoaded') {
       this.store.saveRun({ ...run, status: 'running' });
       this.store.updateTask(taskId, { status: 'running' });
       const requests = this.earlyRequests.get(taskId) || [];
       this.earlyRequests.delete(taskId);
-      for (const request of requests) this.serverRequest(request);
+      for (const request of requests) this.serverRequest(request, this.agentOf(task));
     } else {
-      await this.notification({ method: 'turn/completed', params: { threadId: task.threadId, turn: turn.status === 'inProgress' ? { ...turn, status: 'interrupted' } : turn } });
+      await this.notification({ method: 'turn/completed', params: { threadId: task.threadId, turn: turn.status === 'inProgress' ? { ...turn, status: 'interrupted' } : turn } }, this.agentOf(task));
     }
     return this.store.task(taskId);
   }
@@ -496,5 +521,5 @@ You may run tools in the task worktree to inspect and validate your changes. If 
       throw error;
     } finally { this.deletions.delete(taskId); this.schedule(); }
   }
-  close() { this.closing = true; if (this.usageTimer) clearTimeout(this.usageTimer); this.flush(); this.codex.close(); }
+  close() { this.closing = true; for (const timer of this.usageTimers.values()) clearTimeout(timer); this.flush(); for (const id of AGENTS) this.agents[id].close(); }
 }

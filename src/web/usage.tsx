@@ -35,11 +35,11 @@ function Limit({ window, reached }: { window: UsageWindow; reached: boolean }) {
   </div>;
 }
 
-// The Codex account's included usage, as Codex reports it for this host.
-export function UsageSummary({ usage }: { usage: Usage }) {
+// The agent account's included usage, as the agent reports it for this host.
+export function UsageSummary({ usage, agent = 'Codex' }: { usage: Usage; agent?: string }) {
   const credits = usage.credits;
-  return <section className="usage" aria-label="Codex usage">
-    <span className="usage-account">Codex{usage.plan && <span className="usage-plan">{plans[usage.plan] || usage.plan}</span>}</span>
+  return <section className="usage" aria-label={`${agent} usage`}>
+    <span className="usage-account">{agent}{usage.plan && <span className="usage-plan">{plans[usage.plan] || usage.plan}</span>}</span>
     {usage.windows.map((window, index) => <Limit key={index} window={window} reached={usage.reached}/>)}
     {credits && <span className="usage-credits">{credits.unlimited ? 'Unlimited credits' : credits.balance !== null ? `${Math.floor(credits.balance).toLocaleString('en')} credits` : 'Credits available'}</span>}
   </section>;

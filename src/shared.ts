@@ -4,7 +4,7 @@ export interface ReviewSummary { state: string; round: number | null; counts: Re
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface Task {
   id: string; projectId: string; name: string; title: string; instructions: string;
-  worktree: string; threadId: string | null; turnId: string | null; model: string | null; effort?: string | null;
+  worktree: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null;
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
   error: string | null; review: ReviewSummary | null;
   pauseVersion?: number; pendingRunId?: string | null;
@@ -13,12 +13,13 @@ export interface Task {
 export interface Run { id: string; taskId: string; requestKey: string; prompt: string; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null }
 export interface TimelineItem { id: string; taskId: string; type: string; text: string; detail?: string; status?: string; createdAt: number }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
+export type AgentId = 'codex' | 'claude' | 'antigravity';
 export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort: string | null }
 // The account's included usage: rolling windows (minutes long, reset time in ms) and credits.
 export interface UsageWindow { usedPercent: number; minutes: number | null; resetsAt: number | null }
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
 export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null }
-export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; version: string }
+export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string }
 export interface GitFile { path: string; status: string; staged: boolean; lines?: [number, number]; from?: string }
 export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null; remote?: boolean }
 export interface GitDiff { path: string; diff: string; truncated: boolean }

@@ -1,6 +1,6 @@
 import { StrictMode, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { Annotation, GitDiff, GitStatus, Manuscript, PendingRequest, Project, Snapshot, Task, TimelineItem } from '../shared.ts';
+import type { AgentId, Annotation, GitDiff, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { ComposerDraft, sendsMessage, taskTitle } from './composer.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -31,11 +31,14 @@ async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal,
     throw error;
   }
 }
+const AGENT_IDS: AgentId[] = ['codex', 'claude', 'antigravity'];
+const AGENT_LABELS: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity' };
+const agentName = (task: Task) => AGENT_LABELS[task.agent || 'codex'] || 'Codex';
 const statusNames: Record<string, string> = { idle: 'Ready', queued: 'Queued', running: 'Codex is editing', waiting_input: 'Needs your reply', building: 'Building PDF review', reviewing: 'Ready for review', interrupted: 'Paused', failed: 'Needs attention', uncertain: 'Check task status', deleting: 'Deleting task' };
 const ACTIVE = ['running', 'waiting_input', 'queued'];
 function Status({ task }: { task: Task }) {
   const done = task.status === 'reviewing' && task.review?.state === 'done';
-  return <span className={`status ${task.status}${done ? ' done' : ''}`}><i/>{done ? 'Review complete' : statusNames[task.status] || task.status}</span>;
+  return <span className={`status ${task.status}${done ? ' done' : ''}`}><i/>{done ? 'Review complete' : task.status === 'running' ? `${agentName(task)} is editing` : statusNames[task.status] || task.status}</span>;
 }
 function time(timestamp: number) { return new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }); }
 function ago(timestamp: number) {
@@ -66,16 +69,16 @@ function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, aut
   </form>;
 }
 
-function RequestCard({ request, answerDrafts, onDone }: { request: PendingRequest; answerDrafts: Map<string, Record<string, string>>; onDone: () => void }) {
+function RequestCard({ request, agent, answerDrafts, onDone }: { request: PendingRequest; agent: string; answerDrafts: Map<string, Record<string, string>>; onDone: () => void }) {
   const [answers, updateAnswers] = useState<Record<string, string>>(() => answerDrafts.get(request.id) || {});
   function setAnswers(next: Record<string, string>) { answerDrafts.set(request.id, next); updateAnswers(next); }
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const questions = request.method.endsWith('requestUserInput') ? request.params.questions || [] : [];
   async function respond(decision?: string) { setBusy(true); setError(''); try { await api('/requests/' + request.id, { decision, answers }); answerDrafts.delete(request.id); onDone(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
-  return <div className="request-card"><h3><Icon name={questions.length ? 'chat' : 'alert'} size={16}/>{questions.length ? 'Codex needs your input' : 'Approve this action'}</h3>
+  return <div className="request-card"><h3><Icon name={questions.length ? 'chat' : 'alert'} size={16}/>{questions.length ? `${agent} needs your input` : 'Approve this action'}</h3>
     {questions.map((q: any) => <fieldset className="question" key={q.id}><legend>{q.question || q.header}</legend>{q.options?.length > 0 && <div className="answer-options">{q.options.map((option: any) => <button type="button" disabled={busy} aria-pressed={answers[q.id] === option.label} className={answers[q.id] === option.label ? 'selected' : ''} key={option.label} onClick={() => setAnswers({ ...answers, [q.id]: option.label })}>{option.label}{option.description && <small>{option.description}</small>}</button>)}</div>}<input disabled={busy} aria-label={q.question || q.header} placeholder="Or type your own answer" value={answers[q.id] || ''} onChange={e => setAnswers({ ...answers, [q.id]: e.target.value })}/></fieldset>)}
-    {!questions.length && <><p>{request.params.reason || 'Codex is requesting permission for this action.'}</p><pre>{request.params.command || (request.params.permissions ? JSON.stringify(request.params.permissions, null, 2) : request.params.grantRoot || 'Apply file changes')}</pre></>}
-    {error && <p className="inline-error" role="alert">{error}</p>}<div className="button-row">{!questions.length && <button disabled={busy} className="button secondary" onClick={() => void respond('decline')}>Decline</button>}<button disabled={busy || questions.some((q: any) => !answers[q.id]?.trim())} className="button primary" onClick={() => void respond(questions.length ? undefined : 'accept')}>{busy ? 'Submitting…' : questions.length ? 'Reply to Codex' : 'Allow this action'}</button></div>
+    {!questions.length && <><p>{request.params.reason || `${agent} is requesting permission for this action.`}</p><pre>{request.params.command || (request.params.permissions ? JSON.stringify(request.params.permissions, null, 2) : request.params.grantRoot || 'Apply file changes')}</pre></>}
+    {error && <p className="inline-error" role="alert">{error}</p>}<div className="button-row">{!questions.length && <button disabled={busy} className="button secondary" onClick={() => void respond('decline')}>Decline</button>}<button disabled={busy || questions.some((q: any) => !answers[q.id]?.trim())} className="button primary" onClick={() => void respond(questions.length ? undefined : 'accept')}>{busy ? 'Submitting…' : questions.length ? `Reply to ${agent}` : 'Allow this action'}</button></div>
   </div>;
 }
 
@@ -94,9 +97,9 @@ function CopyButton({ text }: { text: string }) {
   return <button type="button" className="message-action" aria-label={copied ? 'Copied' : 'Copy message'} onClick={() => void copy()}><Icon name={copied ? 'check' : 'copy'} size={14}/><span>{copied ? 'Copied' : 'Copy'}</span></button>;
 }
 
-function TimelineEntry({ item }: { item: TimelineItem }) {
+function TimelineEntry({ item, agent }: { item: TimelineItem; agent: string }) {
   if (item.type === 'user') return <article className="message user" aria-label={`You, ${time(item.createdAt)}`}><div className="message-body" title={time(item.createdAt)}>{item.text}</div></article>;
-  if (item.type === 'assistant') return <article className="message assistant" aria-label={`Codex, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
+  if (item.type === 'assistant') return <article className="message assistant" aria-label={`${agent}, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
   const files = item.type === 'files' ? item.text.split('\n').filter(Boolean) : [];
   const label = item.type === 'command' ? item.text || 'Run command' : item.type === 'files' ? (files.length === 1 ? `Edited ${files[0]}` : `Edited ${files.length} files`) : item.text || 'Run tool';
   const detail = item.type === 'files' ? item.text : item.detail;
@@ -125,23 +128,23 @@ function Activity({ task, composer, answerDrafts, items, loading, loadError, ret
   const active = ACTIVE.includes(task.status), blocked = ['uncertain', 'deleting'].includes(task.status);
   const unsent = task.review?.unsent ?? task.review?.counts?.commented ?? 0;
   const hint = task.status === 'deleting' ? 'This task is being deleted' : task.status === 'uncertain' ? 'Check task status before sending' : sendingSource === 'feedback' ? 'Sending feedback…' : sending ? 'Sending…'
-    : unsent ? `${unsent} review ${unsent === 1 ? 'comment' : 'comments'} will be sent with this message` : active ? 'Codex is working · new instructions run next' : touch() ? '' : 'Enter to send · Shift+Enter for a new line';
-  return <section id="conversation-panel" className="activity-panel" aria-label="Codex conversation"><div className="panel-heading"><span className="panel-title">Chat</span><span className="model-chip" title={task.model || 'Use the default Codex model on this host'}>{task.model || 'Default model'}{task.effort ? ` · ${effortName(task.effort)}` : ''}</span></div>
+    : unsent ? `${unsent} review ${unsent === 1 ? 'comment' : 'comments'} will be sent with this message` : active ? `${agentName(task)} is working · new instructions run next` : touch() ? '' : 'Enter to send · Shift+Enter for a new line';
+  return <section id="conversation-panel" className="activity-panel" aria-label={`${agentName(task)} conversation`}><div className="panel-heading"><span className="panel-title">Chat</span><span className="model-chip" title={`${agentName(task)} · ${task.model || 'the default model on this host'}`}>{task.agent && task.agent !== 'codex' ? `${agentName(task)} · ` : ''}{task.model || 'Default model'}{task.effort ? ` · ${effortName(task.effort)}` : ''}</span></div>
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); } }}><div className="thread">
       {loading && <p className="muted" role="status">Loading conversation…</p>}
       {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary compact" onClick={retry}>Retry conversation</button></div>}
-      {items.map(item => <TimelineEntry key={item.id} item={item}/>)}
-      {requests.map(r => <RequestCard key={r.id} request={r} answerDrafts={answerDrafts} onDone={refresh}/>)}
-      {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>Codex is working on this task</div>}
-      {task.status === 'queued' && <p className="muted">Task saved. Waiting for an available Codex session.</p>}
+      {items.map(item => <TimelineEntry key={item.id} item={item} agent={agentName(task)}/>)}
+      {requests.map(r => <RequestCard key={r.id} request={r} agent={agentName(task)} answerDrafts={answerDrafts} onDone={refresh}/>)}
+      {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>{agentName(task)} is working on this task</div>}
+      {task.status === 'queued' && <p className="muted">Task saved. Waiting for an available {agentName(task)} session.</p>}
       {openReview && task.status === 'reviewing' && task.review?.counts?.pending ? <div className="review-ready"><Icon name="paper" size={16}/><span>Round {task.review.round} is ready · {task.review.counts.pending} {task.review.counts.pending === 1 ? 'change' : 'changes'} to decide</span><button className="button secondary compact" onClick={openReview}>Open review</button></div> : null}
       {task.error && <div className="task-error"><Icon name="alert" size={16}/><div><strong>This step needs attention</strong><p>{task.error}</p></div></div>}
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>Latest messages</button>}</div>
     <div className="composer-wrap">
-      <Composer label="Instructions for Codex" value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? 'Queue instructions for the next turn…' : 'Ask for another revision…'}
+      <Composer label={`Instructions for ${agentName(task)}`} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? 'Queue instructions for the next turn…' : 'Ask for another revision…'}
         footer={<span className="composer-hint">{hint}</span>}
         action={<div className="composer-actions">
-          {active && <button type="button" className="send-button stop" aria-label="Pause task" title="Pause Codex" disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
+          {active && <button type="button" className="send-button stop" aria-label="Pause task" title={`Pause ${agentName(task)}`} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
           {(!active || draft.trim() || sending) && <button aria-label="Send instructions" title="Send (Enter) · New line (Shift+Enter)" disabled={!draft.trim() || sending || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
         </div>}/>
     </div>
@@ -358,10 +361,13 @@ function App() {
   const formTaskId = useRef(uuid());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
-  // The model and reasoning effort are remembered for every new task, whether
-  // it starts from the composer or from PDF notes.
-  const [agentModel, setAgentModel] = useState(() => browserStorage.getItem('papilot:model') || '');
-  const [agentEffort, setAgentEffort] = useState(() => browserStorage.getItem('papilot:effort') || '');
+  // The agent, and each agent's model and reasoning effort, are remembered for
+  // every new task, whether it starts from the composer or from PDF notes.
+  const [agentChoice, setAgentChoice] = useState<AgentId>(() => { const saved = browserStorage.getItem('papilot:agent'); return saved === 'claude' || saved === 'antigravity' ? saved : 'codex'; });
+  const [agentPrefs, setAgentPrefs] = useState(() => Object.fromEntries(AGENT_IDS.map(id => [id, {
+    model: browserStorage.getItem(`papilot:model:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:model') : null) ?? '',
+    effort: browserStorage.getItem(`papilot:effort:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:effort') : null) ?? '',
+  }])) as Record<AgentId, { model: string; effort: string }>);
   const [creating, setCreating] = useState(false), [createError, setCreateError] = useState('');
   const [busy, setBusy] = useState(false), [sidebar, setSidebar] = useState(false);
   const actionRequests = useRef(new Set<string>());
@@ -511,13 +517,20 @@ function App() {
   }
   // A remembered choice the host no longer offers falls back to its default;
   // the preference is kept in case another model offers it again.
-  const models = state?.runtime.models || [];
-  const chosenModel = models.length && !models.some(m => m.id === agentModel) ? '' : agentModel;
+  const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
+  const unavailable = (id: AgentId) => Boolean(runtimes[id]?.error && !(runtimes[id]?.connected && runtimes[id]?.authenticated));
+  const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
+  const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;
   const modelInfo = models.find(m => m.id === chosenModel) || models.find(m => m.isDefault);
-  const agent = { model: chosenModel, effort: modelInfo && !modelInfo.efforts.includes(agentEffort) ? '' : agentEffort };
+  const agent = { agent: agentChoice, model: chosenModel, effort: modelInfo && !modelInfo.efforts.includes(pref.effort) ? '' : pref.effort };
+  const remember = (change: Partial<{ model: string; effort: string }>) => {
+    setAgentPrefs(current => ({ ...current, [agentChoice]: { ...current[agentChoice], ...change } }));
+    for (const [key, value] of Object.entries(change)) browserStorage.setItem(`papilot:${key}:${agentChoice}`, value);
+  };
   const agentOptions = (disabled: boolean) => <>
-    <ChipSelect label="Codex model" disabled={disabled} value={agent.model} onChange={value => { setAgentModel(value); browserStorage.setItem('papilot:model', value); }} options={[{ value: '', label: 'Default model' }, ...models.map(m => ({ value: m.id, label: m.name }))]}/>
-    {modelInfo && <EffortPicker efforts={modelInfo.efforts} value={agent.effort} fallback={modelInfo.defaultEffort} disabled={disabled} onChange={value => { setAgentEffort(value); browserStorage.setItem('papilot:effort', value); }}/>}
+    <ChipSelect label="Agent" disabled={disabled} value={agentChoice} onChange={value => { setAgentChoice(value as AgentId); browserStorage.setItem('papilot:agent', value); }} options={AGENT_IDS.map(id => ({ value: id, label: AGENT_LABELS[id] + (unavailable(id) ? ' · unavailable' : '') }))}/>
+    <ChipSelect label="Model" disabled={disabled} value={agent.model} onChange={value => remember({ model: value })} options={[{ value: '', label: 'Default model' }, ...models.map(m => ({ value: m.id, label: m.name }))]}/>
+    {modelInfo && <EffortPicker efforts={modelInfo.efforts} value={agent.effort} fallback={modelInfo.defaultEffort} disabled={disabled} onChange={value => remember({ effort: value })}/>}
   </>;
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId;
@@ -525,7 +538,7 @@ function App() {
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
-      const t = await api('/tasks', { projectId: target, title: taskTitle(text), instructions: text, model: agent.model, effort: agent.effort, id: formTaskId.current });
+      const t = await api('/tasks', { projectId: target, title: taskTitle(text), instructions: text, agent: agent.agent, model: agent.model, effort: agent.effort, id: formTaskId.current });
       formTaskId.current = uuid(); setNewDraft(''); setSelected(t.id); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
       await refresh(true);
     } catch (e) { setCreateError(e instanceof Error ? e.message : String(e)); } finally { setCreating(false); }
@@ -624,7 +637,7 @@ function App() {
       if (!project || sendingNotes) return;
       setSendingNotes(true);
       try {
-        const created = await api<Task>(`/projects/${project.id}/annotations/send`, { id: notesTaskId.current, model: agent.model, effort: agent.effort });
+        const created = await api<Task>(`/projects/${project.id}/annotations/send`, { id: notesTaskId.current, agent: agent.agent, model: agent.model, effort: agent.effort });
         notesTaskId.current = uuid(); withNotes(() => []); setSelected(created.id); setMobileTab('conversation'); setLayout('split');
         await refresh(true);
       } catch (e) { reportError(e); } finally { setSendingNotes(false); }
@@ -632,6 +645,8 @@ function App() {
     sending: sendingNotes, options: agentOptions(sendingNotes),
   };
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
+  // The banner follows the agent in view: the task's, or the one chosen for a new task.
+  const bannerAgent: AgentId = task ? task.agent || 'codex' : agentChoice, bannerRuntime = runtimes[bannerAgent];
   useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, project?.name]);
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
@@ -701,7 +716,7 @@ function App() {
       </>}
       {task && <>
         <div className="task-state-actions">
-          {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>Retry deletion</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}><Icon name="refresh" size={14}/>Check status</button> : active && !conversationVisible ? <button className="button secondary compact" aria-label="Pause task" title="Pause Codex" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={pause}><Icon name="pause" size={14}/><span className="button-label">Pause</span></button> : task.error ? <button className="button secondary compact" onClick={() => { setMobileTab('conversation'); setLayout('conversation'); }}>View details</button> : null}
+          {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>Retry deletion</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}><Icon name="refresh" size={14}/>Check status</button> : active && !conversationVisible ? <button className="button secondary compact" aria-label="Pause task" title={`Pause ${agentName(task)}`} disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={pause}><Icon name="pause" size={14}/><span className="button-label">Pause</span></button> : task.error ? <button className="button secondary compact" onClick={() => { setMobileTab('conversation'); setLayout('conversation'); }}>View details</button> : null}
         </div>
         <div className="view-selector" role="group" aria-label="Workspace view">{mobile ? <>
           <button aria-label={pending ? `Review, ${pending} to decide` : 'Review'} aria-pressed={mobileTab === 'review'} onClick={() => setMobileTab('review')}><Icon name="paper" size={16}/><span>Review</span>{pending > 0 && <b className="view-count" aria-hidden="true">{pending}</b>}</button>
@@ -714,7 +729,7 @@ function App() {
       </>}
     </header>
       {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>Connection lost. Showing the last update; your draft is kept.</span><button onClick={() => void refresh(true)}>Retry connection</button></div>}
-      {state && (!state.runtime.connected || !state.runtime.authenticated) && <div className="runtime-banner"><Icon name="alert" size={15}/><span>{state.runtime.error || 'Connecting to Codex…'}</span><button disabled={pendingActions.has('/reconnect')} onClick={() => void action('/reconnect')}>{pendingActions.has('/reconnect') ? 'Connecting…' : 'Reconnect'}</button></div>}
+      {state && bannerRuntime && (!bannerRuntime.connected || !bannerRuntime.authenticated) && <div className="runtime-banner"><Icon name="alert" size={15}/><span>{bannerRuntime.error || `Connecting to ${AGENT_LABELS[bannerAgent]}…`}</span><button disabled={pendingActions.has('/reconnect')} onClick={() => void action('/reconnect')}>{pendingActions.has('/reconnect') ? 'Connecting…' : 'Reconnect'}</button></div>}
       {task ? <div className={`task-grid layout-${layout} show-${mobileTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
           {!mobile && layout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat panel" aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title="Drag to resize · Double-click to reset" onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
           <section id="review-panel" className="review-panel" aria-label="PDF review">
@@ -733,7 +748,8 @@ function App() {
             </div>}
             action={<button className="send-button" type="submit" aria-label="Start task" title="Start task (Enter)" disabled={creating || !newDraft.trim()} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
           {createError && <p className="inline-error home-error" role="alert">{createError}</p>}
-          {state.runtime.usage && <UsageSummary usage={state.runtime.usage}/>}
+          {unavailable(agentChoice) && <p className="inline-error home-error" role="status">{AGENT_LABELS[agentChoice]} is unavailable on this host: {runtimes[agentChoice]?.error}</p>}
+          {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
         </div></div>
       : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>Add your first paper</h1><p className="home-copy">Connect a LaTeX Git repository on this host. An agent edits it in isolated worktrees, and you review every change as a PDF diff.</p><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>Add paper</button></div></div>}
     </main>

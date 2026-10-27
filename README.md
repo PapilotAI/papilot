@@ -1,15 +1,15 @@
 # Papilot
 
-A personal workspace for revising LaTeX papers with an AI agent (currently Codex) and reviewing the resulting PDF changes. Run it on your host computer and continue from a desktop, tablet, or phone.
+A personal workspace for revising LaTeX papers with an AI agent (Codex, Claude or Antigravity) and reviewing the resulting PDF changes. Run it on your host computer and continue from a desktop, tablet, or phone.
 
-- Give each editing task an isolated Git worktree and a persistent Codex conversation.
+- Give each editing task an isolated Git worktree and a persistent agent conversation, with Codex, Claude or Antigravity.
 - Compare PDF changes, accept or reject edits, and send review feedback into the next turn.
-- Keep tasks and messages across browser sessions, with up to two Codex tasks running concurrently.
+- Keep tasks and messages across browser sessions, with up to two tasks running concurrently.
 - Read each paper's PDF as it is on disk in a fast in-browser viewer with a table of contents, search and zoom, beside its Git status, and mark notes on the PDF for the agent to address.
 
 The interface, built-in messages, and documentation are in English. Codex also defaults to English updates and questions. Your manuscript, project names, comments, and conversation history retain their original language.
 
-Built with TypeScript, React/Vite, Fastify, SQLite, and the official Codex app-server over stdio.
+Built with TypeScript, React/Vite, Fastify, SQLite, the official Codex app-server over stdio, the Claude Agent SDK, and the Antigravity CLI.
 
 ## Run
 
@@ -27,6 +27,14 @@ Open [Papilot](http://127.0.0.1:4317). Select **Add paper** and enter the path t
 To try a sample first, run `npm run demo`. It registers a separate example Git repository under `.papilot/example-paper` without changing an existing manuscript. Start an editing task from the interface when you are ready to run Codex.
 
 The bundled Codex CLI uses the host's normal Codex login/configuration. To sign in, run `./node_modules/.bin/codex login` on the host. No API key is stored by Papilot. Model selection defaults to the host's configured Codex model.
+
+### Agents
+
+Each task runs on one agent, chosen with **Agent** below the prompt; Papilot remembers the agent, and each agent's model and reasoning effort, for the next task. Every agent uses its own login on this host, and Papilot never reads, stores or forwards a credential. Agents that are not installed or signed in are listed as unavailable. All three edit only the task's worktree and leave compiling and publishing the review to Papilot.
+
+- **Codex** runs through the Codex app-server with its workspace-write sandbox. Commands outside the sandbox and Codex's questions come to the conversation for approval.
+- **Claude** runs through the Claude Agent SDK, which runs Claude Code with the login on this host. Edits in the worktree are accepted, commands run in Claude Code's sandbox, and anything that needs approval, including Claude's questions, comes to the conversation. Anthropic does not allow a Claude subscription (Pro or Max) login to be used through the Agent SDK and answers such requests with 403, so run Papilot with an Anthropic API key in `ANTHROPIC_API_KEY` for Claude tasks; usage is then billed to that key. The new-task page shows Claude's usage windows after a turn reports them.
+- **Antigravity** runs `agy -p` with streamed output, one process per turn, and resumes the same agy conversation on later turns. Headless agy cannot ask for permission, so Papilot runs it in accept-edits mode: it reads and edits files in the worktree, while shell commands and edits elsewhere are declined by agy and noted in the conversation. Its models are listed with their effort variants grouped, and your saved agy model is the default. If agy reports that your location is not supported, set `PAPILOT_AGY_PROXY` to an HTTP proxy; it applies only to agy.
 
 ## Workflow
 
@@ -104,6 +112,9 @@ The workspace uses short, non-overlapping polling on HTTP/1 connections so multi
 | `PAPILOT_PORT` | `4317` | Local HTTP port; the server binds to `127.0.0.1`. |
 | `PAPILOT_DATA` | `.papilot` in the project root | SQLite state and generated example project. |
 | `PAPILOT_CODEX_BIN` | Bundled Codex CLI, then `codex` on `PATH` | Codex executable used by the backend. |
+| `ANTHROPIC_API_KEY` | Unset | Anthropic API key for Claude tasks (the Agent SDK does not accept a Claude subscription login). |
+| `PAPILOT_AGY_BIN` | `agy` on `PATH` | Antigravity CLI used for Antigravity tasks. |
+| `PAPILOT_AGY_PROXY` | Unset | HTTP proxy for agy only, for regions where Antigravity needs one. |
 | `PAPILOT_REVIEW_ENGINE` | `vendor/latex-review` | Review engine directory. |
 | `PAPILOT_PUBLIC_ORIGIN` | Unset | Exact remote browser origin, including scheme and port. |
 | `PAPILOT_TAILSCALE_LOGIN` | Unset | Tailscale login allowed to access the remote workspace. |

@@ -18,6 +18,8 @@ const pageErrors = [];
 page.on('pageerror', error => pageErrors.push(error.message));
 const task = { id: 'fixture-task-0001', projectId: 'fixture-paper', name: 'p-fixture', title: 'Clarify the introduction', instructions: 'Keep the technical meaning.', worktree: '/tmp/fixture', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 3, commented: 1 } } };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' }], usage: { plan: 'pro', windows: [{ usedPercent: 83, minutes: 10080, resetsAt: Date.now() + 3 * 86_400_000 }], credits: { unlimited: false, balance: 12418.76 }, reached: false } } };
+// Claude is available with its own models; Antigravity is not installed.
+snapshot.runtimes = { codex: snapshot.runtime, claude: { connected: true, authenticated: true, account: 'Claude Max', error: null, models: [{ id: 'opus', name: 'Opus 5.5', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: null }, { id: 'haiku', name: 'Haiku 5.5', isDefault: false, efforts: ['low', 'medium', 'high'], defaultEffort: null }] }, antigravity: { connected: false, authenticated: false, account: null, error: 'spawn agy ENOENT', models: [] } };
 const messages = [];
 const creates = [];
 let failCreate = true;
@@ -357,8 +359,11 @@ try {
   const usage = page.getByRole('region', { name: 'Codex usage' });
   assert.equal(await usage.getByRole('meter', { name: 'Weekly limit used' }).getAttribute('aria-valuenow'), '83');
   assert.match(await usage.innerText(), /Pro[\s\S]*Weekly limit[\s\S]*83% used[\s\S]*resets [\s\S]*12,418 credits/);
-  // Model and reasoning effort are chosen beside the prompt and remembered.
-  const modelChip = page.getByRole('combobox', { name: 'Codex model' });
+  // Agent, model and reasoning effort are chosen beside the prompt and remembered.
+  const agentChip = page.getByRole('combobox', { name: 'Agent', exact: true });
+  const modelChip = page.getByRole('combobox', { name: 'Model', exact: true });
+  assert.equal(await agentChip.inputValue(), 'codex');
+  assert.deepEqual(await agentChip.locator('option').allInnerTexts(), ['Codex', 'Claude', 'Antigravity · unavailable']);
   const effortChip = page.getByRole('button', { name: /^Reasoning effort/ });
   assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Medium');
   await modelChip.selectOption('deep-model');
@@ -377,18 +382,30 @@ try {
   assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Medium');
   await modelChip.selectOption('deep-model');
   assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Extra high');
-  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:model'), localStorage.getItem('papilot:effort')]), ['deep-model', 'xhigh']);
+  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:model:codex'), localStorage.getItem('papilot:effort:codex')]), ['deep-model', 'xhigh']);
+  // Each agent lists its own models and keeps its own choice.
+  await agentChip.selectOption('claude');
+  assert.deepEqual(await modelChip.locator('option').allInnerTexts(), ['Default model', 'Opus 5.5', 'Haiku 5.5']);
+  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Default');
+  await modelChip.selectOption('haiku');
+  await agentChip.selectOption('antigravity');
+  await page.locator('.home').getByText('Antigravity is unavailable on this host: spawn agy ENOENT').waitFor();
+  await agentChip.selectOption('codex');
+  assert.equal(await modelChip.inputValue(), 'deep-model');
+  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Extra high');
+  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:claude')]), ['codex', 'haiku']);
   failCreate = false;
   await page.getByRole('button', { name: 'Start task' }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
   assert.equal(creates.length, 2);
+  assert.equal(creates[1].agent, 'codex');
   assert.equal(creates[1].model, 'deep-model');
   assert.equal(creates[1].effort, 'xhigh');
   assert.equal(creates[0].id, creates[1].id);
   assert.equal(creates[1].title, 'Shorten the introduction');
   assert.equal(creates[1].instructions, 'Shorten the introduction.\nPreserve the technical content.');
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:new-task')), null);
-  console.log('PASS: Enter starts a task, Shift+Enter adds a line, retrying creation retains the same task ID, and model and effort are remembered');
+  console.log('PASS: Enter starts a task, Shift+Enter adds a line, retrying creation retains the same task ID, and agent, model and effort are remembered per agent');
 
   const input = page.getByRole('textbox', { name: 'Instructions for Codex' });
   await input.fill('Keep this unsent draft.');

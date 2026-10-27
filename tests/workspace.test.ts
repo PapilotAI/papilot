@@ -32,7 +32,7 @@ class FakeCodex extends EventEmitter {
   close() { this.ready = false; }
 }
 
-function fixture(reviewHandler?: (method: string, route: string, body?: unknown) => Promise<any>, options: { file?: string; reviewUrl?: string } = {}) {
+function fixture(reviewHandler?: (method: string, route: string, body?: unknown) => Promise<any>, options: { file?: string; reviewUrl?: string; claude?: FakeCodex } = {}) {
   const store = new Store(options.file || ':memory:');
   const codex = new FakeCodex();
   const calls: { method: string; route: string; body?: unknown }[] = [];
@@ -45,7 +45,7 @@ function fixture(reviewHandler?: (method: string, route: string, body?: unknown)
     return summary;
   };
   const review: ReviewClient = { url: options.reviewUrl || 'http://unused', token: 'test', get: route => invoke('GET', route), post: (route, body) => invoke('POST', route, body) };
-  const workspace = new Workspace(store, codex as unknown as Codex, 2, async () => review);
+  const workspace = new Workspace(store, codex as unknown as Codex, 2, async () => review, options.claude ? { claude: options.claude as unknown as Codex } : {});
   const task: Task = { id: 'task-id', projectId: 'paper', name: 'p-task', title: 'Task', instructions: 'Edit the introduction.', worktree: '/unused', threadId: 'thread', turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
   store.saveProject({ id: task.projectId, name: 'Paper', path: '/unused', createdAt: 1 });
   store.saveTask(task);
@@ -828,4 +828,36 @@ test('account usage keeps the limit windows, plan and credits Codex reports', ()
   assert.equal(accountUsage({ ordinaryUsageAllowed: false, rateLimits: { primary: { usedPercent: 140, windowDurationMins: 300, resetsAt: null } } })!.windows[0].usedPercent, 100);
   assert.equal(accountUsage({ rateLimits: { primary: null, secondary: null, credits: { hasCredits: false, unlimited: false, balance: null } } }), null);
   assert.equal(accountUsage(undefined), null);
+});
+
+test('a task runs on its own agent: turns, approvals and pausing go to that agent only', async () => {
+  const claude = new FakeCodex();
+  const f = fixture(undefined, { claude });
+  try {
+    f.codex.ready = true; claude.ready = true;
+    f.workspace.runtimes.claude.authenticated = true;
+    f.store.updateTask(f.task.id, { agent: 'claude', threadId: 'claude-thread' });
+    (f.workspace as any).loaded.add('claude-thread');
+    await f.workspace.enqueue(f.task.id, 'Tighten the abstract.', 'claude-run', false);
+    await tick();
+    assert.equal(f.codex.calls.length, 0);
+    assert.deepEqual(claude.calls.map(call => call.method), ['turn/start']);
+    assert.equal(claude.calls[0].params.threadId, 'claude-thread');
+    // An approval from Claude is answered through Claude, never Codex.
+    claude.emit('request', { id: 'approval-1', method: 'item/commandExecution/requestApproval', params: { threadId: 'claude-thread', turnId: 'turn-new', command: 'make' } });
+    const [request] = f.workspace.snapshot().requests;
+    assert.equal(request.taskId, f.task.id);
+    f.workspace.answer(request.id, { decision: 'accept' });
+    assert.deepEqual(claude.replies, [{ id: 'approval-1', result: { decision: 'accept' } }]);
+    assert.deepEqual(f.codex.replies, []);
+    // A request for this task that arrives from another agent is refused.
+    f.codex.emit('request', { id: 'stray', method: 'item/commandExecution/requestApproval', params: { threadId: 'claude-thread', turnId: 'turn-new' } });
+    assert.deepEqual(f.codex.rejections.map(r => r.id), ['stray']);
+    await f.workspace.interrupt(f.task.id);
+    assert.deepEqual(claude.calls.at(-1), { method: 'turn/interrupt', params: { threadId: 'claude-thread', turnId: 'turn-new' } });
+    // Claude's turn completion is handled like Codex's.
+    claude.emit('notification', { method: 'turn/completed', params: { threadId: 'claude-thread', turn: { id: 'turn-new', status: 'interrupted' } } });
+    await tick();
+    assert.equal(f.store.task(f.task.id).status, 'interrupted');
+  } finally { f.close(); }
 });

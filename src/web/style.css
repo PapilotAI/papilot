@@ -303,6 +303,7 @@ body.resizing iframe{pointer-events:none}
 .effort-name{font-size:15px;font-weight:600;letter-spacing:-.01em}
 .effort-track{position:relative;height:30px;margin-top:12px;border-radius:999px;background:#ececec;transition:box-shadow .15s}
 .effort-fill{position:absolute;top:0;bottom:0;left:0;border-radius:999px;background:var(--accent);pointer-events:none}
+.effort-track.unset .effort-fill{display:none}
 .effort-track:has(input:focus-visible){box-shadow:0 0 0 3px rgb(37 99 235/.22)}
 .effort-stop{position:absolute;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:rgb(0 0 0/.2);pointer-events:none}
 .effort-stop.on{background:rgb(255 255 255/.6)}
@@ -552,7 +553,7 @@ body.resizing iframe{pointer-events:none}
   .composer .send-button{width:36px;height:36px}
   .chip-select{height:36px;min-width:0;flex-shrink:1}
   .composer-options{flex-wrap:nowrap;min-width:0}
-  .chip-select:first-child{flex-shrink:3}
+  .composer-options>.chip-select:nth-child(2){flex-shrink:3}
   .home{padding:18px 14px}
   .home h1{font-size:26px;margin-bottom:18px}
   /* The new-task composer docks at the bottom like the chat composer, above the keyboard. */
