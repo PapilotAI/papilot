@@ -7,7 +7,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Store } from './store.ts';
 import { Workspace } from './workspace.ts';
 import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER } from './paths.ts';
-import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse } from './review.ts';
+import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState } from './review.ts';
 import { authorize } from './security.ts';
 import { fullPaperPdf } from './pdf.ts';
 
@@ -115,7 +115,8 @@ app.route<{ Params: { projectId: string; '*': string } }>({
       return Buffer.from(await response.arrayBuffer());
     };
     if (request.method === 'POST' && !reviewTask) throw new Error('This review task does not belong to this workspace.');
-    return reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown> } : undefined) : forward();
+    const result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown> } : undefined) : forward());
+    return annotateReviewState(result, store.tasks().filter(task => task.projectId === project.id));
   },
 });
 

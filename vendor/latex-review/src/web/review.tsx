@@ -110,6 +110,14 @@ export function ReviewApp({
     latest = Boolean(
       detail && state && detail.round === state.latest && !state.closed,
     );
+  const actionLock = (kind: ActionKind) =>
+    kind === "comment" ? state?.commentLock : state?.decisionLock;
+  function blocked(kind: ActionKind): boolean {
+    const current = snapshot.current.state;
+    const reason = kind === "comment" ? current?.commentLock : current?.decisionLock;
+    if (reason) setToast(reason);
+    return Boolean(reason);
+  }
   async function api<T>(route: string, body?: unknown): Promise<T> {
     const response = await fetch(
       `/api/tasks/${encodeURIComponent(task)}${route}`,
@@ -236,7 +244,7 @@ export function ReviewApp({
     return () => clearTimeout(timer);
   }, [toast]);
   function beginComposer(changes = pendingUnits(stops[current], decisions)) {
-    if (!latest || !changes.length || busy || state?.closed) return;
+    if (!latest || !changes.length || busy || state?.closed || blocked("comment")) return;
     const key = `latex-review:${task}:draft:${detail?.round}:${changes.join(",")}`;
     setDraft(readStorage(key, ""));
     setComposer({ changes, stop: current, key });
@@ -250,7 +258,7 @@ export function ReviewApp({
     changes = pendingUnits(stops[current], decisions),
     body = "",
   ) {
-    if (!changes.length || busy || !latest || !detail) return;
+    if (!changes.length || snapshot.current.busy || !latest || !detail || blocked(kind)) return;
     epoch.current++;
     setBusy(true);
     snapshot.current.busy = true;
@@ -279,7 +287,7 @@ export function ReviewApp({
     }
   }
   async function undo() {
-    if (!state?.undo || busy) return;
+    if (!state?.undo || snapshot.current.busy || blocked("accept")) return;
     epoch.current++;
     setBusy(true);
     snapshot.current.busy = true;
@@ -450,8 +458,9 @@ export function ReviewApp({
                   className={kind}
                   key={kind}
                   aria-keyshortcuts={kind[0]}
-                  title={`${kind[0].toUpperCase() + kind.slice(1)} (${kind[0].toUpperCase()})`}
-                  disabled={busy || !latest}
+                  title={actionLock(kind) || `${kind[0].toUpperCase() + kind.slice(1)} (${kind[0].toUpperCase()})`}
+                  aria-describedby={actionLock(kind) ? "review-lock" : undefined}
+                  disabled={busy || !latest || Boolean(actionLock(kind))}
                   onClick={() =>
                     kind === "comment" ? beginComposer() : void decide(kind)
                   }
@@ -488,7 +497,9 @@ export function ReviewApp({
           </button>
           <button
             className="undo"
-            disabled={!state.undo || busy}
+            title={state.decisionLock || undefined}
+            aria-describedby={state.decisionLock ? "review-lock" : undefined}
+            disabled={!state.undo || busy || Boolean(state.decisionLock)}
             onClick={() => void undo()}
           >
             Undo
@@ -641,7 +652,9 @@ export function ReviewApp({
                             <button
                               className={kind}
                               key={kind}
-                              disabled={busy || !latest}
+                              title={actionLock(kind) || undefined}
+                              aria-describedby={actionLock(kind) ? "review-lock" : undefined}
+                              disabled={busy || !latest || Boolean(actionLock(kind))}
                               onClick={() =>
                                 kind === "comment"
                                   ? beginComposer([unit.id])
@@ -706,8 +719,9 @@ export function ReviewApp({
           {count.pending > 0 && (
             <button
               className="ghost accept accept-all"
-              disabled={busy || !latest || Boolean(composer)}
-              title="Accept all pending changes in this round. Undo reverses the whole batch."
+              disabled={busy || !latest || Boolean(composer) || Boolean(state?.decisionLock)}
+              title={state?.decisionLock || "Accept all pending changes in this round. Undo reverses the whole batch."}
+              aria-describedby={state?.decisionLock ? "review-lock" : undefined}
               onClick={() =>
                 void decide(
                   "accept",
@@ -746,7 +760,12 @@ export function ReviewApp({
       </header>
       <div className="review-body">
         <main id="paper" ref={paper} tabIndex={-1} onScroll={onScroll}>
-          {state?.closed && (
+          {(state?.commentLock || state?.decisionLock) && (
+            <div className="banner" id="review-lock" role="status">
+              {state.commentLock || state.decisionLock}
+            </div>
+          )}
+          {state?.closed && !state.commentLock && (
             <div className="banner">
               This review is finished. Accepted changes are in your manuscript.
             </div>
@@ -760,7 +779,7 @@ export function ReviewApp({
               )}
             </div>
           )}
-          {state?.state === "building" && detail && (
+          {state?.state === "building" && detail && !state.decisionLock && (
             <div className="banner">
               The agent is publishing a new round. You can keep reviewing; the
               new round will include your decisions.
@@ -899,7 +918,12 @@ export function ReviewApp({
             <button type="button" onClick={() => closeComposer()}>
               Cancel
             </button>
-            <button type="submit" disabled={busy || !draft.trim()}>
+            <button
+              type="submit"
+              title={state?.commentLock || undefined}
+              aria-describedby={state?.commentLock ? "review-lock" : undefined}
+              disabled={busy || !draft.trim() || Boolean(state?.commentLock)}
+            >
               Send
             </button>
           </div>

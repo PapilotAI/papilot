@@ -13,7 +13,11 @@ export function DeleteTaskDialog({ task, submit, onClose, onDeleted, refresh }: 
     const opener = document.activeElement as HTMLElement | null;
     const element = dialog.current!;
     element.showModal(); element.querySelector<HTMLButtonElement>('[data-cancel]')?.focus();
-    return () => { element.close(); if (opener?.isConnected) opener.focus(); };
+    return () => {
+      element.close();
+      if (opener?.isConnected && opener.getClientRects().length && !opener.closest('[inert]')) opener.focus();
+      else Array.from(document.querySelectorAll<HTMLElement>('.sidebar .new-task, .sidebar-toggle')).find(target => target.getClientRects().length && !target.closest('[inert]'))?.focus();
+    };
   }, []);
   async function remove() {
     if (pending.current || blocked) return;

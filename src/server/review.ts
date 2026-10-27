@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { ENGINE } from './paths.ts';
+import type { Task } from '../shared.ts';
 
 export interface ReviewClient { url: string; token: string; get<T = any>(route: string): Promise<T>; post<T = any>(route: string, body?: unknown): Promise<T> }
 let modulePromise: Promise<{ connect: (root: string) => Promise<ReviewClient> }> | null = null;
@@ -16,6 +17,24 @@ export function confirmedReviewResponse(status: number, value: unknown, task: st
   if (status === 400 || status === 409) return typeof result.error === 'string';
   return status >= 200 && status < 300 && result.task === task && typeof result.csrf === 'string' && typeof result.closed === 'boolean'
     && result.decisions !== null && typeof result.decisions === 'object' && !Array.isArray(result.decisions);
+}
+
+/** Add current workspace availability to viewer state; standalone engine state stays unchanged. */
+export function annotateReviewState(value: unknown, tasks: readonly Task[]): unknown {
+  if (!value || typeof value !== 'object' || typeof (value as any).task !== 'string'
+    || !confirmedReviewResponse(200, value, (value as any).task)) return value;
+  const state = value as Record<string, unknown>;
+  const task = tasks.find(task => task.name === state.task);
+  let decisionLock: string | null = null;
+  let commentLock: string | null = null;
+  if (!task) decisionLock = commentLock = 'This task is no longer available in Papilot. Return to the workspace.';
+  else if (state.closed) decisionLock = commentLock = 'This review is finished. Accepted changes are in your manuscript.';
+  else if (task.status === 'deleting') decisionLock = commentLock = 'This task is being deleted. Review actions and comments are unavailable.';
+  else if (task.status === 'uncertain') decisionLock = 'Select Check status in Papilot before accepting, rejecting, or undoing changes. You can still add comments.';
+  else if (task.status === 'building') decisionLock = 'Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.';
+  else if (['running', 'waiting_input', 'queued'].includes(task.status)) decisionLock = 'Pause this task in Papilot before accepting, rejecting, or undoing changes. You can still add comments.';
+  else if (task.pendingReview) decisionLock = 'Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.';
+  return { ...state, decisionLock, commentLock };
 }
 
 export function allowedReviewRoute(route: string, method: string): boolean {

@@ -7,6 +7,7 @@ import { browserStorage } from './storage.ts';
 import { ReviewFrame } from './review-frame.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { DeleteTaskDialog } from './task-dialog.tsx';
+import { ActionMenu } from './action-menu.tsx';
 import './style.css';
 
 let token = '';
@@ -54,8 +55,8 @@ function RequestCard({ request, answerDrafts, onDone }: { request: PendingReques
   </div>;
 }
 
-function Activity({ task, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, onCollapse }: { task: Task; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; onCollapse: () => void }) {
-  const { text: draft, sending } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
+function Activity({ task, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError }: { task: Task; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void }) {
+  const { text: draft, sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
   const scroller = useRef<HTMLDivElement>(null);
   const shouldFollow = useRef(true);
   const [following, setFollowing] = useState(true);
@@ -73,8 +74,7 @@ function Activity({ task, composer, answerDrafts, items, loading, loadError, ret
     catch (e) { reportError(e); }
   }
   const active = ['running', 'queued', 'waiting_input'].includes(task.status);
-  const comments = task.review?.counts?.commented || 0;
-  return <section id="conversation-panel" className="activity-panel" aria-label="Codex conversation"><div className="panel-heading"><span className="codex-label">Codex <span className="model-label" title={task.model || 'Use the default Codex model on this host'}>{task.model || 'Default model'}</span></span><button className="icon-button collapse-conversation" aria-label="Hide conversation" title="Hide conversation" onClick={onCollapse}><Icon name="close" size={15}/></button></div>
+  return <section id="conversation-panel" className="activity-panel" aria-label="Codex conversation"><div className="panel-heading"><span className="codex-label">Codex <span className="model-label" title={task.model || 'Use the default Codex model on this host'}>{task.model || 'Default model'}</span></span></div>
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); } }}>
       {loading && <p className="muted" role="status">Loading conversation…</p>}
       {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary" onClick={retry}>Retry conversation</button></div>}
@@ -84,10 +84,22 @@ function Activity({ task, composer, answerDrafts, items, loading, loadError, ret
       {task.status === 'queued' && <p className="muted">Task saved. Waiting for an available Codex session.</p>}
       {task.error && <div className="task-error"><strong>This step needs attention</strong><p>{task.error}</p></div>}
     </div>{!following && <button className="jump-latest" onClick={latest}>Latest messages ↓</button>}</div>
-    <div className="composer-wrap">{comments > 0 && <button className="feedback-button" disabled={sending || ['uncertain', 'deleting'].includes(task.status)} onClick={() => void submit('feedback')}><Icon name="sparkle" size={16}/><span>{comments} saved {comments === 1 ? 'comment' : 'comments'} · Send to Codex</span><Icon name="arrow" size={15}/></button>}
-      <form className="composer" onSubmit={e => { e.preventDefault(); void submit('draft'); }}><textarea aria-label="Instructions for Codex" maxLength={20000} placeholder={active ? 'Add instructions for the next turn…' : 'Describe the next revision…'} value={draft} onChange={e => composer.edit(e.target.value)} onKeyDown={e => { if (!e.nativeEvent.isComposing && (e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void submit('draft'); } }}/><div className="composer-footer"><span>{task.status === 'deleting' ? 'This task is being deleted' : task.status === 'uncertain' ? 'Check task status before sending' : sending ? 'Sending…' : active ? 'Queued for the next turn' : 'Includes new review feedback'}</span><button aria-label="Send instructions" title="Send instructions (⌘/Ctrl+Enter)" disabled={!draft.trim() || sending || ['uncertain', 'deleting'].includes(task.status)} className="send-button" type="submit"><Icon name="send" size={18}/></button></div></form>
+    <div className="composer-wrap">
+      <form className="composer" onSubmit={e => { e.preventDefault(); void submit('draft'); }}><textarea aria-label="Instructions for Codex" maxLength={20000} placeholder={active ? 'Add instructions for the next turn…' : 'Describe the next revision…'} value={draft} onChange={e => composer.edit(e.target.value)} onKeyDown={e => { if (!e.nativeEvent.isComposing && (e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void submit('draft'); } }}/><div className="composer-footer"><span>{task.status === 'deleting' ? 'This task is being deleted' : task.status === 'uncertain' ? 'Check task status before sending' : sendingSource === 'feedback' ? 'Sending feedback…' : sending ? 'Sending…' : active ? 'Queued for the next turn' : 'Includes new review feedback'}</span><button aria-label="Send instructions" title="Send instructions (⌘/Ctrl+Enter)" disabled={!draft.trim() || sending || ['uncertain', 'deleting'].includes(task.status)} className="send-button" type="submit"><Icon name="send" size={18}/></button></div></form>
     </div>
   </section>;
+}
+
+function ReviewFeedback({ task, composer, refresh, reportError, onSent }: { task: Task; composer: ComposerDraft; refresh: () => void; reportError: (error: unknown) => void; onSent: () => void }) {
+  const { sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
+  const count = task.review?.counts?.commented || 0;
+  if (!count || task.status === 'deleting') return null;
+  async function send() {
+    if (task.status === 'uncertain') return;
+    try { if (await composer.submit('feedback', message => api('/tasks/' + task.id + '/messages', message))) { refresh(); onSent(); } }
+    catch (error) { reportError(error); }
+  }
+  return <div className="review-feedback"><span>{count} saved {count === 1 ? 'comment' : 'comments'}</span><button className="button primary compact" disabled={sending || task.status === 'uncertain'} onClick={() => void send()}>{sendingSource === 'feedback' ? 'Sending feedback…' : 'Send feedback'}<Icon name="arrow" size={14}/></button></div>;
 }
 
 function App() {
@@ -255,6 +267,7 @@ function App() {
     if (selectedRef.current === id) setSelected('');
     setState(previous => previous ? { ...previous, tasks: previous.tasks.filter(t => t.id !== id), requests: previous.requests.filter(r => r.taskId !== id) } : previous);
     void refresh(true);
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(narrow && sidebar ? '.sidebar .new-task' : '.sidebar-toggle')?.focus());
   }
 
   const sidebarExpanded = narrow ? sidebar : sidebarVisible;
@@ -264,34 +277,48 @@ function App() {
       {state?.projects.length ? <select aria-label="Paper project" className="project-select" value={project?.id || projectId} onChange={e => { setProjectId(e.target.value); setSelected(''); }}>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select> : <button className="add-project" disabled={!state} onClick={() => openForm('project')}><Icon name="paper"/>Add paper</button>}
       <button className="button new-task" disabled={!state} onClick={() => newTask()}><Icon name="plus" size={16}/>New task</button>
       <div className="sidebar-section task-label"><span>Tasks</span><span className="count">{tasks.length}</span></div>
-      <nav className="task-list" aria-label="Task list">{tasks.length ? [...tasks].reverse().map(t => <button key={t.id} aria-current={t.id === selected ? 'page' : undefined} className={'task-link ' + (t.id === selected ? 'active' : '')} onClick={() => { setSelected(t.id); setSidebar(false); }}><div className="task-link-top"><span>{t.title}</span>{t.review?.counts?.pending ? <b>{t.review.counts.pending}</b> : null}</div><Status task={t}/></button>) : <div className="task-list-empty">No tasks yet</div>}</nav>
+      <nav className="task-list" aria-label="Task list">{tasks.length ? [...tasks].reverse().map(t => <div key={t.id} className={'task-row ' + (t.id === selected ? 'active' : '')}>
+        <button aria-current={t.id === selected ? 'page' : undefined} className={'task-link ' + (t.id === selected ? 'active' : '')} onClick={() => { setSelected(t.id); setSidebar(false); }}><div className="task-link-top"><span>{t.title}</span>{t.review?.counts?.pending ? <b>{t.review.counts.pending}</b> : null}</div><Status task={t}/></button>
+        <ActionMenu label={`Task actions for ${t.title}`} actions={[
+          ...(['running', 'waiting_input', 'queued'].includes(t.status) ? [{ label: 'Pause task', disabled: pendingActions.has('/tasks/' + t.id), select: () => void action('/tasks/' + t.id + '/interrupt') }] : []),
+          ...(t.status === 'uncertain' ? [{ label: 'Check status', disabled: pendingActions.has('/tasks/' + t.id), select: () => void action('/tasks/' + t.id + '/reconcile') }] : []),
+          { label: t.status === 'deleting' ? 'Retry deletion…' : 'Delete task…', danger: true, select: () => setDeleteTarget(t) },
+        ]}/>
+      </div>) : <div className="task-list-empty">No tasks yet</div>}</nav>
       <div className="sidebar-bottom"><div className="host-status"><span className={'connection-dot ' + (online ? 'connected' : '')}/><span>Host</span><span className="host-state">{!state ? 'Connecting…' : online ? 'Connected' : 'Reconnecting'}</span></div>{running > 0 && <div className="host-caption">{running} {running === 1 ? 'active task' : 'active tasks'}</div>}</div>
     </aside>
     {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label="Close task list" onClick={() => setSidebar(false)}/>}
     <main className="main" inert={narrow && sidebar}><header className="topbar">
       <button className="icon-button sidebar-toggle" aria-label={sidebarExpanded ? 'Hide task list' : 'Show task list'} title={sidebarExpanded ? 'Hide task list' : 'Show task list'} aria-expanded={sidebarExpanded} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(v => !v) : setSidebarVisible(v => !v)}><Icon name="sidebar"/></button>
-      <div className="breadcrumb"><span className="project-name" title={project?.name}>{project?.name || 'Papilot'}</span>{task && <><span className="slash">/</span><h1 title={task.title}>{task.title}</h1></>}</div>
-      {task && <><div className="toolbar-status"><Status task={task}/></div><div className="toolbar-actions">
-        {fullPdfUrl && <a className="button secondary compact full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" title={`Open the full PDF after round ${task.review?.round}; download it from the browser viewer`}><Icon name="paper" size={15}/>Full PDF</a>}
-        {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>Retry deletion</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}>Check status</button> : ['running', 'waiting_input', 'queued'].includes(task.status) ? <button className="button secondary compact task-action" aria-label="Pause task" title="Pause task" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/interrupt')}><Icon name="pause" size={14}/><span>Pause</span></button> : <button className="button secondary compact task-action" title="Build review" aria-label="Build review" disabled={task.status === 'building' || taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="paper" size={14}/><span>Build review</span></button>}
-        {task.status !== 'deleting' && <button className="icon-button" aria-label="Delete task" title="Delete task" onClick={() => setDeleteTarget(task)}><Icon name="trash" size={16}/></button>}
-        {task.status !== 'deleting' && task.review?.round ? <a className="icon-button external-review" aria-label="Open review in a new window" title="Open review in a new window" href={`/review/${task.projectId}/?task=${task.name}`} target="_blank" rel="noreferrer"><Icon name="external" size={16}/></a> : null}
-        <div className="panel-switches" aria-label="Panel layout">
-          <button className={'panel-toggle ' + (layout !== 'conversation' ? 'active' : '')} aria-label={layout === 'conversation' ? 'Show PDF review' : 'Hide PDF review'} title={layout === 'conversation' ? 'Show PDF review' : 'Hide PDF review'} aria-expanded={layout !== 'conversation'} aria-controls="review-panel" onClick={() => setLayout(layout === 'conversation' ? 'split' : 'conversation')}><Icon name="paper" size={15}/><span>Review</span></button>
-          <button className={'panel-toggle ' + (layout !== 'review' ? 'active' : '')} aria-label={layout === 'review' ? 'Show conversation' : 'Hide conversation'} title={layout === 'review' ? 'Show conversation' : 'Hide conversation'} aria-expanded={layout !== 'review'} aria-controls="conversation-panel" onClick={() => setLayout(layout === 'review' ? 'split' : 'review')}><Icon name="conversation" size={15}/><span>Conversation</span>{state?.requests.some(r => r.taskId === task.id) && <i className="attention-dot"/>}</button>
+      <div className="breadcrumb"><span className="project-name" title={project?.name}>{project?.name || 'Papilot'}</span>{task && <><span className="slash">/</span><div className="task-identity"><h1 title={task.title}>{task.title}</h1><Status task={task}/></div></>}</div>
+      {task && <>
+        <div className="task-state-actions">
+          {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>Retry deletion</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}>Check status</button> : ['running', 'waiting_input', 'queued'].includes(task.status) ? <button className="button secondary compact" aria-label="Pause task" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/interrupt')}>Pause</button> : task.error ? <button className="button secondary compact" onClick={() => { setMobileTab('conversation'); setLayout('conversation'); }}>View details</button> : null}
         </div>
-      </div></>}
+        <div className="view-selector" role="group" aria-label="Workspace view">
+          <button aria-pressed={layout === 'review'} onClick={() => { setLayout('review'); setMobileTab('review'); }}>Review</button>
+          <button aria-pressed={layout === 'split'} onClick={() => setLayout('split')}>Split</button>
+          <button aria-pressed={layout === 'conversation'} onClick={() => { setLayout('conversation'); setMobileTab('conversation'); }}>Conversation{state?.requests.some(r => r.taskId === task.id) && <i className="attention-dot" aria-label="Reply needed"/>}</button>
+        </div>
+      </>}
     </header>
       {state && !online && <div className="connection-banner" role="status"><span>Connection lost. Showing the last update; your draft is kept.</span><button onClick={() => void refresh(true)}>Retry connection</button></div>}
       {error && <div role="alert" className="error-banner"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}
       {state && (!state.runtime.connected || !state.runtime.authenticated) && <div className="runtime-banner"><span>{state.runtime.error || 'Connecting to Codex…'}</span><button disabled={pendingActions.has('/reconnect')} onClick={() => void action('/reconnect')}>{pendingActions.has('/reconnect') ? 'Connecting…' : 'Reconnect'}</button></div>}
       {task ? <div className="task-workspace">
-        <div className="mobile-tabs"><button aria-pressed={mobileTab === 'review'} className={mobileTab === 'review' ? 'active' : ''} onClick={() => setMobileTab('review')}>Review {task.review?.counts?.pending ? `· ${task.review.counts.pending}` : ''}</button><button aria-label={state?.requests.some(r => r.taskId === task.id) ? 'Conversation (reply needed)' : 'Conversation'} aria-pressed={mobileTab === 'conversation'} className={mobileTab === 'conversation' ? 'active' : ''} onClick={() => setMobileTab('conversation')}>Conversation{state?.requests.some(r => r.taskId === task.id) && <i className="attention-dot" aria-hidden="true"/>}</button><Status task={task}/>{mobileTab === 'review' && <select className="reading-scale" aria-label="PDF reading zoom" value={pdfScale} onChange={e => setPdfScale(Number(e.target.value))}><option value={1}>100%</option><option value={1.5}>150%</option><option value={2}>200%</option><option value={3}>300%</option></select>}</div>
+        <div className="mobile-tabs" role="group" aria-label="Workspace view"><button aria-pressed={mobileTab === 'review'} className={mobileTab === 'review' ? 'active' : ''} onClick={() => setMobileTab('review')}>Review {task.review?.counts?.pending ? `· ${task.review.counts.pending}` : ''}</button><button aria-label={state?.requests.some(r => r.taskId === task.id) ? 'Conversation (reply needed)' : 'Conversation'} aria-pressed={mobileTab === 'conversation'} className={mobileTab === 'conversation' ? 'active' : ''} onClick={() => setMobileTab('conversation')}>Conversation{state?.requests.some(r => r.taskId === task.id) && <i className="attention-dot" aria-hidden="true"/>}</button></div>
         <div className={`task-grid layout-${layout} show-${mobileTab}`}><section id="review-panel" className="review-panel" aria-label="PDF review">
-          {task.review?.round && ['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) ? <div className="review-mode-hint" role="status">{task.status === 'uncertain' ? 'Check task status before accepting, rejecting, or undoing changes.' : task.status === 'building' ? 'A new review is building. You can still read and comment on this round.' : 'You can read and comment. Pause this task to accept, reject, or undo changes.'}</div> : null}
-          {task.status === 'deleting' ? <div className="review-placeholder"><h2>Deletion is in progress</h2><p>This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} scale={pdfScale}/> : <div className="review-placeholder"><Icon name="paper" size={28}/><h2>{task.status === 'building' ? 'Building PDF review…' : 'No review yet'}</h2><p>{task.status === 'building' ? 'The review will appear when the build finishes.' : 'PDF changes will appear here after Codex finishes editing.'}</p></div>}
-          {task.status === 'building' && task.review?.round ? <div className="build-overlay"><span className="spinner"/>Building the next review round</div> : null}
-        </section><Activity key={task.id} task={task} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} onCollapse={() => setLayout('review')}/></div>
+          <div className="review-toolbar"><span className="review-heading">PDF review</span><div className="review-tools">
+            {fullPdfUrl && <><select className="reading-scale" aria-label="PDF reading zoom" value={pdfScale} onChange={e => setPdfScale(Number(e.target.value))}><option value={1}>Fit</option><option value={1.5}>150%</option><option value={2}>200%</option><option value={3}>300%</option></select><a className="button secondary compact full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" title={`Open the full PDF after round ${task.review?.round}`}>Full PDF</a></>}
+            {task.status !== 'deleting' && <ActionMenu label="Review options" actions={[
+              { label: 'Build review', disabled: ['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) || taskActionBusy, select: () => void action('/tasks/' + task.id + '/publish') },
+              ...(fullPdfUrl ? [{ label: 'Open review in new tab', href: `/review/${task.projectId}/?task=${task.name}` }] : []),
+            ]}/>}
+          </div></div>
+          {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><span>The latest review build failed.</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>Retry build</button></div>}
+          {task.status === 'deleting' ? <div className="review-placeholder"><h2>Deletion is in progress</h2><p>This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} scale={pdfScale}/> : <div className="review-placeholder"><Icon name="paper" size={28}/><h2>{task.status === 'building' ? 'Building PDF review…' : 'No review yet'}</h2><p>{task.status === 'building' ? 'The review will appear when the build finishes.' : 'PDF changes will appear here after Codex finishes editing.'}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>Build review</button>}</div>}
+          <ReviewFeedback task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError} onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>
+        </section><Activity key={task.id} task={task} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError}/></div>
       </div> : !state ? <div className="welcome"><h1>Opening your workspace</h1><p className="welcome-copy" role="status">{connectionError || 'Connecting to your papers and tasks…'}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>Retry connection</button>}</div> : <div className="welcome"><h1>{project?.name || 'Your paper workspace'}</h1><p className="welcome-copy">{project ? 'Select a task or create a new editing task for Codex.' : 'Add a LaTeX repository from this host, then create an editing task.'}</p><button className="button primary" onClick={() => newTask()}><Icon name="plus"/>{project ? 'New task' : 'Add paper'}</button></div>}
     </main>
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}

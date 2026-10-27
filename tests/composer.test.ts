@@ -41,12 +41,14 @@ test('typing during submission preserves new text and blocks duplicate sends', a
     await gate.promise;
   });
   assert.equal(draft.sending, true);
+  assert.equal(draft.getSnapshot().sendingSource, 'draft');
   draft.edit('Next instruction');
   assert.equal(await draft.submit('draft', async () => { calls++; }), false);
   gate.resolve();
   await pending;
   assert.equal(calls, 1);
   assert.equal(draft.sending, false);
+  assert.equal(draft.getSnapshot().sendingSource, null);
   assert.equal(draft.text, 'Next instruction');
   assert.equal(storage.getItem('draft'), 'Next instruction');
 });

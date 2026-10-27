@@ -8,18 +8,19 @@ export const reviewInstructions = 'Address the comments from this review round. 
 export class ComposerDraft {
   text: string;
   sending = false;
+  sendingSource: 'draft' | 'feedback' | null = null;
   private revision = 0;
   private requestKeys: Record<'draft' | 'feedback', string>;
   private listeners = new Set<() => void>();
-  private snapshot: { text: string; sending: boolean };
+  private snapshot: { text: string; sending: boolean; sendingSource: 'draft' | 'feedback' | null };
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
-  private changed() { this.snapshot = { text: this.text, sending: this.sending }; for (const listener of this.listeners) listener(); }
+  private changed() { this.snapshot = { text: this.text, sending: this.sending, sendingSource: this.sendingSource }; for (const listener of this.listeners) listener(); }
 
   constructor(private key: string, private storage: DraftStorage, private newId: () => string) {
     this.text = storage.getItem(key) || '';
     this.requestKeys = { draft: newId(), feedback: newId() };
-    this.snapshot = { text: this.text, sending: this.sending };
+    this.snapshot = { text: this.text, sending: this.sending, sendingSource: this.sendingSource };
   }
 
   edit(text: string) {
@@ -33,7 +34,7 @@ export class ComposerDraft {
   async submit(source: 'draft' | 'feedback', send: (message: Message) => Promise<unknown>): Promise<boolean> {
     const text = source === 'draft' ? this.text : reviewInstructions;
     if (this.sending || !text.trim()) return false;
-    this.sending = true;
+    this.sending = true; this.sendingSource = source;
     this.changed();
     const revision = this.revision;
     try {
@@ -50,7 +51,7 @@ export class ComposerDraft {
       if (source === 'feedback' || this.revision === revision) this.requestKeys[source] = this.newId();
       return true;
     } finally {
-      this.sending = false;
+      this.sending = false; this.sendingSource = null;
       this.changed();
     }
   }

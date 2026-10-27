@@ -18,6 +18,8 @@ function compactReviewFrame(doc: Document, scale: number) {
     .bar .ghost.round{width:25px;height:25px;padding:0}
     #paper{--paper-top:10px;padding-top:10px}
     .part-title{font-size:16px;margin:5px 0 10px}
+      .side,.context{overflow-x:auto;overscroll-behavior-x:contain}
+      .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-reading-scale,1));max-width:none}
     @media(max-width:680px){
       .bar{min-height:44px}.bar .ghost{min-height:36px;font-size:12px}.bar .ghost.round{width:36px;height:36px}
       .bar .identity span,.bar .meter{font-size:12px}
@@ -26,8 +28,6 @@ function compactReviewFrame(doc: Document, scale: number) {
       .change-head .actions{gap:0;box-shadow:none}.change-head .actions button{min-height:44px;padding:6px;font-size:12px}
       .change-head .actions .nav{min-width:32px;padding:4px}.change-head .position{min-width:26px;font-size:10px}
       .change-head .link{min-height:36px;padding:6px}.change-head .dock{margin:0}
-      .side,.context{overflow-x:auto;overscroll-behavior-x:contain}
-      .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-reading-scale,1));max-width:none}
       .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;bottom:8px;transform:none;max-height:calc(100% - 16px);overflow:auto}
       .composer textarea{font-size:16px;max-height:min(140px,30vh)}.composer button{min-height:44px}
     }

@@ -243,6 +243,9 @@ export interface PageState {
   task: string;
   title: string;
   closed: boolean;
+  /** Optional host-provided reason that file decisions or comments are unavailable. */
+  decisionLock?: string | null;
+  commentLock?: string | null;
   state: TaskState | null;
   latest: number | null;
   round: number | null;
