@@ -338,24 +338,14 @@ function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Ann
   </section>;
 }
 
-// Bookmarks of the PDF; the current section follows the reading position.
-function ContentsPanel({ outline, section, onGo }: { outline: OutlineItem[]; section: number; onGo: (item: OutlineItem) => void }) {
-  const list = useRef<HTMLOListElement>(null);
-  useEffect(() => { list.current?.querySelector('[aria-current="location"]')?.scrollIntoView({ block: 'nearest' }); }, [section]);
-  if (!outline.length) return <section className="contents-panel" aria-label="Contents"><p className="muted notes-empty">This PDF has no bookmarks. Load the hyperref package to add them.</p></section>;
-  return <section className="contents-panel" aria-label="Contents"><ol ref={list} className="contents-list">{outline.map((item, index) => <li key={index}>
-    <button type="button" aria-current={index === section ? 'location' : undefined} style={{ paddingLeft: 12 + Math.min(item.level, 4) * 16 }} className={item.level === 0 ? 'top-level' : undefined} onClick={() => onGo(item)}><span className="contents-title">{item.title}</span><span className="contents-page">{item.page}</span></button>
-  </li>)}</ol></section>;
-}
-
-type ManuscriptPanel = 'pdf' | 'contents' | 'notes' | 'git';
+type ManuscriptPanel = 'pdf' | 'notes' | 'git';
 function ManuscriptView({ project, data, error, view, setView, region, setRegion, active, setActive, actions, onGit }: { onGit: (status: GitStatus) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
   const build = data?.build, notes = data?.annotations || [];
   const pdf = useRef<PdfHandle>(null);
   const [outline, setOutline] = useState<OutlineItem[]>([]), [section, setSection] = useState(-1);
   const numbered = notes.map((note, index) => ({ note, number: index + 1 }));
   const phone = () => window.matchMedia('(max-width: 680px)').matches;
-  const side = view === 'git' || view === 'notes' ? view : 'contents';
+  const side = view === 'git' ? 'git' : 'notes';
   function show(note: Annotation) {
     setActive(note.id);
     if (phone()) setView('pdf');
@@ -370,14 +360,12 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
           onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('notes'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>Compiling the PDF…</h2><p>The first build of a paper can take a minute.</p></div>}
     </section>
-    <aside className="manuscript-side" aria-label="Contents, notes and Git">
+    <aside className="manuscript-side" aria-label="Notes and Git">
       <div className="side-tabs" role="tablist" aria-label="PDF panels">
-        <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}>Contents</button>
         <button role="tab" aria-selected={side === 'notes'} onClick={() => setView('notes')}>Notes{notes.length > 0 && <span className="count">{notes.length}</span>}</button>
         <button role="tab" aria-selected={side === 'git'} onClick={() => setView('git')}>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
       </div>
-      {side === 'git' ? <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit}/> : side === 'notes' ? <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>
-        : <ContentsPanel outline={outline} section={section} onGo={item => { if (phone()) setView('pdf'); pdf.current?.goTo(item); }}/>}
+      {side === 'git' ? <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit}/> : <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>}
     </aside>
   </div>;
 }
@@ -433,7 +421,7 @@ function App() {
     refocus.current = '';
   }, [renaming]);
   const [page, setPage] = useState<'home' | 'manuscript'>('home');
-  const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'contents');
+  const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'notes');
   const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
   const [sendingNotes, setSendingNotes] = useState(false);
@@ -717,7 +705,7 @@ function App() {
           { label: 'Add paper…', icon: 'plus', divider: true, select: () => openProject() },
         ]}><span className="project-switcher-name">{project.name}</span><Icon name="updown" size={14}/></ActionMenu>
           : <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="plus" size={16}/>Add paper</button>}
-        {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); setSidebar(false); }}><Icon name="paper" size={16}/><span className="nav-label">PDF</span>{gitSummary(projectGit) && <span className="nav-meta" title="Git status of the manuscript">{gitSummary(projectGit)}</span>}</button>}
+        {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><Icon name="paper" size={16}/><span className="nav-label">PDF</span>{gitSummary(projectGit) && <span className="nav-meta" title="Git status of the manuscript">{gitSummary(projectGit)}</span>}</button>}
         <button className={'nav-link new-task' + (!task && !manuscriptOpen && project ? ' active' : '')} aria-current={!task && !manuscriptOpen && project ? 'page' : undefined} disabled={!state} onClick={() => newTask()}><Icon name="compose" size={16}/><span className="nav-label">New task</span></button>
       </div>
       <div className="sidebar-section"><span>Tasks</span>{tasks.length > 0 && <span className="count">{tasks.length}</span>}</div>
@@ -748,8 +736,8 @@ function App() {
             { label: 'Recompile', icon: 'refresh', select: () => void loadManuscript(project.id, true) },
             ...(manuscriptData.data?.build.key ? [{ label: 'Open the PDF file', icon: 'external', href: `/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}` }] : []),
           ]}/> : <>
-            <button className="icon-button" aria-label="Recompile PDF" title="Recompile" onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={17}/></button>
-            {manuscriptData.data?.build.key && <a className="icon-button" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" aria-label="Open the PDF file" title="Open the PDF file"><Icon name="external" size={17}/></a>}
+            <button className="button ghost compact" title="Compile the PDF again" onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={14}/>Recompile</button>
+            {manuscriptData.data?.build.key && <a className="button ghost compact" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" title="Open the PDF file in a new tab"><Icon name="external" size={14}/>Open PDF</a>}
           </>}
         </div>
         {mobile && <div className="view-selector" role="group" aria-label="PDF view">

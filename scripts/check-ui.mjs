@@ -185,13 +185,16 @@ try {
   await page.locator('.textLayer span').filter({ hasText: 'Fixture sentence' }).first().waitFor();
   assert.equal(await pdfPages.count(), 2);
   assert.equal(await page.getByLabel('Page number').inputValue(), '1');
-  // Bookmarks fill the Contents panel and jump to their page.
-  const contents = page.getByRole('region', { name: 'Contents', exact: true });
-  assert.deepEqual((await contents.getByRole('button').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
-  await contents.getByRole('button', { name: /^Results/ }).click();
+  // Bookmarks fill the Contents menu in the toolbar and jump to their page; the side panel holds notes and Git.
+  assert.deepEqual((await page.getByRole('tablist', { name: 'PDF panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Notes', 'Git 2']);
+  await page.getByRole('button', { name: 'Contents', exact: true }).click();
+  assert.deepEqual((await page.getByRole('menuitemradio').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
+  await page.getByRole('menuitemradio', { name: /^Results/ }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
   assert.equal(await page.locator('.pdf-section-title').innerText(), 'Results');
-  assert.equal(await contents.getByRole('button', { name: /^Results/ }).getAttribute('aria-current'), 'location');
+  await page.getByRole('button', { name: 'Contents', exact: true }).click();
+  assert.equal(await page.getByRole('menuitemradio', { name: /^Results/ }).getAttribute('aria-checked'), 'true');
+  await page.keyboard.press('Escape');
   await page.getByLabel('Page number').fill('1');
   await page.getByLabel('Page number').press('Enter');
   await page.waitForFunction(() => document.querySelector('.pdf-section-title').textContent === 'Introduction');
@@ -311,7 +314,8 @@ try {
   assert.deepEqual(gitActions, ['push']);
   assert.equal(await gitPanel.getByRole('button', { name: 'Push', exact: true }).count(), 0);
   Object.assign(gitState, structuredClone(originalGit));
-  assert.equal(await page.getByRole('link', { name: 'Open the PDF file' }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
+  assert.equal(await page.getByRole('link', { name: 'Open PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
+  await page.getByRole('button', { name: 'Recompile', exact: true }).waitFor();
   assert.equal(await page.title(), 'Example paper · Papilot');
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
