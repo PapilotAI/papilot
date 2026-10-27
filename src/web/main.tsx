@@ -439,7 +439,7 @@ function App() {
   const models = state?.runtime.models || [];
   const chosenModel = models.length && !models.some(m => m.id === agentModel) ? '' : agentModel;
   const modelInfo = models.find(m => m.id === chosenModel) || models.find(m => m.isDefault);
-  const agent = { model: chosenModel, effort: modelInfo && !modelInfo.efforts.some(e => e.id === agentEffort) ? '' : agentEffort };
+  const agent = { model: chosenModel, effort: modelInfo && !modelInfo.efforts.includes(agentEffort) ? '' : agentEffort };
   const agentOptions = (disabled: boolean) => <>
     <ChipSelect label="Codex model" disabled={disabled} value={agent.model} onChange={value => { setAgentModel(value); browserStorage.setItem('papilot:model', value); }} options={[{ value: '', label: 'Default model' }, ...models.map(m => ({ value: m.id, label: m.name }))]}/>
     {modelInfo && <EffortPicker efforts={modelInfo.efforts} value={agent.effort} fallback={modelInfo.defaultEffort} disabled={disabled} onChange={value => { setAgentEffort(value); browserStorage.setItem('papilot:effort', value); }}/>}

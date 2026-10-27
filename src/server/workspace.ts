@@ -15,7 +15,7 @@ const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 // A Codex model/list entry with the reasoning efforts it supports.
 export const agentModel = (m: any): AgentModel => ({
   id: m.model || m.id, name: m.displayName || m.model || m.id, isDefault: Boolean(m.isDefault),
-  efforts: (m.supportedReasoningEfforts || []).filter((e: any) => typeof e?.reasoningEffort === 'string').map((e: any) => ({ id: e.reasoningEffort, description: e.description || '' })),
+  efforts: (m.supportedReasoningEfforts || []).map((e: any) => e?.reasoningEffort).filter((e: unknown) => typeof e === 'string'),
   defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null,
 });
 // An account/rateLimits/read response as the usage Papilot shows; null when

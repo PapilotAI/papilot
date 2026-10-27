@@ -13,8 +13,7 @@ export interface Task {
 export interface Run { id: string; taskId: string; requestKey: string; prompt: string; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null }
 export interface TimelineItem { id: string; taskId: string; type: string; text: string; detail?: string; status?: string; createdAt: number }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
-export interface Effort { id: string; description: string }
-export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: Effort[]; defaultEffort: string | null }
+export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort: string | null }
 // The account's included usage: rolling windows (minutes long, reset time in ms) and credits.
 export interface UsageWindow { usedPercent: number; minutes: number | null; resetsAt: number | null }
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }

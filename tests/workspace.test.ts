@@ -800,7 +800,7 @@ test('real engine deletion removes one temporary worktree while preserving accep
 
 test('Codex models list their reasoning efforts, and a task runs every turn at its effort', async () => {
   assert.deepEqual(agentModel({ model: 'gpt-x', displayName: 'GPT X', isDefault: true, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low', description: 'Fast' }, { reasoningEffort: 'xhigh', description: 'Deep' }, { description: 'malformed' }] }),
-    { id: 'gpt-x', name: 'GPT X', isDefault: true, efforts: [{ id: 'low', description: 'Fast' }, { id: 'xhigh', description: 'Deep' }], defaultEffort: 'medium' });
+    { id: 'gpt-x', name: 'GPT X', isDefault: true, efforts: ['low', 'xhigh'], defaultEffort: 'medium' });
   assert.deepEqual(agentModel({ id: 'plain' }), { id: 'plain', name: 'plain', isDefault: false, efforts: [], defaultEffort: null });
   const f = fixture();
   try {
