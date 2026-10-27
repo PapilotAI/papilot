@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in Papilot doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting. Please leave out anything private from your paper or your logs.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run papilot demo
+        2. Open PDF in the sidebar
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Papilot version
+      description: The output of `papilot --version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      options:
+        - Not about an agent
+        - Codex
+        - Claude
+        - Antigravity
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: macOS 15.5, Node.js 22.22.0, MacTeX 2026, Chrome 141
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Terminal output, a build error or a screenshot, if you have one.
