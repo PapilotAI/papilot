@@ -87,12 +87,12 @@ test('Antigravity turns run agy in accept-edits mode, stream into items, and res
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-function fakeClaude(script: (options: any) => AsyncGenerator<any>) {
+function fakeClaude(script: (options: any) => AsyncGenerator<any>, account: Record<string, string> = { email: 'me@example.com', apiKeySource: 'ANTHROPIC_API_KEY', apiProvider: 'firstParty' }) {
   const calls: { prompt: unknown; options: any }[] = [];
   const query = ((input: { prompt: unknown; options: any }) => {
     calls.push(input);
     const generator: any = typeof input.prompt === 'string' ? script(input.options) : (async function* () {})();
-    generator.accountInfo = async () => ({ email: 'me@example.com', subscriptionType: 'Claude Max' });
+    generator.accountInfo = async () => account;
     generator.supportedModels = async () => [
       { value: 'default', displayName: 'Default (recommended)', description: '', resolvedModel: 'claude-opus-5-5', supportedEffortLevels: ['low', 'high'] },
       { value: 'opus', displayName: 'Opus 5.5', description: '', resolvedModel: 'claude-opus-5-5', supportedEffortLevels: ['low', 'high'] },
@@ -120,7 +120,16 @@ test('Claude turns use the local Claude Code login, resume their session, and re
   });
   const agent = new ClaudeAgent(fake.load);
   await agent.start();
-  assert.deepEqual(await agent.request('account/read'), { account: { email: 'me@example.com', type: 'Claude Max' }, requiresOpenaiAuth: false });
+  assert.deepEqual(await agent.request('account/read'), { account: { email: 'me@example.com', type: 'API key' }, requiresOpenaiAuth: false });
+  // With only a Claude subscription login, Claude is unavailable and says why.
+  const subscription = new ClaudeAgent(fakeClaude(async function* () {}, { email: 'me@example.com', subscriptionType: 'Claude Max', apiProvider: 'firstParty' }).load);
+  await subscription.start();
+  const refused = await subscription.request('account/read');
+  assert.equal(refused.account, null);
+  assert.match(refused.reason, /needs an Anthropic API key.*ANTHROPIC_API_KEY/);
+  const bedrock = new ClaudeAgent(fakeClaude(async function* () {}, { apiProvider: 'bedrock' }).load);
+  await bedrock.start();
+  assert.deepEqual((await bedrock.request('account/read')).account, { email: undefined, type: 'bedrock' });
   assert.deepEqual((await agent.request('model/list')).data.map((m: any) => [m.model, m.isDefault, m.supportedReasoningEfforts.length]), [['opus', true, 2], ['haiku', false, 1]]);
   await assert.rejects(agent.request('account/rateLimits/read'), /not reported usage/);
   const seen = events(agent), requests: any[] = [];
@@ -143,7 +152,7 @@ test('Claude turns use the local Claude Code login, resume their session, and re
   // Usage comes from the turn's rate limit events; the model's default effort from its init message.
   const usage = await agent.request('account/rateLimits/read');
   assert.deepEqual(usage.rateLimits.primary, { usedPercent: 42, windowDurationMins: 300, resetsAt: 1_800_000_000 });
-  assert.equal(usage.rateLimits.planType, 'max');
+  assert.equal(usage.rateLimits.planType, null);
   assert.equal((await agent.request('model/list')).data[0].defaultReasoningEffort, 'xhigh');
   // The next turn resumes the same Claude session.
   const next = events(agent);

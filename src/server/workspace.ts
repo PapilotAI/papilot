@@ -97,7 +97,7 @@ export class Workspace extends EventEmitter {
       runtime.connected = true;
       runtime.authenticated = Boolean(account.account) || account.requiresOpenaiAuth === false;
       runtime.account = account.account?.email || account.account?.type || (runtime.authenticated ? `Local ${name} configuration` : null);
-      runtime.error = runtime.authenticated ? null : `Sign in to ${name} on this host, then select Reconnect.`;
+      runtime.error = runtime.authenticated ? null : account.reason || `Sign in to ${name} on this host, then select Reconnect.`;
       try {
         const models = await agent.request('model/list', {}, 20000);
         runtime.models = (models.data || []).map(agentModel);

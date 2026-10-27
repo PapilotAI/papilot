@@ -114,9 +114,13 @@ export class ClaudeAgent extends Adapter {
       this.ready = true;
     } finally { finish(); probe.close(); }
   }
+  // Claude tasks need an API key (or a cloud provider's own credentials):
+  // Anthropic does not accept a Claude subscription login through the SDK.
   protected account() {
-    const account = this.info.account, signedIn = Boolean(account?.email || account?.subscriptionType || account?.apiKeySource || account?.apiProvider && account.apiProvider !== 'firstParty');
-    return { account: signedIn ? { email: account?.email, type: account?.subscriptionType || account?.apiKeySource || account?.apiProvider } : null, requiresOpenaiAuth: false };
+    const account = this.info.account, keyed = Boolean(account?.apiKeySource && !['none', 'oauth'].includes(account.apiKeySource));
+    const external = Boolean(account?.apiProvider && account.apiProvider !== 'firstParty');
+    if (keyed || external) return { account: { email: account?.email, type: external ? account!.apiProvider : 'API key' }, requiresOpenaiAuth: false };
+    return { account: null, requiresOpenaiAuth: true, reason: 'Claude needs an Anthropic API key: Anthropic does not allow a Claude subscription login through the Claude Agent SDK. Start Papilot with ANTHROPIC_API_KEY set to use Claude.' };
   }
   protected models() {
     const all = this.info.models, preferred = all.find(model => model.value === 'default');
