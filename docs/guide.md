@@ -148,6 +148,8 @@ npm run build
 npm run test:ui
 ```
 
+The landing page at [cu1ch3n.github.io/papilot](https://cu1ch3n.github.io/papilot/) lives in `site/`. It is bilingual: every piece of text appears twice, in a `lang="en"` and a `lang="zh-CN"` span, and attributes carry their Chinese in `data-zh-*`, so change both when you edit it. `npm run site` builds it into `_site` with the README's screenshots, the workspace fonts and the demo GIF turned into a video (this needs FFmpeg); open `_site/index.html` through any static server to preview it. The Pages workflow publishes it whenever these change on `main`.
+
 `npm run dev` watches the TypeScript backend. After frontend changes, run `npm run build` and reload the browser; the server serves rebuilt assets without a restart. Backend changes require a restart, which interrupts active turns, so wait for running tasks to finish first. To develop alongside an existing instance, use a different `PAPILOT_PORT` and `PAPILOT_DATA` directory.
 
 The automated tests cover restart recovery, access restrictions, review proxy routes, Codex RPC, worktree reservations, stale events, uncertain-operation recovery, rebuilt frontend assets, and draft preservation during feedback, retries, and concurrent editing.

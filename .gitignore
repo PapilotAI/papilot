@@ -1,5 +1,6 @@
 node_modules
 dist/
+_site/
 .papilot/
 .env
 .DS_Store

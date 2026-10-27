@@ -59,6 +59,7 @@
     "service:install": "tsx scripts/service.ts install",
     "service:stop": "tsx scripts/service.ts stop",
     "test:ui": "npm run build && node scripts/check-ui.mjs",
+    "site": "node scripts/build-site.mjs",
     "prepack": "npm run build && npm run setup:review"
   },
   "dependencies": {

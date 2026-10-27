@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Papilot · A Cursor-like workspace for your papers</title>
+<script>
+// Chinese for ?lang=zh-CN, a saved choice of Chinese, or a Simplified Chinese
+// browser; decided before the page paints so it never flashes in English.
+{
+  let saved = null;
+  try { saved = localStorage.getItem('papilot-lang'); } catch {}
+  const asked = new URLSearchParams(location.search).get('lang') || saved;
+  const zh = asked ? /^zh/i.test(asked) : /^zh(?!-(TW|HK|MO|Hant))/i.test(navigator.language);
+  document.documentElement.lang = zh ? 'zh-CN' : 'en';
+}
+</script>
+<meta name="description" content="Annotate and review PDFs directly without ever touching LaTeX. An AI agent edits the LaTeX, and every change comes back as a typeset before-and-after that you accept or reject." data-zh-content="直接在 PDF 上批注和审阅，完全不用碰 LaTeX。AI 智能体去改 LaTeX，每处改动都以排版后的修改前后对比回到你面前，由你接受或拒绝。">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://cu1ch3n.github.io/papilot/">
+<link rel="alternate" hreflang="en" href="https://cu1ch3n.github.io/papilot/?lang=en">
+<link rel="alternate" hreflang="zh-CN" href="https://cu1ch3n.github.io/papilot/?lang=zh-CN">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Papilot">
+<meta property="og:title" content="Papilot · A Cursor-like workspace for your papers">
+<meta property="og:description" content="Annotate and review PDFs directly without ever touching LaTeX.">
+<meta property="og:url" content="https://cu1ch3n.github.io/papilot/">
+<meta property="og:image" content="https://cu1ch3n.github.io/papilot/assets/feature-review.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="750">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preload" href="fonts/TeXGyrePagellaX-Regular.otf" as="font" type="font/otf" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="./"><img class="brand-mark" src="assets/logo.svg" alt="" width="26" height="26">Papilot</a>
+    <nav class="nav" aria-label="Sections" data-zh-aria-label="页面导航">
+      <a href="#features"><span lang="en">Features</span><span lang="zh-CN">功能</span></a>
+      <a href="#agents"><span lang="en">Agents</span><span lang="zh-CN">智能体</span></a>
+      <a href="#start"><span lang="en">Quick start</span><span lang="zh-CN">快速开始</span></a>
+      <a href="https://github.com/cu1ch3n/papilot/blob/main/docs/guide.md"><span lang="en">Guide</span><span lang="zh-CN">指南</span></a>
+    </nav>
+    <div class="topbar-actions">
+      <div class="lang-switch" role="group" aria-label="Language" data-zh-aria-label="语言" hidden>
+        <button type="button" data-set-lang="en" aria-pressed="true">EN</button>
+        <button type="button" data-set-lang="zh-CN" aria-pressed="false">中文</button>
+      </div>
+      <a class="button secondary compact" href="https://github.com/cu1ch3n/papilot">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<section class="hero">
+  <div class="wrap hero-copy">
+    <img class="hero-mark" src="assets/logo.svg" alt="" width="76" height="76">
+    <h1><span lang="en">A Cursor-like workspace<br> for your papers</span><span lang="zh-CN">像 Cursor 一样<br>改论文</span></h1>
+    <p class="lede"><span lang="en">Annotate and review PDFs directly, without ever touching LaTeX.</span><span lang="zh-CN">直接在 PDF 上批注和审阅，完全不用碰 LaTeX。</span></p>
+    <div class="hero-actions">
+      <div class="install">
+        <code><span class="prompt" aria-hidden="true">$</span> npm install -g papilot</code>
+        <button class="copy" type="button" data-copy="npm install -g papilot" aria-label="Copy the install command" data-zh-aria-label="复制安装命令">
+          <svg class="icon-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2"/></svg>
+          <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        </button>
+      </div>
+      <a class="button primary" href="#start"><span lang="en">Get started</span><span lang="zh-CN">开始使用</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+      </a>
+    </div>
+    <p class="works-with"><span lang="en">Works with</span><span lang="zh-CN">支持</span> <span class="agent codex">Codex</span><span class="agent claude">Claude</span><span class="agent antigravity">Antigravity</span></p>
+  </div>
+  <div class="wrap">
+    <figure class="demo">
+      <video autoplay muted loop playsinline preload="auto" poster="assets/demo-poster.jpg" width="1200" height="750" aria-label="Papilot: describe a revision, review the typeset diff, read the PDF, annotate it and commit" data-zh-aria-label="Papilot：描述修改、审阅排版后的差异、阅读 PDF、在页面上批注并提交">
+        <source src="assets/demo.mp4" type="video/mp4">
+      </video>
+    </figure>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap">
+    <p><span lang="en">You read and mark up the PDF the way a supervisor marks up a draft. An AI agent makes the edits in LaTeX, and every change comes back to you as a before-and-after of the typeset page. <strong>Nothing touches your paper until you accept it.</strong></span><span lang="zh-CN">你像导师批改学生的稿子一样，直接在 PDF 上阅读和批注；AI 智能体去改 LaTeX，每一处改动都以排版后修改前后的对比回到你面前。<strong>你点头之前，论文一个字都不会变。</strong></span></p>
+  </div>
+</section>
+
+<section class="section" id="features">
+  <div class="wrap">
+    <header class="section-head">
+      <p class="eyebrow"><span lang="en">Features</span><span lang="zh-CN">功能</span></p>
+      <h2><span lang="en">The PDF is the whole interface</span><span lang="zh-CN">PDF 就是全部界面</span></h2>
+      <p><span lang="en">Everything you would do on paper, plus the parts paper can't do: an agent that writes the LaTeX, and Git underneath.</span><span lang="zh-CN">纸上能做的，这里都能做；纸上做不到的也有：替你写 LaTeX 的智能体，和底层的 Git。</span></p>
+    </header>
+
+    <article class="feature">
+      <div class="feature-text">
+        <p class="step"><span class="step-num">1</span><span lang="en">Annotate</span><span lang="zh-CN">批注</span></p>
+        <h3><span lang="en">Mark up the PDF</span><span lang="zh-CN">在 PDF 上批注</span></h3>
+        <p><span lang="en">Select a sentence or circle an equation and say what should change. SyncTeX hands the agent the exact LaTeX lines.</span><span lang="zh-CN">选中一句话或框出一个公式，写下要怎么改。SyncTeX 会把对应的 LaTeX 行准确交给智能体。</span></p>
+        <ul class="checks">
+          <li><span lang="en">Notes on selected text, or on a marked region for figures and equations</span><span lang="zh-CN">批注选中的文字；图和公式可以框选区域来批注</span></li>
+          <li><span lang="en">All your notes go to the agent as one task</span><span lang="zh-CN">所有批注作为一个任务交给智能体</span></li>
+          <li><span lang="en">Pick the agent, its model and how hard it thinks</span><span lang="zh-CN">自选智能体、模型和推理强度</span></li>
+        </ul>
+      </div>
+      <img class="shot" src="assets/feature-note.png" alt="A note on a selected passage of the PDF" data-zh-alt="在 PDF 选中的段落上写批注" width="1200" height="750" loading="lazy">
+    </article>
+
+    <article class="feature flip">
+      <div class="feature-text">
+        <p class="step"><span class="step-num">2</span><span lang="en">Review</span><span lang="zh-CN">审阅</span></p>
+        <h3><span lang="en">Approve change by change</span><span lang="zh-CN">逐条点头</span></h3>
+        <p><span lang="en">Each edit comes back as a typeset diff. Accept, reject or comment on it, and undo any decision.</span><span lang="zh-CN">每处改动都以排版后的差异呈现。接受、拒绝或评论，任何决定都能撤销。</span></p>
+        <ul class="checks">
+          <li><span lang="en">Before and after on the printed page, not in LaTeX source</span><span lang="zh-CN">在排版后的页面上看修改前后，不用读 LaTeX 源码</span></li>
+          <li><span lang="en">Send your comments back for another round</span><span lang="zh-CN">把评论发回去，再改一轮</span></li>
+          <li><span lang="en">Accept all and Reject all touch only the changes you haven't decided</span><span lang="zh-CN">全部接受、全部拒绝只作用于还没决定的改动</span></li>
+        </ul>
+      </div>
+      <img class="shot" src="assets/feature-review.png" alt="A change shown before and after, with Accept and Reject" data-zh-alt="改动的修改前后对比，带接受和拒绝按钮" width="1200" height="750" loading="lazy">
+    </article>
+
+    <article class="feature">
+      <div class="feature-text">
+        <p class="step"><span class="step-num">3</span><span lang="en">Read</span><span lang="zh-CN">阅读</span></p>
+        <h3><span lang="en">Read it like a real PDF</span><span lang="zh-CN">像本地 PDF 一样阅读</span></h3>
+        <p><span lang="en">Jump around with the contents menu, search every page and zoom in sharply. Selecting text picks exactly the printed words.</span><span lang="zh-CN">用目录随意跳转，全文搜索，缩放清晰。选中的文字与印出的词完全对齐。</span></p>
+        <ul class="checks">
+          <li><span lang="en">Contents from the PDF's own bookmarks, following the section you're in</span><span lang="zh-CN">目录来自 PDF 自带的书签，并跟随你正在读的章节</span></li>
+          <li><span lang="en">Crisp text at any zoom, with working links and cross-references</span><span lang="zh-CN">任意缩放都清晰，链接和交叉引用都能点</span></li>
+          <li><span lang="en">Shows the paper as it is on disk, accepted changes included</span><span lang="zh-CN">显示磁盘上论文的当前状态，包括已接受的改动</span></li>
+        </ul>
+      </div>
+      <img class="shot" src="assets/feature-contents.png" alt="The PDF viewer with its contents menu open" data-zh-alt="打开目录菜单的 PDF 阅读器" width="1200" height="750" loading="lazy">
+    </article>
+
+    <article class="feature flip">
+      <div class="feature-text">
+        <p class="step"><span class="step-num">4</span><span lang="en">Commit</span><span lang="zh-CN">提交</span></p>
+        <h3><span lang="en">Commit when you're happy</span><span lang="zh-CN">满意了再提交</span></h3>
+        <p><span lang="en">Diff files, commit the ones you choose, then pull and push without leaving the page.</span><span lang="zh-CN">查看差异，只提交你勾选的文件，pull 和 push 都不用离开页面。</span></p>
+        <ul class="checks">
+          <li><span lang="en">Tick exactly the files to commit; LaTeX build output starts unticked</span><span lang="zh-CN">精确勾选要提交的文件；LaTeX 编译产物默认不勾选</span></li>
+          <li><span lang="en">Anything you staged elsewhere stays staged</span><span lang="zh-CN">你在别处暂存的内容保持原样</span></li>
+          <li><span lang="en">Pull only fast-forwards, so nothing is merged behind your back</span><span lang="zh-CN">pull 只做快进，不会背着你合并</span></li>
+        </ul>
+      </div>
+      <img class="shot" src="assets/feature-git.png" alt="The Git panel with a diff and a commit message" data-zh-alt="带差异和提交信息的 Git 面板" width="1200" height="750" loading="lazy">
+    </article>
+  </div>
+</section>
+
+<section class="section muted-band">
+  <div class="wrap">
+    <header class="section-head">
+      <p class="eyebrow"><span lang="en">Safe by design</span><span lang="zh-CN">安全设计</span></p>
+      <h2><span lang="en">Your paper stays yours</span><span lang="zh-CN">论文始终由你做主</span></h2>
+    </header>
+    <div class="cards">
+      <div class="card">
+        <span class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+        <h3><span lang="en">A worktree for every task</span><span lang="zh-CN">每个任务一个工作树</span></h3>
+        <p><span lang="en">Each task edits its own Git worktree, so your manuscript changes only when you accept an edit. Two tasks run at once; the rest wait in a queue.</span><span lang="zh-CN">每个任务都在自己的 Git 工作树里修改，只有你接受改动时，论文才会变。两个任务同时运行，其余排队等候。</span></p>
+      </div>
+      <div class="card">
+        <span class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <h3><span lang="en">Accept first, commit later</span><span lang="zh-CN">先接受，再提交</span></h3>
+        <p><span lang="en">Accepting a change updates your working tree without committing, and any decision can be undone. You decide what goes into each commit.</span><span lang="zh-CN">接受改动只更新工作区，不会自动提交，任何决定都能撤销。每次提交包含什么，由你决定。</span></p>
+      </div>
+      <div class="card">
+        <span class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M12 18h.01"/></svg></span>
+        <h3><span lang="en">On your computer, and your phone</span><span lang="zh-CN">在电脑上运行，用手机也能看</span></h3>
+        <p><span lang="en">Papilot listens only on 127.0.0.1. Publish it on your tailnet with Tailscale Serve to review from a phone or tablet.</span><span lang="zh-CN">Papilot 只监听 127.0.0.1。用 Tailscale Serve 把它发布到你的 tailnet，就能在手机或平板上审阅。</span></p>
+      </div>
+      <div class="card">
+        <span class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5M16 13H8M16 17H8M10 9H8"/></svg></span>
+        <h3><span lang="en">Your own TeX</span><span lang="zh-CN">用你自己的 TeX</span></h3>
+        <p><span lang="en">It builds with latexmk and the TeX distribution you already have, so your packages, BibTeX and TikZ figures work as they do today.</span><span lang="zh-CN">用 latexmk 和你已经装好的 TeX 发行版编译，宏包、BibTeX 和 TikZ 图都照常工作。</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="agents">
+  <div class="wrap">
+    <header class="section-head">
+      <p class="eyebrow"><span lang="en">Agents</span><span lang="zh-CN">智能体</span></p>
+      <h2><span lang="en">Bring the agent you already use</span><span lang="zh-CN">用你已经在用的智能体</span></h2>
+      <p><span lang="en">Choose one per task. Papilot never reads, stores or forwards your credentials, and an agent that isn't installed or signed in shows as unavailable.</span><span lang="zh-CN">每个任务选一个。Papilot 从不读取、保存或转发你的凭据；没有安装或没有登录的智能体会显示为不可用。</span></p>
+    </header>
+    <div class="agents">
+      <div class="agent-card">
+        <h3><span class="agent codex">Codex</span></h3>
+        <p class="sign-in"><span lang="en">Sign in once with <code>papilot codex login</code></span><span lang="zh-CN">用 <code>papilot codex login</code> 登录一次</span></p>
+        <p><span lang="en">Runs through the Codex app server, in its workspace sandbox. Papilot uses your <code>codex</code> if you have one, or installs it on first start.</span><span lang="zh-CN">通过 Codex app server 在其工作区沙箱中运行。已装有 <code>codex</code> 就直接用，没有则在首次启动时自动安装。</span></p>
+      </div>
+      <div class="agent-card">
+        <h3><span class="agent claude">Claude</span></h3>
+        <p class="sign-in"><span lang="en">Start <code>papilot</code> with <code>ANTHROPIC_API_KEY</code> set</span><span lang="zh-CN">设置好 <code>ANTHROPIC_API_KEY</code> 再启动 <code>papilot</code></span></p>
+        <p><span lang="en">Runs through the Claude Agent SDK, downloaded the first time. The SDK does not accept a Pro or Max subscription login.</span><span lang="zh-CN">通过 Claude Agent SDK 运行，首次使用时下载。该 SDK 不接受 Pro 或 Max 订阅登录。</span></p>
+      </div>
+      <div class="agent-card">
+        <h3><span class="agent antigravity">Antigravity</span></h3>
+        <p class="sign-in"><span lang="en">Install Antigravity and sign in to <code>agy</code></span><span lang="zh-CN">安装 Antigravity 并登录 <code>agy</code></span></p>
+        <p><span lang="en">Runs <code>agy -p</code>, one process per turn, editing files only. If your region needs it, set <code>PAPILOT_AGY_PROXY</code>.</span><span lang="zh-CN">运行 <code>agy -p</code>，每轮一个进程，只编辑文件。所在地区需要代理时，设置 <code>PAPILOT_AGY_PROXY</code>。</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section muted-band" id="start">
+  <div class="wrap start">
+    <div class="start-text">
+      <p class="eyebrow"><span lang="en">Quick start</span><span lang="zh-CN">快速开始</span></p>
+      <h2><span lang="en">Up and running in two commands</span><span lang="zh-CN">两条命令就能跑起来</span></h2>
+      <ol class="steps">
+        <li><span lang="en"><strong>Install</strong> with npm. You need Node.js 22.22+, Git and a full TeX distribution (<a href="https://www.tug.org/mactex/">MacTeX</a> or <a href="https://www.tug.org/texlive/">TeX Live</a>).</span><span lang="zh-CN"><strong>用 npm 安装。</strong>需要 Node.js 22.22+、Git 和完整的 TeX 发行版（<a href="https://www.tug.org/mactex/">MacTeX</a> 或 <a href="https://www.tug.org/texlive/">TeX Live</a>）。</span></li>
+        <li><span lang="en"><strong>Run the demo</strong> and open <code>127.0.0.1:7274</code>. It adds a 26-page LaTeX paper about Papilot itself, full of equations, to revise.</span><span lang="zh-CN"><strong>运行 demo</strong>，打开 <code>127.0.0.1:7274</code>。它会添加一篇讲 Papilot 本身的 26 页 LaTeX 论文供你修改，满是公式。</span></li>
+        <li><span lang="en"><strong>Add your paper.</strong> Run <code>papilot</code> and choose <b>Add paper</b> for any LaTeX project in a Git repository.</span><span lang="zh-CN"><strong>添加你的论文。</strong>运行 <code>papilot</code>，选择 <b>Add paper</b>，即可添加任何放在 Git 仓库里的 LaTeX 项目。</span></li>
+      </ol>
+    </div>
+    <div class="terminal">
+      <div class="terminal-bar">
+        <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="terminal-title"><span lang="en">Terminal</span><span lang="zh-CN">终端</span></span>
+        <button class="copy" type="button" data-copy="npm install -g papilot&#10;papilot demo" aria-label="Copy the commands" data-zh-aria-label="复制命令">
+          <svg class="icon-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2"/></svg>
+          <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        </button>
+      </div>
+<pre><code><span class="prompt">$</span> npm install -g papilot
+<span class="prompt">$</span> papilot demo
+<span class="output">Example paper ready: Papilot paper (~/.papilot/example-paper)</span>
+<span class="output">Papilot is running at http://127.0.0.1:7274</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="cta">
+      <h2><span lang="en">Revise your next paper on the PDF</span><span lang="zh-CN">下一篇论文，直接在 PDF 上改</span></h2>
+      <p><span lang="en">Free and open source under the MIT license.</span><span lang="zh-CN">基于 MIT 许可证免费开源。</span></p>
+      <div class="cta-actions">
+        <a class="button primary" href="https://github.com/cu1ch3n/papilot"><span lang="en">Star on GitHub</span><span lang="zh-CN">在 GitHub 上 Star</span></a>
+        <a class="button secondary" href="https://github.com/cu1ch3n/papilot/blob/main/docs/guide.md"><span lang="en">Read the guide</span><span lang="zh-CN">阅读指南（英文）</span></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <a class="brand" href="./"><img class="brand-mark" src="assets/logo.svg" alt="" width="22" height="22">Papilot</a>
+    <nav aria-label="Links" data-zh-aria-label="链接">
+      <a href="https://github.com/cu1ch3n/papilot">GitHub</a>
+      <a href="https://www.npmjs.com/package/papilot">npm</a>
+      <a href="https://github.com/cu1ch3n/papilot#readme" data-zh-href="https://github.com/cu1ch3n/papilot/blob/main/README.zh-CN.md">README</a>
+      <a href="https://github.com/cu1ch3n/papilot/blob/main/docs/guide.md"><span lang="en">Guide</span><span lang="zh-CN">指南</span></a>
+    </nav>
+    <p>MIT © 2026 Cui Chen</p>
+  </div>
+</footer>
+
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(button.dataset.copy); } catch { return; }
+    button.classList.add('copied');
+    setTimeout(() => button.classList.remove('copied'), 1600);
+  });
+}
+// With reduced motion the demo waits for the reader to press play.
+const demo = document.querySelector('.demo video');
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) { demo.pause(); demo.removeAttribute('autoplay'); demo.controls = true; }
+
+// Both languages sit side by side in lang="en" and lang="zh-CN" spans, and the
+// stylesheet shows the one matching <html lang>. Attributes can't hold two
+// languages, so their Chinese waits in data-zh-* until it is chosen.
+const titles = { en: document.title, 'zh-CN': 'Papilot · 像 Cursor 一样改论文' };
+function setLanguage(lang) {
+  document.documentElement.lang = lang;
+  document.title = titles[lang];
+  for (const name of ['alt', 'aria-label', 'href', 'content']) {
+    for (const element of document.querySelectorAll(`[data-zh-${name}]`)) {
+      if (!element.hasAttribute(`data-en-${name}`)) element.setAttribute(`data-en-${name}`, element.getAttribute(name));
+      element.setAttribute(name, element.getAttribute(`data-${lang === 'zh-CN' ? 'zh' : 'en'}-${name}`));
+    }
+  }
+  for (const button of document.querySelectorAll('[data-set-lang]')) button.setAttribute('aria-pressed', String(button.dataset.setLang === lang));
+}
+setLanguage(document.documentElement.lang);
+for (const button of document.querySelectorAll('[data-set-lang]')) {
+  button.addEventListener('click', () => {
+    setLanguage(button.dataset.setLang);
+    try { localStorage.setItem('papilot-lang', button.dataset.setLang); } catch {}
+    const url = new URL(location.href);
+    if (url.searchParams.has('lang')) { url.searchParams.delete('lang'); history.replaceState(null, '', url); }
+  });
+}
+document.querySelector('.lang-switch').hidden = false;
+</script>
+</body>
+</html>
