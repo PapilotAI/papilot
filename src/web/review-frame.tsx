@@ -4,10 +4,8 @@ import type { Task } from '../shared.ts';
 // The embedded viewer shares our origin. Keep its decision controls, but remove
 // navigation and the task title that the workspace already provides. Its bar
 // becomes the review toolbar; Papilot's PDF tools sit in the reserved space.
-function compactReviewFrame(doc: Document, scale: number, reserve: number) {
+function compactReviewFrame(doc: Document, reserve: number) {
   if (!doc || doc.getElementById('papilot-embed-style')) return;
-  doc.documentElement.style.setProperty('--pdf-reading-scale', String(scale));
-  doc.documentElement.toggleAttribute('data-papilot-fit', scale === 1);
   doc.documentElement.style.setProperty('--papilot-tools', `${reserve}px`);
   const style = doc.createElement('style'); style.id = 'papilot-embed-style';
   style.textContent = `
@@ -96,8 +94,7 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     ::-webkit-scrollbar-thumb:hover{background-color:rgb(24 24 27/.32);border-width:2px}
     @supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:rgb(24 24 27/.2) transparent}}
     .part-title{font-size:15px;margin:6px 0 10px}
-    .side,.context{overflow-x:auto;overscroll-behavior-x:contain}
-    .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-reading-scale,1));max-width:none}
+    .side .pdf-strip,.context .pdf-strip{max-width:none}
     @media(max-width:680px){
       .bar{height:48px;min-height:48px;padding-left:12px;gap:8px}.bar .ghost{min-height:36px;font-size:12px}
       .bar .ghost.round{display:none}.bar .identity span,.bar .meter{font-size:12px}
@@ -112,8 +109,8 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
       .change-head .actions .undo{flex:0 0 auto;margin-left:0;padding:0 6px;font-size:14px}
       .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;bottom:70px;transform:none;max-height:calc(100% - 86px);overflow:auto}
       .composer textarea{font-size:16px;max-height:min(140px,30vh)}.composer button{min-height:44px}
-      .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-reading-scale,1) * var(--pdf-crop-scale,1));margin-left:calc(-100% * var(--pdf-reading-scale,1) * var(--pdf-crop-scale,1) * var(--pdf-crop-shift,0))}
-      [data-papilot-fit] .side,[data-papilot-fit] .context{overflow-x:hidden}
+      .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-crop-scale,1));margin-left:calc(-100% * var(--pdf-crop-scale,1) * var(--pdf-crop-shift,0))}
+      .side,.context{overflow-x:hidden}
     }
     @media(max-width:480px){.bar .identity,.bar .meter{display:none}.bar .bar-end{gap:4px}}
     @media(max-width:400px){.change-head .position{display:none}}
@@ -145,7 +142,7 @@ function cropMargins(doc: Document) {
 
 // The iframe can finish loading an HTTP error or an empty document. Wait for the
 // actual viewer, keep watching slow startup, and let the user retry safely.
-export function ReviewFrame({ task, scale, tools }: { task: Task; scale: number; tools?: ReactNode }) {
+export function ReviewFrame({ task, tools }: { task: Task; tools?: ReactNode }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   const [reserve, setReserve] = useState(0);
@@ -165,16 +162,15 @@ export function ReviewFrame({ task, scale, tools }: { task: Task; scale: number;
   useEffect(() => {
     try {
       const root = frame.current?.contentDocument?.documentElement;
-      root?.style.setProperty('--pdf-reading-scale', String(scale)); root?.style.setProperty('--papilot-tools', `${reserve}px`);
-      root?.toggleAttribute('data-papilot-fit', scale === 1);
+      root?.style.setProperty('--papilot-tools', `${reserve}px`);
     } catch { /* A browser error document may be inaccessible. */ }
-  }, [scale, reserve]);
+  }, [reserve]);
   function loaded() {
     observer.current?.disconnect();
     try {
       const doc = frame.current?.contentDocument;
       if (!doc || (!doc.getElementById('root') && !doc.getElementById('paper'))) { setPhase('error'); return; }
-      compactReviewFrame(doc, scale, reserve);
+      compactReviewFrame(doc, reserve);
       // Strips render after the viewer starts; re-measure the text edges when they change.
       let pending: ReturnType<typeof setTimeout> | undefined;
       cropper.current?.disconnect();

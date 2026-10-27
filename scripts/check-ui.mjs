@@ -193,14 +193,19 @@ try {
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), true);
   assert.equal(await page.locator('.topbar .full-pdf-link').count(), 0);
   assert.equal(await page.locator('.topbar').getByRole('button', { name: 'Delete task', exact: true }).count(), 0);
-  const reviewOptions = page.getByRole('button', { name: 'Review options', exact: true });
-  await reviewOptions.focus(); await page.keyboard.press('ArrowDown');
-  await page.getByRole('menu', { name: 'Review options', exact: true }).waitFor();
-  assert.equal(await page.getByRole('menuitem', { name: 'Build review', exact: true }).evaluate(el => el === document.activeElement), true);
-  await page.keyboard.press('ArrowDown');
-  assert.equal(await page.getByRole('menuitem', { name: 'Open review in new tab', exact: true }).evaluate(el => el === document.activeElement), true);
+  // The review's own tools are direct buttons beside the review toolbar, with no zoom box or menu.
+  const reviewTools = page.locator('.review-tools');
+  assert.equal(await reviewTools.getByRole('link', { name: 'Full PDF', exact: true }).getAttribute('href'), '/api/tasks/fixture-task-0001/pdf?round=1');
+  assert.equal(await reviewTools.getByRole('link', { name: 'Open review in new tab', exact: true }).getAttribute('href'), '/review/fixture-paper/?task=p-fixture');
+  assert.equal(await reviewTools.getByRole('button', { name: 'Build review', exact: true }).isDisabled(), false);
+  assert.equal(await reviewTools.getByRole('combobox').count() + await reviewTools.getByRole('button', { name: 'Review options' }).count(), 0);
+  // Menus open from the keyboard on the first item and return focus on Escape.
+  const taskMenu = page.getByRole('button', { name: `Task actions for ${task.title}`, exact: true });
+  await taskMenu.focus(); await page.keyboard.press('ArrowDown');
+  await page.getByRole('menu', { name: `Task actions for ${task.title}`, exact: true }).waitFor();
+  assert.equal(await page.getByRole('menuitem', { name: 'Rename…', exact: true }).evaluate(el => el === document.activeElement), true);
   await page.keyboard.press('Escape');
-  assert.equal(await reviewOptions.evaluate(el => el === document.activeElement), true);
+  assert.equal(await taskMenu.evaluate(el => el === document.activeElement), true);
   console.log('PASS: Views select explicitly, PDF tools stay with the review, and menus support keyboard navigation');
 
   const pdfLink = page.getByRole('button', { name: /^PDF/ });
@@ -577,8 +582,7 @@ try {
     assert.ok(send.x >= 0 && send.x + send.width <= width);
     if (width < 681) {
       await page.getByRole('button', { name: /Review/ }).first().click();
-      await page.getByRole('combobox', { name: 'PDF reading zoom' }).selectOption('2');
-      assert.equal(await page.locator('.review-frame').evaluate(el => el.contentDocument.documentElement.style.getPropertyValue('--pdf-reading-scale')), '2');
+      await page.locator('.review-tools').getByRole('button', { name: 'Build review', exact: true }).waitFor();
       await page.screenshot({ path: `test-results/english-mobile-${width}.png`, fullPage: true });
     }
     const drawerToggle = page.getByRole('button', { name: 'Show task list', exact: true });
