@@ -1,6 +1,6 @@
 import { StrictMode, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { PendingRequest, Snapshot, Task, TimelineItem } from '../shared.ts';
+import type { GitStatus, Manuscript, PendingRequest, Project, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { ComposerDraft, sendsMessage, taskTitle } from './composer.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -10,6 +10,7 @@ import { DeleteTaskDialog } from './task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { Markdown } from './markdown.tsx';
+import logo from './logo.png';
 import './style.css';
 
 let token = '';
@@ -138,7 +139,7 @@ function Activity({ task, composer, answerDrafts, items, loading, loadError, ret
       {task.error && <div className="task-error"><Icon name="alert" size={16}/><div><strong>This step needs attention</strong><p>{task.error}</p></div></div>}
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>Latest messages</button>}</div>
     <div className="composer-wrap">
-      <Composer label="Instructions for Codex" value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? 'Queue instructions for the next turn…' : 'Ask Codex for another revision…'}
+      <Composer label="Instructions for Codex" value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? 'Queue instructions for the next turn…' : 'Ask for another revision…'}
         footer={<span className="composer-hint">{hint}</span>}
         action={<div className="composer-actions">
           {active && <button type="button" className="send-button stop" aria-label="Pause task" title="Pause Codex" disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
@@ -161,7 +162,46 @@ function ReviewFeedback({ task, composer, refresh, reportError, onSent }: { task
   return <div className="review-feedback"><span><Icon name="chat" size={15}/>{count} {count === 1 ? 'comment' : 'comments'} not sent yet</span><button className="button primary compact" disabled={sending || task.status === 'uncertain'} onClick={() => void send()}>{sendingSource === 'feedback' ? 'Sending feedback…' : 'Send feedback'}<Icon name="arrowRight" size={14}/></button></div>;
 }
 
-const suggestions = ['Proofread for grammar and typos', 'Tighten the abstract', 'Make the introduction more concise', 'Check notation for consistency'];
+
+// Shorten an absolute repository path to its last folders for menus.
+function shortPath(value: string) { const parts = value.split('/').filter(Boolean); return (parts.length > 2 ? '…/' : '/') + parts.slice(-2).join('/'); }
+function gitSummary(git: GitStatus | null) {
+  if (!Array.isArray(git?.files)) return '';
+  const sync = [git.ahead ? `↑${git.ahead}` : '', git.behind ? `↓${git.behind}` : ''].filter(Boolean).join(' ');
+  return [git.branch || 'detached', git.files.length ? `${git.files.length} changed` : 'clean', sync].filter(Boolean).join(' · ');
+}
+
+function GitPanel({ git }: { git: GitStatus | null }) {
+  if (!git || !Array.isArray(git.files)) return <aside className="git-panel" aria-label="Git status"><p className="muted">Reading Git status…</p></aside>;
+  const statusNames: Record<string, string> = { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied', U: 'Conflict', '?': 'Untracked', T: 'Type changed' };
+  return <aside className="git-panel" aria-label="Git status">
+    <h2 className="panel-label">Git</h2>
+    <dl className="git-facts">
+      <dt>Branch</dt><dd><code>{git.branch || 'detached HEAD'}</code>{git.upstream && <span className="muted"> · {git.upstream}{git.ahead || git.behind ? ` · ↑${git.ahead} ↓${git.behind}` : ' · up to date'}</span>}</dd>
+      {git.head && <><dt>Commit</dt><dd><code>{git.head.hash}</code> {git.head.subject}<span className="muted"> · {ago(git.head.date)} ago</span></dd></>}
+    </dl>
+    <h2 className="panel-label">Changes{git.files.length > 0 && <span className="count">{git.files.length}</span>}</h2>
+    {git.files.length ? <ul className="git-files">{git.files.map(file => <li key={file.path} title={statusNames[file.status] || file.status}>
+      <span className={'git-code s-' + (file.status === '?' ? 'u' : file.status.toLowerCase())} aria-label={statusNames[file.status] || file.status}>{file.status === '?' ? 'U' : file.status}</span>
+      <span className="git-path">{file.path}</span>
+      {file.lines && <span className="git-lines"><ins>+{file.lines[0]}</ins> <del>−{file.lines[1]}</del></span>}
+    </li>)}</ul> : <p className="muted">Working tree clean.</p>}
+  </aside>;
+}
+
+function ManuscriptView({ project, data, error, tab }: { project: Project; data: Manuscript | null; error: string; tab: 'pdf' | 'git' }) {
+  const build = data?.build;
+  return <div className={'manuscript show-' + tab}>
+    <section className="manuscript-pages" aria-label="Manuscript preview" aria-busy={!build || build.status === 'building'}>
+      {error && <div className="manuscript-note error" role="alert">{error}</div>}
+      {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>The manuscript did not compile.</strong><pre>{build.error}</pre></div>}
+      {build?.status === 'building' && build.pages && <div className="manuscript-note">Compiling the latest changes…</div>}
+      {build?.pages?.length ? <div className="pages">{build.pages.map(([width, height], index) => <img key={`${build.key}-${index}`} className="page" loading={index < 2 ? 'eager' : 'lazy'} decoding="async" width={width} height={height} alt={`Page ${index + 1}`} src={`/api/projects/${project.id}/manuscript/pages/${index}?key=${build.key}`}/>)}</div>
+        : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>Compiling the manuscript…</h2><p>The first build of a paper can take a minute.</p></div>}
+    </section>
+    <GitPanel git={data?.git || null}/>
+  </div>;
+}
 
 function App() {
   const [state, setState] = useState<Snapshot | null>(null);
@@ -200,6 +240,18 @@ function App() {
   const [mobileTab, setMobileTab] = useState('review');
   const [pdfScale, setPdfScale] = useState(1);
   const [renaming, setRenaming] = useState('');
+  // Enter and Escape return focus to the renamed task; clicking elsewhere keeps that focus.
+  const refocus = useRef('');
+  useEffect(() => {
+    if (renaming || !refocus.current) return;
+    document.querySelector<HTMLElement>(`.task-row[data-task="${refocus.current}"] .task-link`)?.focus();
+    refocus.current = '';
+  }, [renaming]);
+  const [page, setPage] = useState<'home' | 'manuscript'>('home');
+  const [manuscriptTab, setManuscriptTab] = useState<'pdf' | 'git'>('pdf');
+  const [manuscript, setManuscript] = useState<{ projectId: string; data: Manuscript | null; error: string }>({ projectId: '', data: null, error: '' });
+  const [git, setGit] = useState<{ projectId: string; status: GitStatus | null }>({ projectId: '', status: null });
+  const building = useRef(false);
   const [chatWidth, setChatWidth] = useState(() => Number(browserStorage.getItem('papilot:chat-width')) || 0);
   const [form, setForm] = useState({ path: '', name: '' });
   const selectedRef = useRef(selected); selectedRef.current = selected;
@@ -309,7 +361,7 @@ function App() {
   const running = state?.tasks.filter(t => ['running', 'waiting_input', 'building'].includes(t.status)).length || 0;
   function openProject() { modalOpener.current = document.activeElement as HTMLElement | null; setError(''); setForm({ path: '', name: '' }); setModal('project'); }
   function newTask() {
-    setSelected(''); setSidebar(false);
+    setSelected(''); setPage('home'); setSidebar(false);
     if (!state?.projects.length) openProject();
     else requestAnimationFrame(() => newTaskInput.current?.focus());
   }
@@ -355,7 +407,6 @@ function App() {
   async function rename(target: Task, value: string) {
     const title = value.trim().replace(/\s+/g, ' ').slice(0, 120);
     setRenaming('');
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(`.task-row[data-task="${target.id}"] .task-link`)?.focus());
     if (!title || title === target.title) return;
     setState(previous => previous ? { ...previous, tasks: previous.tasks.map(t => t.id === target.id ? { ...t, title } : t) } : previous);
     try { await api('/tasks/' + target.id + '/rename', { title }); } catch (e) { reportError(e); }
@@ -379,8 +430,34 @@ function App() {
     if (next === null) return;
     event.preventDefault(); setChatWidth(Math.min(Math.max(next, 300), max));
   }
+  const manuscriptOpen = !task && page === 'manuscript' && Boolean(project);
+  const loadManuscript = useCallback(async (projectId: string, rebuild = false) => {
+    try {
+      const data = await api<Manuscript>(`/projects/${projectId}/manuscript`, rebuild ? {} : undefined);
+      building.current = data.build.status === 'building';
+      setManuscript({ projectId, data, error: '' }); setGit({ projectId, status: data.git });
+    } catch (e) { setManuscript(current => ({ projectId, data: current.projectId === projectId ? current.data : null, error: e instanceof Error ? e.message : String(e) })); }
+  }, []);
+  // Poll quickly while the preview compiles; otherwise recheck the working tree now and then.
+  useEffect(() => {
+    if (!manuscriptOpen || !project) return;
+    let stopped = false, timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => { await loadManuscript(project.id); if (!stopped) timer = setTimeout(() => void tick(), building.current ? 1500 : 15000); };
+    void tick();
+    const focus = () => void loadManuscript(project.id);
+    window.addEventListener('focus', focus);
+    return () => { stopped = true; clearTimeout(timer); window.removeEventListener('focus', focus); };
+  }, [manuscriptOpen, project?.id, loadManuscript]);
+  useEffect(() => {
+    if (!project || manuscriptOpen) return;
+    const load = () => void api<GitStatus>(`/projects/${project.id}/git`).then(status => setGit({ projectId: project.id, status })).catch(() => undefined);
+    load(); const timer = setInterval(load, 20000);
+    return () => clearInterval(timer);
+  }, [project?.id, manuscriptOpen]);
+  const projectGit = git.projectId === project?.id ? git.status : null;
+  const manuscriptData = manuscript.projectId === project?.id ? manuscript : { data: null, error: '' };
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
-  useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : 'Papilot'); }, [waiting, task?.title]);
+  useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, project?.name]);
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
   const active = Boolean(task && ACTIVE.includes(task.status));
@@ -398,19 +475,21 @@ function App() {
 
   return <div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
     <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label="Papers and tasks">
-      <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setSidebar(false); }}><span className="brand-mark"><Icon name="plane" size={14}/></span><span>Papilot</span></a><button className="icon-button" aria-label="Hide task list" title="Hide task list" onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
+      <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setPage('home'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a><button className="icon-button" aria-label="Hide task list" title="Hide task list" onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
+      <div className="sidebar-section"><span>Paper</span></div>
       <div className="sidebar-actions">
-        {state?.projects.length ? <ActionMenu label={`Paper: ${project?.name || ''}`} className="project-switcher" align="start" actions={[
-          ...state.projects.map(p => ({ id: p.id, label: p.name, checked: p.id === project?.id, select: p.id === project?.id ? undefined : () => { setProjectId(p.id); setSelected(''); } })),
+        {state?.projects.length && project ? <ActionMenu label={`Paper: ${project.name}`} className="project-switcher" align="start" actions={[
+          ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); } })),
           { label: 'Add paper…', icon: 'plus', divider: true, select: () => openProject() },
-        ]}><Icon name="paper" size={16}/><span className="project-switcher-name">{project?.name}</span><Icon name="updown" size={14}/></ActionMenu>
+        ]}><span className="project-switcher-name">{project.name}</span><Icon name="updown" size={14}/></ActionMenu>
           : <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="plus" size={16}/>Add paper</button>}
-        <button className="new-task" disabled={!state} onClick={() => newTask()}><Icon name="compose" size={16}/>New task</button>
+        {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); setSidebar(false); }}><Icon name="paper" size={16}/><span className="nav-label">Manuscript</span>{gitSummary(projectGit) && <span className="nav-meta" title="Git status of the manuscript">{gitSummary(projectGit)}</span>}</button>}
+        <button className={'nav-link new-task' + (!task && !manuscriptOpen && project ? ' active' : '')} aria-current={!task && !manuscriptOpen && project ? 'page' : undefined} disabled={!state} onClick={() => newTask()}><Icon name="compose" size={16}/><span className="nav-label">New task</span></button>
       </div>
       <div className="sidebar-section"><span>Tasks</span>{tasks.length > 0 && <span className="count">{tasks.length}</span>}</div>
       <nav className="task-list" aria-label="Task list">{tasks.length ? [...tasks].reverse().map(t => <div key={t.id} data-task={t.id} className={'task-row ' + (t.id === selected ? 'active' : '')}>
-        {renaming === t.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); e.currentTarget.querySelector('input')?.blur(); }}>
-          <input name="title" aria-label={`Rename ${t.title}`} defaultValue={t.title} maxLength={120} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void rename(t, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.currentTarget.value = t.title; e.currentTarget.blur(); } }}/>
+        {renaming === t.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); refocus.current = t.id; e.currentTarget.querySelector('input')?.blur(); }}>
+          <input name="title" aria-label={`Rename ${t.title}`} defaultValue={t.title} maxLength={120} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void rename(t, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocus.current = t.id; e.currentTarget.value = t.title; e.currentTarget.blur(); } }}/>
         </form>
         : <button aria-current={t.id === selected ? 'page' : undefined} className={'task-link ' + (t.id === selected ? 'active' : '')} onClick={() => { setSelected(t.id); setSidebar(false); }} onDoubleClick={() => { if (t.status !== 'deleting') setRenaming(t.id); }}><span className="task-title">{t.title}</span><span className="task-meta"><Status task={t}/><span className="task-time">{ago(t.updatedAt)}</span></span></button>}
         {t.review?.counts?.pending ? <span className="task-badge" title={`${t.review.counts.pending} changes to decide`}>{t.review.counts.pending}</span> : null}
@@ -426,7 +505,19 @@ function App() {
     {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label="Close task list" onClick={() => setSidebar(false)}/>}
     <main className="main" inert={narrow && sidebar}><header className="topbar">
       {(narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label="Show task list" title="Show task list" aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/></button>}
-      <div className="breadcrumb">{!mobile && <><span className="project-name" title={project?.name}>{project?.name || 'Papilot'}</span>{task && <span className="slash">/</span>}</>}{task ? <div className="task-identity"><h1 title={task.title}>{task.title}</h1><Status task={task}/></div> : mobile && <span className="project-name">{project?.name || 'Papilot'}</span>}</div>
+      <div className="breadcrumb">{!mobile && <><span className="project-name" title={project?.name}>{project?.name || 'Papilot'}</span>{(task || manuscriptOpen) && <span className="slash">/</span>}</>}{task ? <div className="task-identity"><h1 title={task.title}>{task.title}</h1><Status task={task}/></div>
+        : manuscriptOpen ? <div className="task-identity"><h1>Manuscript</h1><span className={'status ' + (manuscriptData.data?.build.status === 'failed' ? 'failed' : manuscriptData.data?.build.status === 'ready' ? 'idle' : 'building')}><i/>{!manuscriptData.data ? 'Loading' : manuscriptData.data.build.status === 'building' ? 'Compiling' : manuscriptData.data.build.status === 'failed' ? 'Build failed' : `Compiled ${ago(manuscriptData.data.build.builtAt || Date.now())} ago`.replace('now ago', 'just now')}</span></div>
+        : mobile && <span className="project-name">{project?.name || 'Papilot'}</span>}</div>
+      {manuscriptOpen && project && <>
+        <div className="task-state-actions">
+          <button className="icon-button" aria-label="Recompile manuscript" title="Recompile" onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={17}/></button>
+          {manuscriptData.data?.build.key && <a className="icon-button" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" aria-label="Open manuscript PDF" title="Open PDF"><Icon name="external" size={17}/></a>}
+        </div>
+        {mobile && <div className="view-selector" role="group" aria-label="Manuscript view">
+          <button aria-label="PDF" aria-pressed={manuscriptTab === 'pdf'} onClick={() => setManuscriptTab('pdf')}><Icon name="paper" size={16}/><span>PDF</span></button>
+          <button aria-label={projectGit?.files?.length ? `Git, ${projectGit.files.length} changed` : 'Git'} aria-pressed={manuscriptTab === 'git'} onClick={() => setManuscriptTab('git')}><Icon name="diff" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
+        </div>}
+      </>}
       {task && <>
         <div className="task-state-actions">
           {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>Retry deletion</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}><Icon name="refresh" size={14}/>Check status</button> : active && !conversationVisible ? <button className="button secondary compact" aria-label="Pause task" title="Pause Codex" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={pause}><Icon name="pause" size={14}/><span className="button-label">Pause</span></button> : task.error ? <button className="button secondary compact" onClick={() => { setMobileTab('conversation'); setLayout('conversation'); }}>View details</button> : null}
@@ -450,21 +541,20 @@ function App() {
           {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>Deletion is in progress</h2><p>This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} scale={pdfScale} tools={reviewTools}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? 'Building PDF review…' : 'No review yet'}</h2><p>{task.status === 'building' ? 'The review will appear when the build finishes.' : 'PDF changes will appear here after Codex finishes editing.'}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>Build review</button>}</div>}
           <ReviewFeedback task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError} onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>
         </section><Activity key={task.id} task={task} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} openReview={(mobile ? mobileTab === 'conversation' : layout === 'conversation') ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
+      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} tab={manuscriptTab}/>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>Opening your workspace</h1><p className="home-copy" role="status">{connectionError || 'Connecting to your papers and tasks…'}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>Retry connection</button>}</div></div>
       : project ? <div className="home"><div className="home-inner compose">
-          <div className="home-mark"><Icon name="plane" size={20}/></div>
-          <h1>What should Codex revise?</h1>
-          <Composer large autoFocus inputRef={newTaskInput} label="What should Codex do?" value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder="Describe the revision, what to preserve, and how to judge the result…"
+          <img className="home-logo" src={logo} alt=""/>
+          <h1>What are we revising next?</h1>
+          <Composer large autoFocus inputRef={newTaskInput} label="Describe the revision" value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder="Describe the revision, what to preserve, and how to judge the result…"
             footer={<div className="composer-options">
               <ChipSelect label="Paper" icon="paper" disabled={creating} value={project.id} onChange={setProjectId} options={state.projects.map(p => ({ value: p.id, label: p.name }))}/>
               <ChipSelect label="Codex model" disabled={creating} value={newModel} onChange={setNewModel} options={[{ value: '', label: 'Default model' }, ...state.runtime.models.map(m => ({ value: m.id, label: m.name }))]}/>
             </div>}
-            action={<button className="send-button" type="submit" aria-label="Create and start Codex" title="Start task (Enter)" disabled={creating || !newDraft.trim()} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+            action={<button className="send-button" type="submit" aria-label="Start task" title="Start task (Enter)" disabled={creating || !newDraft.trim()} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
           {createError && <p className="inline-error home-error" role="alert">{createError}</p>}
-          {!newDraft.trim() && <div className="suggestions">{suggestions.map(text => <button key={text} type="button" className="suggestion" onClick={() => { setNewDraft(text); newTaskInput.current?.focus(); }}>{text}</button>)}</div>}
-          <p className="home-hint">Each task edits its own Git worktree. Changes reach your manuscript only after you accept them in the PDF review.</p>
         </div></div>
-      : <div className="home"><div className="home-inner"><div className="home-mark"><Icon name="paper" size={20}/></div><h1>Add your first paper</h1><p className="home-copy">Connect a LaTeX Git repository on this host. Codex edits it in isolated worktrees, and you review every change as a PDF diff.</p><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>Add paper</button></div></div>}
+      : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>Add your first paper</h1><p className="home-copy">Connect a LaTeX Git repository on this host. An agent edits it in isolated worktrees, and you review every change as a PDF diff.</p><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>Add paper</button></div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}

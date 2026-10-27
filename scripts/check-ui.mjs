@@ -35,6 +35,9 @@ let reviewStarting = false;
 let deleteFailure = false;
 const deletions = [];
 const renames = [];
+const gitState = { branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false }] };
+const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true };
+const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
 const interruptions = [];
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
 await page.route('**/api/**', async route => {
@@ -50,6 +53,9 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items') && itemsFailure) return route.fulfill({ status: 503, json: { error: 'Conversation temporarily unavailable.' } });
   if (url.pathname.endsWith('/items') && history) return json({ items: history });
   if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'hello', taskId: task.id, type: 'assistant', text: 'The introduction is ready for review.', createdAt: 1 }] });
+  if (url.pathname.endsWith('/git')) return json(gitState);
+  if (url.pathname.endsWith('/manuscript')) return json({ git: gitState, build: manuscriptBuild });
+  if (url.pathname.includes('/manuscript/pages/')) return route.fulfill({ contentType: 'image/png', body: pixel });
   if (url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); renames.push({ id, ...body }); snapshot.tasks.find(t => t.id === id).title = body.title; return json(snapshot.tasks.find(t => t.id === id)); }
   if (url.pathname.endsWith('/interrupt')) { const id = url.pathname.split('/')[3]; interruptions.push(id); snapshot.tasks.find(t => t.id === id).status = 'interrupted'; return json({ ok: true }); }
   if (url.pathname.endsWith('/delete')) {
@@ -89,7 +95,7 @@ async function openDelete(title = task.title) {
 try {
   await page.goto(origin);
   await page.getByText('Connected', { exact: true }).waitFor();
-  await page.getByRole('heading', { name: 'What should Codex revise?' }).waitFor();
+  await page.getByRole('heading', { name: 'What are we revising next?' }).waitFor();
   assert.equal(await page.getByRole('alert').count(), 0);
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).waitFor();
@@ -112,13 +118,12 @@ try {
   await dialog.waitFor({ state: 'hidden' });
   assert.equal(await switcher.evaluate(el => el === document.activeElement), true);
   await page.getByRole('button', { name: 'New task', exact: true }).click();
-  const prompt = page.getByRole('textbox', { name: 'What should Codex do?' });
+  const prompt = page.getByRole('textbox', { name: 'Describe the revision' });
   await prompt.waitFor();
   assert.equal(await prompt.evaluate(el => el === document.activeElement), true);
-  assert.equal(await page.getByRole('button', { name: 'Create and start Codex' }).isDisabled(), true);
-  await page.getByRole('button', { name: 'Tighten the abstract', exact: true }).click();
-  assert.equal(await prompt.inputValue(), 'Tighten the abstract');
-  await prompt.fill('');
+  assert.equal(await page.getByRole('button', { name: 'Start task' }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'New task', exact: true }).getAttribute('aria-current'), 'page');
+  assert.equal(await page.getByText(/Proofread|Each task edits its own Git worktree/).count(), 0);
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   console.log('PASS: English UI, stale selection recovery, paper menu, modal focus containment, Escape, focus restoration, and the new-task composer');
   const views = page.locator('.view-selector');
@@ -145,6 +150,23 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await reviewOptions.evaluate(el => el === document.activeElement), true);
   console.log('PASS: Views select explicitly, PDF tools stay with the review, and menus support keyboard navigation');
+
+  const manuscriptLink = page.getByRole('button', { name: /^Manuscript/ });
+  await manuscriptLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
+  await manuscriptLink.click();
+  await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
+  assert.equal(await manuscriptLink.getAttribute('aria-current'), 'page');
+  await page.getByRole('img', { name: 'Page 2' }).waitFor({ state: 'attached' });
+  assert.equal(await page.getByRole('img', { name: /^Page \d$/ }).count(), 2);
+  const gitPanel = page.getByRole('complementary', { name: 'Git status' });
+  await gitPanel.getByText('main.tex', { exact: true }).waitFor();
+  await gitPanel.getByText('notes.md', { exact: true }).waitFor();
+  assert.match(await gitPanel.innerText(), /origin\/main · ↑1 ↓0/);
+  assert.equal(await page.getByRole('link', { name: 'Open manuscript PDF' }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
+  assert.equal(await page.title(), 'Example paper · Papilot');
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
+  await page.getByRole('heading', { name: task.title }).waitFor();
+  console.log('PASS: Each paper has a manuscript preview with its Git status');
 
   const divider = page.getByRole('separator', { name: 'Resize chat panel' });
   const chatPanel = page.getByRole('region', { name: 'Codex conversation', exact: true });
@@ -185,7 +207,7 @@ try {
   await page.locator('.home').getByRole('alert').waitFor();
   assert.equal(await prompt.inputValue(), 'Shorten the introduction.\nPreserve the technical content.');
   failCreate = false;
-  await page.getByRole('button', { name: 'Create and start Codex' }).click();
+  await page.getByRole('button', { name: 'Start task' }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
   assert.equal(creates.length, 2);
   assert.equal(creates[0].id, creates[1].id);
@@ -291,7 +313,7 @@ try {
   createResult = { ...secondTask, id: 'fixture-task-0003', title: 'A newly created task' };
   await page.getByRole('button', { name: 'New task', exact: true }).click();
   await prompt.fill(createResult.title + '\nKeep this new task selected.');
-  await page.getByRole('button', { name: 'Create and start Codex' }).click();
+  await page.getByRole('button', { name: 'Start task' }).click();
   await page.getByRole('heading', { name: createResult.title }).waitFor();
   releaseState();
   assert.equal(await page.locator('.task-link.active').innerText().then(text => text.includes(createResult.title)), true);
@@ -366,10 +388,16 @@ try {
     assert.equal(await page.getByRole('textbox', { name: 'Repository path' }).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('Escape');
     if (width === 390) {
+      await page.getByRole('button', { name: /^Manuscript/ }).click();
+      await page.getByRole('img', { name: 'Page 1' }).waitFor();
+      await page.getByRole('button', { name: 'Git, 2 changed' }).click();
+      await page.getByRole('complementary', { name: 'Git status' }).getByText('main.tex', { exact: true }).waitFor();
+      assert.equal(await page.getByRole('img', { name: 'Page 1' }).isVisible(), false);
+      await drawerToggle.click();
       await page.getByRole('button', { name: 'New task', exact: true }).click();
       await page.locator('.sidebar').waitFor({ state: 'hidden' });
       await prompt.fill('A task from the drawer\nKeep the mobile conversation visible.');
-      await page.getByRole('button', { name: 'Create and start Codex' }).click();
+      await page.getByRole('button', { name: 'Start task' }).click();
       await input.waitFor();
       assert.equal(await page.locator('.sidebar').isVisible(), false);
       assert.equal(await page.getByRole('button', { name: 'Chat (reply needed)', exact: true }).getAttribute('aria-pressed'), 'true');

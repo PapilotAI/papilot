@@ -1,10 +1,11 @@
 # Papilot
 
-A personal workspace for editing LaTeX papers with Codex and reviewing the resulting PDF changes. Run it on your host computer and continue from a desktop, tablet, or phone.
+A personal workspace for revising LaTeX papers with an AI agent (currently Codex) and reviewing the resulting PDF changes. Run it on your host computer and continue from a desktop, tablet, or phone.
 
 - Give each editing task an isolated Git worktree and a persistent Codex conversation.
 - Compare PDF changes, accept or reject edits, and send review feedback into the next turn.
 - Keep tasks and messages across browser sessions, with up to two Codex tasks running concurrently.
+- Preview each paper's manuscript as it is on disk, with its Git status.
 
 The interface, built-in messages, and documentation are in English. Codex also defaults to English updates and questions. Your manuscript, project names, comments, and conversation history retain their original language.
 
@@ -35,6 +36,10 @@ The bundled Codex CLI uses the host's normal Codex login/configuration. To sign 
 4. Use **Send feedback** below the PDF review to submit saved comments, or write further instructions in the conversation panel. Both actions include new review feedback. Sending comments opens the conversation on a phone, or the split view when reviewing on desktop, while preserving an unsent instruction draft.
 
 While Codex works, the composer shows a stop button that pauses the task; when the chat is hidden, **Pause** appears in the task header instead. The header also keeps status and recovery actions beside the selected task. Choose **Review**, **Split**, or **Chat** for the desktop workspace; choosing a view always shows that view, and the choice is saved in this browser. On phones, switch between **Review** and **Chat** in the header. PDF controls share the review toolbar with the viewer's progress, **Accept all** and **Reject all**: reading zoom, **Full PDF**, and **Review options** for a manual build or a separate review tab. **Accept all** and **Reject all** apply only to changes you have not decided yet; accepted, rejected and commented changes keep their state, and one undo reverses the whole batch. On phones, the current change's Accept, Reject and Comment bar sits at the bottom of the screen, menus open as bottom sheets, **Full PDF** is in **Review options**, and **Fit** crops the page margins so the text block fills the width. The zoom menu enlarges PDF strips; scroll horizontally to read enlarged content. Real-device keyboard and touch behavior still needs validation on iOS and Android.
+
+Select **Manuscript** under the paper in the sidebar to read the manuscript as it is on disk, including review changes you accepted but have not committed yet, beside its Git status: branch, upstream and ahead/behind counts, the last commit, and changed files with line counts. The sidebar shows a one-line summary of the same status. The preview recompiles when the working tree changes, keeping the previous pages visible meanwhile; **Recompile** retries a failed build and **Open PDF** opens the full PDF. A temporary Git index captures the working tree, so your index, branches and files are not touched. Builds reuse the review engine's cache in the repository's `.git/latex-review` folder, and rendered pages are stored under `.papilot/manuscripts`. On phones, switch between **PDF** and **Git** in the header.
+
+The interface follows the manuscript's typography: TeX Gyre Pagella and Inconsolata (bundled in `src/web/fonts` with their licenses), small-capital labels, and the same palette as the review viewer.
 
 **Send feedback** appears only while review comments have not reached Codex. Comments also go with any message you type, and the composer says how many will be included; pausing a queued message returns its comments to the unsent count. When only the chat is visible, a card at the end of the conversation announces a new review round and opens it. In **Split** view, drag the divider between the PDF and the chat to resize the chat; with the divider focused, the arrow keys resize it and Enter or a double-click resets it. The width is saved in this browser. Rename a task from its **Task actions** menu or by double-clicking it in the sidebar; Enter saves and Escape cancels. Each Codex reply has a **Copy** button, and the browser tab shows the selected task and how many tasks are waiting for your reply.
 

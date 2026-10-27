@@ -10,9 +10,11 @@ import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER } from './paths.ts';
 import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState } from './review.ts';
 import { authorize } from './security.ts';
 import { fullPaperPdf } from './pdf.ts';
+import { Manuscripts, gitStatus } from './manuscript.ts';
 
 const store = new Store(path.join(DATA, 'papilot.sqlite'));
 const workspace = new Workspace(store);
+const manuscripts = new Manuscripts();
 const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
 const csrf = randomBytes(32).toString('base64url');
 const equals = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
@@ -67,6 +69,20 @@ app.post<{ Params: { id: string } }>('/api/tasks/:id/reconcile', request => work
 app.post<{ Params: { id: string } }>('/api/tasks/:id/publish', request => {
   const task = store.task(request.params.id); if (['running', 'waiting_input', 'building'].includes(task.status)) throw new Error('This task is busy. Wait for it to finish or pause it first.');
   void workspace.publish(task.id); return { ok: true };
+});
+// The manuscript preview compiles each paper's working tree and reports its Git status.
+app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', request => manuscripts.state(request.params.id, store.project(request.params.id).path));
+app.get<{ Params: { id: string } }>('/api/projects/:id/git', request => gitStatus(store.project(request.params.id).path));
+app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', request => manuscripts.state(request.params.id, store.project(request.params.id).path, true));
+app.get<{ Params: { id: string; page: string }; Querystring: { key?: string } }>('/api/projects/:id/manuscript/pages/:page', async (request, reply) => {
+  store.project(request.params.id);
+  const png = await manuscripts.page(request.params.id, String(request.query.key || ''), Number(request.params.page));
+  return reply.type('image/png').header('Cache-Control', 'private, max-age=31536000, immutable').send(png);
+});
+app.get<{ Params: { id: string }; Querystring: { key?: string; download?: string } }>('/api/projects/:id/manuscript.pdf', (request, reply) => {
+  const project = store.project(request.params.id), pdf = manuscripts.pdf(project.id, String(request.query.key || ''));
+  const name = (project.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'manuscript') + '.pdf';
+  return reply.type('application/pdf').header('Content-Disposition', `${request.query.download === '1' ? 'attachment' : 'inline'}; filename="${name}"`).sendFile(path.basename(pdf), path.dirname(pdf), { cacheControl: false });
 });
 app.post<{ Params: { id: string } }>('/api/requests/:id', request => { workspace.answer(request.params.id, request.body as any); return { ok: true }; });
 
