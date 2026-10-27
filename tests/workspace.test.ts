@@ -871,3 +871,15 @@ test('a task runs on its own agent: turns, approvals and pausing go to that agen
     assert.equal(f.store.task(f.task.id).status, 'interrupted');
   } finally { f.close(); }
 });
+
+test('Antigravity is told to edit with its file tools, since it cannot run commands', () => {
+  const f = fixture();
+  try {
+    const codex = (f.workspace as any).instructions(f.task) as string;
+    const antigravity = (f.workspace as any).instructions({ ...f.task, agent: 'antigravity' }) as string;
+    assert.match(codex, /You may run tools in the task worktree/);
+    assert.match(antigravity, /^You are Antigravity running inside Papilot/);
+    assert.match(antigravity, /Shell commands are not available to you here.*file tools only/);
+    assert.doesNotMatch(antigravity, /You may run tools/);
+  } finally { f.close(); }
+});
