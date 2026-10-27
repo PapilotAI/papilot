@@ -6,7 +6,6 @@ import { EventBus, FindState, LinkTarget, PDFFindController, PDFLinkService, PDF
 import viewerStyles from 'pdfjs-dist/web/pdf_viewer.css?inline';
 import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { Annotation } from '../shared.ts';
-import { ActionMenu } from './action-menu.tsx';
 import { ChipSelect } from './chip-select.tsx';
 import { sendsMessage } from './composer.ts';
 import { Icon } from './icons.tsx';
@@ -321,11 +320,7 @@ export const PdfView = forwardRef<PdfHandle, {
 
   return <div className={'pdf-view' + (props.region ? ' marking' : '')}>
     <div className="pdf-toolbar" role="toolbar" aria-label="PDF controls">
-      <ActionMenu label="Contents" className="pdf-section" menuClassName="outline-menu" align="start" actions={props.outline.length
-        ? props.outline.map((item, index) => ({ id: String(index), label: item.title, hint: String(item.page), indent: Math.min(item.level, 4), checked: index === props.section, select: () => { props.onSection(index); void tools.current?.links.goToDestination(item.dest as string | unknown[]); } }))
-        : [{ label: 'This PDF has no bookmarks', disabled: true }]}>
-        <Icon name="list" size={16}/><span className="pdf-section-title">{section?.title || 'Contents'}</span><Icon name="chevronDown" size={14}/>
-      </ActionMenu>
+      <div className="pdf-section" title={section?.title}><span className="pdf-section-title">{section?.title || 'PDF'}</span></div>
       <div className="pdf-pager">
         <button type="button" className="icon-button" aria-label="Previous page" disabled={page <= 1} onClick={() => tools.current?.viewer.previousPage()}><Icon name="chevronUp" size={16}/></button>
         <input aria-label="Page number" inputMode="numeric" value={pageInput} onChange={e => setPageInput(e.target.value.replace(/\D/g, ''))} onFocus={e => e.currentTarget.select()} onBlur={() => setPageInput(String(page))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); goToPage(); e.currentTarget.blur(); } }}/>

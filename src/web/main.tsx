@@ -341,14 +341,18 @@ function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Ann
   </section>;
 }
 
-type ManuscriptPanel = 'pdf' | 'notes' | 'git';
+type ManuscriptPanel = 'pdf' | 'contents' | 'notes' | 'git';
 function ManuscriptView({ project, data, error, view, setView, region, setRegion, active, setActive, actions, onGit }: { onGit: (status: GitStatus) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
   const build = data?.build, notes = data?.annotations || [];
   const pdf = useRef<PdfHandle>(null);
   const [outline, setOutline] = useState<OutlineItem[]>([]), [section, setSection] = useState(-1);
   const numbered = notes.map((note, index) => ({ note, number: index + 1 }));
   const phone = () => window.matchMedia('(max-width: 680px)').matches;
-  const side = view === 'git' ? 'git' : 'notes';
+  const side = view === 'pdf' ? 'notes' : view;
+  function goTo(item: OutlineItem) {
+    if (phone()) setView('pdf');
+    requestAnimationFrame(() => pdf.current?.goTo(item));
+  }
   function show(note: Annotation) {
     setActive(note.id);
     if (phone()) setView('pdf');
@@ -363,12 +367,19 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
           onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('notes'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>Compiling the PDF…</h2><p>The first build of a paper can take a minute.</p></div>}
     </section>
-    <aside className="manuscript-side" aria-label="Notes and Git">
+    <aside className="manuscript-side" aria-label="Contents, Notes and Git">
       <div className="side-tabs" role="tablist" aria-label="PDF panels">
+        <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}>Contents</button>
         <button role="tab" aria-selected={side === 'notes'} onClick={() => setView('notes')}>Notes{notes.length > 0 && <span className="count">{notes.length}</span>}</button>
         <button role="tab" aria-selected={side === 'git'} onClick={() => setView('git')}>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
       </div>
-      {side === 'git' ? <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit}/> : <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>}
+      {side === 'contents' ? <nav className="contents-panel" aria-label="PDF contents">
+        {outline.length ? <ol>{outline.map((item, index) => <li key={index}>
+          <button type="button" aria-current={index === section ? 'location' : undefined} style={{ paddingLeft: 12 + Math.min(item.level, 4) * 14 }} onClick={() => goTo(item)}>
+            <span>{item.title}</span><span className="contents-page">{item.page}</span>
+          </button>
+        </li>)}</ol> : <p className="muted">{build?.key ? 'This PDF has no bookmarks.' : 'Contents will appear when the PDF is ready.'}</p>}
+      </nav> : side === 'git' ? <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit}/> : <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>}
     </aside>
   </div>;
 }
@@ -765,6 +776,7 @@ function App() {
         </div>
         {mobile && <div className="view-selector" role="group" aria-label="PDF view">
           <button aria-label="PDF" aria-pressed={manuscriptView === 'pdf'} onClick={() => setManuscriptView('pdf')}><Icon name="paper" size={16}/><span>PDF</span></button>
+          <button aria-label="Contents" aria-pressed={manuscriptView === 'contents'} onClick={() => { setManuscriptView('contents'); setRegion(false); }}><Icon name="list" size={16}/><span>Contents</span></button>
           <button aria-label={notes.length ? `Notes, ${notes.length}` : 'Notes'} aria-pressed={manuscriptView === 'notes'} onClick={() => { setManuscriptView('notes'); setRegion(false); }}><Icon name="notes" size={16}/><span>Notes</span>{notes.length ? <b className="view-count" aria-hidden="true">{notes.length}</b> : null}</button>
           <button aria-label={projectGit?.files?.length ? `Git, ${projectGit.files.length} changed` : 'Git'} aria-pressed={manuscriptView === 'git'} onClick={() => { setManuscriptView('git'); setRegion(false); }}><Icon name="diff" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
         </div>}

@@ -220,28 +220,23 @@ try {
   await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().waitFor();
   assert.equal(await pdfPages.count(), 2);
   assert.equal(await page.getByLabel('Page number').inputValue(), '1');
-  // Bookmarks fill the Contents menu in the toolbar and jump to their page; the side panel holds notes and Git.
-  assert.deepEqual((await page.getByRole('tablist', { name: 'PDF panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Notes', 'Git 2']);
-  await page.getByRole('button', { name: 'Contents', exact: true }).click();
-  assert.deepEqual((await page.getByRole('menuitemradio').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
-  await page.getByRole('menuitemradio', { name: /^Results/ }).click();
+  // Contents sits immediately before Notes and keeps the bookmarks beside the PDF.
+  assert.deepEqual((await page.getByRole('tablist', { name: 'PDF panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Contents', 'Notes', 'Git 2']);
+  await page.getByRole('tab', { name: 'Contents', exact: true }).click();
+  const contents = page.getByRole('navigation', { name: 'PDF contents' });
+  assert.deepEqual((await contents.getByRole('button').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
+  await contents.getByRole('button', { name: /^Results/ }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
   assert.equal(await page.locator('.pdf-section-title').innerText(), 'Results');
-  await page.getByRole('button', { name: 'Contents', exact: true }).click();
-  assert.equal(await page.getByRole('menuitemradio', { name: /^Results/ }).getAttribute('aria-checked'), 'true');
-  await page.keyboard.press('Escape');
+  assert.equal(await contents.getByRole('button', { name: /^Results/ }).getAttribute('aria-current'), 'location');
   await page.getByLabel('Page number').fill('1');
   await page.getByLabel('Page number').press('Enter');
   await page.waitForFunction(() => document.querySelector('.pdf-section-title').textContent === 'Introduction');
-  // Scrolling a long contents menu keeps it open; scrolling the page closes it.
-  await page.getByRole('button', { name: 'Contents', exact: true }).click();
-  const contentsMenu = page.getByRole('menu', { name: 'Contents', exact: true });
-  await contentsMenu.evaluate(menu => menu.dispatchEvent(new Event('scroll')));
-  assert.equal(await contentsMenu.isVisible(), true);
-  await page.locator('.pdf-container').evaluate(box => box.dispatchEvent(new Event('scroll')));
-  await contentsMenu.waitFor({ state: 'hidden' });
-  await page.getByRole('button', { name: 'Contents', exact: true }).click();
-  await page.getByRole('menuitemradio', { name: /^Method/ }).click();
+  assert.equal(await contents.isVisible(), true);
+  assert.equal(await contents.getByRole('button', { name: /^Introduction/ }).getAttribute('aria-current'), 'location');
+  await page.clock.runFor(200);
+  await page.screenshot({ path: 'test-results/contents-desktop.png', fullPage: true });
+  await contents.getByRole('button', { name: /^Method/ }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
   await page.getByRole('button', { name: 'Previous page', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '1');
@@ -268,6 +263,7 @@ try {
   await findBox.press('Escape');
   await findBox.waitFor({ state: 'hidden' });
   // Select text, write a note, cancel it, delete one, then send another.
+  await page.getByRole('tab', { name: 'Notes', exact: true }).click();
   const notesPanel = page.getByRole('region', { name: 'PDF notes' });
   // Where a word is printed, in page pixels, from the server's word places.
   const printed = async text => {
@@ -652,8 +648,14 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
       const toolbar = page.getByRole('toolbar', { name: 'PDF controls' });
       assert.equal(await toolbar.evaluate(el => el.scrollWidth <= el.clientWidth), true);
-      await toolbar.getByRole('button', { name: 'Contents', exact: true }).click();
-      await page.getByRole('menuitemradio', { name: /^Results/ }).click();
+      await page.getByRole('button', { name: 'Contents', exact: true }).click();
+      await page.getByRole('navigation', { name: 'PDF contents' }).waitFor();
+      assert.equal(await pdfPage.isVisible(), false);
+      assert.equal(await page.getByRole('button', { name: 'Contents', exact: true }).getAttribute('aria-pressed'), 'true');
+      await page.clock.runFor(200);
+      await page.screenshot({ path: 'test-results/contents-mobile.png', fullPage: true });
+      await page.getByRole('navigation', { name: 'PDF contents' }).getByRole('button', { name: /^Results/ }).click();
+      await pdfPage.waitFor();
       await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
       await page.getByRole('button', { name: 'Git, 2 changed' }).click();
       await page.getByRole('region', { name: 'Git status' }).getByText('main.tex', { exact: true }).waitFor();
