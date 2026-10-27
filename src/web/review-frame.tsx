@@ -11,39 +11,40 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
   doc.documentElement.style.setProperty('--papilot-tools', `${reserve}px`);
   const style = doc.createElement('style'); style.id = 'papilot-embed-style';
   style.textContent = `
-    :root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Noto Sans SC",system-ui,sans-serif;--accent:#356aa0;--comment:#356aa0;--frame:#f5f5f5;--line:#e5e5e5;--muted:#808080;--ink:#000;--head:#fafafa;font-size:14px}
-    button,.ghost,.status,.change-head .actions,.composer,.composer textarea,.composer button,.sheet,.banner,dialog{border-radius:0!important}
+    :root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Noto Sans SC",system-ui,sans-serif;--accent:#356aa0;--comment:#356aa0;--frame:#f3f3f1;--line:#e8e7e3;--muted:#8c8b85;--ink:#1b1b19;--head:#fafaf9;font-size:14px}
+    .banner{border-radius:10px}
     .bar{display:flex;align-items:center;height:44px;min-height:44px;padding:0 calc(var(--papilot-tools,0px) + 12px) 0 14px;gap:12px;flex-wrap:nowrap;overflow:hidden}
     .bar .overview-link,.bar .identity h1{display:none}
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
-    .bar .identity span{font:15px/1.3 var(--serif);font-variant-caps:small-caps;letter-spacing:.02em;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+    .bar .identity span{font-size:13px;font-weight:600;color:#55544f;overflow:hidden;text-overflow:ellipsis}
     .bar .meter{display:flex;order:initial;width:auto;font-size:13px}
     .bar .bar-end{margin-left:0;gap:6px}
-    .bar .ghost{font-size:13px;height:28px;padding:0 10px}
-    .bar .ghost:hover{text-decoration:none;background:#f2f2f2}
-    .bar .accept-all,.bar .reject-all{border-color:var(--line);background:#fff;box-shadow:none}
+    .bar .ghost{font-size:13px;font-weight:500;height:28px;padding:0 10px;border-radius:7px}
+    .bar .ghost:hover{text-decoration:none;background:#efefec}
+    .bar .accept-all,.bar .reject-all{border-color:#d6d5d0;background:#fff;box-shadow:0 1px 2px rgb(28 27 25/.06)}
     .bar .accept-all{color:var(--accept)}.bar .reject-all{color:var(--reject)}
-    .bar .ghost.round{width:28px;height:28px;padding:0}
+    .bar .ghost.round{width:28px;height:28px;padding:0;border-radius:50%}
     .bar .status{font-size:13px}
-    .sheet{box-shadow:0 1px 2px rgb(0 0 0/.06),0 6px 22px rgb(0 0 0/.07)}
+    .sheet{border-radius:4px;box-shadow:0 1px 2px rgb(28 27 25/.06),0 8px 24px rgb(28 27 25/.08)}
     .change-head{font-size:13px}.link{font-size:13px}
     /* The current change's decision bar: a solid toolbar with clear buttons. */
-    .change-head .actions{gap:3px;padding:3px;background:#fff;border:1px solid #c9c9c9;box-shadow:0 1px 2px rgb(0 0 0/.08)}
-    .change-head .actions button{height:28px;padding:0 12px;border:1px solid transparent;font-size:13.5px;font-weight:500;line-height:1}
-    .change-head .actions .nav{width:28px;padding:0;font-size:19px;font-weight:400;color:#3b3b3b}
+    .change-head .actions{gap:3px;padding:4px;background:#fff;border:1px solid #d6d5d0;border-radius:12px;box-shadow:0 1px 2px rgb(28 27 25/.06),0 4px 12px rgb(28 27 25/.06)}
+    .change-head .actions button{height:30px;padding:0 13px;border:1px solid transparent;border-radius:8px;font-size:13.5px;font-weight:500;line-height:1}
+    .change-head .actions .nav{width:30px;padding:0;font-size:19px;font-weight:400;color:#55544f}
+    .change-head .actions .nav:hover:not(:disabled){background:#efefec}
     .change-head .actions .nav:disabled{color:#cfcfcf;opacity:1}
-    .change-head .position{min-width:38px;font-size:12.5px;color:#3b3b3b;font-variant-numeric:tabular-nums}
+    .change-head .position{min-width:38px;font-size:12.5px;color:#55544f;font-variant-numeric:tabular-nums}
     .change-head .actions .accept{background:var(--accept);border-color:var(--accept);color:#fff}
     .change-head .actions .accept:hover:not(:disabled){background:#155c38;border-color:#155c38}
     .change-head .actions .reject{border-color:#e2bcc0;color:var(--reject)}
     .change-head .actions .reject:hover:not(:disabled){background:#fbf2f3;border-color:var(--reject)}
     .change-head .actions .comment{border-color:#c6d5e5;color:var(--comment)}
     .change-head .actions .comment:hover:not(:disabled){background:#f0f4f8;border-color:var(--comment)}
-    .change-head .actions .skip{border-color:#c9c9c9;color:#000}
-    .change-head .actions .skip:hover{background:#f2f2f2}
+    .change-head .actions .skip{border-color:#d6d5d0;color:#1b1b19}
+    .change-head .actions .skip:hover{background:#efefec}
     .change-head .complete{padding:0 10px;font-size:13.5px;color:var(--accept)}
-    .change-head .actions .undo{margin-left:3px;padding:0 10px;border:0;border-left:1px solid #e5e5e5;font-weight:400;color:#3b3b3b}
-    .change-head .actions .undo:hover:not(:disabled){background:#f2f2f2}
+    .change-head .actions .undo{margin-left:3px;padding:0 10px;font-weight:400;color:#55544f}
+    .change-head .actions .undo:hover:not(:disabled){background:#efefec}
     .change-head .actions .undo:disabled{color:#bdbdbd;opacity:1}
     .change-head .actions .accept:disabled,.change-head .actions .reject:disabled,.change-head .actions .comment:disabled{opacity:.4}
     #paper{--paper-top:14px;padding-top:14px}
@@ -72,8 +73,8 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
       .change-head{align-items:center;padding:4px 6px 4px 10px;gap:6px}.change-head .change-where{min-width:0}
       .change-head .link{min-height:36px;padding:0 6px}
       .change-head .dock{position:fixed;z-index:6;left:8px;right:8px;bottom:8px;margin:0}
-      .change-head .actions{width:100%;flex-wrap:nowrap;justify-content:space-between;gap:4px;padding:4px;border-color:#bdbdbd;box-shadow:0 2px 8px rgb(0 0 0/.14)}
-      .change-head .actions button{flex:1 1 auto;min-width:0;height:44px;padding:0 6px;font-size:15px}
+      .change-head .actions{width:100%;flex-wrap:nowrap;justify-content:space-between;gap:4px;padding:5px;border-radius:16px;border-color:#d6d5d0;box-shadow:0 2px 4px rgb(28 27 25/.05),0 10px 28px rgb(28 27 25/.16)}
+      .change-head .actions button{flex:1 1 auto;min-width:0;height:44px;padding:0 6px;border-radius:11px;font-size:15px}
       .change-head .actions .nav{flex:0 0 auto;width:32px;min-width:32px;padding:0}.change-head .position{min-width:30px;font-size:11.5px}
       .change-head .actions .undo{flex:0 0 auto;margin-left:0;padding:0 8px;font-size:14px}
       .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;bottom:70px;transform:none;max-height:calc(100% - 86px);overflow:auto}
