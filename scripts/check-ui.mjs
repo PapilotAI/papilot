@@ -119,8 +119,8 @@ async function openDelete(title = task.title) {
 
 try {
   await page.goto(origin);
-  await page.getByText('Connected', { exact: true }).waitFor();
   await page.getByRole('heading', { name: 'What are we revising next?' }).waitFor();
+  assert.equal(await page.locator('.sidebar-footer').count(), 0, 'A connected, idle host shows no status line');
   assert.equal(await page.getByRole('alert').count(), 0);
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).waitFor();
@@ -691,6 +691,8 @@ try {
   await page.locator('.tool-group > summary').click();
   assert.deepEqual(await work.locator('.tool-label').allInnerTexts(), ['cat main.tex', 'git status --short', 'Edited main.tex']);
   assert.equal(await page.locator('.thread > .tool-item .tool-label').innerText(), 'latexmk -pdf main.tex');
+  // A task on the host's default model names that model.
+  assert.equal(await page.locator('.model-chip').innerText(), 'Fast model');
   console.log('PASS: Notes sent from the PDF read as notes, and consecutive commands fold into one line with task paths');
 
   history = Array.from({ length: 120 }, (_, i) => ({ id: `history-${i}`, taskId: task.id, type: 'assistant', text: `Message ${i}: A detailed review of the argument.`, createdAt: i + 1 }));
