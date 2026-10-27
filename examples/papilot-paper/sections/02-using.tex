@@ -10,16 +10,14 @@ Papilot needs Node.js~22.22 or later, Git, a \TeX{} installation with
 \texttt{latexmk} and \texttt{synctex}, and a signed-in agent on the host. It is
 installed and started with
 \begin{verbatim}
-npm ci
-npm run setup:review
-npm run build
-npm start
+npm install -g papilot
+papilot
 \end{verbatim}
 and then opened at \texttt{http://127.0.0.1:4317}. \emph{Add paper} registers a
 \LaTeX{} Git repository on the host; later papers are added and switched from
 the paper menu at the top of the sidebar. A repository must have at least one
 commit and compile with \texttt{latexmk}; a custom root document is named in a
-\texttt{.latex-review.json} file. To try a sample first, \texttt{npm run demo}
+\texttt{.latex-review.json} file. To try a sample first, \texttt{papilot demo}
 copies this paper into a separate repository and registers it as
 \emph{Papilot paper}, without touching any existing manuscript.
 
@@ -107,7 +105,7 @@ request (\cref{sec:security}):
 \begin{verbatim}
 export PAPILOT_PUBLIC_ORIGIN=https://your-mac.your-tailnet.ts.net:8443
 export PAPILOT_TAILSCALE_LOGIN=your-tailscale-login
-npm run service:install
+papilot service install
 tailscale serve --bg --https=8443 http://127.0.0.1:4317
 \end{verbatim}
 A background service starts Papilot after login, restarts it if it exits and
@@ -123,7 +121,7 @@ tunnel serves the same purpose.
 Variable & Purpose \\
 \midrule
 \texttt{PAPILOT\_PORT} & local HTTP port, $4317$ by default \\
-\texttt{PAPILOT\_DATA} & state and generated example, \texttt{.papilot} by default \\
+\texttt{PAPILOT\_DATA} & state and generated example, \texttt{\textasciitilde/.papilot} by default \\
 \texttt{PAPILOT\_CODEX\_BIN} & Codex executable \\
 \texttt{ANTHROPIC\_API\_KEY} & API key for Claude tasks \\
 \texttt{PAPILOT\_AGY\_BIN} & Antigravity command line \\

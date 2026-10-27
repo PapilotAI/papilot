@@ -1,0 +1,7 @@
+# npm reads this instead of .gitignore. Papilot's package ships the built viewer in dist/.
+.DS_Store
+node_modules/
+.cache/
+coverage/
+test-results/
+playwright-report/
