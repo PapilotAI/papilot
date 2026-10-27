@@ -37,6 +37,8 @@ const deletions = [];
 const renames = [];
 const gitState = { branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false }] };
 const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true };
+let annotations = [];
+const noteSends = [];
 const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
 const interruptions = [];
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
@@ -54,7 +56,19 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items') && history) return json({ items: history });
   if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'hello', taskId: task.id, type: 'assistant', text: 'The introduction is ready for review.', createdAt: 1 }] });
   if (url.pathname.endsWith('/git')) return json(gitState);
-  if (url.pathname.endsWith('/manuscript')) return json({ git: gitState, build: manuscriptBuild });
+  if (url.pathname.endsWith('/manuscript')) return json({ git: gitState, build: manuscriptBuild, annotations });
+  if (url.pathname.endsWith('/annotations/send')) {
+    const body = route.request().postDataJSON(); noteSends.push(body);
+    const created = { ...task, id: body.id, name: 'p-notes', title: 'Address a PDF note', status: 'queued', review: null };
+    snapshot.tasks.push(created); annotations = [];
+    return json(created);
+  }
+  if (url.pathname.endsWith('/delete') && url.pathname.includes('/annotations/')) { const id = url.pathname.split('/')[5]; annotations = annotations.filter(note => note.id !== id); return json({ ok: true }); }
+  if (url.pathname.endsWith('/annotations')) {
+    const body = route.request().postDataJSON();
+    const note = { id: `note-${annotations.length + 1}`, projectId: task.projectId, ...body, quote: 'The marked fixture sentence.', source: { file: 'main.tex', lines: [10, 12] }, createdAt: 1 };
+    annotations.push(note); return json(note);
+  }
   if (url.pathname.includes('/manuscript/pages/')) return route.fulfill({ contentType: 'image/png', body: pixel });
   if (url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); renames.push({ id, ...body }); snapshot.tasks.find(t => t.id === id).title = body.title; return json(snapshot.tasks.find(t => t.id === id)); }
   if (url.pathname.endsWith('/interrupt')) { const id = url.pathname.split('/')[3]; interruptions.push(id); snapshot.tasks.find(t => t.id === id).status = 'interrupted'; return json({ ok: true }); }
@@ -158,7 +172,49 @@ try {
   assert.equal(await manuscriptLink.getAttribute('aria-current'), 'page');
   await page.getByRole('img', { name: 'Page 2' }).waitFor({ state: 'attached' });
   assert.equal(await page.getByRole('img', { name: /^Page \d$/ }).count(), 2);
-  const gitPanel = page.getByRole('complementary', { name: 'Git status' });
+  // Mark a region on page 1 with the mouse, write a note, delete it, then send a new one.
+  const firstPage = await page.getByRole('img', { name: 'Page 1' }).boundingBox();
+  const markRegion = async () => {
+    await page.mouse.move(firstPage.x + firstPage.width * 0.2, firstPage.y + firstPage.height * 0.3);
+    await page.mouse.down();
+    await page.mouse.move(firstPage.x + firstPage.width * 0.7, firstPage.y + firstPage.height * 0.36, { steps: 5 });
+    await page.mouse.up();
+    const note = page.getByRole('textbox', { name: 'Note for the agent' });
+    assert.equal(await note.evaluate(el => el === document.activeElement), true);
+    return note;
+  };
+  let noteBox = await markRegion();
+  await noteBox.press('Escape');
+  await noteBox.waitFor({ state: 'hidden' });
+  assert.equal(annotations.length, 0);
+  noteBox = await markRegion();
+  await noteBox.fill('Shorten this sentence.');
+  await noteBox.press('Enter');
+  const notesPanel = page.getByRole('region', { name: 'PDF notes' });
+  await notesPanel.getByText('Page 1 · main.tex:10–12', { exact: true }).waitFor();
+  await notesPanel.getByText('The marked fixture sentence.', { exact: true }).waitFor();
+  assert.equal(annotations[0].page, 0);
+  assert.equal(annotations[0].key, 'fixture');
+  assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
+  await page.getByRole('button', { name: 'Note 1: Shorten this sentence.' }).waitFor();
+  await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
+  await page.getByRole('button', { name: 'Note 1: Shorten this sentence.' }).waitFor({ state: 'hidden' });
+  assert.equal(annotations.length, 0);
+  noteBox = await markRegion();
+  await noteBox.fill('Define the operator here.');
+  await page.getByRole('button', { name: 'Add note', exact: true }).click();
+  await notesPanel.getByText('Define the operator here.', { exact: true }).waitFor();
+  await notesPanel.getByRole('button', { name: 'Send 1 note to the agent' }).click();
+  await page.getByRole('heading', { name: 'Address a PDF note' }).waitFor();
+  assert.equal(noteSends.length, 1);
+  assert.ok(noteSends[0].id.length >= 16);
+  const notesTask = noteSends[0].id;
+  snapshot.tasks = snapshot.tasks.filter(t => t.id !== notesTask);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await manuscriptLink.click();
+  await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
+  await page.getByRole('tab', { name: /^Git/ }).click();
+  const gitPanel = page.getByRole('region', { name: 'Git status' });
   await gitPanel.getByText('main.tex', { exact: true }).waitFor();
   await gitPanel.getByText('notes.md', { exact: true }).waitFor();
   assert.match(await gitPanel.innerText(), /origin\/main · ↑1 ↓0/);
@@ -166,7 +222,7 @@ try {
   assert.equal(await page.title(), 'Example paper · Papilot');
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
-  console.log('PASS: Each paper has a manuscript preview with its Git status');
+  console.log('PASS: Each paper has a manuscript preview with its Git status; PDF notes are marked, deleted and sent as one task');
 
   const divider = page.getByRole('separator', { name: 'Resize chat panel' });
   const chatPanel = page.getByRole('region', { name: 'Codex conversation', exact: true });
@@ -391,7 +447,7 @@ try {
       await page.getByRole('button', { name: /^Manuscript/ }).click();
       await page.getByRole('img', { name: 'Page 1' }).waitFor();
       await page.getByRole('button', { name: 'Git, 2 changed' }).click();
-      await page.getByRole('complementary', { name: 'Git status' }).getByText('main.tex', { exact: true }).waitFor();
+      await page.getByRole('region', { name: 'Git status' }).getByText('main.tex', { exact: true }).waitFor();
       assert.equal(await page.getByRole('img', { name: 'Page 1' }).isVisible(), false);
       await drawerToggle.click();
       await page.getByRole('button', { name: 'New task', exact: true }).click();

@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { gitStatus, parseStatus, workingTree } from '../src/server/manuscript.ts';
+import { annotationTask, gitStatus, parseStatus, parseSynctex, workingTree } from '../src/server/manuscript.ts';
+import type { Annotation } from '../src/shared.ts';
 
 test('Git status parsing keeps branch counts, renames, untracked files and line counts', () => {
   const output = ['# branch.oid abc', '# branch.head main', '# branch.upstream origin/main', '# branch.ab +2 -1', '1 .M N... 100644 100644 100644 a b chapters/intro file.tex', '2 R. N... 100644 100644 100644 a b R100 new.tex', 'old.tex', '? notes.md', ''].join('\0');
@@ -45,4 +46,20 @@ test('the working tree snapshot includes uncommitted edits without touching the 
       assert.equal(status.head?.subject, 'Initial');
     }).finally(() => fs.rmSync(root, { recursive: true, force: true }));
   } catch (error) { fs.rmSync(root, { recursive: true, force: true }); throw error; }
+});
+
+test('SyncTeX output resolves to a normalized source path and line', () => {
+  const output = 'SyncTeX result begin\nOutput:/b/src/build/main.pdf\nInput:/b/src/./chapters/intro.tex\nLine:21\nColumn:-1\nSyncTeX result end\n';
+  assert.deepEqual(parseSynctex(output), { input: '/b/src/chapters/intro.tex', line: 21 });
+  assert.equal(parseSynctex('SyncTeX result begin\nSyncTeX result end\n'), null);
+});
+
+test('PDF notes become one task that quotes each marked region and its source', () => {
+  const note = (comment: string, extra: Partial<Annotation> = {}): Annotation => ({ id: comment, projectId: 'p', key: 'k', page: 1, rect: [0, 0, 1, 1], comment, quote: 'The operator applies a compatible revision.', source: { file: 'main.tex', lines: [31, 33] }, createdAt: 1, ...extra });
+  const single = annotationTask([note('Define "compatible" here.')]);
+  assert.equal(single.title, 'Define "compatible" here.');
+  assert.match(single.instructions, /1\. Page 2 · main\.tex lines 31–33\n   Marked text: "The operator applies a compatible revision\."\n   Note: Define "compatible" here\./);
+  const many = annotationTask([note('Shorten.'), note('Redraw this figure.', { quote: '', source: { file: 'figures.tex', lines: [5, 5] }, page: 3 })]);
+  assert.equal(many.title, 'Address 2 PDF notes');
+  assert.match(many.instructions, /2\. Page 4 · figures\.tex line 5\n   Marked region: a figure, equation or other non-text area\n   Note: Redraw this figure\./);
 });

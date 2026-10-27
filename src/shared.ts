@@ -18,4 +18,5 @@ export interface Snapshot { projects: Project[]; tasks: Task[]; requests: Pendin
 export interface GitFile { path: string; status: string; staged: boolean; lines?: [number, number] }
 export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null }
 export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean }
-export interface Manuscript { git: GitStatus; build: ManuscriptBuild }
+export interface Annotation { id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; comment: string; quote: string; source: { file: string; lines: [number, number] } | null; createdAt: number; taskId?: string }
+export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }

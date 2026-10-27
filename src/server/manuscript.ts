@@ -7,7 +7,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { DATA, ENGINE } from './paths.ts';
-import type { GitStatus, ManuscriptBuild } from '../shared.ts';
+import type { Annotation, GitStatus, ManuscriptBuild } from '../shared.ts';
 
 const exec = promisify(execFile);
 async function git(root: string, args: string[], env: NodeJS.ProcessEnv = {}) {
@@ -68,16 +68,35 @@ export async function workingTree(root: string) {
 }
 
 async function engine() {
-  const [{ Builder }, { Repo }, { loadProject }, { mupdf }] = await Promise.all([
+  const [{ Builder }, { Repo }, { loadProject }, { mupdf, PdfDocument, containsCenter }] = await Promise.all([
     import(pathToFileURL(path.join(ENGINE, 'src/core/build.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/git.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/render/pdf.ts')).href),
   ]);
-  return { Builder, Repo, loadProject, mupdf };
+  return { Builder, Repo, loadProject, mupdf, PdfDocument, containsCenter };
 }
 
-interface Build { tree: string; status: ManuscriptBuild['status']; key?: string; pdf?: string; pages?: [number, number][]; builtAt?: number; error?: string }
+// `synctex edit` maps a PDF position (big points from the top-left corner) to
+// the source file and line that produced it.
+export function parseSynctex(output: string) {
+  const input = /^Input:(.*)$/m.exec(output)?.[1], line = Number(/^Line:(\d+)$/m.exec(output)?.[1]);
+  return input && line > 0 ? { input: path.normalize(input), line } : null;
+}
+
+// One task for every pending note, quoting the marked text and its source so
+// the agent can find each place without guessing.
+export function annotationTask(notes: Annotation[]) {
+  const first = notes[0].comment.split('\n').find(line => line.trim())?.trim() || 'Address a PDF note';
+  const title = notes.length === 1 ? (first.length > 80 ? first.slice(0, 79).replace(/\s+\S*$/, '') + '…' : first) : `Address ${notes.length} PDF notes`;
+  const items = notes.map((note, index) => {
+    const where = [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : ''].filter(Boolean).join(' · ');
+    return [`${index + 1}. ${where}`, note.quote ? `   Marked text: "${note.quote}"` : '   Marked region: a figure, equation or other non-text area', `   Note: ${note.comment.trim().replace(/\n/g, '\n   ')}`].join('\n');
+  });
+  return { title, instructions: `Revise the manuscript according to these notes the author marked on the compiled PDF. Each note gives the page, the marked text, and the LaTeX source of that region when SyncTeX could locate it. Change only what the notes ask for.\n\n${items.join('\n\n')}` };
+}
+
+interface Build { tree: string; status: ManuscriptBuild['status']; key?: string; pdf?: string; root?: string; sourceDir?: string; pages?: [number, number][]; builtAt?: number; error?: string }
 
 export class Manuscripts extends EventEmitter {
   private builds = new Map<string, Build>();
@@ -98,14 +117,14 @@ export class Manuscripts extends EventEmitter {
     void (async () => {
       try {
         const { Builder, Repo, loadProject, mupdf } = await engine();
-        const result = await new Builder(loadProject(root), new Repo(root)).build(tree, ['full']);
+        const project = loadProject(root), result = await new Builder(project, new Repo(root)).build(tree, ['full']);
         const document = mupdf.Document.openDocument(fs.readFileSync(result.pdf), 'application/pdf');
         const pages: [number, number][] = [];
         for (let i = 0; i < document.countPages(); i++) { const [x0, y0, x1, y1] = document.loadPage(i).getBounds(); pages.push([Math.round(x1 - x0), Math.round(y1 - y0)]); }
         const key = createHash('sha256').update(result.key + result.pdf).digest('hex').slice(0, 16);
         if (this.builds.get(projectId) !== build) return;
         this.documents.set(projectId, { key, document });
-        Object.assign(build, { status: 'ready', key, pdf: result.pdf, pages, builtAt: Date.now(), error: undefined });
+        Object.assign(build, { status: 'ready', key, pdf: result.pdf, root: result.root, sourceDir: project.source_dir || '', pages, builtAt: Date.now(), error: undefined });
       } catch (error) {
         if (this.builds.get(projectId) !== build) return;
         const detail = error as { message?: string; details?: string[] };
@@ -120,6 +139,35 @@ export class Manuscripts extends EventEmitter {
     const build = this.builds.get(projectId);
     if (!build?.pdf || build.key !== key) throw Object.assign(new Error('This manuscript preview is out of date. Refresh it and try again.'), { statusCode: 404 });
     return build.pdf;
+  }
+
+  // A note keeps the text under the marked region and its LaTeX source, so it
+  // stays meaningful after the manuscript changes and the preview recompiles.
+  async locate(projectId: string, key: string, page: number, rect: [number, number, number, number]) {
+    const pdf = this.pdf(projectId, key), build = this.builds.get(projectId)!;
+    const { PdfDocument, containsCenter } = await engine();
+    const document = new PdfDocument(pdf);
+    try {
+      if (!Number.isInteger(page) || page < 0 || page >= document.length) throw Object.assign(new Error('That page is not part of the manuscript.'), { statusCode: 400 });
+      const current = document.page(page), [x0, y0, x1, y1] = current.bounds, width = x1 - x0, height = y1 - y0;
+      const clip = [x0 + rect[0] * width, y0 + rect[1] * height, x0 + rect[2] * width, y0 + rect[3] * height];
+      const quote = current.text(clip).replace(/\uFFFD/g, '').replace(/\s+/g, ' ').trim().slice(0, 600);
+      const points: [number, number][] = [];
+      for (const line of current.lines as { chars: { rect: number[] }[] }[]) {
+        const char = line.chars.find(c => containsCenter(clip, c.rect));
+        if (char && points.length < 12) points.push([(char.rect[0] + char.rect[2]) / 2, (char.rect[1] + char.rect[3]) / 2]);
+      }
+      if (!points.length) points.push([(clip[0] + clip[2]) / 2, (clip[1] + clip[3]) / 2]);
+      const hits = (await Promise.all(points.map(([x, y]) => exec('synctex', ['edit', '-o', `${page + 1}:${(x - x0).toFixed(1)}:${(y - y0).toFixed(1)}:${pdf}`]).then(r => parseSynctex(r.stdout), () => null)))).filter(hit => hit !== null);
+      const files = new Map<string, number[]>();
+      for (const hit of hits) {
+        const relative = path.relative(build.root || path.dirname(hit.input), hit.input);
+        const file = path.posix.join(build.sourceDir || '', (relative.startsWith('..') ? path.basename(hit.input) : relative).split(path.sep).join('/'));
+        files.set(file, [...(files.get(file) || []), hit.line]);
+      }
+      const [file, lines] = [...files].sort((a, b) => b[1].length - a[1].length)[0] || [];
+      return { quote, source: file && lines ? { file, lines: [Math.min(...lines), Math.max(...lines)] as [number, number] } : null };
+    } finally { document.close(); }
   }
 
   // Pages render on demand at twice the PDF resolution and stay cached per build.

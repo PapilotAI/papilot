@@ -1,6 +1,6 @@
 import { StrictMode, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { GitStatus, Manuscript, PendingRequest, Project, Snapshot, Task, TimelineItem } from '../shared.ts';
+import type { Annotation, GitStatus, Manuscript, PendingRequest, Project, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { ComposerDraft, sendsMessage, taskTitle } from './composer.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -172,10 +172,9 @@ function gitSummary(git: GitStatus | null) {
 }
 
 function GitPanel({ git }: { git: GitStatus | null }) {
-  if (!git || !Array.isArray(git.files)) return <aside className="git-panel" aria-label="Git status"><p className="muted">Reading Git status…</p></aside>;
+  if (!git || !Array.isArray(git.files)) return <section className="git-panel" aria-label="Git status"><p className="muted">Reading Git status…</p></section>;
   const statusNames: Record<string, string> = { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied', U: 'Conflict', '?': 'Untracked', T: 'Type changed' };
-  return <aside className="git-panel" aria-label="Git status">
-    <h2 className="panel-label">Git</h2>
+  return <section className="git-panel" aria-label="Git status">
     <dl className="git-facts">
       <dt>Branch</dt><dd><code>{git.branch || 'detached HEAD'}</code>{git.upstream && <span className="muted"> · {git.upstream}{git.ahead || git.behind ? ` · ↑${git.ahead} ↓${git.behind}` : ' · up to date'}</span>}</dd>
       {git.head && <><dt>Commit</dt><dd><code>{git.head.hash}</code> {git.head.subject}<span className="muted"> · {ago(git.head.date)} ago</span></dd></>}
@@ -186,20 +185,103 @@ function GitPanel({ git }: { git: GitStatus | null }) {
       <span className="git-path">{file.path}</span>
       {file.lines && <span className="git-lines"><ins>+{file.lines[0]}</ins> <del>−{file.lines[1]}</del></span>}
     </li>)}</ul> : <p className="muted">Working tree clean.</p>}
-  </aside>;
+  </section>;
 }
 
-function ManuscriptView({ project, data, error, tab }: { project: Project; data: Manuscript | null; error: string; tab: 'pdf' | 'git' }) {
-  const build = data?.build;
-  return <div className={'manuscript show-' + tab}>
+type Rect = [number, number, number, number];
+const percent = ([x0, y0, x1, y1]: Rect): React.CSSProperties => ({ left: `${x0 * 100}%`, top: `${y0 * 100}%`, width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%` });
+const unit = (value: number) => Math.min(1, Math.max(0, value));
+function noteWhere(note: Annotation) { return `Page ${note.page + 1}` + (note.source ? ` · ${note.source.file}:${note.source.lines[0]}${note.source.lines[1] !== note.source.lines[0] ? `–${note.source.lines[1]}` : ''}` : ''); }
+
+function NoteEditor({ rect, onSave, onCancel }: { rect: Rect; onSave: (comment: string) => Promise<void>; onCancel: () => void }) {
+  const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  async function save() {
+    if (!text.trim() || busy) return;
+    setBusy(true); setError('');
+    try { await onSave(text.trim()); } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false); }
+  }
+  // Open below the marked region, or above it when the region ends near the bottom of the page.
+  const below = rect[3] < 0.75;
+  return <form className="note-editor" style={{ left: `min(${rect[0] * 100}%, calc(100% - min(340px, 100%)))`, ...(below ? { top: `calc(${rect[3] * 100}% + 8px)` } : { bottom: `calc(${(1 - rect[1]) * 100}% + 8px)` }) }} onPointerDown={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); void save(); }}>
+    <textarea autoFocus aria-label="Note for the agent" placeholder="What should change here?" rows={3} value={text} readOnly={busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } else if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); void save(); } }}/>
+    {error && <p className="inline-error" role="alert">{error}</p>}
+    <div className="button-row"><button type="button" className="button secondary compact" disabled={busy} onClick={onCancel}>Cancel</button><button className="button primary compact" disabled={busy || !text.trim()}>{busy ? 'Adding…' : 'Add note'}</button></div>
+  </form>;
+}
+
+// A page image with its notes. A mouse can mark a region at any time; touch
+// marks only in Annotate mode so that swiping still scrolls the document.
+function PageFrame({ index, size, src, notes, drawing, active, onCreate, onSelect }: { index: number; size: [number, number]; src: string; notes: { note: Annotation; number: number }[]; drawing: boolean; active: string; onCreate: (page: number, rect: Rect, comment: string) => Promise<void>; onSelect: (note: Annotation) => void }) {
+  const frame = useRef<HTMLDivElement>(null), origin = useRef<[number, number] | null>(null), draftRef = useRef<Rect | null>(null);
+  const [draft, updateDraft] = useState<Rect | null>(null), [editing, setEditing] = useState(false);
+  const setDraft = (value: Rect | null) => { draftRef.current = value; updateDraft(value); };
+  const point = (event: React.PointerEvent): [number, number] => { const box = frame.current!.getBoundingClientRect(); return [unit((event.clientX - box.left) / box.width), unit((event.clientY - box.top) / box.height)]; };
+  const cancel = () => { setDraft(null); setEditing(false); };
+  return <div ref={frame} className="page-frame" data-page={index} style={{ aspectRatio: `${size[0]}/${size[1]}` }}
+    onPointerDown={e => {
+      if (editing || (e.pointerType === 'mouse' ? e.button !== 0 : !drawing)) return;
+      e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId);
+      const p = point(e); origin.current = p; setDraft([p[0], p[1], p[0], p[1]]);
+    }}
+    onPointerMove={e => { const start = origin.current; if (!start) return; const p = point(e); setDraft([Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])]); }}
+    onPointerUp={() => {
+      if (!origin.current) return;
+      origin.current = null;
+      const current = draftRef.current;
+      if (current && (current[2] - current[0] > 0.015 || current[3] - current[1] > 0.01)) setEditing(true); else setDraft(null);
+    }}
+    onPointerCancel={() => { origin.current = null; cancel(); }}>
+    <img className="page" loading={index < 2 ? 'eager' : 'lazy'} decoding="async" draggable={false} width={size[0]} height={size[1]} alt={`Page ${index + 1}`} src={src}/>
+    {notes.map(({ note, number }) => <button key={note.id} type="button" className={'note-box' + (active === note.id ? ' active' : '')} style={percent(note.rect)} aria-label={`Note ${number}: ${note.comment}`} title={note.comment} onPointerDown={e => e.stopPropagation()} onClick={() => onSelect(note)}><span className="note-tag" aria-hidden="true">{number}</span></button>)}
+    {draft && <div className="note-box draft" style={percent(draft)}/>}
+    {draft && editing && <NoteEditor rect={draft} onCancel={cancel} onSave={async comment => { await onCreate(index, draft, comment); cancel(); }}/>}
+  </div>;
+}
+
+interface NoteActions { add: (page: number, rect: Rect, comment: string) => Promise<void>; remove: (note: Annotation) => void; send: () => void; sending: boolean; model: string; setModel: (value: string) => void; models: { id: string; name: string }[] }
+
+function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void }) {
+  const list = useRef<HTMLOListElement>(null);
+  useEffect(() => { if (active) list.current?.querySelector(`[data-note="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active]);
+  return <section className="notes-panel" aria-label="PDF notes">
+    {notes.length ? <ol ref={list} className="note-list">{notes.map((note, index) => <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
+      <div className="note-head"><button type="button" className="note-number" aria-label={`Show note ${index + 1} on the page`} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}</span><button type="button" className="icon-button" aria-label={`Delete note ${index + 1}`} title="Delete note" onClick={() => actions.remove(note)}><Icon name="close" size={14}/></button></div>
+      {note.quote && <blockquote>{note.quote}</blockquote>}
+      <p>{note.comment}</p>
+      {note.key !== currentKey && <small className="muted">Marked on an earlier version of the PDF.</small>}
+    </li>)}</ol>
+      : <p className="muted notes-empty">{touch() ? 'Tap Annotate, then drag' : 'Drag'} across the PDF to mark text or a figure, then describe the change. All notes go to the agent as one task.</p>}
+    <div className="notes-send">
+      <ChipSelect label="Codex model" disabled={actions.sending} value={actions.model} onChange={actions.setModel} options={[{ value: '', label: 'Default model' }, ...actions.models.map(m => ({ value: m.id, label: m.name }))]}/>
+      <button type="button" className="button primary" disabled={!notes.length || actions.sending} onClick={actions.send}>{actions.sending ? 'Sending…' : `Send ${notes.length || ''} ${notes.length === 1 ? 'note' : 'notes'} to the agent`.replace('  ', ' ')}</button>
+    </div>
+  </section>;
+}
+
+function ManuscriptView({ project, data, error, view, setView, drawing, active, setActive, actions }: { project: Project; data: Manuscript | null; error: string; view: 'pdf' | 'notes' | 'git'; setView: (view: 'pdf' | 'notes' | 'git') => void; drawing: boolean; active: string; setActive: (id: string) => void; actions: NoteActions }) {
+  const build = data?.build, notes = data?.annotations || [];
+  const numbered = notes.map((note, index) => ({ note, number: index + 1 }));
+  function show(note: Annotation) {
+    setActive(note.id);
+    if (view !== 'pdf' && window.matchMedia('(max-width: 680px)').matches) setView('pdf');
+    requestAnimationFrame(() => document.querySelector(`.page-frame[data-page="${note.page}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+  }
+  return <div className={'manuscript show-' + view + (drawing ? ' drawing' : '')}>
     <section className="manuscript-pages" aria-label="Manuscript preview" aria-busy={!build || build.status === 'building'}>
       {error && <div className="manuscript-note error" role="alert">{error}</div>}
       {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>The manuscript did not compile.</strong><pre>{build.error}</pre></div>}
       {build?.status === 'building' && build.pages && <div className="manuscript-note">Compiling the latest changes…</div>}
-      {build?.pages?.length ? <div className="pages">{build.pages.map(([width, height], index) => <img key={`${build.key}-${index}`} className="page" loading={index < 2 ? 'eager' : 'lazy'} decoding="async" width={width} height={height} alt={`Page ${index + 1}`} src={`/api/projects/${project.id}/manuscript/pages/${index}?key=${build.key}`}/>)}</div>
+      {drawing && <div className="manuscript-note">Drag across the page to mark a region.</div>}
+      {build?.pages?.length ? <div className="pages">{build.pages.map((size, index) => <PageFrame key={`${build.key}-${index}`} index={index} size={size} src={`/api/projects/${project.id}/manuscript/pages/${index}?key=${build.key}`} notes={numbered.filter(item => item.note.page === index && item.note.key === build.key)} drawing={drawing} active={active} onCreate={actions.add} onSelect={note => { setActive(note.id); if (!window.matchMedia('(max-width: 680px)').matches) setView('notes'); }}/>)}</div>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>Compiling the manuscript…</h2><p>The first build of a paper can take a minute.</p></div>}
     </section>
-    <GitPanel git={data?.git || null}/>
+    <aside className="manuscript-side" aria-label="Notes and Git">
+      <div className="side-tabs" role="tablist" aria-label="Manuscript panels">
+        <button role="tab" aria-selected={view !== 'git'} onClick={() => setView('notes')}>Notes{notes.length > 0 && <span className="count">{notes.length}</span>}</button>
+        <button role="tab" aria-selected={view === 'git'} onClick={() => setView('git')}>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
+      </div>
+      {view === 'git' ? <GitPanel git={data?.git || null}/> : <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>}
+    </aside>
   </div>;
 }
 
@@ -248,7 +330,12 @@ function App() {
     refocus.current = '';
   }, [renaming]);
   const [page, setPage] = useState<'home' | 'manuscript'>('home');
-  const [manuscriptTab, setManuscriptTab] = useState<'pdf' | 'git'>('pdf');
+  const [manuscriptView, setManuscriptView] = useState<'pdf' | 'notes' | 'git'>('pdf');
+  const [drawing, setDrawing] = useState(false);
+  const [activeNote, setActiveNote] = useState('');
+  const [notesModel, setNotesModel] = useState('');
+  const [sendingNotes, setSendingNotes] = useState(false);
+  const notesTaskId = useRef(uuid());
   const [manuscript, setManuscript] = useState<{ projectId: string; data: Manuscript | null; error: string }>({ projectId: '', data: null, error: '' });
   const [git, setGit] = useState<{ projectId: string; status: GitStatus | null }>({ projectId: '', status: null });
   const building = useRef(false);
@@ -456,6 +543,31 @@ function App() {
   }, [project?.id, manuscriptOpen]);
   const projectGit = git.projectId === project?.id ? git.status : null;
   const manuscriptData = manuscript.projectId === project?.id ? manuscript : { data: null, error: '' };
+  const notes = manuscriptData.data?.annotations || [];
+  const withNotes = (update: (list: Annotation[]) => Annotation[]) => setManuscript(current => current.data ? { ...current, data: { ...current.data, annotations: update(current.data.annotations || []) } } : current);
+  const noteActions: NoteActions = {
+    async add(page, rect, comment) {
+      if (!project || !manuscriptData.data?.build.key) throw new Error('Wait for the manuscript to compile.');
+      const note = await api<Annotation>(`/projects/${project.id}/annotations`, { key: manuscriptData.data.build.key, page, rect, comment });
+      withNotes(list => [...list, note]); setActiveNote(note.id); setDrawing(false);
+    },
+    remove(note) {
+      if (!project) return;
+      withNotes(list => list.filter(item => item.id !== note.id));
+      void api(`/projects/${project.id}/annotations/${note.id}/delete`, {}).catch(e => { reportError(e); void loadManuscript(project.id); });
+    },
+    // The task ID is kept until sending succeeds, so a retry cannot create a second task.
+    async send() {
+      if (!project || sendingNotes) return;
+      setSendingNotes(true);
+      try {
+        const created = await api<Task>(`/projects/${project.id}/annotations/send`, { id: notesTaskId.current, model: notesModel });
+        notesTaskId.current = uuid(); withNotes(() => []); setSelected(created.id); setMobileTab('conversation'); setLayout('split');
+        await refresh(true);
+      } catch (e) { reportError(e); } finally { setSendingNotes(false); }
+    },
+    sending: sendingNotes, model: notesModel, setModel: setNotesModel, models: state?.runtime.models || [],
+  };
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
   useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, project?.name]);
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
@@ -510,12 +622,19 @@ function App() {
         : mobile && <span className="project-name">{project?.name || 'Papilot'}</span>}</div>
       {manuscriptOpen && project && <>
         <div className="task-state-actions">
-          <button className="icon-button" aria-label="Recompile manuscript" title="Recompile" onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={17}/></button>
-          {manuscriptData.data?.build.key && <a className="icon-button" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" aria-label="Open manuscript PDF" title="Open PDF"><Icon name="external" size={17}/></a>}
+          {touch() && <button className={'icon-button annotate-toggle' + (drawing ? ' active' : '')} aria-label="Annotate" aria-pressed={drawing} title="Mark a region on the PDF" onClick={() => { setDrawing(value => !value); setManuscriptView('pdf'); }}><Icon name="pencil" size={17}/></button>}
+          {mobile ? <ActionMenu label="Manuscript options" actions={[
+            { label: 'Recompile', icon: 'refresh', select: () => void loadManuscript(project.id, true) },
+            ...(manuscriptData.data?.build.key ? [{ label: 'Open PDF', icon: 'external', href: `/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}` }] : []),
+          ]}/> : <>
+            <button className="icon-button" aria-label="Recompile manuscript" title="Recompile" onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={17}/></button>
+            {manuscriptData.data?.build.key && <a className="icon-button" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" aria-label="Open manuscript PDF" title="Open PDF"><Icon name="external" size={17}/></a>}
+          </>}
         </div>
         {mobile && <div className="view-selector" role="group" aria-label="Manuscript view">
-          <button aria-label="PDF" aria-pressed={manuscriptTab === 'pdf'} onClick={() => setManuscriptTab('pdf')}><Icon name="paper" size={16}/><span>PDF</span></button>
-          <button aria-label={projectGit?.files?.length ? `Git, ${projectGit.files.length} changed` : 'Git'} aria-pressed={manuscriptTab === 'git'} onClick={() => setManuscriptTab('git')}><Icon name="diff" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
+          <button aria-label="PDF" aria-pressed={manuscriptView === 'pdf'} onClick={() => setManuscriptView('pdf')}><Icon name="paper" size={16}/><span>PDF</span></button>
+          <button aria-label={notes.length ? `Notes, ${notes.length}` : 'Notes'} aria-pressed={manuscriptView === 'notes'} onClick={() => { setManuscriptView('notes'); setDrawing(false); }}><Icon name="notes" size={16}/><span>Notes</span>{notes.length ? <b className="view-count" aria-hidden="true">{notes.length}</b> : null}</button>
+          <button aria-label={projectGit?.files?.length ? `Git, ${projectGit.files.length} changed` : 'Git'} aria-pressed={manuscriptView === 'git'} onClick={() => { setManuscriptView('git'); setDrawing(false); }}><Icon name="diff" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
         </div>}
       </>}
       {task && <>
@@ -541,7 +660,7 @@ function App() {
           {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>Deletion is in progress</h2><p>This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} scale={pdfScale} tools={reviewTools}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? 'Building PDF review…' : 'No review yet'}</h2><p>{task.status === 'building' ? 'The review will appear when the build finishes.' : 'PDF changes will appear here after Codex finishes editing.'}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>Build review</button>}</div>}
           <ReviewFeedback task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError} onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>
         </section><Activity key={task.id} task={task} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} openReview={(mobile ? mobileTab === 'conversation' : layout === 'conversation') ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} tab={manuscriptTab}/>
+      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} drawing={drawing} active={activeNote} setActive={setActiveNote} actions={noteActions}/>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>Opening your workspace</h1><p className="home-copy" role="status">{connectionError || 'Connecting to your papers and tasks…'}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>Retry connection</button>}</div></div>
       : project ? <div className="home"><div className="home-inner compose">
           <img className="home-logo" src={logo} alt=""/>

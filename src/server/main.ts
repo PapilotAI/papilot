@@ -3,14 +3,14 @@ import { registerFrontend } from './frontend.ts';
 import compress from '@fastify/compress';
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Store } from './store.ts';
 import { Workspace } from './workspace.ts';
 import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER } from './paths.ts';
 import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState } from './review.ts';
 import { authorize } from './security.ts';
 import { fullPaperPdf } from './pdf.ts';
-import { Manuscripts, gitStatus } from './manuscript.ts';
+import { Manuscripts, annotationTask, gitStatus } from './manuscript.ts';
 
 const store = new Store(path.join(DATA, 'papilot.sqlite'));
 const workspace = new Workspace(store);
@@ -71,9 +71,30 @@ app.post<{ Params: { id: string } }>('/api/tasks/:id/publish', request => {
   void workspace.publish(task.id); return { ok: true };
 });
 // The manuscript preview compiles each paper's working tree and reports its Git status.
-app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', request => manuscripts.state(request.params.id, store.project(request.params.id).path));
+app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));
 app.get<{ Params: { id: string } }>('/api/projects/:id/git', request => gitStatus(store.project(request.params.id).path));
-app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', request => manuscripts.state(request.params.id, store.project(request.params.id).path, true));
+app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path, true)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));
+// Notes marked on the manuscript PDF become one agent task when sent.
+app.post<{ Params: { id: string } }>('/api/projects/:id/annotations', async request => {
+  const project = store.project(request.params.id), b = request.body as any;
+  const rect = Array.isArray(b.rect) && b.rect.length === 4 && b.rect.every((v: unknown) => typeof v === 'number' && v >= 0 && v <= 1) ? b.rect as [number, number, number, number] : null;
+  if (!rect || rect[2] <= rect[0] || rect[3] <= rect[1]) throw new Error('Mark a region on the page first.');
+  const comment = string(b.comment, 'Note', 4000), key = string(b.key, 'Preview key', 64), page = Number(b.page);
+  const { quote, source } = await manuscripts.locate(project.id, key, page, rect);
+  return store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect, comment, quote, source, createdAt: Date.now() });
+});
+app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/delete', request => { store.deleteAnnotation(store.project(request.params.id).id, request.params.note); return { ok: true }; });
+app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', async request => {
+  const project = store.project(request.params.id), b = request.body as any, id = string(b.id, 'Task ID', 64);
+  const existing = store.tasks().find(task => task.id === id);
+  if (existing) return existing;
+  const notes = store.annotations(project.id).filter(note => !note.taskId);
+  if (!notes.length) throw new Error('Mark a region on the PDF and add a note first.');
+  const { title, instructions } = annotationTask(notes);
+  const task = await workspace.createTask({ id, projectId: project.id, title, instructions, model: typeof b.model === 'string' ? b.model : undefined });
+  for (const note of notes) store.saveAnnotation({ ...note, taskId: task.id });
+  return task;
+});
 app.get<{ Params: { id: string; page: string }; Querystring: { key?: string } }>('/api/projects/:id/manuscript/pages/:page', async (request, reply) => {
   store.project(request.params.id);
   const png = await manuscripts.page(request.params.id, String(request.query.key || ''), Number(request.params.page));
