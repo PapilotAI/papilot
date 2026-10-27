@@ -34,23 +34,26 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     .change-head .link{display:inline-flex;align-items:center;height:28px;padding:0 8px;border-radius:7px;color:#525252;font-weight:500}
     .change-head .link:hover{background:#ebebeb;color:var(--ink);text-decoration:none}
     .change-head .link.active{background:#eff6ff;color:var(--accent);text-decoration:none}
-    /* Decision buttons follow the workspace buttons: one blue primary action,
-       white secondary ones, and colour only in their small icons. On phones the
-       bar is a solid toolbar at the bottom. */
+    /* Decision buttons are plain text actions like the rest of the header
+       (Copy reference, LaTeX, Undo): a coloured icon says what each does, and
+       hovering tints it green, red or blue. On phones the bar is a solid
+       toolbar at the bottom. */
     :root{--icon-check:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>");--icon-cross:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M18 6 6 18M6 6l12 12'/></svg>");--icon-comment:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><path d='M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z'/></svg>")}
     .change-head .actions .accept::before,.change-head .actions .reject::before,.change-head .actions .comment::before,.bar .accept-all::before,.bar .reject-all::before{content:"";flex:none;width:13px;height:13px;background:currentColor;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
     .change-head .actions .accept,.bar .accept-all{--icon:var(--icon-check)}.change-head .actions .reject,.bar .reject-all{--icon:var(--icon-cross)}.change-head .actions .comment{--icon:var(--icon-comment)}
-    .change-head .actions .reject::before,.bar .reject-all::before{background:var(--reject)}.change-head .actions .comment::before{background:var(--accent)}.bar .accept-all::before{background:var(--accept)}
+    .change-head .actions .accept::before,.bar .accept-all::before{background:var(--accept)}.change-head .actions .reject::before,.bar .reject-all::before{background:var(--reject)}.change-head .actions .comment::before{background:var(--accent)}
     .change-head .actions{gap:3px;padding:4px;background:#fff;border:1px solid #d6d6d6;border-radius:12px;box-shadow:0 1px 2px rgb(0 0 0/.06),0 4px 12px rgb(0 0 0/.06)}
     .change-head .actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 11px;border:1px solid transparent;border-radius:7px;font-size:13px;font-weight:500;line-height:1;transition:background-color .15s,border-color .15s}
     .change-head .actions .nav{width:28px;padding:0;font-size:19px;font-weight:400;color:#525252}
     .change-head .actions .nav:hover:not(:disabled){background:#ebebeb}
     .change-head .actions .nav:disabled{color:#cfcfcf;opacity:1}
     .change-head .position{min-width:38px;font-size:12.5px;color:#525252;font-variant-numeric:tabular-nums}
-    .change-head .actions .accept{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 1px 2px rgb(0 0 0/.06)}
-    .change-head .actions .accept:hover:not(:disabled){background:#1d4ed8;border-color:#1d4ed8}
-    .change-head .actions .reject,.change-head .actions .comment,.change-head .actions .skip{background:#fff;border-color:#d6d6d6;color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0/.06)}
-    .change-head .actions .reject:hover:not(:disabled),.change-head .actions .comment:hover:not(:disabled),.change-head .actions .skip:hover{background:#fafafa;border-color:#c4c4c4}
+    .change-head .actions .accept,.change-head .actions .reject,.change-head .actions .comment,.change-head .actions .skip{background:transparent;color:var(--ink)}
+    .change-head .actions .accept:hover:not(:disabled){background:#e8f6ee;color:var(--accept)}
+    .change-head .actions .reject:hover:not(:disabled){background:#fdeeee;color:var(--reject)}
+    .change-head .actions .comment:hover:not(:disabled){background:#eaf1fe;color:var(--accent)}
+    .change-head .actions .skip:hover{background:#ebebeb}
+    .change-head .actions button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
     .change-head .complete{display:inline-flex;align-items:center;gap:6px;padding:0 8px;font-size:13px;font-weight:500;color:var(--accept)}
     .change-head .complete::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
     .change-head .actions .undo{margin-left:3px;padding:0 9px;font-weight:400;color:#525252}
