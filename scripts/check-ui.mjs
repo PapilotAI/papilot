@@ -39,7 +39,7 @@ const gitState = { branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0,
 const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true };
 let annotations = [];
 const noteSends = [];
-const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
+const fixturePdf = fs.readFileSync('tests/fixtures/outline.pdf');
 const interruptions = [];
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
 await page.route('**/api/**', async route => {
@@ -66,10 +66,10 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/delete') && url.pathname.includes('/annotations/')) { const id = url.pathname.split('/')[5]; annotations = annotations.filter(note => note.id !== id); return json({ ok: true }); }
   if (url.pathname.endsWith('/annotations')) {
     const body = route.request().postDataJSON();
-    const note = { id: `note-${annotations.length + 1}`, projectId: task.projectId, ...body, quote: 'The marked fixture sentence.', source: { file: 'main.tex', lines: [10, 12], excerpt: 'The marked \\emph{fixture} sentence.' }, createdAt: 1 };
+    const note = { id: `note-${annotations.length + 1}`, projectId: task.projectId, quote: 'The marked fixture sentence.', ...body, source: { file: 'main.tex', lines: [10, 12], excerpt: 'The marked \\emph{fixture} sentence.' }, createdAt: 1 };
     annotations.push(note); return json(note);
   }
-  if (url.pathname.includes('/manuscript/pages/')) return route.fulfill({ contentType: 'image/png', body: pixel });
+  if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fixturePdf });
   if (url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); renames.push({ id, ...body }); snapshot.tasks.find(t => t.id === id).title = body.title; return json(snapshot.tasks.find(t => t.id === id)); }
   if (url.pathname.endsWith('/interrupt')) { const id = url.pathname.split('/')[3]; interruptions.push(id); snapshot.tasks.find(t => t.id === id).status = 'interrupted'; return json({ ok: true }); }
   if (url.pathname.endsWith('/delete')) {
@@ -165,45 +165,101 @@ try {
   assert.equal(await reviewOptions.evaluate(el => el === document.activeElement), true);
   console.log('PASS: Views select explicitly, PDF tools stay with the review, and menus support keyboard navigation');
 
-  const manuscriptLink = page.getByRole('button', { name: /^Manuscript/ });
-  await manuscriptLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
-  await manuscriptLink.click();
-  await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
-  assert.equal(await manuscriptLink.getAttribute('aria-current'), 'page');
-  await page.getByRole('img', { name: 'Page 2' }).waitFor({ state: 'attached' });
-  assert.equal(await page.getByRole('img', { name: /^Page \d$/ }).count(), 2);
-  // Mark a region on page 1 with the mouse, write a note, delete it, then send a new one.
-  const firstPage = await page.getByRole('img', { name: 'Page 1' }).boundingBox();
-  const markRegion = async () => {
-    await page.mouse.move(firstPage.x + firstPage.width * 0.2, firstPage.y + firstPage.height * 0.3);
+  const pdfLink = page.getByRole('button', { name: /^PDF/ });
+  await pdfLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
+  await pdfLink.click();
+  await page.getByRole('heading', { name: 'PDF', exact: true }).waitFor();
+  assert.equal(await pdfLink.getAttribute('aria-current'), 'page');
+  const pdfPages = page.locator('.pdfViewer .page');
+  await page.locator('.textLayer span').filter({ hasText: 'Fixture sentence' }).first().waitFor();
+  assert.equal(await pdfPages.count(), 2);
+  assert.equal(await page.getByLabel('Page number').inputValue(), '1');
+  // Bookmarks fill the Contents panel and jump to their page.
+  const contents = page.getByRole('region', { name: 'Contents', exact: true });
+  assert.deepEqual((await contents.getByRole('button').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
+  await contents.getByRole('button', { name: /^Results/ }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
+  assert.equal(await page.locator('.pdf-section-title').innerText(), 'Results');
+  assert.equal(await contents.getByRole('button', { name: /^Results/ }).getAttribute('aria-current'), 'location');
+  await page.getByLabel('Page number').fill('1');
+  await page.getByLabel('Page number').press('Enter');
+  await page.waitForFunction(() => document.querySelector('.pdf-section-title').textContent === 'Introduction');
+  await page.getByRole('button', { name: 'Contents', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: /^Method/ }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
+  await page.getByRole('button', { name: 'Previous page', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '1');
+  // Zoom steps away from fit width and returns to it; the choice is remembered.
+  const zoom = page.getByRole('combobox', { name: 'Zoom', exact: true });
+  assert.equal(await zoom.inputValue(), 'page-width');
+  const width = (await pdfPages.first().boundingBox()).width;
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await page.waitForFunction(() => /^[\d.]+$/.test(document.querySelector('select[aria-label="Zoom"]').value));
+  assert.ok((await pdfPages.first().boundingBox()).width > width);
+  await zoom.selectOption('page-width');
+  await page.waitForFunction(() => document.querySelector('select[aria-label="Zoom"]').value === 'page-width');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:pdf-zoom')), 'page-width');
+  // Find runs across every page.
+  await page.locator('.pdf-container').focus();
+  await page.keyboard.press('ControlOrMeta+f');
+  const findBox = page.getByRole('textbox', { name: 'Search the PDF' });
+  assert.equal(await findBox.evaluate(el => el === document.activeElement), true);
+  await findBox.fill('operator');
+  await page.locator('.pdf-find-count').filter({ hasText: '1 of 1' }).waitFor();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
+  await findBox.fill('nowhere in the fixture');
+  await page.locator('.pdf-find-count').filter({ hasText: 'No matches' }).waitFor();
+  await findBox.press('Escape');
+  await findBox.waitFor({ state: 'hidden' });
+  // Select text, write a note, cancel it, delete one, then send another.
+  const notesPanel = page.getByRole('region', { name: 'PDF notes' });
+  const selectText = async () => {
+    await page.getByLabel('Page number').fill('1');
+    await page.getByLabel('Page number').press('Enter');
+    const span = page.locator('.textLayer span').filter({ hasText: 'Fixture sentence' }).first();
+    await span.scrollIntoViewIfNeeded();
+    const box = await span.boundingBox();
+    await page.mouse.move(box.x + 1, box.y + box.height / 2);
     await page.mouse.down();
-    await page.mouse.move(firstPage.x + firstPage.width * 0.7, firstPage.y + firstPage.height * 0.36, { steps: 5 });
+    await page.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 6 });
     await page.mouse.up();
+    await page.getByRole('button', { name: 'Add note', exact: true }).click();
     const note = page.getByRole('textbox', { name: 'Note for the agent' });
     assert.equal(await note.evaluate(el => el === document.activeElement), true);
     return note;
   };
-  let noteBox = await markRegion();
+  let noteBox = await selectText();
   await noteBox.press('Escape');
   await noteBox.waitFor({ state: 'hidden' });
   assert.equal(annotations.length, 0);
-  noteBox = await markRegion();
+  noteBox = await selectText();
   await noteBox.fill('Shorten this sentence.');
   await noteBox.press('Enter');
-  const notesPanel = page.getByRole('region', { name: 'PDF notes' });
-  await notesPanel.getByText('Page 1 · main.tex:10–12', { exact: true }).waitFor();
   await notesPanel.getByText('The marked \\emph{fixture} sentence.', { exact: true }).waitFor();
   assert.equal(annotations[0].page, 0);
   assert.equal(annotations[0].key, 'fixture');
-  assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
+  assert.match(annotations[0].quote, /^Fixture sentence/);
+  assert.ok(annotations[0].rects.length >= 1 && annotations[0].rects.every(([x0, y0, x1, y1]) => x0 < x1 && y0 < y1 && y1 < 0.5));
   await page.getByRole('button', { name: 'Note 1: Shorten this sentence.' }).waitFor();
+  assert.ok(await page.locator('.note-mark').count() >= 1);
   await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
   await page.getByRole('button', { name: 'Note 1: Shorten this sentence.' }).waitFor({ state: 'hidden' });
   assert.equal(annotations.length, 0);
-  noteBox = await markRegion();
+  // A region marks a figure or equation that has no text to select.
+  await page.getByRole('button', { name: 'Mark region', exact: true }).click();
+  const firstPage = await pdfPages.first().boundingBox();
+  await page.mouse.move(firstPage.x + firstPage.width * 0.2, firstPage.y + firstPage.height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(firstPage.x + firstPage.width * 0.7, firstPage.y + firstPage.height * 0.36, { steps: 5 });
+  await page.mouse.up();
+  noteBox = page.getByRole('textbox', { name: 'Note for the agent' });
+  assert.equal(await noteBox.evaluate(el => el === document.activeElement), true);
   await noteBox.fill('Define the operator here.');
   await page.getByRole('button', { name: 'Add note', exact: true }).click();
-  await notesPanel.getByText('Define the operator here.', { exact: true }).waitFor();
+  await notesPanel.getByText('Page 1 · main.tex:10–12', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Mark region', exact: true }).getAttribute('aria-pressed'), 'false');
+  assert.equal(annotations[0].rects, undefined);
+  assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
   await notesPanel.getByRole('button', { name: 'Send 1 note to the agent' }).click();
   await page.getByRole('heading', { name: 'Address a PDF note' }).waitFor();
   assert.equal(noteSends.length, 1);
@@ -211,8 +267,8 @@ try {
   const notesTask = noteSends[0].id;
   snapshot.tasks = snapshot.tasks.filter(t => t.id !== notesTask);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await manuscriptLink.click();
-  await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
+  await pdfLink.click();
+  await page.getByRole('heading', { name: 'PDF', exact: true }).waitFor();
   await page.getByRole('tab', { name: /^Git/ }).click();
   const gitPanel = page.getByRole('region', { name: 'Git status' });
   await gitPanel.getByText('main.tex', { exact: true }).waitFor();
@@ -222,11 +278,11 @@ try {
   assert.match(gitText, /Tracking origin\/main/);
   assert.match(gitText, /Draft the introduction\s+abc1234/);
   assert.equal(await gitPanel.getByLabel('Untracked').innerText(), 'U');
-  assert.equal(await page.getByRole('link', { name: 'Open manuscript PDF' }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
+  assert.equal(await page.getByRole('link', { name: 'Open the PDF file' }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
   assert.equal(await page.title(), 'Example paper · Papilot');
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
-  console.log('PASS: Each paper has a manuscript preview with its Git status; PDF notes are marked, deleted and sent as one task');
+  console.log('PASS: Each paper has a PDF view with contents, paging, zoom, find and Git status; text and region notes are added, deleted and sent as one task');
 
   const divider = page.getByRole('separator', { name: 'Resize chat panel' });
   const chatPanel = page.getByRole('region', { name: 'Codex conversation', exact: true });
@@ -448,11 +504,20 @@ try {
     assert.equal(await page.getByRole('textbox', { name: 'Repository path' }).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('Escape');
     if (width === 390) {
-      await page.getByRole('button', { name: /^Manuscript/ }).click();
-      await page.getByRole('img', { name: 'Page 1' }).waitFor();
+      await page.getByRole('button', { name: /^PDF/ }).click();
+      const pdfPage = page.locator('.pdfViewer .page').first();
+      await page.locator('.textLayer span').first().waitFor();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
+      const toolbar = page.getByRole('toolbar', { name: 'PDF controls' });
+      assert.equal(await toolbar.evaluate(el => el.scrollWidth <= el.clientWidth), true);
+      await toolbar.getByRole('button', { name: 'Contents', exact: true }).click();
+      await page.getByRole('menuitemradio', { name: /^Results/ }).click();
+      await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
       await page.getByRole('button', { name: 'Git, 2 changed' }).click();
       await page.getByRole('region', { name: 'Git status' }).getByText('main.tex', { exact: true }).waitFor();
-      assert.equal(await page.getByRole('img', { name: 'Page 1' }).isVisible(), false);
+      assert.equal(await pdfPage.isVisible(), false);
+      await page.getByRole('button', { name: 'PDF', exact: true }).click();
+      await pdfPage.waitFor();
       await drawerToggle.click();
       await page.getByRole('button', { name: 'New task', exact: true }).click();
       await page.locator('.sidebar').waitFor({ state: 'hidden' });

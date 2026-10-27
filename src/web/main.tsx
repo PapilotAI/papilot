@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { StrictMode, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Annotation, GitStatus, Manuscript, PendingRequest, Project, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { ComposerDraft, sendsMessage, taskTitle } from './composer.ts';
@@ -11,6 +11,10 @@ import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { Markdown } from './markdown.tsx';
 import logo from './logo.png';
+import { ChipSelect } from './chip-select.tsx';
+import type { OutlineItem, PdfHandle, Rect } from './pdf-view.tsx';
+// pdf.js is large, so the PDF view loads the first time it opens.
+const PdfView = lazy(() => import('./pdf-view.tsx').then(module => ({ default: module.PdfView })));
 import './style.css';
 
 let token = '';
@@ -58,13 +62,6 @@ function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, aut
     <textarea ref={input} rows={1} aria-label={label} maxLength={20000} placeholder={placeholder} value={value} readOnly={readOnly} onChange={e => onChange(e.target.value)} onKeyDown={e => { if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); onSubmit(); } }}/>
     <div className="composer-footer">{footer}{action}</div>
   </form>;
-}
-
-// A compact chip that opens the native picker. The transparent select keeps a
-// 16px font so iOS does not zoom the page when it is tapped.
-function ChipSelect({ label, value, options, onChange, disabled, icon, className = '' }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean; icon?: string; className?: string }) {
-  return <label className={'chip-select ' + className} title={label}>{icon && <Icon name={icon} size={14}/>}<span className="chip-value">{options.find(option => option.value === value)?.label ?? value}</span>
-    <select aria-label={label} disabled={disabled} value={value} onChange={e => onChange(e.target.value)}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
 function RequestCard({ request, answerDrafts, onDone }: { request: PendingRequest; answerDrafts: Map<string, Record<string, string>>; onDone: () => void }) {
@@ -195,57 +192,9 @@ function GitPanel({ git }: { git: GitStatus | null }) {
   </section>;
 }
 
-type Rect = [number, number, number, number];
-const percent = ([x0, y0, x1, y1]: Rect): React.CSSProperties => ({ left: `${x0 * 100}%`, top: `${y0 * 100}%`, width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%` });
-const unit = (value: number) => Math.min(1, Math.max(0, value));
 function noteWhere(note: Annotation) { return `Page ${note.page + 1}` + (note.source ? ` · ${note.source.file}:${note.source.lines[0]}${note.source.lines[1] !== note.source.lines[0] ? `–${note.source.lines[1]}` : ''}` : ''); }
 
-function NoteEditor({ rect, onSave, onCancel }: { rect: Rect; onSave: (comment: string) => Promise<void>; onCancel: () => void }) {
-  const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
-  async function save() {
-    if (!text.trim() || busy) return;
-    setBusy(true); setError('');
-    try { await onSave(text.trim()); } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false); }
-  }
-  // Open below the marked region, or above it when the region ends near the bottom of the page.
-  const below = rect[3] < 0.75;
-  return <form className="note-editor" style={{ left: `min(${rect[0] * 100}%, calc(100% - min(340px, 100%)))`, ...(below ? { top: `calc(${rect[3] * 100}% + 8px)` } : { bottom: `calc(${(1 - rect[1]) * 100}% + 8px)` }) }} onPointerDown={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); void save(); }}>
-    <textarea autoFocus aria-label="Note for the agent" placeholder="What should change here?" rows={3} value={text} readOnly={busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } else if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); void save(); } }}/>
-    {error && <p className="inline-error" role="alert">{error}</p>}
-    <div className="button-row"><button type="button" className="button secondary compact" disabled={busy} onClick={onCancel}>Cancel</button><button className="button primary compact" disabled={busy || !text.trim()}>{busy ? 'Adding…' : 'Add note'}</button></div>
-  </form>;
-}
-
-// A page image with its notes. A mouse can mark a region at any time; touch
-// marks only in Annotate mode so that swiping still scrolls the document.
-function PageFrame({ index, size, src, notes, drawing, active, onCreate, onSelect }: { index: number; size: [number, number]; src: string; notes: { note: Annotation; number: number }[]; drawing: boolean; active: string; onCreate: (page: number, rect: Rect, comment: string) => Promise<void>; onSelect: (note: Annotation) => void }) {
-  const frame = useRef<HTMLDivElement>(null), origin = useRef<[number, number] | null>(null), draftRef = useRef<Rect | null>(null);
-  const [draft, updateDraft] = useState<Rect | null>(null), [editing, setEditing] = useState(false);
-  const setDraft = (value: Rect | null) => { draftRef.current = value; updateDraft(value); };
-  const point = (event: React.PointerEvent): [number, number] => { const box = frame.current!.getBoundingClientRect(); return [unit((event.clientX - box.left) / box.width), unit((event.clientY - box.top) / box.height)]; };
-  const cancel = () => { setDraft(null); setEditing(false); };
-  return <div ref={frame} className="page-frame" data-page={index} style={{ aspectRatio: `${size[0]}/${size[1]}` }}
-    onPointerDown={e => {
-      if (editing || (e.pointerType === 'mouse' ? e.button !== 0 : !drawing)) return;
-      e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId);
-      const p = point(e); origin.current = p; setDraft([p[0], p[1], p[0], p[1]]);
-    }}
-    onPointerMove={e => { const start = origin.current; if (!start) return; const p = point(e); setDraft([Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])]); }}
-    onPointerUp={() => {
-      if (!origin.current) return;
-      origin.current = null;
-      const current = draftRef.current;
-      if (current && (current[2] - current[0] > 0.015 || current[3] - current[1] > 0.01)) setEditing(true); else setDraft(null);
-    }}
-    onPointerCancel={() => { origin.current = null; cancel(); }}>
-    <img className="page" loading={index < 2 ? 'eager' : 'lazy'} decoding="async" draggable={false} width={size[0]} height={size[1]} alt={`Page ${index + 1}`} src={src}/>
-    {notes.map(({ note, number }) => <button key={note.id} type="button" className={'note-box' + (active === note.id ? ' active' : '')} style={percent(note.rect)} aria-label={`Note ${number}: ${note.comment}`} title={note.comment} onPointerDown={e => e.stopPropagation()} onClick={() => onSelect(note)}><span className="note-tag" aria-hidden="true">{number}</span></button>)}
-    {draft && <div className="note-box draft" style={percent(draft)}/>}
-    {draft && editing && <NoteEditor rect={draft} onCancel={cancel} onSave={async comment => { await onCreate(index, draft, comment); cancel(); }}/>}
-  </div>;
-}
-
-interface NoteActions { add: (page: number, rect: Rect, comment: string) => Promise<void>; remove: (note: Annotation) => void; send: () => void; sending: boolean; model: string; setModel: (value: string) => void; models: { id: string; name: string }[] }
+interface NoteActions { add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>; remove: (note: Annotation) => void; send: () => void; sending: boolean; model: string; setModel: (value: string) => void; models: { id: string; name: string }[] }
 
 function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void }) {
   const list = useRef<HTMLOListElement>(null);
@@ -257,7 +206,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Ann
       <p>{note.comment}</p>
       {note.key !== currentKey && <small className="muted">Marked on an earlier version of the PDF.</small>}
     </li>)}</ol>
-      : <p className="muted notes-empty">{touch() ? 'Tap Annotate, then drag' : 'Drag'} across the PDF to mark text or a figure, then describe the change. All notes go to the agent as one task.</p>}
+      : <p className="muted notes-empty">Select text in the PDF and choose Add note, or use Mark region for a figure or equation. All notes go to the agent as one task.</p>}
     <div className="notes-send">
       <ChipSelect label="Codex model" disabled={actions.sending} value={actions.model} onChange={actions.setModel} options={[{ value: '', label: 'Default model' }, ...actions.models.map(m => ({ value: m.id, label: m.name }))]}/>
       <button type="button" className="button primary" disabled={!notes.length || actions.sending} onClick={actions.send}>{actions.sending ? 'Sending…' : `Send ${notes.length || ''} ${notes.length === 1 ? 'note' : 'notes'} to the agent`.replace('  ', ' ')}</button>
@@ -265,29 +214,46 @@ function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Ann
   </section>;
 }
 
-function ManuscriptView({ project, data, error, view, setView, drawing, active, setActive, actions }: { project: Project; data: Manuscript | null; error: string; view: 'pdf' | 'notes' | 'git'; setView: (view: 'pdf' | 'notes' | 'git') => void; drawing: boolean; active: string; setActive: (id: string) => void; actions: NoteActions }) {
+// Bookmarks of the PDF; the current section follows the reading position.
+function ContentsPanel({ outline, section, onGo }: { outline: OutlineItem[]; section: number; onGo: (item: OutlineItem) => void }) {
+  const list = useRef<HTMLOListElement>(null);
+  useEffect(() => { list.current?.querySelector('[aria-current="location"]')?.scrollIntoView({ block: 'nearest' }); }, [section]);
+  if (!outline.length) return <section className="contents-panel" aria-label="Contents"><p className="muted notes-empty">This PDF has no bookmarks. Load the hyperref package to add them.</p></section>;
+  return <section className="contents-panel" aria-label="Contents"><ol ref={list} className="contents-list">{outline.map((item, index) => <li key={index}>
+    <button type="button" aria-current={index === section ? 'location' : undefined} style={{ paddingLeft: 12 + Math.min(item.level, 4) * 16 }} className={item.level === 0 ? 'top-level' : undefined} onClick={() => onGo(item)}><span className="contents-title">{item.title}</span><span className="contents-page">{item.page}</span></button>
+  </li>)}</ol></section>;
+}
+
+type ManuscriptPanel = 'pdf' | 'contents' | 'notes' | 'git';
+function ManuscriptView({ project, data, error, view, setView, region, setRegion, active, setActive, actions }: { project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
   const build = data?.build, notes = data?.annotations || [];
+  const pdf = useRef<PdfHandle>(null);
+  const [outline, setOutline] = useState<OutlineItem[]>([]), [section, setSection] = useState(-1);
   const numbered = notes.map((note, index) => ({ note, number: index + 1 }));
+  const phone = () => window.matchMedia('(max-width: 680px)').matches;
+  const side = view === 'git' || view === 'notes' ? view : 'contents';
   function show(note: Annotation) {
     setActive(note.id);
-    if (view !== 'pdf' && window.matchMedia('(max-width: 680px)').matches) setView('pdf');
-    requestAnimationFrame(() => document.querySelector(`.page-frame[data-page="${note.page}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+    if (phone()) setView('pdf');
+    requestAnimationFrame(() => pdf.current?.goToNote(note));
   }
-  return <div className={'manuscript show-' + view + (drawing ? ' drawing' : '')}>
-    <section className="manuscript-pages" aria-label="Manuscript preview" aria-busy={!build || build.status === 'building'}>
+  return <div className={'manuscript show-' + view}>
+    <section className="manuscript-pages" aria-label="PDF preview" aria-busy={!build || build.status === 'building'}>
       {error && <div className="manuscript-note error" role="alert">{error}</div>}
       {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>The manuscript did not compile.</strong><pre>{build.error}</pre></div>}
-      {build?.status === 'building' && build.pages && <div className="manuscript-note">Compiling the latest changes…</div>}
-      {drawing && <div className="manuscript-note">Drag across the page to mark a region.</div>}
-      {build?.pages?.length ? <div className="pages">{build.pages.map((size, index) => <PageFrame key={`${build.key}-${index}`} index={index} size={size} src={`/api/projects/${project.id}/manuscript/pages/${index}?key=${build.key}`} notes={numbered.filter(item => item.note.page === index && item.note.key === build.key)} drawing={drawing} active={active} onCreate={actions.add} onSelect={note => { setActive(note.id); if (!window.matchMedia('(max-width: 680px)').matches) setView('notes'); }}/>)}</div>
-        : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>Compiling the manuscript…</h2><p>The first build of a paper can take a minute.</p></div>}
+      {build?.status === 'building' && build.key && <div className="manuscript-note">Compiling the latest changes…</div>}
+      {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">Opening the PDF…</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion}
+          onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('notes'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection}/></Suspense>
+        : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>Compiling the PDF…</h2><p>The first build of a paper can take a minute.</p></div>}
     </section>
-    <aside className="manuscript-side" aria-label="Notes and Git">
-      <div className="side-tabs" role="tablist" aria-label="Manuscript panels">
-        <button role="tab" aria-selected={view !== 'git'} onClick={() => setView('notes')}>Notes{notes.length > 0 && <span className="count">{notes.length}</span>}</button>
-        <button role="tab" aria-selected={view === 'git'} onClick={() => setView('git')}>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
+    <aside className="manuscript-side" aria-label="Contents, notes and Git">
+      <div className="side-tabs" role="tablist" aria-label="PDF panels">
+        <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}>Contents</button>
+        <button role="tab" aria-selected={side === 'notes'} onClick={() => setView('notes')}>Notes{notes.length > 0 && <span className="count">{notes.length}</span>}</button>
+        <button role="tab" aria-selected={side === 'git'} onClick={() => setView('git')}>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
       </div>
-      {view === 'git' ? <GitPanel git={data?.git || null}/> : <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>}
+      {side === 'git' ? <GitPanel git={data?.git || null}/> : side === 'notes' ? <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>
+        : <ContentsPanel outline={outline} section={section} onGo={item => { if (phone()) setView('pdf'); pdf.current?.goTo(item); }}/>}
     </aside>
   </div>;
 }
@@ -337,8 +303,8 @@ function App() {
     refocus.current = '';
   }, [renaming]);
   const [page, setPage] = useState<'home' | 'manuscript'>('home');
-  const [manuscriptView, setManuscriptView] = useState<'pdf' | 'notes' | 'git'>('pdf');
-  const [drawing, setDrawing] = useState(false);
+  const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'contents');
+  const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
   const [notesModel, setNotesModel] = useState('');
   const [sendingNotes, setSendingNotes] = useState(false);
@@ -553,10 +519,11 @@ function App() {
   const notes = manuscriptData.data?.annotations || [];
   const withNotes = (update: (list: Annotation[]) => Annotation[]) => setManuscript(current => current.data ? { ...current, data: { ...current.data, annotations: update(current.data.annotations || []) } } : current);
   const noteActions: NoteActions = {
-    async add(page, rect, comment) {
-      if (!project || !manuscriptData.data?.build.key) throw new Error('Wait for the manuscript to compile.');
-      const note = await api<Annotation>(`/projects/${project.id}/annotations`, { key: manuscriptData.data.build.key, page, rect, comment });
-      withNotes(list => [...list, note]); setActiveNote(note.id); setDrawing(false);
+    async add(page, rect, rects, quote, comment) {
+      if (!project || !manuscriptData.data?.build.key) throw new Error('Wait for the PDF to compile.');
+      const note = await api<Annotation>(`/projects/${project.id}/annotations`, { key: manuscriptData.data.build.key, page, rect, ...(rects.length ? { rects, quote } : {}), comment });
+      withNotes(list => [...list, note]); setActiveNote(note.id); setRegion(false);
+      if (!mobile) setManuscriptView('notes');
     },
     remove(note) {
       if (!project) return;
@@ -602,7 +569,7 @@ function App() {
           { label: 'Add paper…', icon: 'plus', divider: true, select: () => openProject() },
         ]}><span className="project-switcher-name">{project.name}</span><Icon name="updown" size={14}/></ActionMenu>
           : <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="plus" size={16}/>Add paper</button>}
-        {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); setSidebar(false); }}><Icon name="paper" size={16}/><span className="nav-label">Manuscript</span>{gitSummary(projectGit) && <span className="nav-meta" title="Git status of the manuscript">{gitSummary(projectGit)}</span>}</button>}
+        {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); setSidebar(false); }}><Icon name="paper" size={16}/><span className="nav-label">PDF</span>{gitSummary(projectGit) && <span className="nav-meta" title="Git status of the manuscript">{gitSummary(projectGit)}</span>}</button>}
         <button className={'nav-link new-task' + (!task && !manuscriptOpen && project ? ' active' : '')} aria-current={!task && !manuscriptOpen && project ? 'page' : undefined} disabled={!state} onClick={() => newTask()}><Icon name="compose" size={16}/><span className="nav-label">New task</span></button>
       </div>
       <div className="sidebar-section"><span>Tasks</span>{tasks.length > 0 && <span className="count">{tasks.length}</span>}</div>
@@ -625,23 +592,22 @@ function App() {
     <main className="main" inert={narrow && sidebar}><header className="topbar">
       {(narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label="Show task list" title="Show task list" aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/></button>}
       <div className="breadcrumb">{!mobile && <><span className="project-name" title={project?.name}>{project?.name || 'Papilot'}</span>{(task || manuscriptOpen) && <span className="slash">/</span>}</>}{task ? <div className="task-identity"><h1 title={task.title}>{task.title}</h1><Status task={task}/></div>
-        : manuscriptOpen ? <div className="task-identity"><h1>Manuscript</h1><span className={'status ' + (manuscriptData.data?.build.status === 'failed' ? 'failed' : manuscriptData.data?.build.status === 'ready' ? 'idle' : 'building')}><i/>{!manuscriptData.data ? 'Loading' : manuscriptData.data.build.status === 'building' ? 'Compiling' : manuscriptData.data.build.status === 'failed' ? 'Build failed' : `Compiled ${ago(manuscriptData.data.build.builtAt || Date.now())} ago`.replace('now ago', 'just now')}</span></div>
+        : manuscriptOpen ? <div className="task-identity"><h1>PDF</h1><span className={'status ' + (manuscriptData.data?.build.status === 'failed' ? 'failed' : manuscriptData.data?.build.status === 'ready' ? 'idle' : 'building')}><i/>{!manuscriptData.data ? 'Loading' : manuscriptData.data.build.status === 'building' ? 'Compiling' : manuscriptData.data.build.status === 'failed' ? 'Build failed' : `Compiled ${ago(manuscriptData.data.build.builtAt || Date.now())} ago`.replace('now ago', 'just now')}</span></div>
         : mobile && <span className="project-name">{project?.name || 'Papilot'}</span>}</div>
       {manuscriptOpen && project && <>
         <div className="task-state-actions">
-          {touch() && <button className={'icon-button annotate-toggle' + (drawing ? ' active' : '')} aria-label="Annotate" aria-pressed={drawing} title="Mark a region on the PDF" onClick={() => { setDrawing(value => !value); setManuscriptView('pdf'); }}><Icon name="pencil" size={17}/></button>}
-          {mobile ? <ActionMenu label="Manuscript options" actions={[
+          {mobile ? <ActionMenu label="PDF options" actions={[
             { label: 'Recompile', icon: 'refresh', select: () => void loadManuscript(project.id, true) },
-            ...(manuscriptData.data?.build.key ? [{ label: 'Open PDF', icon: 'external', href: `/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}` }] : []),
+            ...(manuscriptData.data?.build.key ? [{ label: 'Open the PDF file', icon: 'external', href: `/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}` }] : []),
           ]}/> : <>
-            <button className="icon-button" aria-label="Recompile manuscript" title="Recompile" onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={17}/></button>
-            {manuscriptData.data?.build.key && <a className="icon-button" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" aria-label="Open manuscript PDF" title="Open PDF"><Icon name="external" size={17}/></a>}
+            <button className="icon-button" aria-label="Recompile PDF" title="Recompile" onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={17}/></button>
+            {manuscriptData.data?.build.key && <a className="icon-button" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" aria-label="Open the PDF file" title="Open the PDF file"><Icon name="external" size={17}/></a>}
           </>}
         </div>
-        {mobile && <div className="view-selector" role="group" aria-label="Manuscript view">
+        {mobile && <div className="view-selector" role="group" aria-label="PDF view">
           <button aria-label="PDF" aria-pressed={manuscriptView === 'pdf'} onClick={() => setManuscriptView('pdf')}><Icon name="paper" size={16}/><span>PDF</span></button>
-          <button aria-label={notes.length ? `Notes, ${notes.length}` : 'Notes'} aria-pressed={manuscriptView === 'notes'} onClick={() => { setManuscriptView('notes'); setDrawing(false); }}><Icon name="notes" size={16}/><span>Notes</span>{notes.length ? <b className="view-count" aria-hidden="true">{notes.length}</b> : null}</button>
-          <button aria-label={projectGit?.files?.length ? `Git, ${projectGit.files.length} changed` : 'Git'} aria-pressed={manuscriptView === 'git'} onClick={() => { setManuscriptView('git'); setDrawing(false); }}><Icon name="diff" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
+          <button aria-label={notes.length ? `Notes, ${notes.length}` : 'Notes'} aria-pressed={manuscriptView === 'notes'} onClick={() => { setManuscriptView('notes'); setRegion(false); }}><Icon name="notes" size={16}/><span>Notes</span>{notes.length ? <b className="view-count" aria-hidden="true">{notes.length}</b> : null}</button>
+          <button aria-label={projectGit?.files?.length ? `Git, ${projectGit.files.length} changed` : 'Git'} aria-pressed={manuscriptView === 'git'} onClick={() => { setManuscriptView('git'); setRegion(false); }}><Icon name="diff" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
         </div>}
       </>}
       {task && <>
@@ -667,7 +633,7 @@ function App() {
           {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>Deletion is in progress</h2><p>This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} scale={pdfScale} tools={reviewTools}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? 'Building PDF review…' : 'No review yet'}</h2><p>{task.status === 'building' ? 'The review will appear when the build finishes.' : 'PDF changes will appear here after Codex finishes editing.'}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>Build review</button>}</div>}
           <ReviewFeedback task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError} onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>
         </section><Activity key={task.id} task={task} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} openReview={(mobile ? mobileTab === 'conversation' : layout === 'conversation') ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} drawing={drawing} active={activeNote} setActive={setActiveNote} actions={noteActions}/>
+      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions}/>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>Opening your workspace</h1><p className="home-copy" role="status">{connectionError || 'Connecting to your papers and tasks…'}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>Retry connection</button>}</div></div>
       : project ? <div className="home"><div className="home-inner compose">
           <img className="home-logo" src={logo} alt=""/>

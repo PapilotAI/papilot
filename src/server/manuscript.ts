@@ -6,8 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
-import { DATA, ENGINE } from './paths.ts';
+import { ENGINE } from './paths.ts';
 import type { Annotation, GitStatus, ManuscriptBuild } from '../shared.ts';
+
+type Rect = [number, number, number, number];
 
 const exec = promisify(execFile);
 async function git(root: string, args: string[], env: NodeJS.ProcessEnv = {}) {
@@ -109,7 +111,6 @@ interface Build { tree: string; status: ManuscriptBuild['status']; key?: string;
 
 export class Manuscripts extends EventEmitter {
   private builds = new Map<string, Build>();
-  private documents = new Map<string, { key: string; document: any }>();
 
   async state(projectId: string, root: string, rebuild = false): Promise<{ git: GitStatus; build: ManuscriptBuild }> {
     const [status, tree] = await Promise.all([gitStatus(root), workingTree(root)]);
@@ -130,9 +131,9 @@ export class Manuscripts extends EventEmitter {
         const document = mupdf.Document.openDocument(fs.readFileSync(result.pdf), 'application/pdf');
         const pages: [number, number][] = [];
         for (let i = 0; i < document.countPages(); i++) { const [x0, y0, x1, y1] = document.loadPage(i).getBounds(); pages.push([Math.round(x1 - x0), Math.round(y1 - y0)]); }
+        document.destroy?.();
         const key = createHash('sha256').update(result.key + result.pdf).digest('hex').slice(0, 16);
         if (this.builds.get(projectId) !== build) return;
-        this.documents.set(projectId, { key, document });
         Object.assign(build, { status: 'ready', key, pdf: result.pdf, root: result.root, sourceDir: project.source_dir || '', pages, builtAt: Date.now(), error: undefined });
       } catch (error) {
         if (this.builds.get(projectId) !== build) return;
@@ -152,25 +153,28 @@ export class Manuscripts extends EventEmitter {
 
   // A note keeps the text under the marked region and its LaTeX source, so it
   // stays meaningful after the manuscript changes and the preview recompiles.
-  async locate(projectId: string, key: string, page: number, rect: [number, number, number, number]) {
+  // A text selection arrives as one rectangle per line plus the selected text;
+  // a marked region arrives as one rectangle.
+  async locate(projectId: string, key: string, page: number, rect: Rect, rects: Rect[] = [], selected = '') {
     const pdf = this.pdf(projectId, key), build = this.builds.get(projectId)!;
     const { PdfDocument, containsCenter } = await engine();
     const document = new PdfDocument(pdf);
     try {
       if (!Number.isInteger(page) || page < 0 || page >= document.length) throw Object.assign(new Error('That page is not part of the manuscript.'), { statusCode: 400 });
       const current = document.page(page), [x0, y0, x1, y1] = current.bounds, width = x1 - x0, height = y1 - y0;
-      const clip = [x0 + rect[0] * width, y0 + rect[1] * height, x0 + rect[2] * width, y0 + rect[3] * height];
-      const quote = current.text(clip).replace(/\uFFFD/g, '').replace(/\s+/g, ' ').trim().slice(0, 600);
+      const toPage = (r: Rect) => [x0 + r[0] * width, y0 + r[1] * height, x0 + r[2] * width, y0 + r[3] * height];
+      const clips = (rects.length ? rects : [rect]).map(toPage);
+      const quote = (selected || clips.map(clip => current.text(clip)).join(' ')).replace(/\uFFFD/g, '').replace(/\s+/g, ' ').trim().slice(0, 600);
       // Ask SyncTeX about the first and last marked character of every line, so
-      // the source range covers the whole region rather than its first line.
+      // the source range covers the whole selection rather than its first line.
       const points: [number, number][] = [], centre = (r: number[]): [number, number] => [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2];
       for (const line of current.lines as { chars: { rect: number[] }[] }[]) {
-        const marked = line.chars.filter(c => containsCenter(clip, c.rect));
+        const marked = line.chars.filter(c => clips.some(clip => containsCenter(clip, c.rect)));
         if (!marked.length || points.length >= 24) continue;
         points.push(centre(marked[0].rect));
         if (marked.length > 1) points.push(centre(marked[marked.length - 1].rect));
       }
-      if (!points.length) points.push(centre(clip));
+      if (!points.length) points.push(...clips.slice(0, 12).map(centre));
       const hits = (await Promise.all(points.map(([x, y]) => exec('synctex', ['edit', '-o', `${page + 1}:${(x - x0).toFixed(1)}:${(y - y0).toFixed(1)}:${pdf}`]).then(r => parseSynctex(r.stdout), () => null)))).filter(hit => hit !== null);
       const files = new Map<string, { input: string; lines: number[] }>();
       for (const hit of hits) {
@@ -185,24 +189,4 @@ export class Manuscripts extends EventEmitter {
     } finally { document.close(); }
   }
 
-  // Pages render on demand at twice the PDF resolution and stay cached per build.
-  async page(projectId: string, key: string, number: number) {
-    const file = path.join(DATA, 'manuscripts', projectId, key, `${number}.png`);
-    if (fs.existsSync(file)) return fs.readFileSync(file);
-    const build = this.builds.get(projectId), open = this.documents.get(projectId);
-    if (!build?.pages || build.key !== key || open?.key !== key || !Number.isInteger(number) || number < 0 || number >= build.pages.length)
-      throw Object.assign(new Error('This page is not part of the current manuscript preview.'), { statusCode: 404 });
-    const { mupdf } = await engine();
-    const pixmap = open.document.loadPage(number).toPixmap(mupdf.Matrix.scale(2, 2), mupdf.ColorSpace.DeviceRGB, false, true);
-    const png = Buffer.from(pixmap.asPNG());
-    pixmap.destroy?.();
-    const folder = path.dirname(file);
-    if (!fs.existsSync(folder)) {
-      // Only the latest preview of each paper keeps rendered pages on disk.
-      fs.rmSync(path.dirname(folder), { recursive: true, force: true });
-      fs.mkdirSync(folder, { recursive: true });
-    }
-    fs.writeFileSync(file, png);
-    return png;
-  }
 }

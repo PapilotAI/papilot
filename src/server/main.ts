@@ -77,11 +77,13 @@ app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', async reque
 // Notes marked on the manuscript PDF become one agent task when sent.
 app.post<{ Params: { id: string } }>('/api/projects/:id/annotations', async request => {
   const project = store.project(request.params.id), b = request.body as any;
-  const rect = Array.isArray(b.rect) && b.rect.length === 4 && b.rect.every((v: unknown) => typeof v === 'number' && v >= 0 && v <= 1) ? b.rect as [number, number, number, number] : null;
-  if (!rect || rect[2] <= rect[0] || rect[3] <= rect[1]) throw new Error('Mark a region on the page first.');
+  const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] > value[0] && value[3] > value[1];
+  if (!isRect(b.rect)) throw new Error('Select text or mark a region on the page first.');
+  const rects = Array.isArray(b.rects) ? b.rects.slice(0, 80).filter(isRect) : [];
   const comment = string(b.comment, 'Note', 4000), key = string(b.key, 'Preview key', 64), page = Number(b.page);
-  const { quote, source } = await manuscripts.locate(project.id, key, page, rect);
-  return store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect, comment, quote, source, createdAt: Date.now() });
+  const selected = typeof b.quote === 'string' ? b.quote.slice(0, 2000) : '';
+  const { quote, source } = await manuscripts.locate(project.id, key, page, b.rect, rects, selected);
+  return store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(rects.length ? { rects } : {}), comment, quote, source, createdAt: Date.now() });
 });
 app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/delete', request => { store.deleteAnnotation(store.project(request.params.id).id, request.params.note); return { ok: true }; });
 app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', async request => {
@@ -95,15 +97,11 @@ app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', async
   for (const note of notes) store.saveAnnotation({ ...note, taskId: task.id });
   return task;
 });
-app.get<{ Params: { id: string; page: string }; Querystring: { key?: string } }>('/api/projects/:id/manuscript/pages/:page', async (request, reply) => {
-  store.project(request.params.id);
-  const png = await manuscripts.page(request.params.id, String(request.query.key || ''), Number(request.params.page));
-  return reply.type('image/png').header('Cache-Control', 'private, max-age=31536000, immutable').send(png);
-});
 app.get<{ Params: { id: string }; Querystring: { key?: string; download?: string } }>('/api/projects/:id/manuscript.pdf', (request, reply) => {
   const project = store.project(request.params.id), pdf = manuscripts.pdf(project.id, String(request.query.key || ''));
   const name = (project.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'manuscript') + '.pdf';
-  return reply.type('application/pdf').header('Content-Disposition', `${request.query.download === '1' ? 'attachment' : 'inline'}; filename="${name}"`).sendFile(path.basename(pdf), path.dirname(pdf), { cacheControl: false });
+  // Each key names one immutable build, so the viewer can cache and range-read it.
+  return reply.type('application/pdf').header('Content-Disposition', `${request.query.download === '1' ? 'attachment' : 'inline'}; filename="${name}"`).header('Cache-Control', 'private, max-age=31536000, immutable').sendFile(path.basename(pdf), path.dirname(pdf), { cacheControl: false });
 });
 app.post<{ Params: { id: string } }>('/api/requests/:id', request => { workspace.answer(request.params.id, request.body as any); return { ok: true }; });
 

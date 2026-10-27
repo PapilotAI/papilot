@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './icons.tsx';
 
-export interface MenuAction { id?: string; label: string; detail?: string; select?: () => void; href?: string; disabled?: boolean; danger?: boolean; checked?: boolean; icon?: string; divider?: boolean }
+export interface MenuAction { id?: string; label: string; detail?: string; hint?: string; indent?: number; select?: () => void; href?: string; disabled?: boolean; danger?: boolean; checked?: boolean; icon?: string; divider?: boolean }
 
 // Native popovers escape scrolling containers and handle outside clicks without
 // making the rest of the workspace modal. Each menu keeps its own task identity.
@@ -54,10 +54,10 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
       }
     }}>
       {actions.map(action => {
-        const content = <>{action.icon ? <Icon name={action.icon} size={16}/> : radio && <span className="menu-check">{action.checked && <Icon name="check" size={16}/>}</span>}<span className="menu-label">{action.label}{action.detail && <small className="menu-detail" aria-hidden="true">{action.detail}</small>}</span></>;
+        const content = <>{action.icon ? <Icon name={action.icon} size={16}/> : radio && <span className="menu-check">{action.checked && <Icon name="check" size={16}/>}</span>}<span className="menu-label">{action.label}{action.detail && <small className="menu-detail" aria-hidden="true">{action.detail}</small>}</span>{action.hint && <span className="menu-hint" aria-hidden="true">{action.hint}</span>}</>;
         const item = action.href
           ? <a key={action.id || action.label} role="menuitem" href={action.href} target="_blank" rel="noreferrer" onClick={close}>{content}</a>
-          : <button key={action.id || action.label} type="button" role={action.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={action.checked} disabled={action.disabled} className={action.danger ? 'danger-text' : undefined} onClick={() => { close(); trigger.current?.focus(); action.select?.(); }}>{content}</button>;
+          : <button key={action.id || action.label} type="button" role={action.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={action.checked} disabled={action.disabled} className={action.danger ? 'danger-text' : undefined} data-indent={action.indent || undefined} style={action.indent ? { paddingLeft: 10 + action.indent * 14 } : undefined} onClick={() => { close(); trigger.current?.focus(); action.select?.(); }}>{content}</button>;
         return action.divider ? [<div key={action.label + '-divider'} role="separator" className="menu-separator"/>, item] : item;
       })}
     </div>
