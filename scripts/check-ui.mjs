@@ -45,6 +45,8 @@ const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [
 let annotations = [];
 const noteSends = [];
 const fixturePdf = fs.readFileSync('tests/fixtures/outline.pdf');
+// The server's word places for the fixture PDF (tests/manuscript.test.ts keeps them current).
+const fixtureWords = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 const interruptions = [];
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
 await page.route('**/api/**', async route => {
@@ -82,6 +84,7 @@ await page.route('**/api/**', async route => {
     annotations.push(note); return json(note);
   }
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fixturePdf });
+  if (url.pathname.endsWith('/manuscript/words')) return json(fixtureWords[Number(url.searchParams.get('page'))]);
   if (url.pathname.startsWith('/api/projects/') && url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); paperRenames.push({ id, ...body }); const paper = snapshot.projects.find(p => p.id === id); paper.name = body.name; return json(paper); }
   if (url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); renames.push({ id, ...body }); snapshot.tasks.find(t => t.id === id).title = body.title; return json(snapshot.tasks.find(t => t.id === id)); }
   if (url.pathname.endsWith('/interrupt')) { const id = url.pathname.split('/')[3]; interruptions.push(id); snapshot.tasks.find(t => t.id === id).status = 'interrupted'; return json({ ok: true }); }
@@ -214,7 +217,7 @@ try {
   await page.getByRole('heading', { name: 'PDF', exact: true }).waitFor();
   assert.equal(await pdfLink.getAttribute('aria-current'), 'page');
   const pdfPages = page.locator('.pdfViewer .page');
-  await page.locator('.textLayer span').filter({ hasText: 'Fixture sentence' }).first().waitFor();
+  await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().waitFor();
   assert.equal(await pdfPages.count(), 2);
   assert.equal(await page.getByLabel('Page number').inputValue(), '1');
   // Bookmarks fill the Contents menu in the toolbar and jump to their page; the side panel holds notes and Git.
@@ -259,17 +262,28 @@ try {
   await findBox.waitFor({ state: 'hidden' });
   // Select text, write a note, cancel it, delete one, then send another.
   const notesPanel = page.getByRole('region', { name: 'PDF notes' });
+  // Where a word is printed, in page pixels, from the server's word places.
+  const printed = async text => {
+    const words = fixtureWords[0], word = words.words.find(w => w[0] === text), box = await pdfPages.first().boundingBox();
+    const sx = box.width / words.width, sy = box.height / words.height;
+    return { left: box.x + word[1] * sx, right: box.x + (word[1] + word[4]) * sx, middle: box.y + (word[2] - word[3] * 0.3) * sy };
+  };
+  const drag = async (from, to) => {
+    await page.mouse.move(from.x, from.y); await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 6 }); await page.mouse.up();
+    await page.waitForTimeout(200);
+  };
   const selectText = async () => {
     await page.getByLabel('Page number').fill('1');
     await page.getByLabel('Page number').press('Enter');
-    const span = page.locator('.textLayer span').filter({ hasText: 'Fixture sentence' }).first();
-    await span.scrollIntoViewIfNeeded();
-    const box = await span.boundingBox();
-    // Start inside "Fixture"; the note still takes the whole word.
-    await page.mouse.move(box.x + 14, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 6 });
-    await page.mouse.up();
+    await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().scrollIntoViewIfNeeded();
+    // The selection layer sits on the printed words: one run per word, from
+    // where the word is printed to where the next one begins.
+    const fixture = await printed('Fixture'), sentence = await printed('sentence'), about = await printed('about');
+    const span = await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().boundingBox();
+    assert.ok(Math.abs(span.x - fixture.left) < 1.5 && Math.abs(span.x + span.width - sentence.left) < 2, `Fixture is printed from ${fixture.left} and sentence from ${sentence.left}; the run spans ${span.x}–${span.x + span.width}`);
+    // Start inside "Fixture" and end inside "about"; the note takes both whole words.
+    await drag({ x: fixture.left + (fixture.right - fixture.left) * 0.4, y: fixture.middle }, { x: about.right - 3, y: about.middle });
     assert.doesNotMatch(await page.evaluate(() => document.getSelection().toString()), /^F/);
     await page.getByRole('button', { name: 'Add note', exact: true }).click();
     const note = page.getByRole('textbox', { name: 'Note for the agent' });
@@ -280,13 +294,24 @@ try {
   await noteBox.press('Escape');
   await noteBox.waitFor({ state: 'hidden' });
   assert.equal(annotations.length, 0);
+  // A drag from the gap before a word to the gap after another takes just those words.
+  const sentence = await printed('sentence'), about = await printed('about');
+  await drag({ x: sentence.left - 2, y: sentence.middle }, { x: about.right + 1, y: about.middle });
+  await page.getByRole('button', { name: 'Add note', exact: true }).click();
+  noteBox = page.getByRole('textbox', { name: 'Note for the agent' });
+  await noteBox.fill('Only these words.');
+  await noteBox.press('Enter');
+  await page.getByRole('button', { name: 'Note 1: Only these words.' }).waitFor();
+  assert.equal(annotations[0].quote, 'sentence about');
+  await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
+  await page.getByRole('button', { name: 'Note 1: Only these words.' }).waitFor({ state: 'hidden' });
   noteBox = await selectText();
   await noteBox.fill('Shorten this sentence.');
   await noteBox.press('Enter');
   await notesPanel.getByText('The marked \\emph{fixture} sentence.', { exact: true }).waitFor();
   assert.equal(annotations[0].page, 0);
   assert.equal(annotations[0].key, 'fixture');
-  assert.match(annotations[0].quote, /^Fixture sentence/);
+  assert.equal(annotations[0].quote, 'Fixture sentence about');
   assert.ok(annotations[0].rects.length >= 1 && annotations[0].rects.every(([x0, y0, x1, y1]) => x0 < x1 && y0 < y1 && y1 < 0.5));
   await page.getByRole('button', { name: 'Note 1: Shorten this sentence.' }).waitFor();
   assert.ok(await page.locator('.note-mark').count() >= 1);

@@ -207,6 +207,35 @@ export function sourceExcerpt(file: string, [start, end]: [number, number], limi
   return (lines.length > limit ? [...lines.slice(0, limit), '…'] : lines).join('\n');
 }
 
+// Every word on a page with its exact place, for the PDF view's selection
+// layer: [text, left, baseline, font size, width, ends a line], in points from
+// the page's top left. pdf.js lays a whole line out in a stand-in font and
+// drifts from the printed words mid-line; per-word runs cannot drift.
+export async function pdfWords(pdf: string, page: number) {
+  const { PdfDocument } = await engine();
+  const document = new PdfDocument(pdf);
+  try {
+    if (!Number.isInteger(page) || page < 0 || page >= document.length) throw Object.assign(new Error('That page is not part of the manuscript.'), { statusCode: 400 });
+    const raw = document.raw.loadPage(page), [x0, y0, x1, y1] = raw.getBounds();
+    const words: { text: string; left: number; right: number; baseline: number; size: number; eol: boolean }[] = [];
+    let word: (typeof words)[number] | null = null;
+    const text = raw.toStructuredText('preserve-whitespace');
+    text.walk({
+      beginLine: () => { word = null; },
+      onChar: (c: string, origin: [number, number], _font: unknown, size: number, quad: number[]) => {
+        if (/\s/u.test(c)) { word = null; return; }
+        const left = Math.min(quad[0], quad[2], quad[4], quad[6]) - x0, right = Math.max(quad[0], quad[2], quad[4], quad[6]) - x0;
+        if (!word) { word = { text: '', left, right, baseline: origin[1] - y0, size, eol: false }; words.push(word); }
+        word.text += c; word.right = Math.max(word.right, right);
+      },
+      endLine: () => { if (words.length) words[words.length - 1].eol = true; },
+    });
+    text.destroy(); raw.destroy();
+    const round = (value: number) => Math.round(value * 100) / 100;
+    return { width: round(x1 - x0), height: round(y1 - y0), words: words.map(w => [w.text, round(w.left), round(w.baseline), round(w.size), round(w.right - w.left), w.eol ? 1 : 0] as [string, number, number, number, number, number]) };
+  } finally { document.close(); }
+}
+
 interface Build { tree: string; status: ManuscriptBuild['status']; key?: string; pdf?: string; root?: string; sourceDir?: string; pages?: [number, number][]; builtAt?: number; error?: string }
 
 export class Manuscripts extends EventEmitter {
@@ -255,6 +284,17 @@ export class Manuscripts extends EventEmitter {
   // stays meaningful after the manuscript changes and the preview recompiles.
   // A text selection arrives as one rectangle per line plus the selected text;
   // a marked region arrives as one rectangle.
+  // Word places for the PDF view's selection layer, cached per build and page.
+  private wordCache = new Map<string, Awaited<ReturnType<typeof pdfWords>>>();
+  async words(projectId: string, key: string, page: number) {
+    const cacheKey = `${projectId}:${key}:${page}`, cached = this.wordCache.get(cacheKey);
+    if (cached) return cached;
+    const result = await pdfWords(this.pdf(projectId, key), page);
+    if (this.wordCache.size > 200) this.wordCache.delete(this.wordCache.keys().next().value!);
+    this.wordCache.set(cacheKey, result);
+    return result;
+  }
+
   async locate(projectId: string, key: string, page: number, rect: Rect, rects: Rect[] = [], selected = '') {
     const pdf = this.pdf(projectId, key), build = this.builds.get(projectId)!;
     const { PdfDocument, containsCenter } = await engine();

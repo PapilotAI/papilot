@@ -1,7 +1,7 @@
 import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as pdfjs from 'pdfjs-dist';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { EventBus, FindState, LinkTarget, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import viewerStyles from 'pdfjs-dist/web/pdf_viewer.css?inline';
 import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -32,14 +32,55 @@ const bounds = (rects: Rect[]): Rect => [Math.min(...rects.map(r => r[0])), Math
 const zooms = [{ value: 'page-width', label: 'Fit width' }, { value: 'page-fit', label: 'Fit page' }, ...[0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map(scale => ({ value: String(scale), label: `${scale * 100}%` }))];
 
 // A note covers whole words: a drag that starts or ends inside a word takes
-// all of it, so the quote is readable and the highlight matches it. Returns
-// the widened range and the word pieces it added at each end.
+// all of it, so the quote is readable and the highlight matches it. Only a
+// boundary that cuts through a word widens; one already beside a word (the
+// browser often ends a drag at the start of the next word) stays. Returns the
+// widened range and the word pieces it added at each end.
 function wholeWords(selected: Range) {
   const range = selected.cloneRange(), letter = /[\p{L}\p{N}]/u, start = range.startContainer, end = range.endContainer;
   let before = '', after = '';
-  if (start.nodeType === Node.TEXT_NODE) { const text = start.textContent || ''; let at = range.startOffset; while (at > 0 && letter.test(text[at - 1])) at--; before = text.slice(at, range.startOffset); range.setStart(start, at); }
-  if (end.nodeType === Node.TEXT_NODE) { const text = end.textContent || ''; let at = range.endOffset; while (at < text.length && letter.test(text[at])) at++; after = text.slice(range.endOffset, at); range.setEnd(end, at); }
+  if (start.nodeType === Node.TEXT_NODE) {
+    const text = start.textContent || ''; let at = range.startOffset;
+    if (letter.test(text[at] || '')) while (at > 0 && letter.test(text[at - 1])) at--;
+    before = text.slice(at, range.startOffset); range.setStart(start, at);
+  }
+  if (end.nodeType === Node.TEXT_NODE) {
+    const text = end.textContent || ''; let at = range.endOffset;
+    if (at > 0 && letter.test(text[at - 1])) while (at < text.length && letter.test(text[at])) at++;
+    after = text.slice(range.endOffset, at); range.setEnd(end, at);
+  }
   return { range, before, after };
+}
+
+// pdf.js lays each line of text out as one run in a stand-in font, which
+// drifts from the printed words mid-line, so a drag selects other words than
+// the ones under the pointer. The server reads each word's printed place from
+// the PDF; selection and search use one run per word from it, placed on the
+// word's baseline, and fall back to pdf.js's own text if that is unavailable.
+type Words = { words: [string, number, number, number, number, number][] };
+function exactText(document: PDFDocumentProxy, source: string) {
+  const getPage = document.getPage.bind(document), pages = new Map<number, Promise<PDFPageProxy>>();
+  document.getPage = (number: number) => {
+    if (!pages.has(number)) pages.set(number, getPage(number).then(page => {
+      if (page.rotate % 360 !== 0) return page;
+      const own = page.getTextContent.bind(page);
+      let exact: Promise<ReturnType<typeof textContent> | null> | null = null;
+      const content = () => exact ??= fetch(`${source}&page=${number - 1}`).then(response => response.ok ? response.json() : null).then((data: Words | null) => data ? textContent(data, page.view) : null, () => null);
+      page.getTextContent = (async (params?: Parameters<PDFPageProxy['getTextContent']>[0]) => (await content()) || own(params)) as PDFPageProxy['getTextContent'];
+      page.streamTextContent = ((params?: Parameters<PDFPageProxy['getTextContent']>[0]) => new ReadableStream({ async start(controller) { controller.enqueue((await content()) || await own(params)); controller.close(); } })) as PDFPageProxy['streamTextContent'];
+      return page;
+    }));
+    return pages.get(number)!;
+  };
+}
+// A word followed by another on its line carries the space and reaches the
+// next word's start, so a drag can begin in the gap between words.
+function textContent({ words }: Words, view: number[]) {
+  const items = words.map(([str, left, baseline, size, width, eol], index) => {
+    const next = words[index + 1], joined = !eol && next && next[1] > left;
+    return { str: joined ? str + ' ' : str, dir: 'ltr', width: joined ? next[1] - left : width, height: size, transform: [size, 0, 0, size, view[0] + left, view[3] - baseline], fontName: 'exact', hasEOL: Boolean(eol) };
+  });
+  return { items, styles: { exact: { fontFamily: 'serif', ascent: 0.8, descent: -0.2, vertical: false } }, lang: null };
 }
 
 // Number tags sit in the page margin level with the first marked line, on the
@@ -107,7 +148,7 @@ export function NoteEditor({ rect, onSave, onCancel }: { rect: Rect; onSave: (co
 // layer above each page; pdf.js clears unknown children when it redraws a
 // page, so each layer is re-attached after rendering.
 export const PdfView = forwardRef<PdfHandle, {
-  url: string; notes: { note: Annotation; number: number }[]; active: string; region: boolean; setRegion: (on: boolean) => void;
+  url: string; words?: string; notes: { note: Annotation; number: number }[]; active: string; region: boolean; setRegion: (on: boolean) => void;
   onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>;
   onSelect: (note: Annotation) => void; outline: OutlineItem[]; section: number;
   onOutline: (items: OutlineItem[]) => void; onSection: (index: number) => void;
@@ -232,6 +273,7 @@ export const PdfView = forwardRef<PdfHandle, {
       if (cancelled) { void document.loadingTask.destroy(); return; }
       const previous = loaded.current;
       loaded.current = document; layerMap.current.clear(); setLayers(new Map()); setSelection(null); setEditing(null);
+      if (latest.current.words) exactText(document, latest.current.words);
       current.viewer.setDocument(document); current.links.setDocument(document, null);
       setPages(document.numPages); setLoading(false);
       void previous?.loadingTask.destroy();

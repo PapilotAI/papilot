@@ -359,7 +359,7 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
       {error && <div className="manuscript-note error" role="alert">{error}</div>}
       {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>The manuscript did not compile.</strong><pre>{build.error}</pre></div>}
       {build?.status === 'building' && build.key && <div className="manuscript-note">Compiling the latest changes…</div>}
-      {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">Opening the PDF…</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion}
+      {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">Opening the PDF…</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion}
           onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('notes'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>Compiling the PDF…</h2><p>The first build of a paper can take a minute.</p></div>}
     </section>

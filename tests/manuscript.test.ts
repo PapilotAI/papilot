@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { anchor, annotationTask, gitCommit, gitDiff, gitRemote, gitStatus, parseStatus, parseSynctex, settleLines, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
+import { anchor, annotationTask, gitCommit, gitDiff, gitRemote, gitStatus, parseStatus, parseSynctex, pdfWords, settleLines, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
 import { readNotesInstructions } from '../src/notes.ts';
 import type { Annotation } from '../src/shared.ts';
 
@@ -156,4 +156,18 @@ test('the Git panel commits only the chosen files, shows diffs and syncs with th
     run(base, 'init', '-q', lone);
     await assert.rejects(gitRemote(lone, 'push'), /no remote/);
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('word places come from the printed glyphs, one per word, in reading order', async () => {
+  const fixture = path.join(import.meta.dirname, 'fixtures/outline.pdf');
+  const pages = [await pdfWords(fixture, 0), await pdfWords(fixture, 1)];
+  // The UI check serves this file; it must match what the server extracts.
+  assert.deepEqual(pages, JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures/outline-words.json'), 'utf8')));
+  const words = pages[0].words, find = (text: string) => words.find(word => word[0] === text)!;
+  assert.deepEqual([pages[0].width, pages[0].height], [612, 792]);
+  const [fixtureWord, sentence] = [find('Fixture'), find('sentence')];
+  assert.equal(fixtureWord[2], sentence[2], 'Words on one line share a baseline');
+  assert.ok(fixtureWord[1] + fixtureWord[4] < sentence[1], 'A word ends before the next begins');
+  assert.equal(words.filter(word => word[5]).length >= 2, true, 'Line ends are marked');
+  await assert.rejects(pdfWords(fixture, 2), /not part of the manuscript/);
 });

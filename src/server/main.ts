@@ -120,6 +120,12 @@ app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', async
   for (const note of notes) store.saveAnnotation({ ...note, taskId: task.id });
   return task;
 });
+// Exact word places for the PDF view's selection layer; immutable per build key.
+app.get<{ Params: { id: string }; Querystring: { key?: string; page?: string } }>('/api/projects/:id/manuscript/words', async (request, reply) => {
+  const project = store.project(request.params.id);
+  const words = await manuscripts.words(project.id, String(request.query.key || ''), Number(request.query.page));
+  return reply.header('Cache-Control', 'private, max-age=31536000, immutable').send(words);
+});
 app.get<{ Params: { id: string }; Querystring: { key?: string; download?: string } }>('/api/projects/:id/manuscript.pdf', (request, reply) => {
   const project = store.project(request.params.id), pdf = manuscripts.pdf(project.id, String(request.query.key || ''));
   const name = (project.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'manuscript') + '.pdf';
