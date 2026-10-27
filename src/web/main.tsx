@@ -540,6 +540,8 @@ function App() {
   }, [selected, refreshTimeline, timelineRequest]);
   useEffect(() => { if (!projectId && state?.projects.length) setProjectId(state.projects[0].id); }, [state, projectId]);
   const task = state?.tasks.find(t => t.id === selected);
+  // The paper follows the task being read, so New task and PDF stay on that paper.
+  useEffect(() => { if (task?.projectId) setProjectId(task.projectId); }, [task?.projectId]);
   if (task && !composers.current.has(task.id)) composers.current.set(task.id, new ComposerDraft('papilot:draft:' + task.id, browserStorage, uuid));
   const fullPdfUrl = task?.status !== 'deleting' && task?.review?.round ? `/api/tasks/${task.id}/pdf?round=${task.review.round}` : '';
   const project = state?.projects.find(p => p.id === (task?.projectId || projectId)) || state?.projects[0];

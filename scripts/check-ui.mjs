@@ -832,6 +832,21 @@ try {
   assert.equal(await page.evaluate(id => localStorage.getItem('papilot:draft:' + id), secondTask.id), null);
   console.log('PASS: Deletion in another tab closes a stale confirmation and clears only that task’s local draft');
 
+  // Opening on a task from a paper other than the first keeps New task on that paper.
+  const otherPaper = { id: 'second-paper', name: 'Second paper', path: '/tmp/second', createdAt: 2 };
+  const otherTask = { ...task, id: 'other-task-0001', projectId: otherPaper.id, name: 'p-other', title: 'Polish the second paper', status: 'reviewing', review: null };
+  const papers = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const papersPage = await papers.newPage();
+  await papersPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? { ...snapshot, projects: [...snapshot.projects, otherPaper], tasks: [otherTask], requests: [] } : { items: [] } }));
+  await papersPage.goto(origin);
+  await papersPage.getByRole('heading', { name: otherTask.title }).waitFor();
+  assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
+  await papersPage.getByRole('button', { name: 'New task', exact: true }).click();
+  await papersPage.getByRole('textbox', { name: 'Describe the revision' }).waitFor();
+  assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
+  await papers.close();
+  console.log('PASS: New task stays on the paper of the task being read');
+
   const restricted = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await restricted.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Storage blocked', 'SecurityError'); } }));
   const restrictedPage = await restricted.newPage();
