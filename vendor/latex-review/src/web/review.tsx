@@ -441,19 +441,23 @@ export function ReviewApp({
     return (
       <div className="dock">
         <nav className="actions" aria-label="Review the current change">
-          <button
-            className="nav"
-            aria-label="Previous change"
-            aria-keyshortcuts="k ArrowLeft"
-            title="Previous change (K or ←)"
-            disabled={index === 0}
-            onClick={() => select(index - 1)}
-          >
-            ‹
-          </button>
-          <span className="position">
-            {index + 1} / {stops.length}
-          </span>
+          {stops.length > 1 && (
+            <>
+              <button
+                className="nav"
+                aria-label="Previous change"
+                aria-keyshortcuts="k ArrowLeft"
+                title="Previous change (K or ←)"
+                disabled={index === 0}
+                onClick={() => select(index - 1)}
+              >
+                ‹
+              </button>
+              <span className="position">
+                {index + 1} / {stops.length}
+              </span>
+            </>
+          )}
           {pending.length ? (
             <>
               {(["accept", "reject", "comment"] as const).map((kind) => (
@@ -488,16 +492,18 @@ export function ReviewApp({
               {latest ? "Review complete" : "Earlier round"}
             </span>
           )}
-          <button
-            className="nav"
-            aria-label="Next change"
-            aria-keyshortcuts="j ArrowRight"
-            title="Next change (J or →)"
-            disabled={index === stops.length - 1}
-            onClick={() => select(index + 1)}
-          >
-            ›
-          </button>
+          {stops.length > 1 && (
+            <button
+              className="nav"
+              aria-label="Next change"
+              aria-keyshortcuts="j ArrowRight"
+              title="Next change (J or →)"
+              disabled={index === stops.length - 1}
+              onClick={() => select(index + 1)}
+            >
+              ›
+            </button>
+          )}
           <button
             className="undo"
             title={state.decisionLock || undefined}
@@ -720,8 +726,9 @@ export function ReviewApp({
         )}
         <div className="bar-end">
           {/* Batch decisions cover only undecided changes; accepted,
-              rejected and commented changes keep their state. */}
-          {count.pending > 0 && (
+              rejected and commented changes keep their state. A single
+              undecided change is decided from its own bar. */}
+          {count.pending > 1 && (
             <button
               className="ghost accept accept-all"
               disabled={busy || !latest || Boolean(composer) || Boolean(state?.decisionLock)}
@@ -732,7 +739,7 @@ export function ReviewApp({
               Accept all ({count.pending})
             </button>
           )}
-          {count.pending > 0 && (
+          {count.pending > 1 && (
             <button
               className="ghost reject reject-all"
               disabled={busy || !latest || Boolean(composer) || Boolean(state?.decisionLock)}

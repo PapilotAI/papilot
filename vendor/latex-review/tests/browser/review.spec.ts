@@ -206,6 +206,42 @@ test("Reject all decides only undecided changes and one undo restores the batch"
   await expect(page.getByText("0 of 7 decided", { exact: true })).toBeVisible();
 });
 
+test("the last undecided change is decided from its own bar, without batch buttons", async ({
+  page,
+}) => {
+  for (let decided = 1; decided <= 6; decided++) {
+    const next = page
+      .locator(".change.current")
+      .getByRole("button", { name: "Next undecided", exact: true });
+    if (await next.isVisible()) await next.click();
+    await page
+      .locator(".change.current")
+      .getByRole("button", { name: "Accept", exact: true })
+      .click();
+    await expect(
+      page.getByText(`${decided} of 7 decided`, { exact: true }),
+    ).toBeVisible();
+  }
+  await expect(
+    page.getByRole("button", { name: /^(Accept|Reject) all/ }),
+  ).toHaveCount(0);
+  await page.keyboard.press(
+    process.platform === "darwin" ? "Meta+z" : "Control+z",
+  );
+  await expect(page.getByText("5 of 7 decided", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Accept all (2)", exact: true }),
+  ).toBeVisible();
+  // The review server is shared by every test; leave the round undecided.
+  for (let decided = 4; decided >= 0; decided--) {
+    await page.keyboard.press(
+      process.platform === "darwin" ? "Meta+z" : "Control+z",
+    );
+    await expect(
+      page.getByText(`${decided} of 7 decided`, { exact: true }),
+    ).toBeVisible();
+  }
+});
 test("comments retain drafts and reach agent feedback with their source location", async ({
   page,
 }) => {
