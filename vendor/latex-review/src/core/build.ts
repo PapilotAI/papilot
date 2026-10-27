@@ -59,20 +59,62 @@ export function affectedTargets(
   return [...selected].sort();
 }
 export function errors(text: string) {
-  const lines = text.split("\n"),
+  const lines = text.split(/\r?\n/),
     result: string[] = [];
+  const startsError = (line: string) =>
+    /^(\S[^\n]*):(\d+): (.+)$/.test(line) || line.startsWith("! ");
   for (const [i, line] of lines.entries())
-    if (/^(\S[^:\n]*):(\d+): (.+)$/.test(line) || line.startsWith("! ")) {
+    if (startsError(line)) {
+      let message = line,
+        last = line;
+      // TeX hard-wraps even in the middle of words ("P\nackage"). Keep
+      // continuations, but stop before help text, source context or a new error.
+      let end = i + 1;
+      for (; end < lines.length && end < i + 20; end++) {
+        const next = lines[end];
+        if (
+          !next.trim() ||
+          startsError(next) ||
+          /^(?:See |Type |l\.\d+ |\s*\.\.\.|\s*<)/.test(next)
+        )
+          break;
+        message += (last.length >= 78 ? "" : " ") + next;
+        last = next;
+      }
       const context = lines
-        .slice(i + 1, i + 8)
+        .slice(end, end + 12)
         .find((l) => /^l\.\d+ /.test(l))
         ?.trim();
       result.push(
-        line.replace(/^! |^\.\//, "") + (context ? `  [${context}]` : ""),
+        message
+          .replace(/^! |^\.\//, "")
+          .replace(/\s+/g, " ")
+          .trim() + (context ? `  [${context}]` : ""),
       );
       if (result.length === 8) break;
     }
   return result;
+}
+export function compilerDiagnostics(log: string, transcript: string) {
+  const details = errors(log);
+  // Errors from shell-escape helpers go to latexmk's stderr, not the TeX log.
+  for (const traceback of transcript
+    .split("Traceback (most recent call last):")
+    .slice(1)) {
+    const exception = traceback
+      .split(/\r?\n/)
+      .find((line) => /^[\w.]+(?:Error|Exception): /.test(line));
+    if (!exception) continue;
+    const minted = traceback
+      .slice(0, traceback.indexOf(exception))
+      .includes("latexminted");
+    details.push((minted ? "latexminted: " : "") + exception);
+    if (minted && exception.includes("unexpected keyword argument 'color'"))
+      details.push(
+        "latexminted is incompatible with this Python version. Update latexminted or select a compatible Python on PATH, then restart the service and retry.",
+      );
+  }
+  return [...new Set(details)];
 }
 export function warnings(text: string) {
   const patterns: [RegExp, string][] = [
@@ -247,11 +289,15 @@ export class Builder {
         log = path.join(out, job + ".log"),
         logText = fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "";
       if (failure || !fs.existsSync(pdf)) {
-        const details = errors(logText),
+        const transcriptText = fs.readFileSync(transcript, "utf8"),
+          details = compilerDiagnostics(logText, transcriptText),
           kept = path.join(p.state, "logs", key + ".log");
         fs.mkdirSync(path.dirname(kept), { recursive: true });
-        fs.copyFileSync(fs.existsSync(log) ? log : transcript, kept);
-        const tail = fs.readFileSync(transcript, "utf8").split("\n").slice(-25);
+        fs.writeFileSync(
+          kept,
+          transcriptText + (logText ? "\n\n--- TeX log ---\n" + logText : ""),
+        );
+        const tail = transcriptText.split("\n").slice(-25);
         fs.rmSync(folder, { recursive: true, force: true });
         throw new BuildError(
           failure?.message.includes("ENOENT")

@@ -4,12 +4,13 @@ import type { Heading, Ranges, SectionRef, Span } from "../types.ts";
 const LEVELS: Record<string, number> = {
   part: 0,
   chapter: 1,
+  addchap: 1,
   section: 2,
   subsection: 3,
   subsubsection: 4,
 };
 const COMMAND =
-  /^\s*\\(part|chapter|section|subsection|subsubsection|input|include|subfile|appendix|mainmatter|frontmatter|backmatter)\b(\*)?/;
+  /^\s*\\(part|chapter|addchap|section|subsection|subsubsection|input|include|subfile|appendix|mainmatter|frontmatter|backmatter)\b(\*)?/;
 export const stripComments = (text: string) =>
   text.replace(/(?<!\\)%[^\n]*/g, "");
 export function sourceLines(text: string) {
@@ -190,7 +191,9 @@ export function buildOutline(
           ":" +
           createHash("sha256").update(`${file}:${i}`).digest("hex").slice(0, 8);
       used.add(id);
-      const isNumbered = !match[2] && (numbered || level === 0);
+      // KOMA-Script's addchap never advances the chapter counter.
+      const isNumbered =
+        command !== "addchap" && !match[2] && (numbered || level === 0);
       if (isNumbered) {
         counters[level]++;
         if (level) counters.fill(0, level + 1);
@@ -198,7 +201,7 @@ export function buildOutline(
       const node: Draft = {
         id,
         title: plainTitle(value),
-        kind: command,
+        kind: command === "addchap" ? "chapter" : command,
         level,
         file,
         line: i + 1,

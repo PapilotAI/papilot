@@ -4,7 +4,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
 import staticFiles from "@fastify/static";
 import compress from "@fastify/compress";
-import { WEB, codeVersion } from "./runtime.ts";
+import { WEB, codeVersion, environmentVersion } from "./runtime.ts";
 import { Repo } from "./core/git.ts";
 import { CONFIG_NAME, loadProject, type Project } from "./core/config.ts";
 import { Store } from "./core/store.ts";
@@ -118,6 +118,7 @@ export function createServer(app: App) {
     server.get("/api/info", () => ({
       root: app.root,
       version: codeVersion(),
+      environment: environmentVersion(),
       pid: process.pid,
       busy: app.publisher.busy(),
       build_workers: app.project.build_workers,

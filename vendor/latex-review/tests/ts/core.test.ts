@@ -16,7 +16,12 @@ import {
   revertUnits,
   scopeViolations,
 } from "../../src/core/changes.ts";
-import { affectedTargets, errors, warnings } from "../../src/core/build.ts";
+import {
+  affectedTargets,
+  compilerDiagnostics,
+  errors,
+  warnings,
+} from "../../src/core/build.ts";
 import { wordDiff } from "../../src/web/model.ts";
 let f: Fixture;
 beforeEach(() => {
@@ -127,6 +132,39 @@ describe("configuration", () => {
   });
 });
 describe("outline and units", () => {
+  it("maps KOMA addchap source without advancing chapter numbers", () => {
+    const files: Record<string, string> = {
+      "paper/main.tex": String.raw`\documentclass{scrbook}
+\begin{document}
+\frontmatter
+\include{acknowledgments}
+\mainmatter
+\chapter{Introduction}
+Introduction.
+\addchap[Short]{Unnumbered chapter}
+Unnumbered content.
+\addchap*{Unlisted chapter}
+Unlisted content.
+\chapter{Background}
+Background.
+\end{document}
+`,
+      "paper/acknowledgments.tex":
+        "% Notes before the heading.\n\n\\addchap{Acknowledgments}\nThanks to my supervisor.\nThanks to my family.\n",
+    };
+    const nodes = buildOutline((name) => files[name], "paper/main.tex").nodes;
+    expect(nodes.map((n) => [n.kind, n.number, n.title])).toEqual([
+      ["chapter", "", "Acknowledgments"],
+      ["chapter", "1", "Introduction"],
+      ["chapter", "", "Unnumbered chapter"],
+      ["chapter", "", "Unlisted chapter"],
+      ["chapter", "2", "Background"],
+    ]);
+    expect(deepestNode(nodes, "paper/acknowledgments.tex", 1, 5)?.title).toBe(
+      "Acknowledgments",
+    );
+    expect(nodes[0].ranges["paper/main.tex"]).toBeUndefined();
+  });
   it("selects labeled sections and nested ranges", () => {
     const files: Record<string, string> = {
         "paper/main.tex": MAIN,
@@ -201,6 +239,33 @@ describe("outline and units", () => {
   });
 });
 describe("compiler diagnostics and source diff", () => {
+  it("retains TeX diagnostics wrapped in the middle of a word", () => {
+    const message =
+      "./chapters/01-introduction/01-operational-semantics-and-static-typing.tex:12: Package minted Error: minted v3+ executable is not installed, is not added to PATH, or is not permitted with restricted shell escape.";
+    const wrapped = message.match(/.{1,79}/g)!.join("\n");
+    expect(
+      errors(
+        wrapped +
+          "\n\nSee the minted package documentation for explanation.\nType H for immediate help.\n ...\n\nl.12 \\end{shortcode}\n",
+      ),
+    ).toEqual([message.slice(2) + "  [l.12 \\end{shortcode}]"]);
+  });
+  it("includes Python helper failures from compiler output with a useful remedy", () => {
+    const transcript =
+      "Traceback (most recent call last):\n  File \"/tex/latexminted.py\", line 372, in <module>\n    main()\nTypeError: ArgParser.__init__() got an unexpected keyword argument 'color'\n";
+    const diagnostics = compilerDiagnostics(
+      "! Package minted Error: executable unavailable.\nl.12 \\end{minted}",
+      transcript,
+    );
+    expect(diagnostics[0]).toContain("Package minted Error");
+    expect(diagnostics[1]).toBe(
+      "latexminted: TypeError: ArgParser.__init__() got an unexpected keyword argument 'color'",
+    );
+    expect(diagnostics[2]).toContain("select a compatible Python on PATH");
+    expect(
+      compilerDiagnostics("! Undefined control sequence.\nl.4 \\broken", ""),
+    ).toEqual(["Undefined control sequence.  [l.4 \\broken]"]);
+  });
   it("resolves shared input owners and falls back for global files", () => {
     const files = {
       "a.tex": "\\input{shared}",

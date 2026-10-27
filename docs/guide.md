@@ -110,6 +110,16 @@ If you use a private Tailscale IP instead of a MagicDNS hostname, set `PAPILOT_P
 
 The launchd user agent starts after login, restarts the service on exit, and uses `caffeinate -i` to prevent idle system sleep while Papilot runs. A full reboot still requires the account to log in. Run `papilot service stop` (`npm run service:stop` in a source checkout) to stop it. Logs are in `service.log` and `service.error.log` in the data folder.
 
+The installer retains your shell's tool search path. To select a particular Python or TeX installation for the service, set `PAPILOT_SERVICE_PATH` to its absolute binary directory. Multiple directories use the usual path separator. This override is saved and reused when you reinstall the service. Set it to an empty string during installation to clear it.
+
+For example, older `latexminted` releases can fail under Python 3.14 with `ArgParser.__init__() got an unexpected keyword argument 'color'` ([upstream issue](https://github.com/gpoore/minted/issues/463)). Update `latexminted`, or select an installed compatible Python. On a Mac with Homebrew Python 3.12 installed:
+
+```sh
+PAPILOT_SERVICE_PATH=/opt/homebrew/opt/python@3.12/libexec/bin papilot service install
+```
+
+Preserve your `PAPILOT_DATA`, port and remote-access settings when reinstalling. When a paper is accessed again, an existing review server with different tool paths is restarted after its active builds finish. Compilation errors show both the TeX diagnostic and Python helper exceptions when available. The saved build log includes the complete compiler output.
+
 For SSH access without Tailscale, run `ssh -N -L 7274:127.0.0.1:7274 user@your-host` on the computer running your browser, keep that terminal open, and visit `http://localhost:7274`.
 
 The workspace uses short, non-overlapping polling on HTTP/1 connections so multiple tabs cannot exhaust the browser's connection pool with permanent event streams. HTTP/2 and HTTP/3 connections use event streams. Hidden workspace tabs pause their status refreshes and update when reopened; task switches cancel obsolete conversation requests. If upgrading from an older frontend leaves pages loading indefinitely, close the old Papilot tabs and reopen the workspace.
@@ -121,6 +131,7 @@ The workspace uses short, non-overlapping polling on HTTP/1 connections so multi
 | `PAPILOT_PORT` | `7274` | Local HTTP port; the server binds to `127.0.0.1`. |
 | `PAPILOT_DATA` | `~/.papilot` for the `papilot` command, `.papilot` in a source checkout | SQLite state and generated example project. |
 | `PAPILOT_CODEX_BIN` | `codex` on `PATH` (0.164.0 or newer), else one installed into the data folder | Codex executable used by the backend. |
+| `PAPILOT_SERVICE_PATH` | Unset | Absolute tool directories to prioritize in the macOS service; retained across service reinstalls. |
 | `ANTHROPIC_API_KEY` | Unset | Anthropic API key for Claude tasks (the Agent SDK does not accept a Claude subscription login). |
 | `PAPILOT_AGY_BIN` | `agy` on `PATH` | Antigravity CLI used for Antigravity tasks. |
 | `PAPILOT_AGY_PROXY` | Unset | HTTP proxy for agy only, for regions where Antigravity needs one. |

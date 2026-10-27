@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { ROOT, codeVersion } from "./runtime.ts";
+import { ROOT, codeVersion, environmentVersion } from "./runtime.ts";
 import { Repo } from "./core/git.ts";
 import { readJson, sleep, withLock } from "./core/files.ts";
 export interface Connection {
@@ -14,6 +14,7 @@ export interface Connection {
 export interface ServerInfo {
   root: string;
   version: string;
+  environment?: string;
   pid: number;
   busy: boolean;
   csrf: string;
@@ -153,7 +154,8 @@ export async function connect(
   root: string,
   start = true,
 ): Promise<Client | null> {
-  root = path.resolve(root);
+  // Match the canonical repository path reported by the server (e.g. macOS /var).
+  root = fs.realpathSync(root);
   const home = serverHome(root);
   return withLock(path.join(home, "start.lock"), async () => {
     const last = readJson<{ port: number } | null>(
@@ -167,7 +169,12 @@ export async function connect(
     if (!info && last)
       info = { url: `http://127.0.0.1:${last.port}`, port: last.port, pid: 0 };
     let answer = await probe(root, info);
-    if (answer && (!start || answer.version === codeVersion()))
+    if (
+      answer &&
+      (!start ||
+        (answer.version === codeVersion() &&
+          answer.environment === environmentVersion()))
+    )
       return new Client(info!.url, answer.csrf);
     if (!start) return null;
     if (answer && info) {

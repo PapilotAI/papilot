@@ -69,7 +69,12 @@ export interface Round {
   before: string;
   after: string;
   units: Unit[];
-  summary: { warnings: string[]; targets: string[]; builds: string[] };
+  summary: {
+    warnings: string[];
+    targets: string[];
+    builds: string[];
+    renderer?: string;
+  };
   created: number;
 }
 export type ActionKind = "accept" | "reject" | "comment";

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { ROOT } from "../runtime.ts";
+import { ROOT, codeVersion } from "../runtime.ts";
 import { Builder, BuildError } from "./build.ts";
 import { diffUnits, scopeViolations } from "./changes.ts";
 import { isFigure } from "./config.ts";
@@ -218,7 +218,8 @@ export class Publisher {
     if (
       latest &&
       latest.before === before &&
-      app.repo.treeId(latest.after) === app.repo.treeId(after)
+      app.repo.treeId(latest.after) === app.repo.treeId(after) &&
+      latest.summary.renderer === codeVersion()
     )
       return {
         outcome: "unchanged",
@@ -242,9 +243,9 @@ export class Publisher {
     } catch (error) {
       if (error instanceof BuildError)
         throw new PublishError(
-          "The accepted text does not compile, so there is nothing to compare against.",
+          "The comparison baseline could not be compiled.",
           error.details,
-          "Fix the accepted document or undo the change that broke it, then publish again.",
+          "Check the compiler diagnostics, fix the document or build environment, then publish again.",
           error.log,
         );
       throw error;
@@ -254,9 +255,9 @@ export class Publisher {
     } catch (error) {
       if (error instanceof BuildError)
         throw new PublishError(
-          "Your edits do not compile.",
+          "The revised document could not be compiled.",
           error.details,
-          "Fix the LaTeX errors in the worktree, then publish again.",
+          "Check the compiler diagnostics, fix the document or build environment, then publish again.",
           error.log,
         );
       throw error;
@@ -270,6 +271,7 @@ export class Publisher {
       output = final + ".pending-" + randomBytes(4).toString("hex");
     fs.mkdirSync(output, { recursive: true });
     const summary = {
+      renderer: codeVersion(),
       warnings,
       targets,
       builds: [seed, old, next].filter((b) => b !== null).map((b) => b.key),

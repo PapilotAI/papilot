@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { ROOT, DATA } from '../src/server/paths.ts';
+import { serviceEnvironment } from '../src/server/service-environment.ts';
 
 if (process.platform !== 'darwin') throw new Error('This service installer is for macOS. On other systems run npm start with your process manager.');
 const label = 'local.papilot';
@@ -14,8 +15,13 @@ if (process.argv[2] === 'stop') {
   const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   fs.mkdirSync(DATA, { recursive: true, mode: 0o700 });
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const env: Record<string, string> = { PATH: [path.join(ROOT, 'node_modules/.bin'), '/Library/TeX/texbin', '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'), HOME: os.homedir(), NODE_ENV: 'production' };
-  for (const [key, value] of Object.entries(process.env)) if (key.startsWith('PAPILOT_') && value) env[key] = value;
+  let previous: NodeJS.ProcessEnv = {};
+  if (fs.existsSync(file)) {
+    try {
+      previous = JSON.parse(execFileSync('/usr/bin/plutil', ['-extract', 'EnvironmentVariables', 'json', '-o', '-', file], { encoding: 'utf8' }));
+    } catch { /* An older or incomplete plist may not contain environment settings. */ }
+  }
+  const env = serviceEnvironment(ROOT, os.homedir(), process.execPath, process.env, previous);
   const args = ['/usr/bin/caffeinate', '-i', process.execPath, '--import', 'tsx', path.join(ROOT, 'src/server/main.ts')];
   const plist = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>
 <key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${args.map(a => `<string>${xml(a)}</string>`).join('')}</array>
