@@ -233,6 +233,13 @@ try {
   await page.getByLabel('Page number').fill('1');
   await page.getByLabel('Page number').press('Enter');
   await page.waitForFunction(() => document.querySelector('.pdf-section-title').textContent === 'Introduction');
+  // Scrolling a long contents menu keeps it open; scrolling the page closes it.
+  await page.getByRole('button', { name: 'Contents', exact: true }).click();
+  const contentsMenu = page.getByRole('menu', { name: 'Contents', exact: true });
+  await contentsMenu.evaluate(menu => menu.dispatchEvent(new Event('scroll')));
+  assert.equal(await contentsMenu.isVisible(), true);
+  await page.locator('.pdf-container').evaluate(box => box.dispatchEvent(new Event('scroll')));
+  await contentsMenu.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Contents', exact: true }).click();
   await page.getByRole('menuitemradio', { name: /^Method/ }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');

@@ -14,8 +14,11 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
   useEffect(() => {
     if (!open) return;
     const dismiss = () => menu.current?.hidePopover();
-    window.addEventListener('resize', dismiss); document.addEventListener('scroll', dismiss, true);
-    return () => { window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', dismiss, true); };
+    // Scrolling the page moves the trigger away, so the menu closes; scrolling
+    // a long menu itself, such as a paper's contents, keeps it open.
+    const scroll = (event: Event) => { if (!(event.target instanceof Node && menu.current?.contains(event.target))) dismiss(); };
+    window.addEventListener('resize', dismiss); document.addEventListener('scroll', scroll, true);
+    return () => { window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
   }, [open]);
   function position() {
     const panel = menu.current!, rect = trigger.current!.getBoundingClientRect();
