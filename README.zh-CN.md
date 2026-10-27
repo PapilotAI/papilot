@@ -81,8 +81,8 @@ papilot demo
 
 | 智能体 | 登录（一次即可） | Papilot 如何运行它 |
 | --- | --- | --- |
-| **Codex** | `npx @openai/codex login` | 通过 Codex app server 在其工作区沙箱中运行；新建任务页会显示你套餐的用量。 |
-| **Claude** | 设置好 `ANTHROPIC_API_KEY` 再启动 `papilot` | 通过 Claude Agent SDK 运行；该 SDK 不接受 Pro 或 Max 订阅登录。 |
+| **Codex** | `papilot codex login` | 通过 Codex app server 在其工作区沙箱中运行；已装有 `codex` 就直接用，没有则在首次启动时自动安装。 |
+| **Claude** | 设置好 `ANTHROPIC_API_KEY` 再启动 `papilot` | 通过 Claude Agent SDK 运行，首次使用时下载；该 SDK 不接受 Pro 或 Max 订阅登录。 |
 | **Antigravity** | 安装 Antigravity 并登录 `agy` | 运行 `agy -p`，每轮一个进程，只编辑文件；所在地区需要代理时设置 `PAPILOT_AGY_PROXY`。 |
 
 Papilot 从不读取、保存或转发你的凭据。没有安装或没有登录的智能体会显示为不可用。

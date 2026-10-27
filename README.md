@@ -81,8 +81,8 @@ Open **http://127.0.0.1:4317** and choose **PDF** in the sidebar. The demo adds 
 
 | Agent | Sign in once | How Papilot runs it |
 | --- | --- | --- |
-| **Codex** | `npx @openai/codex login` | Through the Codex app server, in its workspace sandbox. Your plan's usage appears on the new-task page. |
-| **Claude** | Start `papilot` with `ANTHROPIC_API_KEY` set | Through the Claude Agent SDK. The SDK does not accept a Pro or Max subscription login. |
+| **Codex** | `papilot codex login` | Through the Codex app server, in its workspace sandbox. Papilot uses your `codex` if you have one, or installs it on first start. |
+| **Claude** | Start `papilot` with `ANTHROPIC_API_KEY` set | Through the Claude Agent SDK, downloaded the first time. The SDK does not accept a Pro or Max subscription login. |
 | **Antigravity** | Install Antigravity and sign in to `agy` | `agy -p`, one process per turn, editing files only. If your region needs it, set `PAPILOT_AGY_PROXY`. |
 
 Papilot never reads, stores or forwards your credentials. An agent that isn't installed or signed in shows as unavailable.

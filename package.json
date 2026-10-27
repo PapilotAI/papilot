@@ -62,10 +62,8 @@
     "prepack": "npm run build && npm run setup:review"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.311",
     "@fastify/compress": "^9.2.2",
     "@fastify/static": "^10.1.7",
-    "@openai/codex": "0.164.0",
     "commander": "^15.0.0",
     "diff": "^9.0.0",
     "fastify": "^5.12.7",
@@ -74,6 +72,8 @@
     "tsx": "^4.23.15"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.311",
+    "@openai/codex": "0.164.0",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

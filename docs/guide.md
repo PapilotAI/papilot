@@ -35,14 +35,14 @@ Open [Papilot](http://127.0.0.1:4317). Select **Add paper** and enter the path t
 
 To try a sample first, run `papilot demo` (`npm run demo` in a source checkout). It copies the example paper in `examples/papilot-paper` (this README written as a 26-page LaTeX paper in fifteen chapter files, with a usage chapter, formal models of review rounds, conflicts, the PDF view's geometry, queueing and Git, theorems with proofs, an algorithm, TikZ and pgfplots figures, tables and a BibTeX bibliography, so there is plenty to review) into a separate Git repository, `example-paper` in the data folder, and registers it as **Papilot paper** without changing an existing manuscript. Start an editing task from the interface when you are ready to run Codex.
 
-The bundled Codex CLI uses the host's normal Codex login/configuration. To sign in, run `npx @openai/codex login` (or `codex login` if Codex is installed) on the host. No API key is stored by Papilot. Model selection defaults to the host's configured Codex model.
+Papilot uses the `codex` on your `PATH` when it is version 0.164.0 or newer; otherwise the `papilot` command installs that version into `agents` in the data folder on its first start. Either way Codex uses the host's normal Codex login and configuration. To sign in, run `papilot codex login` on the host. No API key is stored by Papilot. Model selection defaults to the host's configured Codex model.
 
 ### Agents
 
 Each task runs on one agent, chosen with **Agent** below the prompt; Papilot remembers the agent, and each agent's model and reasoning effort, for the next task. Every agent uses its own login on this host, and Papilot never reads, stores or forwards a credential. Agents that are not installed or signed in are listed as unavailable. All three edit only the task's worktree and leave compiling and publishing the review to Papilot.
 
 - **Codex** runs through the Codex app-server with its workspace-write sandbox. Commands outside the sandbox and Codex's questions come to the conversation for approval.
-- **Claude** runs through the Claude Agent SDK, which runs Claude Code with the login on this host. Edits in the worktree are accepted, commands run in Claude Code's sandbox, and anything that needs approval, including Claude's questions, comes to the conversation. Claude tasks need an Anthropic API key: Anthropic does not allow a Claude subscription (Pro or Max) login to be used through the Agent SDK and refuses such requests with 403. Run Papilot with `ANTHROPIC_API_KEY` set (or with Claude Code configured for Amazon Bedrock, Google Vertex AI or Microsoft Foundry); usage is billed to that key or provider. With only a subscription login, Claude is listed as unavailable and says why.
+- **Claude** runs through the Claude Agent SDK, which runs Claude Code with the login on this host. An installed Papilot downloads the SDK into `agents` in the data folder the first time it starts with an API key. Edits in the worktree are accepted, commands run in Claude Code's sandbox, and anything that needs approval, including Claude's questions, comes to the conversation. Claude tasks need an Anthropic API key: Anthropic does not allow a Claude subscription (Pro or Max) login to be used through the Agent SDK and refuses such requests with 403. Run Papilot with `ANTHROPIC_API_KEY` set (or with Claude Code configured for Amazon Bedrock, Google Vertex AI or Microsoft Foundry); usage is billed to that key or provider. With only a subscription login, Claude is listed as unavailable and says why.
 - **Antigravity** runs `agy -p` with streamed output, one process per turn, and resumes the same agy conversation on later turns. Headless agy cannot ask for permission, so Papilot runs it in accept-edits mode: it reads and edits files in the worktree, while shell commands and edits elsewhere are declined by agy and noted in the conversation. Its models are listed with their effort variants grouped, and your saved agy model is the default. If agy reports that your location is not supported, set `PAPILOT_AGY_PROXY` to an HTTP proxy; it applies only to agy.
 
 ## Workflow
@@ -120,7 +120,7 @@ The workspace uses short, non-overlapping polling on HTTP/1 connections so multi
 | --- | --- | --- |
 | `PAPILOT_PORT` | `4317` | Local HTTP port; the server binds to `127.0.0.1`. |
 | `PAPILOT_DATA` | `~/.papilot` for the `papilot` command, `.papilot` in a source checkout | SQLite state and generated example project. |
-| `PAPILOT_CODEX_BIN` | Bundled Codex CLI, then `codex` on `PATH` | Codex executable used by the backend. |
+| `PAPILOT_CODEX_BIN` | `codex` on `PATH` (0.164.0 or newer), else one installed into the data folder | Codex executable used by the backend. |
 | `ANTHROPIC_API_KEY` | Unset | Anthropic API key for Claude tasks (the Agent SDK does not accept a Claude subscription login). |
 | `PAPILOT_AGY_BIN` | `agy` on `PATH` | Antigravity CLI used for Antigravity tasks. |
 | `PAPILOT_AGY_PROXY` | Unset | HTTP proxy for agy only, for regions where Antigravity needs one. |

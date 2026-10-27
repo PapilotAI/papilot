@@ -4,11 +4,13 @@ import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { AccountInfo, ModelInfo, Options, PermissionResult, Query, SDKMessage, SDKRateLimitInfo, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentId } from '../shared.ts';
-import { DATA } from './paths.ts';
+import { DATA, ROOT } from './paths.ts';
 
 // Papilot drives every agent through the request and notification surface of
 // the Codex app-server: thread/start, thread/resume, turn/start,
@@ -90,6 +92,29 @@ function toolItem(id: string, name: string, input: Record<string, any>): Item {
   return { id, type: 'toolCall', text: `${name}${target ? ` ${String(target).slice(0, 200)}` : ''}`, status: 'inProgress' };
 }
 
+const CLAUDE_KEY = 'Claude needs an Anthropic API key: Anthropic does not allow a Claude subscription login through the Claude Agent SDK. Start Papilot with ANTHROPIC_API_KEY set to use Claude.';
+let claude: Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> | null = null;
+// The Claude Agent SDK carries Claude Code, a large download, so an installed
+// Papilot fetches it into the data folder the first time Claude can be used.
+export function loadClaude() {
+  claude ??= (async () => {
+    try { return (await import('@anthropic-ai/claude-agent-sdk')).query; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw error; }
+    const prefix = path.join(DATA, 'agents'), resolve = () => createRequire(path.join(prefix, 'package.json')).resolve('@anthropic-ai/claude-agent-sdk');
+    let entry: string;
+    try { entry = resolve(); } catch {
+      const env = process.env;
+      if (!(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CODE_USE_VERTEX || env.CLAUDE_CODE_USE_FOUNDRY)) throw new Error(CLAUDE_KEY);
+      const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).devDependencies['@anthropic-ai/claude-agent-sdk'];
+      console.log('Installing the Claude Agent SDK for Claude tasks (first use only)...');
+      await promisify(execFile)('npm', ['install', '--prefix', prefix, `@anthropic-ai/claude-agent-sdk@${version}`, '--no-audit', '--no-fund', '--loglevel=error'], { maxBuffer: 16 * 1024 * 1024 });
+      entry = resolve();
+    }
+    return (await import(pathToFileURL(entry).href)).query;
+  })().catch(error => { claude = null; throw error; });
+  return claude;
+}
+
 // Claude runs through the Claude Agent SDK, which runs the Claude Code binary
 // with the login already on this host (a Claude subscription, or an API key
 // if ANTHROPIC_API_KEY is set). Papilot never reads or stores the credential.
@@ -100,7 +125,7 @@ export class ClaudeAgent extends Adapter {
   private rateLimits = new Map<string, SDKRateLimitInfo>();
   private defaults = new Map<string, string>();
   private approvals = new Map<string, { resolve: (result: PermissionResult) => void; input: Record<string, unknown>; kind: 'tool' | 'question'; questions: string[] }>();
-  constructor(private load: () => Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> = () => import('@anthropic-ai/claude-agent-sdk').then(sdk => sdk.query)) { super(); }
+  constructor(private load: () => Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> = loadClaude) { super(); }
   async start() {
     if (this.ready) return;
     const query = await this.load();
@@ -120,7 +145,7 @@ export class ClaudeAgent extends Adapter {
     const account = this.info.account, keyed = Boolean(account?.apiKeySource && !['none', 'oauth'].includes(account.apiKeySource));
     const external = Boolean(account?.apiProvider && account.apiProvider !== 'firstParty');
     if (keyed || external) return { account: { email: account?.email, type: external ? account!.apiProvider : 'API key' }, requiresOpenaiAuth: false };
-    return { account: null, requiresOpenaiAuth: true, reason: 'Claude needs an Anthropic API key: Anthropic does not allow a Claude subscription login through the Claude Agent SDK. Start Papilot with ANTHROPIC_API_KEY set to use Claude.' };
+    return { account: null, requiresOpenaiAuth: true, reason: CLAUDE_KEY };
   }
   protected models() {
     const all = this.info.models, preferred = all.find(model => model.value === 'default');
