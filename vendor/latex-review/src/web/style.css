@@ -198,7 +198,8 @@ kbd {
   text-decoration: underline;
   text-underline-offset: 0.18em;
 }
-.accept-all {
+.accept-all,
+.reject-all {
   color: var(--ink);
   border-color: var(--line);
   border-radius: 999px;

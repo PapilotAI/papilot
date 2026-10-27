@@ -107,6 +107,9 @@ export function ReviewApp({
     ),
     decisions = state?.decisions ?? {},
     count = progress(decisions),
+    undecided = Object.keys(decisions).filter(
+      (id) => decisions[id] === "pending",
+    ),
     latest = Boolean(
       detail && state && detail.round === state.latest && !state.closed,
     );
@@ -716,22 +719,28 @@ export function ReviewApp({
           </div>
         )}
         <div className="bar-end">
+          {/* Batch decisions cover only undecided changes; accepted,
+              rejected and commented changes keep their state. */}
           {count.pending > 0 && (
             <button
               className="ghost accept accept-all"
               disabled={busy || !latest || Boolean(composer) || Boolean(state?.decisionLock)}
-              title={state?.decisionLock || "Accept all pending changes in this round. Undo reverses the whole batch."}
+              title={state?.decisionLock || `Accept the ${count.pending} undecided ${count.pending === 1 ? "change" : "changes"} in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.`}
               aria-describedby={state?.decisionLock ? "review-lock" : undefined}
-              onClick={() =>
-                void decide(
-                  "accept",
-                  Object.keys(decisions).filter(
-                    (id) => decisions[id] === "pending",
-                  ),
-                )
-              }
+              onClick={() => void decide("accept", undecided)}
             >
               Accept all ({count.pending})
+            </button>
+          )}
+          {count.pending > 0 && (
+            <button
+              className="ghost reject reject-all"
+              disabled={busy || !latest || Boolean(composer) || Boolean(state?.decisionLock)}
+              title={state?.decisionLock || `Reject the ${count.pending} undecided ${count.pending === 1 ? "change" : "changes"} in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.`}
+              aria-describedby={state?.decisionLock ? "review-lock" : undefined}
+              onClick={() => void decide("reject", undecided)}
+            >
+              Reject all ({count.pending})
             </button>
           )}
           {(!online || state?.closed || state?.state !== "reviewing") && (

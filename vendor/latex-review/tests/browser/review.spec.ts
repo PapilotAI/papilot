@@ -175,6 +175,37 @@ test("Accept all acts once for the full round and one undo restores every change
   await expectMapAligned(page);
 });
 
+test("Reject all decides only undecided changes and one undo restores the batch", async ({
+  page,
+}) => {
+  const undo = process.platform === "darwin" ? "Meta+z" : "Control+z";
+  await page
+    .locator(".change.current")
+    .getByRole("button", { name: "Accept", exact: true })
+    .click();
+  await expect(page.locator('.change[data-state="accepted"]')).toHaveCount(1);
+  const rejectAll = page.getByRole("button", { name: /^Reject all \(\d+\)$/ });
+  const undecided = Number(/\((\d+)\)/.exec((await rejectAll.textContent())!)![1]);
+  expect(undecided).toBeGreaterThan(0);
+  expect(undecided).toBeLessThan(7);
+  await expect(
+    page.getByRole("button", { name: `Accept all (${undecided})`, exact: true }),
+  ).toBeVisible();
+  await rejectAll.click();
+  await expect(page.getByText("7 of 7 decided", { exact: true })).toBeVisible();
+  await expect(page.locator('.change[data-state="accepted"]')).toHaveCount(1);
+  await expect(page.locator('.change[data-state="pending"]')).toHaveCount(0);
+  await expect(rejectAll).toHaveCount(0);
+  await page.keyboard.press(undo);
+  await expect(
+    page.getByText(`${7 - undecided} of 7 decided`, { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('.change[data-state="accepted"]')).toHaveCount(1);
+  await expect(page.locator('.change[data-state="rejected"]')).toHaveCount(0);
+  await page.keyboard.press(undo);
+  await expect(page.getByText("0 of 7 decided", { exact: true })).toBeVisible();
+});
+
 test("comments retain drafts and reach agent feedback with their source location", async ({
   page,
 }) => {
