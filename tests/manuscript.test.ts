@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { annotationTask, gitStatus, parseStatus, parseSynctex, workingTree } from '../src/server/manuscript.ts';
+import { annotationTask, gitStatus, parseStatus, parseSynctex, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
 import type { Annotation } from '../src/shared.ts';
 
 test('Git status parsing keeps branch counts, renames, untracked files and line counts', () => {
@@ -58,8 +58,20 @@ test('PDF notes become one task that quotes each marked region and its source', 
   const note = (comment: string, extra: Partial<Annotation> = {}): Annotation => ({ id: comment, projectId: 'p', key: 'k', page: 1, rect: [0, 0, 1, 1], comment, quote: 'The operator applies a compatible revision.', source: { file: 'main.tex', lines: [31, 33] }, createdAt: 1, ...extra });
   const single = annotationTask([note('Define "compatible" here.')]);
   assert.equal(single.title, 'Define "compatible" here.');
-  assert.match(single.instructions, /1\. Page 2 · main\.tex lines 31–33\n   Marked text: "The operator applies a compatible revision\."\n   Note: Define "compatible" here\./);
+  assert.match(single.instructions, /1\. Page 2 · main\.tex lines 31–33\n   PDF text: "The operator applies a compatible revision\."\n   Note: Define "compatible" here\./);
+  const withSource = annotationTask([note('Explain the operator.', { source: { file: 'main.tex', lines: [30, 32], excerpt: '\\begin{equation}\n  D_{t+1} = D_t \\oplus \\Delta_t\n\\end{equation}' } })]);
+  assert.match(withSource.instructions, /main\.tex lines 30–32\n   LaTeX source of the marked region:\n   ```latex\n   \\begin\{equation\}\n     D_\{t\+1\} = D_t \\oplus \\Delta_t\n   \\end\{equation\}\n   ```\n   PDF text:/);
   const many = annotationTask([note('Shorten.'), note('Redraw this figure.', { quote: '', source: { file: 'figures.tex', lines: [5, 5] }, page: 3 })]);
   assert.equal(many.title, 'Address 2 PDF notes');
   assert.match(many.instructions, /2\. Page 4 · figures\.tex line 5\n   Marked region: a figure, equation or other non-text area\n   Note: Redraw this figure\./);
+});
+
+test('source excerpts keep the marked lines and shorten long ranges', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-excerpt-')), 'main.tex');
+  try {
+    fs.writeFileSync(file, Array.from({ length: 40 }, (_, i) => `line ${i + 1}   `).join('\n'));
+    assert.equal(sourceExcerpt(file, [3, 5]), 'line 3\nline 4\nline 5');
+    assert.equal(sourceExcerpt(file, [1, 30], 2), 'line 1\nline 2\n…');
+    assert.equal(sourceExcerpt(file + '.missing', [1, 2]), undefined);
+  } finally { fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
 });

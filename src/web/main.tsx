@@ -171,20 +171,27 @@ function gitSummary(git: GitStatus | null) {
   return [git.branch || 'detached', git.files.length ? `${git.files.length} changed` : 'clean', sync].filter(Boolean).join(' · ');
 }
 
+// A source-control style summary: where the manuscript is, its last commit,
+// and what is not committed yet (accepted review changes land here).
 function GitPanel({ git }: { git: GitStatus | null }) {
-  if (!git || !Array.isArray(git.files)) return <section className="git-panel" aria-label="Git status"><p className="muted">Reading Git status…</p></section>;
-  const statusNames: Record<string, string> = { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied', U: 'Conflict', '?': 'Untracked', T: 'Type changed' };
+  if (!git || !Array.isArray(git.files)) return <section className="git-panel" aria-label="Git status"><p className="git-clean">Reading Git status…</p></section>;
+  const names: Record<string, string> = { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied', U: 'Conflict', '?': 'Untracked', T: 'Type changed' };
+  const added = git.files.reduce((sum, file) => sum + (file.lines?.[0] || 0), 0), removed = git.files.reduce((sum, file) => sum + (file.lines?.[1] || 0), 0);
   return <section className="git-panel" aria-label="Git status">
-    <dl className="git-facts">
-      <dt>Branch</dt><dd><code>{git.branch || 'detached HEAD'}</code>{git.upstream && <span className="muted"> · {git.upstream}{git.ahead || git.behind ? ` · ↑${git.ahead} ↓${git.behind}` : ' · up to date'}</span>}</dd>
-      {git.head && <><dt>Commit</dt><dd><code>{git.head.hash}</code> {git.head.subject}<span className="muted"> · {ago(git.head.date)} ago</span></dd></>}
-    </dl>
-    <h2 className="panel-label">Changes{git.files.length > 0 && <span className="count">{git.files.length}</span>}</h2>
-    {git.files.length ? <ul className="git-files">{git.files.map(file => <li key={file.path} title={statusNames[file.status] || file.status}>
-      <span className={'git-code s-' + (file.status === '?' ? 'u' : file.status.toLowerCase())} aria-label={statusNames[file.status] || file.status}>{file.status === '?' ? 'U' : file.status}</span>
-      <span className="git-path">{file.path}</span>
-      {file.lines && <span className="git-lines"><ins>+{file.lines[0]}</ins> <del>−{file.lines[1]}</del></span>}
-    </li>)}</ul> : <p className="muted">Working tree clean.</p>}
+    <div className="git-branch"><Icon name="branch" size={16}/><code>{git.branch || 'detached HEAD'}</code>
+      {git.upstream && <span className="git-sync" title={`Compared with ${git.upstream}`}>{git.ahead || git.behind ? <>{git.ahead > 0 && <span>↑{git.ahead}</span>}{git.behind > 0 && <span>↓{git.behind}</span>}</> : 'up to date'}</span>}
+    </div>
+    {git.upstream && <p className="git-upstream">Tracking <code>{git.upstream}</code></p>}
+    {git.head && <div className="git-commit"><Icon name="commit" size={16}/><div><p>{git.head.subject}</p><small><code>{git.head.hash}</code> · {ago(git.head.date)} ago</small></div></div>}
+    <h3 className="git-section"><span>Uncommitted changes</span>{git.files.length > 0 && <span className="count">{git.files.length}</span>}{added || removed ? <span className="git-total"><ins>+{added}</ins> <del>−{removed}</del></span> : null}</h3>
+    {git.files.length ? <ul className="git-files">{git.files.map(file => {
+      const slash = file.path.lastIndexOf('/'), code = file.status === '?' ? 'U' : file.status;
+      return <li key={file.path} title={`${names[file.status] || file.status}: ${file.path}`}>
+        <span className="git-file"><span className="git-name">{file.path.slice(slash + 1)}</span>{slash > 0 && <span className="git-dir">{file.path.slice(0, slash)}</span>}</span>
+        {file.lines && <span className="git-lines"><ins>+{file.lines[0]}</ins> <del>−{file.lines[1]}</del></span>}
+        <span className={'git-code s-' + (file.status === '?' ? 'u' : file.status.toLowerCase())} aria-label={names[file.status] || file.status}>{code}</span>
+      </li>;
+    })}</ul> : <p className="git-clean"><Icon name="check" size={15}/>No uncommitted changes</p>}
   </section>;
 }
 
@@ -246,7 +253,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Ann
   return <section className="notes-panel" aria-label="PDF notes">
     {notes.length ? <ol ref={list} className="note-list">{notes.map((note, index) => <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
       <div className="note-head"><button type="button" className="note-number" aria-label={`Show note ${index + 1} on the page`} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}</span><button type="button" className="icon-button" aria-label={`Delete note ${index + 1}`} title="Delete note" onClick={() => actions.remove(note)}><Icon name="close" size={14}/></button></div>
-      {note.quote && <blockquote>{note.quote}</blockquote>}
+      {note.source?.excerpt ? <pre className="note-source" title={`${note.source.file}, the LaTeX that produced the marked region`}>{note.source.excerpt}</pre> : note.quote && <blockquote>{note.quote}</blockquote>}
       <p>{note.comment}</p>
       {note.key !== currentKey && <small className="muted">Marked on an earlier version of the PDF.</small>}
     </li>)}</ol>
@@ -590,7 +597,7 @@ function App() {
       <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setPage('home'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a><button className="icon-button" aria-label="Hide task list" title="Hide task list" onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
       <div className="sidebar-section"><span>Paper</span></div>
       <div className="sidebar-actions">
-        {state?.projects.length && project ? <ActionMenu label={`Paper: ${project.name}`} className="project-switcher" align="start" actions={[
+        {state?.projects.length && project ? <ActionMenu label={`Paper: ${project.name}`} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
           ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); } })),
           { label: 'Add paper…', icon: 'plus', divider: true, select: () => openProject() },
         ]}><span className="project-switcher-name">{project.name}</span><Icon name="updown" size={14}/></ActionMenu>
@@ -667,7 +674,7 @@ function App() {
           <h1>What are we revising next?</h1>
           <Composer large autoFocus inputRef={newTaskInput} label="Describe the revision" value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder="Describe the revision, what to preserve, and how to judge the result…"
             footer={<div className="composer-options">
-              <ChipSelect label="Paper" icon="paper" disabled={creating} value={project.id} onChange={setProjectId} options={state.projects.map(p => ({ value: p.id, label: p.name }))}/>
+              <ChipSelect className="paper-chip" label="Paper" icon="paper" disabled={creating} value={project.id} onChange={setProjectId} options={state.projects.map(p => ({ value: p.id, label: p.name }))}/>
               <ChipSelect label="Codex model" disabled={creating} value={newModel} onChange={setNewModel} options={[{ value: '', label: 'Default model' }, ...state.runtime.models.map(m => ({ value: m.id, label: m.name }))]}/>
             </div>}
             action={<button className="send-button" type="submit" aria-label="Start task" title="Start task (Enter)" disabled={creating || !newDraft.trim()} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>

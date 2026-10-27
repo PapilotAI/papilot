@@ -91,9 +91,18 @@ export function annotationTask(notes: Annotation[]) {
   const title = notes.length === 1 ? (first.length > 80 ? first.slice(0, 79).replace(/\s+\S*$/, '') + '…' : first) : `Address ${notes.length} PDF notes`;
   const items = notes.map((note, index) => {
     const where = [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : ''].filter(Boolean).join(' · ');
-    return [`${index + 1}. ${where}`, note.quote ? `   Marked text: "${note.quote}"` : '   Marked region: a figure, equation or other non-text area', `   Note: ${note.comment.trim().replace(/\n/g, '\n   ')}`].join('\n');
+    const source = note.source?.excerpt ? ['   LaTeX source of the marked region:', '   ```latex', ...note.source.excerpt.split('\n').map(line => '   ' + line), '   ```'] : [];
+    return [`${index + 1}. ${where}`, ...source, note.quote ? `   PDF text: "${note.quote}"` : '   Marked region: a figure, equation or other non-text area', `   Note: ${note.comment.trim().replace(/\n/g, '\n   ')}`].join('\n');
   });
-  return { title, instructions: `Revise the manuscript according to these notes the author marked on the compiled PDF. Each note gives the page, the marked text, and the LaTeX source of that region when SyncTeX could locate it. Change only what the notes ask for.\n\n${items.join('\n\n')}` };
+  return { title, instructions: `Revise the manuscript according to these notes the author marked on the compiled PDF. SyncTeX mapped each marked region to the LaTeX file and lines that produced it; the PDF text is what the author saw. Read the current source before editing, and change only what the notes ask for.\n\n${items.join('\n\n')}` };
+}
+
+// The LaTeX the marked region came from, read from the exact tree that was
+// compiled. Long ranges keep their first lines.
+export function sourceExcerpt(file: string, [start, end]: [number, number], limit = 20) {
+  if (!fs.existsSync(file)) return undefined;
+  const lines = fs.readFileSync(file, 'utf8').split('\n').slice(start - 1, end).map(line => line.trimEnd());
+  return (lines.length > limit ? [...lines.slice(0, limit), '…'] : lines).join('\n');
 }
 
 interface Build { tree: string; status: ManuscriptBuild['status']; key?: string; pdf?: string; root?: string; sourceDir?: string; pages?: [number, number][]; builtAt?: number; error?: string }
@@ -152,21 +161,27 @@ export class Manuscripts extends EventEmitter {
       const current = document.page(page), [x0, y0, x1, y1] = current.bounds, width = x1 - x0, height = y1 - y0;
       const clip = [x0 + rect[0] * width, y0 + rect[1] * height, x0 + rect[2] * width, y0 + rect[3] * height];
       const quote = current.text(clip).replace(/\uFFFD/g, '').replace(/\s+/g, ' ').trim().slice(0, 600);
-      const points: [number, number][] = [];
+      // Ask SyncTeX about the first and last marked character of every line, so
+      // the source range covers the whole region rather than its first line.
+      const points: [number, number][] = [], centre = (r: number[]): [number, number] => [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2];
       for (const line of current.lines as { chars: { rect: number[] }[] }[]) {
-        const char = line.chars.find(c => containsCenter(clip, c.rect));
-        if (char && points.length < 12) points.push([(char.rect[0] + char.rect[2]) / 2, (char.rect[1] + char.rect[3]) / 2]);
+        const marked = line.chars.filter(c => containsCenter(clip, c.rect));
+        if (!marked.length || points.length >= 24) continue;
+        points.push(centre(marked[0].rect));
+        if (marked.length > 1) points.push(centre(marked[marked.length - 1].rect));
       }
-      if (!points.length) points.push([(clip[0] + clip[2]) / 2, (clip[1] + clip[3]) / 2]);
+      if (!points.length) points.push(centre(clip));
       const hits = (await Promise.all(points.map(([x, y]) => exec('synctex', ['edit', '-o', `${page + 1}:${(x - x0).toFixed(1)}:${(y - y0).toFixed(1)}:${pdf}`]).then(r => parseSynctex(r.stdout), () => null)))).filter(hit => hit !== null);
-      const files = new Map<string, number[]>();
+      const files = new Map<string, { input: string; lines: number[] }>();
       for (const hit of hits) {
         const relative = path.relative(build.root || path.dirname(hit.input), hit.input);
         const file = path.posix.join(build.sourceDir || '', (relative.startsWith('..') ? path.basename(hit.input) : relative).split(path.sep).join('/'));
-        files.set(file, [...(files.get(file) || []), hit.line]);
+        files.set(file, { input: hit.input, lines: [...(files.get(file)?.lines || []), hit.line] });
       }
-      const [file, lines] = [...files].sort((a, b) => b[1].length - a[1].length)[0] || [];
-      return { quote, source: file && lines ? { file, lines: [Math.min(...lines), Math.max(...lines)] as [number, number] } : null };
+      const [file, found] = [...files].sort((a, b) => b[1].lines.length - a[1].lines.length)[0] || [];
+      if (!file || !found) return { quote, source: null };
+      const lines: [number, number] = [Math.min(...found.lines), Math.max(...found.lines)];
+      return { quote, source: { file, lines, excerpt: sourceExcerpt(found.input, lines) } };
     } finally { document.close(); }
   }
 

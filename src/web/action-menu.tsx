@@ -6,7 +6,7 @@ export interface MenuAction { id?: string; label: string; detail?: string; selec
 // Native popovers escape scrolling containers and handle outside clicks without
 // making the rest of the workspace modal. Each menu keeps its own task identity.
 // The trigger defaults to a "more" button; pass children for a labelled trigger.
-export function ActionMenu({ label, actions, children, className = 'icon-button more-button', align = 'end' }: { label: string; actions: MenuAction[]; children?: ReactNode; className?: string; align?: 'start' | 'end' }) {
+export function ActionMenu({ label, actions, children, className = 'icon-button more-button', menuClassName = '', align = 'end' }: { label: string; actions: MenuAction[]; children?: ReactNode; className?: string; menuClassName?: string; align?: 'start' | 'end' }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -39,7 +39,7 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
     }} onKeyDown={event => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); show(event.key === 'ArrowUp'); }
     }}>{children || <Icon name="more" size={18}/>}</button>
-    <div ref={menu} id={id} popover="auto" role="menu" aria-label={label} className="action-menu" onToggle={event => {
+    <div ref={menu} id={id} popover="auto" role="menu" aria-label={label} className={'action-menu ' + menuClassName} onToggle={event => {
       const shown = (event.nativeEvent as ToggleEvent).newState === 'open'; setOpen(shown);
     }} onKeyDown={event => {
       // Continue normal tab order from the trigger. A surrounding mobile drawer

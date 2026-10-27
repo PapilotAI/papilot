@@ -66,7 +66,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/delete') && url.pathname.includes('/annotations/')) { const id = url.pathname.split('/')[5]; annotations = annotations.filter(note => note.id !== id); return json({ ok: true }); }
   if (url.pathname.endsWith('/annotations')) {
     const body = route.request().postDataJSON();
-    const note = { id: `note-${annotations.length + 1}`, projectId: task.projectId, ...body, quote: 'The marked fixture sentence.', source: { file: 'main.tex', lines: [10, 12] }, createdAt: 1 };
+    const note = { id: `note-${annotations.length + 1}`, projectId: task.projectId, ...body, quote: 'The marked fixture sentence.', source: { file: 'main.tex', lines: [10, 12], excerpt: 'The marked \\emph{fixture} sentence.' }, createdAt: 1 };
     annotations.push(note); return json(note);
   }
   if (url.pathname.includes('/manuscript/pages/')) return route.fulfill({ contentType: 'image/png', body: pixel });
@@ -192,7 +192,7 @@ try {
   await noteBox.press('Enter');
   const notesPanel = page.getByRole('region', { name: 'PDF notes' });
   await notesPanel.getByText('Page 1 · main.tex:10–12', { exact: true }).waitFor();
-  await notesPanel.getByText('The marked fixture sentence.', { exact: true }).waitFor();
+  await notesPanel.getByText('The marked \\emph{fixture} sentence.', { exact: true }).waitFor();
   assert.equal(annotations[0].page, 0);
   assert.equal(annotations[0].key, 'fixture');
   assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
@@ -217,7 +217,11 @@ try {
   const gitPanel = page.getByRole('region', { name: 'Git status' });
   await gitPanel.getByText('main.tex', { exact: true }).waitFor();
   await gitPanel.getByText('notes.md', { exact: true }).waitFor();
-  assert.match(await gitPanel.innerText(), /origin\/main · ↑1 ↓0/);
+  const gitText = await gitPanel.innerText();
+  assert.match(gitText, /^main\s+↑1/);
+  assert.match(gitText, /Tracking origin\/main/);
+  assert.match(gitText, /Draft the introduction\s+abc1234/);
+  assert.equal(await gitPanel.getByLabel('Untracked').innerText(), 'U');
   assert.equal(await page.getByRole('link', { name: 'Open manuscript PDF' }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
   assert.equal(await page.title(), 'Example paper · Papilot');
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
