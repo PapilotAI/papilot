@@ -59,6 +59,13 @@ function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, aut
   </form>;
 }
 
+// A compact chip that opens the native picker. The transparent select keeps a
+// 16px font so iOS does not zoom the page when it is tapped.
+function ChipSelect({ label, value, options, onChange, disabled, icon, className = '' }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean; icon?: string; className?: string }) {
+  return <label className={'chip-select ' + className} title={label}>{icon && <Icon name={icon} size={14}/>}<span className="chip-value">{options.find(option => option.value === value)?.label ?? value}</span>
+    <select aria-label={label} disabled={disabled} value={value} onChange={e => onChange(e.target.value)}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
+}
+
 function RequestCard({ request, answerDrafts, onDone }: { request: PendingRequest; answerDrafts: Map<string, Record<string, string>>; onDone: () => void }) {
   const [answers, updateAnswers] = useState<Record<string, string>>(() => answerDrafts.get(request.id) || {});
   function setAnswers(next: Record<string, string>) { answerDrafts.set(request.id, next); updateAnswers(next); }
@@ -329,7 +336,7 @@ function App() {
   const conversationVisible = mobile ? mobileTab === 'conversation' : layout !== 'review';
   const pause = () => { if (task) void action('/tasks/' + task.id + '/interrupt'); };
   const reviewTools = task && fullPdfUrl ? <>
-    <select className="reading-scale" aria-label="PDF reading zoom" title="Zoom" value={pdfScale} onChange={e => setPdfScale(Number(e.target.value))}><option value={1}>Fit</option><option value={1.5}>150%</option><option value={2}>200%</option><option value={3}>300%</option></select>
+    <ChipSelect className="zoom-chip" label="PDF reading zoom" value={String(pdfScale)} onChange={value => setPdfScale(Number(value))} options={[{ value: '1', label: 'Fit' }, { value: '1.5', label: '150%' }, { value: '2', label: '200%' }, { value: '3', label: '300%' }]}/>
     {!mobile && <a className="button ghost compact full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" title={`Open the full PDF after round ${task.review?.round}`}><Icon name="external" size={14}/><span>Full PDF</span></a>}
     <ActionMenu label="Review options" actions={[
       ...(mobile ? [{ label: 'Open full PDF', icon: 'external', href: fullPdfUrl }] : []),
@@ -387,13 +394,13 @@ function App() {
           <ReviewFeedback task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError} onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>
         </section><Activity key={task.id} task={task} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy}/></div>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>Opening your workspace</h1><p className="home-copy" role="status">{connectionError || 'Connecting to your papers and tasks…'}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>Retry connection</button>}</div></div>
-      : project ? <div className="home"><div className="home-inner">
+      : project ? <div className="home"><div className="home-inner compose">
           <div className="home-mark"><Icon name="plane" size={20}/></div>
           <h1>What should Codex revise?</h1>
           <Composer large autoFocus inputRef={newTaskInput} label="What should Codex do?" value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder="Describe the revision, what to preserve, and how to judge the result…"
             footer={<div className="composer-options">
-              <label className="chip-select" title="Paper"><Icon name="paper" size={14}/><select aria-label="Paper" disabled={creating} value={project.id} onChange={e => setProjectId(e.target.value)}>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-              <label className="chip-select" title="Codex model"><select aria-label="Codex model" disabled={creating} value={newModel} onChange={e => setNewModel(e.target.value)}><option value="">Default model</option>{state.runtime.models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+              <ChipSelect label="Paper" icon="paper" disabled={creating} value={project.id} onChange={setProjectId} options={state.projects.map(p => ({ value: p.id, label: p.name }))}/>
+              <ChipSelect label="Codex model" disabled={creating} value={newModel} onChange={setNewModel} options={[{ value: '', label: 'Default model' }, ...state.runtime.models.map(m => ({ value: m.id, label: m.name }))]}/>
             </div>}
             action={<button className="send-button" type="submit" aria-label="Create and start Codex" title="Start task (Enter)" disabled={creating || !newDraft.trim()} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
           {createError && <p className="inline-error home-error" role="alert">{createError}</p>}

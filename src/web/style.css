@@ -148,9 +148,7 @@ h1,h2,h3,p{margin-top:0}
 .review-frame{display:block;width:100%;height:100%;flex:1;border:0;background:var(--bg-muted);min-height:0}
 .review-pending>.review-frame{visibility:hidden}
 .review-tools{position:absolute;z-index:2;top:0;right:0;height:44px;display:flex;align-items:center;gap:4px;padding:0 8px}
-.reading-scale{appearance:none;-webkit-appearance:none;height:28px;padding:0 24px 0 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 7px center;font-size:12px;font-weight:500;color:var(--text-2);cursor:pointer;box-shadow:var(--shadow-sm)}
-.reading-scale:hover{border-color:var(--line-strong)}
-.reading-scale:focus-visible{box-shadow:var(--ring);border-color:var(--accent)}
+.chip-select.zoom-chip{height:28px;border-radius:8px;padding:0 24px 0 9px;font-size:12px;color:var(--text-2);box-shadow:var(--shadow-sm);background-position:right 7px center}
 .review-tools .full-pdf-link{height:28px;padding:0 9px}
 .review-tools .more-button{width:30px;height:30px}
 @container (max-width:620px){.review-tools .full-pdf-link span{display:none}.review-tools .full-pdf-link{width:30px;padding:0}}
@@ -254,10 +252,12 @@ h1,h2,h3,p{margin-top:0}
 .composer.large .composer-footer{padding:6px 10px 10px 12px}
 .composer.large .send-button{width:36px;height:36px}
 .composer-options{display:flex;gap:6px;min-width:0;flex-wrap:wrap}
-.chip-select{position:relative;display:inline-flex;align-items:center;gap:6px;height:30px;max-width:220px;padding:0 26px 0 10px;border:1px solid var(--line);border-radius:999px;font-size:12.5px;color:var(--text-2);background:var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center;cursor:pointer;transition:border-color .15s,background-color .15s}
+.chip-select{position:relative;display:inline-flex;align-items:center;gap:6px;height:30px;max-width:220px;min-width:0;padding:0 26px 0 10px;border:1px solid var(--line);border-radius:999px;font-size:12.5px;font-weight:500;color:var(--text);background:var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center;cursor:pointer;transition:border-color .15s,background-color .15s}
 .chip-select:hover{border-color:var(--line-strong);background-color:var(--bg-subtle)}
 .chip-select:focus-within{border-color:var(--accent);box-shadow:var(--ring)}
-.chip-select select{appearance:none;-webkit-appearance:none;border:0;background:none;outline:none;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:12.5px;font-weight:500;color:var(--text);cursor:pointer;padding:0}
+.chip-select>svg{color:var(--text-3)}
+.chip-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip-select select{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;appearance:none;-webkit-appearance:none;font-size:16px;cursor:pointer}
 .chip-select:has(select:disabled){opacity:.6;cursor:default}
 
 /* Home */
@@ -349,17 +349,37 @@ h1,h2,h3,p{margin-top:0}
   .composer .send-button{width:36px;height:36px}
   .composer.large textarea{min-height:96px;max-height:min(220px,32dvh);font-size:16px}
   .chip-select{height:36px}
-  .chip-select select{font-size:16px}
   .composer-options{flex-wrap:nowrap;min-width:0}
   .chip-select{min-width:0;flex-shrink:1}
   .chip-select:first-child{flex-shrink:3}
   .home{padding:18px 14px}
   .home h1{font-size:22px;margin-bottom:18px}
   .suggestion{height:36px}
+  /* The new-task composer docks at the bottom like the chat composer, above the keyboard. */
+  .home:has(.compose){padding:0}
+  .home-inner.compose{flex:1;margin:0;max-width:none;padding:16px 10px max(10px,env(safe-area-inset-bottom))}
+  .compose .home-mark{margin-top:auto;width:40px;height:40px;margin-bottom:14px}
+  .compose h1{margin-bottom:8px}
+  .compose .home-hint{order:1;margin:0 0 auto;padding:0 16px;font-size:12.5px}
+  .compose .suggestions{order:2;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;align-self:stretch;margin:16px -10px 10px;padding:0 10px;scrollbar-width:none}
+  .compose .suggestions::-webkit-scrollbar{display:none}
+  .compose .suggestion{flex-shrink:0}
+  .compose .home-error{order:3;margin:0 0 8px}
+  .compose .composer{order:4}
+  .composer.large{border-radius:var(--radius-lg)}
+  .composer.large textarea{min-height:52px;max-height:min(200px,30dvh);padding:12px 14px 4px}
+  .composer.large .composer-footer{padding:4px 8px 8px 10px}
+  /* Menus open as bottom sheets within thumb reach. */
+  .action-menu{left:8px!important;right:8px!important;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom))!important;width:auto;min-width:0!important;max-width:none;padding:6px;border-radius:18px}
+  .action-menu:popover-open{animation:sheet-in .22s var(--ease)}
+  .action-menu::backdrop{background:rgb(9 9 11/.28)}
+  .action-menu::before{content:attr(aria-label);padding:8px 14px 6px;font-size:12.5px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .action-menu>button,.action-menu>a{min-height:50px;font-size:16px;padding:0 14px;gap:12px;border-radius:12px}
   .review-tools{height:48px;padding-right:4px}
-  .reading-scale{height:36px;font-size:16px;padding-right:26px}
+  .chip-select.zoom-chip{height:36px;font-size:13px}
   .review-tools .more-button{width:44px;height:44px}
-  .review-feedback{padding:6px 8px max(6px,env(safe-area-inset-bottom)) 14px}
+  .review-panel{padding-bottom:env(safe-area-inset-bottom)}
+  .review-feedback{padding:6px 8px 6px 14px}
   .review-feedback>.button{height:40px}
   .review-placeholder{padding:24px 20px}
   .sidebar-header{height:56px}
@@ -369,7 +389,6 @@ h1,h2,h3,p{margin-top:0}
   .task-link{min-height:56px;padding:10px 4px 10px 10px}
   .task-title{font-size:14.5px}
   .task-row .more-button{width:44px;height:44px}
-  .action-menu>button,.action-menu>a{min-height:44px;font-size:14px}
   .tool-item summary{min-height:40px}
   .request-card button,.question input,.connection-banner>button,.runtime-banner>button,.jump-latest,.delete-dialog .button,.modal .button{min-height:44px}
   .question input,.modal input{font-size:16px}
@@ -387,4 +406,10 @@ h1,h2,h3,p{margin-top:0}
 @keyframes dialog-in{from{opacity:0;transform:translateY(8px) scale(.98)}}
 @keyframes toast-in{from{opacity:0;transform:translate(-50%,-6px)}}
 @keyframes fade-in{from{opacity:0}}
+@keyframes sheet-in{from{opacity:0;transform:translateY(16px)}}
+/* Touch screens have no hover, so pressed states confirm each tap. */
+@media(hover:none){
+  .task-row:active,.new-task:active,.add-project:active,.suggestion:active,.action-menu>button:active,.action-menu>a:active,.answer-options button:active,.icon-button:active,.view-selector>button:active,.tool-item summary:active{background:var(--bg-hover)}
+  .button:active:not(:disabled){transform:scale(.98)}
+}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important;transition:none!important}}

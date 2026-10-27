@@ -7,6 +7,7 @@ import type { Task } from '../shared.ts';
 function compactReviewFrame(doc: Document, scale: number, reserve: number) {
   if (!doc || doc.getElementById('papilot-embed-style')) return;
   doc.documentElement.style.setProperty('--pdf-reading-scale', String(scale));
+  doc.documentElement.toggleAttribute('data-papilot-fit', scale === 1);
   doc.documentElement.style.setProperty('--papilot-tools', `${reserve}px`);
   const style = doc.createElement('style'); style.id = 'papilot-embed-style';
   style.textContent = `
@@ -19,7 +20,8 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     .bar .bar-end{margin-left:0;gap:6px}
     .bar .ghost{font-size:12px;font-weight:500;height:28px;padding:0 10px;border-radius:8px}
     .bar .ghost:hover{text-decoration:none;background:#f4f4f5}
-    .bar .accept-all{color:var(--accept);border-color:var(--line);background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.05)}
+    .bar .accept-all,.bar .reject-all{border-color:var(--line);background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.05)}
+    .bar .accept-all{color:var(--accept)}.bar .reject-all{color:var(--reject)}
     .bar .ghost.round{width:28px;height:28px;padding:0;border-radius:8px}
     .bar .status{font-size:11px;font-weight:500}
     .sheet{border-radius:6px;box-shadow:0 1px 2px rgb(0 0 0/.06),0 6px 20px rgb(0 0 0/.06)}
@@ -44,17 +46,44 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     @media(max-width:680px){
       .bar{height:48px;min-height:48px;padding-left:12px;gap:8px}.bar .ghost{min-height:36px;font-size:12px}
       .bar .ghost.round{display:none}.bar .identity span,.bar .meter{font-size:12px}
-      .change-map{display:none}.review-body>#paper{padding-left:8px;padding-right:8px;padding-bottom:40px}
-      .change-head{padding:8px}.change-head .change-where{min-width:0;overflow-wrap:anywhere}
-      .change-head .actions{gap:0;box-shadow:none}.change-head .actions button{min-height:44px;padding:6px;font-size:12px}
-      .change-head .actions .nav{min-width:32px;padding:4px}.change-head .position{min-width:26px;font-size:10px}
-      .change-head .link{min-height:36px;padding:6px}.change-head .dock{margin:0}
-      .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;bottom:8px;transform:none;max-height:calc(100% - 16px);overflow:auto}
+      .change-map{display:none}.review-body>#paper{padding-left:8px;padding-right:8px;padding-bottom:84px}
+      .side.before::after,.side.after::after{content:none}
+      .change-head{align-items:center;padding:4px 6px 4px 10px;gap:6px}.change-head .change-where{min-width:0}
+      .change-head .link{min-height:36px;padding:0 6px}
+      .change-head .dock{position:fixed;z-index:6;left:8px;right:8px;bottom:8px;margin:0}
+      .change-head .actions{width:100%;flex-wrap:nowrap;justify-content:space-between;gap:0;padding:4px;border-radius:14px;box-shadow:0 2px 6px rgb(0 0 0/.06),0 12px 32px rgb(0 0 0/.14)}
+      .change-head .actions button{flex:1 1 auto;min-width:0;min-height:44px;padding:0 6px;font-size:14px;font-weight:500}
+      .change-head .actions .nav{flex:0 0 auto;min-width:32px;padding:0 4px}.change-head .position{min-width:30px;font-size:11px}
+      .change-head .actions .undo{flex:0 0 auto;margin-left:2px;padding:0 8px;font-size:13px}
+      .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;bottom:70px;transform:none;max-height:calc(100% - 86px);overflow:auto}
       .composer textarea{font-size:16px;max-height:min(140px,30vh)}.composer button{min-height:44px}
+      .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-reading-scale,1) * var(--pdf-crop-scale,1));margin-left:calc(-100% * var(--pdf-reading-scale,1) * var(--pdf-crop-scale,1) * var(--pdf-crop-shift,0))}
+      [data-papilot-fit] .side,[data-papilot-fit] .context{overflow-x:hidden}
     }
-    @media(max-width:420px){.bar .identity{display:none}.bar .meter{flex:1}}
+    @media(max-width:480px){.bar .identity,.bar .meter{display:none}.bar .bar-end{gap:4px}}
+    @media(max-width:400px){.change-head .position{display:none}}
+    @media(max-width:350px){.change-head .actions .nav{display:none}}
+    @media(max-width:360px){.bar .ghost{padding:0 7px;font-size:11.5px}}
   `;
   doc.head.append(style);
+}
+
+// Phones read the text block rather than the page. Measure the text layer's
+// shared left and right edges across all strips and crop the page margins
+// (used only by the narrow-screen strip rule above).
+function cropMargins(doc: Document) {
+  let min = 1, max = 0;
+  for (const strip of doc.querySelectorAll<HTMLElement>('.pdf-strip')) {
+    const box = strip.getBoundingClientRect(); if (!box.width) continue;
+    for (const line of strip.querySelectorAll('.pdf-text-line')) {
+      const first = line.firstElementChild?.getBoundingClientRect(), last = line.lastElementChild?.getBoundingClientRect();
+      if (!first?.width || !last?.width) continue;
+      min = Math.min(min, (first.left - box.left) / box.width); max = Math.max(max, (last.right - box.left) / box.width);
+    }
+  }
+  const root = doc.documentElement.style, span = max - min + 0.04;
+  if (max <= min || span >= 0.95) { root.removeProperty('--pdf-crop-scale'); root.removeProperty('--pdf-crop-shift'); return; }
+  root.setProperty('--pdf-crop-scale', (1 / span).toFixed(4)); root.setProperty('--pdf-crop-shift', Math.max(0, min - 0.02).toFixed(4));
 }
 
 
@@ -65,11 +94,12 @@ export function ReviewFrame({ task, scale, tools }: { task: Task; scale: number;
   const toolbar = useRef<HTMLDivElement>(null);
   const [reserve, setReserve] = useState(0);
   const observer = useRef<MutationObserver | null>(null);
+  const cropper = useRef<MutationObserver | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'slow' | 'error'>('loading');
   useEffect(() => {
     const timer = setTimeout(() => setPhase(value => value === 'loading' ? 'slow' : value), 15000);
-    return () => { clearTimeout(timer); observer.current?.disconnect(); };
+    return () => { clearTimeout(timer); observer.current?.disconnect(); cropper.current?.disconnect(); };
   }, [attempt]);
   useEffect(() => {
     const element = toolbar.current; if (!element) return;
@@ -80,6 +110,7 @@ export function ReviewFrame({ task, scale, tools }: { task: Task; scale: number;
     try {
       const root = frame.current?.contentDocument?.documentElement;
       root?.style.setProperty('--pdf-reading-scale', String(scale)); root?.style.setProperty('--papilot-tools', `${reserve}px`);
+      root?.toggleAttribute('data-papilot-fit', scale === 1);
     } catch { /* A browser error document may be inaccessible. */ }
   }, [scale, reserve]);
   function loaded() {
@@ -88,11 +119,16 @@ export function ReviewFrame({ task, scale, tools }: { task: Task; scale: number;
       const doc = frame.current?.contentDocument;
       if (!doc || (!doc.getElementById('root') && !doc.getElementById('paper'))) { setPhase('error'); return; }
       compactReviewFrame(doc, scale, reserve);
+      // Strips render after the viewer starts; re-measure the text edges when they change.
+      let pending: ReturnType<typeof setTimeout> | undefined;
+      cropper.current?.disconnect();
+      cropper.current = new MutationObserver(() => { clearTimeout(pending); pending = setTimeout(() => cropMargins(doc), 150); });
+      cropper.current.observe(doc.body, { childList: true, subtree: true });
       const inspect = () => {
         const paper = doc.getElementById('paper');
         if (!paper) return;
         if (paper.querySelector('[role="alert"]')) { setPhase('error'); return; }
-        if (!paper.querySelector('.waiting')) { setPhase('ready'); observer.current?.disconnect(); }
+        if (!paper.querySelector('.waiting')) { setPhase('ready'); observer.current?.disconnect(); cropMargins(doc); }
       };
       observer.current = new MutationObserver(inspect);
       observer.current.observe(doc.body, { childList: true, subtree: true });
