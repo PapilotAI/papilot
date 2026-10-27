@@ -27,7 +27,7 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     .bar .status{font-size:13px}
     .sheet{border-radius:4px;box-shadow:0 1px 2px rgb(28 27 25/.06),0 8px 24px rgb(28 27 25/.08)}
     .change-head{font-size:13px}.link{font-size:13px}
-    /* The current change's decision bar: a solid toolbar with clear buttons. */
+    /* The current change's decision buttons; on phones the bar is a solid toolbar at the bottom. */
     .change-head .actions{gap:3px;padding:4px;background:#fff;border:1px solid #d6d5d0;border-radius:12px;box-shadow:0 1px 2px rgb(28 27 25/.06),0 4px 12px rgb(28 27 25/.06)}
     .change-head .actions button{height:30px;padding:0 13px;border:1px solid transparent;border-radius:8px;font-size:13.5px;font-weight:500;line-height:1}
     .change-head .actions .nav{width:30px;padding:0;font-size:19px;font-weight:400;color:#55544f}
@@ -47,6 +47,18 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     .change-head .actions .undo:hover:not(:disabled){background:#efefec}
     .change-head .actions .undo:disabled{color:#bdbdbd;opacity:1}
     .change-head .actions .accept:disabled,.change-head .actions .reject:disabled,.change-head .actions .comment:disabled{opacity:.4}
+    /* Wider than a phone, the decision bar is a flat strip along the bottom of the
+       current change's header: moving between changes on the left, deciding on
+       the right. It belongs to the header rather than floating over it. */
+    @media(min-width:681px){
+      .change-head .dock{order:9;flex-basis:calc(100% + 24px);justify-content:flex-start;margin:6px -12px -8px;padding:5px 8px 5px 6px;border-top:1px solid var(--line)}
+      .change-head .actions{flex:1;flex-wrap:nowrap;justify-content:flex-start;gap:4px;max-width:none;padding:0;background:none;border:0;border-radius:0;box-shadow:none}
+      .change-head .actions>*{order:4}
+      .change-head .actions>.nav:first-child{order:1}.change-head .actions>.position{order:2}.change-head .actions>.nav:not(:first-child){order:3}
+      .change-head .actions .undo{order:5}
+      .change-head .actions .accept,.change-head .actions .skip,.change-head .actions .complete{margin-left:auto}
+      .change-head .position{min-width:34px}
+    }
     #paper{--paper-top:14px;padding-top:14px}
     .review-body>#paper{padding-right:34px}
     .change-map{top:10px;bottom:10px;right:8px;width:14px;border:0;border-radius:0;background:none;box-shadow:none}
