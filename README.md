@@ -53,7 +53,7 @@ Each edit comes back as a typeset diff. Accept, reject or comment on it, and und
 <td width="50%" valign="top">
 <img src="docs/assets/feature-contents.png" alt="The PDF viewer with its contents menu open">
 <h3>📖 Read it like a real PDF</h3>
-Jump around with the contents menu, search every page and zoom in sharply. Selecting text picks exactly the printed words.
+Jump to any section from the contents, search every page and zoom in sharply. Selecting text picks exactly the printed words.
 </td>
 <td width="50%" valign="top">
 <img src="docs/assets/feature-git.png" alt="The Git panel with a diff and a commit message">
@@ -120,7 +120,17 @@ Run `npm run typecheck`, `npm test` and `npm run test:ui` before sending a pull 
 
 ## 📚 Documentation
 
-The **[guide](docs/guide.md)** covers every part of the workspace, the configuration variables, recovery after restarts, and development. The example paper in [`examples/papilot-paper`](examples/papilot-paper) explains the design in depth, with proofs.
+The **[guide](docs/guide.md)** covers every part of the workspace, the configuration variables, recovery after restarts, and development. The example paper in [`examples/papilot-paper`](examples/papilot-paper) explains the design in depth, with proofs. What changed in each release is in the [changelog](CHANGELOG.md).
+
+## 💬 Community
+
+- 💡 **Questions and ideas**: [Discussions](https://github.com/cu1ch3n/papilot/discussions)
+- 🐛 **Something broke**: [open an issue](https://github.com/cu1ch3n/papilot/issues/new/choose)
+- 🤝 **Want to help**: pick a [good first issue](https://github.com/cu1ch3n/papilot/labels/good%20first%20issue) and read [CONTRIBUTING.md](CONTRIBUTING.md)
+
+If Papilot saves you time on a paper, a ⭐ helps other researchers find it.
+
+<a href="https://github.com/cu1ch3n/papilot/graphs/contributors"><img src="https://contrib.rocks/image?repo=cu1ch3n/papilot" alt="Papilot contributors"></a>
 
 ## 📄 License
 

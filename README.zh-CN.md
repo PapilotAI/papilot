@@ -120,7 +120,17 @@ npm run build && npm start
 
 ## 📚 文档
 
-**[指南](docs/guide.md)**（英文）介绍工作台的每个部分、配置变量、重启后的恢复以及开发流程。[`examples/papilot-paper`](examples/papilot-paper) 中的示例论文深入讲解了设计，并附有证明。
+**[指南](docs/guide.md)**（英文）介绍工作台的每个部分、配置变量、重启后的恢复以及开发流程。[`examples/papilot-paper`](examples/papilot-paper) 中的示例论文深入讲解了设计，并附有证明。每个版本的变化见[更新日志](CHANGELOG.md)。
+
+## 💬 社区
+
+- 💡 **提问和想法**：[Discussions](https://github.com/cu1ch3n/papilot/discussions)
+- 🐛 **遇到问题**：[提交 issue](https://github.com/cu1ch3n/papilot/issues/new/choose)
+- 🤝 **想参与**：从 [good first issue](https://github.com/cu1ch3n/papilot/labels/good%20first%20issue) 开始，并阅读 [CONTRIBUTING.md](CONTRIBUTING.md)
+
+如果 Papilot 帮你省下了改论文的时间，点个 ⭐ 能让更多研究者发现它。
+
+<a href="https://github.com/cu1ch3n/papilot/graphs/contributors"><img src="https://contrib.rocks/image?repo=cu1ch3n/papilot" alt="Papilot 贡献者"></a>
 
 ## 📄 许可证
 
