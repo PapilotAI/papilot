@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { DATA } from '../src/server/paths.ts';
 
 if (!process.argv.includes('--allow-example-writes')) throw new Error('This check changes only the generated example manuscript. Pass --allow-example-writes to run it.');
-const origin = 'http://127.0.0.1:4317';
+const origin = 'http://127.0.0.1:7274';
 const state = await (await fetch(origin + '/api/state')).json() as any;
 const tasks = JSON.parse(fs.readFileSync(path.join(DATA, 'smoke.json'), 'utf8')) as { id: string; title: string }[];
 const a = state.tasks.find((t: any) => t.id === tasks[0].id), b = state.tasks.find((t: any) => t.id === tasks[1].id);

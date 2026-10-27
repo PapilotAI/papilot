@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
-import { CODEX, ROOT } from './paths.ts';
+import { CODEX, ROOT, VERSION } from './paths.ts';
 
 export class RpcResponseError extends Error {}
 
@@ -34,7 +34,7 @@ export class Codex extends EventEmitter {
     };
     child.once('error', failed);
     child.once('exit', (code, signal) => failed(new Error(`Codex exited (${signal || code})`)));
-    await this.request('initialize', { clientInfo: { name: 'papilot', title: 'Papilot', version: '0.1.0' } });
+    await this.request('initialize', { clientInfo: { name: 'papilot', title: 'Papilot', version: VERSION } });
     this.notify('initialized', {}); this.ready = true;
   }
   private receive(message: any) {

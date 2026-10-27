@@ -6,7 +6,7 @@ import path from 'node:path';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Store } from './store.ts';
 import { Workspace } from './workspace.ts';
-import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER } from './paths.ts';
+import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER, VERSION } from './paths.ts';
 import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState } from './review.ts';
 import { authorize } from './security.ts';
 import { fullPaperPdf } from './pdf.ts';
@@ -27,7 +27,7 @@ app.addHook('onRequest', async (request, reply) => {
   if (request.method === 'POST' && !request.url.startsWith('/review/') && !equals(String(request.headers['x-papilot-token'] || ''), csrf)) return reply.code(403).send({ error: 'This page has expired. Refresh it and try again.' });
 });
 app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
-app.get('/api/health', () => ({ ok: true, name: 'Papilot', version: '0.1.0' }));
+app.get('/api/health', () => ({ ok: true, name: 'Papilot', version: VERSION }));
 app.get('/api/state', () => ({ ...workspace.snapshot(), csrf }));
 app.get('/api/events', (request, reply) => {
   reply.hijack();

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const usage = `Usage: papilot [demo | codex <args> | service install | service stop] [--port <number>] [--data <folder>]
 
-  papilot                  Start Papilot at http://127.0.0.1:4317
+  papilot                  Start Papilot at http://127.0.0.1:7274
   papilot demo             Add the example paper, then start
   papilot codex login      Sign in to Codex with the Codex that Papilot uses
   papilot service install  Run Papilot in the background after login (macOS)
@@ -106,7 +106,7 @@ if (service) {
     await import('../src/server/main.ts');
   } catch (error) {
     if (error?.code !== 'EADDRINUSE') throw error;
-    console.error(`Port ${process.env.PAPILOT_PORT || 4317} is already in use. Is Papilot already running? Start another copy with --port <number>.`);
+    console.error(`Port ${process.env.PAPILOT_PORT || 7274} is already in use. Is Papilot already running? Start another copy with --port <number>.`);
     process.exit(1);
   }
   if (!tex) console.warn('\nlatexmk was not found, so PDFs cannot be built yet. Install MacTeX or TeX Live (the full distribution), open a new terminal and run papilot again.');

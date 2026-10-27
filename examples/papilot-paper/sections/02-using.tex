@@ -13,7 +13,7 @@ installed and started with
 npm install -g papilot
 papilot
 \end{verbatim}
-and then opened at \texttt{http://127.0.0.1:4317}. \emph{Add paper} registers a
+and then opened at \texttt{http://127.0.0.1:7274}. \emph{Add paper} registers a
 \LaTeX{} Git repository on the host; later papers are added and switched from
 the paper menu at the top of the sidebar. A repository must have at least one
 commit and compile with \texttt{latexmk}; a custom root document is named in a
@@ -106,7 +106,7 @@ request (\cref{sec:security}):
 export PAPILOT_PUBLIC_ORIGIN=https://your-mac.your-tailnet.ts.net:8443
 export PAPILOT_TAILSCALE_LOGIN=your-tailscale-login
 papilot service install
-tailscale serve --bg --https=8443 http://127.0.0.1:4317
+tailscale serve --bg --https=8443 http://127.0.0.1:7274
 \end{verbatim}
 A background service starts Papilot after login, restarts it if it exits and
 keeps the computer from sleeping while it runs. Without Tailscale, an SSH
@@ -120,7 +120,7 @@ tunnel serves the same purpose.
 \toprule
 Variable & Purpose \\
 \midrule
-\texttt{PAPILOT\_PORT} & local HTTP port, $4317$ by default \\
+\texttt{PAPILOT\_PORT} & local HTTP port, $7274$ by default \\
 \texttt{PAPILOT\_DATA} & state and generated example, \texttt{\textasciitilde/.papilot} by default \\
 \texttt{PAPILOT\_CODEX\_BIN} & Codex executable \\
 \texttt{ANTHROPIC\_API\_KEY} & API key for Claude tasks \\

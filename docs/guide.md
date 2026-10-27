@@ -31,7 +31,7 @@ npm start
 
 A source checkout keeps its state in `.papilot` inside the checkout, and `npm run demo` adds the example paper.
 
-Open [Papilot](http://127.0.0.1:4317). Select **Add paper** and enter the path to a LaTeX Git repository on the host. Later papers are added and switched from the paper menu at the top of the sidebar. The repository must have at least one commit and compile with `latexmk`. Custom root documents can use `.latex-review.json` as described in the [review engine reference](../vendor/latex-review/docs/reference.md).
+Open [Papilot](http://127.0.0.1:7274). Select **Add paper** and enter the path to a LaTeX Git repository on the host. Later papers are added and switched from the paper menu at the top of the sidebar. The repository must have at least one commit and compile with `latexmk`. Custom root documents can use `.latex-review.json` as described in the [review engine reference](../vendor/latex-review/docs/reference.md).
 
 To try a sample first, run `papilot demo` (`npm run demo` in a source checkout). It copies the example paper in `examples/papilot-paper` (this README written as a 26-page LaTeX paper in fifteen chapter files, with a usage chapter, formal models of review rounds, conflicts, the PDF view's geometry, queueing and Git, theorems with proofs, an algorithm, TikZ and pgfplots figures, tables and a BibTeX bibliography, so there is plenty to review) into a separate Git repository, `example-paper` in the data folder, and registers it as **Papilot paper** without changing an existing manuscript. Start an editing task from the interface when you are ready to run Codex.
 
@@ -90,7 +90,7 @@ Papilot binds **only to 127.0.0.1**. Configure a private Tailscale Serve endpoin
 export PAPILOT_PUBLIC_ORIGIN=https://your-mac.your-tailnet.ts.net:8443
 export PAPILOT_TAILSCALE_LOGIN=your-tailscale-login
 papilot service install   # npm run service:install in a source checkout
-tailscale serve --bg --https=8443 http://127.0.0.1:4317
+tailscale serve --bg --https=8443 http://127.0.0.1:7274
 ```
 
 This uses a separate HTTPS port so an existing service on 443 can stay in place. Keep devices connected to your tailnet. Do not use Funnel for this personal workspace. The Codex app-server itself is never exposed to the network.
@@ -101,7 +101,7 @@ If certificate issuance cannot reach Let's Encrypt, use a private HTTP endpoint 
 export PAPILOT_PUBLIC_ORIGIN=http://your-mac.your-tailnet.ts.net:8081
 export PAPILOT_TAILSCALE_LOGIN=your-tailscale-login
 papilot service install
-tailscale serve --bg --http=8081 http://127.0.0.1:4317
+tailscale serve --bg --http=8081 http://127.0.0.1:7274
 ```
 
 With HTTP Serve, the connection is protected by Tailscale rather than browser HTTPS. Browser features that require a secure context, such as the viewer's clipboard button, may be unavailable; native text selection and copying remain available.
@@ -110,7 +110,7 @@ If you use a private Tailscale IP instead of a MagicDNS hostname, set `PAPILOT_P
 
 The launchd user agent starts after login, restarts the service on exit, and uses `caffeinate -i` to prevent idle system sleep while Papilot runs. A full reboot still requires the account to log in. Run `papilot service stop` (`npm run service:stop` in a source checkout) to stop it. Logs are in `service.log` and `service.error.log` in the data folder.
 
-For SSH access without Tailscale, run `ssh -N -L 4317:127.0.0.1:4317 user@your-host` on the computer running your browser, keep that terminal open, and visit `http://localhost:4317`.
+For SSH access without Tailscale, run `ssh -N -L 7274:127.0.0.1:7274 user@your-host` on the computer running your browser, keep that terminal open, and visit `http://localhost:7274`.
 
 The workspace uses short, non-overlapping polling on HTTP/1 connections so multiple tabs cannot exhaust the browser's connection pool with permanent event streams. HTTP/2 and HTTP/3 connections use event streams. Hidden workspace tabs pause their status refreshes and update when reopened; task switches cancel obsolete conversation requests. If upgrading from an older frontend leaves pages loading indefinitely, close the old Papilot tabs and reopen the workspace.
 
@@ -118,7 +118,7 @@ The workspace uses short, non-overlapping polling on HTTP/1 connections so multi
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PAPILOT_PORT` | `4317` | Local HTTP port; the server binds to `127.0.0.1`. |
+| `PAPILOT_PORT` | `7274` | Local HTTP port; the server binds to `127.0.0.1`. |
 | `PAPILOT_DATA` | `~/.papilot` for the `papilot` command, `.papilot` in a source checkout | SQLite state and generated example project. |
 | `PAPILOT_CODEX_BIN` | `codex` on `PATH` (0.164.0 or newer), else one installed into the data folder | Codex executable used by the backend. |
 | `ANTHROPIC_API_KEY` | Unset | Anthropic API key for Claude tasks (the Agent SDK does not accept a Claude subscription login). |

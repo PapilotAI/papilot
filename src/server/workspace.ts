@@ -8,6 +8,7 @@ import { Store } from './store.ts';
 import { Codex, RpcResponseError } from './codex.ts';
 import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, type AgentRuntime } from './agents.ts';
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
+import { VERSION } from './paths.ts';
 import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -83,7 +84,7 @@ export class Workspace extends EventEmitter {
     if (id === 'codex') this.loaded.clear();
     this.emit('change');
   }
-  snapshot(): Snapshot { return { version: '0.1.0', projects: this.store.projects(), tasks: this.store.tasks(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
+  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), tasks: this.store.tasks(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
   async connect() {
     if (this.connecting) return this.connecting;
     this.connecting = Promise.all(AGENTS.map(id => this.connectAgent(id))).then(() => { this.emit('change'); this.schedule(); }).finally(() => { this.connecting = null; });

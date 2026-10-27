@@ -75,7 +75,7 @@ npm install -g papilot
 papilot demo
 ```
 
-Open **http://127.0.0.1:4317** and choose **PDF** in the sidebar. The demo adds an example paper to revise: a 26-page LaTeX paper about Papilot itself, full of equations. When you are ready, run `papilot` and choose **Add paper** to add any LaTeX project in a Git repository.
+Open **http://127.0.0.1:7274** and choose **PDF** in the sidebar. The demo adds an example paper to revise: a 26-page LaTeX paper about Papilot itself, full of equations. When you are ready, run `papilot` and choose **Add paper** to add any LaTeX project in a Git repository.
 
 ## 🤖 Agents
 

@@ -31,16 +31,16 @@ test('restart preserves queued instructions and marks in-flight work interrupted
 
 test('remote access requires the configured Tailscale identity and matching browser origin', () => {
   const origin = 'https://mini.example.ts.net:8443';
-  const check = (headers: any, address = '127.0.0.1') => authorize(headers, address, 4317, origin, 'owner@example');
-  assert.equal(check({ host: '127.0.0.1:4317' }), null);
-  assert.ok(check({ host: '127.0.0.1:4317', origin: 'https://evil.example' }));
+  const check = (headers: any, address = '127.0.0.1') => authorize(headers, address, 7274, origin, 'owner@example');
+  assert.equal(check({ host: '127.0.0.1:7274' }), null);
+  assert.ok(check({ host: '127.0.0.1:7274', origin: 'https://evil.example' }));
   assert.ok(check({ host: 'evil.example' }));
-  assert.ok(check({ host: '127.0.0.1:4317', 'x-forwarded-for': '100.64.0.2', 'tailscale-user-login': 'other@example' }));
+  assert.ok(check({ host: '127.0.0.1:7274', 'x-forwarded-for': '100.64.0.2', 'tailscale-user-login': 'other@example' }));
   assert.ok(check({ host: 'mini.example.ts.net:8443' }));
   assert.ok(check({ host: 'mini.example.ts.net:8443', 'tailscale-user-login': 'other@example' }));
   assert.equal(check({ host: 'mini.example.ts.net:8443', origin, 'tailscale-user-login': 'owner@example' }), null);
   assert.ok(check({ host: 'mini.example.ts.net:8443', origin: 'https://evil.example', 'tailscale-user-login': 'owner@example' }));
-  assert.ok(check({ host: '127.0.0.1:4317' }, '192.168.1.4'));
+  assert.ok(check({ host: '127.0.0.1:7274' }, '192.168.1.4'));
 });
 
 test('review proxy only exposes review routes and keeps assets on the remote origin', () => {
