@@ -35,15 +35,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      # apt's mirrors sometimes hang for many minutes, so take a static build
-      # from GitHub, which downloads in seconds.
-      - name: Install FFmpeg
-        run: |
-          mkdir -p "$RUNNER_TEMP/ffmpeg"
-          curl -sSfL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz \
-            | tar -xJ -C "$RUNNER_TEMP/ffmpeg" --strip-components=2 --wildcards '*/bin/ffmpeg'
-          echo "$RUNNER_TEMP/ffmpeg" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/ffmpeg/ffmpeg" -hide_banner -version | head -1
+      # The demo video is committed, so the build only copies and checks files.
       - run: node scripts/build-site.mjs
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
