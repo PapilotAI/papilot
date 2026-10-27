@@ -10,7 +10,7 @@ import { DeleteTaskDialog } from './task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { Markdown } from './markdown.tsx';
-import logo from './logo.png';
+import logo from './logo.svg';
 import { ChipSelect } from './chip-select.tsx';
 import type { OutlineItem, PdfHandle, Rect } from './pdf-view.tsx';
 // pdf.js is large, so the PDF view loads the first time it opens.
