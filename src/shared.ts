@@ -1,6 +1,6 @@
 export type TaskStatus = 'idle' | 'queued' | 'running' | 'waiting_input' | 'building' | 'reviewing' | 'interrupted' | 'failed' | 'uncertain' | 'deleting';
 export interface Project { id: string; name: string; path: string; createdAt: number }
-export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; next?: string; job?: { phase: string; status: string; error?: string; details?: string[] } | null }
+export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; next?: string; job?: { phase: string; status: string; error?: string; details?: string[] } | null }
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface Task {
   id: string; projectId: string; name: string; title: string; instructions: string;

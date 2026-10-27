@@ -34,6 +34,7 @@ let reviewFailure = false;
 let reviewStarting = false;
 let deleteFailure = false;
 const deletions = [];
+const renames = [];
 const interruptions = [];
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
 await page.route('**/api/**', async route => {
@@ -49,6 +50,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items') && itemsFailure) return route.fulfill({ status: 503, json: { error: 'Conversation temporarily unavailable.' } });
   if (url.pathname.endsWith('/items') && history) return json({ items: history });
   if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'hello', taskId: task.id, type: 'assistant', text: 'The introduction is ready for review.', createdAt: 1 }] });
+  if (url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); renames.push({ id, ...body }); snapshot.tasks.find(t => t.id === id).title = body.title; return json(snapshot.tasks.find(t => t.id === id)); }
   if (url.pathname.endsWith('/interrupt')) { const id = url.pathname.split('/')[3]; interruptions.push(id); snapshot.tasks.find(t => t.id === id).status = 'interrupted'; return json({ ok: true }); }
   if (url.pathname.endsWith('/delete')) {
     const id = url.pathname.split('/')[3];
@@ -127,7 +129,10 @@ try {
   assert.equal(await views.getByRole('button', { name: 'Review', exact: true }).getAttribute('aria-pressed'), 'true');
   await views.getByRole('button', { name: 'Chat', exact: true }).click();
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), false);
-  await views.getByRole('button', { name: 'Split', exact: true }).click();
+  await page.getByText('Round 1 is ready · 3 changes to decide', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Open review', exact: true }).click();
+  assert.equal(await views.getByRole('button', { name: 'Split', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('button', { name: 'Open review', exact: true }).count(), 0);
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), true);
   assert.equal(await page.locator('.topbar .full-pdf-link').count(), 0);
   assert.equal(await page.locator('.topbar').getByRole('button', { name: 'Delete task', exact: true }).count(), 0);
@@ -140,6 +145,36 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await reviewOptions.evaluate(el => el === document.activeElement), true);
   console.log('PASS: Views select explicitly, PDF tools stay with the review, and menus support keyboard navigation');
+
+  const divider = page.getByRole('separator', { name: 'Resize chat panel' });
+  const chatPanel = page.getByRole('region', { name: 'Codex conversation', exact: true });
+  const defaultWidth = Math.round((await chatPanel.boundingBox()).width);
+  await divider.focus();
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(Math.round((await chatPanel.boundingBox()).width), defaultWidth + 24);
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:chat-width')), String(defaultWidth + 24));
+  const handle = await divider.boundingBox();
+  await page.mouse.move(handle.x + 4, handle.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(handle.x - 96, handle.y + 300, { steps: 5 });
+  await page.mouse.up();
+  assert.ok(Math.abs((await chatPanel.boundingBox()).width - (defaultWidth + 124)) <= 2);
+  await divider.dblclick();
+  assert.equal(Math.round((await chatPanel.boundingBox()).width), defaultWidth);
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:chat-width')), null);
+  const copy = page.getByRole('button', { name: 'Copy message' });
+  await copy.click();
+  await page.getByRole('button', { name: 'Copied' }).waitFor();
+  await page.getByText('1 comment not sent yet', { exact: true }).waitFor();
+  await page.getByText('1 review comment will be sent with this message', { exact: true }).waitFor();
+  task.review.unsent = 0;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.getByRole('button', { name: 'Send feedback', exact: true }).waitFor({ state: 'hidden' });
+  await page.getByText('Enter to send · Shift+Enter for a new line', { exact: true }).waitFor();
+  delete task.review.unsent;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.getByRole('button', { name: 'Send feedback', exact: true }).waitFor();
+  console.log('PASS: The chat divider drags, nudges, persists and resets; replies copy; only unsent comments offer Send feedback');
 
 
   await page.getByRole('button', { name: 'New task', exact: true }).click();
@@ -202,6 +237,25 @@ try {
   assert.deepEqual(interruptions, [secondTask.id]);
   assert.equal(await page.locator('.task-link.active').innerText(), activeBeforeMenu);
   secondTask.status = 'reviewing';
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await otherMenu.click();
+  await page.getByRole('menuitem', { name: 'Rename…', exact: true }).click();
+  let renameBox = page.getByRole('textbox', { name: `Rename ${secondTask.title}` });
+  assert.equal(await renameBox.evaluate(el => el === document.activeElement), true);
+  await renameBox.fill('Something else');
+  await renameBox.press('Escape');
+  await page.getByRole('button', { name: /^Check the notation/ }).waitFor();
+  assert.equal(renames.length, 0);
+  await otherMenu.click();
+  await page.getByRole('menuitem', { name: 'Rename…', exact: true }).click();
+  renameBox = page.getByRole('textbox', { name: `Rename ${secondTask.title}` });
+  await renameBox.fill('Check the notation and symbols');
+  await renameBox.press('Enter');
+  await page.getByRole('button', { name: /^Check the notation and symbols/ }).waitFor();
+  assert.deepEqual(renames, [{ id: secondTask.id, title: 'Check the notation and symbols' }]);
+  assert.equal(await page.getByRole('button', { name: /^Check the notation and symbols/ }).evaluate(el => el === document.activeElement), true);
+  assert.equal(await page.locator('.task-link.active').innerText(), activeBeforeMenu);
+  console.log('PASS: Tasks rename inline from their menu; Escape cancels and Enter saves without changing the selection');
 
 
   await input.fill('Only send this once.');
@@ -253,6 +307,7 @@ try {
   await page.reload();
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('heading', { name: 'Codex needs your input' }).waitFor();
+  assert.equal(await page.title(), `(1) ${task.title} · Papilot`);
   assert.equal(await page.getByRole('button', { name: 'Reply to Codex' }).isDisabled(), true);
   await page.getByRole('button', { name: /Introduction/ }).click({ timeout: 3000 });
   assert.equal(await page.getByRole('button', { name: 'Reply to Codex' }).isEnabled(), true);

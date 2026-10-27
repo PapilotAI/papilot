@@ -79,9 +79,24 @@ function RequestCard({ request, answerDrafts, onDone }: { request: PendingReques
   </div>;
 }
 
+// Clipboard access needs a secure context; Tailscale HTTP falls back to a hidden selection.
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(false), 1600); return () => clearTimeout(timer); }, [copied]);
+  async function copy() {
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const area = document.createElement('textarea'); area.value = text; area.readOnly = true; area.style.position = 'fixed'; area.style.opacity = '0';
+      document.body.append(area); area.select(); document.execCommand('copy'); area.remove();
+    }
+    setCopied(true);
+  }
+  return <button type="button" className="message-action" aria-label={copied ? 'Copied' : 'Copy message'} onClick={() => void copy()}><Icon name={copied ? 'check' : 'copy'} size={14}/><span>{copied ? 'Copied' : 'Copy'}</span></button>;
+}
+
 function TimelineEntry({ item }: { item: TimelineItem }) {
   if (item.type === 'user') return <article className="message user" aria-label={`You, ${time(item.createdAt)}`}><div className="message-body" title={time(item.createdAt)}>{item.text}</div></article>;
-  if (item.type === 'assistant') return <article className="message assistant" aria-label={`Codex, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div></article>;
+  if (item.type === 'assistant') return <article className="message assistant" aria-label={`Codex, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
   const files = item.type === 'files' ? item.text.split('\n').filter(Boolean) : [];
   const label = item.type === 'command' ? item.text || 'Run command' : item.type === 'files' ? (files.length === 1 ? `Edited ${files[0]}` : `Edited ${files.length} files`) : item.text || 'Run tool';
   const detail = item.type === 'files' ? item.text : item.detail;
@@ -89,7 +104,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
   return <details className={'tool-item ' + state}><summary><Icon name={item.type === 'command' ? 'terminal' : item.type === 'files' ? 'diff' : 'tool'} size={14}/><span className="tool-label">{label}</span>{state === 'running' ? <span className="spinner" aria-label="Running"/> : state && <span className="tool-status">{item.status === 'declined' ? 'Declined' : 'Failed'}</span>}</summary>{detail && <pre>{detail}</pre>}</details>;
 }
 
-function Activity({ task, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing }: { task: Task; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean }) {
+function Activity({ task, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing, openReview }: { task: Task; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void }) {
   const { text: draft, sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
   const scroller = useRef<HTMLDivElement>(null);
   const shouldFollow = useRef(true);
@@ -108,7 +123,9 @@ function Activity({ task, composer, answerDrafts, items, loading, loadError, ret
     catch (e) { reportError(e); }
   }
   const active = ACTIVE.includes(task.status), blocked = ['uncertain', 'deleting'].includes(task.status);
-  const hint = task.status === 'deleting' ? 'This task is being deleted' : task.status === 'uncertain' ? 'Check task status before sending' : sendingSource === 'feedback' ? 'Sending feedback…' : sending ? 'Sending…' : active ? 'Codex is working · new instructions run next' : 'Includes new review comments';
+  const unsent = task.review?.unsent ?? task.review?.counts?.commented ?? 0;
+  const hint = task.status === 'deleting' ? 'This task is being deleted' : task.status === 'uncertain' ? 'Check task status before sending' : sendingSource === 'feedback' ? 'Sending feedback…' : sending ? 'Sending…'
+    : unsent ? `${unsent} review ${unsent === 1 ? 'comment' : 'comments'} will be sent with this message` : active ? 'Codex is working · new instructions run next' : touch() ? '' : 'Enter to send · Shift+Enter for a new line';
   return <section id="conversation-panel" className="activity-panel" aria-label="Codex conversation"><div className="panel-heading"><span className="panel-title">Chat</span><span className="model-chip" title={task.model || 'Use the default Codex model on this host'}>{task.model || 'Default model'}</span></div>
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); } }}><div className="thread">
       {loading && <p className="muted" role="status">Loading conversation…</p>}
@@ -117,6 +134,7 @@ function Activity({ task, composer, answerDrafts, items, loading, loadError, ret
       {requests.map(r => <RequestCard key={r.id} request={r} answerDrafts={answerDrafts} onDone={refresh}/>)}
       {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>Codex is working on this task</div>}
       {task.status === 'queued' && <p className="muted">Task saved. Waiting for an available Codex session.</p>}
+      {openReview && task.status === 'reviewing' && task.review?.counts?.pending ? <div className="review-ready"><Icon name="paper" size={16}/><span>Round {task.review.round} is ready · {task.review.counts.pending} {task.review.counts.pending === 1 ? 'change' : 'changes'} to decide</span><button className="button secondary compact" onClick={openReview}>Open review</button></div> : null}
       {task.error && <div className="task-error"><Icon name="alert" size={16}/><div><strong>This step needs attention</strong><p>{task.error}</p></div></div>}
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>Latest messages</button>}</div>
     <div className="composer-wrap">
@@ -132,14 +150,15 @@ function Activity({ task, composer, answerDrafts, items, loading, loadError, ret
 
 function ReviewFeedback({ task, composer, refresh, reportError, onSent }: { task: Task; composer: ComposerDraft; refresh: () => void; reportError: (error: unknown) => void; onSent: () => void }) {
   const { sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
-  const count = task.review?.counts?.commented || 0;
+  // Older summaries have no unsent count; fall back to every commented change.
+  const count = task.review?.unsent ?? task.review?.counts?.commented ?? 0;
   if (!count || task.status === 'deleting') return null;
   async function send() {
     if (task.status === 'uncertain') return;
     try { if (await composer.submit('feedback', message => api('/tasks/' + task.id + '/messages', message))) { refresh(); onSent(); } }
     catch (error) { reportError(error); }
   }
-  return <div className="review-feedback"><span><Icon name="chat" size={15}/>{count} saved {count === 1 ? 'comment' : 'comments'}</span><button className="button primary compact" disabled={sending || task.status === 'uncertain'} onClick={() => void send()}>{sendingSource === 'feedback' ? 'Sending feedback…' : 'Send feedback'}<Icon name="arrowRight" size={14}/></button></div>;
+  return <div className="review-feedback"><span><Icon name="chat" size={15}/>{count} {count === 1 ? 'comment' : 'comments'} not sent yet</span><button className="button primary compact" disabled={sending || task.status === 'uncertain'} onClick={() => void send()}>{sendingSource === 'feedback' ? 'Sending feedback…' : 'Send feedback'}<Icon name="arrowRight" size={14}/></button></div>;
 }
 
 const suggestions = ['Proofread for grammar and typos', 'Tighten the abstract', 'Make the introduction more concise', 'Check notation for consistency'];
@@ -180,6 +199,8 @@ function App() {
   const narrow = useMedia('(max-width: 900px)'), mobile = useMedia('(max-width: 680px)');
   const [mobileTab, setMobileTab] = useState('review');
   const [pdfScale, setPdfScale] = useState(1);
+  const [renaming, setRenaming] = useState('');
+  const [chatWidth, setChatWidth] = useState(() => Number(browserStorage.getItem('papilot:chat-width')) || 0);
   const [form, setForm] = useState({ path: '', name: '' });
   const selectedRef = useRef(selected); selectedRef.current = selected;
   const loaded = useRef(false);
@@ -200,6 +221,7 @@ function App() {
   useEffect(() => { setSidebar(false); }, [narrow]);
   useEffect(() => { browserStorage.setItem('papilot:sidebar', sidebarVisible ? 'visible' : 'hidden'); }, [sidebarVisible]);
   useEffect(() => { browserStorage.setItem('papilot:layout', layout); }, [layout]);
+  useEffect(() => { if (chatWidth) browserStorage.setItem('papilot:chat-width', String(chatWidth)); else browserStorage.removeItem('papilot:chat-width'); }, [chatWidth]);
   useEffect(() => { if (newDraft) browserStorage.setItem('papilot:new-task', newDraft); else browserStorage.removeItem('papilot:new-task'); }, [newDraft]);
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -330,6 +352,35 @@ function App() {
     setSidebarVisible(false); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.topbar .sidebar-toggle')?.focus());
   }
 
+  async function rename(target: Task, value: string) {
+    const title = value.trim().replace(/\s+/g, ' ').slice(0, 120);
+    setRenaming('');
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`.task-row[data-task="${target.id}"] .task-link`)?.focus());
+    if (!title || title === target.title) return;
+    setState(previous => previous ? { ...previous, tasks: previous.tasks.map(t => t.id === target.id ? { ...t, title } : t) } : previous);
+    try { await api('/tasks/' + target.id + '/rename', { title }); } catch (e) { reportError(e); }
+    await refresh(true);
+  }
+  // The divider sets the chat width; CSS keeps both panels usable when the window narrows.
+  function resizeChat(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget, grid = handle.parentElement!.getBoundingClientRect();
+    handle.setPointerCapture(event.pointerId); document.body.classList.add('resizing');
+    const move = (e: PointerEvent) => setChatWidth(Math.round(Math.min(Math.max(grid.right - e.clientX, 300), grid.width - 360)));
+    const stop = () => { document.body.classList.remove('resizing'); handle.removeEventListener('pointermove', move); handle.removeEventListener('lostpointercapture', stop); };
+    handle.addEventListener('pointermove', move); handle.addEventListener('lostpointercapture', stop);
+  }
+  function nudgeChat(event: React.KeyboardEvent<HTMLDivElement>) {
+    const current = event.currentTarget.parentElement!.querySelector<HTMLElement>('.activity-panel')?.offsetWidth || 400;
+    const max = event.currentTarget.parentElement!.offsetWidth - 360;
+    const next = event.key === 'ArrowLeft' ? current + 24 : event.key === 'ArrowRight' ? current - 24 : event.key === 'Home' ? max : event.key === 'End' ? 300 : null;
+    if (event.key === 'Enter') { event.preventDefault(); setChatWidth(0); return; }
+    if (next === null) return;
+    event.preventDefault(); setChatWidth(Math.min(Math.max(next, 300), max));
+  }
+  const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
+  useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : 'Papilot'); }, [waiting, task?.title]);
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
   const active = Boolean(task && ACTIVE.includes(task.status));
@@ -357,10 +408,14 @@ function App() {
         <button className="new-task" disabled={!state} onClick={() => newTask()}><Icon name="compose" size={16}/>New task</button>
       </div>
       <div className="sidebar-section"><span>Tasks</span>{tasks.length > 0 && <span className="count">{tasks.length}</span>}</div>
-      <nav className="task-list" aria-label="Task list">{tasks.length ? [...tasks].reverse().map(t => <div key={t.id} className={'task-row ' + (t.id === selected ? 'active' : '')}>
-        <button aria-current={t.id === selected ? 'page' : undefined} className={'task-link ' + (t.id === selected ? 'active' : '')} onClick={() => { setSelected(t.id); setSidebar(false); }}><span className="task-title">{t.title}</span><span className="task-meta"><Status task={t}/><span className="task-time">{ago(t.updatedAt)}</span></span></button>
+      <nav className="task-list" aria-label="Task list">{tasks.length ? [...tasks].reverse().map(t => <div key={t.id} data-task={t.id} className={'task-row ' + (t.id === selected ? 'active' : '')}>
+        {renaming === t.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); e.currentTarget.querySelector('input')?.blur(); }}>
+          <input name="title" aria-label={`Rename ${t.title}`} defaultValue={t.title} maxLength={120} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void rename(t, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.currentTarget.value = t.title; e.currentTarget.blur(); } }}/>
+        </form>
+        : <button aria-current={t.id === selected ? 'page' : undefined} className={'task-link ' + (t.id === selected ? 'active' : '')} onClick={() => { setSelected(t.id); setSidebar(false); }} onDoubleClick={() => { if (t.status !== 'deleting') setRenaming(t.id); }}><span className="task-title">{t.title}</span><span className="task-meta"><Status task={t}/><span className="task-time">{ago(t.updatedAt)}</span></span></button>}
         {t.review?.counts?.pending ? <span className="task-badge" title={`${t.review.counts.pending} changes to decide`}>{t.review.counts.pending}</span> : null}
         <ActionMenu label={`Task actions for ${t.title}`} actions={[
+          ...(t.status === 'deleting' ? [] : [{ label: 'Rename…', icon: 'pencil', select: () => setRenaming(t.id) }]),
           ...(ACTIVE.includes(t.status) ? [{ label: 'Pause task', icon: 'pause', disabled: pendingActions.has('/tasks/' + t.id), select: () => void action('/tasks/' + t.id + '/interrupt') }] : []),
           ...(t.status === 'uncertain' ? [{ label: 'Check status', icon: 'refresh', disabled: pendingActions.has('/tasks/' + t.id), select: () => void action('/tasks/' + t.id + '/reconcile') }] : []),
           { label: t.status === 'deleting' ? 'Retry deletion…' : 'Delete task…', icon: 'trash', danger: true, select: () => setDeleteTarget(t) },
@@ -388,11 +443,13 @@ function App() {
     </header>
       {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>Connection lost. Showing the last update; your draft is kept.</span><button onClick={() => void refresh(true)}>Retry connection</button></div>}
       {state && (!state.runtime.connected || !state.runtime.authenticated) && <div className="runtime-banner"><Icon name="alert" size={15}/><span>{state.runtime.error || 'Connecting to Codex…'}</span><button disabled={pendingActions.has('/reconnect')} onClick={() => void action('/reconnect')}>{pendingActions.has('/reconnect') ? 'Connecting…' : 'Reconnect'}</button></div>}
-      {task ? <div className={`task-grid layout-${layout} show-${mobileTab}`}><section id="review-panel" className="review-panel" aria-label="PDF review">
+      {task ? <div className={`task-grid layout-${layout} show-${mobileTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
+          {!mobile && layout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat panel" aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title="Drag to resize · Double-click to reset" onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
+          <section id="review-panel" className="review-panel" aria-label="PDF review">
           {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>The latest review build failed.</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>Retry build</button></div>}
           {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>Deletion is in progress</h2><p>This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} scale={pdfScale} tools={reviewTools}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? 'Building PDF review…' : 'No review yet'}</h2><p>{task.status === 'building' ? 'The review will appear when the build finishes.' : 'PDF changes will appear here after Codex finishes editing.'}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>Build review</button>}</div>}
           <ReviewFeedback task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError} onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>
-        </section><Activity key={task.id} task={task} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy}/></div>
+        </section><Activity key={task.id} task={task} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} openReview={(mobile ? mobileTab === 'conversation' : layout === 'conversation') ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>Opening your workspace</h1><p className="home-copy" role="status">{connectionError || 'Connecting to your papers and tasks…'}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>Retry connection</button>}</div></div>
       : project ? <div className="home"><div className="home-inner compose">
           <div className="home-mark"><Icon name="plane" size={20}/></div>

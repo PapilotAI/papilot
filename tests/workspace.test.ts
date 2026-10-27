@@ -189,7 +189,39 @@ test('canceling queued feedback leaves it available for the next submission', as
     const retry = await f.workspace.enqueue(f.task.id, 'Apply the review comments.', 'retry');
     assert.match(retry.prompt, /Preserve the boundary condition/);
     assert.equal(f.store.task(f.task.id).feedbackCursor, 0);
-    assert.deepEqual(f.calls.filter(call => call.route.includes('/feedback')).map(call => new URL(call.route, 'http://unused').searchParams.get('after')), ['0', '0']);
+    const afters = f.calls.filter(call => call.route.includes('/feedback')).map(call => new URL(call.route, 'http://unused').searchParams.get('after'));
+    assert.ok(afters.length >= 2 && afters.every(after => after === '0'), afters.join());
+  } finally { f.close(); }
+});
+
+test('unsent review comments exclude feedback already queued for Codex', async () => {
+  const items = [{ id: 3, kind: 'comment' }, { id: 5, kind: 'reject' }, { id: 7, kind: 'comment' }];
+  const f = fixture(async (_method, route) => {
+    if (!route.includes('/feedback')) return summary;
+    const after = Number(new URL(route, 'http://unused').searchParams.get('after'));
+    const feedback = items.filter(item => item.id > after);
+    return { cursor: feedback.at(-1)?.id ?? after, feedback };
+  });
+  try {
+    await f.workspace.refresh(f.task.id);
+    assert.equal(f.store.task(f.task.id).review?.unsent, 2);
+    await f.workspace.enqueue(f.task.id, 'Address the comments.', 'send');
+    await f.workspace.refresh(f.task.id);
+    assert.equal(f.store.task(f.task.id).review?.unsent, 0);
+    await f.workspace.interrupt(f.task.id);
+    await f.workspace.refresh(f.task.id);
+    assert.equal(f.store.task(f.task.id).review?.unsent, 2, 'Pausing a queued message returns its comments to the unsent count');
+  } finally { f.close(); }
+});
+
+test('renaming a task changes only its title and is blocked during deletion', () => {
+  const f = fixture();
+  try {
+    const renamed = f.workspace.renameTask(f.task.id, 'Clarify the abstract');
+    assert.equal(renamed.title, 'Clarify the abstract');
+    assert.equal(f.store.task(f.task.id).instructions, f.task.instructions);
+    f.store.updateTask(f.task.id, { status: 'deleting' });
+    assert.throws(() => f.workspace.renameTask(f.task.id, 'Another title'), /being deleted/);
   } finally { f.close(); }
 });
 

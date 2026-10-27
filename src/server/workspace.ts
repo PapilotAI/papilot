@@ -6,7 +6,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { Store } from './store.ts';
 import { Codex, RpcResponseError } from './codex.ts';
-import { reviewClient, taskRoute, confirmedReviewResponse } from './review.ts';
+import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
 import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -130,7 +130,9 @@ export class Workspace extends EventEmitter {
       this.store.saveItem({ id: run.id, taskId, type: 'user', text: text.trim(), createdAt: run.createdAt });
       return run;
     });
-    this.schedule(); return saved;
+    this.schedule();
+    if (includeFeedback) void this.refresh(taskId);
+    return saved;
   }
   private schedule() {
     if (this.queued || this.closing) return;
@@ -301,6 +303,7 @@ You may run tools in the task worktree to inspect and validate your changes. If 
     if (task.status === 'building') throw new Error('The PDF is building. Wait for this build to finish.');
     this.store.updateTask(taskId, { pauseVersion: (task.pauseVersion || 0) + 1 });
     for (const run of this.store.runs().filter(r => r.taskId === taskId && r.status === 'queued')) this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
+    void this.refresh(taskId);
     if (this.active.has(taskId)) {
       if (!task.turnId) throw new Error('Codex is starting. Try pausing again in a moment.');
       await this.codex.request('turn/interrupt', { threadId: task.threadId, turnId: task.turnId });
@@ -395,22 +398,36 @@ You may run tools in the task worktree to inspect and validate your changes. If 
         if (this.closing) return;
         const current = await client.get(`/api/jobs/${job.job}`);
         const summary = await client.get(taskRoute(task.name));
-        this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: current } });
+        this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: current, unsent: this.store.task(taskId).review?.unsent } });
         if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') break;
         if (current.status === 'failed') throw new Error([current.error, ...(current.details || [])].filter(Boolean).join('\n') || 'PDF build failed.');
         await delay(1500);
       }
       this.store.updateTask(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null });
+      await this.refresh(taskId);
     } catch (e) { this.store.updateTask(taskId, { status: 'failed', error: errorText(e) }); }
   }
   async refresh(taskId: string) {
-    const task = this.store.task(taskId);
-    if (task.status === 'deleting') return;
     try {
+      const task = this.store.task(taskId);
+      if (task.status === 'deleting') return;
       const client = await this.connectReview(this.store.project(task.projectId).path);
       const summary = await client.get(taskRoute(task.name));
-      if (this.store.task(taskId).status !== 'deleting') this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: task.review?.job } });
+      const unsent = await this.unsentComments(client, this.store.task(taskId));
+      const current = this.store.task(taskId);
+      if (current.status !== 'deleting') this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent } });
     } catch { /* The task remains visible even if its project is temporarily unavailable. */ }
+  }
+  // Review comments Codex has not received yet. A queued or in-flight message
+  // already carries the feedback up to its own cursor.
+  private async unsentComments(client: ReviewClient, task: Task) {
+    const after = Math.max(task.feedbackCursor, ...this.store.runs().filter(r => r.taskId === task.id && ['queued', 'running', 'uncertain'].includes(r.status)).map(r => r.feedbackCursor || 0));
+    const feedback = await client.get<{ feedback?: { kind?: string }[] }>(`${taskRoute(task.name)}/feedback?after=${after}`);
+    return (feedback.feedback || []).filter(item => item.kind === 'comment').length;
+  }
+  renameTask(taskId: string, title: string) {
+    if (this.store.task(taskId).status === 'deleting') throw new Error('This task is being deleted.');
+    return this.store.updateTask(taskId, { title });
   }
   async deleteTask(taskId: string): Promise<{ ok: true }> {
     if (this.preparing.has(taskId)) throw new Error('Wait for task creation to finish before deleting it.');

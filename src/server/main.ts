@@ -57,6 +57,7 @@ app.post<{ Params: { id: string } }>('/api/tasks/:id/messages', async request =>
   const b = request.body as any;
   return workspace.enqueue(request.params.id, string(b.text, 'Revision instructions'), string(b.requestKey, 'Request ID', 100), true);
 });
+app.post<{ Params: { id: string } }>('/api/tasks/:id/rename', request => workspace.renameTask(request.params.id, string((request.body as any).title, 'Task title', 120)));
 app.post<{ Params: { id: string } }>('/api/tasks/:id/interrupt', request => workspace.interrupt(request.params.id).then(() => ({ ok: true })));
 app.post<{ Params: { id: string } }>('/api/tasks/:id/delete', request => {
   if ((request.body as any)?.confirm !== true) throw new Error('Confirm permanent task deletion before continuing.');
