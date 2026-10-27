@@ -24,7 +24,7 @@ npm start
 
 Open [Papilot](http://127.0.0.1:4317). Select **Add paper** and enter the path to a LaTeX Git repository on the host. Later papers are added and switched from the paper menu at the top of the sidebar. The repository must have at least one commit and compile with `latexmk`. Custom root documents can use `.latex-review.json` as described in the [review engine reference](vendor/latex-review/docs/reference.md).
 
-To try a sample first, run `npm run demo`. It registers a separate example Git repository under `.papilot/example-paper` without changing an existing manuscript. Start an editing task from the interface when you are ready to run Codex.
+To try a sample first, run `npm run demo`. It copies the example paper in `examples/papilot-paper` (this README written as a nine-page LaTeX paper, with a formal model of review rounds, the geometry of the PDF view, an algorithm, a TikZ figure and plenty of equations to review) into a separate Git repository under `.papilot/example-paper`, and registers it as **Papilot paper** without changing an existing manuscript. Start an editing task from the interface when you are ready to run Codex.
 
 The bundled Codex CLI uses the host's normal Codex login/configuration. To sign in, run `./node_modules/.bin/codex login` on the host. No API key is stored by Papilot. Model selection defaults to the host's configured Codex model.
 
