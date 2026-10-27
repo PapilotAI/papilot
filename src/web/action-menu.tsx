@@ -1,10 +1,12 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Icon } from './icons.tsx';
 
-export interface MenuAction { label: string; select?: () => void; href?: string; disabled?: boolean; danger?: boolean }
+export interface MenuAction { id?: string; label: string; select?: () => void; href?: string; disabled?: boolean; danger?: boolean; checked?: boolean; icon?: string; divider?: boolean }
 
 // Native popovers escape scrolling containers and handle outside clicks without
 // making the rest of the workspace modal. Each menu keeps its own task identity.
-export function ActionMenu({ label, actions }: { label: string; actions: MenuAction[] }) {
+// The trigger defaults to a "more" button; pass children for a labelled trigger.
+export function ActionMenu({ label, actions, children, className = 'icon-button more-button', align = 'end' }: { label: string; actions: MenuAction[]; children?: ReactNode; className?: string; align?: 'start' | 'end' }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -17,21 +19,26 @@ export function ActionMenu({ label, actions }: { label: string; actions: MenuAct
   }, [open]);
   function position() {
     const panel = menu.current!, rect = trigger.current!.getBoundingClientRect();
-    panel.style.left = `${Math.max(8, Math.min(rect.right - panel.offsetWidth, window.innerWidth - panel.offsetWidth - 8))}px`;
-    panel.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - panel.offsetHeight - 8))}px`;
+    if (align === 'start') panel.style.minWidth = `${rect.width}px`;
+    const left = align === 'start' ? rect.left : rect.right - panel.offsetWidth;
+    panel.style.left = `${Math.max(8, Math.min(left, window.innerWidth - panel.offsetWidth - 8))}px`;
+    const below = rect.bottom + 6, above = rect.top - panel.offsetHeight - 6;
+    panel.style.top = `${below + panel.offsetHeight > window.innerHeight - 8 && above >= 8 ? above : Math.max(8, Math.min(below, window.innerHeight - panel.offsetHeight - 8))}px`;
   }
-  function choices() { return Array.from(menu.current!.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)')); }
+  function choices() { return Array.from(menu.current!.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')); }
   function close() { menu.current?.hidePopover(); }
   function show(last = false) {
     menu.current?.showPopover(); position(); setOpen(true);
-    const items = choices(); items[last ? items.length - 1 : 0]?.focus();
+    const items = choices();
+    (last ? items[items.length - 1] : items.find(item => item.getAttribute('aria-checked') === 'true') || items[0])?.focus();
   }
+  const radio = actions.some(action => action.checked !== undefined);
   return <span className="menu-anchor">
-    <button ref={trigger} className="icon-button more-button" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} popoverTarget={id} onClick={event => {
+    <button ref={trigger} type="button" className={className} aria-label={label} title={children ? undefined : label} aria-haspopup="menu" aria-expanded={open} popoverTarget={id} onClick={event => {
       event.preventDefault(); if (menu.current?.matches(':popover-open')) close(); else show();
     }} onKeyDown={event => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); show(event.key === 'ArrowUp'); }
-    }}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
+    }}>{children || <Icon name="more" size={18}/>}</button>
     <div ref={menu} id={id} popover="auto" role="menu" aria-label={label} className="action-menu" onToggle={event => {
       const shown = (event.nativeEvent as ToggleEvent).newState === 'open'; setOpen(shown);
     }} onKeyDown={event => {
@@ -46,7 +53,13 @@ export function ActionMenu({ label, actions }: { label: string; actions: MenuAct
         items[index]?.focus();
       }
     }}>
-      {actions.map(action => action.href ? <a key={action.label} role="menuitem" href={action.href} target="_blank" rel="noreferrer" onClick={close}>{action.label}</a> : <button key={action.label} role="menuitem" disabled={action.disabled} className={action.danger ? 'danger-text' : undefined} onClick={() => { close(); trigger.current?.focus(); action.select?.(); }}>{action.label}</button>)}
+      {actions.map(action => {
+        const content = <>{action.icon ? <Icon name={action.icon} size={16}/> : radio && <span className="menu-check">{action.checked && <Icon name="check" size={16}/>}</span>}<span className="menu-label">{action.label}</span></>;
+        const item = action.href
+          ? <a key={action.id || action.label} role="menuitem" href={action.href} target="_blank" rel="noreferrer" onClick={close}>{content}</a>
+          : <button key={action.id || action.label} type="button" role={action.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={action.checked} disabled={action.disabled} className={action.danger ? 'danger-text' : undefined} onClick={() => { close(); trigger.current?.focus(); action.select?.(); }}>{content}</button>;
+        return action.divider ? [<div key={action.label + '-divider'} role="separator" className="menu-separator"/>, item] : item;
+      })}
     </div>
   </span>;
 }

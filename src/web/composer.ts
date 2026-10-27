@@ -56,3 +56,22 @@ export class ComposerDraft {
     }
   }
 }
+
+// New tasks start from a single prompt, like a chat. The sidebar title is its
+// first line, shortened at a word boundary.
+export function taskTitle(text: string) {
+  const line = (text.split('\n').find(value => value.trim()) || '').replace(/^[\s#>*+-]+/, '').replace(/\s+/g, ' ').trim().replace(/\.$/, '');
+  if (!line) return 'Untitled task';
+  if (line.length <= 80) return line;
+  const cut = line.slice(0, 80), space = cut.lastIndexOf(' ');
+  return (space > 40 ? cut.slice(0, space) : cut).replace(/[\s,.;:]+$/, '') + '…';
+}
+
+type SendKey = { key: string; keyCode?: number; shiftKey: boolean; altKey: boolean; metaKey: boolean; ctrlKey: boolean; isComposing: boolean };
+// Enter sends from a hardware keyboard and Shift+Enter adds a line. Touch
+// keyboards have no Shift+Enter, so Enter adds a line there. Command/Ctrl+Enter
+// always sends. Safari reports the Enter that confirms IME input as keyCode 229.
+export function sendsMessage(event: SendKey, touch: boolean) {
+  if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return false;
+  return event.metaKey || event.ctrlKey || (!touch && !event.shiftKey && !event.altKey);
+}

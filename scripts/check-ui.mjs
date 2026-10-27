@@ -77,7 +77,9 @@ await page.route('**/review/**', route => reviewFailure ? route.fulfill({ status
 
 async function openDelete(title = task.title) {
   const show = page.getByRole('button', { name: 'Show task list', exact: true });
-  if (await show.count() && !(await page.locator('.sidebar').isVisible())) await show.click();
+  // The drawer slides closed; check its open state rather than its in-transition visibility.
+  const narrow = await page.evaluate(() => matchMedia('(max-width: 900px)').matches);
+  if (narrow ? !(await page.locator('.sidebar.is-open').count()) : await show.count()) await show.click();
   await page.getByRole('button', { name: `Task actions for ${title}`, exact: true }).click();
   await page.getByRole('menuitem', { name: 'Delete task…', exact: true }).click();
 }
@@ -85,32 +87,45 @@ async function openDelete(title = task.title) {
 try {
   await page.goto(origin);
   await page.getByText('Connected', { exact: true }).waitFor();
-  await page.getByRole('heading', { name: 'Example paper' }).waitFor();
+  await page.getByRole('heading', { name: 'What should Codex revise?' }).waitFor();
   assert.equal(await page.getByRole('alert').count(), 0);
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).waitFor();
   assert.equal(await page.locator('html').getAttribute('lang'), 'en');
   assert.doesNotMatch(await page.locator('body').innerText(), /\p{Script=Han}/u);
 
-  await page.getByRole('button', { name: 'New task', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New Codex task' });
+  const switcher = page.getByRole('button', { name: 'Paper: Example paper', exact: true });
+  await switcher.click();
+  await page.getByRole('menuitemradio', { name: 'Example paper', exact: true }).waitFor();
+  assert.equal(await page.getByRole('menuitemradio', { name: 'Example paper', exact: true }).getAttribute('aria-checked'), 'true');
+  await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a paper' });
   await dialog.waitFor();
-  assert.equal(await page.getByRole('textbox', { name: 'Task title' }).evaluate(el => el === document.activeElement), true);
+  assert.equal(await page.getByRole('textbox', { name: 'Repository path' }).evaluate(el => el === document.activeElement), true);
   for (let i = 0; i < 9; i++) {
     await page.keyboard.press(i < 5 ? 'Tab' : 'Shift+Tab');
     assert.equal(await dialog.evaluate(el => el.contains(document.activeElement)), true);
   }
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'hidden' });
-  assert.equal(await page.getByRole('button', { name: 'New task', exact: true }).evaluate(el => el === document.activeElement), true);
-  console.log('PASS: English UI, stale selection recovery, modal focus containment, Escape, and focus restoration');
+  assert.equal(await switcher.evaluate(el => el === document.activeElement), true);
+  await page.getByRole('button', { name: 'New task', exact: true }).click();
+  const prompt = page.getByRole('textbox', { name: 'What should Codex do?' });
+  await prompt.waitFor();
+  assert.equal(await prompt.evaluate(el => el === document.activeElement), true);
+  assert.equal(await page.getByRole('button', { name: 'Create and start Codex' }).isDisabled(), true);
+  await page.getByRole('button', { name: 'Tighten the abstract', exact: true }).click();
+  assert.equal(await prompt.inputValue(), 'Tighten the abstract');
+  await prompt.fill('');
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
+  console.log('PASS: English UI, stale selection recovery, paper menu, modal focus containment, Escape, focus restoration, and the new-task composer');
   const views = page.locator('.view-selector');
   await views.getByRole('button', { name: 'Review', exact: true }).click();
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), true);
   assert.equal(await page.getByRole('region', { name: 'Codex conversation', exact: true }).isVisible(), false);
   await views.getByRole('button', { name: 'Review', exact: true }).click();
   assert.equal(await views.getByRole('button', { name: 'Review', exact: true }).getAttribute('aria-pressed'), 'true');
-  await views.getByRole('button', { name: 'Conversation', exact: true }).click();
+  await views.getByRole('button', { name: 'Chat', exact: true }).click();
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), false);
   await views.getByRole('button', { name: 'Split', exact: true }).click();
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), true);
@@ -128,16 +143,21 @@ try {
 
 
   await page.getByRole('button', { name: 'New task', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Task title' }).fill('Shorten the introduction');
-  await page.getByRole('textbox', { name: 'What should Codex do?' }).fill('Preserve the technical content.');
-  await page.getByRole('button', { name: 'Create and start Codex' }).click();
-  await dialog.getByRole('alert').waitFor();
+  await prompt.fill('Shorten the introduction.');
+  await prompt.press('Shift+Enter');
+  await prompt.pressSequentially('Preserve the technical content.');
+  await prompt.press('Enter');
+  await page.locator('.home').getByRole('alert').waitFor();
+  assert.equal(await prompt.inputValue(), 'Shorten the introduction.\nPreserve the technical content.');
   failCreate = false;
   await page.getByRole('button', { name: 'Create and start Codex' }).click();
-  await dialog.waitFor({ state: 'hidden' });
+  await page.getByRole('heading', { name: task.title }).waitFor();
   assert.equal(creates.length, 2);
   assert.equal(creates[0].id, creates[1].id);
-  console.log('PASS: Retrying task creation retains the same task ID');
+  assert.equal(creates[1].title, 'Shorten the introduction');
+  assert.equal(creates[1].instructions, 'Shorten the introduction.\nPreserve the technical content.');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:new-task')), null);
+  console.log('PASS: Enter starts a task, Shift+Enter adds a line, and retrying creation retains the same task ID');
 
   const input = page.getByRole('textbox', { name: 'Instructions for Codex' });
   await input.fill('Keep this unsent draft.');
@@ -199,6 +219,16 @@ try {
   assert.equal(messages.length, beforeNavigationSend + 1);
   assert.equal(await input.inputValue(), 'New text typed during submission.');
   console.log('PASS: Task navigation retains pending sends and cannot duplicate a message');
+  const beforeEnterSend = messages.length;
+  await input.fill('First line');
+  await input.press('Shift+Enter');
+  await input.pressSequentially('Second line');
+  await input.press('Enter');
+  await page.waitForFunction(() => document.querySelector('.composer textarea').value === '');
+  assert.equal(messages.length, beforeEnterSend + 1);
+  assert.equal(messages.at(-1).text, 'First line\nSecond line');
+  await input.fill('New text typed during submission.');
+  console.log('PASS: Enter sends follow-up instructions and Shift+Enter keeps a new line');
 
   heldState = new Promise(resolve => { releaseState = resolve; });
   const stateCaptured = new Promise(resolve => { stateStarted = resolve; });
@@ -206,8 +236,7 @@ try {
   await stateCaptured;
   createResult = { ...secondTask, id: 'fixture-task-0003', title: 'A newly created task' };
   await page.getByRole('button', { name: 'New task', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Task title' }).fill(createResult.title);
-  await page.getByRole('textbox', { name: 'What should Codex do?' }).fill('Keep this new task selected.');
+  await prompt.fill(createResult.title + '\nKeep this new task selected.');
   await page.getByRole('button', { name: 'Create and start Codex' }).click();
   await page.getByRole('heading', { name: createResult.title }).waitFor();
   releaseState();
@@ -237,11 +266,11 @@ try {
 
   for (const width of [320, 390, 768]) {
     await page.setViewportSize({ width, height: width === 320 ? 568 : 844 });
-    if (width < 681) await page.getByRole('button', { name: 'Conversation (reply needed)', exact: true }).click();
+    if (width < 681) await page.getByRole('button', { name: 'Chat (reply needed)', exact: true }).click();
     await input.waitFor();
     assert.equal(await input.inputValue(), 'New text typed during submission.');
     const overflow = await page.evaluate(() => {
-      const containers = ['.app-shell', '.topbar', '.mobile-tabs', '.review-toolbar', '.composer-wrap'];
+      const containers = ['.app-shell', '.topbar', '.view-selector', '.review-tools', '.composer-wrap'];
       return containers.filter(selector => { const el = document.querySelector(selector); return el && el.clientWidth && el.scrollWidth > el.clientWidth + 1; });
     });
     assert.deepEqual(overflow, [], `overflow at ${width}px`);
@@ -276,18 +305,19 @@ try {
     await drawer.waitFor({ state: 'hidden' });
     assert.equal(await drawerToggle.evaluate(el => el === document.activeElement), true);
     await drawerToggle.click();
-    await page.getByRole('button', { name: 'Add paper', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Add a paper project' }).waitFor();
-    assert.equal(await page.getByRole('textbox', { name: 'Paper name (optional)' }).evaluate(el => el === document.activeElement), true);
+    await drawer.getByRole('button', { name: 'Paper: Example paper', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Add a paper' }).waitFor();
+    assert.equal(await page.getByRole('textbox', { name: 'Repository path' }).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('Escape');
     if (width === 390) {
       await page.getByRole('button', { name: 'New task', exact: true }).click();
-      await page.getByRole('textbox', { name: 'Task title' }).fill('A task from the drawer');
-      await page.getByRole('textbox', { name: 'What should Codex do?' }).fill('Keep the mobile conversation visible.');
+      await page.locator('.sidebar').waitFor({ state: 'hidden' });
+      await prompt.fill('A task from the drawer\nKeep the mobile conversation visible.');
       await page.getByRole('button', { name: 'Create and start Codex' }).click();
-      await page.getByRole('dialog', { name: 'New Codex task' }).waitFor({ state: 'hidden' });
+      await input.waitFor();
       assert.equal(await page.locator('.sidebar').isVisible(), false);
-      assert.equal(await page.getByRole('button', { name: 'Conversation (reply needed)', exact: true }).getAttribute('aria-pressed'), 'true');
+      assert.equal(await page.getByRole('button', { name: 'Chat (reply needed)', exact: true }).getAttribute('aria-pressed'), 'true');
     } else await page.getByRole('button', { name: 'Hide task list', exact: true }).first().click();
   }
   console.log('PASS: 320px, 390px, and tablet layouts; draft persistence; zoom; drawer; project dialog');
@@ -295,7 +325,7 @@ try {
   await page.getByRole('button', { name: /^Review/ }).first().click();
   await page.getByRole('button', { name: 'Send feedback', exact: true }).click();
   await input.waitFor({ state: 'visible' });
-  assert.equal(await page.getByRole('button', { name: 'Conversation (reply needed)', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('button', { name: 'Chat (reply needed)', exact: true }).getAttribute('aria-pressed'), 'true');
   assert.equal(await input.inputValue(), 'New text typed during submission.');
   await openDelete();
   await page.getByRole('dialog', { name: 'Delete task?' }).waitFor();
@@ -355,19 +385,19 @@ try {
   const scroller = page.locator('.messages');
   assert.ok(await scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 5));
   await scroller.evaluate(el => { el.scrollTop = 0; });
-  await page.getByRole('button', { name: 'Latest messages ↓' }).waitFor();
+  await page.getByRole('button', { name: 'Latest messages' }).waitFor();
   history.push({ ...history[0], id: 'history-new', text: 'A new message while reading history.' });
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.getByText('A new message while reading history.', { exact: true }).waitFor();
   assert.equal(await scroller.evaluate(el => el.scrollTop), 0);
-  await page.getByRole('button', { name: 'Latest messages ↓' }).click();
+  await page.getByRole('button', { name: 'Latest messages' }).click();
   assert.ok(await scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 5));
   history = null;
   task.status = 'failed'; task.error = 'A build failed in the test fixture.'; task.review.job = { status: 'failed' };
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.getByRole('button', { name: 'Retry build', exact: true }).waitFor();
   await page.getByRole('button', { name: 'View details', exact: true }).click();
-  assert.equal(await views.getByRole('button', { name: 'Conversation', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await views.getByRole('button', { name: 'Chat', exact: true }).getAttribute('aria-pressed'), 'true');
   await page.getByText(task.error, { exact: true }).waitFor();
   task.error = null; task.review.job = null;
   await views.getByRole('button', { name: 'Split', exact: true }).click();
@@ -375,7 +405,19 @@ try {
 
   task.status = 'running';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await page.getByRole('button', { name: 'Pause task' }).waitFor();
+  const pauseButton = page.locator('.composer').getByRole('button', { name: 'Pause task' });
+  await pauseButton.waitFor();
+  assert.equal(await page.locator('.topbar').getByRole('button', { name: 'Pause task' }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Send instructions', exact: true }).isEnabled(), true);
+  await views.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.locator('.topbar').getByRole('button', { name: 'Pause task' }).waitFor();
+  await views.getByRole('button', { name: 'Split', exact: true }).click();
+  await pauseButton.click();
+  assert.equal(interruptions.at(-1), task.id);
+  task.status = 'running';
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await pauseButton.waitFor();
+  console.log('PASS: Pause sits in the composer while Codex works and moves to the header when the chat is hidden');
   await openDelete();
   const deleteDialog = page.getByRole('dialog', { name: 'Delete task?' });
   await deleteDialog.waitFor();

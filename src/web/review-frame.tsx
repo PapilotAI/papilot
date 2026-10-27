@@ -1,29 +1,50 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Task } from '../shared.ts';
 
 // The embedded viewer shares our origin. Keep its decision controls, but remove
-// navigation and the task title that the workspace already provides.
-function compactReviewFrame(doc: Document, scale: number) {
+// navigation and the task title that the workspace already provides. Its bar
+// becomes the review toolbar; Papilot's PDF tools sit in the reserved space.
+function compactReviewFrame(doc: Document, scale: number, reserve: number) {
   if (!doc || doc.getElementById('papilot-embed-style')) return;
   doc.documentElement.style.setProperty('--pdf-reading-scale', String(scale));
+  doc.documentElement.style.setProperty('--papilot-tools', `${reserve}px`);
   const style = doc.createElement('style'); style.id = 'papilot-embed-style';
   style.textContent = `
-    .bar{display:flex;min-height:36px;padding:3px 12px;gap:12px;flex-wrap:nowrap}
+    :root{--sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Inter","Segoe UI","PingFang SC","Noto Sans",sans-serif;--accent:#2563eb;--comment:#2563eb;--frame:#f4f4f5;--line:#e4e4e7;--muted:#71717a;--ink:#18181b}
+    .bar{display:flex;align-items:center;height:44px;min-height:44px;padding:0 calc(var(--papilot-tools,0px) + 12px) 0 14px;gap:12px;flex-wrap:nowrap;overflow:hidden}
     .bar .overview-link,.bar .identity h1{display:none}
-    .bar .identity{flex:1;flex-direction:row;gap:6px}
-    .bar .identity span,.bar .meter,.bar .ghost{font-size:11px}
-    .bar .meter{display:flex;order:initial;width:auto}
+    .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
+    .bar .identity span{font-size:12px;font-weight:500;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+    .bar .meter{display:flex;order:initial;width:auto;font-size:12px}
     .bar .bar-end{margin-left:0;gap:6px}
-    .bar .ghost{padding:3px 8px}
-    .bar .ghost.round{width:25px;height:25px;padding:0}
-    #paper{--paper-top:10px;padding-top:10px}
-    .part-title{font-size:16px;margin:5px 0 10px}
-      .side,.context{overflow-x:auto;overscroll-behavior-x:contain}
-      .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-reading-scale,1));max-width:none}
+    .bar .ghost{font-size:12px;font-weight:500;height:28px;padding:0 10px;border-radius:8px}
+    .bar .ghost:hover{text-decoration:none;background:#f4f4f5}
+    .bar .accept-all{color:var(--accept);border-color:var(--line);background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.05)}
+    .bar .ghost.round{width:28px;height:28px;padding:0;border-radius:8px}
+    .bar .status{font-size:11px;font-weight:500}
+    .sheet{border-radius:6px;box-shadow:0 1px 2px rgb(0 0 0/.06),0 6px 20px rgb(0 0 0/.06)}
+    #paper{--paper-top:14px;padding-top:14px}
+    .review-body>#paper{padding-right:34px}
+    .change-map{top:10px;bottom:10px;right:8px;width:14px;border:0;border-radius:0;background:none;box-shadow:none}
+    .change-map::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;border-radius:2px;background:var(--line)}
+    .change-map-viewport{left:50%;right:auto;width:4px;margin-left:-2px;border:0;border-radius:999px;background:rgb(24 24 27/.1);transition:width .15s,margin .15s,background-color .15s}
+    .change-map:hover .change-map-viewport,.change-map-viewport:active{width:6px;margin-left:-3px;background:rgb(24 24 27/.2)}
+    .change-map-mark{left:50%;width:4px;min-height:3px;margin-left:-2px;border-radius:999px;transition:width .15s,margin .15s}
+    .change-map-mark[aria-current]{outline:0;width:6px;margin-left:-3px;box-shadow:0 0 0 2px var(--frame)}
+    .change-map:hover .change-map-mark{width:6px;margin-left:-3px}
+    .change-map .change-map-mark:hover{outline:0;width:8px;margin-left:-4px;box-shadow:0 0 0 2px var(--frame)}
+    .change-map-mark:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+    ::-webkit-scrollbar-thumb{background-color:rgb(24 24 27/.14);border:3px solid transparent;border-radius:999px;background-clip:padding-box}
+    ::-webkit-scrollbar-thumb:hover{background-color:rgb(24 24 27/.32);border-width:2px}
+    @supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:rgb(24 24 27/.2) transparent}}
+    .part-title{font-size:15px;margin:6px 0 10px}
+    .side,.context{overflow-x:auto;overscroll-behavior-x:contain}
+    .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-reading-scale,1));max-width:none}
     @media(max-width:680px){
-      .bar{min-height:44px}.bar .ghost{min-height:36px;font-size:12px}.bar .ghost.round{width:36px;height:36px}
-      .bar .identity span,.bar .meter{font-size:12px}
-      .change-map{display:none}.review-body>#paper{padding-right:6px;padding-bottom:40px}
+      .bar{height:48px;min-height:48px;padding-left:12px;gap:8px}.bar .ghost{min-height:36px;font-size:12px}
+      .bar .ghost.round{display:none}.bar .identity span,.bar .meter{font-size:12px}
+      .change-map{display:none}.review-body>#paper{padding-left:8px;padding-right:8px;padding-bottom:40px}
       .change-head{padding:8px}.change-head .change-where{min-width:0;overflow-wrap:anywhere}
       .change-head .actions{gap:0;box-shadow:none}.change-head .actions button{min-height:44px;padding:6px;font-size:12px}
       .change-head .actions .nav{min-width:32px;padding:4px}.change-head .position{min-width:26px;font-size:10px}
@@ -31,7 +52,7 @@ function compactReviewFrame(doc: Document, scale: number) {
       .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;bottom:8px;transform:none;max-height:calc(100% - 16px);overflow:auto}
       .composer textarea{font-size:16px;max-height:min(140px,30vh)}.composer button{min-height:44px}
     }
-    @media(max-width:420px){.bar{gap:7px;padding-inline:8px}.bar .meter{font-size:10px}}
+    @media(max-width:420px){.bar .identity{display:none}.bar .meter{flex:1}}
   `;
   doc.head.append(style);
 }
@@ -39,8 +60,10 @@ function compactReviewFrame(doc: Document, scale: number) {
 
 // The iframe can finish loading an HTTP error or an empty document. Wait for the
 // actual viewer, keep watching slow startup, and let the user retry safely.
-export function ReviewFrame({ task, scale }: { task: Task; scale: number }) {
+export function ReviewFrame({ task, scale, tools }: { task: Task; scale: number; tools?: ReactNode }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const toolbar = useRef<HTMLDivElement>(null);
+  const [reserve, setReserve] = useState(0);
   const observer = useRef<MutationObserver | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'slow' | 'error'>('loading');
@@ -49,14 +72,22 @@ export function ReviewFrame({ task, scale }: { task: Task; scale: number }) {
     return () => { clearTimeout(timer); observer.current?.disconnect(); };
   }, [attempt]);
   useEffect(() => {
-    try { frame.current?.contentDocument?.documentElement.style.setProperty('--pdf-reading-scale', String(scale)); } catch { /* A browser error document may be inaccessible. */ }
-  }, [scale]);
+    const element = toolbar.current; if (!element) return;
+    const observer = new ResizeObserver(() => setReserve(Math.ceil(element.offsetWidth)));
+    observer.observe(element); return () => observer.disconnect();
+  }, [Boolean(tools)]);
+  useEffect(() => {
+    try {
+      const root = frame.current?.contentDocument?.documentElement;
+      root?.style.setProperty('--pdf-reading-scale', String(scale)); root?.style.setProperty('--papilot-tools', `${reserve}px`);
+    } catch { /* A browser error document may be inaccessible. */ }
+  }, [scale, reserve]);
   function loaded() {
     observer.current?.disconnect();
     try {
       const doc = frame.current?.contentDocument;
       if (!doc || (!doc.getElementById('root') && !doc.getElementById('paper'))) { setPhase('error'); return; }
-      compactReviewFrame(doc, scale);
+      compactReviewFrame(doc, scale, reserve);
       const inspect = () => {
         const paper = doc.getElementById('paper');
         if (!paper) return;
@@ -71,6 +102,7 @@ export function ReviewFrame({ task, scale }: { task: Task; scale: number }) {
   const ready = phase === 'ready';
   return <div className={'review-viewport' + (ready ? '' : ' review-pending')} aria-busy={!ready}>
     <iframe ref={frame} key={attempt} title={`${task.title} PDF change review`} src={`/review/${task.projectId}/?task=${task.name}`} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
+    {tools && <div ref={toolbar} className="review-tools">{tools}</div>}
     {!ready && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? 'The PDF review could not be loaded.' : phase === 'slow' ? 'The PDF review is taking longer than expected.' : 'Loading PDF review…'}</p>{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>Reload review</button>}</div>}
   </div>;
 }

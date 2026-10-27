@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ComposerDraft, reviewInstructions } from '../src/web/composer.ts';
+import { ComposerDraft, reviewInstructions, sendsMessage, taskTitle } from '../src/web/composer.ts';
 
 function deferred() {
   let resolve!: () => void;
@@ -84,4 +84,25 @@ test('an edited draft receives a new request ID after a failed request', async (
   await assert.rejects(draft.submit('draft', async message => { firstKey = message.requestKey; throw new Error('Offline'); }));
   draft.edit('Revised instruction');
   await draft.submit('draft', async message => { assert.notEqual(message.requestKey, firstKey); });
+});
+
+test('new task titles use the first line of the prompt', () => {
+  assert.equal(taskTitle('\n  Shorten the introduction.\nKeep the citations.'), 'Shorten the introduction');
+  assert.equal(taskTitle('## Tighten   the abstract'), 'Tighten the abstract');
+  assert.equal(taskTitle('   '), 'Untitled task');
+  const long = taskTitle('Rewrite the related work section so that it compares our method with every baseline in the evaluation and explains the differences');
+  assert.ok(long.length <= 81 && long.endsWith('…') && !long.includes('  '));
+  assert.equal(long, 'Rewrite the related work section so that it compares our method with every…');
+});
+
+test('Enter sends from a hardware keyboard but never while composing text', () => {
+  const key = { key: 'Enter', shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, isComposing: false };
+  assert.equal(sendsMessage(key, false), true);
+  assert.equal(sendsMessage({ ...key, shiftKey: true }, false), false);
+  assert.equal(sendsMessage(key, true), false);
+  assert.equal(sendsMessage({ ...key, metaKey: true }, true), true);
+  assert.equal(sendsMessage({ ...key, ctrlKey: true }, false), true);
+  assert.equal(sendsMessage({ ...key, isComposing: true }, false), false);
+  assert.equal(sendsMessage({ ...key, keyCode: 229 }, false), false);
+  assert.equal(sendsMessage({ ...key, key: 'a' }, false), false);
 });
