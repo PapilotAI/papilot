@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { annotationTask, gitStatus, parseStatus, parseSynctex, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
+import { anchor, annotationTask, gitStatus, parseStatus, parseSynctex, settleLines, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
 import type { Annotation } from '../src/shared.ts';
 
 test('Git status parsing keeps branch counts, renames, untracked files and line counts', () => {
@@ -74,4 +74,23 @@ test('source excerpts keep the marked lines and shorten long ranges', () => {
     assert.equal(sourceExcerpt(file, [1, 30], 2), 'line 1\nline 2\n…');
     assert.equal(sourceExcerpt(file + '.missing', [1, 2]), undefined);
   } finally { fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
+});
+
+test('notes settle on the source line that holds the marked words, not the one SyncTeX credits for the space before them', () => {
+  const source = ['\\begin{equation}', ' D_{t+1}=D_t\\oplus\\Delta_t', '\\end{equation}', 'The operator $\\oplus$ applies a compatible revision. If two changes conflict,', 'the author requests a new proposal instead of silently replacing accepted text.', 'Compilation is a useful check, but it does not establish that the mathematical', 'meaning of a revised passage is correct. % not printed', '\\section{Discussion}'];
+  const chars = (text: string) => [...text].map(c => ({ text: c }));
+  const printed = chars('proposal instead of silently replacing accepted text. Compilation is a useful check, but it does not');
+  const word = printed.findIndex((_, index) => printed.slice(index).map(c => c.text).join('').startsWith('Compilation'));
+  // SyncTeX says line 5 for "Compilation", which starts line 6 of the source.
+  assert.deepEqual(settleLines(source, [5, 5], anchor(printed, word, false), anchor(printed, word + 10, true)), [6, 6]);
+  // A selection from "accepted" to "Compilation" spans both lines.
+  const accepted = printed.findIndex((_, index) => printed.slice(index).map(c => c.text).join('').startsWith('accepted'));
+  assert.deepEqual(settleLines(source, [5, 5], anchor(printed, accepted, false), anchor(printed, word + 10, true)), [5, 6]);
+  // Subscripts and macros reduce to the same letters as the printed line.
+  const equation = chars('The operator ⊕ applies a compatible revision. If two changes conflict, the author');
+  assert.deepEqual(settleLines(source, [4, 5], anchor(equation, 4, false), anchor(equation, 11, true)), [4, 4]);
+  // Text that is not in the source, like a typeset formula, keeps SyncTeX's lines.
+  const formula = chars('Dt+1 = Dt ⊕ Δt');
+  assert.deepEqual(settleLines(source, [2, 2], anchor(formula, 0, false), anchor(formula, 13, true)), [2, 2]);
+  assert.deepEqual(settleLines([], [3, 4], null, null), [3, 4]);
 });

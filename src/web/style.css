@@ -368,7 +368,7 @@ body.resizing iframe{pointer-events:none}
 .note-box{position:absolute;border:1.5px solid var(--accent);border-radius:3px;background:rgb(53 106 160/.07)}
 .note-box.active{background:rgb(53 106 160/.15);box-shadow:0 0 0 4px rgb(53 106 160/.18)}
 .note-box.draft{border-style:dashed}
-.note-tag{position:absolute;z-index:1;transform:translate(-6px,calc(-100% - 3px));min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--accent);color:#fff;font-size:11.5px;font-weight:600;line-height:20px;text-align:center;box-shadow:var(--shadow-xs);pointer-events:auto;cursor:pointer}
+.note-tag{position:absolute;z-index:1;transform:translateY(-50%);min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--accent);color:#fff;font-size:11.5px;font-weight:600;line-height:20px;text-align:center;box-shadow:var(--shadow-xs);pointer-events:auto;cursor:pointer}
 .note-tag.active{box-shadow:0 0 0 3px rgb(53 106 160/.25)}
 .add-note{position:absolute;z-index:2;transform:translate(-100%,8px);display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:999px;background:var(--primary);color:#fff;font-size:13px;font-weight:500;white-space:nowrap;box-shadow:var(--float);pointer-events:auto;animation:menu-in .14s var(--ease)}
 .add-note:hover{background:var(--primary-hover)}

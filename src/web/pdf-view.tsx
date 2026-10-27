@@ -31,6 +31,18 @@ const percent = ([x0, y0, x1, y1]: Rect): React.CSSProperties => ({ left: `${x0 
 const bounds = (rects: Rect[]): Rect => [Math.min(...rects.map(r => r[0])), Math.min(...rects.map(r => r[1])), Math.max(...rects.map(r => r[2])), Math.max(...rects.map(r => r[3]))];
 const zooms = [{ value: 'page-width', label: 'Fit width' }, { value: 'page-fit', label: 'Fit page' }, ...[0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map(scale => ({ value: String(scale), label: `${scale * 100}%` }))];
 
+// Number tags sit in the page margin level with the first marked line, on the
+// side nearer the mark, so they never cover text; tags on one line step outwards.
+function tagSpots(firsts: Rect[]) {
+  const placed: { side: 'left' | 'right'; top: number }[] = [];
+  return firsts.map(rect => {
+    const side: 'left' | 'right' = (rect[0] + rect[2]) / 2 > 0.5 ? 'right' : 'left', top = (rect[1] + rect[3]) / 2;
+    const slot = placed.filter(spot => spot.side === side && Math.abs(spot.top - top) < 0.015).length;
+    placed.push({ side, top });
+    return { [side]: 8 + slot * 24, top: `${top * 100}%` } as React.CSSProperties;
+  });
+}
+
 // Text layers report one rectangle per span; join those on the same line so a
 // selection is stored and highlighted line by line.
 export function mergeLines(rects: Rect[]) {
@@ -290,13 +302,13 @@ export const PdfView = forwardRef<PdfHandle, {
       {(loading || error) && <div className="review-loading"><p role={error ? 'alert' : 'status'}>{error ? `The PDF could not be opened: ${error}` : 'Opening the PDF…'}</p></div>}
     </div>
     {[...layers].map(([number, layer]) => createPortal(<Fragment>
-      {props.notes.filter(({ note }) => note.page === number - 1).map(({ note, number: label }) => {
-        const marks = note.rects?.length ? note.rects : [note.rect], first = marks[0];
-        return <Fragment key={note.id}>
-          {marks.map((rect, index) => <div key={index} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} style={percent(rect)}/>)}
-          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} style={{ left: `${first[0] * 100}%`, top: `${first[1] * 100}%` }} aria-label={`Note ${label}: ${note.comment}`} title={note.comment} onClick={() => props.onSelect(note)}>{label}</button>
-        </Fragment>;
-      })}
+      {(() => {
+        const notes = props.notes.filter(({ note }) => note.page === number - 1), spots = tagSpots(notes.map(({ note }) => (note.rects?.length ? note.rects : [note.rect])[0]));
+        return notes.map(({ note, number: label }, index) => <Fragment key={note.id}>
+          {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} style={percent(rect)}/>)}
+          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} style={spots[index]} aria-label={`Note ${label}: ${note.comment}`} title={note.comment} onClick={() => props.onSelect(note)}>{label}</button>
+        </Fragment>);
+      })()}
       {props.region && <div className="region-capture"
         onPointerDown={e => {
           if (editing || e.button > 0) return;

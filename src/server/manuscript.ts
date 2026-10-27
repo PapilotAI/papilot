@@ -101,6 +101,52 @@ export function annotationTask(notes: Annotation[]) {
 
 // The LaTeX the marked region came from, read from the exact tree that was
 // compiled. Long ranges keep their first lines.
+// Where one end of a selection sits in its printed line: the line's letters and
+// the index of the marked letter among them.
+export interface Anchor { line: string; at: number }
+const letters = (text: string) => text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+
+// The printed line around a marked character, for settleLines.
+export function anchor(chars: { text: string }[], index: number, end: boolean): Anchor | null {
+  const line = letters(chars.map(c => c.text).join(''));
+  if (!line) return null;
+  const at = end ? letters(chars.slice(0, index + 1).map(c => c.text).join('')).length - 1 : letters(chars.slice(0, index).map(c => c.text).join('')).length;
+  return { line, at: Math.min(Math.max(at, 0), line.length - 1) };
+}
+
+// SyncTeX records spaces and boxes rather than characters, so a word that
+// starts a printed line is often credited to the source line before it, whose
+// line break made the space. Settle each end of the selection by finding its
+// printed line among the source lines around SyncTeX's answer; text that does
+// not match, such as formulas, keeps SyncTeX's lines.
+export function settleLines(source: string[], [start, end]: [number, number], first: Anchor | null, last: Anchor | null): [number, number] {
+  const low = Math.max(1, start - 4), high = Math.min(source.length, end + 4);
+  let text = '';
+  const owner: number[] = [];
+  for (let number = low; number <= high; number++) {
+    const plain = letters(source[number - 1].replace(/(^|[^\\])%.*$/, '$1').replace(/\\[a-zA-Z@]+\*?/g, ' '));
+    text += plain; owner.push(...Array<number>(plain.length).fill(number));
+  }
+  const distance = (line: number) => Math.max(0, start - line, line - end);
+  const locate = (mark: Anchor | null) => {
+    if (!mark) return null;
+    // The whole printed line pins the place best; shorter context around the
+    // mark still matches when part of the line does not appear in the source.
+    for (const reach of [Infinity, 24, 10]) {
+      const from = Math.max(0, mark.at - reach), needle = mark.line.slice(from, mark.at + reach + 1);
+      let best: number | null = null;
+      for (let index = text.indexOf(needle); index >= 0; index = text.indexOf(needle, index + 1)) {
+        const line = owner[index + mark.at - from];
+        if (best === null || distance(line) < distance(best)) best = line;
+      }
+      if (best !== null) return best;
+    }
+    return null;
+  };
+  const from = locate(first) ?? start, to = locate(last) ?? end;
+  return from <= to ? [from, to] : [start, end];
+}
+
 export function sourceExcerpt(file: string, [start, end]: [number, number], limit = 20) {
   if (!fs.existsSync(file)) return undefined;
   const lines = fs.readFileSync(file, 'utf8').split('\n').slice(start - 1, end).map(line => line.trimEnd());
@@ -168,11 +214,15 @@ export class Manuscripts extends EventEmitter {
       // Ask SyncTeX about the first and last marked character of every line, so
       // the source range covers the whole selection rather than its first line.
       const points: [number, number][] = [], centre = (r: number[]): [number, number] => [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2];
-      for (const line of current.lines as { chars: { rect: number[] }[] }[]) {
-        const marked = line.chars.filter(c => clips.some(clip => containsCenter(clip, c.rect)));
-        if (!marked.length || points.length >= 24) continue;
-        points.push(centre(marked[0].rect));
-        if (marked.length > 1) points.push(centre(marked[marked.length - 1].rect));
+      let first: Anchor | null = null, last: Anchor | null = null;
+      for (const line of current.lines as { chars: { text: string; rect: number[] }[] }[]) {
+        const marked = line.chars.flatMap((c, index) => clips.some(clip => containsCenter(clip, c.rect)) ? [index] : []);
+        if (!marked.length) continue;
+        if (!first && !last) first = anchor(line.chars, marked[0], false);
+        last = anchor(line.chars, marked[marked.length - 1], true);
+        if (points.length >= 24) continue;
+        points.push(centre(line.chars[marked[0]].rect));
+        if (marked.length > 1) points.push(centre(line.chars[marked[marked.length - 1]].rect));
       }
       if (!points.length) points.push(...clips.slice(0, 12).map(centre));
       const hits = (await Promise.all(points.map(([x, y]) => exec('synctex', ['edit', '-o', `${page + 1}:${(x - x0).toFixed(1)}:${(y - y0).toFixed(1)}:${pdf}`]).then(r => parseSynctex(r.stdout), () => null)))).filter(hit => hit !== null);
@@ -184,7 +234,8 @@ export class Manuscripts extends EventEmitter {
       }
       const [file, found] = [...files].sort((a, b) => b[1].lines.length - a[1].lines.length)[0] || [];
       if (!file || !found) return { quote, source: null };
-      const lines: [number, number] = [Math.min(...found.lines), Math.max(...found.lines)];
+      const source = fs.existsSync(found.input) ? fs.readFileSync(found.input, 'utf8').split('\n') : [];
+      const lines = settleLines(source, [Math.min(...found.lines), Math.max(...found.lines)], first, last);
       return { quote, source: { file, lines, excerpt: sourceExcerpt(found.input, lines) } };
     } finally { document.close(); }
   }
