@@ -29,7 +29,7 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     .change-head{font-size:13px;background:#fafafa}.link{font-size:13px}
     /* The current change: a thin accent outline and a warm header, like a selected
        row in the workspace, rather than a blue frame on a blue-grey header. */
-    .change.current{box-shadow:0 0 0 1.5px var(--accent)}
+    .change.current{box-shadow:0 0 0 1px #93b4f5,0 0 0 4px rgb(37 99 235/.07)}
     .change.current .change-head{background:#f5f5f5;color:var(--ink)}
     .change-head .link{display:inline-flex;align-items:center;height:28px;padding:0 8px;border-radius:7px;color:#525252;font-weight:500}
     .change-head .link:hover{background:#ebebeb;color:var(--ink);text-decoration:none}
@@ -38,7 +38,7 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
        (Copy reference, LaTeX, Undo): a coloured icon says what each does, and
        hovering tints it green, red or blue. On phones the bar is a solid
        toolbar at the bottom. */
-    :root{--icon-check:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>");--icon-cross:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M18 6 6 18M6 6l12 12'/></svg>");--icon-comment:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><path d='M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z'/></svg>")}
+    :root{--icon-copy:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'><rect x='8' y='8' width='12' height='12' rx='2'/><path d='M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2'/></svg>");--icon-check:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>");--icon-cross:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M18 6 6 18M6 6l12 12'/></svg>");--icon-comment:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><path d='M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z'/></svg>")}
     .change-head .actions .accept::before,.change-head .actions .reject::before,.change-head .actions .comment::before,.bar .accept-all::before,.bar .reject-all::before{content:"";flex:none;width:13px;height:13px;background:currentColor;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
     .change-head .actions .accept,.bar .accept-all{--icon:var(--icon-check)}.change-head .actions .reject,.bar .reject-all{--icon:var(--icon-cross)}.change-head .actions .comment{--icon:var(--icon-comment)}
     .change-head .actions .accept::before,.bar .accept-all::before{background:var(--accept)}.change-head .actions .reject::before,.bar .reject-all::before{background:var(--reject)}.change-head .actions .comment::before{background:var(--accent)}
@@ -60,17 +60,25 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     .change-head .actions .undo:hover:not(:disabled){background:#ebebeb}
     .change-head .actions .undo:disabled{color:#bdbdbd;opacity:1}
     .change-head .actions .accept:disabled,.change-head .actions .reject:disabled,.change-head .actions .comment:disabled{opacity:.4}
-    /* Wider than a phone, the decision bar is a flat strip along the bottom of the
-       current change's header: moving between changes on the left, deciding on
-       the right. It belongs to the header rather than floating over it. */
+    /* Wider than a phone, a change has one compact header row: its number and
+       place on the left, between the previous and next arrows; its status,
+       the decisions and the change's own tools on the right. The bar's items
+       join the header row directly. Undo appears once there is something to
+       undo, Copy reference is a copy icon, and the position and "Review
+       complete" are left to the toolbar's decided count. */
     @media(min-width:681px){
-      .change-head .dock{order:9;flex-basis:calc(100% + 24px);justify-content:flex-start;margin:6px -12px -8px;padding:5px 8px 5px 6px;border-top:1px solid var(--line)}
-      .change-head .actions{flex:1;flex-wrap:nowrap;justify-content:flex-start;gap:4px;max-width:none;padding:0;background:none;border:0;border-radius:0;box-shadow:none}
-      .change-head .actions>*{order:4}
-      .change-head .actions>.nav:first-child{order:1}.change-head .actions>.position{order:2}.change-head .actions>.nav:not(:first-child){order:3}
-      .change-head .actions .undo{order:5}
-      .change-head .actions .accept,.change-head .actions .skip,.change-head .actions .complete{margin-left:auto}
-      .change-head .position{min-width:34px}
+      .change-head{flex-wrap:wrap;align-items:center;gap:4px 6px;padding:5px 8px 5px 12px;min-height:40px}
+      .change-head .dock,.change-head .actions{display:contents}
+      .change-head .actions>.nav:first-child{order:1}.change-head .change-number{order:2}.change-head .actions>.nav:not(:first-child){order:3}
+      .change-head .change-where{order:4;flex:1 1 120px;min-width:0;margin-left:4px}
+      .change-head .change-kind,.change-head .badge{order:5}
+      .change-head .actions>*{order:6}
+      .change-head .link{order:7}
+      .change-head .position,.change-head .complete{display:none}
+      .change-head .actions .undo:disabled{display:none}
+      .change-head .actions .nav{width:24px;height:26px;font-size:18px}
+      .change-head .copy-reference{width:28px;padding:0;justify-content:center;font-size:0}
+      .change-head .copy-reference::before{content:"";width:15px;height:15px;background:currentColor;-webkit-mask:var(--icon-copy) center/contain no-repeat;mask:var(--icon-copy) center/contain no-repeat}
     }
     #paper{--paper-top:14px;padding-top:14px}
     .review-body>#paper{padding-right:34px}
@@ -78,7 +86,7 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     .change-map::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;border-radius:2px;background:var(--line)}
     .change-map-viewport{left:50%;right:auto;width:4px;margin-left:-2px;border:0;border-radius:999px;background:rgb(24 24 27/.1);transition:width .15s,margin .15s,background-color .15s}
     .change-map:hover .change-map-viewport,.change-map-viewport:active{width:6px;margin-left:-3px;background:rgb(24 24 27/.2)}
-    .change-map-mark{left:50%;width:4px;min-height:3px;margin-left:-2px;border-radius:999px;transition:width .15s,margin .15s}
+    .change-map-mark{--mark:#b5b5b5;left:50%;width:4px;min-height:3px;margin-left:-2px;border-radius:999px;transition:width .15s,margin .15s}
     .change-map-mark[aria-current]{outline:0;width:6px;margin-left:-3px;box-shadow:0 0 0 2px var(--frame)}
     .change-map:hover .change-map-mark{width:6px;margin-left:-3px}
     .change-map .change-map-mark:hover{outline:0;width:8px;margin-left:-4px;box-shadow:0 0 0 2px var(--frame)}
