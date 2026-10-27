@@ -423,6 +423,13 @@ function App() {
     document.querySelector<HTMLElement>(`.task-row[data-task="${refocus.current}"] .task-link`)?.focus();
     refocus.current = '';
   }, [renaming]);
+  const [renamingPaper, setRenamingPaper] = useState(false);
+  const refocusPaper = useRef(false);
+  useEffect(() => {
+    if (renamingPaper || !refocusPaper.current) return;
+    document.querySelector<HTMLElement>('.breadcrumb .project-name')?.focus();
+    refocusPaper.current = false;
+  }, [renamingPaper]);
   const [page, setPage] = useState<'home' | 'manuscript'>('home');
   const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'notes');
   const [region, setRegion] = useState(false);
@@ -609,6 +616,14 @@ function App() {
     try { await api('/tasks/' + target.id + '/rename', { title }); } catch (e) { reportError(e); }
     await refresh(true);
   }
+  async function renamePaper(target: Project, value: string) {
+    const name = value.trim().replace(/\s+/g, ' ').slice(0, 120);
+    setRenamingPaper(false);
+    if (!name || name === target.name) return;
+    setState(previous => previous ? { ...previous, projects: previous.projects.map(p => p.id === target.id ? { ...p, name } : p) } : previous);
+    try { await api('/projects/' + target.id + '/rename', { name }); } catch (e) { reportError(e); }
+    await refresh(true);
+  }
   // The divider sets the chat width; CSS keeps both panels usable when the window narrows.
   function resizeChat(event: React.PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
@@ -698,6 +713,13 @@ function App() {
     ]}/>
   </> : null;
 
+  // The paper name in the header renames the paper in place, like a task title in the sidebar.
+  const paperName = !project ? <span className="project-name">Papilot</span>
+    : renamingPaper ? <form className="paper-rename" onSubmit={e => { e.preventDefault(); refocusPaper.current = true; e.currentTarget.querySelector('input')?.blur(); }}>
+      <input name="name" aria-label={`Rename ${project.name}`} defaultValue={project.name} maxLength={120} size={Math.min(40, Math.max(12, project.name.length + 2))} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void renamePaper(project, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocusPaper.current = true; e.currentTarget.value = project.name; e.currentTarget.blur(); } }}/>
+    </form>
+    : <button className="project-name" aria-label={`Rename paper: ${project.name}`} title={`${project.name} · Click to rename`} onClick={() => setRenamingPaper(true)}>{project.name}</button>;
+
   return <div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
     <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label="Papers and tasks">
       <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setPage('home'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a><button className="icon-button" aria-label="Hide task list" title="Hide task list" onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
@@ -731,9 +753,9 @@ function App() {
     {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label="Close task list" onClick={() => setSidebar(false)}/>}
     <main className="main" inert={narrow && sidebar}><header className="topbar">
       {(narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label="Show task list" title="Show task list" aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/></button>}
-      <div className="breadcrumb">{!mobile && <><span className="project-name" title={project?.name}>{project?.name || 'Papilot'}</span>{(task || manuscriptOpen) && <span className="slash">/</span>}</>}{task ? <div className="task-identity"><h1 title={task.title}>{task.title}</h1><Status task={task}/></div>
+      <div className="breadcrumb">{!mobile && <>{paperName}{(task || manuscriptOpen) && <span className="slash">/</span>}</>}{task ? <div className="task-identity"><h1 title={task.title}>{task.title}</h1><Status task={task}/></div>
         : manuscriptOpen ? <div className="task-identity"><h1>PDF</h1><span className={'status ' + (manuscriptData.data?.build.status === 'failed' ? 'failed' : manuscriptData.data?.build.status === 'ready' ? 'idle' : 'building')}><i/>{!manuscriptData.data ? 'Loading' : manuscriptData.data.build.status === 'building' ? 'Compiling' : manuscriptData.data.build.status === 'failed' ? 'Build failed' : `Compiled ${ago(manuscriptData.data.build.builtAt || Date.now())} ago`.replace('now ago', 'just now')}</span></div>
-        : mobile && <span className="project-name">{project?.name || 'Papilot'}</span>}</div>
+        : mobile && paperName}</div>
       {manuscriptOpen && project && <>
         <div className="task-state-actions">
           {mobile ? <ActionMenu label="PDF options" actions={[

@@ -117,6 +117,10 @@ export class Workspace extends EventEmitter {
     const project = { id: randomUUID(), name: name?.trim() || path.basename(root), path: root, createdAt: Date.now() };
     this.store.saveProject(project); return project;
   }
+  renameProject(projectId: string, name: string) {
+    const project = { ...this.store.project(projectId), name };
+    this.store.saveProject(project); return project;
+  }
   async createTask(input: { projectId: string; title: string; instructions: string; agent?: AgentId; model?: string; effort?: string; id: string }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');

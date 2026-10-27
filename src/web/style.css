@@ -137,6 +137,10 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .breadcrumb{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
 .project-name{font:400 15px/1.3 var(--serif);color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;flex-shrink:1}
 .slash{font-size:14px;color:var(--line-strong)}
+button.project-name{padding:3px 6px;margin:0 -6px;border-radius:var(--r);text-align:left;transition:background-color .15s,color .15s}
+button.project-name:hover{background:var(--bg-hover);color:var(--text-2)}
+.paper-rename{display:flex;min-width:0;flex-shrink:1}
+.paper-rename input{field-sizing:content;min-width:10ch;max-width:min(360px,40vw);height:30px;margin:0 -7px;padding:0 6px;border:1px solid var(--accent);border-radius:var(--r);background:var(--bg);font:400 15px/1.3 var(--serif);color:var(--text);box-shadow:var(--ring);outline:none}
 .task-identity{min-width:0;display:flex;align-items:center;gap:12px;overflow:hidden}
 .task-identity h1{font:400 19px/1.3 var(--serif);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;letter-spacing:-.005em}
 .task-identity>.status{flex-shrink:0;padding:2px 9px 2px 8px;border-radius:999px;background:var(--bg-muted);font-size:12px;font-weight:500}
@@ -546,6 +550,7 @@ body.resizing iframe{pointer-events:none}
   .topbar{height:54px;gap:6px;padding:0 6px 0 4px}
   .topbar .icon-button{width:44px;height:44px}
   .breadcrumb{gap:6px}
+  .paper-rename input{height:36px;font-size:16px}
   .task-identity{flex-direction:column;align-items:flex-start;gap:0}
   .task-identity h1{font-size:17px;max-width:100%}
   .task-identity>.status{padding:0;background:none!important;font-size:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis}

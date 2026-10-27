@@ -225,6 +225,16 @@ test('renaming a task changes only its title and is blocked during deletion', ()
   } finally { f.close(); }
 });
 
+test('renaming a paper changes only its display name', () => {
+  const f = fixture();
+  try {
+    const renamed = f.workspace.renameProject(f.task.projectId, 'Small Steps');
+    assert.equal(renamed.name, 'Small Steps');
+    assert.deepEqual(f.store.project(f.task.projectId), { id: f.task.projectId, name: 'Small Steps', path: '/unused', createdAt: 1 });
+    assert.throws(() => f.workspace.renameProject('missing', 'Other'), /not found/);
+  } finally { f.close(); }
+});
+
 test('feedback is marked delivered only after turn start is acknowledged', async () => {
   const ack = deferred<{ turn: { id: string } }>();
   const f = fixture();

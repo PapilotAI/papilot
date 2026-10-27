@@ -45,6 +45,7 @@ const agent = (value: unknown): AgentId => value === 'claude' || value === 'anti
 const effort = (value: unknown) => typeof value === 'string' && /^[a-z]{1,16}$/.test(value) ? value : undefined;
 const string = (value: unknown, name: string, max = 20000) => { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
 app.post('/api/projects', async request => { const b = request.body as any; return workspace.addProject(string(b.path, 'Repository path', 4000), b.name ? string(b.name, 'Paper name', 120) : undefined); });
+app.post<{ Params: { id: string } }>('/api/projects/:id/rename', request => workspace.renameProject(request.params.id, string((request.body as any).name, 'Paper name', 120)));
 app.post('/api/tasks', async request => {
   const b = request.body as any;
   return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: string(b.instructions, 'Instructions'), agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort) });

@@ -37,6 +37,7 @@ let reviewStarting = false;
 let deleteFailure = false;
 const deletions = [];
 const renames = [];
+const paperRenames = [];
 const gitState = { remote: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false }] };
 const originalGit = structuredClone(gitState);
 const gitCommits = [], gitActions = [];
@@ -81,6 +82,7 @@ await page.route('**/api/**', async route => {
     annotations.push(note); return json(note);
   }
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fixturePdf });
+  if (url.pathname.startsWith('/api/projects/') && url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); paperRenames.push({ id, ...body }); const paper = snapshot.projects.find(p => p.id === id); paper.name = body.name; return json(paper); }
   if (url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); renames.push({ id, ...body }); snapshot.tasks.find(t => t.id === id).title = body.title; return json(snapshot.tasks.find(t => t.id === id)); }
   if (url.pathname.endsWith('/interrupt')) { const id = url.pathname.split('/')[3]; interruptions.push(id); snapshot.tasks.find(t => t.id === id).status = 'interrupted'; return json({ ok: true }); }
   if (url.pathname.endsWith('/delete')) {
@@ -142,6 +144,31 @@ try {
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'hidden' });
   assert.equal(await switcher.evaluate(el => el === document.activeElement), true);
+
+  const paperName = page.getByRole('button', { name: 'Rename paper: Example paper', exact: true });
+  await paperName.click();
+  let paperBox = page.getByRole('textbox', { name: 'Rename Example paper' });
+  assert.equal(await paperBox.evaluate(el => el === document.activeElement && el.selectionStart === 0 && el.selectionEnd === el.value.length), true);
+  await paperBox.fill('Something else');
+  await paperBox.press('Escape');
+  await paperName.waitFor();
+  assert.equal(paperRenames.length, 0);
+  assert.equal(await paperName.evaluate(el => el === document.activeElement), true);
+  await paperName.click();
+  paperBox = page.getByRole('textbox', { name: 'Rename Example paper' });
+  await paperBox.fill('  Small   Steps ');
+  await paperBox.press('Enter');
+  const renamedPaper = page.getByRole('button', { name: 'Rename paper: Small Steps', exact: true });
+  await renamedPaper.waitFor();
+  assert.deepEqual(paperRenames, [{ id: task.projectId, name: 'Small Steps' }]);
+  assert.equal(await renamedPaper.evaluate(el => el === document.activeElement), true);
+  await page.getByRole('button', { name: 'Paper: Small Steps', exact: true }).waitFor();
+  await renamedPaper.click();
+  await page.getByRole('textbox', { name: 'Rename Small Steps' }).fill('Example paper');
+  await page.getByRole('textbox', { name: 'Rename Small Steps' }).press('Enter');
+  await paperName.waitFor();
+  assert.equal(paperRenames.length, 2);
+  console.log('PASS: Papers rename from their name in the header; Escape cancels and Enter saves the trimmed name');
   await page.getByRole('button', { name: 'New task', exact: true }).click();
   const prompt = page.getByRole('textbox', { name: 'Describe the revision' });
   await prompt.waitFor();
