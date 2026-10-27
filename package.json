@@ -1,7 +1,7 @@
 {
   "name": "papilot",
   "version": "0.1.0",
-  "description": "Revise LaTeX papers with an AI agent and review every change as a PDF diff before it reaches your manuscript.",
+  "description": "A Cursor-like workspace for your papers: annotate and review PDFs directly without ever touching LaTeX.",
   "keywords": [
     "latex",
     "pdf",

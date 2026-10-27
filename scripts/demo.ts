@@ -17,5 +17,5 @@ if (!fs.existsSync(folder)) {
 const store = new Store(path.join(DATA, 'papilot.sqlite'));
 const workspace = new Workspace(store);
 const project = await workspace.addProject(folder, 'Papilot paper');
-console.log(JSON.stringify({ project, note: 'Example ready. Create a task in the web UI to run real Codex.' }, null, 2));
+console.log(`Example paper ready: ${project.name} (${folder})`);
 store.close();

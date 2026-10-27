@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // The papilot command: starts the workspace, or adds the example paper first.
-import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const usage = `Usage: papilot [demo | service install | service stop] [--port <number>] [--data <folder>]
 
@@ -27,18 +28,37 @@ for (let i = 0; i < args.length; i++) {
     console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
     process.exit(0);
   } else {
+    if (arg !== '--help' && arg !== '-h') console.error(`Unknown argument: ${arg}\n`);
     console.log(usage);
     process.exit(arg === '--help' || arg === '-h' ? 0 : 1);
   }
 }
 
-const [major, minor] = process.versions.node.split('.').map(Number);
-if (major < 22 || (major === 22 && minor < 22)) {
-  console.error(`Papilot needs Node.js 22.22 or newer; this is ${process.versions.node}.`);
-  process.exit(1);
+// Papilot needs Node 22.22+. When an older Node runs this command, use a newer
+// one from nvm or PATH, preferring LTS releases, without changing the default.
+const parse = version => version.replace(/^v/, '').split('.').map(Number);
+const supported = version => { const [major, minor] = parse(version); return major > 22 || (major === 22 && minor >= 22); };
+if (!supported(process.versions.node)) {
+  const versions = path.join(process.env.NVM_DIR || path.join(os.homedir(), '.nvm'), 'versions/node');
+  const nvm = existsSync(versions) ? readdirSync(versions).map(v => ({ file: path.join(versions, v, 'bin/node'), version: v })) : [];
+  const others = [...new Set([...(process.env.PATH || '').split(path.delimiter).map(dir => path.join(dir, 'node')), '/opt/homebrew/bin/node', '/usr/local/bin/node'])]
+    .filter(file => existsSync(file)).map(file => ({ file, version: (spawnSync(file, ['--version'], { encoding: 'utf8' }).stdout || '0').trim() }));
+  // nvm's versions come first, then any other Node; even majors are LTS releases,
+  // and among those the newest wins.
+  const rank = ({ version }) => { const [major, minor, patch] = parse(version); return (major % 2 === 0 ? 1e9 : 0) + major * 1e6 + minor * 1e3 + patch; };
+  const best = list => list.filter(c => existsSync(c.file) && supported(c.version)).sort((a, b) => rank(b) - rank(a))[0];
+  const node = best(nvm) || best(others);
+  if (!node) {
+    console.error(`Papilot needs Node.js 22.22 or newer; this is ${process.versions.node}. Install it with \`nvm install 22\` or from https://nodejs.org, then run papilot again.`);
+    process.exit(1);
+  }
+  console.error(`Papilot needs Node.js 22.22+; using ${node.version.replace(/^v/, '')} from ${path.dirname(node.file)}.`);
+  const child = spawn(node.file, [fileURLToPath(import.meta.url), ...args], { stdio: 'inherit', env: { ...process.env, PATH: path.dirname(node.file) + path.delimiter + process.env.PATH } });
+  // Pass stop signals on, so stopping papilot also stops the server it started.
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => child.kill(signal));
+  await new Promise(() => child.on('exit', code => process.exit(code ?? 1)));
 }
-if (spawnSync('latexmk', ['-v'], { stdio: 'ignore' }).error)
-  console.warn('latexmk was not found. Install a TeX distribution such as MacTeX or TeX Live to build PDFs.');
+const tex = !spawnSync('latexmk', ['-v'], { stdio: 'ignore' }).error;
 
 // Node 22 marks node:sqlite as experimental; that notice is noise for users.
 const emitWarning = process.emitWarning;
@@ -51,5 +71,12 @@ if (service) {
   await import('../scripts/service.ts');
 } else {
   if (demo) await import('../scripts/demo.ts');
-  await import('../src/server/main.ts');
+  try {
+    await import('../src/server/main.ts');
+  } catch (error) {
+    if (error?.code !== 'EADDRINUSE') throw error;
+    console.error(`Port ${process.env.PAPILOT_PORT || 4317} is already in use. Is Papilot already running? Start another copy with --port <number>.`);
+    process.exit(1);
+  }
+  if (!tex) console.warn('\nlatexmk was not found, so PDFs cannot be built yet. Install MacTeX or TeX Live (the full distribution), open a new terminal and run papilot again.');
 }
