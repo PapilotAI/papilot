@@ -25,6 +25,8 @@ jobs:
   deploy:
     name: Build and deploy
     runs-on: ubuntu-latest
+    # apt can hang on a slow mirror; give up rather than hold the pages group.
+    timeout-minutes: 15
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
