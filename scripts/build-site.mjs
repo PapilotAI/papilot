@@ -17,7 +17,7 @@ const copy = (from, names, to = '') => {
 fs.rmSync(out, { recursive: true, force: true });
 fs.cpSync(path.join(root, 'site'), out, { recursive: true });
 copy('public', ['favicon.png', 'apple-touch-icon.png']);
-copy('docs/assets', ['logo.svg', 'feature-note.png', 'feature-review.png', 'feature-contents.png', 'feature-git.png'], 'assets');
+copy('docs/assets', ['logo.svg', 'social-preview.png', 'feature-note.png', 'feature-review.png', 'feature-contents.png', 'feature-git.png'], 'assets');
 copy('src/web/fonts', fs.readdirSync(path.join(root, 'src/web/fonts')).filter(name => /\.(otf|txt)$/.test(name)), 'fonts');
 
 const gif = path.join(root, 'docs/assets/demo.gif');
