@@ -39,22 +39,80 @@ export function parseStatus(output: string, numstat: string): Omit<GitStatus, 'h
     else if (/^[12u] /.test(field)) {
       const parts = field.split(' '), xy = parts[1], kind = field[0];
       const file = parts.slice(kind === '1' ? 8 : kind === '2' ? 9 : 10).join(' ');
-      if (kind === '2') i++;
+      // A rename or copy is followed by its original path.
+      const from = kind === '2' ? fields[++i] : undefined;
       const code = kind === 'u' ? 'U' : xy[1] !== '.' ? xy[1] : xy[0];
-      status.files.push({ path: file, status: code, staged: xy[0] !== '.', lines: lines.get(file) });
+      status.files.push({ path: file, status: code, staged: xy[0] !== '.', lines: lines.get(file), ...(from ? { from } : {}) });
     }
   }
   return status;
 }
 
 export async function gitStatus(root: string): Promise<GitStatus> {
-  const [status, numstat, head] = await Promise.all([
+  const [status, numstat, head, remotes] = await Promise.all([
     git(root, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all']),
     git(root, ['diff', '--numstat', '-z', 'HEAD']).catch(() => ''),
     git(root, ['log', '-1', '--format=%h%x00%s%x00%ct']).catch(() => ''),
+    git(root, ['remote']).catch(() => ''),
   ]);
   const [hash, subject, time] = head.trim().split('\0');
-  return { ...parseStatus(status, numstat), head: hash ? { hash, subject, date: Number(time) * 1000 } : null };
+  return { ...parseStatus(status, numstat), head: hash ? { hash, subject, date: Number(time) * 1000 } : null, remote: Boolean(remotes.trim()) };
+}
+
+// Paths from the browser are matched against the changed files, and Git reads
+// them literally, so a name cannot act as a pathspec pattern.
+const literal = { GIT_LITERAL_PATHSPECS: '1' };
+const DIFF_LIMIT = 400_000;
+
+// One changed file's diff against HEAD; an untracked file shows as all new.
+export async function gitDiff(root: string, file: string) {
+  const entry = (await gitStatus(root)).files.find(item => item.path === file);
+  if (!entry) throw Object.assign(new Error('That file has no uncommitted changes.'), { statusCode: 404 });
+  const diff = entry.status === '?'
+    // `git diff --no-index` exits with 1 when the files differ.
+    ? await exec('git', ['diff', '--no-index', '--no-color', '--', '/dev/null', file], { cwd: root, maxBuffer: 64 * 1024 * 1024 }).then(r => r.stdout, (e: { stdout?: string }) => e.stdout || '')
+    : await git(root, ['diff', '--no-color', '--find-renames', 'HEAD', '--', ...(entry.from ? [entry.from] : []), file], literal);
+  return { path: file, diff: diff.slice(0, DIFF_LIMIT), truncated: diff.length > DIFF_LIMIT };
+}
+
+// Commit exactly the chosen files as they are on disk. Changes staged
+// elsewhere for other files stay staged and out of this commit.
+export async function gitCommit(root: string, message: string, paths: string[]) {
+  const files = (await gitStatus(root)).files.filter(item => paths.includes(item.path));
+  if (!files.length) throw new Error('Select at least one changed file to commit.');
+  if (files.some(item => item.status === 'U')) throw new Error('Resolve the merge conflicts in the selected files before committing.');
+  // A rename is already staged, so only its new path is added; the commit
+  // names the old path too, so the removal is part of it.
+  await gitAction(root, ['add', '-A', '--', ...files.map(item => item.path)]);
+  await gitAction(root, ['commit', '--only', '-m', message, '--', ...new Set(files.flatMap(item => item.from ? [item.from, item.path] : [item.path]))]);
+  return (await git(root, ['rev-parse', '--short', 'HEAD'])).trim();
+}
+
+// Fetch, fast-forward pull and push use the host's Git credentials. Nothing
+// may prompt, so a missing credential fails instead of hanging.
+export async function gitRemote(root: string, action: 'fetch' | 'pull' | 'push') {
+  const status = await gitStatus(root);
+  if (!status.remote) throw new Error('This repository has no remote.');
+  if (action === 'fetch') await gitAction(root, ['fetch', '--prune'], 120_000);
+  else if (action === 'pull') {
+    if (!status.upstream) throw new Error('This branch does not track a remote branch yet.');
+    await gitAction(root, ['pull', '--ff-only'], 120_000);
+  } else if (status.upstream) await gitAction(root, ['push'], 120_000);
+  else {
+    if (!status.branch) throw new Error('Check out a branch before pushing.');
+    const remotes = (await git(root, ['remote'])).split('\n').filter(Boolean);
+    await gitAction(root, ['push', '-u', remotes.includes('origin') ? 'origin' : remotes[0], status.branch], 120_000);
+  }
+}
+
+// Git's own message, without the usage noise, becomes the error the user sees.
+async function gitAction(root: string, args: string[], timeout = 60_000) {
+  try { return (await exec('git', args, { cwd: root, timeout, env: { ...process.env, ...literal, GIT_TERMINAL_PROMPT: '0' }, maxBuffer: 64 * 1024 * 1024 })).stdout; }
+  catch (error) {
+    const e = error as { stderr?: string; stdout?: string; killed?: boolean; message: string };
+    const detail = (e.stderr || e.stdout || '').split('\n').map(line => line.trim()).filter(line => line && !/^(hint|To |From ):?/.test(line)).slice(-4).join(' ');
+    throw new Error(e.killed ? `git ${args[0]} timed out.` : detail || e.message);
+  }
 }
 
 // The preview shows the manuscript as it is on disk, including accepted but

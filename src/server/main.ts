@@ -10,7 +10,7 @@ import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER } from './paths.ts';
 import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState } from './review.ts';
 import { authorize } from './security.ts';
 import { fullPaperPdf } from './pdf.ts';
-import { Manuscripts, annotationTask, gitStatus } from './manuscript.ts';
+import { Manuscripts, annotationTask, gitCommit, gitDiff, gitRemote, gitStatus } from './manuscript.ts';
 
 const store = new Store(path.join(DATA, 'papilot.sqlite'));
 const workspace = new Workspace(store);
@@ -75,6 +75,24 @@ app.post<{ Params: { id: string } }>('/api/tasks/:id/publish', request => {
 // The manuscript preview compiles each paper's working tree and reports its Git status.
 app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));
 app.get<{ Params: { id: string } }>('/api/projects/:id/git', request => gitStatus(store.project(request.params.id).path));
+// Git writes to one repository run one at a time; each returns the new status.
+const gitQueue = new Map<string, Promise<unknown>>();
+function serialGit<T>(projectId: string, work: () => Promise<T>) {
+  const run = (gitQueue.get(projectId) || Promise.resolve()).catch(() => {}).then(work);
+  gitQueue.set(projectId, run);
+  return run.finally(() => { if (gitQueue.get(projectId) === run) gitQueue.delete(projectId); });
+}
+app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/projects/:id/git/diff', request => gitDiff(store.project(request.params.id).path, string(request.query.path, 'File path', 4096)));
+app.post<{ Params: { id: string } }>('/api/projects/:id/git/commit', request => {
+  const project = store.project(request.params.id), b = request.body as any;
+  const message = string(b.message, 'Commit message', 5000), paths = Array.isArray(b.paths) ? b.paths.filter((p: unknown) => typeof p === 'string').slice(0, 5000) : [];
+  return serialGit(project.id, async () => ({ commit: await gitCommit(project.path, message, paths), git: await gitStatus(project.path) }));
+});
+app.post<{ Params: { id: string; action: string } }>('/api/projects/:id/git/:action', request => {
+  const project = store.project(request.params.id), action = request.params.action;
+  if (action !== 'fetch' && action !== 'pull' && action !== 'push') throw Object.assign(new Error('Unknown Git action.'), { statusCode: 404 });
+  return serialGit(project.id, async () => { await gitRemote(project.path, action); return { git: await gitStatus(project.path) }; });
+});
 app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path, true)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));
 // Notes marked on the manuscript PDF become one agent task when sent.
 app.post<{ Params: { id: string } }>('/api/projects/:id/annotations', async request => {

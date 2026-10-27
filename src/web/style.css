@@ -425,7 +425,7 @@ body.resizing iframe{pointer-events:none}
 .git-branch{display:flex;align-items:center;gap:8px;padding:14px 20px 2px;font-size:14px}
 .git-branch>svg,.git-commit>svg{color:var(--text-3);flex-shrink:0}
 .git-branch code{font-size:14px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.git-sync{margin-left:auto;display:flex;gap:8px;padding:2px 8px;border-radius:999px;background:var(--bg-muted);font-size:12px;font-weight:500;color:var(--text-2);white-space:nowrap}
+.git-sync{display:flex;gap:8px;padding:2px 8px;border-radius:999px;background:var(--bg-muted);font-size:12px;font-weight:500;color:var(--text-2);white-space:nowrap}
 .git-upstream{margin:0;padding:0 20px 0 44px;font-size:12.5px;color:var(--text-3)}
 .git-upstream code{font-size:12.5px}
 .git-commit{display:flex;gap:8px;margin:12px 12px 4px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg-subtle)}
@@ -435,10 +435,31 @@ body.resizing iframe{pointer-events:none}
 .git-commit code{font-size:12px}
 .git-section{display:flex;align-items:center;gap:8px;margin:0;padding:16px 20px 6px;font-size:12px;font-weight:600;color:var(--text-3)}
 .git-total{margin-left:auto;font:12px/1 var(--mono)}
+.git-remote{display:flex;align-items:center;gap:4px;margin-left:auto}
+.git-remote .button.compact{height:28px;padding:0 10px}
+.git-remote .icon-button{width:28px;height:28px}
+.git-panel input[type=checkbox]{flex:none;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
+.git-message{margin:10px 20px 0;font-size:13px}
+.git-notice{display:flex;align-items:center;gap:6px;color:var(--green)}
+.git-commit-form{display:flex;flex-direction:column;gap:8px;padding:2px 20px 10px}
+.git-commit-form textarea{display:block;width:100%;min-height:58px;resize:vertical;padding:8px 10px;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--bg);font:inherit;font-size:13.5px;line-height:1.45;color:var(--text);outline:none}
+.git-commit-form textarea:focus{border-color:var(--accent);box-shadow:var(--ring)}
+.git-commit-form .button{width:100%}
 .git-files{list-style:none;margin:0;padding:0 8px}
-.git-files li{display:flex;align-items:center;gap:10px;min-height:34px;padding:4px 12px;border-radius:var(--r)}
-.git-files li:hover{background:var(--bg-hover)}
-.git-file{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden}
+.git-files li{border-radius:var(--r)}
+.git-row{display:flex;align-items:center;gap:10px;min-height:34px;padding:4px 12px;border-radius:var(--r)}
+.git-row:hover,.git-files li.open .git-row{background:var(--bg-hover)}
+.git-file{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden;padding:0;border:0;background:none;font:inherit;text-align:left;color:inherit;cursor:pointer}
+.git-diff-wrap{max-height:420px;margin:4px 4px 10px 37px;overflow:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
+/* LaTeX paragraphs are long lines, so diff lines wrap with a hanging indent. */
+.git-diff{margin:0;padding:6px 0;font:12px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text-2)}
+.git-diff span{display:block;padding:0 12px 0 24px;text-indent:-12px}
+.git-diff .add{background:#ecfdf3;color:#166534}
+.git-diff .del{background:#fef2f2;color:#991b1b}
+.git-diff .hunk{margin:4px 0;background:var(--bg-subtle);color:var(--text-3)}
+.git-diff .note{color:var(--text-3)}
+.git-diff-wrap .inline-error{margin:8px 10px}
+.git-diff-note{margin:0;padding:8px 12px;font-size:12.5px;color:var(--text-3)}
 .git-name{flex-shrink:0;max-width:100%;font-size:13.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .git-dir{min-width:0;font-size:12.5px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .git-lines,.git-total{white-space:nowrap}
@@ -505,6 +526,8 @@ body.resizing iframe{pointer-events:none}
 
 /* Phones: one panel at a time, chosen from the top bar. */
 @media(max-width:680px){
+  .git-commit-form textarea{font-size:16px}
+  .git-row{min-height:44px}
   .app-shell{position:fixed;inset:auto 0 auto 0;top:var(--viewport-top,0px);height:var(--viewport-height,100dvh)}
   .main{height:100%;padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
   .sidebar,.sidebar-collapsed>.sidebar{height:var(--viewport-height,100dvh);padding-bottom:max(10px,env(safe-area-inset-bottom))}

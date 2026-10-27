@@ -19,8 +19,9 @@ export interface UsageWindow { usedPercent: number; minutes: number | null; rese
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
 export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null }
 export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; version: string }
-export interface GitFile { path: string; status: string; staged: boolean; lines?: [number, number] }
-export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null }
+export interface GitFile { path: string; status: string; staged: boolean; lines?: [number, number]; from?: string }
+export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null; remote?: boolean }
+export interface GitDiff { path: string; diff: string; truncated: boolean }
 export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean }
 export interface Annotation { id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string }
 export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }

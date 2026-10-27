@@ -35,7 +35,9 @@ let reviewStarting = false;
 let deleteFailure = false;
 const deletions = [];
 const renames = [];
-const gitState = { branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false }] };
+const gitState = { remote: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false }] };
+const originalGit = structuredClone(gitState);
+const gitCommits = [], gitActions = [];
 const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true };
 let annotations = [];
 const noteSends = [];
@@ -56,6 +58,13 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items') && history) return json({ items: history });
   if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'hello', taskId: task.id, type: 'assistant', text: 'The introduction is ready for review.', createdAt: 1 }] });
   if (url.pathname.endsWith('/git')) return json(gitState);
+  if (url.pathname.endsWith('/git/diff')) return json({ path: url.searchParams.get('path'), diff: 'diff --git a/main.tex b/main.tex\n--- a/main.tex\n+++ b/main.tex\n@@ -1,2 +1,2 @@\n-Old line.\n+New line.\n Context.\n', truncated: false });
+  if (url.pathname.endsWith('/git/commit')) {
+    const body = route.request().postDataJSON(); gitCommits.push(body);
+    Object.assign(gitState, { files: gitState.files.filter(file => !body.paths.includes(file.path)), ahead: gitState.ahead + 1, head: { hash: 'def5678', subject: body.message, date: 2 } });
+    return json({ commit: 'def5678', git: gitState });
+  }
+  if (/\/git\/(fetch|pull|push)$/.test(url.pathname)) { const action = url.pathname.split('/').pop(); gitActions.push(action); if (action === 'push') gitState.ahead = 0; return json({ git: gitState }); }
   if (url.pathname.endsWith('/manuscript')) return json({ git: gitState, build: manuscriptBuild, annotations });
   if (url.pathname.endsWith('/annotations/send')) {
     const body = route.request().postDataJSON(); noteSends.push(body);
@@ -280,11 +289,31 @@ try {
   assert.match(gitText, /Tracking origin\/main/);
   assert.match(gitText, /Draft the introduction\s+abc1234/);
   assert.equal(await gitPanel.getByLabel('Untracked').innerText(), 'U');
+  // Changes can be read as diffs, chosen and committed, then pushed.
+  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include main.tex' }).isChecked(), true);
+  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include notes.md' }).isChecked(), true);
+  await gitPanel.getByRole('button', { name: 'main.tex', exact: true }).click();
+  await gitPanel.getByRole('region', { name: 'Changes in main.tex' }).getByText('+New line.', { exact: true }).waitFor();
+  await gitPanel.getByRole('checkbox', { name: 'Include notes.md' }).uncheck();
+  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include all changes' }).evaluate(box => box.indeterminate), true);
+  assert.equal(await gitPanel.getByRole('button', { name: 'Commit 1 of 2 files' }).isDisabled(), true);
+  const commitMessage = gitPanel.getByRole('textbox', { name: 'Commit message' });
+  await commitMessage.fill('Tighten the introduction');
+  await commitMessage.press('Enter');
+  await gitPanel.getByRole('status').filter({ hasText: 'Committed def5678.' }).waitFor();
+  assert.deepEqual(gitCommits, [{ message: 'Tighten the introduction', paths: ['main.tex'] }]);
+  assert.equal(await commitMessage.inputValue(), '');
+  assert.match(await gitPanel.innerText(), /Tighten the introduction\s+def5678/);
+  await gitPanel.getByRole('button', { name: 'Push', exact: true }).click();
+  await gitPanel.getByRole('status').filter({ hasText: 'Pushed to origin/main.' }).waitFor();
+  assert.deepEqual(gitActions, ['push']);
+  assert.equal(await gitPanel.getByRole('button', { name: 'Push', exact: true }).count(), 0);
+  Object.assign(gitState, structuredClone(originalGit));
   assert.equal(await page.getByRole('link', { name: 'Open the PDF file' }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
   assert.equal(await page.title(), 'Example paper · Papilot');
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
-  console.log('PASS: Each paper has a PDF view with contents, paging, zoom, find and Git status; text and region notes are added, deleted and sent as one task');
+  console.log('PASS: Each paper has a PDF view with contents, paging, zoom and find; text and region notes are added, deleted and sent as one task; Git changes are diffed, committed and pushed');
 
   const divider = page.getByRole('separator', { name: 'Resize chat panel' });
   const chatPanel = page.getByRole('region', { name: 'Codex conversation', exact: true });

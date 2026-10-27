@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { anchor, annotationTask, gitStatus, parseStatus, parseSynctex, settleLines, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
+import { anchor, annotationTask, gitCommit, gitDiff, gitRemote, gitStatus, parseStatus, parseSynctex, settleLines, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
 import type { Annotation } from '../src/shared.ts';
 
 test('Git status parsing keeps branch counts, renames, untracked files and line counts', () => {
@@ -14,7 +14,7 @@ test('Git status parsing keeps branch counts, renames, untracked files and line 
     branch: 'main', upstream: 'origin/main', ahead: 2, behind: 1,
     files: [
       { path: 'chapters/intro file.tex', status: 'M', staged: false, lines: [3, 1] },
-      { path: 'new.tex', status: 'R', staged: true, lines: [0, 0] },
+      { path: 'new.tex', status: 'R', staged: true, lines: [0, 0], from: 'old.tex' },
       { path: 'notes.md', status: '?', staged: false },
     ],
   });
@@ -93,4 +93,54 @@ test('notes settle on the source line that holds the marked words, not the one S
   const formula = chars('Dt+1 = Dt ⊕ Δt');
   assert.deepEqual(settleLines(source, [2, 2], anchor(formula, 0, false), anchor(formula, 13, true)), [2, 2]);
   assert.deepEqual(settleLines([], [3, 4], null, null), [3, 4]);
+});
+
+test('the Git panel commits only the chosen files, shows diffs and syncs with the remote', async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-git-'));
+  const run = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  const clone = (target: string) => {
+    run(base, 'clone', '-q', remote, target);
+    for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@localhost'], ['commit.gpgsign', 'false'], ['core.hooksPath', path.join(base, 'no-hooks')]]) run(target, 'config', key, value);
+  };
+  const remote = path.join(base, 'remote.git'), root = path.join(base, 'paper'), other = path.join(base, 'other');
+  try {
+    run(base, 'init', '-q', '--bare', '-b', 'main', remote);
+    clone(root);
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Original.\n'); fs.writeFileSync(path.join(root, 'old.tex'), 'Chapter.\n'); fs.writeFileSync(path.join(root, 'notes.md'), 'Notes.\n');
+    run(root, 'add', '.'); run(root, 'commit', '-qm', 'Initial'); run(root, 'push', '-q', '-u', 'origin', 'main');
+    // A modified file, a staged rename, a new file, and a change staged elsewhere.
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Changed.\n');
+    run(root, 'mv', 'old.tex', 'chapter.tex');
+    fs.writeFileSync(path.join(root, 'extra.tex'), 'New.\n');
+    fs.writeFileSync(path.join(root, 'notes.md'), 'Staged elsewhere.\n'); run(root, 'add', 'notes.md');
+    let status = await gitStatus(root);
+    assert.equal(status.remote, true);
+    assert.equal(status.files.find(file => file.path === 'chapter.tex')?.from, 'old.tex');
+    const diff = await gitDiff(root, 'main.tex');
+    assert.match(diff.diff, /^-Original\.$/m); assert.match(diff.diff, /^\+Changed\.$/m); assert.equal(diff.truncated, false);
+    assert.match((await gitDiff(root, 'extra.tex')).diff, /^\+New\.$/m);
+    await assert.rejects(gitDiff(root, 'missing.tex'), /no uncommitted changes/);
+    await assert.rejects(gitCommit(root, 'Nothing', ['missing.tex']), /Select at least one/);
+    const hash = await gitCommit(root, 'Revise the introduction', ['main.tex', 'extra.tex', 'chapter.tex']);
+    assert.equal(run(root, 'log', '-1', '--format=%h %s'), `${hash} Revise the introduction`);
+    assert.deepEqual(run(root, 'show', '--name-status', '--format=', 'HEAD').split('\n').sort(), ['A\textra.tex', 'M\tmain.tex', 'R100\told.tex\tchapter.tex']);
+    status = await gitStatus(root);
+    assert.deepEqual(status.files.map(file => [file.path, file.status, file.staged]), [['notes.md', 'M', true]], 'The change staged elsewhere stays staged and uncommitted');
+    assert.equal(status.ahead, 1);
+    await gitRemote(root, 'push');
+    assert.equal((await gitStatus(root)).ahead, 0);
+    assert.equal(run(remote, 'log', '-1', '--format=%s', 'main'), 'Revise the introduction');
+    // Another clone moves the remote ahead; fetch shows it, and pull fast-forwards.
+    clone(other);
+    fs.writeFileSync(path.join(other, 'other.tex'), 'From elsewhere.\n'); run(other, 'add', '.'); run(other, 'commit', '-qm', 'Elsewhere'); run(other, 'push', '-q');
+    await gitRemote(root, 'fetch');
+    assert.equal((await gitStatus(root)).behind, 1);
+    await gitRemote(root, 'pull');
+    status = await gitStatus(root);
+    assert.equal(status.behind, 0);
+    assert.equal(fs.readFileSync(path.join(root, 'other.tex'), 'utf8'), 'From elsewhere.\n');
+    const lone = path.join(base, 'lone');
+    run(base, 'init', '-q', lone);
+    await assert.rejects(gitRemote(lone, 'push'), /no remote/);
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
