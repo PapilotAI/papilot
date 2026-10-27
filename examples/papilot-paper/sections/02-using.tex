@@ -1,0 +1,136 @@
+\section{Using Papilot}
+\label{sec:using}
+
+This section describes Papilot as an author meets it. The later sections
+explain why it behaves as it does.
+
+\subsection{Running it}
+
+Papilot needs Node.js~22.22 or later, Git, a \TeX{} installation with
+\texttt{latexmk} and \texttt{synctex}, and a signed-in agent on the host. It is
+installed and started with
+\begin{verbatim}
+npm ci
+npm run setup:review
+npm run build
+npm start
+\end{verbatim}
+and then opened at \texttt{http://127.0.0.1:4317}. \emph{Add paper} registers a
+\LaTeX{} Git repository on the host; later papers are added and switched from
+the paper menu at the top of the sidebar. A repository must have at least one
+commit and compile with \texttt{latexmk}; a custom root document is named in a
+\texttt{.latex-review.json} file. To try a sample first, \texttt{npm run demo}
+copies this paper into a separate repository and registers it as
+\emph{Papilot paper}, without touching any existing manuscript.
+
+\subsection{A task from start to finish}
+
+\begin{enumerate}
+  \item Select \emph{New task}, describe the revision and press Enter. The first
+    line of the prompt becomes the task's title, and the task runs on the paper
+    selected in the sidebar. Below the prompt, choose the agent, its model and
+    its reasoning effort; Papilot remembers all three for the next task.
+  \item Follow the conversation and answer the agent's questions or permission
+    requests. When both execution slots are busy, further tasks queue
+    (\cref{sec:agents}).
+  \item When the agent finishes, Papilot builds the PDF review automatically.
+    Accept, reject or comment on each change in the typeset review.
+  \item Send the saved comments, or write further instructions in the
+    conversation. Either starts the next round, which carries the review
+    feedback with it (\cref{sec:model}).
+\end{enumerate}
+
+While the agent works, the composer shows a stop button that pauses the task.
+The desktop workspace offers three views, \emph{Review}, \emph{Split} and
+\emph{Chat}, and remembers the choice; on a phone the header switches between
+the review and the chat. The review toolbar shows the round's progress, accepts
+or rejects every undecided change at once, opens the full PDF of the round,
+builds the review again, and opens it in a separate tab. \emph{Accept all} and
+\emph{Reject all} act only on changes not yet decided, and one undo reverses the
+whole batch.
+
+Conversation drafts are saved per task in the browser; Enter sends, Shift+Enter
+adds a line, and an input method's composition is never sent by Enter. Closing
+the browser does not stop a run. After a restart of the host process, turns that
+were in flight are marked interrupted and can be continued, and queued messages
+are kept. If the outcome of a request is uncertain, the task offers
+\emph{Check status}, and further decisions wait until it is resolved.
+
+\subsection{Reading the paper}
+
+\emph{PDF}, under the paper in the sidebar, shows the manuscript as it is on
+disk, including accepted but uncommitted changes (\cref{sec:build}). It behaves
+like a local PDF reader: continuous pages with crisp text at any zoom,
+selectable text, working links and cross-references, and search across the
+whole document.
+\begin{itemize}
+  \item \emph{Contents} lists the PDF's bookmarks, which \texttt{hyperref}
+    writes for every section, highlights the section being read, and jumps to
+    any entry. The same list opens from the toolbar.
+  \item A page number or the arrows change page; the zoom buttons, the zoom
+    menu, the keyboard and a pinch change the zoom, which is remembered.
+  \item Find (Cmd+F) searches every page, with Enter and Shift+Enter stepping
+    through the matches.
+\end{itemize}
+
+\subsection{Notes on the PDF}
+
+To ask for a change directly on the PDF, select text and choose \emph{Add note},
+or mark a region around a figure or an equation, then describe the change. The
+selection follows the printed words exactly (\cref{sec:geometry}), each note is
+settled on the source lines that produced it (\cref{sec:notes}), and every
+pending note is sent to the agent as one task.
+
+\subsection{The Git panel}
+
+Beside the PDF, a small source-control panel shows the branch and how it
+compares with its upstream, the last commit, and the uncommitted changes with
+their line counts. Selecting a file shows its difference. Ticking files,
+writing a message and pressing Enter commits exactly those files as they are on
+disk; fetch, a fast-forward pull and push keep the branch in step with its
+remote (\cref{sec:git}).
+
+\subsection{Agents}
+
+Each task runs on one agent: Codex through its app server, Claude through the
+Claude Agent SDK, or Antigravity through its command line. Every agent uses its
+own login on the host, and an agent that is not installed or signed in is listed
+as unavailable. When an agent reports usage, the new-task page shows each usage
+window with how much is used and when it resets (\cref{sec:usage}).
+
+\subsection{Working from another device}
+
+Papilot binds only to \texttt{127.0.0.1}. To reach it from a phone or another
+computer, it is published on a private Tailscale network, and the server checks
+the host, the browser's origin and the Tailscale identity of every remote
+request (\cref{sec:security}):
+\begin{verbatim}
+export PAPILOT_PUBLIC_ORIGIN=https://your-mac.your-tailnet.ts.net:8443
+export PAPILOT_TAILSCALE_LOGIN=your-tailscale-login
+npm run service:install
+tailscale serve --bg --https=8443 http://127.0.0.1:4317
+\end{verbatim}
+A background service starts Papilot after login, restarts it if it exits and
+keeps the computer from sleeping while it runs. Without Tailscale, an SSH
+tunnel serves the same purpose.
+
+\subsection{Configuration}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lp{0.62\linewidth}@{}}
+\toprule
+Variable & Purpose \\
+\midrule
+\texttt{PAPILOT\_PORT} & local HTTP port, $4317$ by default \\
+\texttt{PAPILOT\_DATA} & state and generated example, \texttt{.papilot} by default \\
+\texttt{PAPILOT\_CODEX\_BIN} & Codex executable \\
+\texttt{ANTHROPIC\_API\_KEY} & API key for Claude tasks \\
+\texttt{PAPILOT\_AGY\_BIN} & Antigravity command line \\
+\texttt{PAPILOT\_AGY\_PROXY} & HTTP proxy used only for Antigravity \\
+\texttt{PAPILOT\_REVIEW\_ENGINE} & review engine directory \\
+\texttt{PAPILOT\_PUBLIC\_ORIGIN} & exact browser origin for remote access \\
+\texttt{PAPILOT\_TAILSCALE\_LOGIN} & Tailscale login allowed to connect \\
+\bottomrule
+\end{tabular}
+\end{center}

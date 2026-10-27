@@ -1,0 +1,99 @@
+\section{Concurrent tasks and conflicts}
+\label{sec:conflicts}
+
+Papilot runs up to $c = 2$ tasks at once, each against the manuscript as it was
+when the task started. Accepted text from one task can therefore overlap a
+later proposal from another, and \cref{eq:transform} then returns $\bot$.
+This section estimates how often that happens.
+
+\subsection{Uniformly placed edits}
+
+\begin{assumption}
+\label{ass:uniform}
+Each task proposes edits of a common length $\ell$ whose start positions are
+independent and uniformly distributed over a document of length $n \gg \ell$.
+\end{assumption}
+
+\begin{proposition}[Conflict probability]
+\label{prop:conflict}
+Under \cref{ass:uniform}, let two tasks propose $k_1$ and $k_2$ edits. The
+number $X$ of incompatible cross pairs has mean
+\begin{equation}
+  \E[X] = \frac{(2\ell + 1)\, k_1 k_2}{n},
+  \label{eq:conflict-mean}
+\end{equation}
+and the probability that the tasks conflict at all is
+\begin{equation}
+  \Prob(X > 0)
+  = 1 - \Bigl(1 - \frac{2\ell + 1}{n}\Bigr)^{k_1 k_2}
+  \approx 1 - \exp\Bigl(-\frac{(2\ell+1)\, k_1 k_2}{n}\Bigr).
+  \label{eq:conflict}
+\end{equation}
+\end{proposition}
+
+\begin{proof}
+Two edits of length $\ell$ starting at $s$ and $s'$ violate
+\cref{eq:compatible} exactly when $\abs{s - s'} \le \ell$, an event of
+probability $(2\ell+1)/n$ up to boundary effects of order $\ell/n$. Summing over
+the $k_1 k_2$ cross pairs gives \cref{eq:conflict-mean}. Treating the pairs as
+independent gives the product in \cref{eq:conflict}, and
+$\log(1-x) = -x + O(x^2)$ gives the approximation, which is the Poisson
+approximation $\Prob(X = 0) \approx e^{-\E[X]}$~\cite{feller1968}.
+\end{proof}
+
+For a $40$-page paper with $n \approx 1.2 \times 10^{5}$ characters, two tasks
+of $k_1 = k_2 = 10$ edits of $\ell = 200$ characters have $\E[X] \approx 0.33$
+and conflict with probability about $1 - e^{-0.33} \approx 0.28$.
+
+\subsection{How much overlaps}
+
+When two edits do conflict, the overlap is usually partial.
+
+\begin{proposition}[Expected overlap]
+\label{prop:overlap}
+Conditioned on a conflict, the offset $d = s' - s$ is uniform on
+$\{-\ell, \dots, \ell\}$ and the overlap $\ell - \abs{d}$ has mean
+\begin{equation}
+  \E\bigl[\ell - \abs{d} \bigm| \abs{d} \le \ell\bigr]
+  = \frac{1}{2\ell + 1} \sum_{d=-\ell}^{\ell} \bigl(\ell - \abs{d}\bigr)
+  = \frac{\ell^{2}}{2\ell + 1}
+  \approx \frac{\ell}{2} .
+  \label{eq:overlap}
+\end{equation}
+\end{proposition}
+
+\begin{proof}
+The sum is $\ell + 2\sum_{j=1}^{\ell} (\ell - j) = \ell + \ell(\ell - 1) = \ell^2$.
+\end{proof}
+
+A typical conflict therefore involves about half of an edit, which matches the
+experience that conflicting proposals usually touch the same sentence rather
+than the same word.
+
+\subsection{Clustered edits}
+
+Real revisions are not uniform: an author working on the introduction asks for
+several changes there. We model this by letting both tasks place their edits
+uniformly within a common region covering a fraction $\nu \in (0, 1]$ of the
+document.
+
+\begin{corollary}[Clustering raises conflicts]
+\label{cor:clustered}
+If both tasks edit only within a region of length $\nu n$,
+\begin{equation}
+  \Prob(X > 0) \approx 1 - \exp\Bigl(-\frac{(2\ell+1)\, k_1 k_2}{\nu n}\Bigr),
+  \label{eq:clustered}
+\end{equation}
+so that confining two tasks to a tenth of the paper multiplies the expected
+number of conflicts by ten.
+\end{corollary}
+
+\begin{proof}
+Apply \cref{prop:conflict} with $n$ replaced by $\nu n$.
+\end{proof}
+
+\Cref{cor:clustered} argues for fewer, longer tasks over many short ones that
+touch the same part of a paper, and for finishing the review of one task
+before starting another in the same section. It also explains why Papilot
+surfaces conflicts from Git rather than resolving them: a resolution would
+have to choose between two texts the author has not yet compared.

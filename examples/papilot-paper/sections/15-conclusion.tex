@@ -1,0 +1,27 @@
+\section{Discussion and conclusion}
+\label{sec:conclusion}
+
+\subsection{Limitations}
+
+Three limitations are worth stating. First, \cref{prop:conflict} assumes
+uniformly placed edits; real revisions cluster around the parts of a paper an
+author is working on, which by \cref{cor:clustered} raises the conflict rate
+and argues for fewer, longer tasks over many short ones. Second,
+\cref{alg:settle} cannot settle formulas, since their printed form shares no
+letters with their source; for those, SyncTeX's lines are kept and the excerpt
+shows the whole display. Third, an agent that cannot ask for permission, such
+as a headless command line, must be restricted in advance; Papilot runs such
+agents so that they edit only the task's worktree, which also means they cannot
+compile or test their own changes.
+
+\subsection{Conclusion}
+
+Papilot treats agent editing as a sequence of reviewable rounds. Isolation
+makes proposals safe, typeset review makes them legible, and explicit
+acceptance keeps the author in charge of the paper. The models in this paper
+make those properties checkable: compatible edits commute and rebase
+(\cref{prop:commute,lem:tp1}), tasks need few rounds
+(\cref{prop:rounds,cor:rounds}), undo never recompiles
+(\cref{prop:undo-build}), per-word text bounds the selection error
+(\cref{thm:per-word}), and partial commits keep unrelated staged work intact
+(\cref{prop:partial}). They also give the reader something worth reviewing.

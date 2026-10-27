@@ -1,0 +1,41 @@
+\section{Security}
+\label{sec:security}
+
+Papilot runs on the author's own computer and can be reached from other
+devices over a private network. Its threat model is a web page in another tab
+that tries to act on the author's behalf, and a device on the network that is
+not the author's.
+
+\subsection{Requests}
+
+Every state-changing request must carry a token $\chi$ of $256$ random bits,
+issued with the page and compared in constant time, which defends against
+cross-site request forgery~\cite{barth2008}. A remote request must also come
+from the configured origin and, over the private network, from the configured
+owner. Writing $\rho$ for a request,
+\begin{equation}
+  \operatorname{allow}(\rho) =
+  \bigl(\operatorname{safe}(\rho) \lor \operatorname{token}(\rho) = \chi\bigr)
+  \land \operatorname{origin}(\rho) \in \mathcal{O}
+  \land \operatorname{owner}(\rho) = o ,
+  \label{eq:allow}
+\end{equation}
+where $\operatorname{safe}(\rho)$ holds for requests that only read. A guess
+succeeds with probability $2^{-256}$, and a constant-time comparison leaks no
+prefix of $\chi$ through timing.
+
+\subsection{Agents}
+
+Agents run with the author's own logins but within limits Papilot sets:
+\begin{itemize}
+  \item each task's agent works in its own worktree $w_i$ and is told never to
+    edit the manuscript checkout $w_0$, other worktrees, or Papilot itself;
+  \item commands run in the agent's sandbox, and anything that leaves it is
+    either brought to the author for approval or, for an agent that cannot
+    ask, declined in advance;
+  \item only the author accepts changes into $w_0$, through the review of
+    \cref{sec:model}.
+\end{itemize}
+The last point is the one that matters most: even an agent that ignored its
+instructions could not change the manuscript without a decision the author
+made while looking at the typeset result.

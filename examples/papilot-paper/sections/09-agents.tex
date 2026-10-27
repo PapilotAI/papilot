@@ -1,0 +1,106 @@
+\section{Agents and scheduling}
+\label{sec:agents}
+
+\subsection{One protocol for three agents}
+
+Every agent is driven through the same small protocol: a thread is started or
+resumed, a turn is started with the author's text, the agent streams items
+(messages, commands, file changes, questions), and the turn completes, is
+interrupted, or fails. Formally a task moves through the states of
+\cref{fig:states}.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  >={Stealth[length=2.2mm]}, node distance=2.1cm and 2.6cm,
+  every state/.style={draw=blue!50!black, thick, fill=blue!4, rounded corners=3pt,
+    rectangle, minimum width=1.9cm, minimum height=0.8cm, font=\small\sffamily},
+  every edge/.style={draw, ->, thick, gray!70!black},
+  lbl/.style={font=\scriptsize\sffamily, fill=white, inner sep=1pt}]
+  \node[state, initial, initial text={}] (idle) {idle};
+  \node[state, right=of idle] (queued) {queued};
+  \node[state, right=of queued] (running) {running};
+  \node[state, below=1.6cm of running] (building) {building};
+  \node[state, left=of building] (reviewing) {reviewing};
+  \node[state, above=1.5cm of running] (waiting) {waiting input};
+  \node[state, above=1.5cm of idle] (paused) {paused};
+  \path (idle) edge node[lbl, above] {instructions} (queued)
+        (queued) edge node[lbl, above] {slot free} (running)
+        (running) edge[bend right=28] node[lbl, right] {approval} (waiting)
+        (waiting) edge[bend right=28] node[lbl, left] {answer} (running)
+        (running) edge node[lbl, right] {turn done} (building)
+        (building) edge node[lbl, below] {published} (reviewing)
+        (reviewing) edge node[lbl, left] {feedback} (queued)
+        (running) edge[out=150, in=0, looseness=0.9] node[lbl, above, pos=0.45] {pause} (paused)
+        (paused) edge node[lbl, left] {resume} (idle);
+\end{tikzpicture}
+\caption{Task states. A turn that fails or whose outcome is uncertain leaves the
+task in a recoverable state with a \emph{Check status} action (not shown).}
+\label{fig:states}
+\end{figure}
+
+Codex speaks this protocol natively. Claude runs through the Claude Agent SDK,
+and Antigravity runs the \texttt{agy} command line once per turn; both are
+translated by small adapters into the same requests and notifications. Each
+agent uses its own login on the host, and Papilot never reads, stores or
+forwards a credential. An agent that cannot ask for permission, such as a
+headless command line, is told in advance which tools it may not use.
+
+\subsection{Effort and cost}
+
+A reasoning effort $\epsilon$ from the ordered set
+\begin{equation}
+  \mathcal{E} = \{\textsf{low} < \textsf{medium} < \textsf{high} <
+  \textsf{xhigh} < \textsf{max}\}
+\end{equation}
+is chosen per task and remembered per agent. If a turn at effort $\epsilon$
+consumes on average $\kappa(\epsilon)$ tokens and produces an accepted change
+with probability $q(\epsilon)$, the number of turns until acceptance is
+geometric and the expected cost of an accepted change is
+\begin{equation}
+  \operatorname{cost}(\epsilon) = \frac{\kappa(\epsilon)}{q(\epsilon)}
+  \cdot \operatorname{price}, \qquad
+  \epsilon^{\star} = \argmin_{\epsilon \in \mathcal{E}}
+    \operatorname{cost}(\epsilon).
+  \label{eq:effort-cost}
+\end{equation}
+A lower effort is cheaper only if
+$\kappa(\epsilon) / \kappa(\epsilon') < q(\epsilon) / q(\epsilon')$: a failed
+turn must be paid for again, and so must the author's review of it.
+
+\subsection{Queueing}
+
+Tasks arrive at rate $\nu$ and occupy a slot for a mean time $1/\omega$. With
+$c$ slots, exponential times and offered load $A = \nu/\omega < c$, Papilot is
+an $M/M/c$ queue~\cite{kleinrock1975}. The probability that a new task waits is
+given by the Erlang~C formula~\cite{erlang1917}:
+\begin{equation}
+  C(c, A) =
+  \frac{\dfrac{A^{c}}{c!}\,\dfrac{c}{c - A}}
+       {\displaystyle\sum_{k=0}^{c-1} \frac{A^{k}}{k!}
+        + \frac{A^{c}}{c!}\,\frac{c}{c - A}},
+  \qquad
+  \E[\text{wait}] = \frac{C(c, A)}{c\,\omega - \nu} .
+  \label{eq:erlang}
+\end{equation}
+For $c = 2$ this simplifies to $C(2, A) = A^2 / (2 + A)$. An author who starts
+a task every ten minutes, each taking six minutes, has $A = 0.6$ and waits
+with probability about $0.14$, for $0.14 / (2/6 - 1/10) \approx 0.6$ minutes on
+average. By Little's law~\cite{little1961}, the mean number of tasks in the
+system is
+\begin{equation}
+  \bar{N} = \nu \Bigl( \E[\text{wait}] + \frac{1}{\omega} \Bigr) .
+  \label{eq:little}
+\end{equation}
+
+\subsection{Approvals}
+
+A turn that asks for approval stops until the author answers. If approvals
+arrive at rate $\zeta$ during a turn of working time $T_w$ and the author
+answers after a mean delay $\Theta$, the expected wall-clock time of the turn is
+\begin{equation}
+  \E[T] = T_w \bigl(1 + \zeta \Theta\bigr),
+  \label{eq:approvals}
+\end{equation}
+which is why Papilot lets agents edit and run sandboxed commands in the task's
+worktree without asking, and asks only for what leaves it.

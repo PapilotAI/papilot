@@ -1,0 +1,70 @@
+\section{Building the PDF}
+\label{sec:build}
+
+\subsection{Snapshots of the working tree}
+
+The PDF view shows the manuscript exactly as it is on disk, including accepted
+but uncommitted changes. Let $W$ be the working tree and $H$ the tree of
+\texttt{HEAD}. A temporary index $I$ records the working tree without touching
+the real index:
+\begin{equation}
+  I \leftarrow \operatorname{read-tree}(H), \qquad
+  I \leftarrow I \cup \operatorname{add}(W), \qquad
+  T = \operatorname{write-tree}(I) .
+  \label{eq:snapshot}
+\end{equation}
+The tree $T$ is a content hash of every tracked and untracked, non-ignored
+file. The build is cached under the key
+\begin{equation}
+  \key(W) = h\bigl(T \,\|\, \text{build settings}\bigr),
+  \label{eq:key}
+\end{equation}
+where $h$ is a cryptographic hash and the settings name the engine and the
+main file.
+
+\begin{proposition}[Undo never recompiles]
+\label{prop:undo-build}
+Let $W_0$ be a working tree whose build has completed, and let a sequence of
+decisions followed by their undos return the files to the same content. Then
+the final working tree has the key of $W_0$ and its PDF is served from the
+cache.
+\end{proposition}
+
+\begin{proof}
+$T$ in \cref{eq:snapshot} depends only on file contents, so equal contents give
+equal trees and, by \cref{eq:key}, equal keys.
+\end{proof}
+
+\subsection{When to build}
+
+While the PDF view is open, Papilot checks the working tree every second and
+a half during a build, every fifteen seconds otherwise, and whenever the window
+regains focus. Let checks happen at rate at least $\varphi$, edits at rate
+$\mu$ and builds take time $\beta$. A build that is running when the tree
+changes is not cancelled; the first check after it finishes starts a build for
+the newer key. An edit made just after a build started waits for that build,
+then for the next check, then for its own build, so the PDF is never older than
+\begin{equation}
+  \text{staleness} \le 2\beta + \frac{1}{\varphi} ,
+  \label{eq:staleness}
+\end{equation}
+and the number of builds per unit time is at most
+$\min\bigl(\mu, \varphi, 1/\beta\bigr)$ in the long run: frequent edits do not
+cause a backlog of builds, they only skip intermediate states.
+
+\subsection{Reviewing changed pages}
+
+A review compares the PDF of the round's base with the PDF after the task's
+edits. Let the two documents have pages $P = (p_1, \dots, p_N)$ and
+$P' = (p'_1, \dots, p'_M)$ with content hashes $h(p_i)$. Inserting a paragraph
+shifts every later page, so comparing pages by index would mark almost
+everything as changed. A robust comparison aligns the pages by a longest common
+subsequence of their hashes,
+\begin{equation}
+  \operatorname{LCS}(P, P') = \max\Bigl\{ \abs{S} : S \subseteq [N]\times[M]
+  \text{ increasing},\ h(p_i) = h(p'_j)\ \forall (i,j) \in S \Bigr\},
+\end{equation}
+computed in $O\bigl((N + M) D\bigr)$ time, where $D = N + M - 2\abs{S}$ is the
+size of the edit script~\cite{myers1986}. Papilot's review goes further and
+renders only the strips of each page around the changed source lines, so that
+a one-word change is reviewed as one or two lines of typeset text.

@@ -1,0 +1,54 @@
+\section{Notation and keyboard}
+\label{app:reference}
+
+\subsection{Notation}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Symbol & Meaning & Where \\
+\midrule
+$x_k$, $F$ & auxiliary state of the build, one run & \cref{eq:fixed-point} \\
+$T_{rm}$, $T_m$ & text rendering and text matrices & \cref{eq:trm} \\
+$\doc$, $n$ & manuscript source and its length & \cref{sec:model} \\
+$e = (a, b, w)$, $\delta(e)$ & edit replacing $[a, b)$ by $w$, its shift & \cref{eq:apply} \\
+$e \perp e'$ & compatible edits & \cref{eq:compatible} \\
+$\tau(e', e)$ & $e'$ rebased past $e$ & \cref{eq:transform} \\
+$\theta$, $\alpha$ & decision state, action & \cref{eq:round,eq:idempotent} \\
+$p$, $R_{\max}$, $r_{\eta}$ & acceptance probability, rounds, rounds with confidence & \cref{eq:rounds,eq:rounds-confidence} \\
+$\ell$, $k_i$, $\nu$ & edit length, edits per task, clustered fraction & \cref{eq:conflict,eq:clustered} \\
+$T$, $\key(W)$ & snapshot tree, build key & \cref{eq:snapshot,eq:key} \\
+$s$, $V_s$, $R_{\phi}$ & viewer scale, viewport, rotation & \cref{eq:viewport} \\
+$r$, $b(r)$, $d$ & adjustment ratio, badness, demerits & \cref{eq:ratio,eq:badness,eq:demerits} \\
+$\varepsilon_k$, $\sigma$, $\beta_k$ & text layer drift, stretch factor, bias & \cref{eq:drift,eq:bias} \\
+$\mathcal{S}$, $\letters$, $\dist$ & SyncTeX query, letter normalisation, line distance & \cref{sec:notes} \\
+$\epsilon$, $\kappa$, $q$ & effort, tokens per turn, acceptance per turn & \cref{eq:effort-cost} \\
+$c$, $A$, $C(c, A)$ & slots, offered load, waiting probability & \cref{eq:erlang} \\
+$u_w$, $B_w$, $S(t)$ & window utilisation, budget, usage process & \cref{eq:utilisation,eq:compound} \\
+$H$, $I$, $W$, $P$ & Git trees, index, working tree, chosen paths & \cref{eq:partial} \\
+$\anc(X)$ & commits reachable from $X$ & \cref{eq:ahead-behind} \\
+$\chi$, $\mathcal{O}$, $o$ & request token, allowed origins, owner & \cref{eq:allow} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Keyboard}
+
+\begin{center}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+Key & Action \\
+\midrule
+\texttt{A}, \texttt{R}, \texttt{C} & accept, reject or comment on the current change \\
+\texttt{J}, \texttt{K} & next and previous change \\
+\texttt{N} & next undecided change \\
+\texttt{S} & show the \LaTeX{} source of the current change \\
+$\text{\texttt{Cmd}} + \text{\texttt{F}}$ & find in the PDF \\
+$\text{\texttt{Cmd}} + \text{\texttt{+}}$, $\text{\texttt{Cmd}} + \text{\texttt{-}}$, $\text{\texttt{Cmd}} + \text{\texttt{0}}$ & zoom in, zoom out, fit width \\
+\texttt{Enter}, \texttt{Shift+Enter} & send, new line \\
+\texttt{Esc} & close a menu, cancel a note, stop marking a region \\
+\bottomrule
+\end{tabular}
+\end{center}

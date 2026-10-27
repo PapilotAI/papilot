@@ -1,0 +1,97 @@
+\section{Background}
+\label{sec:background}
+
+This section fixes notation for the four systems Papilot sits between: the
+\TeX{} build, the PDF format, Git, and SyncTeX.
+
+\subsection{The \LaTeX{} build as a fixed point}
+
+\LaTeX{} resolves cross-references, citations and the table of contents by
+reading auxiliary data written by the previous run~\cite{lamport1994}. Let
+$x_k$ be the auxiliary state after run $k$ and $F$ the map computed by one run,
+so that
+\begin{equation}
+  x_{k+1} = F(x_k), \qquad x_0 = \varnothing .
+  \label{eq:fixed-point}
+\end{equation}
+A build tool such as \texttt{latexmk} repeats runs until a fixed point
+$x^{\star} = F(x^{\star})$ is reached or a limit of $K$ runs is hit (five by
+default). A single run suffices when $F(\varnothing) = \varnothing$, which is
+the case only for documents without references. A typical paper converges in
+two or three runs: the first records labels, the second resolves them, and a
+third is needed only when resolving them moved a page break.
+
+\begin{remark}
+$F$ need not be a contraction. A reference whose resolution lengthens a line
+can push a label onto the next page, whose page number shortens the line again;
+the sequence $x_k$ then alternates between two states and the run limit ends
+the build. Such documents are rare, but they are why a build key must include
+the build settings and not only the sources (\cref{sec:build}).
+\end{remark}
+
+\subsection{Text in a PDF}
+
+A PDF page places glyphs with a chain of matrices~\cite{iso32000}. The text
+state contains the font size $T_{fs}$, the horizontal scaling $T_h$, the rise
+$T_{\text{rise}}$, the character and word spacings $T_c$ and $T_w$, and the
+text matrix $T_m$. A glyph is drawn in user space through the text rendering
+matrix
+\begin{equation}
+  T_{rm} =
+  \begin{pmatrix}
+    T_{fs} T_h & 0 & 0 \\
+    0 & T_{fs} & 0 \\
+    0 & T_{\text{rise}} & 1
+  \end{pmatrix}
+  \times T_m \times \mathrm{CTM},
+  \label{eq:trm}
+\end{equation}
+where $\mathrm{CTM}$ is the current transformation matrix. After each glyph
+with horizontal advance $w_0$ (in thousandths of a text space unit) and a
+positioning adjustment $T_j$, the text matrix moves by
+\begin{equation}
+  t_x = \Bigl( \bigl(w_0 - \tfrac{T_j}{1000}\bigr) T_{fs} + T_c + T_w \Bigr) T_h ,
+  \qquad
+  T_m \leftarrow
+  \begin{pmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ t_x & 0 & 1 \end{pmatrix} T_m ,
+  \label{eq:advance}
+\end{equation}
+with $T_w$ applied only to the single-byte space character. \TeX{} rarely uses
+$T_w$; it positions words with explicit adjustments $T_j$, which is why a PDF
+produced from \TeX{} often contains no space characters at all.
+
+\subsection{Git worktrees}
+
+A Git repository is a store of immutable objects (blobs, trees and commits)
+addressed by their hashes, together with a set of references~\cite{chacon2014}.
+A \emph{worktree} is a checkout with its own working files $W_i$, index $I_i$
+and head $\mathrm{HEAD}_i$, sharing the object store with every other worktree
+of the same repository:
+\begin{equation}
+  \mathcal{R} = \bigl(\mathcal{O},\ \mathrm{refs}\bigr), \qquad
+  w_i = \bigl(W_i,\ I_i,\ \mathrm{HEAD}_i\bigr), \quad i = 0, 1, \dots, t .
+\end{equation}
+The manuscript checkout is $w_0$; each task $i \ge 1$ gets its own $w_i$ on its
+own branch. Because objects are shared, creating a worktree costs only the
+working files, and because indexes are separate, a task can stage, diff and
+build without touching $w_0$.
+
+\subsection{SyncTeX}
+
+SyncTeX records, while \TeX{} typesets, where each box, glue and kern came from:
+an input file, a line and a column~\cite{laurens2008}. Positions are recorded
+in \TeX{}'s scaled points. With
+\begin{equation}
+  1\,\mathrm{pt} = \tfrac{1}{72.27}\,\mathrm{in}, \qquad
+  1\,\mathrm{bp} = \tfrac{1}{72}\,\mathrm{in}, \qquad
+  1\,\mathrm{sp} = 2^{-16}\,\mathrm{pt},
+\end{equation}
+a horizontal position $h$ in scaled points becomes PDF points as
+\begin{equation}
+  x = \bigl(h + h_{\text{origin}}\bigr) \cdot 2^{-16} \cdot \frac{72}{72.27},
+  \label{eq:sp-to-bp}
+\end{equation}
+where $h_{\text{origin}}$ is the one-inch offset of \TeX{}'s origin from the
+page edge, expressed in scaled points. A reverse query (``edit'') returns the
+record nearest to a point on the page; a forward query (``view'') returns the
+boxes produced by a source line. Papilot uses only reverse queries.

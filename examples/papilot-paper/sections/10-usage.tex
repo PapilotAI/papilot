@@ -1,0 +1,56 @@
+\section{Usage windows}
+\label{sec:usage}
+
+\subsection{Utilisation}
+
+Agent subscriptions meter usage over rolling windows, typically a five-hour
+window and a weekly one. If $r(\tau)$ is the rate at which a plan's allowance
+is consumed, the utilisation of a window of length $w$ at time $t$ is
+\begin{equation}
+  u_w(t) = \frac{1}{B_w} \int_{t-w}^{t} r(\tau)\, d\tau \in [0, 1],
+  \label{eq:utilisation}
+\end{equation}
+where $B_w$ is the window's budget. Papilot shows $u_w$ for each window the
+agent reports, coloured by thresholds
+\begin{equation}
+  \operatorname{colour}(u) =
+  \begin{cases}
+    \text{blue}, & u < 0.75,\\
+    \text{amber}, & 0.75 \le u < 0.9,\\
+    \text{red}, & u \ge 0.9 \ \text{or the limit is reached},
+  \end{cases}
+\end{equation}
+together with the reset time: as a countdown when it is less than a day away,
+and as a day and time otherwise.
+
+\subsection{Will the limit be reached?}
+
+At a constant rate $\bar r$, the time left before the limit is
+\begin{equation}
+  t_{\text{left}} = \frac{\bigl(1 - u_w(t)\bigr) B_w}{\bar r} ;
+\end{equation}
+with the weekly window at $u = 0.83$ and an even pace over the week,
+$\bar r = B_w / 7$\,days and about $1.2$ days of work remain.
+
+Usage is lumpy, however: it arrives in turns. Model turns as a Poisson process
+of rate $\lambda$ with independent costs $J$ of mean $\mu_J$ and variance
+$s_J^2$. The usage $S(t)$ over the next $t$ is compound Poisson, with
+\begin{equation}
+  \E[S(t)] = \lambda t \mu_J, \qquad
+  \Var\bigl(S(t)\bigr) = \lambda t \bigl(\mu_J^2 + s_J^2\bigr)
+  \label{eq:compound}
+\end{equation}
+by Wald's identity and the law of total variance~\cite{feller1968}. With $t_r$ the time until the window
+resets, the normal approximation gives the probability of reaching the limit
+before the reset:
+\begin{equation}
+  \Prob\bigl(S(t_r) > (1 - u) B_w\bigr) \approx
+  1 - \Phi\!\left(
+    \frac{(1 - u) B_w - \lambda t_r \mu_J}
+         {\sqrt{\lambda t_r (\mu_J^2 + s_J^2)}}
+  \right),
+  \label{eq:limit-probability}
+\end{equation}
+where $\Phi$ is the standard normal distribution function. Large, rare turns
+(high $s_J$) make the limit more likely than the mean alone suggests, which is
+one more reason to prefer a lower effort for routine edits.

@@ -1,0 +1,53 @@
+% Packages and notation shared by every chapter.
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{bm}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\usepackage{tikz}
+\usetikzlibrary{automata,positioning,arrows.meta,calc,decorations.pathreplacing}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\usepackage[nameinlink]{cleveref}
+
+% thmtools lets cleveref name each kind of statement correctly although they
+% share one counter.
+\usepackage{thmtools}
+\declaretheorem[style=plain, numberwithin=section]{theorem}
+\declaretheorem[style=plain, sibling=theorem]{proposition}
+\declaretheorem[style=plain, sibling=theorem]{lemma}
+\declaretheorem[style=plain, sibling=theorem]{corollary}
+\declaretheorem[style=definition, sibling=theorem]{definition}
+\declaretheorem[style=definition, sibling=theorem]{example}
+\declaretheorem[style=definition, sibling=theorem]{assumption}
+\declaretheorem[style=remark, sibling=theorem]{remark}
+\numberwithin{equation}{section}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\doc}{D}
+\newcommand{\edit}{\Delta}
+\newcommand{\apply}{\oplus}
+\newcommand{\letters}{\lambda}
+\newcommand{\anc}{\operatorname{anc}}
+\newcommand{\ind}{\mathbf{1}}
+\DeclareMathOperator{\key}{key}
+\DeclareMathOperator{\dist}{dist}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclarePairedDelimiter{\abs}{\lvert}{\rvert}
+\DeclarePairedDelimiter{\norm}{\lVert}{\rVert}
+\DeclarePairedDelimiter{\floor}{\lfloor}{\rfloor}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}

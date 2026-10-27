@@ -1,0 +1,62 @@
+\section{Closing the loop with Git}
+\label{sec:git}
+
+Accepted changes land in the working tree without a commit, so that the author
+decides what history to write. The Git panel shows the branch and how it
+compares with its upstream, the last commit, and the uncommitted changes with
+their diffs; from it the author commits chosen files, fetches, pulls and
+pushes.
+
+\subsection{Committing chosen files}
+
+Write a tree as a map from paths to contents and, for a set of paths $P$, let
+$X|_P$ be the restriction of $X$ to $P$ and $\overline{P}$ the complement. Let
+$\mathrm{HEAD}$ have tree $H$, let $I$ be the index and $W$ the working tree,
+and let $P$ be the set of paths the author ticks.
+
+\begin{proposition}[Partial commits]
+\label{prop:partial}
+Committing $P$ produces the tree and leaves the index as
+\begin{equation}
+  T_{c} = H|_{\overline{P}} \cup W|_{P},
+  \qquad
+  I' = I|_{\overline{P}} \cup W|_{P},
+  \label{eq:partial}
+\end{equation}
+that is, exactly the chosen files as they are on disk are committed, while
+anything staged for other paths stays staged and out of the commit. A rename
+from $\pi$ to $\pi'$ contributes both $\pi$ and $\pi'$ to $P$.
+\end{proposition}
+
+The proof, which follows the semantics of \texttt{git add} followed by
+\texttt{git commit --only}, is in \cref{app:proofs}. Paths are passed to Git
+literally, so that a file name cannot act as a pattern, and new \LaTeX{} build
+output (\texttt{.aux}, \texttt{.log} and similar files) starts unticked.
+
+\subsection{Synchronising with the remote}
+
+Let $\anc(X)$ be the set of commits reachable from $X$, including $X$. With
+local head $L$ and upstream $U$, the branch is ahead and behind by
+\begin{equation}
+  \operatorname{ahead} = \abs{\anc(L) \setminus \anc(U)}, \qquad
+  \operatorname{behind} = \abs{\anc(U) \setminus \anc(L)},
+  \label{eq:ahead-behind}
+\end{equation}
+the two numbers shown beside the branch name. Pull is a fast-forward only. It
+succeeds exactly when
+\begin{equation}
+  \anc(L) \subseteq \anc(U)
+  \iff \operatorname{merge-base}(L, U) = L
+  \iff \operatorname{ahead} = 0,
+  \label{eq:fast-forward}
+\end{equation}
+in which case $L \leftarrow U$; otherwise Papilot reports the divergence and
+never merges or rebases on the author's behalf. Push is the mirror image and
+succeeds when $\operatorname{behind} = 0$. A branch without an upstream is
+published with its first push.
+
+\begin{remark}
+Fetch, pull and push use the host's own Git credentials with prompts disabled
+and a time limit, so that a missing credential produces Git's own error message
+instead of a request that hangs.
+\end{remark}

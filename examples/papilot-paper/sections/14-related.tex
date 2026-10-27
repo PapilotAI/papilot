@@ -1,0 +1,38 @@
+\section{Related work}
+\label{sec:related}
+
+\paragraph{Differences between documents.}
+Line-based differences go back to Hunt and McIlroy~\cite{hunt1976} and Myers's
+$O(ND)$ algorithm~\cite{myers1986}, which Git uses by default.
+\texttt{latexdiff}~\cite{latexdiff} marks up the differences between two
+\LaTeX{} sources so that they can be typeset together. Papilot instead
+typesets each version separately and shows the corresponding strips of the
+two PDFs one above the other, which keeps the typeset result of each version
+exact at the cost of a second build.
+
+\paragraph{Concurrent editing.}
+Operational transformation~\cite{ellis1989} and conflict-free replicated data
+types~\cite{shapiro2011} let several writers edit a shared document and converge
+without coordination. Papilot's setting is different: proposals are not applied
+until an author accepts them, so convergence is a property of accepted edits
+only, and \cref{lem:tp1} needs to hold only for compatible pairs. Incompatible
+pairs are surfaced to the author rather than transformed.
+
+\paragraph{Line breaking and text layers.}
+The Knuth--Plass algorithm~\cite{knuth1981} is the reason \LaTeX{} spaces vary
+from line to line, and with it the drift analysed in \cref{sec:geometry}. PDF
+viewers such as PDF.js~\cite{pdfjs} place an invisible text layer over the
+rendered page; Papilot uses PDF.js for rendering, search and links, and
+replaces only the placement of its text with the per-word runs of
+\cref{thm:per-word}.
+
+\paragraph{Source synchronisation.}
+SyncTeX~\cite{laurens2008} maps between typeset positions and source lines and
+underlies forward and inverse search in most \TeX{} editors. Papilot uses its
+reverse queries and corrects their line-boundary error with
+\cref{alg:settle}.
+
+\paragraph{Queueing.}
+The waiting-time results of \cref{sec:agents} are classical; we use Erlang's
+formula~\cite{erlang1917}, Little's law~\cite{little1961} and the treatment of
+$M/M/c$ queues in Kleinrock~\cite{kleinrock1975}.

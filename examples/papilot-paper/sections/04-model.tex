@@ -1,0 +1,185 @@
+\section{A model of review rounds}
+\label{sec:model}
+
+\subsection{Documents and edits}
+
+We view a manuscript as a finite sequence of source characters over an
+alphabet $\Sigma$, $\doc \in \Sigma^{*}$, of length $n = \abs{\doc}$. An
+\emph{edit} replaces a half-open range of the source by new text.
+
+\begin{definition}[Edit]
+An edit is a triple $e = (a, b, w)$ with $0 \le a \le b \le n$ and
+$w \in \Sigma^{*}$. Applying $e$ to $\doc$ gives
+\begin{equation}
+  \doc \apply e = \doc_{[0,a)} \, w \, \doc_{[b,n)},
+  \label{eq:apply}
+\end{equation}
+whose length is $n + \delta(e)$ with \emph{shift} $\delta(e) = \abs{w} - (b - a)$.
+\end{definition}
+
+A task proposes a \emph{revision} $\edit = \{e_1, \dots, e_m\}$, a finite set
+of edits against the same base document. Papilot groups nearby edits into
+\emph{changes}, the units the author decides on.
+
+\begin{definition}[Compatibility]
+Two edits $e = (a, b, w)$ and $e' = (a', b', w')$ are \emph{compatible},
+written $e \perp e'$, when their ranges are disjoint and not adjacent:
+\begin{equation}
+  e \perp e' \iff b < a' \ \text{or}\ b' < a .
+  \label{eq:compatible}
+\end{equation}
+A revision is compatible when its edits are pairwise compatible.
+\end{definition}
+
+For a compatible revision we apply edits from right to left, so that earlier
+offsets remain valid:
+\begin{equation}
+  \doc \apply \edit
+  = \bigl(\cdots\bigl((\doc \apply e_{\sigma(1)}) \apply e_{\sigma(2)}\bigr)
+    \cdots\bigr) \apply e_{\sigma(m)},
+  \qquad a_{\sigma(1)} > a_{\sigma(2)} > \dots > a_{\sigma(m)} .
+  \label{eq:apply-revision}
+\end{equation}
+
+\begin{proposition}[Compatible edits commute]
+\label{prop:commute}
+If $e \perp e'$, then applying them right to left in either listing gives the
+same document, and the result of \cref{eq:apply-revision} does not depend on
+how the remaining edits of a compatible revision are ordered.
+\end{proposition}
+
+\begin{proof}
+Assume without loss of generality $b < a'$. Applying $e'$ first changes only
+positions at or after $a'$, so the range $[a, b)$ and every offset before it are
+unchanged, and applying $e$ afterwards gives
+$\doc_{[0,a)}\, w\, \doc_{[b,a')}\, w'\, \doc_{[b',n)}$. Applying $e$ first
+shifts every later offset by $\delta(e)$; rewriting $e'$ as
+$(a'+\delta(e), b'+\delta(e), w')$ yields the same string. Induction on the
+number of edits, ordering them by start offset, gives the general statement.
+\end{proof}
+
+\subsection{Rebasing edits}
+
+When one task's edit $e$ has been accepted, another task's edit $e'$, written
+against the old document, must be moved onto the new one. The
+\emph{transformation} of $e'$ past $e$ is
+\begin{equation}
+  \tau(e', e) =
+  \begin{cases}
+    (a', b', w'), & b' < a,\\
+    \bigl(a' + \delta(e),\ b' + \delta(e),\ w'\bigr), & b < a',\\
+    \bot, & \text{otherwise,}
+  \end{cases}
+  \label{eq:transform}
+\end{equation}
+where $\bot$ signals a conflict that the author must resolve.
+
+\begin{lemma}[Convergence of rebased edits]
+\label{lem:tp1}
+If $e \perp e'$, then
+\begin{equation}
+  \doc \apply e \apply \tau(e', e) = \doc \apply e' \apply \tau(e, e') .
+  \label{eq:tp1}
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+If $b < a'$, then $\tau(e, e') = e$ and $\tau(e', e)$ is $e'$ shifted by
+$\delta(e)$, so the left side is the second computation in the proof of
+\cref{prop:commute} and the right side the first. The case $b' < a$ is
+symmetric.
+\end{proof}
+
+\Cref{eq:tp1} is the convergence property known from operational
+transformation~\cite{ellis1989}. Papilot needs only the compatible case: an
+incompatible pair is never merged automatically.
+
+\subsection{Decisions and rounds}
+
+Let $U$ be the set of changes in a round. A \emph{decision state} is a map
+\begin{equation}
+  \theta : U \to \{\textsf{pending}, \textsf{accepted}, \textsf{rejected},
+  \textsf{commented}\},
+\end{equation}
+and the accepted part of a revision is
+$\edit^{\theta} = \{ e \in \edit : \theta(u(e)) = \textsf{accepted} \}$.
+The manuscript after round $t$ is
+\begin{equation}
+  \doc_{t+1} =
+  \begin{cases}
+    \doc_t \apply \edit_t^{\theta_t}, & \text{if } \edit_t^{\theta_t}
+      \text{ applies cleanly to } \doc_t,\\[2pt]
+    \doc_t, & \text{otherwise, and the task is asked for a new proposal.}
+  \end{cases}
+  \label{eq:round}
+\end{equation}
+Rejected and commented changes return to the agent as feedback bound to their
+round, file and lines; the agent must not reintroduce a rejected edit unless it
+is explicitly asked to.
+
+\paragraph{Actions and undo.}
+An \emph{action} $\alpha = (\iota, u, d)$ carries an identifier $\iota$, a
+change $u$ and a decision $d$. Applying it to a state gives
+$\theta \cdot \alpha = \theta[u \mapsto d]$, and the history is a stack
+$\alpha_1, \dots, \alpha_k$. Two properties make decisions safe over an
+unreliable network:
+\begin{align}
+  (\theta \cdot \alpha) \cdot \alpha &= \theta \cdot \alpha
+    && \text{(idempotence: a retried write changes nothing)},
+    \label{eq:idempotent}\\
+  \operatorname{undo}(\theta_0 \cdot \alpha_1 \cdots \alpha_k)
+    &= \theta_0 \cdot \alpha_1 \cdots \alpha_{k-1}
+    && \text{(undo reverses exactly the last action)}.
+    \label{eq:undo}
+\end{align}
+An undo request names the action it reverses, so a retried undo cannot reverse
+a different one.
+
+\subsection{How many rounds?}
+
+Suppose that each change is accepted in a round independently with probability
+$p \in (0,1]$, and otherwise revised and proposed again. The number of rounds
+$R$ until a single change is accepted is geometric,
+\begin{equation}
+  \Prob(R = r) = (1-p)^{r-1} p, \qquad
+  \E[R] = \frac{1}{p}, \qquad
+  \Var(R) = \frac{1-p}{p^{2}} .
+\end{equation}
+For $m$ independent changes the task ends when the last one is accepted, after
+$R_{\max} = \max_i R_i$ rounds.
+
+\begin{proposition}[Expected rounds]
+\label{prop:rounds}
+\begin{equation}
+  \E[R_{\max}]
+  = \sum_{k=1}^{m} (-1)^{k+1} \binom{m}{k} \frac{1}{1 - (1-p)^{k}} .
+  \label{eq:rounds}
+\end{equation}
+\end{proposition}
+
+The proof is in \cref{app:proofs}. For small $p$ the sum behaves like
+$\frac{1}{p} H_m$, where $H_m = \sum_{k=1}^{m} 1/k \approx \ln m + \gamma$ is
+the $m$-th harmonic number: doubling the number of changes adds only about
+$(\ln 2)/p$ rounds.
+
+\begin{corollary}[Rounds with confidence]
+\label{cor:rounds}
+For every $\eta \in (0,1)$, the task ends within
+\begin{equation}
+  r_{\eta} = \ceil*{ \frac{\ln(m/\eta)}{-\ln(1-p)} }
+  \label{eq:rounds-confidence}
+\end{equation}
+rounds with probability at least $1 - \eta$.
+\end{corollary}
+
+\begin{proof}
+By the union bound, $\Prob(R_{\max} > r) \le m\, \Prob(R > r) = m (1-p)^{r}$,
+which is at most $\eta$ as soon as $r \ge \ln(m/\eta) / (-\ln(1-p))$.
+\end{proof}
+
+\begin{example}
+With $p = 0.8$ and $m = 5$, \cref{eq:rounds} gives
+$\E[R_{\max}] \approx 1.91$ and \cref{eq:rounds-confidence} with $\eta = 0.05$
+gives $r_{\eta} = 3$: most tasks finish in one or two rounds, and almost all
+within three.
+\end{example}

@@ -1,0 +1,66 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Writing a research paper is a long sequence of small decisions. A sentence is
+shortened, a definition is moved before its first use, a symbol is renamed so
+that it no longer collides with another, a proof gains the step a referee
+asked for. An agent that edits \LaTeX{} can propose many of these decisions
+quickly, but a proposal is only useful when the author can see what it changes
+in the typeset paper, decide, and say why. Papilot is built around that loop.
+
+\subsection{Three commitments}
+
+Papilot organises the loop around three commitments.
+
+\begin{enumerate}[label=(C\arabic*)]
+  \item \emph{Isolation.} Every task edits its own Git worktree, never the
+    manuscript checkout, so that unreviewed text cannot leak into the paper.
+  \item \emph{Typeset review.} Changes are reviewed as differences between two
+    compiled PDFs, with the \LaTeX{} source one click away.
+  \item \emph{Explicit acceptance.} Only accepted changes are merged into the
+    working tree, and every decision can be undone.
+\end{enumerate}
+
+The first commitment is about safety, the second about legibility and the
+third about authority. Together they turn an agent from a co-author that writes
+into the manuscript into an assistant that proposes to it.
+
+\subsection{What this paper does}
+
+The rest of this paper makes the commitments precise and studies their
+consequences with small, explicit models. Our contributions are:
+
+\begin{itemize}
+  \item an algebra of edits and review rounds, with a proof that compatible
+    edits commute and can be rebased onto each other (\cref{sec:model}), and
+    tight bounds on the number of rounds a task needs;
+  \item an estimate of the conflict rate between concurrent tasks under uniform
+    and clustered edits (\cref{sec:conflicts});
+  \item a content-addressed build scheme in which undoing a decision never
+    recompiles (\cref{sec:build});
+  \item a geometric account of the PDF view, explaining why a line-wide text
+    layer drifts from the printed words and proving that per-word runs bound
+    the drift (\cref{sec:geometry});
+  \item an algorithm that turns a mark on the page into source lines, and an
+    analysis of when its matches are unique (\cref{sec:notes});
+  \item queueing and usage models for agents (\cref{sec:agents,sec:usage}),
+    the index algebra behind partial commits (\cref{sec:git}) and a security
+    model (\cref{sec:security});
+  \item a model-based evaluation that tabulates the quantities above
+    (\cref{sec:evaluation}).
+\end{itemize}
+
+\Cref{sec:using} describes Papilot as an author uses it, \cref{sec:background}
+collects the background on \TeX{}, PDF, Git and SyncTeX that the later sections
+rely on, \cref{sec:related} discusses related
+work, and \cref{sec:conclusion} concludes. Longer proofs are in
+\cref{app:proofs}; \cref{app:reference} lists the notation and the keyboard
+shortcuts.
+
+\subsection{A note on this document}
+
+This paper is also Papilot's example manuscript. It is deliberately dense with
+displayed mathematics, theorems and cross-references, because those are the
+places where an agent's edit is easiest to get subtly wrong and a typeset
+review most useful. The reader is invited to start a task against any equation
+and to review the result.

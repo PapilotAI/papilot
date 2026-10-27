@@ -1,0 +1,104 @@
+\section{Notes on the PDF}
+\label{sec:notes}
+
+An author can also ask for changes directly on the PDF: select text, or mark a
+region around a figure or an equation, and write a note. All pending notes go
+to the agent as one task. For that task to be useful, each note must name the
+source it refers to.
+
+\subsection{From a mark to source lines}
+
+A note is a set of rectangles $\{r_1, \dots, r_q\}$ in the normalised
+coordinates of \cref{eq:normalised} on page $P$, together with a comment. For
+every printed line the selection touches, Papilot asks SyncTeX for the source
+position of the first and the last marked character~\cite{laurens2008}:
+\begin{equation}
+  \mathcal{S}(P, x, y) = (\text{file}, \text{line}),
+  \qquad
+  L = \{\, \mathcal{S}(P, c) : c \in C_{\text{first}} \cup C_{\text{last}} \,\},
+  \qquad
+  [\ell_{-}, \ell_{+}] = [\min L, \max L].
+  \label{eq:synctex-range}
+\end{equation}
+
+SyncTeX records boxes and glue rather than characters. The space before a word
+that begins a printed line comes from the line break of the \emph{previous}
+source line, so such a word is credited to that line. Papilot therefore
+\emph{settles} each end of the selection by matching its printed context
+against the source near SyncTeX's answer.
+
+\subsection{Settling a selection}
+
+Let $\letters(\cdot)$ map text to its lowercase letters and digits, after
+Unicode compatibility normalisation, with \TeX{} control sequences and comments
+removed from the source. For a source window $[\ell_{-} - 4, \ell_{+} + 4]$ we
+form the string $S = \letters(\text{lines})$ and remember for each position the
+line it came from, $\pi : \{1, \dots, \abs{S}\} \to \N$. The distance of a
+line from SyncTeX's range is
+\begin{equation}
+  \dist(\ell) = \max\bigl(0,\ \ell_{-} - \ell,\ \ell - \ell_{+}\bigr).
+  \label{eq:line-distance}
+\end{equation}
+
+\begin{algorithm}[t]
+\caption{Settling one end of a selection}
+\label{alg:settle}
+\begin{algorithmic}[1]
+\Require printed line $p$, index $\alpha$ of the marked letter in $\letters(p)$, source string $S$ with line map $\pi$
+\For{$\rho \in (\infty, 24, 10)$} \Comment{whole line first, then shorter context}
+  \State $o_0 \gets \max(0, \alpha - \rho)$
+  \State $q \gets \letters(p)_{[o_0,\ \alpha + \rho]}$
+  \State $O \gets \{ o : S_{[o,\, o + \abs{q})} = q \}$
+  \If{$O \neq \emptyset$}
+    \State $o^{\star} \gets \argmin_{o \in O} \dist\bigl(\pi(o + \alpha - o_0)\bigr)$
+    \State \Return $\pi\bigl(o^{\star} + \alpha - o_0\bigr)$
+  \EndIf
+\EndFor
+\State \Return SyncTeX's line \Comment{formulas and other unmatched text}
+\end{algorithmic}
+\end{algorithm}
+
+\Cref{alg:settle} runs once for the first and once for the last marked
+character. If the settled range is empty or inverted, Papilot keeps SyncTeX's
+range. Because the comparison uses letters only, subscripts, macros and
+hyphenation do not prevent a match; formulas, whose printed form shares no
+letters with their source, fall back to SyncTeX by design.
+
+\subsection{When is a match unique?}
+
+\Cref{alg:settle} picks the occurrence nearest to SyncTeX's answer, so a
+spurious occurrence matters only if it is closer than the true one. Model the
+letters of the source as a stationary source with entropy $\mathcal{H}$ bits per letter.
+The expected number of chance occurrences of a context of $\abs{q}$ letters in
+a window of $\abs{S}$ letters is about
+\begin{equation}
+  \E[\text{spurious}] \approx \abs{S} \cdot 2^{-\mathcal{H} \abs{q}} .
+  \label{eq:spurious}
+\end{equation}
+Estimates of the entropy of English range from about one to four bits per
+letter depending on how much context is used~\cite{shannon1951}. Even with the
+pessimistic $\mathcal{H} = 1$, a context of $\abs{q} = 21$ letters (the shortest one
+\cref{alg:settle} tries) in a window of $\abs{S} = 2000$ letters gives
+$\E[\text{spurious}] \approx 2000 \cdot 2^{-21} \approx 10^{-3}$. Spurious
+matches come instead from genuine repetition, such as a phrase used twice in
+nearby paragraphs, which is exactly the case the distance
+\cref{eq:line-distance} resolves.
+
+\subsection{Selecting whole words}
+
+Let a drag select characters $[s, t)$ of the per-word text layer of
+\cref{thm:per-word}. Papilot widens the selection to whole words, but only at
+a boundary that cuts through a word:
+\begin{equation}
+  s' = \begin{cases}
+    \max\{ i \le s : \text{$i = 0$ or $c_{i-1}$ is not a letter} \}, &
+      c_s \text{ is a letter},\\
+    s, & \text{otherwise},
+  \end{cases}
+  \label{eq:whole-words}
+\end{equation}
+and symmetrically for $t$. A drag that ends at the start of the next word, as
+browsers often report, therefore keeps exactly the words it covers. The note
+stores the widened quote, one rectangle per printed line, and the source lines
+of \cref{alg:settle} together with an excerpt of their \LaTeX{}, so that the
+agent receives formulas as source rather than as extracted text.

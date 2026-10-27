@@ -1,0 +1,60 @@
+\section{Proofs}
+\label{app:proofs}
+
+\subsection{Expected rounds}
+
+We prove \cref{prop:rounds}. Write $q = 1 - p$. The rounds of different changes are independent, so
+$\Prob(R_{\max} \le r) = \Prob(R \le r)^{m} = (1 - q^{r})^{m}$, and since
+$R_{\max}$ takes values in $\N$,
+\begin{equation}
+  \E[R_{\max}] = \sum_{r \ge 0} \Prob(R_{\max} > r)
+  = \sum_{r \ge 0} \Bigl( 1 - \bigl(1 - q^{r}\bigr)^{m} \Bigr).
+\end{equation}
+By the binomial theorem,
+$1 - (1 - q^{r})^{m} = \sum_{k=1}^{m} (-1)^{k+1} \binom{m}{k} q^{rk}$. The inner
+sum is finite, so the two sums may be exchanged, and
+$\sum_{r \ge 0} q^{rk} = 1 / (1 - q^{k})$ gives \cref{eq:rounds}.
+
+For the asymptotics, $1 - q^{k} = 1 - (1-p)^{k} = kp + O(p^2)$ as $p \to 0$, so
+\begin{equation}
+  \E[R_{\max}] = \frac{1}{p} \sum_{k=1}^{m} \frac{(-1)^{k+1}}{k} \binom{m}{k}
+  + O(1)
+  = \frac{H_m}{p} + O(1),
+\end{equation}
+using the identity $\sum_{k=1}^{m} \frac{(-1)^{k+1}}{k}\binom{m}{k} = H_m$,
+which follows by integrating $\bigl(1 - (1-x)^{m}\bigr)/x
+= \sum_{j=0}^{m-1} (1-x)^{j}$ from $0$ to $1$. \qed
+
+\subsection{Mid-line drift}
+
+We prove \cref{thm:drift}. Let $\gamma = \Cov(\delta_i, \delta_j)$ for $i \ne j$, which does not depend on the
+pair by exchangeability. Since $\sum_{i=1}^{N} \delta_i = 0$,
+\begin{equation}
+  0 = \Var\Bigl(\sum_{i=1}^{N} \delta_i\Bigr) = N v + N(N-1)\, \gamma,
+  \qquad\text{so}\qquad \gamma = -\frac{v}{N-1} .
+\end{equation}
+With $j = k - 1$ terms in $\varepsilon_k$,
+\begin{equation}
+  \Var(\varepsilon_k) = j v + j(j-1)\, \gamma
+  = j v \Bigl(1 - \frac{j - 1}{N - 1}\Bigr)
+  = v\, \frac{j\,(N - j)}{N - 1}
+  = v\, \frac{(k-1)(N-k+1)}{N-1} .
+\end{equation}
+The product $j(N-j)$ is largest at $j = N/2$, where it equals $N^2/4$, and
+$N^2/(4(N-1)) \approx N/4$ for large $N$. \qed
+
+\subsection{Partial commits}
+
+We prove \cref{prop:partial}. Papilot commits $P$ in two steps. First, adding $P$ to the index sets
+$I(\pi) = W(\pi)$ for every $\pi \in P$ that exists on disk and removes from the
+index every $\pi \in P$ that does not, leaving the entries for $\overline{P}$
+unchanged:
+\begin{equation}
+  I_1 = I|_{\overline{P}} \cup W|_{P} .
+\end{equation}
+Second, a commit restricted to $P$ builds its tree from $H$ with the entries
+for $P$ taken from the working tree and ignores the entries of the index for
+$\overline{P}$, which gives $T_c = H|_{\overline{P}} \cup W|_{P}$. It then
+updates the index entries for $P$ and keeps the others, so $I' = I_1$. For a
+rename from $\pi$ to $\pi'$, the entry for $\pi$ is absent from $W$; including
+$\pi$ in $P$ removes it from $T_c$, and including $\pi'$ adds the new path. \qed
