@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Store } from '../src/server/store.ts';
-import { Workspace, agentModel } from '../src/server/workspace.ts';
+import { Workspace, accountUsage, agentModel } from '../src/server/workspace.ts';
 import { RpcResponseError, type Codex } from '../src/server/codex.ts';
 import type { ReviewClient } from '../src/server/review.ts';
 import type { PendingReview, Run, Task } from '../src/shared.ts';
@@ -818,4 +818,14 @@ test('Codex models list their reasoning efforts, and a task runs every turn at i
     await tick();
     assert.equal('effort' in plain.codex.calls.find(call => call.method === 'turn/start')!.params, false);
   } finally { plain.close(); }
+});
+
+test('account usage keeps the limit windows, plan and credits Codex reports', () => {
+  const window = { usedPercent: 83, windowDurationMins: 10080, resetsAt: 1_793_600_296 };
+  assert.deepEqual(accountUsage({ ordinaryUsageAllowed: true, rateLimits: { planType: 'pro', primary: window, secondary: null, credits: { hasCredits: true, unlimited: false, balance: '12418.76' }, rateLimitReachedType: null } }),
+    { plan: 'pro', windows: [{ usedPercent: 83, minutes: 10080, resetsAt: 1_793_600_296_000 }], credits: { unlimited: false, balance: 12418.76 }, reached: false });
+  assert.equal(accountUsage({ ordinaryUsageAllowed: false, rateLimits: { primary: { usedPercent: 140, windowDurationMins: 300, resetsAt: null } } })!.reached, true);
+  assert.equal(accountUsage({ ordinaryUsageAllowed: false, rateLimits: { primary: { usedPercent: 140, windowDurationMins: 300, resetsAt: null } } })!.windows[0].usedPercent, 100);
+  assert.equal(accountUsage({ rateLimits: { primary: null, secondary: null, credits: { hasCredits: false, unlimited: false, balance: null } } }), null);
+  assert.equal(accountUsage(undefined), null);
 });

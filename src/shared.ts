@@ -15,7 +15,10 @@ export interface TimelineItem { id: string; taskId: string; type: string; text: 
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
 export interface Effort { id: string; description: string }
 export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: Effort[]; defaultEffort: string | null }
-export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[] }
+// The account's included usage: rolling windows (minutes long, reset time in ms) and credits.
+export interface UsageWindow { usedPercent: number; minutes: number | null; resetsAt: number | null }
+export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
+export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null }
 export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; version: string }
 export interface GitFile { path: string; status: string; staged: boolean; lines?: [number, number] }
 export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null }

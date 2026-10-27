@@ -17,7 +17,7 @@ await page.clock.install();
 const pageErrors = [];
 page.on('pageerror', error => pageErrors.push(error.message));
 const task = { id: 'fixture-task-0001', projectId: 'fixture-paper', name: 'p-fixture', title: 'Clarify the introduction', instructions: 'Keep the technical meaning.', worktree: '/tmp/fixture', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 3, commented: 1 } } };
-const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: [{ id: 'low', description: 'Quick answers' }, { id: 'medium', description: 'Balanced' }, { id: 'high', description: 'Thorough' }], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: [{ id: 'low', description: 'Quick answers' }, { id: 'medium', description: 'Balanced' }, { id: 'high', description: 'Thorough' }, { id: 'xhigh', description: 'Deepest reasoning' }], defaultEffort: 'high' }] } };
+const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: [{ id: 'low', description: 'Quick answers' }, { id: 'medium', description: 'Balanced' }, { id: 'high', description: 'Thorough' }], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: [{ id: 'low', description: 'Quick answers' }, { id: 'medium', description: 'Balanced' }, { id: 'high', description: 'Thorough' }, { id: 'xhigh', description: 'Deepest reasoning' }], defaultEffort: 'high' }], usage: { plan: 'pro', windows: [{ usedPercent: 83, minutes: 10080, resetsAt: Date.now() + 3 * 86_400_000 }], credits: { unlimited: false, balance: 12418.76 }, reached: false } } };
 const messages = [];
 const creates = [];
 let failCreate = true;
@@ -324,6 +324,10 @@ try {
   await prompt.press('Enter');
   await page.locator('.home').getByRole('alert').waitFor();
   assert.equal(await prompt.inputValue(), 'Shorten the introduction.\nPreserve the technical content.');
+  // The new-task page shows the Codex account's usage.
+  const usage = page.getByRole('region', { name: 'Codex usage' });
+  assert.equal(await usage.getByRole('meter', { name: 'Weekly limit used' }).getAttribute('aria-valuenow'), '83');
+  assert.match(await usage.innerText(), /Pro[\s\S]*Weekly limit[\s\S]*83% used[\s\S]*resets [\s\S]*12,418 credits/);
   // Model and reasoning effort are chosen beside the prompt and remembered.
   const modelChip = page.getByRole('combobox', { name: 'Codex model' });
   const effortChip = page.getByRole('button', { name: /^Reasoning effort/ });

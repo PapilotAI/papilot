@@ -23,7 +23,6 @@ const paths: Record<string, React.ReactNode> = {
   trash: <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 5v6m4-6v6"/>,
   pause: <><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></>,
   search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>,
-  effort: <path d="M5 19v-4M10 19v-8M15 19V7M20 19V4"/>,
   region: <><path d="M5 3a2 2 0 0 0-2 2m16-2a2 2 0 0 1 2 2M5 21a2 2 0 0 1-2-2M9 3h1m4 0h1M9 21h2M3 9v1m18-1v2M3 14v1"/><path d="M12.5 12.5 21 15.8l-3.6 1.3-1.3 3.6Z"/></>,
   list: <path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>,
   chevronDown: <path d="m6 9 6 6 6-6"/>,

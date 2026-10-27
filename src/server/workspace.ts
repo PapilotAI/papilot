@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 import { Store } from './store.ts';
 import { Codex, RpcResponseError } from './codex.ts';
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
-import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel } from '../shared.ts';
+import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -18,6 +18,18 @@ export const agentModel = (m: any): AgentModel => ({
   efforts: (m.supportedReasoningEfforts || []).filter((e: any) => typeof e?.reasoningEffort === 'string').map((e: any) => ({ id: e.reasoningEffort, description: e.description || '' })),
   defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null,
 });
+// An account/rateLimits/read response as the usage Papilot shows; null when
+// the account reports neither limits nor credits (for example, an API key).
+export function accountUsage(response: any): Usage | null {
+  const limits = response?.rateLimits;
+  if (!limits) return null;
+  const windows = [limits.primary, limits.secondary].filter((w: any) => typeof w?.usedPercent === 'number')
+    .map((w: any) => ({ usedPercent: Math.min(100, Math.max(0, w.usedPercent)), minutes: typeof w.windowDurationMins === 'number' ? w.windowDurationMins : null, resetsAt: typeof w.resetsAt === 'number' ? w.resetsAt * 1000 : null }));
+  const balance = Number(limits.credits?.balance);
+  const credits = limits.credits?.hasCredits || limits.credits?.unlimited ? { unlimited: Boolean(limits.credits.unlimited), balance: Number.isFinite(balance) ? balance : null } : null;
+  if (!windows.length && !credits) return null;
+  return { plan: typeof limits.planType === 'string' ? limits.planType : null, windows, credits, reached: Boolean(limits.rateLimitReachedType) || response.ordinaryUsageAllowed === false };
+}
 const BUSY = new Set(['running', 'waiting_input', 'building', 'uncertain', 'deleting']);
 
 export class Workspace extends EventEmitter {
@@ -37,6 +49,7 @@ export class Workspace extends EventEmitter {
   private liveItems = new Map<string, TimelineItem>();
   private flushTimer: NodeJS.Timeout | null = null;
   private connecting: Promise<void> | null = null;
+  private usageTimer: NodeJS.Timeout | null = null;
   constructor(public store: Store, public codex = new Codex(), private concurrency = 2, private connectReview = reviewClient) {
     super();
     store.on('change', () => this.emit('change'));
@@ -66,6 +79,7 @@ export class Workspace extends EventEmitter {
           const models = await this.codex.request('model/list', {}, 20000);
           this.runtime.models = (models.data || []).map(agentModel);
         } catch { /* Tasks can still use the account's configured default model. */ }
+        await this.readUsage();
       } catch (e) { this.runtime.error = errorText(e); this.runtime.connected = false; }
       this.emit('change'); this.schedule();
     })().finally(() => { this.connecting = null; });
@@ -219,8 +233,20 @@ You may run tools in the task worktree to inspect and validate your changes. If 
     this.liveItems.set(id, item);
     this.flushTimer ??= setTimeout(() => this.flush(), 350);
   }
+  // Usage is shown on the new-task page. Codex reports changes after turns;
+  // read the full snapshot again rather than merging its sparse updates.
+  async readUsage() {
+    try { this.runtime.usage = accountUsage(await this.codex.request('account/rateLimits/read', { excludeResetCreditDetails: true }, 20000)); }
+    catch { this.runtime.usage = null; }
+    this.emit('change');
+  }
   private async notification(message: any) {
     const p = message.params || {}, method = message.method;
+    if (method === 'account/rateLimits/updated') {
+      if (this.usageTimer) clearTimeout(this.usageTimer);
+      this.usageTimer = setTimeout(() => { this.usageTimer = null; void this.readUsage(); }, 1500);
+      return;
+    }
     const task = this.store.tasks().find(t => t.threadId === p.threadId);
     if (!task || task.status === 'deleting') return;
     const eventTurn = p.turnId || p.turn?.id;
@@ -470,5 +496,5 @@ You may run tools in the task worktree to inspect and validate your changes. If 
       throw error;
     } finally { this.deletions.delete(taskId); this.schedule(); }
   }
-  close() { this.closing = true; this.flush(); this.codex.close(); }
+  close() { this.closing = true; if (this.usageTimer) clearTimeout(this.usageTimer); this.flush(); this.codex.close(); }
 }

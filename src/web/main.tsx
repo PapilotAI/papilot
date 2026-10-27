@@ -13,6 +13,7 @@ import { Markdown } from './markdown.tsx';
 import logo from './logo.svg';
 import { ChipSelect } from './chip-select.tsx';
 import { EffortPicker, effortName } from './effort-picker.tsx';
+import { UsageSummary } from './usage.tsx';
 import type { OutlineItem, PdfHandle, Rect } from './pdf-view.tsx';
 // pdf.js is large, so the PDF view loads the first time it opens.
 const PdfView = lazy(() => import('./pdf-view.tsx').then(module => ({ default: module.PdfView })));
@@ -657,6 +658,7 @@ function App() {
             </div>}
             action={<button className="send-button" type="submit" aria-label="Start task" title="Start task (Enter)" disabled={creating || !newDraft.trim()} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
           {createError && <p className="inline-error home-error" role="alert">{createError}</p>}
+          {state.runtime.usage && <UsageSummary usage={state.runtime.usage}/>}
         </div></div>
       : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>Add your first paper</h1><p className="home-copy">Connect a LaTeX Git repository on this host. An agent edits it in isolated worktrees, and you review every change as a PDF diff.</p><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>Add paper</button></div></div>}
     </main>
