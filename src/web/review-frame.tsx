@@ -26,7 +26,26 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
     .bar .ghost.round{width:28px;height:28px;padding:0}
     .bar .status{font-size:13px}
     .sheet{box-shadow:0 1px 2px rgb(0 0 0/.06),0 6px 22px rgb(0 0 0/.07)}
-    .change-head{font-size:13px}.change-head .actions button{font-size:14px}.link{font-size:13px}
+    .change-head{font-size:13px}.link{font-size:13px}
+    /* The current change's decision bar: a solid toolbar with clear buttons. */
+    .change-head .actions{gap:3px;padding:3px;background:#fff;border:1px solid #c9c9c9;box-shadow:0 1px 2px rgb(0 0 0/.08)}
+    .change-head .actions button{height:28px;padding:0 12px;border:1px solid transparent;font-size:13.5px;font-weight:500;line-height:1}
+    .change-head .actions .nav{width:28px;padding:0;font-size:19px;font-weight:400;color:#3b3b3b}
+    .change-head .actions .nav:disabled{color:#cfcfcf;opacity:1}
+    .change-head .position{min-width:38px;font-size:12.5px;color:#3b3b3b;font-variant-numeric:tabular-nums}
+    .change-head .actions .accept{background:var(--accept);border-color:var(--accept);color:#fff}
+    .change-head .actions .accept:hover:not(:disabled){background:#155c38;border-color:#155c38}
+    .change-head .actions .reject{border-color:#e2bcc0;color:var(--reject)}
+    .change-head .actions .reject:hover:not(:disabled){background:#fbf2f3;border-color:var(--reject)}
+    .change-head .actions .comment{border-color:#c6d5e5;color:var(--comment)}
+    .change-head .actions .comment:hover:not(:disabled){background:#f0f4f8;border-color:var(--comment)}
+    .change-head .actions .skip{border-color:#c9c9c9;color:#000}
+    .change-head .actions .skip:hover{background:#f2f2f2}
+    .change-head .complete{padding:0 10px;font-size:13.5px;color:var(--accept)}
+    .change-head .actions .undo{margin-left:3px;padding:0 10px;border:0;border-left:1px solid #e5e5e5;font-weight:400;color:#3b3b3b}
+    .change-head .actions .undo:hover:not(:disabled){background:#f2f2f2}
+    .change-head .actions .undo:disabled{color:#bdbdbd;opacity:1}
+    .change-head .actions .accept:disabled,.change-head .actions .reject:disabled,.change-head .actions .comment:disabled{opacity:.4}
     #paper{--paper-top:14px;padding-top:14px}
     .review-body>#paper{padding-right:34px}
     .change-map{top:10px;bottom:10px;right:8px;width:14px;border:0;border-radius:0;background:none;box-shadow:none}
@@ -53,10 +72,10 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
       .change-head{align-items:center;padding:4px 6px 4px 10px;gap:6px}.change-head .change-where{min-width:0}
       .change-head .link{min-height:36px;padding:0 6px}
       .change-head .dock{position:fixed;z-index:6;left:8px;right:8px;bottom:8px;margin:0}
-      .change-head .actions{width:100%;flex-wrap:nowrap;justify-content:space-between;gap:0;padding:4px;border-color:#ccc;box-shadow:0 1px 2px rgb(0 0 0/.04),0 10px 30px rgb(0 0 0/.1)}
-      .change-head .actions button{flex:1 1 auto;min-width:0;min-height:44px;padding:0 6px;font-size:15px}
-      .change-head .actions .nav{flex:0 0 auto;min-width:32px;padding:0 4px}.change-head .position{min-width:30px;font-size:11px}
-      .change-head .actions .undo{flex:0 0 auto;margin-left:2px;padding:0 8px;font-size:13px}
+      .change-head .actions{width:100%;flex-wrap:nowrap;justify-content:space-between;gap:4px;padding:4px;border-color:#bdbdbd;box-shadow:0 2px 8px rgb(0 0 0/.14)}
+      .change-head .actions button{flex:1 1 auto;min-width:0;height:44px;padding:0 6px;font-size:15px}
+      .change-head .actions .nav{flex:0 0 auto;width:32px;min-width:32px;padding:0}.change-head .position{min-width:30px;font-size:11.5px}
+      .change-head .actions .undo{flex:0 0 auto;margin-left:0;padding:0 8px;font-size:14px}
       .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;bottom:70px;transform:none;max-height:calc(100% - 86px);overflow:auto}
       .composer textarea{font-size:16px;max-height:min(140px,30vh)}.composer button{min-height:44px}
       .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-reading-scale,1) * var(--pdf-crop-scale,1));margin-left:calc(-100% * var(--pdf-reading-scale,1) * var(--pdf-crop-scale,1) * var(--pdf-crop-shift,0))}
