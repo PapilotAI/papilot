@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Store } from '../src/server/store.ts';
-import { Workspace } from '../src/server/workspace.ts';
+import { Workspace, agentModel } from '../src/server/workspace.ts';
 import { RpcResponseError, type Codex } from '../src/server/codex.ts';
 import type { ReviewClient } from '../src/server/review.ts';
 import type { PendingReview, Run, Task } from '../src/shared.ts';
@@ -796,4 +796,26 @@ test('real engine deletion removes one temporary worktree while preserving accep
     assert.equal(closedState.closed, true);
     assert.equal(f.store.tasks().length, 0);
   } finally { f?.close(); await engine.close(); await disk.close(); }
+});
+
+test('Codex models list their reasoning efforts, and a task runs every turn at its effort', async () => {
+  assert.deepEqual(agentModel({ model: 'gpt-x', displayName: 'GPT X', isDefault: true, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low', description: 'Fast' }, { reasoningEffort: 'xhigh', description: 'Deep' }, { description: 'malformed' }] }),
+    { id: 'gpt-x', name: 'GPT X', isDefault: true, efforts: [{ id: 'low', description: 'Fast' }, { id: 'xhigh', description: 'Deep' }], defaultEffort: 'medium' });
+  assert.deepEqual(agentModel({ id: 'plain' }), { id: 'plain', name: 'plain', isDefault: false, efforts: [], defaultEffort: null });
+  const f = fixture();
+  try {
+    f.codex.ready = true;
+    f.store.updateTask(f.task.id, { effort: 'xhigh' });
+    await f.workspace.enqueue(f.task.id, 'Next revision.', 'next', false);
+    await tick();
+    const turn = f.codex.calls.find(call => call.method === 'turn/start');
+    assert.equal(turn?.params.effort, 'xhigh');
+  } finally { f.close(); }
+  const plain = fixture();
+  try {
+    plain.codex.ready = true;
+    await plain.workspace.enqueue(plain.task.id, 'Next revision.', 'next', false);
+    await tick();
+    assert.equal('effort' in plain.codex.calls.find(call => call.method === 'turn/start')!.params, false);
+  } finally { plain.close(); }
 });

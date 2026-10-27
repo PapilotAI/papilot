@@ -11,50 +11,50 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
   doc.documentElement.style.setProperty('--papilot-tools', `${reserve}px`);
   const style = doc.createElement('style'); style.id = 'papilot-embed-style';
   style.textContent = `
-    :root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Noto Sans SC",system-ui,sans-serif;--accent:#356aa0;--comment:#356aa0;--frame:#f3f3f1;--line:#e8e7e3;--muted:#8c8b85;--ink:#1b1b19;--head:#fafaf9;font-size:14px}
+    :root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Noto Sans SC",system-ui,sans-serif;--accent:#2563eb;--comment:#2563eb;--accept:#15803d;--reject:#dc2626;--frame:#f3f3f3;--line:#e8e8e8;--muted:#8a8a8a;--ink:#171717;--head:#fafafa;font-size:14px}
     .banner{border-radius:10px}
     .bar{display:flex;align-items:center;height:44px;min-height:44px;padding:0 calc(var(--papilot-tools,0px) + 12px) 0 14px;gap:12px;flex-wrap:nowrap;overflow:hidden}
     .bar .overview-link,.bar .identity h1{display:none}
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
-    .bar .identity span{font-size:13px;font-weight:600;color:#55544f;overflow:hidden;text-overflow:ellipsis}
+    .bar .identity span{font-size:13px;font-weight:600;color:#525252;overflow:hidden;text-overflow:ellipsis}
     .bar .meter{display:flex;order:initial;width:auto;font-size:13px}
     .bar .bar-end{margin-left:0;gap:6px}
     .bar .ghost{font-size:13px;font-weight:500;height:28px;padding:0 10px;border-radius:7px}
-    .bar .ghost:hover{text-decoration:none;background:#efefec}
-    .bar .accept-all,.bar .reject-all{display:inline-flex;align-items:center;gap:6px;border-color:#d6d5d0;background:#fff;color:var(--ink);box-shadow:0 1px 2px rgb(28 27 25/.06)}
-    .bar .accept-all:hover,.bar .reject-all:hover{background:#fafaf9;border-color:#c4c3be}
+    .bar .ghost:hover{text-decoration:none;background:#efefef}
+    .bar .accept-all,.bar .reject-all{display:inline-flex;align-items:center;gap:6px;border-color:#d6d6d6;background:#fff;color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0/.06)}
+    .bar .accept-all:hover,.bar .reject-all:hover{background:#fafafa;border-color:#c4c4c4}
     .bar .ghost.round{width:28px;height:28px;padding:0;border-radius:50%}
     .bar .status{font-size:13px}
-    .sheet{border-radius:4px;box-shadow:0 1px 2px rgb(28 27 25/.06),0 8px 24px rgb(28 27 25/.08)}
-    .change-head{font-size:13px;background:#fafaf9}.link{font-size:13px}
+    .sheet{border-radius:4px;box-shadow:0 1px 2px rgb(0 0 0/.06),0 8px 24px rgb(0 0 0/.08)}
+    .change-head{font-size:13px;background:#fafafa}.link{font-size:13px}
     /* The current change: a thin accent outline and a warm header, like a selected
        row in the workspace, rather than a blue frame on a blue-grey header. */
     .change.current{box-shadow:0 0 0 1.5px var(--accent)}
-    .change.current .change-head{background:#f5f5f3;color:var(--ink)}
-    .change-head .link{display:inline-flex;align-items:center;height:28px;padding:0 8px;border-radius:7px;color:#55544f;font-weight:500}
-    .change-head .link:hover{background:#ebebe7;color:var(--ink);text-decoration:none}
-    .change-head .link.active{background:#eef3f9;color:var(--accent);text-decoration:none}
-    /* Decision buttons follow the workspace buttons: one dark primary action,
+    .change.current .change-head{background:#f5f5f5;color:var(--ink)}
+    .change-head .link{display:inline-flex;align-items:center;height:28px;padding:0 8px;border-radius:7px;color:#525252;font-weight:500}
+    .change-head .link:hover{background:#ebebeb;color:var(--ink);text-decoration:none}
+    .change-head .link.active{background:#eff6ff;color:var(--accent);text-decoration:none}
+    /* Decision buttons follow the workspace buttons: one blue primary action,
        white secondary ones, and colour only in their small icons. On phones the
        bar is a solid toolbar at the bottom. */
     :root{--icon-check:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>");--icon-cross:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M18 6 6 18M6 6l12 12'/></svg>");--icon-comment:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><path d='M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z'/></svg>")}
     .change-head .actions .accept::before,.change-head .actions .reject::before,.change-head .actions .comment::before,.bar .accept-all::before,.bar .reject-all::before{content:"";flex:none;width:13px;height:13px;background:currentColor;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
     .change-head .actions .accept,.bar .accept-all{--icon:var(--icon-check)}.change-head .actions .reject,.bar .reject-all{--icon:var(--icon-cross)}.change-head .actions .comment{--icon:var(--icon-comment)}
     .change-head .actions .reject::before,.bar .reject-all::before{background:var(--reject)}.change-head .actions .comment::before{background:var(--accent)}.bar .accept-all::before{background:var(--accept)}
-    .change-head .actions{gap:3px;padding:4px;background:#fff;border:1px solid #d6d5d0;border-radius:12px;box-shadow:0 1px 2px rgb(28 27 25/.06),0 4px 12px rgb(28 27 25/.06)}
+    .change-head .actions{gap:3px;padding:4px;background:#fff;border:1px solid #d6d6d6;border-radius:12px;box-shadow:0 1px 2px rgb(0 0 0/.06),0 4px 12px rgb(0 0 0/.06)}
     .change-head .actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 11px;border:1px solid transparent;border-radius:7px;font-size:13px;font-weight:500;line-height:1;transition:background-color .15s,border-color .15s}
-    .change-head .actions .nav{width:28px;padding:0;font-size:19px;font-weight:400;color:#55544f}
-    .change-head .actions .nav:hover:not(:disabled){background:#ebebe7}
+    .change-head .actions .nav{width:28px;padding:0;font-size:19px;font-weight:400;color:#525252}
+    .change-head .actions .nav:hover:not(:disabled){background:#ebebeb}
     .change-head .actions .nav:disabled{color:#cfcfcf;opacity:1}
-    .change-head .position{min-width:38px;font-size:12.5px;color:#55544f;font-variant-numeric:tabular-nums}
-    .change-head .actions .accept{background:#1b1b19;border-color:#1b1b19;color:#fff;box-shadow:0 1px 2px rgb(28 27 25/.06)}
-    .change-head .actions .accept:hover:not(:disabled){background:#3a3a36;border-color:#3a3a36}
-    .change-head .actions .reject,.change-head .actions .comment,.change-head .actions .skip{background:#fff;border-color:#d6d5d0;color:var(--ink);box-shadow:0 1px 2px rgb(28 27 25/.06)}
-    .change-head .actions .reject:hover:not(:disabled),.change-head .actions .comment:hover:not(:disabled),.change-head .actions .skip:hover{background:#fafaf9;border-color:#c4c3be}
+    .change-head .position{min-width:38px;font-size:12.5px;color:#525252;font-variant-numeric:tabular-nums}
+    .change-head .actions .accept{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 1px 2px rgb(0 0 0/.06)}
+    .change-head .actions .accept:hover:not(:disabled){background:#1d4ed8;border-color:#1d4ed8}
+    .change-head .actions .reject,.change-head .actions .comment,.change-head .actions .skip{background:#fff;border-color:#d6d6d6;color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0/.06)}
+    .change-head .actions .reject:hover:not(:disabled),.change-head .actions .comment:hover:not(:disabled),.change-head .actions .skip:hover{background:#fafafa;border-color:#c4c4c4}
     .change-head .complete{display:inline-flex;align-items:center;gap:6px;padding:0 8px;font-size:13px;font-weight:500;color:var(--accept)}
     .change-head .complete::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
-    .change-head .actions .undo{margin-left:3px;padding:0 9px;font-weight:400;color:#55544f}
-    .change-head .actions .undo:hover:not(:disabled){background:#ebebe7}
+    .change-head .actions .undo{margin-left:3px;padding:0 9px;font-weight:400;color:#525252}
+    .change-head .actions .undo:hover:not(:disabled){background:#ebebeb}
     .change-head .actions .undo:disabled{color:#bdbdbd;opacity:1}
     .change-head .actions .accept:disabled,.change-head .actions .reject:disabled,.change-head .actions .comment:disabled{opacity:.4}
     /* Wider than a phone, the decision bar is a flat strip along the bottom of the
@@ -95,7 +95,7 @@ function compactReviewFrame(doc: Document, scale: number, reserve: number) {
       .change-head{align-items:center;padding:4px 6px 4px 10px;gap:6px}.change-head .change-where{min-width:0}
       .change-head .link{min-height:36px;padding:0 6px}
       .change-head .dock{position:fixed;z-index:6;left:8px;right:8px;bottom:8px;margin:0}
-      .change-head .actions{width:100%;flex-wrap:nowrap;justify-content:space-between;gap:4px;padding:5px;border-radius:16px;border-color:#d6d5d0;box-shadow:0 2px 4px rgb(28 27 25/.05),0 10px 28px rgb(28 27 25/.16)}
+      .change-head .actions{width:100%;flex-wrap:nowrap;justify-content:space-between;gap:4px;padding:5px;border-radius:16px;border-color:#d6d6d6;box-shadow:0 2px 4px rgb(0 0 0/.05),0 10px 28px rgb(0 0 0/.16)}
       .change-head .actions button{flex:1 1 auto;min-width:0;height:44px;gap:5px;padding:0 4px;border-radius:11px;font-size:14.5px}
       .change-head .actions .nav{flex:0 0 auto;width:28px;min-width:28px;padding:0}.change-head .position{min-width:30px;font-size:11.5px}
       .change-head .actions .undo{flex:0 0 auto;margin-left:0;padding:0 6px;font-size:14px}

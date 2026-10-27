@@ -12,6 +12,7 @@ import { Icon } from './icons.tsx';
 import { Markdown } from './markdown.tsx';
 import logo from './logo.svg';
 import { ChipSelect } from './chip-select.tsx';
+import { EffortPicker, effortName } from './effort-picker.tsx';
 import type { OutlineItem, PdfHandle, Rect } from './pdf-view.tsx';
 // pdf.js is large, so the PDF view loads the first time it opens.
 const PdfView = lazy(() => import('./pdf-view.tsx').then(module => ({ default: module.PdfView })));
@@ -124,7 +125,7 @@ function Activity({ task, composer, answerDrafts, items, loading, loadError, ret
   const unsent = task.review?.unsent ?? task.review?.counts?.commented ?? 0;
   const hint = task.status === 'deleting' ? 'This task is being deleted' : task.status === 'uncertain' ? 'Check task status before sending' : sendingSource === 'feedback' ? 'Sending feedback…' : sending ? 'Sending…'
     : unsent ? `${unsent} review ${unsent === 1 ? 'comment' : 'comments'} will be sent with this message` : active ? 'Codex is working · new instructions run next' : touch() ? '' : 'Enter to send · Shift+Enter for a new line';
-  return <section id="conversation-panel" className="activity-panel" aria-label="Codex conversation"><div className="panel-heading"><span className="panel-title">Chat</span><span className="model-chip" title={task.model || 'Use the default Codex model on this host'}>{task.model || 'Default model'}</span></div>
+  return <section id="conversation-panel" className="activity-panel" aria-label="Codex conversation"><div className="panel-heading"><span className="panel-title">Chat</span><span className="model-chip" title={task.model || 'Use the default Codex model on this host'}>{task.model || 'Default model'}{task.effort ? ` · ${effortName(task.effort)}` : ''}</span></div>
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); } }}><div className="thread">
       {loading && <p className="muted" role="status">Loading conversation…</p>}
       {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary compact" onClick={retry}>Retry conversation</button></div>}
@@ -194,7 +195,7 @@ function GitPanel({ git }: { git: GitStatus | null }) {
 
 function noteWhere(note: Annotation) { return `Page ${note.page + 1}` + (note.source ? ` · ${note.source.file}:${note.source.lines[0]}${note.source.lines[1] !== note.source.lines[0] ? `–${note.source.lines[1]}` : ''}` : ''); }
 
-interface NoteActions { add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>; remove: (note: Annotation) => void; send: () => void; sending: boolean; model: string; setModel: (value: string) => void; models: { id: string; name: string }[] }
+interface NoteActions { add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>; remove: (note: Annotation) => void; send: () => void; sending: boolean; options: React.ReactNode }
 
 function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void }) {
   const list = useRef<HTMLOListElement>(null);
@@ -208,7 +209,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Ann
     </li>)}</ol>
       : <p className="muted notes-empty">Select text in the PDF and choose Add note, or use Mark region for a figure or equation. All notes go to the agent as one task.</p>}
     <div className="notes-send">
-      <ChipSelect label="Codex model" disabled={actions.sending} value={actions.model} onChange={actions.setModel} options={[{ value: '', label: 'Default model' }, ...actions.models.map(m => ({ value: m.id, label: m.name }))]}/>
+      <div className="composer-options">{actions.options}</div>
       <button type="button" className="button primary" disabled={!notes.length || actions.sending} onClick={actions.send}>{actions.sending ? 'Sending…' : `Send ${notes.length || ''} ${notes.length === 1 ? 'note' : 'notes'} to the agent`.replace('  ', ' ')}</button>
     </div>
   </section>;
@@ -281,7 +282,10 @@ function App() {
   const formTaskId = useRef(uuid());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
-  const [newModel, setNewModel] = useState('');
+  // The model and reasoning effort are remembered for every new task, whether
+  // it starts from the composer or from PDF notes.
+  const [agentModel, setAgentModel] = useState(() => browserStorage.getItem('papilot:model') || '');
+  const [agentEffort, setAgentEffort] = useState(() => browserStorage.getItem('papilot:effort') || '');
   const [creating, setCreating] = useState(false), [createError, setCreateError] = useState('');
   const [busy, setBusy] = useState(false), [sidebar, setSidebar] = useState(false);
   const actionRequests = useRef(new Set<string>());
@@ -306,7 +310,6 @@ function App() {
   const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'contents');
   const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
-  const [notesModel, setNotesModel] = useState('');
   const [sendingNotes, setSendingNotes] = useState(false);
   const notesTaskId = useRef(uuid());
   const [manuscript, setManuscript] = useState<{ projectId: string; data: Manuscript | null; error: string }>({ projectId: '', data: null, error: '' });
@@ -430,13 +433,23 @@ function App() {
     try { const p = await api('/projects', { path: form.path, name: form.name }); setProjectId(p.id); setSelected(''); setModal(null); setSidebar(false); await refresh(true); }
     catch (e) { reportError(e); } finally { setBusy(false); }
   }
+  // A remembered choice the host no longer offers falls back to its default;
+  // the preference is kept in case another model offers it again.
+  const models = state?.runtime.models || [];
+  const chosenModel = models.length && !models.some(m => m.id === agentModel) ? '' : agentModel;
+  const modelInfo = models.find(m => m.id === chosenModel) || models.find(m => m.isDefault);
+  const agent = { model: chosenModel, effort: modelInfo && !modelInfo.efforts.some(e => e.id === agentEffort) ? '' : agentEffort };
+  const agentOptions = (disabled: boolean) => <>
+    <ChipSelect label="Codex model" disabled={disabled} value={agent.model} onChange={value => { setAgentModel(value); browserStorage.setItem('papilot:model', value); }} options={[{ value: '', label: 'Default model' }, ...models.map(m => ({ value: m.id, label: m.name }))]}/>
+    {modelInfo && <EffortPicker efforts={modelInfo.efforts} value={agent.effort} fallback={modelInfo.defaultEffort} disabled={disabled} onChange={value => { setAgentEffort(value); browserStorage.setItem('papilot:effort', value); }}/>}
+  </>;
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId;
     if (!text || creating || !target) return;
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
-      const t = await api('/tasks', { projectId: target, title: taskTitle(text), instructions: text, model: newModel, id: formTaskId.current });
+      const t = await api('/tasks', { projectId: target, title: taskTitle(text), instructions: text, model: agent.model, effort: agent.effort, id: formTaskId.current });
       formTaskId.current = uuid(); setNewDraft(''); setSelected(t.id); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
       await refresh(true);
     } catch (e) { setCreateError(e instanceof Error ? e.message : String(e)); } finally { setCreating(false); }
@@ -535,12 +548,12 @@ function App() {
       if (!project || sendingNotes) return;
       setSendingNotes(true);
       try {
-        const created = await api<Task>(`/projects/${project.id}/annotations/send`, { id: notesTaskId.current, model: notesModel });
+        const created = await api<Task>(`/projects/${project.id}/annotations/send`, { id: notesTaskId.current, model: agent.model, effort: agent.effort });
         notesTaskId.current = uuid(); withNotes(() => []); setSelected(created.id); setMobileTab('conversation'); setLayout('split');
         await refresh(true);
       } catch (e) { reportError(e); } finally { setSendingNotes(false); }
     },
-    sending: sendingNotes, model: notesModel, setModel: setNotesModel, models: state?.runtime.models || [],
+    sending: sendingNotes, options: agentOptions(sendingNotes),
   };
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
   useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, project?.name]);
@@ -640,8 +653,7 @@ function App() {
           <h1>What are we revising next?</h1>
           <Composer large autoFocus inputRef={newTaskInput} label="Describe the revision" value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder="Describe the revision, what to preserve, and how to judge the result…"
             footer={<div className="composer-options">
-              <ChipSelect className="paper-chip" label="Paper" icon="paper" disabled={creating} value={project.id} onChange={setProjectId} options={state.projects.map(p => ({ value: p.id, label: p.name }))}/>
-              <ChipSelect label="Codex model" disabled={creating} value={newModel} onChange={setNewModel} options={[{ value: '', label: 'Default model' }, ...state.runtime.models.map(m => ({ value: m.id, label: m.name }))]}/>
+              {agentOptions(creating)}
             </div>}
             action={<button className="send-button" type="submit" aria-label="Start task" title="Start task (Enter)" disabled={creating || !newDraft.trim()} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
           {createError && <p className="inline-error home-error" role="alert">{createError}</p>}

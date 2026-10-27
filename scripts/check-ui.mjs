@@ -17,7 +17,7 @@ await page.clock.install();
 const pageErrors = [];
 page.on('pageerror', error => pageErrors.push(error.message));
 const task = { id: 'fixture-task-0001', projectId: 'fixture-paper', name: 'p-fixture', title: 'Clarify the introduction', instructions: 'Keep the technical meaning.', worktree: '/tmp/fixture', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 3, commented: 1 } } };
-const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [] } };
+const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: [{ id: 'low', description: 'Quick answers' }, { id: 'medium', description: 'Balanced' }, { id: 'high', description: 'Thorough' }], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: [{ id: 'low', description: 'Quick answers' }, { id: 'medium', description: 'Balanced' }, { id: 'high', description: 'Thorough' }, { id: 'xhigh', description: 'Deepest reasoning' }], defaultEffort: 'high' }] } };
 const messages = [];
 const creates = [];
 let failCreate = true;
@@ -324,15 +324,38 @@ try {
   await prompt.press('Enter');
   await page.locator('.home').getByRole('alert').waitFor();
   assert.equal(await prompt.inputValue(), 'Shorten the introduction.\nPreserve the technical content.');
+  // Model and reasoning effort are chosen beside the prompt and remembered.
+  const modelChip = page.getByRole('combobox', { name: 'Codex model' });
+  const effortChip = page.getByRole('button', { name: /^Reasoning effort/ });
+  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Medium');
+  await modelChip.selectOption('deep-model');
+  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: High');
+  await effortChip.click();
+  const effortSlider = page.getByRole('slider', { name: 'Reasoning effort' });
+  assert.equal(await effortSlider.evaluate(el => el === document.activeElement), true);
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await effortSlider.getAttribute('aria-valuetext'), 'Extra high');
+  await page.keyboard.press('Escape');
+  await effortSlider.waitFor({ state: 'hidden' });
+  assert.equal(await effortChip.evaluate(el => el === document.activeElement), true);
+  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Extra high');
+  // A model without that effort uses its own default; the choice returns with the model.
+  await modelChip.selectOption('fast-model');
+  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Medium');
+  await modelChip.selectOption('deep-model');
+  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Extra high');
+  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:model'), localStorage.getItem('papilot:effort')]), ['deep-model', 'xhigh']);
   failCreate = false;
   await page.getByRole('button', { name: 'Start task' }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
   assert.equal(creates.length, 2);
+  assert.equal(creates[1].model, 'deep-model');
+  assert.equal(creates[1].effort, 'xhigh');
   assert.equal(creates[0].id, creates[1].id);
   assert.equal(creates[1].title, 'Shorten the introduction');
   assert.equal(creates[1].instructions, 'Shorten the introduction.\nPreserve the technical content.');
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:new-task')), null);
-  console.log('PASS: Enter starts a task, Shift+Enter adds a line, and retrying creation retains the same task ID');
+  console.log('PASS: Enter starts a task, Shift+Enter adds a line, retrying creation retains the same task ID, and model and effort are remembered');
 
   const input = page.getByRole('textbox', { name: 'Instructions for Codex' });
   await input.fill('Keep this unsent draft.');

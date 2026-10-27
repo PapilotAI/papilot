@@ -7,11 +7,17 @@ import { EventEmitter } from 'node:events';
 import { Store } from './store.ts';
 import { Codex, RpcResponseError } from './codex.ts';
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
-import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview } from '../shared.ts';
+import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
+// A Codex model/list entry with the reasoning efforts it supports.
+export const agentModel = (m: any): AgentModel => ({
+  id: m.model || m.id, name: m.displayName || m.model || m.id, isDefault: Boolean(m.isDefault),
+  efforts: (m.supportedReasoningEfforts || []).filter((e: any) => typeof e?.reasoningEffort === 'string').map((e: any) => ({ id: e.reasoningEffort, description: e.description || '' })),
+  defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null,
+});
 const BUSY = new Set(['running', 'waiting_input', 'building', 'uncertain', 'deleting']);
 
 export class Workspace extends EventEmitter {
@@ -58,7 +64,7 @@ export class Workspace extends EventEmitter {
         this.runtime.error = this.runtime.authenticated ? null : 'Sign in to Codex on this host, then select Reconnect.';
         try {
           const models = await this.codex.request('model/list', {}, 20000);
-          this.runtime.models = (models.data || []).map((m: any) => ({ id: m.model || m.id, name: m.displayName || m.model || m.id, isDefault: Boolean(m.isDefault) }));
+          this.runtime.models = (models.data || []).map(agentModel);
         } catch { /* Tasks can still use the account's configured default model. */ }
       } catch (e) { this.runtime.error = errorText(e); this.runtime.connected = false; }
       this.emit('change'); this.schedule();
@@ -77,7 +83,7 @@ export class Workspace extends EventEmitter {
     const project = { id: randomUUID(), name: name?.trim() || path.basename(root), path: root, createdAt: Date.now() };
     this.store.saveProject(project); return project;
   }
-  async createTask(input: { projectId: string; title: string; instructions: string; model?: string; id: string }) {
+  async createTask(input: { projectId: string; title: string; instructions: string; model?: string; effort?: string; id: string }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     const existing = this.store.tasks().find(t => t.id === input.id); if (existing) return existing;
@@ -88,7 +94,7 @@ export class Workspace extends EventEmitter {
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
       const info = await client.post('/api/tasks', { name, title: input.title });
       const task: Task = { id: input.id, projectId: project.id, name, title: input.title, instructions: input.instructions,
-        worktree: info.worktree, threadId: null, turnId: null, model: input.model || null, status: 'idle',
+        worktree: info.worktree, threadId: null, turnId: null, model: input.model || null, effort: input.effort || null, status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.saveTask(task);
       await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false);
@@ -173,7 +179,7 @@ You may run tools in the task worktree to inspect and validate your changes. If 
     }
     this.store.updateTask(task.id, { pendingRunId: run.id });
     let result: any;
-    try { result = await this.codex.request('turn/start', { threadId: task.threadId, input: [{ type: 'text', text: run.prompt }], cwd: task.worktree, clientUserMessageId: run.id }); }
+    try { result = await this.codex.request('turn/start', { threadId: task.threadId, input: [{ type: 'text', text: run.prompt }], cwd: task.worktree, clientUserMessageId: run.id, ...(task.effort ? { effort: task.effort } : {}) }); }
     catch (error) {
       if (this.active.get(task.id)?.id !== run.id) return;
       if (error instanceof RpcResponseError) throw error;

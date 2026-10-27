@@ -4,7 +4,7 @@ export interface ReviewSummary { state: string; round: number | null; counts: Re
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface Task {
   id: string; projectId: string; name: string; title: string; instructions: string;
-  worktree: string; threadId: string | null; turnId: string | null; model: string | null;
+  worktree: string; threadId: string | null; turnId: string | null; model: string | null; effort?: string | null;
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
   error: string | null; review: ReviewSummary | null;
   pauseVersion?: number; pendingRunId?: string | null;
@@ -13,7 +13,9 @@ export interface Task {
 export interface Run { id: string; taskId: string; requestKey: string; prompt: string; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null }
 export interface TimelineItem { id: string; taskId: string; type: string; text: string; detail?: string; status?: string; createdAt: number }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
-export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: { id: string; name: string; isDefault: boolean }[] }
+export interface Effort { id: string; description: string }
+export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: Effort[]; defaultEffort: string | null }
+export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[] }
 export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; version: string }
 export interface GitFile { path: string; status: string; staged: boolean; lines?: [number, number] }
 export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null }
