@@ -1,6 +1,6 @@
-// Builds the GitHub Pages site into _site (or the folder given): the page in
-// site/, the README's logo and screenshots, and the workspace's fonts. It then
-// checks that every file the page and its stylesheet point to was built.
+// Builds the GitHub Pages site into _site: the page in site/, the README's logo
+// and screenshots, and the workspace's fonts. It then checks that every file the
+// page and its stylesheet point to was built.
 //
 // The page plays the demo GIF as an MP4 with a poster frame, a fraction of the
 // GIF's size. FFmpeg makes them and they are committed in site/assets, so the
@@ -16,7 +16,9 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
-const out = path.resolve(args.find(arg => !arg.startsWith('--')) ?? path.join(root, '_site'));
+// The build empties this folder first, so it takes no folder argument that
+// could name the source or the repository by mistake.
+const out = path.join(root, '_site');
 const site = 'https://cu1ch3n.github.io/papilot/';
 const copy = (from, names, to = '') => {
   fs.mkdirSync(path.join(out, to), { recursive: true });
