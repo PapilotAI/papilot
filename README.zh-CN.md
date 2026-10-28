@@ -87,6 +87,8 @@ papilot demo
 
 Papilot 从不读取、保存或转发你的凭据。没有安装或没有登录的智能体会显示为不可用。
 
+启动遇到问题？运行 `papilot doctor` 检查环境并查看修复建议，或用 `papilot doctor --repo /path/to/paper` 一并检查论文。加上 `--json` 可输出机器可读的报告。诊断不会安装软件、启动服务或修改论文。检查范围见[诊断指南](docs/guide.md#diagnostics)。
+
 <details>
 <summary><b>⚙️ 选项与远程访问</b></summary>
 

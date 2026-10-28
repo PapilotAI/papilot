@@ -87,6 +87,8 @@ Open **http://127.0.0.1:7274** and choose **PDF** in the sidebar. The demo adds 
 
 Papilot never reads, stores or forwards your credentials. An agent that isn't installed or signed in shows as unavailable.
 
+Having trouble getting started? Run `papilot doctor` for environment checks and fixes, or `papilot doctor --repo /path/to/paper` to check a paper too. Add `--json` for a machine-readable report. Diagnostics do not install software, start the server or change your paper. See the [diagnostics guide](docs/guide.md#diagnostics) for what is checked.
+
 <details>
 <summary><b>⚙️ Options and remote access</b></summary>
 

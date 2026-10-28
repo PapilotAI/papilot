@@ -56,6 +56,7 @@
     "test": "tsx --test tests/*.test.ts",
     "setup:review": "npm --prefix vendor/latex-review ci && npm --prefix vendor/latex-review run build",
     "demo": "tsx scripts/demo.ts",
+    "doctor": "node bin/papilot.mjs doctor",
     "service:install": "tsx scripts/service.ts install",
     "service:stop": "tsx scripts/service.ts stop",
     "test:ui": "npm run build && node scripts/check-ui.mjs",

@@ -45,6 +45,24 @@ Each task runs on one agent, chosen with **Agent** below the prompt; Papilot rem
 - **Claude** runs through the Claude Agent SDK, which runs Claude Code with the login on this host. An installed Papilot downloads the SDK into `agents` in the data folder the first time it starts with an API key. Edits in the worktree are accepted, commands run in Claude Code's sandbox, and anything that needs approval, including Claude's questions, comes to the conversation. Claude tasks need an Anthropic API key: Anthropic does not allow a Claude subscription (Pro or Max) login to be used through the Agent SDK and refuses such requests with 403. Run Papilot with `ANTHROPIC_API_KEY` set (or with Claude Code configured for Amazon Bedrock, Google Vertex AI or Microsoft Foundry); usage is billed to that key or provider. With only a subscription login, Claude is listed as unavailable and says why.
 - **Antigravity** runs `agy -p` with streamed output, one process per turn, and resumes the same agy conversation on later turns. Headless agy cannot ask for permission, so Papilot runs it in accept-edits mode: it reads and edits files in the worktree, while shell commands and edits elsewhere are declined by agy and noted in the conversation. Its models are listed with their effort variants grouped, and your saved agy model is the default. If agy reports that your location is not supported, set `PAPILOT_AGY_PROXY` to an HTTP proxy; it applies only to agy.
 
+## Diagnostics
+
+```sh
+papilot doctor
+papilot doctor --repo /path/to/paper
+papilot doctor --json --data ~/papilot-data --port 4400
+```
+
+Doctor checks Node, runtime packages, built frontend and review-engine files, the data directory, Git, `latexmk`, SyncTeX and available TeX engines. With `--repo`, it also checks that the selected folder is the Git root, has an initial commit, has a valid main document and review configuration, and can create task worktrees. It uses the review engine's own configuration loader, without compiling or creating a worktree. Registered papers are not automatically inspected; select the paper explicitly with `--repo`.
+
+Agent checks use the same Codex locations as the installed launcher, check its version and login status, look for the Claude SDK and API configuration in the current environment, and ask `agy models` for its model list. No model prompt is sent. Claude credentials are not validated against the API, and SDK-managed credentials are not inspected. A successful report does not guarantee a model request or a paper build will succeed. Missing agents are warnings: PDF reading can still work. Configure at least one agent for editing.
+
+Doctor also checks the local health endpoint and Tailscale origin/owner settings. On macOS, it compares an installed service's saved tool paths and data directory with the terminal environment. It does not start, stop or reinstall a service. A stopped server or an uninstalled optional service is normal.
+
+Each failed check includes a suggested fix. Exit code **0** means no blocking errors (warnings may remain), **1** means blocking errors, and **2** means invalid command-line options. `--json` writes one object to standard output with `name`, `version`, `ok`, and `checks`; each check contains `id`, `ok`, `severity`, `detail`, and `fix`. Node fallback notices go to standard error. Diagnostics do not install dependencies, create Papilot state, compile papers or change manuscript files. Each external command has a five-second timeout.
+
+From a source checkout, use `npm run doctor -- --data .papilot` (or `node bin/papilot.mjs doctor --data .papilot` if npm dependencies are missing). The CLI default is `~/.papilot`, even in a checkout; specify the data folder used by the instance you are diagnosing. `PAPILOT_DATA`, `PAPILOT_PORT` and the agent overrides are honored; command-line data and port options take precedence.
+
 ## Workflow
 
 1. Select **New task**, describe the revision, and press Enter. The first line of the prompt becomes the task title. The task runs on the paper selected in the sidebar. Below the prompt, choose the Codex model and its reasoning effort: the effort chip opens a slider from the lightest to the deepest reasoning the model supports. Papilot remembers both for the next task, including tasks started from PDF notes; if a remembered model or effort is no longer offered, the host's default is used. The chat header shows the model and effort a task runs with. When the host's Codex login reports usage (a ChatGPT plan), the new-task page also shows each usage window, such as the weekly limit, with how much is used and when it resets, plus the credit balance; it refreshes when Codex reports new usage after a turn.
