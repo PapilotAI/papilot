@@ -271,6 +271,8 @@ body.resizing iframe{pointer-events:none}
 .feedback-counts span{padding:1px 8px;border-radius:999px;background:var(--bg);font-size:12.5px;font-weight:500;color:var(--text-2)}
 .feedback-counts .accepted{color:var(--green)}.feedback-counts .rejected,.feedback-counts .failed{color:var(--red)}.feedback-counts .commented{color:var(--accent)}
 .feedback-counts+.sent-notes{margin-top:8px}
+.build-message .sent-notes-head>svg{color:var(--red)}
+.build-error{margin:0;font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
 .feedback-attachment{margin-top:8px;white-space:normal}
 .feedback-attachment>summary{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--text-2);cursor:pointer;list-style:none}
 .feedback-attachment>summary::-webkit-details-marker{display:none}

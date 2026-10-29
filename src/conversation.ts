@@ -1,10 +1,21 @@
-import type { FeedbackSummary } from './shared.ts';
+import type { BuildFailure, FeedbackSummary } from './shared.ts';
 
 // What the agent receives when the author sends review feedback without a
 // message of their own. The chat shows the feedback, never this prompt.
 export const reviewInstructions = 'Continue this task using the decisions and comments from this review round. Preserve accepted changes and do not reintroduce rejected edits. Address any remaining revision requests; if no revision is needed, summarize the result.';
 // Earlier versions stored the prompt itself as the author's message.
 export const isFeedbackPrompt = (text: string) => text === reviewInstructions || text === 'Address the comments from this review round. Preserve accepted changes and do not reintroduce rejected edits.';
+
+// What the agent receives when its own edits stop the review build. The chat
+// shows the error, never this prompt.
+export function buildFixPrompt(failure: BuildFailure) {
+  return [
+    'Papilot could not build the PDF review after your last turn:',
+    [failure.error, ...failure.details].join('\n'),
+    failure.log ? `The compiler log is at ${failure.log}.` : '',
+    'Fix this in the task worktree, then end your turn; Papilot builds the review again. Restore any file outside the review\'s scope to how it was when the task started, and mention in your summary any update that file still needs.',
+  ].filter(Boolean).join('\n\n');
+}
 
 // A skill is a named set of instructions; the author's own words, if any, say where and how.
 export function skillPrompt(skill: { name: string; body: string; folder?: string }, request: string) {

@@ -10,8 +10,8 @@ import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, type AgentRuntime } from '.
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
 import { VERSION } from './paths.ts';
 import { findSkill, type SkillFile } from './skills.ts';
-import { reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
-import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary } from '../shared.ts';
+import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
+import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -35,6 +35,10 @@ export function accountUsage(response: any): Usage | null {
   return { plan: typeof limits.planType === 'string' ? limits.planType : null, windows, credits, reached: Boolean(limits.rateLimitReachedType) || response.ordinaryUsageAllowed === false };
 }
 const BUSY = new Set(['running', 'waiting_input', 'building', 'uncertain', 'deleting']);
+// Review builds that fail on the agent's own edits (see the review engine's
+// publish.ts), and the request keys of the turns that send them back to it.
+const FIXABLE = /^(Some edits are outside the task scope|The revised document could not be compiled)/;
+const BUILD_FIX = 'build-fix-';
 
 const AGENTS: AgentId[] = ['codex', 'claude', 'antigravity'];
 const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [] });
@@ -145,9 +149,10 @@ export class Workspace extends EventEmitter {
       return this.store.task(task.id);
     } finally { this.preparing.delete(input.id); }
   }
-  // The author's message, a skill run with or without one, or the review
-  // feedback alone. The chat keeps what the author did; the agent gets the prompt.
-  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; feedback?: boolean } = {}) {
+  // The author's message, a skill run with or without one, the review
+  // feedback alone, or a build the agent broke. The chat keeps what happened;
+  // the agent gets the prompt.
+  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; feedback?: boolean; build?: BuildFailure } = {}) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const existing = this.store.runByKey(requestKey);
@@ -155,7 +160,7 @@ export class Workspace extends EventEmitter {
     if (task.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
     const pauseVersion = task.pauseVersion || 0;
     if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
-    let prompt = options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, text) : text.trim(), cursor = task.feedbackCursor;
+    let prompt = options.build ? buildFixPrompt(options.build) : options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, text) : text.trim(), cursor = task.feedbackCursor;
     let summary: FeedbackSummary | undefined;
     if (includeFeedback) {
       const client = await this.connectReview(this.store.project(task.projectId).path);
@@ -166,7 +171,7 @@ export class Workspace extends EventEmitter {
       if (task.error) prompt += '\n\nLatest task/review error:\n' + task.error + '\nThe latest accepted manuscript is at ' + this.store.project(task.projectId).path + '. You may read it to understand accepted changes, but must only edit your isolated task worktree. Prepare a revised proposal for another review; never write to or accept changes in the manuscript checkout.';
     }
     const run: Run = { id: randomUUID(), taskId, requestKey, prompt, feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null };
-    const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}) };
+    const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}) };
     const saved = this.store.transaction(() => {
       // Feedback loading yields to other requests. Recheck identity, queue, and
       // task status together before committing; none of the earlier reads own a lock.
@@ -182,7 +187,7 @@ export class Workspace extends EventEmitter {
       if (current.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
       this.store.saveRun(run);
       if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null });
-      this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
+      this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
       return run;
     });
     this.schedule();
@@ -205,12 +210,20 @@ export class Workspace extends EventEmitter {
       void this.startRun(run).catch(e => this.failRun(run, e));
     }
   }
-  private instructions(task: Task) {
+  // The paths a task's review covers, or none when it covers the whole worktree.
+  private async reviewScope(task: Task): Promise<string[]> {
+    try {
+      const client = await this.connectReview(this.store.project(task.projectId).path);
+      const files: string[] = (await client.get(taskRoute(task.name))).scope?.files || [];
+      return files.some(file => file === '' || file === '.') ? [] : files;
+    } catch { return []; }
+  }
+  private instructions(task: Task, scope: string[] = []) {
     return `You are ${this.agentOf(task) === 'codex' ? 'the official Codex agent' : AGENT_NAMES[this.agentOf(task)]} running inside Papilot, a paper editing and review workspace.
 Your task is already created. Your editable working directory is ${task.worktree}.
 Original task: ${task.instructions}
 Only edit this isolated task worktree. Never edit the manuscript checkout, other task worktrees, or Papilot's own source/state. Never commit, push, stash, or accept/reject/undo review decisions.
-Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This application workflow replaces the standalone latex-review skill's publish-and-wait loop. End your turn after completing the requested edits, with a concise summary for the author of what you changed and why; do not describe Papilot's review workflow.
+${scope.length ? `The review covers only ${scope.join(', ')} in this worktree, and an edit to any other file stops the PDF build. Leave other files unchanged even when project instructions ask for a matching update; mention that update in your summary instead.\n` : ''}Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This application workflow replaces the standalone latex-review skill's publish-and-wait loop. End your turn after completing the requested edits, with a concise summary for the author of what you changed and why; do not describe Papilot's review workflow.
 Preserve meaning and mathematical correctness. Read relevant project instructions. Treat reviewer comments as instructions tied to their round, file and changes. Rejected edits must not be reintroduced unless explicitly requested. If there is a conflict with accepted text, explain it and propose a revision for a new review round; never overwrite the accepted manuscript.
 ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to you here and any attempt is refused, which ends your turn: read, search and edit files in the task worktree with your file tools only.' : 'You may run tools in the task worktree to inspect and validate your changes.'} If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.`;
   }
@@ -221,7 +234,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     this.store.saveRun({ ...run, status: 'running' });
     this.store.updateTask(task.id, { status: 'running', turnId: null, error: null });
     if (!task.threadId || !this.loaded.has(task.threadId)) {
-      const options = { cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', developerInstructions: this.instructions(task), ...(task.model ? { model: task.model } : {}) };
+      const options = { cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', developerInstructions: this.instructions(task, await this.reviewScope(task)), ...(task.model ? { model: task.model } : {}) };
       const result = task.threadId
         ? await agent.request('thread/resume', { ...options, threadId: task.threadId, excludeTurns: true })
         : await agent.request('thread/start', options);
@@ -327,7 +340,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       this.store.saveRun({ ...run, status, finishedAt: Date.now() });
       this.store.updateTask(task.id, { turnId: null, pendingRunId: null, status: status === 'completed' ? 'building' : status, error: p.turn.error?.message || null });
       this.schedule();
-      if (status === 'completed') await this.publish(task.id, true);
+      if (status === 'completed') await this.publish(task.id, run);
     } else if (method === 'error' && !p.willRetry) {
       if (!this.active.has(task.id) || (eventTurn && !task.turnId)) return;
       this.store.updateTask(task.id, { error: p.error?.message || `${AGENT_NAMES[agent]} encountered an error.` });
@@ -451,17 +464,19 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     }
     finally { this.reviewWrites.delete(taskId); this.schedule(); }
   }
-  publish(taskId: string, automatic = false): Promise<void> {
-    const task = this.store.task(taskId);
+  // A build is automatic after the agent's run `after` completes. When its
+  // edits break the build, the agent gets the error in a new turn, once.
+  publish(taskId: string, after?: Run): Promise<void> {
+    const task = this.store.task(taskId), automatic = Boolean(after);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     if (this.active.has(taskId)) throw new Error('Pause Codex before building a review.');
     if (this.reviewWrites.has(taskId)) throw new Error('Wait for the current review action before building a review.');
     if (this.publishing.has(taskId) || (!automatic && (BUSY.has(task.status) || task.status === 'queued'))) throw new Error('This task is busy. Wait for it to finish or pause it first.');
     this.publishing.add(taskId);
     this.store.updateTask(taskId, { status: 'building', error: null });
-    return this.buildReview(task).finally(() => { this.publishing.delete(taskId); this.schedule(); });
+    return this.buildReview(task, Boolean(after && !after.requestKey.startsWith(BUILD_FIX))).finally(() => { this.publishing.delete(taskId); this.schedule(); });
   }
-  private async buildReview(task: Task) {
+  private async buildReview(task: Task, sendBack: boolean) {
     const taskId = task.id;
     try {
       const client = await this.connectReview(this.store.project(task.projectId).path);
@@ -472,7 +487,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         const summary = await client.get(taskRoute(task.name));
         this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, job: current } });
         if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') break;
-        if (current.status === 'failed') throw new Error([current.error, ...(current.details || [])].filter(Boolean).join('\n') || 'PDF build failed.');
+        if (current.status === 'failed') {
+          const failure: BuildFailure = { error: current.error || 'PDF build failed.', details: current.details || [], ...(current.log ? { log: current.log } : {}) };
+          // Instructions the author queued meanwhile go first; the build after them sends any error that remains.
+          if (sendBack && FIXABLE.test(failure.error) && await this.enqueue(taskId, '', BUILD_FIX + job.job, false, { build: failure }).then(() => true, () => false)) {
+            this.store.updateTask(taskId, { status: 'queued', error: null });
+            return;
+          }
+          throw new Error([failure.error, ...failure.details].join('\n'));
+        }
         await delay(1500);
       }
       this.store.updateTask(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null });

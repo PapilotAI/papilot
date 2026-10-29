@@ -17,7 +17,10 @@ export interface Run { id: string; taskId: string; requestKey: string; prompt: s
 export interface TimelineItem { id: string; taskId: string; type: string; text: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta }
 // A user message can run a skill or carry review feedback; the chat shows
 // those as what they are rather than as the prompt the agent receives.
-export interface MessageMeta { skill?: { id: string; name: string }; feedback?: FeedbackSummary; sendsFeedback?: boolean }
+// Papilot itself sends the agent a build its own edits broke.
+export interface MessageMeta { skill?: { id: string; name: string }; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure }
+// A failed review build as the engine reports it; log is the compiler log's path.
+export interface BuildFailure { error: string; details: string[]; log?: string }
 export interface FeedbackSummary { round: number | null; accepted: number; rejected: number; undone: number; comments: { where: string; text: string }[]; buildError?: boolean }
 export interface Skill { id: string; name: string; description: string; hint: string; source: 'builtin' | 'user' | 'paper' }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }

@@ -155,10 +155,15 @@ function FeedbackDetails({ feedback }: { feedback: FeedbackSummary }) {
   </>;
 }
 
-function UserMessage({ item }: { item: TimelineItem }) {
+function UserMessage({ item, agent }: { item: TimelineItem; agent: string }) {
   const notes = readNotesInstructions(item.text);
   if (notes) return <NotesMessage item={item} notes={notes}/>;
-  const { skill, feedback, sendsFeedback } = item.meta || {};
+  const { skill, feedback, sendsFeedback, build } = item.meta || {};
+  // Papilot sent the agent a build its own edits broke.
+  if (build) return <article className="message user notes-message build-message" aria-label={t('Papilot sent the build error to {agent}, {time}', { agent, time: time(item.createdAt) })}><div className="message-body" title={time(item.createdAt)}>
+    <div className="sent-notes-head"><Icon name="alert" size={14}/>{t('Build failed · sent to {agent}', { agent })}</div>
+    <p className="build-error">{[build.error, ...build.details].join('\n')}</p>
+  </div></article>;
   if (sendsFeedback || isFeedbackPrompt(item.text)) return <article className="message user notes-message" aria-label={t('You sent review feedback, {time}', { time: time(item.createdAt) })}><div className="message-body" title={time(item.createdAt)}>
     <div className="sent-notes-head"><Icon name="paper" size={14}/>{feedback?.round ? t('Review feedback · Round {round}', { round: feedback.round }) : t('Review feedback')}</div>
     {feedback && <FeedbackDetails feedback={feedback}/>}
@@ -170,7 +175,7 @@ function UserMessage({ item }: { item: TimelineItem }) {
 }
 
 function TimelineEntry({ item, agent, root }: { item: TimelineItem; agent: string; root: string }) {
-  if (item.type === 'user') return <UserMessage item={item}/>;
+  if (item.type === 'user') return <UserMessage item={item} agent={agent}/>;
   if (item.type === 'assistant') return <article className="message assistant" aria-label={`${agent}, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
   const files = item.type === 'files' ? editedFiles(item, root) : [];
   const label = item.type === 'command' ? shellCommand(item.text) || t('Run command') : item.type === 'files' ? (files.length === 1 ? t('Edited {file}', { file: files[0] }) : t('Edited {n} files', { n: files.length })) : item.text || t('Run tool');

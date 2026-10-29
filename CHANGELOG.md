@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Fixed
+
+- A task no longer stops at **This step needs attention** when the agent's own edits stop the PDF build, for example by also editing a project note outside the paper's source folder. The agent gets the error and fixes it in one more turn, and its instructions now say which files the review covers.
+
 ## [0.2.0] - 2026-10-29
 
 ### Added

@@ -969,3 +969,60 @@ test('feedback alone cannot be sent when there is none, so the chat never shows 
     assert.equal(f.store.runs().length, 0);
   } finally { f.close(); }
 });
+
+test('a build the agent broke goes back to it once, and its instructions name what the review covers', async () => {
+  const jobs: Record<string, object> = {
+    'job-1': { status: 'failed', error: 'Some edits are outside the task scope: docs/coverage.md', details: ['Allowed: main'], next: 'Undo edits outside the scope, then publish again.' },
+    'job-2': { status: 'failed', error: 'Some edits are outside the task scope: docs/coverage.md', details: ['Allowed: main'] },
+  };
+  let published = 0;
+  const f = fixture(async (_method, route) => {
+    if (route.endsWith('/publish')) return { job: `job-${++published}` };
+    if (route.startsWith('/api/jobs/')) return jobs[route.slice('/api/jobs/'.length)];
+    if (route.includes('/feedback')) return feedback;
+    return { ...summary, scope: { sections: [], files: ['main'] } };
+  });
+  try {
+    f.store.updateTask(f.task.id, { threadId: null });
+    f.codex.ready = true;
+    await f.workspace.enqueue(f.task.id, 'Address the notes.', 'request', false);
+    await tick(); await tick();
+    const start = f.codex.calls.find(call => call.method === 'thread/start')!.params;
+    assert.match(start.developerInstructions, /The review covers only main in this worktree, and an edit to any other file stops the PDF build/);
+    const complete = () => (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } });
+    await complete();
+    const fix = f.store.runByKey('build-fix-job-1')!;
+    assert.ok(fix, 'the build error is queued for the agent');
+    assert.ok(fix.prompt.includes('Some edits are outside the task scope: docs/coverage.md\nAllowed: main'));
+    // The chat shows the error rather than the prompt, and the task carries on.
+    const item = f.store.items(f.task.id).find(entry => entry.id === fix.id)!;
+    assert.equal(item.text, '');
+    assert.deepEqual(item.meta?.build, { error: 'Some edits are outside the task scope: docs/coverage.md', details: ['Allowed: main'] });
+    assert.equal(f.store.task(f.task.id).error, null);
+    await tick(); await tick();
+    assert.equal(f.store.runByKey('build-fix-job-1')?.status, 'running');
+    // The same failure after the fix turn stops for the author instead of looping.
+    await complete();
+    assert.equal(f.store.runByKey('build-fix-job-2'), undefined);
+    assert.equal(f.store.task(f.task.id).status, 'failed');
+    assert.match(f.store.task(f.task.id).error || '', /outside the task scope/);
+  } finally { f.close(); }
+});
+
+test('a build that fails for reasons outside the agent\'s edits is not sent back to it', async () => {
+  const f = fixture(async (_method, route) => {
+    if (route.endsWith('/publish')) return { job: 'job' };
+    if (route.startsWith('/api/jobs/')) return { status: 'failed', error: 'The comparison baseline could not be compiled.', details: ['! Undefined control sequence.'] };
+    if (route.includes('/feedback')) return feedback;
+    return summary;
+  });
+  try {
+    f.codex.ready = true;
+    await f.workspace.enqueue(f.task.id, 'Address the notes.', 'request', false);
+    await tick(); await tick();
+    await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } });
+    assert.equal(f.store.runs().length, 1);
+    assert.equal(f.store.task(f.task.id).status, 'failed');
+    assert.equal(f.store.task(f.task.id).error, 'The comparison baseline could not be compiled.\n! Undefined control sequence.');
+  } finally { f.close(); }
+});
