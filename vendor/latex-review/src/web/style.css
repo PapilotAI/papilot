@@ -517,6 +517,9 @@ kbd {
 .unit-actions .comment {
   color: var(--comment);
 }
+.unit-actions .unstage {
+  color: var(--muted);
+}
 .unit-state {
   font-weight: 600;
 }
@@ -786,6 +789,9 @@ kbd {
 }
 .actions .comment {
   color: var(--comment);
+}
+.actions .unstage {
+  color: var(--muted);
 }
 .actions .skip {
   font-weight: 600;

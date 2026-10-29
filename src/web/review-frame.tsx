@@ -7,13 +7,17 @@ import { language, t, useLanguage } from './i18n.ts';
 
 // The viewer reads the interface language from its address.
 export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>) => `/review/${task.projectId}/?task=${task.name}${language() === 'en' ? '' : `&lang=${language()}`}`;
+// The same viewer shows a paper's uncommitted changes against its last commit.
+export const changesUrl = (projectId: string) => `/review/${projectId}/?changes=1${language() === 'en' ? '' : `&lang=${language()}`}`;
 
 // The embedded viewer shares our origin. Keep its decision controls, but remove
 // navigation and the task title that the workspace already provides. Its bar
-// becomes the review toolbar; Papilot's PDF tools sit in the reserved space.
-function compactReviewFrame(doc: Document, reserve: number) {
+// becomes the review toolbar; Papilot's PDF tools sit in the reserved space
+// on the right, and anything it leads with on the left.
+function compactReviewFrame(doc: Document, reserve: number, lead: number) {
   if (!doc || doc.getElementById('papilot-embed-style')) return;
   doc.documentElement.style.setProperty('--papilot-tools', `${reserve}px`);
+  doc.documentElement.style.setProperty('--papilot-lead', `${lead}px`);
   const style = doc.createElement('style'); style.id = 'papilot-embed-style';
   style.textContent = themeStyles + `
     :root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Noto Sans SC",system-ui,sans-serif;--comment:var(--accent);--accept:var(--green);--reject:var(--red);--frame:var(--canvas);--bar:var(--bg);--muted:var(--text-3);--ink:var(--text);--head:var(--bg-subtle);font-size:14px}
@@ -35,7 +39,7 @@ function compactReviewFrame(doc: Document, reserve: number) {
        transparent: the sheet is the paper, and the before/after rows tint it. */
     .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}.sheet{background:var(--pdf-page)}
     :root[data-theme="dark"]{--before:#432c30;--after:#28392d}
-    .bar{display:flex;align-items:center;height:44px;min-height:44px;padding:0 calc(var(--papilot-tools,0px) + 12px) 0 14px;gap:12px;flex-wrap:nowrap;overflow:hidden}
+    .bar{display:flex;align-items:center;height:44px;min-height:44px;padding:0 calc(var(--papilot-tools,0px) + 12px) 0 calc(var(--papilot-lead,0px) + 14px);gap:12px;flex-wrap:nowrap;overflow:hidden}
     .bar .overview-link,.bar .identity h1{display:none}
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
     .bar .identity span{font-size:13px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis}
@@ -82,6 +86,17 @@ function compactReviewFrame(doc: Document, reserve: number) {
     .change-head .actions .undo:hover:not(:disabled){background:var(--bg-hover)}
     .change-head .actions .undo:disabled{color:var(--text-3);opacity:1}
     .change-head .actions .accept:disabled,.change-head .actions .reject:disabled,.change-head .actions .comment:disabled{opacity:.4}
+    /* Uncommitted changes: Stage is the check, Unstage a minus and Revert an
+       arrow back. The last revert is undone from the bar. */
+    :root{--icon-minus:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M5 12h14'/></svg>");--icon-revert:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M9 14 4 9l5-5'/><path d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/></svg>")}
+    .change-head .actions .unstage::before{content:"";flex:none;width:13px;height:13px;background:var(--text-2);-webkit-mask:var(--icon-minus) center/contain no-repeat;mask:var(--icon-minus) center/contain no-repeat}
+    [data-mode=changes] .change-head .actions .reject{--icon:var(--icon-revert)}
+    .change-head .actions .unstage{background:transparent;color:var(--ink)}
+    .change-head .actions .unstage:hover:not(:disabled){background:var(--bg-hover)}
+    .change-head .actions .unstage:disabled{opacity:.4}
+    .unit-actions .unstage{color:var(--text-2)}
+    .bar .ghost.undo{flex-shrink:0;white-space:nowrap}
+    @media(max-width:370px){.change-head .actions .unstage::before{display:none}}
     /* Wider than a phone, a change has one compact header row: its number and
        place on the left, between the previous and next arrows; its status,
        the decisions and the change's own tools on the right. The bar's items
@@ -120,7 +135,7 @@ function compactReviewFrame(doc: Document, reserve: number) {
     .part-title{font-size:15px;margin:6px 0 10px}
     .side .pdf-strip,.context .pdf-strip{max-width:none}
     @media(max-width:680px){
-      .bar{height:48px;min-height:48px;padding-left:12px;gap:8px}.bar .ghost{min-height:36px;font-size:12px}
+      .bar{height:48px;min-height:48px;padding-left:calc(var(--papilot-lead,0px) + 12px);gap:8px}.bar .ghost{min-height:36px;font-size:12px}
       .bar .ghost.round{display:none}.bar .identity span,.bar .meter{font-size:12px}
       .change-map{display:none}.review-body>#paper{padding-left:8px;padding-right:8px;padding-bottom:84px}
       .side.before::after,.side.after::after{content:none}
@@ -188,11 +203,14 @@ function cropMargins(doc: Document) {
 // The iframe can finish loading an HTTP error or an empty document. Wait for the
 // actual viewer, keep watching slow startup, and let the user retry safely.
 // completion is the next step shown in the viewer's card once every change is decided.
-export function ReviewFrame({ task, tools, completion, onSendNotes }: { task: Task; tools?: ReactNode; completion?: ReactNode; onSendNotes: (message: { text: string; requestKey: string }) => Promise<void> }) {
+// Without a task the frame shows the paper's uncommitted changes (changesOf),
+// and the viewer's own waiting message shows while they are compared.
+export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNotes, onDecided }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onSendNotes?: (message: { text: string; requestKey: string }) => Promise<void>; onDecided?: () => void }) {
   const [document, setDocument] = useState<Document | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
-  const toolbar = useRef<HTMLDivElement>(null);
-  const [reserve, setReserve] = useState(0);
+  const toolbar = useRef<HTMLDivElement>(null), leading = useRef<HTMLDivElement>(null);
+  const [reserve, setReserve] = useState(0), [leadWidth, setLeadWidth] = useState(0);
+  const decided = useRef(onDecided); decided.current = onDecided;
   const observer = useRef<MutationObserver | null>(null);
   const cropper = useRef<MutationObserver | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -210,18 +228,25 @@ export function ReviewFrame({ task, tools, completion, onSendNotes }: { task: Ta
     observer.observe(element); return () => observer.disconnect();
   }, [Boolean(tools)]);
   useEffect(() => {
+    const element = leading.current; if (!element) return;
+    const observer = new ResizeObserver(() => setLeadWidth(Math.ceil(element.offsetWidth)));
+    observer.observe(element); return () => observer.disconnect();
+  }, [Boolean(lead)]);
+  useEffect(() => {
     try {
       const root = frame.current?.contentDocument?.documentElement;
       root?.style.setProperty('--papilot-tools', `${reserve}px`);
+      root?.style.setProperty('--papilot-lead', `${leadWidth}px`);
     } catch { /* A browser error document may be inaccessible. */ }
-  }, [reserve]);
+  }, [reserve, leadWidth]);
   function loaded() {
     observer.current?.disconnect();
     try {
       const doc = frame.current?.contentDocument;
       if (!doc || (!doc.getElementById('root') && !doc.getElementById('paper'))) { setPhase('error'); return; }
-      compactReviewFrame(doc, reserve);
+      compactReviewFrame(doc, reserve, leadWidth);
       setDocument(doc);
+      frame.current?.contentWindow?.addEventListener('latex-review:decided', () => decided.current?.());
       // Strips render after the viewer starts; re-measure the text edges when they change.
       let pending: ReturnType<typeof setTimeout> | undefined;
       cropper.current?.disconnect();
@@ -231,7 +256,7 @@ export function ReviewFrame({ task, tools, completion, onSendNotes }: { task: Ta
         const paper = doc.getElementById('paper');
         if (!paper) return;
         if (paper.querySelector('[role="alert"]')) { setPhase('error'); return; }
-        if (!paper.querySelector('.waiting')) { setPhase('ready'); observer.current?.disconnect(); cropMargins(doc); }
+        if (changesOf || !paper.querySelector('.waiting')) { setPhase('ready'); observer.current?.disconnect(); cropMargins(doc); }
       };
       observer.current = new MutationObserver(inspect);
       observer.current.observe(doc.body, { childList: true, subtree: true });
@@ -258,8 +283,9 @@ export function ReviewFrame({ task, tools, completion, onSendNotes }: { task: Ta
     return () => watch.disconnect();
   }, [document, ready]);
   return <div className={'review-viewport' + (ready ? '' : ' review-pending')} aria-busy={!ready}>
-    <iframe ref={frame} key={`${attempt}:${shown}`} title={t('{title} PDF change review', { title: task.title })} src={reviewUrl(task)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
-    <div ref={toolbar} className="review-tools"><ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>{tools}</div>
+    <iframe ref={frame} key={`${attempt}:${shown}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
+    {lead && <div ref={leading} className="review-lead">{lead}</div>}
+    <div ref={toolbar} className="review-tools">{task && onSendNotes && <ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>}{tools}</div>
     {slot && completion ? createPortal(completion, slot) : null}
     {!ready && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}
   </div>;

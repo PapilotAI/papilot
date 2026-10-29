@@ -14,9 +14,9 @@ test('Git status parsing keeps branch counts, renames, untracked files and line 
   assert.deepEqual(parseStatus(output, numstat), {
     branch: 'main', upstream: 'origin/main', ahead: 2, behind: 1,
     files: [
-      { path: 'chapters/intro file.tex', status: 'M', staged: false, lines: [3, 1] },
-      { path: 'new.tex', status: 'R', staged: true, lines: [0, 0], from: 'old.tex' },
-      { path: 'notes.md', status: '?', staged: false },
+      { path: 'chapters/intro file.tex', status: 'M', staged: false, unstaged: true, lines: [3, 1] },
+      { path: 'new.tex', status: 'R', staged: true, unstaged: false, lines: [0, 0], from: 'old.tex' },
+      { path: 'notes.md', status: '?', staged: false, unstaged: true },
     ],
   });
 });

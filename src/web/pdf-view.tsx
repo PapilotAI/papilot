@@ -1,4 +1,4 @@
-import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
@@ -141,6 +141,7 @@ export const PdfView = forwardRef<PdfHandle, {
   onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>;
   onSelect: (note: Annotation) => void; outline: OutlineItem[]; section: number;
   onOutline: (items: OutlineItem[]) => void; onSection: (index: number) => void;
+  lead?: ReactNode;
 }>(function PdfView(props, ref) {
   const latest = useRef(props); latest.current = props;
   const container = useRef<HTMLDivElement>(null), inner = useRef<HTMLDivElement>(null), findInput = useRef<HTMLInputElement>(null);
@@ -310,6 +311,7 @@ export const PdfView = forwardRef<PdfHandle, {
 
   return <div className={'pdf-view' + (props.region ? ' marking' : '')}>
     <div className="pdf-toolbar" role="toolbar" aria-label={t('PDF controls')}>
+      {props.lead}
       <div className="pdf-section" title={section?.title}><span className="pdf-section-title">{section?.title || 'PDF'}</span></div>
       <div className="pdf-pager">
         <button type="button" className="icon-button" aria-label={t('Previous page')} disabled={page <= 1} onClick={() => tools.current?.viewer.previousPage()}><Icon name="chevronUp" size={16}/></button>

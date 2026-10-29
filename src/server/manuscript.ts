@@ -37,14 +37,15 @@ export function parseStatus(output: string, numstat: string): Omit<GitStatus, 'h
     if (field.startsWith('# branch.head ')) status.branch = field.slice(14) === '(detached)' ? null : field.slice(14);
     else if (field.startsWith('# branch.upstream ')) status.upstream = field.slice(18);
     else if (field.startsWith('# branch.ab ')) { const [ahead, behind] = field.slice(12).split(' '); status.ahead = Number(ahead); status.behind = -Number(behind); }
-    else if (field.startsWith('? ')) status.files.push({ path: field.slice(2), status: '?', staged: false });
+    else if (field.startsWith('? ')) status.files.push({ path: field.slice(2), status: '?', staged: false, unstaged: true });
     else if (/^[12u] /.test(field)) {
       const parts = field.split(' '), xy = parts[1], kind = field[0];
       const file = parts.slice(kind === '1' ? 8 : kind === '2' ? 9 : 10).join(' ');
       // A rename or copy is followed by its original path.
       const from = kind === '2' ? fields[++i] : undefined;
       const code = kind === 'u' ? 'U' : xy[1] !== '.' ? xy[1] : xy[0];
-      status.files.push({ path: file, status: code, staged: xy[0] !== '.', lines: lines.get(file), ...(from ? { from } : {}) });
+      // X is the index against HEAD, Y the working tree against the index.
+      status.files.push({ path: file, status: code, staged: xy[0] !== '.', unstaged: xy[1] !== '.', lines: lines.get(file), ...(from ? { from } : {}) });
     }
   }
   return status;
@@ -91,23 +92,26 @@ export async function gitDiff(root: string, file: string) {
   const diff = await fileDiff(root, entry);
   return { path: file, diff: diff.slice(0, DIFF_LIMIT), truncated: diff.length > DIFF_LIMIT };
 }
-function fileDiff(root: string, entry: GitFile) {
+// A file's diff against HEAD, or with staged, what its index holds.
+function fileDiff(root: string, entry: GitFile, staged = false) {
+  const names = ['--', ...(entry.from ? [entry.from] : []), entry.path];
+  if (staged) return git(root, ['diff', '--cached', '--no-color', '--find-renames', ...names], literal);
   return entry.status === '?'
     // `git diff --no-index` exits with 1 when the files differ.
     ? exec('git', ['diff', '--no-index', '--no-color', '--', '/dev/null', entry.path], { cwd: root, maxBuffer: 64 * 1024 * 1024 }).then(r => r.stdout, (e: { stdout?: string }) => e.stdout || '')
-    : git(root, ['diff', '--no-color', '--find-renames', 'HEAD', '--', ...(entry.from ? [entry.from] : []), entry.path], literal);
+    : git(root, ['diff', '--no-color', '--find-renames', 'HEAD', ...names], literal);
 }
 
-// What a commit message is written from: the chosen files' diffs, each
-// shortened so that a large change still fits, and the repository's recent
-// commit subjects, whose style and language the message follows.
-export async function commitChanges(root: string, paths: string[]) {
-  const files = (await gitStatus(root)).files.filter(item => paths.includes(item.path));
-  if (!files.length) throw new Error('Select at least one changed file.');
+// What a commit message is written from: the chosen files' diffs, or what is
+// staged in them, each shortened so that a large change still fits, and the
+// repository's recent commit subjects, whose style and language the message follows.
+export async function commitChanges(root: string, paths: string[], staged = false) {
+  const files = (await gitStatus(root)).files.filter(item => paths.includes(item.path) && (!staged || item.staged));
+  if (!files.length) throw new Error(staged ? 'Stage at least one change.' : 'Select at least one changed file.');
   let patch = '';
   for (const [index, file] of files.entries()) {
     if (patch.length > 40_000) { patch += `\n[${files.length - index} more changed files are not shown.]\n`; break; }
-    const diff = await fileDiff(root, file);
+    const diff = await fileDiff(root, file, staged);
     patch += diff.length > 8_000 ? `${diff.slice(0, 8_000)}\n[The rest of this file's diff is not shown.]\n` : diff;
   }
   const recent = (await git(root, ['log', '-8', '--format=%s']).catch(() => '')).split('\n').filter(Boolean);
@@ -128,11 +132,29 @@ export async function gitIgnore(root: string, paths: string[]) {
   return gitStatus(root);
 }
 
-// Commit exactly the chosen files as they are on disk. Changes staged
-// elsewhere for other files stay staged and out of this commit.
-export async function gitCommit(root: string, message: string, paths: string[]) {
+// Stage or unstage whole files, as the Git panel's checkboxes do. A rename
+// moves with both of its paths.
+export async function gitStage(root: string, paths: string[], stage: boolean) {
   const status = await gitStatus(root), files = status.files.filter(item => paths.includes(item.path));
+  if (status.merging) throw new Error('Finish or abort the merge before staging other changes.');
+  if (!files.length) throw new Error('Select at least one changed file.');
+  const names = [...new Set(files.flatMap(item => item.from ? [item.from, item.path] : [item.path]))];
+  if (stage) await gitAction(root, ['add', '-A', '--', ...names]);
+  else await gitAction(root, status.head ? ['reset', '-q', 'HEAD', '--', ...names] : ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...names]);
+  return gitStatus(root);
+}
+
+// Commit what is staged, or with paths, exactly those files as they are on
+// disk; changes staged for other files then stay staged and out of the commit.
+export async function gitCommit(root: string, message: string, paths: string[] | null) {
+  const status = await gitStatus(root);
   if (status.merging) throw new Error('Finish or abort the merge before committing other changes.');
+  if (!paths) {
+    if (!status.files.some(item => item.staged)) throw new Error('Stage at least one change to commit.');
+    await gitAction(root, ['commit', '-m', message]);
+    return (await git(root, ['rev-parse', '--short', 'HEAD'])).trim();
+  }
+  const files = status.files.filter(item => paths.includes(item.path));
   if (!files.length) throw new Error('Select at least one changed file to commit.');
   if (files.some(item => item.status === 'U')) throw new Error('Resolve the merge conflicts in the selected files before committing.');
   // A rename is already staged, so only its new path is added; the commit

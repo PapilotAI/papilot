@@ -7,6 +7,7 @@ import { Accounts } from './accounts.ts';
 import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER, VERSION, ACCOUNT_ORIGIN, ACCOUNT_PORT } from './paths.ts';
 import { accountHsts, accountProblem } from './security.ts';
 import { Manuscripts } from './manuscript.ts';
+import { Changes } from './changes.ts';
 import { buildApp, gitQueue } from './app.ts';
 
 const problem = accountProblem(ACCOUNT_ORIGIN, ACCOUNT_PORT, PORT, PUBLIC_ORIGIN);
@@ -15,7 +16,7 @@ const store = new Store(path.join(DATA, 'papilot.sqlite'));
 const workspace = new Workspace(store);
 const accounts = new Accounts(store, ACCOUNT_ORIGIN || null);
 const shared = {
-  store, workspace, accounts, manuscripts: new Manuscripts(), csrf: randomBytes(32).toString('base64url'), serialGit: gitQueue(),
+  store, workspace, accounts, manuscripts: new Manuscripts(), changes: new Changes(), csrf: randomBytes(32).toString('base64url'), serialGit: gitQueue(),
   dist: fs.existsSync(path.join(ROOT, 'dist/index.html')) ? path.join(ROOT, 'dist') : null, version: VERSION,
 };
 const apps = [await buildApp({ ...shared, listener: { kind: 'local', port: PORT, publicOrigin: PUBLIC_ORIGIN, owner: OWNER } })];

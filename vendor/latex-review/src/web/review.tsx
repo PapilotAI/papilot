@@ -44,6 +44,23 @@ const ACTION: Record<string, string> = {
   reject: "Reject",
   comment: "Comment",
 };
+// A host can show a repository's uncommitted changes instead of a task's
+// round (Papilot does, with ?changes). Accepting stages a change in the Git
+// index, rejecting reverts it on disk, and a staged change can be unstaged.
+// Every change stays in view: staged ones remain uncommitted.
+const CHANGE_ACTION: Record<string, string> = {
+  accept: "Stage",
+  reject: "Revert",
+  unstage: "Unstage",
+};
+const CHANGE_STATE: Record<string, string> = {
+  pending: "Unstaged",
+  accepted: "Staged",
+  rejected: "Reverted",
+  commented: "Edited",
+  mixed: "Partly staged",
+};
+type Kind = ActionKind | "unstage";
 const PHASE: Record<string, string> = {
   snapshot: "Taking a snapshot",
   build: "Compiling LaTeX",
@@ -82,9 +99,11 @@ function jobText(job: PageState["job"]) {
 export function ReviewApp({
   task,
   pinned,
+  changes = false,
 }: {
   task: string;
   pinned: number | null;
+  changes?: boolean;
 }) {
   const [state, setState] = useState<PageState | null>(null),
     [detail, setDetail] = useState<RoundDetail | null>(null),
@@ -127,10 +146,32 @@ export function ReviewApp({
     ),
     latest = Boolean(
       detail && state && detail.round === state.latest && !state.closed,
+    ),
+    browsing = history || changes,
+    label = (kind: string) => t((changes ? CHANGE_ACTION : ACTION)[kind] ?? kind),
+    stateLabel = (value: string) =>
+      t((changes ? CHANGE_STATE : STATE)[value] ?? value);
+  // What each button acts on: undecided changes, or in changes mode the
+  // staged ones for Unstage and every change still on disk for Revert.
+  const targets = (units: string[], kind: Kind) =>
+    units.filter((id) =>
+      kind === "unstage"
+        ? decisions[id] === "accepted"
+        : changes && kind === "reject"
+          ? ["pending", "accepted"].includes(decisions[id])
+          : decisions[id] === "pending",
     );
+  const kinds = (units: string[]): Kind[] =>
+    !changes
+      ? ["accept", "reject", "comment"]
+      : targets(units, "accept").length
+        ? ["accept", "reject"]
+        : targets(units, "unstage").length
+          ? ["unstage", "reject"]
+          : [];
   const navigation = stops
     .map((stop, index) => ({ stop, index }))
-    .filter(({ stop }) => history || pendingUnits(stop, decisions).length)
+    .filter(({ stop }) => browsing || pendingUnits(stop, decisions).length)
     .map(({ index }) => index);
   const adjacent = (index: number, direction: number) =>
     navigation[navigation.indexOf(index) + direction] ?? -1;
@@ -142,16 +183,20 @@ export function ReviewApp({
       )
     : [];
   useEffect(() => {
-    if (history || composer) return;
+    if (browsing || composer) return;
     if (!navigation.includes(current)) setCurrent(navigation[0] ?? -1);
   }, [decisions, history, composer, detail]);
+  useEffect(() => {
+    if (changes && current < 0 && stops.length)
+      setCurrent(Math.max(nextPending(stops, decisions), 0));
+  }, [detail]);
   // Lock reasons come from the host in English; known ones are translated.
-  const actionLock = (kind: ActionKind) => {
+  const actionLock = (kind: Kind) => {
     const reason =
       kind === "comment" ? state?.commentLock : state?.decisionLock;
     return reason ? t(reason) : reason;
   };
-  function blocked(kind: ActionKind): boolean {
+  function blocked(kind: Kind): boolean {
     const current = snapshot.current.state;
     const reason =
       kind === "comment" ? current?.commentLock : current?.decisionLock;
@@ -160,7 +205,7 @@ export function ReviewApp({
   }
   async function api<T>(route: string, body?: unknown): Promise<T> {
     const response = await fetch(
-      `/api/tasks/${encodeURIComponent(task)}${route}`,
+      `${changes ? "/api/changes" : `/api/tasks/${encodeURIComponent(task)}`}${route}`,
       body === undefined
         ? {}
         : {
@@ -283,8 +328,12 @@ export function ReviewApp({
       );
   }, [detail?.round]);
   useEffect(() => {
-    if (state) document.title = `${state.title} · LaTeX Review`;
+    if (state) document.title = `${t(state.title)} · LaTeX Review`;
   }, [state?.title]);
+  // Host styles can tell the two modes apart.
+  useEffect(() => {
+    if (changes) document.documentElement.dataset.mode = "changes";
+  }, [changes]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 6000);
@@ -308,12 +357,12 @@ export function ReviewApp({
     setComposer(null);
   }
   async function decide(
-    kind: ActionKind,
-    changes = pendingUnits(stops[current], decisions),
+    kind: Kind,
+    chosen = targets(stops[current]?.units ?? [], kind),
     body = "",
   ) {
     if (
-      !changes.length ||
+      !chosen.length ||
       snapshot.current.busy ||
       !latest ||
       !detail ||
@@ -328,18 +377,26 @@ export function ReviewApp({
         id: crypto.randomUUID(),
         action: kind,
         round: detail.round,
-        changes,
+        changes: chosen,
         body,
       });
       setState(next);
+      // The host refreshes what depends on the decision, such as Git status.
+      window.dispatchEvent(new CustomEvent("latex-review:decided"));
       if (kind === "comment") closeComposer(true);
       const target = pendingUnits(stops[current], next.decisions).length
         ? current
         : nextPending(stops, next.decisions, current);
       if (target >= 0 && target !== current) select(target);
       if (target < 0) {
-        if (!history) setCurrent(-1);
-        setToast(t("All changes reviewed. Your decisions are saved."));
+        if (!browsing) setCurrent(-1);
+        setToast(
+          changes
+            ? kind === "accept"
+              ? t("All changes are staged.")
+              : ""
+            : t("All changes reviewed. Your decisions are saved."),
+        );
       }
     } catch (e) {
       setToast((e as Error).message);
@@ -360,13 +417,16 @@ export function ReviewApp({
         id: state.undo.id,
       });
       setState(next);
+      window.dispatchEvent(new CustomEvent("latex-review:decided"));
       const target = stops.findIndex((s) =>
         s.units.some((id) => next.restored.includes(id)),
       );
       setHistory(false);
       if (target >= 0) select(target);
       setToast(
-        t("Last decision undone. The restored changes need review again."),
+        changes
+          ? t("Revert undone. The changes are back in your files.")
+          : t("Last decision undone. The restored changes need review again."),
       );
     } catch (e) {
       setToast((e as Error).message);
@@ -465,9 +525,10 @@ export function ReviewApp({
         ].includes(key)
       )
         event.preventDefault();
-      if (key === "a") void decide("accept");
+      if (key === "a")
+        void decide(kinds(stops[current]?.units ?? [])[0] ?? "accept");
       else if (key === "r") void decide("reject");
-      else if (key === "c") beginComposer();
+      else if (key === "c" && !changes) beginComposer();
       else if (key === "j" || key === "arrowright")
         select(adjacent(current, 1));
       else if (key === "k" || key === "arrowleft")
@@ -504,7 +565,8 @@ export function ReviewApp({
   }
   const actionBar = (index: number) => {
     if (index !== current || !state) return null;
-    const pending = pendingUnits(stops[index], decisions),
+    const units = stops[index].units,
+      available = kinds(units),
       remaining = nextPending(stops, decisions);
     return (
       <div className="dock">
@@ -526,31 +588,33 @@ export function ReviewApp({
               </span>
             </>
           )}
-          {pending.length ? (
+          {available.length ? (
             <>
-              {(["accept", "reject", "comment"] as const).map((kind) => (
-                <button
-                  className={kind}
-                  key={kind}
-                  aria-keyshortcuts={kind[0]}
-                  title={
-                    actionLock(kind) ||
-                    `${t(ACTION[kind])} (${kind[0].toUpperCase()})`
-                  }
-                  aria-describedby={
-                    actionLock(kind) ? "review-lock" : undefined
-                  }
-                  disabled={busy || !latest || Boolean(actionLock(kind))}
-                  onClick={() =>
-                    kind === "comment" ? beginComposer() : void decide(kind)
-                  }
-                >
-                  {t(ACTION[kind])}
-                  {pending.length > 1 && kind !== "comment"
-                    ? ` (${pending.length})`
-                    : ""}
-                </button>
-              ))}
+              {available.map((kind) => {
+                const key = kind === "unstage" ? "a" : kind[0],
+                  count = targets(units, kind).length;
+                return (
+                  <button
+                    className={kind}
+                    key={kind}
+                    aria-keyshortcuts={key}
+                    title={
+                      actionLock(kind) ||
+                      `${label(kind)} (${key.toUpperCase()})`
+                    }
+                    aria-describedby={
+                      actionLock(kind) ? "review-lock" : undefined
+                    }
+                    disabled={busy || !latest || Boolean(actionLock(kind))}
+                    onClick={() =>
+                      kind === "comment" ? beginComposer() : void decide(kind)
+                    }
+                  >
+                    {label(kind)}
+                    {count > 1 && kind !== "comment" ? ` (${count})` : ""}
+                  </button>
+                );
+              })}
             </>
           ) : remaining >= 0 ? (
             <button
@@ -558,11 +622,15 @@ export function ReviewApp({
               aria-keyshortcuts="n"
               onClick={() => select(nextPending(stops, decisions, current))}
             >
-              {t("Next undecided")}
+              {changes ? t("Next unstaged") : t("Next undecided")}
             </button>
           ) : (
             <span className="complete">
-              {latest ? t("Review complete") : t("Earlier round")}
+              {changes
+                ? stateLabel(stopState(units, decisions))
+                : latest
+                  ? t("Review complete")
+                  : t("Earlier round")}
             </span>
           )}
           {navigation.length > 1 && (
@@ -589,10 +657,16 @@ export function ReviewApp({
     const known = block.units.map((id) => units.get(id)!).filter(Boolean),
       status = stopState(block.units, decisions),
       reviewed = !pendingUnits(stops[index], decisions).length,
+      // A reverted change shows the text that is back on disk; staged and
+      // unstaged ones keep their before and after.
       resolved = history
         ? undefined
-        : resolvedSide(block.units, decisions) ||
-          (status === "commented" ? "after" : undefined),
+        : changes
+          ? status === "rejected"
+            ? "before"
+            : undefined
+          : resolvedSide(block.units, decisions) ||
+            (status === "commented" ? "after" : undefined),
       source =
         openSource.has(index) ||
         block.identical ||
@@ -628,17 +702,17 @@ export function ReviewApp({
     return (
       <article
         key={index}
-        className={`change ${inline ? "inline" : "standalone"}${current === index ? " current" : ""}${reviewed && !history ? " reviewed-change" : ""}${reviewed && !history && !resolved ? " mixed-reviewed" : ""}`}
+        className={`change ${inline ? "inline" : "standalone"}${current === index ? " current" : ""}${reviewed && !browsing ? " reviewed-change" : ""}${reviewed && !browsing && !resolved ? " mixed-reviewed" : ""}`}
         data-stop={index}
         data-state={status}
         data-resolved={resolved}
         tabIndex={-1}
         onClick={() => {
-          if (index !== current && !composer && (history || !reviewed))
+          if (index !== current && !composer && (browsing || !reviewed))
             select(index, false);
         }}
       >
-        {reviewed && !history && !resolved && (
+        {reviewed && !browsing && !resolved && (
           <p className="reviewed-placeholder">
             <button
               className="link"
@@ -667,7 +741,7 @@ export function ReviewApp({
           {actionBar(index)}
           {kindLabel && <span className="change-kind">{kindLabel}</span>}
           {status !== "pending" && (
-            <span className="badge">{t(STATE[status] ?? status)}</span>
+            <span className="badge">{stateLabel(status)}</span>
           )}
           <button
             className="link copy-reference"
@@ -750,32 +824,30 @@ export function ReviewApp({
                     <span className="unit-actions">
                       <span className="unit-state">
                         {decisions[unit.id] !== "pending"
-                          ? t(STATE[decisions[unit.id]]).toLowerCase()
+                          ? stateLabel(decisions[unit.id]).toLowerCase()
                           : ""}
                       </span>
-                      {decisions[unit.id] === "pending" &&
-                        (["accept", "reject", "comment"] as const).map(
-                          (kind) => (
-                            <button
-                              className={kind}
-                              key={kind}
-                              title={actionLock(kind) || undefined}
-                              aria-describedby={
-                                actionLock(kind) ? "review-lock" : undefined
-                              }
-                              disabled={
-                                busy || !latest || Boolean(actionLock(kind))
-                              }
-                              onClick={() =>
-                                kind === "comment"
-                                  ? beginComposer([unit.id])
-                                  : void decide(kind, [unit.id])
-                              }
-                            >
-                              {t(ACTION[kind])}
-                            </button>
-                          ),
-                        )}
+                      {(changes || decisions[unit.id] === "pending") &&
+                        kinds([unit.id]).map((kind) => (
+                          <button
+                            className={kind}
+                            key={kind}
+                            title={actionLock(kind) || undefined}
+                            aria-describedby={
+                              actionLock(kind) ? "review-lock" : undefined
+                            }
+                            disabled={
+                              busy || !latest || Boolean(actionLock(kind))
+                            }
+                            onClick={() =>
+                              kind === "comment"
+                                ? beginComposer([unit.id])
+                                : void decide(kind, [unit.id])
+                            }
+                          >
+                            {label(kind)}
+                          </button>
+                        ))}
                     </span>
                   )}
                 </div>
@@ -816,19 +888,26 @@ export function ReviewApp({
         <div className="identity">
           <h1>{state?.title ?? "LaTeX Review"}</h1>
           <span className="muted">
-            {detail
-              ? t("Round {round}", { round: detail.round }) +
-                (detail.round !== state?.latest ? t(" (earlier round)") : "")
-              : ""}
+            {changes
+              ? t("Since the last commit")
+              : detail
+                ? t("Round {round}", { round: detail.round }) +
+                  (detail.round !== state?.latest ? t(" (earlier round)") : "")
+                : ""}
           </span>
         </div>
         {count.total > 0 && (
           <div className="meter">
             <span>
-              {t("{decided} of {total} decided", {
-                decided: count.decided,
-                total: count.total,
-              })}
+              {changes
+                ? t("{staged} of {total} staged", {
+                    staged: count.accepted,
+                    total: count.accepted + count.pending,
+                  })
+                : t("{decided} of {total} decided", {
+                    decided: count.decided,
+                    total: count.total,
+                  })}
             </span>
           </div>
         )}
@@ -847,21 +926,33 @@ export function ReviewApp({
               }
               title={
                 state?.decisionLock ||
-                tn(
-                  count.pending,
-                  "Accept the {n} undecided change in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
-                  "Accept the {n} undecided changes in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
-                )
+                (changes
+                  ? tn(
+                      count.pending,
+                      "Stage the {n} unstaged change.",
+                      "Stage the {n} unstaged changes.",
+                    )
+                  : tn(
+                      count.pending,
+                      "Accept the {n} undecided change in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
+                      "Accept the {n} undecided changes in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
+                    ))
               }
-              aria-label={t("Accept all ({n})", { n: count.pending })}
+              aria-label={
+                changes
+                  ? t("Stage all ({n})", { n: count.pending })
+                  : t("Accept all ({n})", { n: count.pending })
+              }
               aria-describedby={state?.decisionLock ? "review-lock" : undefined}
               onClick={() => void decide("accept", undecided)}
             >
-              <span className="batch-label">{t("Accept all")}</span>
+              <span className="batch-label">
+                {changes ? t("Stage all") : t("Accept all")}
+              </span>
               <span className="batch-count">{count.pending}</span>
             </button>
           )}
-          {count.pending > 1 && (
+          {count.pending > 1 && !changes && (
             <button
               className="ghost reject reject-all"
               disabled={
@@ -901,12 +992,25 @@ export function ReviewApp({
                   ? t("Finished")
                   : state?.state === "building"
                     ? jobText(state.job)
-                    : t(STATUS[state?.state ?? ""] ?? "")}
+                    : changes && state?.state === "build_failed"
+                      ? t("Comparison failed")
+                      : t(STATUS[state?.state ?? ""] ?? "")}
             </span>
+          )}
+          {/* Changes keep no history; the last revert can be undone. */}
+          {changes && state?.undo && (
+            <button
+              className="ghost undo"
+              disabled={!latest || busy || Boolean(state.decisionLock)}
+              title={state.decisionLock || t("Put back what the last revert removed (U)")}
+              onClick={() => void undo()}
+            >
+              {t("Undo revert")}
+            </button>
           )}
           {/* History is a toolbar action; its own row appears only while
               browsing earlier decisions. */}
-          {detail && !history && (
+          {detail && !history && !changes && (
             <button
               className="ghost history"
               title={t("Earlier decisions and rounds")}
@@ -1009,7 +1113,11 @@ export function ReviewApp({
           )}
           {state?.state === "build_failed" && (
             <div className="banner">
-              <strong>{t("The latest publish failed: ")}</strong>
+              <strong>
+                {changes
+                  ? t("The comparison could not be built: ")
+                  : t("The latest publish failed: ")}
+              </strong>
               {state.job?.error}
               {state.job?.details && (
                 <pre className="details">{state.job.details.join("\n")}</pre>
@@ -1018,12 +1126,16 @@ export function ReviewApp({
           )}
           {state?.state === "building" && detail && !state.decisionLock && (
             <div className="banner">
-              {t(
-                "The agent is publishing a new round. You can keep reviewing; the new round will include your decisions.",
-              )}
+              {changes
+                ? t(
+                    "Updating the comparison with your latest edits. You can keep staging and reverting meanwhile.",
+                  )
+                : t(
+                    "The agent is publishing a new round. You can keep reviewing; the new round will include your decisions.",
+                  )}
             </div>
           )}
-          {detail && state?.latest && detail.round !== state.latest && (
+          {!changes && detail && state?.latest && detail.round !== state.latest && (
             <div className="banner">
               {t("You are viewing round {round}.", { round: detail.round })}{" "}
               <a href={withLanguage(`?task=${encodeURIComponent(task)}`)}>
@@ -1045,7 +1157,22 @@ export function ReviewApp({
               </details>
             </div>
           ) : null}
-          {detail && !history && !count.pending && (
+          {changes && detail && !count.pending && (count.accepted > 0 || !stops.length) && (
+            <div className="review-complete" role="status">
+              <strong>
+                {count.accepted
+                  ? t("All changes are staged")
+                  : t("No uncommitted changes")}
+              </strong>
+              <span>
+                {count.accepted
+                  ? t("Commit them when you are ready.")
+                  : t("The PDF matches the last commit.")}
+              </span>
+              <div className="review-complete-actions" />
+            </div>
+          )}
+          {!changes && detail && !history && !count.pending && (
             <div className="review-complete" role="status">
               <strong>
                 {t(
@@ -1128,7 +1255,7 @@ export function ReviewApp({
                     {detail.loose.map((block) => change(block, index++, false))}
                   </section>
                 )}
-                {!stops.length && (
+                {!stops.length && !changes && (
                   <p className="empty">{t("This round has no changes.")}</p>
                 )}
               </>
@@ -1142,7 +1269,9 @@ export function ReviewApp({
                 <p>
                   {state?.state === "building"
                     ? jobText(state.job)
-                    : t("Waiting for the agent to publish its changes.")}
+                    : changes
+                      ? t("Comparing with the last commit…")
+                      : t("Waiting for the agent to publish its changes.")}
                 </p>
                 <p className="muted">{t("This page updates by itself.")}</p>
               </div>
@@ -1152,7 +1281,7 @@ export function ReviewApp({
         <ChangeMap
           scrollRoot={paper}
           stops={stops}
-          showReviewed={history}
+          showReviewed={browsing}
           locations={locations}
           decisions={decisions}
           current={current}
@@ -1213,16 +1342,27 @@ export function ReviewApp({
           >
             <h2 id="help-title">{t("Keyboard shortcuts")}</h2>
             <dl>
-              {[
-                ["A", "Accept"],
-                ["R", "Reject"],
-                ["C", "Comment"],
-                ["J / K or → / ←", "Next / previous change"],
-                ["N", "Next undecided"],
-                ["S", "Show LaTeX source"],
-                ["⌘Z / U", "Undo"],
-                ["⌘C / Ctrl+C", "Copy selected PDF text"],
-              ].map(([key, label]) => (
+              {(changes
+                ? [
+                    ["A", "Stage or unstage"],
+                    ["R", "Revert"],
+                    ["J / K or → / ←", "Next / previous change"],
+                    ["N", "Next unstaged"],
+                    ["S", "Show LaTeX source"],
+                    ["⌘Z / U", "Undo revert"],
+                    ["⌘C / Ctrl+C", "Copy selected PDF text"],
+                  ]
+                : [
+                    ["A", "Accept"],
+                    ["R", "Reject"],
+                    ["C", "Comment"],
+                    ["J / K or → / ←", "Next / previous change"],
+                    ["N", "Next undecided"],
+                    ["S", "Show LaTeX source"],
+                    ["⌘Z / U", "Undo"],
+                    ["⌘C / Ctrl+C", "Copy selected PDF text"],
+                  ]
+              ).map(([key, label]) => (
                 <Fragment key={key}>
                   <dt>
                     <kbd>{t(key)}</kbd>

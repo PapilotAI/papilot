@@ -1,5 +1,7 @@
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { registerFrontend } from './frontend.ts';
@@ -7,7 +9,8 @@ import type { Store } from './store.ts';
 import type { Workspace } from './workspace.ts';
 import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState } from './review.ts';
 import { fullPaperPdf } from './pdf.ts';
-import { type Manuscripts, annotationTask, gitAbortMerge, gitCommit, gitDiff, gitFinishMerge, gitIgnore, gitRemote, gitStatus } from './manuscript.ts';
+import { type ChangeAction, Changes } from './changes.ts';
+import { type Manuscripts, annotationTask, gitAbortMerge, gitCommit, gitDiff, gitFinishMerge, gitIgnore, gitRemote, gitStage, gitStatus } from './manuscript.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { type Accounts, deviceLabel } from './accounts.ts';
 import { type Listener, Limiter, SESSION_COOKIE, author, clientAddress, cookie, equals, guard, viewerInfo, visibleSnapshot } from './access.ts';
@@ -25,7 +28,7 @@ export function gitQueue() {
 }
 
 export interface AppOptions {
-  listener: Listener; store: Store; workspace: Workspace; manuscripts: Manuscripts; accounts: Accounts;
+  listener: Listener; store: Store; workspace: Workspace; manuscripts: Manuscripts; accounts: Accounts; changes?: Changes;
   csrf: string; serialGit: ReturnType<typeof gitQueue>; dist: string | null; version: string;
   connectReview?: typeof reviewClient;
 }
@@ -34,6 +37,7 @@ export interface AppOptions {
 // the account one for the public URL. Both serve the same workspace.
 export async function buildApp(options: AppOptions) {
   const { listener, store, workspace, manuscripts, accounts, serialGit } = options, connectReview = options.connectReview || reviewClient;
+  const changes = options.changes || new Changes(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-changes-')));
   // A public request must arrive in full within a minute; held-open bodies tie up nothing.
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024, ...(listener.kind === 'account' ? { requestTimeout: 60000 } : {}) });
   const { csrfFor } = guard(app, { listener, accounts, store, csrf: options.csrf, request: id => workspace.requests.get(id) });
@@ -126,17 +130,28 @@ export async function buildApp(options: AppOptions) {
   app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));
   app.get<{ Params: { id: string } }>('/api/projects/:id/git', project(), request => gitStatus(store.project(request.params.id).path));
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/projects/:id/git/diff', project(), request => gitDiff(store.project(request.params.id).path, string(request.query.path, 'File path', 4096)));
+  const paths = (value: unknown): string[] => Array.isArray(value) ? value.filter((p: unknown): p is string => typeof p === 'string').slice(0, 5000) : [];
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/commit', project(), request => {
     const project = store.project(request.params.id), b = request.body as any;
-    const message = string(b.message, 'Commit message', 5000), paths = Array.isArray(b.paths) ? b.paths.filter((p: unknown) => typeof p === 'string').slice(0, 5000) : [];
-    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => ({ commit: await gitCommit(project.path, message, paths), git: await gitStatus(project.path) })));
+    const message = string(b.message, 'Commit message', 5000), chosen = b.staged === true ? null : paths(b.paths);
+    let pushError: string | undefined;
+    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
+      const commit = await gitCommit(project.path, message, chosen);
+      // The commit stands even when the push fails; the author can push again.
+      if (b.push === true) try { await gitRemote(project.path, 'push'); } catch (error) { pushError = (error as Error).message; }
+      return { commit, git: await gitStatus(project.path), ...(pushError ? { pushError } : {}) };
+    }));
   });
-  const paths = (value: unknown): string[] => Array.isArray(value) ? value.filter((p: unknown): p is string => typeof p === 'string').slice(0, 5000) : [];
+  // The Git panel's checkboxes stage or unstage whole files.
+  app.post<{ Params: { id: string } }>('/api/projects/:id/git/stage', project(), request => {
+    const project = store.project(request.params.id), b = request.body as any;
+    return serialGit(project.id, async () => ({ git: await gitStage(project.path, paths(b.paths), b.stage !== false) }));
+  });
   // An agent writes a commit message for the chosen files, or a fresh one
   // instead of the message it already wrote for them; nothing is written.
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/message', project(), request => {
     const b = request.body as any;
-    return workspace.commitMessage(store.project(request.params.id).id, paths(b.paths), { agent: b.agent === undefined ? undefined : agent(b.agent), fresh: b.fresh === true });
+    return workspace.commitMessage(store.project(request.params.id).id, paths(b.paths), { agent: b.agent === undefined ? undefined : agent(b.agent), fresh: b.fresh === true, staged: b.staged === true });
   });
   // A merge in progress is resolved by an agent, committed, or abandoned.
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/resolve', project(), request => {
@@ -238,6 +253,38 @@ export async function buildApp(options: AppOptions) {
       return reply.header('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`).header('Clear-Site-Data', '"cache"').send({ ok: true });
     });
   }
+
+  // The review viewer also shows a paper's uncommitted changes against its
+  // last commit. Papilot answers those routes itself, ahead of the engine's
+  // below, and the viewer posts with Papilot's token. Staging writes the
+  // index; reverting writes files, so it waits for review actions and commits.
+  const changesAccess = { config: { access: { project: 'projectId' }, csrf: false as const } };
+  const changesToken = (request: { headers: Record<string, unknown>; viewer?: Parameters<typeof csrfFor>[0] }) => {
+    if (!equals(String(request.headers['x-review-token'] || ''), csrfFor(request.viewer!))) throw Object.assign(new Error('This page has expired. Refresh it and try again.'), { statusCode: 403 });
+  };
+  const CHANGE_ACTIONS: Record<string, ChangeAction> = { accept: 'stage', unstage: 'unstage', reject: 'revert' };
+  app.get<{ Params: { projectId: string }; Querystring: { round?: string } }>('/review/:projectId/api/changes/state', changesAccess, request => {
+    const project = store.project(request.params.projectId), round = Number(request.query.round);
+    return changes.state(project.id, project.path, csrfFor(request.viewer!), Number.isSafeInteger(round) && round > 0 ? round : undefined);
+  });
+  app.get<{ Params: { projectId: string; number: string } }>('/review/:projectId/api/changes/rounds/:number', changesAccess, request => changes.detail(store.project(request.params.projectId).id, Number(request.params.number)));
+  app.get<{ Params: { projectId: string; number: string; file: string } }>('/review/:projectId/changes/files/:number/:file', changesAccess, (request, reply) => {
+    const file = changes.file(store.project(request.params.projectId).id, Number(request.params.number), request.params.file);
+    return reply.header('Cache-Control', 'private, max-age=31536000, immutable').type(file.endsWith('.svg') ? 'image/svg+xml' : 'image/png').send(fs.createReadStream(file));
+  });
+  app.post<{ Params: { projectId: string } }>('/review/:projectId/api/changes/decide', changesAccess, request => {
+    changesToken(request);
+    const project = store.project(request.params.projectId), b = request.body as any, action = CHANGE_ACTIONS[String(b?.action)];
+    if (!action) throw new Error('Choose stage, unstage or revert.');
+    const ids = Array.isArray(b.changes) ? b.changes.filter((id: unknown): id is string => typeof id === 'string').slice(0, 2000) : [];
+    const act = () => changes.act(project.id, project.path, csrfFor(request.viewer!), action, Number(b.round), ids);
+    return serialGit(project.id, () => action === 'revert' ? workspace.exclusiveCommit(project.id, act) : act());
+  });
+  app.post<{ Params: { projectId: string } }>('/review/:projectId/api/changes/undo', changesAccess, request => {
+    changesToken(request);
+    const project = store.project(request.params.projectId), id = string((request.body as any)?.id, 'Revert ID', 80);
+    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, () => changes.undo(project.id, project.path, csrfFor(request.viewer!), id)));
+  });
 
   app.route<{ Params: { projectId: string; '*': string } }>({
     // The review page posts with the review engine's token rather than Papilot's.

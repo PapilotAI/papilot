@@ -38,9 +38,9 @@ let deleteFailure = false;
 const deletions = [];
 const renames = [];
 const paperRenames = [];
-const gitState = { remote: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false }] };
+const gitState = { remote: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, unstaged: true, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false, unstaged: true }] };
 const originalGit = structuredClone(gitState);
-const gitCommits = [], gitActions = [], gitIgnores = [], gitMessages = [];
+const gitCommits = [], gitActions = [], gitIgnores = [], gitMessages = [], gitStages = [];
 const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true };
 let annotations = [];
 const noteSends = [];
@@ -68,12 +68,17 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/git/diff')) return json({ path: url.searchParams.get('path'), diff: 'diff --git a/main.tex b/main.tex\n--- a/main.tex\n+++ b/main.tex\n@@ -1,2 +1,2 @@\n-Old line.\n+New line.\n Context.\n', truncated: false });
   if (url.pathname.endsWith('/git/commit')) {
     const body = route.request().postDataJSON(); gitCommits.push(body);
-    Object.assign(gitState, { files: gitState.files.filter(file => !body.paths.includes(file.path)), ahead: gitState.ahead + 1, head: { hash: 'def5678', subject: body.message, date: 2 } });
+    Object.assign(gitState, { files: gitState.files.filter(file => body.staged ? !file.staged : !body.paths.includes(file.path)), ahead: gitState.ahead + 1, head: { hash: 'def5678', subject: body.message, date: 2 } });
     return json({ commit: 'def5678', git: gitState });
+  }
+  if (url.pathname.endsWith('/git/stage')) {
+    const body = route.request().postDataJSON(); gitStages.push(body);
+    for (const file of gitState.files) if (body.paths.includes(file.path)) Object.assign(file, { staged: body.stage, unstaged: !body.stage });
+    return json({ git: gitState });
   }
   if (url.pathname.endsWith('/git/ignore')) {
     const body = route.request().postDataJSON(); gitIgnores.push(body);
-    gitState.files = [...gitState.files.filter(file => !body.paths.includes(file.path)), { path: '.gitignore', status: '?', staged: false }];
+    gitState.files = [...gitState.files.filter(file => !body.paths.includes(file.path)), { path: '.gitignore', status: '?', staged: false, unstaged: true }];
     return json({ git: gitState });
   }
   if (url.pathname.endsWith('/git/message')) { gitMessages.push(route.request().postDataJSON()); return json({ message: 'Tighten the introduction', agent: 'codex' }); }
@@ -318,7 +323,7 @@ try {
   assert.equal(await taskMenu.evaluate(el => el === document.activeElement), true);
   console.log('PASS: Views select explicitly, PDF tools stay with the review, and menus support keyboard navigation');
 
-  const pdfLink = page.getByRole('button', { name: /^PDF/ });
+  const pdfLink = page.locator('.manuscript-link');
   await pdfLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
   await pdfLink.click();
   await page.getByRole('heading', { name: 'PDF', exact: true }).waitFor();
@@ -450,7 +455,7 @@ try {
   const notesTask = noteSends[0].id;
   snapshot.tasks = snapshot.tasks.filter(t => t.id !== notesTask);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  gitState.files.push({ path: 'main.aux', status: '?', staged: false }, { path: 'main.log', status: '?', staged: false });
+  gitState.files.push({ path: 'main.aux', status: '?', staged: false, unstaged: true }, { path: 'main.log', status: '?', staged: false, unstaged: true });
   await pdfLink.click();
   await page.getByRole('heading', { name: 'PDF', exact: true }).waitFor();
   await page.getByRole('tab', { name: /^Git/ }).click();
@@ -461,32 +466,34 @@ try {
   assert.match(gitText, /^main\s+↑1/);
   assert.match(gitText, /Tracking origin\/main/);
   assert.match(gitText, /Draft the introduction\s+abc1234/);
-  // Build output starts unticked and goes into .gitignore, one pattern per kind.
-  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include main.aux' }).isChecked(), false);
+  // Build output goes into .gitignore, one pattern per kind.
+  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Stage main.aux' }).isChecked(), false);
   await gitPanel.getByText('2 build files', { exact: true }).waitFor();
   await gitPanel.getByRole('button', { name: 'Add to .gitignore', exact: true }).click();
   await gitPanel.getByRole('status').filter({ hasText: 'Added 2 patterns to .gitignore.' }).waitFor();
   assert.deepEqual(gitIgnores, [{ paths: ['main.aux', 'main.log'] }]);
   assert.equal(await gitPanel.getByText('main.aux', { exact: true }).count(), 0);
-  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include .gitignore' }).isChecked(), true);
   assert.equal(await gitPanel.getByLabel('Untracked').first().innerText(), 'U');
-  // Changes can be read as diffs, chosen and committed, then pushed.
-  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include main.tex' }).isChecked(), true);
-  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include notes.md' }).isChecked(), true);
+  // With nothing staged, Commit takes every file as it is on disk.
+  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Stage main.tex' }).isChecked(), false);
+  assert.equal(await gitPanel.getByRole('button', { name: 'Commit all 3 files' }).isDisabled(), true);
   await gitPanel.getByRole('button', { name: 'main.tex', exact: true }).click();
   await gitPanel.getByRole('region', { name: 'Changes in main.tex' }).getByText('+New line.', { exact: true }).waitFor();
-  await gitPanel.getByRole('checkbox', { name: 'Include notes.md' }).uncheck();
-  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include all changes' }).evaluate(box => box.indeterminate), true);
-  assert.equal(await gitPanel.getByRole('button', { name: 'Commit 2 of 3 files' }).isDisabled(), true);
-  // The chosen agent writes the message for the chosen files.
+  // A ticked file is staged, and Commit then takes only what is staged.
+  await gitPanel.getByRole('checkbox', { name: 'Stage main.tex' }).click();
+  await gitPanel.getByRole('button', { name: 'Commit staged changes in 1 file' }).waitFor();
+  assert.deepEqual(gitStages, [{ paths: ['main.tex'], stage: true }]);
+  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Stage all changes' }).evaluate(box => box.indeterminate), true);
+  // The chosen agent writes the message for what is staged.
   const commitMessage = gitPanel.getByRole('textbox', { name: 'Commit message' });
   await gitPanel.getByRole('button', { name: 'Generate commit message', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Commit message"]')?.value === 'Tighten the introduction');
-  assert.deepEqual(gitMessages.map(body => body.paths), [['main.tex', '.gitignore']]);
+  assert.deepEqual(gitMessages.map(body => [body.paths, body.staged]), [[['main.tex'], true]]);
   assert.ok(['codex', 'claude', 'antigravity'].includes(gitMessages[0].agent));
   await commitMessage.press('Enter');
   await gitPanel.getByRole('status').filter({ hasText: 'Committed def5678.' }).waitFor();
-  assert.deepEqual(gitCommits, [{ message: 'Tighten the introduction', paths: ['main.tex', '.gitignore'] }]);
+  assert.deepEqual(gitCommits, [{ message: 'Tighten the introduction', staged: true }]);
+  assert.deepEqual(gitState.files.map(file => file.path), ['notes.md', '.gitignore'], 'Unstaged files stay for the next commit');
   assert.equal(await commitMessage.inputValue(), '');
   assert.match(await gitPanel.innerText(), /Tighten the introduction\s+def5678/);
   await gitPanel.getByRole('button', { name: 'Push', exact: true }).click();
@@ -793,7 +800,7 @@ try {
     assert.equal(await page.getByRole('textbox', { name: 'Repository path' }).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('Escape');
     if (width === 390) {
-      await page.getByRole('button', { name: /^PDF/ }).click();
+      await page.locator('.manuscript-link').click();
       const pdfPage = page.locator('.pdfViewer .page').first();
       await page.locator('.textLayer span').first().waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);

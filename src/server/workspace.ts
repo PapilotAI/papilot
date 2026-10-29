@@ -580,9 +580,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   // generate button: one read-only turn on the agent's small model, with the
   // lightest reasoning it offers. The same changes get the message already
   // written, or being written, for them unless the author asks for a fresh one.
-  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; fresh?: boolean } = {}) {
+  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; fresh?: boolean; staged?: boolean } = {}) {
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', true);
-    const { files, patch, recent } = await commitChanges(project.path, paths);
+    const { files, patch, recent } = await commitChanges(project.path, paths, choice.staged);
     const tasks = this.store.tasks().filter(task => task.projectId === projectId && task.review?.files?.some(file => paths.includes(file))).map(task => task.title);
     const prompt = [
       recent.length ? `Recent commit subjects in this repository:\n${recent.map(subject => `- ${subject}`).join('\n')}` : 'This repository has no commits yet.',

@@ -45,7 +45,8 @@ export interface Person { id: string; name: string; role: 'owner' | 'member'; jo
 // A passkey or a signed-in browser session, either of which the owner can revoke.
 export interface Device { id: string; kind: 'passkey' | 'session'; label: string; createdAt: number; lastUsedAt: number | null }
 export interface People { origin: string | null; people: Person[] }
-export interface GitFile { path: string; status: string; staged: boolean; lines?: [number, number]; from?: string }
+// staged: the index has changes to this file; unstaged: the working tree has more.
+export interface GitFile { path: string; status: string; staged: boolean; unstaged: boolean; lines?: [number, number]; from?: string }
 // merging is a merge in progress, with the files whose conflict markers remain.
 export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null; remote?: boolean; merging?: { message: string; conflicts: string[] } | null }
 export interface GitDiff { path: string; diff: string; truncated: boolean }

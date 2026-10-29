@@ -5,6 +5,13 @@ import "./style.css";
 const params = new URLSearchParams(location.search),
   task = params.get("task"),
   round = Number(params.get("round")) || null;
+// ?changes shows a host's uncommitted changes instead of a task.
 createRoot(document.getElementById("root")!).render(
-  task ? <ReviewApp task={task} pinned={round} /> : <Overview />,
+  params.has("changes") ? (
+    <ReviewApp task="changes" pinned={null} changes />
+  ) : task ? (
+    <ReviewApp task={task} pinned={round} />
+  ) : (
+    <Overview />
+  ),
 );

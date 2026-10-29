@@ -4,6 +4,14 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- **Changes** beside **PDF** on the PDF page shows what changed since the last commit as a typeset diff, like a task's review. Each change can be staged, unstaged or reverted on its own (**Undo revert** puts a revert back), so one revision can become several commits.
+
+### Changed
+
+- The Git panel's checkboxes are the Git index: a ticked file is staged, a half-ticked one partly staged. **Commit** takes what is staged, or with nothing staged, every file but build output as before.
+
 ## [0.4.0] - 2026-10-29
 
 ### Added
