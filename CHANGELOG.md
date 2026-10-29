@@ -4,6 +4,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-29
+
 ### Added
 
 - **Changes** beside **PDF** on the PDF page shows what changed since the last commit as a typeset diff, like a task's review. Each change can be staged, unstaged or reverted on its own (**Undo revert** puts a revert back), so one revision can become several commits.
@@ -87,7 +89,8 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/cu1ch3n/papilot/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/cu1ch3n/papilot/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/cu1ch3n/papilot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/cu1ch3n/papilot/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cu1ch3n/papilot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/cu1ch3n/papilot/compare/v0.1.1...v0.2.0
