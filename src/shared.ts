@@ -1,6 +1,9 @@
 export type TaskStatus = 'idle' | 'queued' | 'running' | 'waiting_input' | 'building' | 'reviewing' | 'interrupted' | 'failed' | 'uncertain' | 'deleting';
 export interface Project { id: string; name: string; path: string; createdAt: number }
-export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; next?: string; job?: { phase: string; status: string; error?: string; details?: string[] } | null }
+// unsent counts review updates the agent has not received; comments are the
+// ones that ask for a revision. files are the manuscript files this task's
+// accepted changes touched, relative to the repository root.
+export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: { phase: string; status: string; error?: string; details?: string[] } | null }
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface Task {
   id: string; projectId: string; name: string; title: string; instructions: string;
@@ -11,7 +14,12 @@ export interface Task {
   pendingReview?: PendingReview | null;
 }
 export interface Run { id: string; taskId: string; requestKey: string; prompt: string; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null }
-export interface TimelineItem { id: string; taskId: string; type: string; text: string; detail?: string; status?: string; createdAt: number }
+export interface TimelineItem { id: string; taskId: string; type: string; text: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta }
+// A user message can run a skill or carry review feedback; the chat shows
+// those as what they are rather than as the prompt the agent receives.
+export interface MessageMeta { skill?: { id: string; name: string }; feedback?: FeedbackSummary; sendsFeedback?: boolean }
+export interface FeedbackSummary { round: number | null; accepted: number; rejected: number; undone: number; comments: { where: string; text: string }[]; buildError?: boolean }
+export interface Skill { id: string; name: string; description: string; hint: string; source: 'builtin' | 'user' | 'paper' }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
 export type AgentId = 'codex' | 'claude' | 'antigravity';
 export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort: string | null }

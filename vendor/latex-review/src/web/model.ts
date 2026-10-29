@@ -38,6 +38,14 @@ export function nextPending(
   }
   return -1;
 }
+// Names for a change's state; the viewer translates them where it shows them.
+export const STATE: Record<string, string> = {
+  pending: "Pending",
+  accepted: "Accepted",
+  rejected: "Rejected",
+  commented: "Commented",
+  mixed: "Mixed",
+};
 export function stopState(
   units: string[],
   decisions: Record<string, Decision>,
@@ -122,14 +130,24 @@ export function wordDiff(before: string, after: string) {
   }
   return result;
 }
-export function describeLocation(units: (Unit & Partial<VisualUnit>)[]) {
+type Say = (text: string, values?: Record<string, string | number>) => string;
+const english: Say = (text, values = {}) =>
+  text.replace(/\{(\w+)\}/g, (match, name: string) =>
+    name in values ? String(values[name]) : match,
+  );
+// The viewer passes its translator for display; copied references and the
+// default stay in English.
+export function describeLocation(
+  units: (Unit & Partial<VisualUnit>)[],
+  say: Say = english,
+) {
   const files = new Map<string, string[]>();
   for (const unit of units) {
     const where =
       unit.status === "added"
-        ? "new file"
+        ? say("new file")
         : unit.status === "deleted"
-          ? "deleted"
+          ? say("deleted")
           : unit.new_start === unit.new_end
             ? String(unit.new_start)
             : `${unit.new_start}–${unit.new_end}`;
@@ -139,7 +157,8 @@ export function describeLocation(units: (Unit & Partial<VisualUnit>)[]) {
   return (
     [...files]
       .map(([file, places]) => `${file}:${places.join(", ")}`)
-      .join("; ") + (pages.length ? ` · p. ${pages.join(", ")}` : "")
+      .join("; ") +
+    (pages.length ? ` · ${say("p. {pages}", { pages: pages.join(", ") })}` : "")
   );
 }
 export function copyReference(

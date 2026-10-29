@@ -17,6 +17,16 @@ const state = (): PageState => ({
 });
 const annotate = (tasks: Task[], value = state()) => annotateReviewState(value, tasks) as PageState;
 
+test('viewer receives the agent lifecycle and remaining feedback separately from engine decisions', () => {
+  const ready = { ...task(), review: { state: 'done', round: 1, counts: { accepted: 2 }, unsent: 2, comments: 1, files: ['main.tex'] } };
+  const input = state();
+  assert.deepEqual(annotate([ready], input).workspace, { status: 'reviewing', unsent: 2, comments: 1, accepted: 1 });
+  assert.deepEqual(annotate([{ ...ready, status: 'running', review: { ...ready.review, unsent: 0, comments: 0 } }]).workspace, { status: 'running', unsent: 0, comments: 0, accepted: 1 });
+  assert.deepEqual(annotate([task()]).workspace, { status: 'reviewing', unsent: 0, comments: 0, accepted: 0 });
+  assert.equal(annotate([]).workspace, undefined);
+  assert.equal(input.workspace, undefined);
+});
+
 test('active task state blocks every file decision while preserving comments', () => {
   for (const status of ['running', 'waiting_input', 'queued', 'building', 'uncertain'] as const) {
     const result = annotate([task(status)]);

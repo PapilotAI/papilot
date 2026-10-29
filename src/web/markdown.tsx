@@ -1,63 +1,105 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { MathPlugins } from './math-plugins.ts';
+import { t } from './i18n.ts';
 
-// Codex replies use a small Markdown subset. Build React elements directly so
-// message text is never interpreted as HTML, and only http(s) links are live.
-const INLINE = /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\*\*(\S(?:[^*]*\S)?)\*\*|__(\S(?:[^_]*\S)?)__|\*(\S(?:[^*]*\S)?)\*|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-
-function inline(text: string): ReactNode[] {
-  const pattern = new RegExp(INLINE.source, 'g'), out: ReactNode[] = [];
-  let last = 0, match: RegExpExecArray | null;
-  while ((match = pattern.exec(text))) {
-    if (match.index > last) out.push(text.slice(last, match.index));
-    const key = out.length;
-    if (match[1]) out.push(<code key={key}>{match[2]}</code>);
-    else if (match[3] || match[4]) out.push(<strong key={key}>{inline(match[3] || match[4])}</strong>);
-    else if (match[5]) out.push(<em key={key}>{inline(match[5])}</em>);
-    else out.push(<a key={key} href={match[7]} target="_blank" rel="noreferrer">{match[6]}</a>);
-    last = pattern.lastIndex;
+// Host paths are references, not routes on the Papilot web server. Clicking
+// copies the path, including line numbers, even over Tailscale HTTP.
+function FileReference({ path, children }: { path: string; children: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    let value = path;
+    try { value = decodeURI(path); } catch { /* Keep literal percent signs. */ }
+    let ok = false;
+    try { await navigator.clipboard.writeText(value); ok = true; }
+    catch {
+      const area = document.createElement('textarea');
+      area.value = value; area.style.position = 'fixed'; area.style.opacity = '0';
+      document.body.append(area); area.select();
+      try { ok = document.execCommand('copy'); } finally { area.remove(); }
+    }
+    setCopied(ok);
   }
-  if (last < text.length) out.push(text.slice(last));
+  return <button type="button" className="file-reference" title={path} aria-label={copied ? t('Copied path') : t('Copy path: {path}', { path })} onClick={() => void copy()}>{children}</button>;
+}
+
+// Code is never mathematics: fenced blocks, then inline code spans.
+const CODE = /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]+`)/;
+export const hasMath = (text: string) => text.split(CODE).some((part, index) => index % 2 === 0 && /\$|\\\(|\\\[/.test(part));
+// remark-math reads dollar delimiters. LaTeX's \[…\] on lines of its own
+// becomes a $$ block at the same indentation, so lists and quotes keep their
+// structure; within a line it becomes $$…$$, and \(…\) becomes $…$. A doubled
+// backslash, as in the line break \\[4pt], is not a delimiter.
+export function normalizeMath(text: string) {
+  return text.split(CODE).map((part, index) => index % 2 ? part : literalDollars(part
+    .replace(/(^|\n)([ \t]*)\\\[((?:(?!\\\]|\n[ \t]*\n)[\s\S])+?)\\\][ \t]*(?=\n|$)/g, (_, start: string, indent: string, body: string) => `${start}${indent}$$\n${displayLines(body, indent)}\n${indent}$$`)
+    .replace(/(?<!\\)\\\[((?:(?!\\\])[^\n])+?)\\\]/g, (_, body: string) => `$$${body.trim()}$$`)
+    .replace(/(?<!\\)\\\(((?:(?!\\\))[^\n])+?)\\\)/g, (_, body: string) => `$${body.trim()}$`))).join('');
+}
+// The formula's own lines keep their indentation; one written beside the
+// delimiter takes the delimiter's.
+function displayLines(body: string, indent: string) {
+  const lines = body.split('\n');
+  if (!lines[0].trim()) lines.shift(); else lines[0] = indent + lines[0].trim();
+  if (lines.length > 1 && !lines[lines.length - 1].trim()) lines.pop(); else lines[lines.length - 1] = lines[lines.length - 1].trimEnd();
+  return lines.join('\n');
+}
+// Single dollars pair as in Pandoc: the opening one comes before a non-space,
+// and the next dollar closes it if it follows a non-space and precedes no
+// digit. Any other dollar, such as a price, is escaped and stays literal.
+function literalDollars(text: string) {
+  let out = '';
+  for (let i = 0; i < text.length;) {
+    if (text[i] === '\\') { out += text.slice(i, i + 2); i += 2; continue; }
+    if (text[i] !== '$') { out += text[i++]; continue; }
+    if (text[i + 1] === '$') {
+      const end = text.indexOf('$$', i + 2);
+      out += text.slice(i, end < 0 ? i + 2 : end + 2); i = end < 0 ? i + 2 : end + 2; continue;
+    }
+    let close = -1;
+    if (/\S/.test(text[i + 1] || '')) for (let j = i + 1; j < text.length; j++) {
+      if (text[j] === '\\') { j++; continue; }
+      if (text.startsWith('\n\n', j)) break;
+      if (text[j] === '$') { if (text[j + 1] !== '$' && /\S/.test(text[j - 1]) && !/\d/.test(text[j + 1] || '')) close = j; break; }
+    }
+    if (close < 0) { out += '\\$'; i++; } else { out += text.slice(i, close + 1); i = close + 1; }
+  }
   return out;
 }
 
-const LIST = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+let loadedMath: MathPlugins | null = null, loadingMath: Promise<MathPlugins> | null = null;
+function useMath(wanted: boolean) {
+  const [math, setMath] = useState(loadedMath);
+  useEffect(() => {
+    if (!wanted || math) return;
+    let live = true;
+    loadingMath ??= import('./math.ts').then(module => loadedMath = module.math);
+    loadingMath.then(value => { if (live) setMath(value); }, () => { loadingMath = null; });
+    return () => { live = false; };
+  }, [wanted, math]);
+  return wanted ? math : null;
+}
+
+// Renders agent replies. Raw HTML stays text, only web and mail links open,
+// and mathematics is typeset once KaTeX has loaded (until then it shows as written).
+export function MarkdownView({ text, math }: { text: string; math?: MathPlugins | null }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm, ...(math?.remark || [])]} rehypePlugins={math?.rehype} urlTransform={url => /^(?:https?:\/\/|mailto:|#)/i.test(url) || (!/^[a-z][a-z\d+.-]*:/i.test(url) && !url.startsWith('//')) ? url : ''} components={{
+    h1: ({ children }) => <h3>{children}</h3>,
+    h2: ({ children }) => <h4>{children}</h4>,
+    h3: ({ children }) => <h5>{children}</h5>,
+    h4: ({ children }) => <h6>{children}</h6>,
+    h5: ({ children }) => <h6>{children}</h6>,
+    a: ({ href, children, title }) => !href ? <>{children}</> : /^(?:https?:\/\/|mailto:)/i.test(href)
+      ? <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>
+      : href.startsWith('#') ? <a href={href}>{children}</a> : <FileReference path={href}>{children}</FileReference>,
+    table: ({ children }) => <div className="markdown-table"><table>{children}</table></div>,
+    pre: ({ children }) => <pre tabIndex={0}>{children}</pre>,
+    // Do not load arbitrary images embedded in agent output automatically.
+    img: ({ alt }) => <span>{alt}</span>,
+  }}>{math ? normalizeMath(text) : text}</ReactMarkdown>;
+}
 
 export function Markdown({ text }: { text: string }) {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n'), blocks: ReactNode[] = [];
-  for (let i = 0; i < lines.length;) {
-    const line = lines[i], key = blocks.length;
-    const fence = /^\s*(```|~~~)\s*([\w+-]*)/.exec(line);
-    if (fence) {
-      const body: string[] = [];
-      for (i++; i < lines.length && !lines[i].trim().startsWith(fence[1]); i++) body.push(lines[i]);
-      i++; blocks.push(<pre key={key}><code>{body.join('\n')}</code></pre>); continue;
-    }
-    if (!line.trim()) { i++; continue; }
-    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (heading) { const Tag = `h${Math.min(heading[1].length + 2, 6)}` as 'h3'; blocks.push(<Tag key={key}>{inline(heading[2])}</Tag>); i++; continue; }
-    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { blocks.push(<hr key={key}/>); i++; continue; }
-    if (/^\s*>/.test(line)) {
-      const quote: string[] = [];
-      for (; i < lines.length && /^\s*>/.test(lines[i]); i++) quote.push(lines[i].replace(/^\s*>\s?/, ''));
-      blocks.push(<blockquote key={key}><Markdown text={quote.join('\n')}/></blockquote>); continue;
-    }
-    const first = LIST.exec(line);
-    if (first) {
-      const ordered = /\d/.test(first[2]), items: string[] = [];
-      for (; i < lines.length; i++) {
-        const item = LIST.exec(lines[i]);
-        if (item && /\d/.test(item[2]) === ordered) items.push(item[3]);
-        else if (lines[i].trim() && /^\s+/.test(lines[i]) && items.length) items[items.length - 1] += '\n' + lines[i].trim();
-        else break;
-      }
-      const children = items.map((item, index) => <li key={index}>{inline(item)}</li>);
-      blocks.push(ordered ? <ol key={key} start={Number.parseInt(first[2], 10) || 1}>{children}</ol> : <ul key={key}>{children}</ul>);
-      continue;
-    }
-    const paragraph: string[] = [];
-    do paragraph.push(lines[i++]);
-    while (i < lines.length && lines[i].trim() && !LIST.exec(lines[i]) && !/^(#{1,6}\s|\s*(```|~~~|>))/.test(lines[i]));
-    blocks.push(<p key={key}>{inline(paragraph.join('\n'))}</p>);
-  }
-  return <>{blocks}</>;
+  return <MarkdownView text={text} math={useMath(hasMath(text))}/>;
 }

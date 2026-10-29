@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Decision } from "../types.ts";
-import { stopState, type Stop } from "./model.ts";
+import { STATE, pendingUnits, stopState, type Stop } from "./model.ts";
+import { t } from "./i18n.ts";
 
 type Region = { top: number; height: number };
 
 export function ChangeMap({
   scrollRoot,
   stops,
+  showReviewed = true,
   locations,
   decisions,
   current,
@@ -15,6 +17,7 @@ export function ChangeMap({
 }: {
   scrollRoot: RefObject<HTMLElement | null>;
   stops: Stop[];
+  showReviewed?: boolean;
   locations: string[];
   decisions: Record<string, Decision>;
   current: number;
@@ -25,6 +28,10 @@ export function ChangeMap({
     drag = useRef<{ pointer: number; offset: number } | null>(null),
     [regions, setRegions] = useState<Region[]>([]),
     [viewport, setViewport] = useState<Region>({ top: 0, height: 0 });
+  const visible = stops
+    .map((stop, index) => ({ stop, index }))
+    .filter(({ stop }) => showReviewed || pendingUnits(stop, decisions).length)
+    .map(({ index }) => index);
 
   useEffect(() => {
     const root = scrollRoot.current,
@@ -125,7 +132,7 @@ export function ChangeMap({
     <nav
       ref={rail}
       className="change-map"
-      aria-label="Change map"
+      aria-label={t("Change map")}
       onPointerDown={(event) => {
         if (
           event.button !== 0 ||
@@ -165,10 +172,11 @@ export function ChangeMap({
         aria-hidden="true"
       />
       {stops.map((stop, index) => {
+        if (!visible.includes(index)) return null;
         const region = regions[index];
         if (!region) return null;
         const state = stopState(stop.units, decisions),
-          label = `Change ${index + 1} · ${state} · ${locations[index]}`;
+          label = `${t("Change {n}", { n: index + 1 })} · ${t(STATE[state] ?? state).toLowerCase()} · ${locations[index]}`;
         return (
           <button
             key={stop.key}
@@ -178,22 +186,26 @@ export function ChangeMap({
             data-state={state}
             aria-label={label}
             aria-current={index === current ? "location" : undefined}
-            tabIndex={index === Math.max(0, current) ? 0 : -1}
+            tabIndex={
+              index === (visible.includes(current) ? current : visible[0])
+                ? 0
+                : -1
+            }
             disabled={disabled}
             style={{ top: region.top, height: region.height }}
             onClick={() => onSelect(index)}
             onKeyDown={(event) => {
               const target =
                 event.key === "ArrowDown"
-                  ? index + 1
+                  ? (visible[visible.indexOf(index) + 1] ?? index)
                   : event.key === "ArrowUp"
-                    ? index - 1
+                    ? (visible[visible.indexOf(index) - 1] ?? index)
                     : event.key === "Home"
-                      ? 0
+                      ? visible[0]
                       : event.key === "End"
-                        ? stops.length - 1
+                        ? visible.at(-1)
                         : null;
-              if (target === null) return;
+              if (target == null) return;
               event.preventDefault();
               event.stopPropagation();
               rail.current

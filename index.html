@@ -1,2 +1,11 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"/><meta name="theme-color" content="#ffffff"/><meta name="description" content="Revise LaTeX papers with an agent and review the PDF changes."/><link rel="icon" type="image/png" href="/favicon.png"/><link rel="apple-touch-icon" href="/apple-touch-icon.png"/><title>Papilot</title></head><body><div id="root"></div><script type="module" src="/src/web/main.tsx"></script></body></html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"/><meta name="theme-color" content="#ffffff"/><meta name="description" content="Revise LaTeX papers with an agent and review the PDF changes."/><link rel="icon" type="image/png" href="/favicon.png"/><link rel="apple-touch-icon" href="/apple-touch-icon.png"/><title>Papilot</title><script>
+// Resolve before the first paint, even while the application bundle is loading.
+(() => {
+  let theme;
+  try { theme = localStorage.getItem('papilot:theme'); } catch {}
+  const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#26272b' : '#ffffff';
+})();
+</script><style>html{background:#fff;color-scheme:light}html[data-theme="dark"]{background:#26272b;color-scheme:dark}</style></head><body><div id="root"></div><script type="module" src="/src/web/main.tsx"></script></body></html>

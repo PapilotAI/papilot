@@ -34,7 +34,7 @@ export function annotateReviewState(value: unknown, tasks: readonly Task[]): unk
   else if (task.status === 'building') decisionLock = 'Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.';
   else if (['running', 'waiting_input', 'queued'].includes(task.status)) decisionLock = 'Pause this task in Papilot before accepting, rejecting, or undoing changes. You can still add comments.';
   else if (task.pendingReview) decisionLock = 'Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.';
-  return { ...state, decisionLock, commentLock };
+  return { ...state, decisionLock, commentLock, ...(task ? { workspace: { status: task.status, unsent: task.review?.unsent ?? 0, comments: task.review?.comments ?? 0, accepted: task.review?.files?.length ?? 0 } } : {}) };
 }
 
 export function allowedReviewRoute(route: string, method: string): boolean {

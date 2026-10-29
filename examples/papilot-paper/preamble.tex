@@ -18,17 +18,23 @@
 \usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
 \usepackage[nameinlink]{cleveref}
 
-% thmtools lets cleveref name each kind of statement correctly although they
-% share one counter.
-\usepackage{thmtools}
-\declaretheorem[style=plain, numberwithin=section]{theorem}
-\declaretheorem[style=plain, sibling=theorem]{proposition}
-\declaretheorem[style=plain, sibling=theorem]{lemma}
-\declaretheorem[style=plain, sibling=theorem]{corollary}
-\declaretheorem[style=definition, sibling=theorem]{definition}
-\declaretheorem[style=definition, sibling=theorem]{example}
-\declaretheorem[style=definition, sibling=theorem]{assumption}
-\declaretheorem[style=remark, sibling=theorem]{remark}
+% Every kind of statement shares the theorem counter, and cleveref still names
+% each kind correctly. LaTeX from June 2026 does this itself and clashes with
+% thmtools, which older LaTeX needs for it.
+\IfFormatAtLeastTF{2026-06-01}
+  {\newtheorem{theorem}{Theorem}[section]
+   \NewDocumentCommand\statement{mmm}{\theoremstyle{#1}\newtheorem{#2}[theorem]{#3}}}
+  {\usepackage{thmtools}
+   \declaretheorem[style=plain, numberwithin=section]{theorem}
+   \NewDocumentCommand\statement{mmm}{\declaretheorem[style=#1, sibling=theorem, name=#3]{#2}}}
+\statement{plain}{proposition}{Proposition}
+\statement{plain}{lemma}{Lemma}
+\statement{plain}{corollary}{Corollary}
+\statement{definition}{definition}{Definition}
+\statement{definition}{example}{Example}
+\statement{definition}{assumption}{Assumption}
+\statement{remark}{remark}{Remark}
+\crefname{assumption}{assumption}{assumptions}
 \numberwithin{equation}{section}
 
 \newcommand{\R}{\mathbb{R}}

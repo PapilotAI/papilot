@@ -251,6 +251,16 @@ export interface PageState {
   /** Optional host-provided reason that file decisions or comments are unavailable. */
   decisionLock?: string | null;
   commentLock?: string | null;
+  /**
+   * Host activity, undelivered feedback (all updates, and the comments among them),
+   * and how many manuscript files this task's accepted changes touched.
+   */
+  workspace?: {
+    status: string;
+    unsent: number;
+    comments?: number;
+    accepted?: number;
+  };
   state: TaskState | null;
   latest: number | null;
   round: number | null;

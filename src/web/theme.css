@@ -1,0 +1,38 @@
+/* Shared by the workspace and its embedded review viewer. In the dark theme
+   PDF pages turn dark too: --pdf-filter inverts their lightness and turns the
+   hue back, so red, green and blue stay recognisable, and --pdf-page is the
+   colour white paper becomes, for the space around a page's image. */
+:root{
+  --bg:#ffffff;--sidebar:#f9f9f9;--bg-subtle:#fafafa;--bg-muted:#f4f4f4;--bg-hover:#efefef;--bg-active:#e7e7e7;--canvas:#f3f3f3;
+  --line:#e8e8e8;--line-strong:#d6d6d6;
+  --text:#171717;--text-2:#525252;--text-3:#8a8a8a;
+  --accent:#2563eb;--accent-hover:#1d4ed8;--accent-soft:#eff6ff;--accent-line:#bfdbfe;
+  --primary:#2563eb;--primary-hover:#1d4ed8;
+  --green:#15803d;--green-soft:#f0fdf4;--purple:#7c3aed;--purple-soft:#f5f3ff;--red:#dc2626;--red-soft:#fef2f2;--red-line:#fecaca;
+  --amber-soft:#fffbeb;--amber-line:#fde68a;--amber-text:#92400e;
+  --shadow-xs:0 1px 2px rgb(0 0 0/.06);
+  --shadow-sm:0 1px 2px rgb(0 0 0/.05),0 3px 8px rgb(0 0 0/.05);
+  --float:0 2px 4px rgb(0 0 0/.04),0 14px 36px rgb(0 0 0/.13);
+  --ring:0 0 0 3px rgb(37 99 235/.18);
+  --line-hover:#c4c4c4;--danger:#dc2626;--danger-hover:#b91c1c;
+  --scroll-thumb:rgb(0 0 0/.12);--scroll-hover:rgb(0 0 0/.2);--scroll-active:rgb(0 0 0/.34);
+  --pdf-filter:none;--pdf-page:#ffffff;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:#26272b;--sidebar:#202124;--bg-subtle:#2a2b2f;--bg-muted:#303135;--bg-hover:#37383c;--bg-active:#404145;--canvas:#1e1f22;
+  --line:#38393e;--line-strong:#4b4c52;--line-hover:#63646b;
+  --text:#ececee;--text-2:#c2c3c9;--text-3:#9c9da5;
+  --accent:#8ab4ff;--accent-hover:#b2ceff;--accent-soft:#2b3651;--accent-line:#445c85;
+  --primary:#2563eb;--primary-hover:#1d4ed8;
+  --green:#7bd5a0;--green-soft:#243a2f;--purple:#bfa1ff;--purple-soft:#372d48;--red:#ff9696;--red-soft:#46292e;--red-line:#733b45;
+  --amber-soft:#3e3424;--amber-line:#6d5631;--amber-text:#eac584;
+  --shadow-xs:0 1px 2px rgb(0 0 0/.2);
+  --shadow-sm:0 1px 2px rgb(0 0 0/.18),0 3px 8px rgb(0 0 0/.2);
+  --float:0 2px 4px rgb(0 0 0/.2),0 14px 36px rgb(0 0 0/.4);
+  --ring:0 0 0 3px rgb(138 180 255/.22);
+  --scroll-thumb:rgb(255 255 255/.16);--scroll-hover:rgb(255 255 255/.25);--scroll-active:rgb(255 255 255/.38);
+  /* White becomes #292929 and black #d6d6d6. */
+  --pdf-filter:invert(.84) hue-rotate(180deg);--pdf-page:#292929;
+  color-scheme:dark;
+}

@@ -1,0 +1,151 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import Fastify from 'fastify';
+import staticFiles from '@fastify/static';
+import { chromium, expect } from '../vendor/latex-review/node_modules/@playwright/test/index.mjs';
+import { annotateReviewState, rewriteReviewHtml } from '../src/server/review.ts';
+
+const server = Fastify();
+await server.register(staticFiles, { root: path.resolve('dist') });
+await server.listen({ host: '127.0.0.1', port: 0 });
+const origin = `http://127.0.0.1:${server.server.address().port}`;
+const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
+const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 1000 } });
+const errors = []; page.on('pageerror', error => errors.push(error.message));
+const prefix = '/review/paper';
+const task = { id: 'review-flow-fixture', projectId: 'paper', name: 'flow', title: 'Review the new wording', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { state: 'reviewing', round: 1, counts: {}, unsent: 0 } };
+const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
+let latest = 1, serial = 0, undo = null;
+const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
+const actions = [], writes = [];
+const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: null });
+function update() {
+  const values = Object.values(rounds[latest]);
+  task.review.counts = Object.fromEntries(['pending', 'accepted', 'rejected', 'commented'].map(value => [value, values.filter(v => v === value).length]));
+  task.review.state = values.includes('pending') ? 'reviewing' : values.includes('commented') ? 'revise' : 'done';
+}
+update();
+const image = (name, label) => ({ src: `${name}.svg`, clean: `${name}-clean.svg`, width: 600, height: 130, page: 0, label: '1', text: [{ chars: [{ text: label, rect: [60, 40, 500, 62] }] }] });
+function detail(round) {
+  const ids = Object.keys(rounds[round]);
+  const groups = round === 1 ? [['first'], ['second'], ['third', 'fourth']] : [['new']];
+  return { task: 'flow', round, before: `before-${round}`, after: `after-${round}`, warnings: [], files: `${prefix}/files/flow/${round}/`,
+    sections: [{ node: 'intro', title: 'Introduction', number: '1', blocks: groups.map((units, i) => ({ kind: 'change', units, identical: false, before: [image(`before-${i}`, `Original paragraph ${i + 1}.`)], after: [image(`after-${i}`, `Revised paragraph ${i + 1}.`)] })) }], loose: [],
+    units: ids.map((id, i) => ({ id, file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: i + 1, old_end: i + 1, new_start: i + 1, new_end: i + 1, old_text: `Original paragraph ${i + 1}`, new_text: `Revised paragraph ${i + 1}`, truncated: false })) };
+}
+await page.route('**/api/**', async route => {
+  const url = new URL(route.request().url());
+  if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
+  if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
+  if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: [] } });
+  if (url.pathname.endsWith('/git')) return route.fulfill({ json: { files: [] } });
+  if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+  if (url.pathname.endsWith('/messages')) { task.status = 'running'; task.review.unsent = 0; return route.fulfill({ json: { ok: true } }); }
+  throw Error(`Unexpected app request ${url.pathname}`);
+});
+await page.route('**/review/**', async route => {
+  const url = new URL(route.request().url()), relative = url.pathname.slice(prefix.length);
+  if (relative === '/') return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(fs.readFileSync('vendor/latex-review/dist/web/index.html', 'utf8'), prefix) });
+  if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('vendor/latex-review/dist/web' + relative), contentType: relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'font/otf' });
+  if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 130"><rect width="600" height="130" fill="white"/><text x="60" y="60" font-size="20">A paragraph in the review PDF.</text></svg>' });
+  const round = Number(url.searchParams.get('round') || latest);
+  if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail(Number(relative.split('/').at(-1))) });
+  let restored;
+  if (route.request().method() === 'POST') {
+    const body = route.request().postDataJSON(); writes.push(body);
+    if (relative.endsWith('/decide')) {
+      actions.push({ decisions: structuredClone(rounds[latest]), undo });
+      for (const id of body.changes) rounds[latest][id] = { accept: 'accepted', reject: 'rejected', comment: 'commented' }[body.action];
+      undo = { id: `action-${++serial}`, kind: body.action, changes: body.changes };
+      task.review.unsent++;
+    } else if (relative.endsWith('/undo')) {
+      restored = undo.changes;
+      const previous = actions.pop(); rounds[latest] = previous.decisions; undo = previous.undo;
+    }
+    update();
+  }
+  return route.fulfill({ json: { ...annotateReviewState(state(round), [task]), ...(restored ? { restored } : {}) } });
+});
+const viewer = () => page.frameLocator('.review-frame');
+const sync = async () => page.evaluate(() => window.dispatchEvent(new Event('online')));
+try {
+  await page.goto(origin);
+  await viewer().locator('.change.current').waitFor();
+  await viewer().locator('.change.current').getByRole('button', { name: 'Accept', exact: true }).click();
+  const accepted = viewer().locator('[data-stop="0"]');
+  await expect(accepted.locator('.change-head')).toBeHidden();
+  await expect(accepted.locator('.side.after')).toBeVisible();
+  await expect(accepted.locator('.side.before')).toBeHidden();
+  await expect(viewer().locator('.change-map-mark')).toHaveCount(2);
+  await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '1');
+  // The accepted paragraph remains selectable for another note.
+  await accepted.locator('.after .pdf-glyph').evaluate(el => { const range = document.createRange(); range.selectNodeContents(el); const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range); });
+  await viewer().getByRole('button', { name: 'Add note', exact: true }).click();
+  await viewer().getByRole('textbox', { name: 'Note for the agent' }).fill('A note on accepted text.');
+  await viewer().getByRole('button', { name: 'Add note', exact: true }).click();
+  await viewer().getByRole('button', { name: 'Close review notes' }).click();
+  await viewer().locator('.change.current').getByRole('button', { name: 'Reject', exact: true }).click();
+  await expect(viewer().locator('[data-stop="1"] .change-head')).toBeHidden();
+  await expect(viewer().locator('[data-stop="1"] .side.before')).toBeVisible();
+  await viewer().locator('.change.current').getByRole('button', { name: 'Comment', exact: true }).click();
+  await viewer().getByRole('textbox', { name: /^Comment on change/ }).fill('Try a clearer explanation.');
+  await viewer().getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(viewer().locator('.change-head:visible')).toHaveCount(0);
+  await expect(viewer().locator('.change-map-mark')).toHaveCount(0);
+  await expect(viewer().locator('.review-complete')).toBeVisible();
+  // Only History mode adds a row under the toolbar.
+  await expect(viewer().locator('.review-mode')).toHaveCount(0);
+  await sync();
+  await page.getByRole('button', { name: 'Send feedback', exact: true }).click();
+  await expect(viewer().getByText('Feedback sent · Agent is working', { exact: true })).toBeVisible();
+  await viewer().getByRole('button', { name: 'History', exact: true }).click();
+  await expect(viewer().locator('.change-head:visible')).toHaveCount(3);
+  await expect(viewer().getByRole('button', { name: 'Undo last decision', exact: true })).toBeDisabled();
+  task.status = 'reviewing';
+  await sync();
+  await expect(viewer().getByRole('button', { name: 'Undo last decision', exact: true })).toBeEnabled();
+  await viewer().getByRole('button', { name: 'Back to review', exact: true }).click();
+  await expect(viewer().getByText('All changes reviewed', { exact: true })).toBeVisible();
+  await expect(viewer().getByText('There are no new changes to review. Previous decisions are available in History.', { exact: true })).toBeVisible();
+  await expect(viewer().locator('.change-head:visible')).toHaveCount(0);
+  await viewer().getByRole('button', { name: 'History', exact: true }).click();
+  await viewer().getByRole('button', { name: 'Undo last decision', exact: true }).click();
+  await expect(viewer().getByRole('button', { name: 'History', exact: true })).toBeVisible();
+  await expect(viewer().locator('.change-head:visible')).toHaveCount(1);
+  await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '2');
+  // Mixed decisions cannot be shown as an entirely accepted or rejected PDF strip.
+  await viewer().locator('.change.current').getByRole('button', { name: /LaTeX$/ }).click();
+  await viewer().locator('.source-unit').filter({ hasText: 'main.tex · lines 3–3' }).getByRole('button', { name: 'Accept', exact: true }).click();
+  await viewer().locator('.source-unit').filter({ hasText: 'main.tex · lines 4–4' }).getByRole('button', { name: 'Reject', exact: true }).click();
+  await expect(viewer().locator('.mixed-reviewed .side:visible')).toHaveCount(0);
+  await expect(viewer().getByText('Reviewed changes · View in History', { exact: true })).toBeVisible();
+  fs.mkdirSync('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/review-completed.png', fullPage: true });
+  // A new round replaces the current review. Earlier rounds are inspection only.
+  latest = 2; rounds[2] = { new: 'pending' }; task.review.round = 2; task.review.unsent = 0; update();
+  await sync();
+  await expect(viewer().getByText('Round 2', { exact: true })).toBeVisible();
+  await expect(viewer().locator('.change-head:visible')).toHaveCount(1);
+  await viewer().getByRole('button', { name: 'History', exact: true }).click();
+  await viewer().getByLabel('Review round').selectOption('1');
+  await expect(viewer().getByText('Round 1 (earlier round)', { exact: true })).toBeVisible();
+  await expect(viewer().getByRole('button', { name: 'Undo last decision', exact: true })).toBeDisabled();
+  const writeCount = writes.length;
+  await viewer().locator('#paper').focus();
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+  assert.equal(writes.length, writeCount);
+  await viewer().getByRole('button', { name: 'Back to review', exact: true }).click();
+  await expect(viewer().getByText('Round 2', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
+  await viewer().locator('.change.current').getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(viewer().locator('.change-head:visible')).toHaveCount(0);
+  await viewer().getByRole('button', { name: 'History', exact: true }).click();
+  await expect(viewer().getByRole('button', { name: 'Undo last decision', exact: true })).toBeInViewport();
+  await expect(viewer().getByRole('button', { name: 'Back to review', exact: true })).toBeInViewport();
+  await page.screenshot({ path: 'test-results/review-history-mobile.png', fullPage: true });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
+  assert.deepEqual(errors, []);
+  console.log('PASS: Current changes resolve to clean PDF; history and explicit undo; sent/working states; notes on accepted text; mixed decisions; new rounds; older rounds read-only; mobile');
+} finally { await browser.close(); await server.close(); }

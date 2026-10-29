@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ComposerDraft, reviewInstructions, sendsMessage, taskTitle } from '../src/web/composer.ts';
+import { ComposerDraft, reviewInstructions, sendsMessage, taskTitle, unsentReviewFeedback, type Message } from '../src/web/composer.ts';
+
+test('review submission includes accepted and rejected decisions, with confirmed delivery taking precedence', () => {
+  const review = { state: 'done', round: 1, counts: { pending: 0, accepted: 1, rejected: 2, commented: 0 } };
+  assert.equal(unsentReviewFeedback(null), 0);
+  assert.equal(unsentReviewFeedback(review), 3);
+  assert.equal(unsentReviewFeedback({ ...review, unsent: 0 }), 0);
+  assert.equal(unsentReviewFeedback({ ...review, unsent: 1 }), 1);
+  assert.match(reviewInstructions, /decisions and comments/);
+  assert.match(reviewInstructions, /Preserve accepted changes and do not reintroduce rejected edits/);
+});
 
 function deferred() {
   let resolve!: () => void;
@@ -19,9 +29,9 @@ function setup() {
 test('sending review feedback preserves the unsent draft and uses a separate request ID', async () => {
   const { draft, storage } = setup();
   draft.edit('My next revision');
-  const messages: { text: string; requestKey: string }[] = [];
+  const messages: Message[] = [];
   await draft.submit('feedback', async message => { messages.push(message); });
-  assert.equal(messages[0].text, reviewInstructions);
+  assert.deepEqual({ ...messages[0], requestKey: '' }, { text: '', requestKey: '', feedback: true });
   assert.equal(draft.text, 'My next revision');
   assert.equal(storage.getItem('draft'), 'My next revision');
   await draft.submit('draft', async message => { messages.push(message); });
@@ -105,4 +115,13 @@ test('Enter sends from a hardware keyboard but never while composing text', () =
   assert.equal(sendsMessage({ ...key, isComposing: true }, false), false);
   assert.equal(sendsMessage({ ...key, keyCode: 229 }, false), false);
   assert.equal(sendsMessage({ ...key, key: 'a' }, false), false);
+});
+
+test('a skill can run without text, and a draft without a skill cannot', async () => {
+  const { draft } = setup();
+  const messages: Message[] = [];
+  assert.equal(await draft.submit('draft', async message => { messages.push(message); }), false);
+  assert.equal(await draft.submit('draft', async message => { messages.push(message); }, 'proofread'), true);
+  assert.equal(messages[0].skill, 'proofread');
+  assert.equal(messages[0].text, '');
 });

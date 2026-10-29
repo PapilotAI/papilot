@@ -6,14 +6,23 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
+- Skills: type `/` in any prompt, or pick a suggestion on the new-task page, to run **Polish**, **Proofread**, **Shorten**, **Check math**, **Consistency**, **Fix LaTeX warnings** or **Address reviewers** without writing the prompt. Add your own as Markdown files in `~/.papilot/skills` or a paper's `.papilot/skills`.
+- **Settings** in the sidebar holds **Appearance** (light, dark or the system setting, for the workspace and the review viewer; in dark, PDF pages turn dark too), **Language** (English or Simplified Chinese, following the browser by default) and **Notifications** (a browser notification when a task needs your reply, its review is ready, or it stops with an error while Papilot is in the background).
+- **Notes** in the PDF review: select any text, including accepted or unchanged text, or mark a region, and send the notes to the task's agent together.
+- Agent replies typeset LaTeX mathematics.
 - `papilot doctor` checks the environment and suggests fixes without installing software or changing papers; `--repo` checks a paper and `--json` outputs a report for scripts.
 
 ### Changed
 
+- The chat shows what you did rather than the prompt the agent receives: a skill by name with your words, and sent review feedback as its decisions and comments.
+- **Send feedback** asks only for comments, or for a round you rejected entirely; accepted and rejected decisions reach the agent with your next message.
+- Decided changes leave the current review and become clean PDF text. **History** holds earlier diffs and **Undo last decision**; sending feedback shows the agent's progress until new changes arrive.
 - The PDF's contents sit in the side panel beside Notes and Git.
 
 ### Fixed
 
+- **Send feedback** includes accepted and rejected review decisions, so a round without comments can still be sent to the agent. Queued or delivered feedback no longer prompts another send.
+- Claude is available with `ANTHROPIC_AUTH_TOKEN`, the key a gateway or another service's Anthropic-compatible `ANTHROPIC_BASE_URL` uses, instead of asking for an Anthropic API key. The guide shows how to map the model menu onto that service's models.
 - The macOS background service keeps the tool search path of the shell it was installed from, and `PAPILOT_SERVICE_PATH` picks a particular TeX or Python installation for it.
 - KOMA-Script papers build and review correctly.
 - Build errors show the TeX diagnostic together with any Python helper exception, such as one from `latexminted`.

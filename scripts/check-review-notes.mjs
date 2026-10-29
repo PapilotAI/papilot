@@ -1,0 +1,116 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import Fastify from 'fastify';
+import staticFiles from '@fastify/static';
+import { chromium } from '../vendor/latex-review/node_modules/playwright/index.mjs';
+
+const server = Fastify();
+await server.register(staticFiles, { root: path.resolve('dist') });
+await server.listen({ host: '127.0.0.1', port: 0 });
+const origin = `http://127.0.0.1:${server.server.address().port}`;
+const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
+const page = await browser.newPage({ locale: 'en-US', colorScheme: 'dark', viewport: { width: 1440, height: 900 } });
+const errors = []; page.on('pageerror', error => errors.push(error.message));
+const task = { id: 'review-notes-fixture', projectId: 'paper', name: 'p-notes', title: 'Polish the acknowledgments', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { round: 1, state: 'reviewed', counts: { pending: 0, rejected: 1, accepted: 1 } } };
+const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Thesis', path: '/tmp/thesis' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
+const markdown = '已润色 [acknowledgments.tex](/Users/chen/thesis/main/frontmatter/acknowledgments.tex:26)。\n\n| Item | Result |\n| --- | --- |\n| Text | **Ready** |\n\n- Parent\n  - Nested *item*\n\n- [x] Reviewed\n\n~~Previous~~';
+let failSend = true;
+const messages = [];
+await page.route('**/api/**', route => {
+  const url = new URL(route.request().url());
+  if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
+  if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
+  if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: [{ id: 'reply', taskId: task.id, type: 'assistant', text: markdown, createdAt: 1 }] } });
+  if (url.pathname.endsWith('/messages')) {
+    messages.push(route.request().postDataJSON());
+    return route.fulfill(failSend ? { status: 503, json: { error: 'Temporary failure. Try again.' } } : { json: { ok: true } });
+  }
+  if (url.pathname.endsWith('/git')) return route.fulfill({ json: { files: [], branch: 'main' } });
+  if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+  throw Error(`Unexpected request ${url.pathname}`);
+});
+const strip = (text, page) => `<div class="pdf-strip" data-page="${page}" style="aspect-ratio:600/180"><img alt="" aria-hidden="true" width="600" height="180"><div class="pdf-text"><span class="pdf-text-line"><span class="pdf-glyph" style="left:15%;top:30%;font-size:20px">${text}</span></span></div></div>`;
+const review = `<html><head><style>${fs.readFileSync('vendor/latex-review/src/web/style.css', 'utf8')} .pdf-glyph{color:#171717}</style></head><body><header class="bar"><div class="identity"><span>Round 1</span></div><span class="meter">2 of 2 decided</span></header><main id="paper"><div class="document"><div class="sheet"><div class="context">${strip('Unchanged paragraph for context.', 'ix')}</div>${['rejected', 'accepted'].map((state, i) => `<article class="change inline" data-stop="${i}" data-state="${state}" data-resolved="${i ? 'after' : 'before'}"><header class="change-head"><span class="change-number">Change ${i + 1}</span><span class="change-where" title="main/frontmatter/acknowledgments.tex:26–43">main/frontmatter/acknowledgments.tex:26–43</span><span class="badge">${state}</span></header><div class="side ${i ? 'after' : 'before'}">${strip(i ? 'Accepted paragraph remains available.' : 'Thank you to my friends and family.', 'x')}</div></article>`).join('')}</div></div></main></body></html>`;
+await page.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: review }));
+const frame = () => page.frameLocator('.review-frame');
+async function selectText(selector) {
+  await frame().locator(selector).evaluate(el => {
+    const range = document.createRange(); range.selectNodeContents(el);
+    const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  });
+  await frame().getByRole('button', { name: 'Add note', exact: true }).click();
+}
+try {
+  await page.goto(origin);
+  await page.getByRole('button', { name: 'Review notes', exact: true }).waitFor();
+  await frame().locator('.review-note-layer').first().waitFor({ state: 'attached' });
+  assert.equal(await page.locator('.markdown .file-reference').textContent(), 'acknowledgments.tex');
+  assert.equal(await page.locator('.markdown table td').last().textContent(), 'Ready');
+  assert.equal(await page.locator('.markdown ul ul li').textContent(), 'Nested item');
+  await page.locator('.file-reference').click();
+  await page.getByRole('button', { name: 'Copied path' }).waitFor();
+  await selectText('[data-state="rejected"] .pdf-glyph');
+  const noteInput = frame().getByRole('textbox', { name: 'Note for the agent' });
+  assert.equal(await noteInput.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(38, 39, 43)');
+  // The pages turn dark with the theme.
+  assert.equal(await frame().locator('.sheet').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(41, 41, 41)');
+  assert.match(await frame().locator('.pdf-strip img').first().evaluate(el => getComputedStyle(el).filter), /invert/);
+  await noteInput.fill('Keep all the names and make this warmer.');
+  await frame().getByRole('button', { name: 'Add note', exact: true }).click();
+  await page.getByRole('button', { name: 'Review notes, 1', exact: true }).waitFor();
+  assert.equal(await frame().locator('[data-state="rejected"]').getAttribute('data-state'), 'rejected');
+  await page.reload();
+  await page.getByRole('button', { name: 'Review notes, 1', exact: true }).click();
+  await frame().getByText('Keep all the names and make this warmer.', { exact: true }).waitFor();
+  await frame().getByRole('button', { name: 'Close review notes' }).click();
+  await selectText('[data-state="accepted"] .pdf-glyph');
+  await frame().getByRole('textbox', { name: 'Note for the agent' }).fill('Keep this accepted paragraph.');
+  await frame().getByRole('button', { name: 'Add note', exact: true }).click();
+  await frame().getByRole('button', { name: 'Close review notes' }).click();
+  await page.getByRole('button', { name: 'Mark region', exact: true }).click();
+  const box = await frame().locator('.context .review-region-capture').boundingBox();
+  await page.mouse.move(box.x + 60, box.y + 20); await page.mouse.down();
+  await page.mouse.move(box.x + 250, box.y + 65, { steps: 5 }); await page.mouse.up();
+  await frame().getByRole('textbox', { name: 'Note for the agent' }).fill('Check the spacing in this region.');
+  await frame().getByRole('button', { name: 'Add note', exact: true }).click();
+  await page.getByRole('button', { name: 'Review notes, 3', exact: true }).waitFor();
+  fs.mkdirSync('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/review-notes-desktop.png', fullPage: true });
+  await frame().getByRole('button', { name: 'Send 3 notes to the agent' }).click();
+  await frame().getByRole('alert').waitFor();
+  assert.equal(messages.length, 1);
+  await page.reload();
+  await page.getByRole('button', { name: 'Review notes, 3', exact: true }).click();
+  failSend = false;
+  await frame().getByRole('button', { name: 'Send 3 notes to the agent' }).click();
+  await page.getByRole('button', { name: 'Review notes', exact: true }).waitFor();
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages[0], messages[1], 'retry after reload uses the same submission identity');
+  assert.match(messages[1].text, /Round 1 · PDF page x · Before · Change 1 · main\/frontmatter\/acknowledgments.tex:26–43/);
+  assert.match(messages[1].text, /After · Change 2/);
+  assert.match(messages[1].text, /Unchanged text · Region in displayed strip/);
+  assert.match(messages[1].text, /Thank you to my friends and family/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: /^Review/ }).first().click();
+  await page.getByRole('button', { name: 'Review notes', exact: true }).click();
+  await page.getByRole('button', { name: 'Show task list', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('radio', { name: 'Light', exact: true }).check();
+  await frame().locator('html[data-theme="light"]').waitFor();
+  await settings.getByRole('radio', { name: 'Dark', exact: true }).check();
+  await frame().locator('html[data-theme="dark"]').waitFor();
+  await page.keyboard.press('Escape');
+  await settings.waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Hide task list', exact: true }).click();
+  await page.locator('.sidebar').waitFor({ state: 'hidden' });
+  const panel = frame().getByRole('complementary', { name: 'Review PDF notes' });
+  await panel.waitFor();
+  const bounds = await panel.boundingBox();
+  assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
+  await page.screenshot({ path: 'test-results/review-notes-mobile.png', fullPage: true });
+  assert.deepEqual(errors, []);
+  console.log('PASS: Review notes on rejected, accepted and unchanged text; region marking; persistence; retry identity; Markdown; mobile layout');
+} finally { await browser.close(); await server.close(); }

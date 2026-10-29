@@ -130,6 +130,10 @@ test('Claude turns use the local Claude Code login, resume their session, and re
   const bedrock = new ClaudeAgent(fakeClaude(async function* () {}, { apiProvider: 'bedrock' }).load);
   await bedrock.start();
   assert.deepEqual((await bedrock.request('account/read')).account, { email: undefined, type: 'bedrock' });
+  // A token for a gateway or an Anthropic-compatible ANTHROPIC_BASE_URL counts as a key.
+  const compatible = new ClaudeAgent(fakeClaude(async function* () {}, { tokenSource: 'ANTHROPIC_AUTH_TOKEN', apiProvider: 'firstParty' }).load);
+  await compatible.start();
+  assert.deepEqual((await compatible.request('account/read')).account, { email: undefined, type: 'API key' });
   assert.deepEqual((await agent.request('model/list')).data.map((m: any) => [m.model, m.isDefault, m.supportedReasoningEfforts.length]), [['opus', true, 2], ['haiku', false, 1]]);
   await assert.rejects(agent.request('account/rateLimits/read'), /not reported usage/);
   const seen = events(agent), requests: any[] = [];

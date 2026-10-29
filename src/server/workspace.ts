@@ -9,7 +9,9 @@ import { Codex, RpcResponseError } from './codex.ts';
 import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, type AgentRuntime } from './agents.ts';
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
 import { VERSION } from './paths.ts';
-import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId } from '../shared.ts';
+import { findSkill, type SkillFile } from './skills.ts';
+import { reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
+import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -122,25 +124,30 @@ export class Workspace extends EventEmitter {
     const project = { ...this.store.project(projectId), name };
     this.store.saveProject(project); return project;
   }
-  async createTask(input: { projectId: string; title: string; instructions: string; agent?: AgentId; model?: string; effort?: string; id: string }) {
+  // A task can start from a skill; its instructions are then the author's own words, possibly none.
+  async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; agent?: AgentId; model?: string; effort?: string; id: string }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     const existing = this.store.tasks().find(t => t.id === input.id); if (existing) return existing;
     if (this.preparing.has(input.id)) throw new Error('This task is being created. Refresh in a moment.');
     this.preparing.add(input.id);
     try {
-      const project = this.store.project(input.projectId), client = await this.connectReview(project.path);
+      const project = this.store.project(input.projectId), skill = input.skill ? findSkill(project.path, input.skill) : undefined;
+      if (!skill && !input.instructions.trim()) throw new Error('Describe the revision, or choose a skill.');
+      const client = await this.connectReview(project.path);
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
       const info = await client.post('/api/tasks', { name, title: input.title });
-      const task: Task = { id: input.id, projectId: project.id, name, title: input.title, instructions: input.instructions,
+      const task: Task = { id: input.id, projectId: project.id, name, title: input.title, instructions: skill ? skillPrompt(skill, input.instructions) : input.instructions,
         worktree: info.worktree, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.saveTask(task);
-      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false);
+      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill });
       return this.store.task(task.id);
     } finally { this.preparing.delete(input.id); }
   }
-  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true) {
+  // The author's message, a skill run with or without one, or the review
+  // feedback alone. The chat keeps what the author did; the agent gets the prompt.
+  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; feedback?: boolean } = {}) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const existing = this.store.runByKey(requestKey);
@@ -148,15 +155,18 @@ export class Workspace extends EventEmitter {
     if (task.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
     const pauseVersion = task.pauseVersion || 0;
     if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
-    let prompt = text.trim(), cursor = task.feedbackCursor;
+    let prompt = options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, text) : text.trim(), cursor = task.feedbackCursor;
+    let summary: FeedbackSummary | undefined;
     if (includeFeedback) {
       const client = await this.connectReview(this.store.project(task.projectId).path);
       const feedback = await client.get(`${taskRoute(task.name)}/feedback?after=${task.feedbackCursor}`);
-      cursor = feedback.cursor;
+      cursor = feedback.cursor; summary = summarizeFeedback(feedback);
+      if (options.feedback && !summary) throw new Error('There is no new review feedback to send.');
       if (feedback.feedback?.length || feedback.build_error) prompt += '\n\nPapilot review feedback (bound to the specified review round and source changes):\n' + JSON.stringify(feedback, null, 2);
       if (task.error) prompt += '\n\nLatest task/review error:\n' + task.error + '\nThe latest accepted manuscript is at ' + this.store.project(task.projectId).path + '. You may read it to understand accepted changes, but must only edit your isolated task worktree. Prepare a revised proposal for another review; never write to or accept changes in the manuscript checkout.';
     }
     const run: Run = { id: randomUUID(), taskId, requestKey, prompt, feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null };
+    const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}) };
     const saved = this.store.transaction(() => {
       // Feedback loading yields to other requests. Recheck identity, queue, and
       // task status together before committing; none of the earlier reads own a lock.
@@ -172,7 +182,7 @@ export class Workspace extends EventEmitter {
       if (current.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
       this.store.saveRun(run);
       if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null });
-      this.store.saveItem({ id: run.id, taskId, type: 'user', text: text.trim(), createdAt: run.createdAt });
+      this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
       return run;
     });
     this.schedule();
@@ -200,7 +210,7 @@ export class Workspace extends EventEmitter {
 Your task is already created. Your editable working directory is ${task.worktree}.
 Original task: ${task.instructions}
 Only edit this isolated task worktree. Never edit the manuscript checkout, other task worktrees, or Papilot's own source/state. Never commit, push, stash, or accept/reject/undo review decisions.
-Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This application workflow replaces the standalone latex-review skill's publish-and-wait loop. End your turn after completing the requested edits, with a concise summary.
+Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This application workflow replaces the standalone latex-review skill's publish-and-wait loop. End your turn after completing the requested edits, with a concise summary for the author of what you changed and why; do not describe Papilot's review workflow.
 Preserve meaning and mathematical correctness. Read relevant project instructions. Treat reviewer comments as instructions tied to their round, file and changes. Rejected edits must not be reintroduced unless explicitly requested. If there is a conflict with accepted text, explain it and propose a revision for a new review round; never overwrite the accepted manuscript.
 ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to you here and any attempt is refused, which ends your turn: read, search and edit files in the task worktree with your file tools only.' : 'You may run tools in the task worktree to inspect and validate your changes.'} If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.`;
   }
@@ -460,7 +470,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         if (this.closing) return;
         const current = await client.get(`/api/jobs/${job.job}`);
         const summary = await client.get(taskRoute(task.name));
-        this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: current, unsent: this.store.task(taskId).review?.unsent } });
+        this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, job: current } });
         if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') break;
         if (current.status === 'failed') throw new Error([current.error, ...(current.details || [])].filter(Boolean).join('\n') || 'PDF build failed.');
         await delay(1500);
@@ -473,19 +483,22 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     try {
       const task = this.store.task(taskId);
       if (task.status === 'deleting') return;
-      const client = await this.connectReview(this.store.project(task.projectId).path);
+      const project = this.store.project(task.projectId), client = await this.connectReview(project.path);
       const summary = await client.get(taskRoute(task.name));
-      const unsent = await this.unsentComments(client, this.store.task(taskId));
+      const { unsent, comments } = await this.unsentReviewFeedback(client, this.store.task(taskId));
+      const files = await acceptedFiles(project.path, task.name);
       const current = this.store.task(taskId);
-      if (current.status !== 'deleting') this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent } });
+      if (current.status !== 'deleting') this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent, comments, files } });
     } catch { /* The task remains visible even if its project is temporarily unavailable. */ }
   }
-  // Review comments Codex has not received yet. A queued or in-flight message
-  // already carries the feedback up to its own cursor.
-  private async unsentComments(client: ReviewClient, task: Task) {
+  // Review decisions, comments and undo updates the agent has not received yet.
+  // The engine excludes decisions undone before delivery. A queued or in-flight message
+  // already carries the feedback up to its own cursor. Comments and notes ask for a revision.
+  private async unsentReviewFeedback(client: ReviewClient, task: Task) {
     const after = Math.max(task.feedbackCursor, ...this.store.runs().filter(r => r.taskId === task.id && ['queued', 'running', 'uncertain'].includes(r.status)).map(r => r.feedbackCursor || 0));
     const feedback = await client.get<{ feedback?: { kind?: string }[] }>(`${taskRoute(task.name)}/feedback?after=${after}`);
-    return (feedback.feedback || []).filter(item => item.kind === 'comment').length;
+    const items = feedback.feedback || [];
+    return { unsent: items.length, comments: items.filter(item => item.kind === 'comment' || item.kind === 'note').length };
   }
   renameTask(taskId: string, title: string) {
     if (this.store.task(taskId).status === 'deleting') throw new Error('This task is being deleted.');
@@ -527,4 +540,14 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     } finally { this.deletions.delete(taskId); this.schedule(); }
   }
   close() { this.closing = true; for (const timer of this.usageTimers.values()) clearTimeout(timer); this.flush(); for (const id of AGENTS) this.agents[id].close(); }
+}
+
+// The review engine records each task's accepted text as a commit beside the
+// one it started from; their difference is what the task put in the
+// manuscript. A rename counts as both of its paths.
+export async function acceptedFiles(root: string, name: string) {
+  try {
+    const { stdout } = await execute('git', ['-C', root, 'diff', '--name-only', '--no-renames', '-z', `refs/latex-review/${name}/base`, `refs/latex-review/${name}/accepted`, '--']);
+    return stdout.split('\0').filter(Boolean);
+  } catch { return []; }
 }

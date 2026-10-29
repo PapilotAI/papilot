@@ -1,5 +1,6 @@
 import { memo, useMemo, type CSSProperties } from "react";
 import type { Strip, TextGlyph } from "../types.ts";
+import { t } from "./i18n.ts";
 let context: CanvasRenderingContext2D | null | undefined;
 const widths = new Map<string, number>();
 function width(text: string) {
@@ -67,7 +68,10 @@ export const PdfStrip = memo(function PdfStrip({
         <div
           className="pdf-text"
           role="region"
-          aria-label={`${label}, PDF page ${image.label}`}
+          aria-label={t("{label}, PDF page {page}", {
+            label,
+            page: image.label,
+          })}
         >
           {text}
         </div>

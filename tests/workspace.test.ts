@@ -6,7 +6,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Store } from '../src/server/store.ts';
-import { Workspace, accountUsage, agentModel } from '../src/server/workspace.ts';
+import { Workspace, accountUsage, acceptedFiles, agentModel } from '../src/server/workspace.ts';
+import { findSkill } from '../src/server/skills.ts';
+import { reviewInstructions } from '../src/conversation.ts';
 import { RpcResponseError, type Codex } from '../src/server/codex.ts';
 import type { ReviewClient } from '../src/server/review.ts';
 import type { PendingReview, Run, Task } from '../src/shared.ts';
@@ -194,7 +196,7 @@ test('canceling queued feedback leaves it available for the next submission', as
   } finally { f.close(); }
 });
 
-test('unsent review comments exclude feedback already queued for Codex', async () => {
+test('unsent review feedback includes decisions and excludes feedback already queued for Codex', async () => {
   const items = [{ id: 3, kind: 'comment' }, { id: 5, kind: 'reject' }, { id: 7, kind: 'comment' }];
   const f = fixture(async (_method, route) => {
     if (!route.includes('/feedback')) return summary;
@@ -204,14 +206,39 @@ test('unsent review comments exclude feedback already queued for Codex', async (
   });
   try {
     await f.workspace.refresh(f.task.id);
-    assert.equal(f.store.task(f.task.id).review?.unsent, 2);
+    assert.equal(f.store.task(f.task.id).review?.unsent, 3);
     await f.workspace.enqueue(f.task.id, 'Address the comments.', 'send');
     await f.workspace.refresh(f.task.id);
     assert.equal(f.store.task(f.task.id).review?.unsent, 0);
     await f.workspace.interrupt(f.task.id);
     await f.workspace.refresh(f.task.id);
-    assert.equal(f.store.task(f.task.id).review?.unsent, 2, 'Pausing a queued message returns its comments to the unsent count');
+    assert.equal(f.store.task(f.task.id).review?.unsent, 3, 'Pausing a queued message returns its decisions and comments to the unsent count');
   } finally { f.close(); }
+});
+
+test('accept-only, reject-only and undo feedback can be sent without comments', async () => {
+  for (const kind of ['accept', 'reject', 'undo', 'note']) {
+    const items = [{ id: 7, kind, round: 1, changes: ['change-1'] }];
+    const f = fixture(async (_method, route) => {
+      if (!route.includes('/feedback')) return { state: 'done', round: 1, counts: { pending: 0, accepted: kind === 'accept' ? 1 : 0, rejected: kind === 'reject' ? 1 : 0, commented: 0 } };
+      const after = Number(new URL(route, 'http://unused').searchParams.get('after'));
+      return { cursor: Math.max(after, 7), feedback: items.filter(item => item.id > after) };
+    });
+    try {
+      await f.workspace.refresh(f.task.id);
+      assert.equal(f.store.task(f.task.id).review?.unsent, 1, kind);
+      const run = await f.workspace.enqueue(f.task.id, 'Continue from the review decisions.', 'send-decisions');
+      assert.match(run.prompt, new RegExp(`"kind": "${kind}"`));
+      assert.equal(run.feedbackCursor, 7);
+      assert.equal((await f.workspace.enqueue(f.task.id, 'Continue from the review decisions.', 'send-decisions')).id, run.id);
+      await f.workspace.refresh(f.task.id);
+      assert.equal(f.store.task(f.task.id).review?.unsent, 0, kind);
+      await f.workspace.interrupt(f.task.id);
+      f.store.updateTask(f.task.id, { feedbackCursor: 7 });
+      await f.workspace.refresh(f.task.id);
+      assert.equal(f.store.task(f.task.id).review?.unsent, 0, 'Delivered feedback stays hidden');
+    } finally { f.close(); }
+  }
 });
 
 test('renaming a task changes only its title and is blocked during deletion', () => {
@@ -881,5 +908,64 @@ test('Antigravity is told to edit with its file tools, since it cannot run comma
     assert.match(antigravity, /^You are Antigravity running inside Papilot/);
     assert.match(antigravity, /Shell commands are not available to you here.*file tools only/);
     assert.doesNotMatch(antigravity, /You may run tools/);
+  } finally { f.close(); }
+});
+
+test('a skill runs as its instructions while the chat keeps the author\'s words', async () => {
+  const f = fixture();
+  try {
+    const run = await f.workspace.enqueue(f.task.id, 'Only the abstract.', 'skill-run', false, { skill: findSkill('/unused', 'proofread') });
+    assert.match(run.prompt, /^Use the "Proofread" skill below/);
+    assert.match(run.prompt, /<skill name="Proofread">[\s\S]*typos[\s\S]*<\/skill>\n\nRequest: Only the abstract\.$/);
+    const item = f.store.items(f.task.id).find(entry => entry.id === run.id)!;
+    assert.equal(item.text, 'Only the abstract.');
+    assert.deepEqual(item.meta, { skill: { id: 'proofread', name: 'Proofread' } });
+  } finally { f.close(); }
+});
+
+test('sent review feedback shows as decisions and comments, not as the prompt', async () => {
+  const f = fixture(async (_method, route) => route.includes('/feedback') ? { cursor: 9, feedback: [
+    { id: 8, kind: 'accept', round: 2, changes: ['a', 'b'] },
+    { id: 9, kind: 'comment', round: 2, text: 'Clarify the bound.', changes: [{ id: 'c', file: 'main.tex', lines: [4, 6], old: '', new: '' }] },
+  ] } : summary);
+  try {
+    const run = await f.workspace.enqueue(f.task.id, '', 'feedback-run', true, { feedback: true });
+    assert.ok(run.prompt.startsWith(reviewInstructions));
+    assert.match(run.prompt, /Clarify the bound/);
+    const item = f.store.items(f.task.id).find(entry => entry.id === run.id)!;
+    assert.equal(item.text, '');
+    assert.deepEqual(item.meta, { sendsFeedback: true, feedback: { round: 2, accepted: 2, rejected: 0, undone: 0, comments: [{ where: 'main.tex:4', text: 'Clarify the bound.' }] } });
+    await f.workspace.interrupt(f.task.id);
+    const typed = await f.workspace.enqueue(f.task.id, 'Also shorten it.', 'typed-run', false);
+    assert.equal(f.store.items(f.task.id).find(entry => entry.id === typed.id)!.meta, undefined);
+  } finally { f.close(); }
+});
+
+test('accepting puts a change in the manuscript without a commit, and the review knows the files it touched', async () => {
+  const { Fixture, METHOD, fakeRound } = await import(new URL('../vendor/latex-review/tests/ts/helpers.ts', import.meta.url).href);
+  const disk = new Fixture();
+  const app = disk.app();
+  const f = fixture();
+  try {
+    const target = app.tasks.create('p-task', 'Accept into the manuscript', [], ['paper']);
+    disk.edit(target, METHOD, 'Method sentence 2.', 'Accepted manuscript sentence.');
+    f.store.saveProject({ id: f.task.projectId, name: 'Temporary paper', path: disk.root, createdAt: 1 });
+    assert.doesNotMatch((f.workspace as any).instructions(f.store.task(f.task.id)), /commit message/i);
+    assert.deepEqual(await acceptedFiles(disk.root, target.name), []);
+    const head = app.repo.text(['rev-parse', 'HEAD']);
+    const round = fakeRound(app, target.name);
+    app.review.decide(target.name, { id: 'accept', action: 'accept', round: round.number, changes: [round.units[0].id] });
+    assert.match(fs.readFileSync(path.join(disk.root, METHOD), 'utf8'), /Accepted manuscript sentence\./);
+    assert.equal(app.repo.text(['rev-parse', 'HEAD']), head);
+    await f.workspace.refresh(f.task.id);
+    assert.deepEqual(f.store.task(f.task.id).review?.files, [METHOD]);
+  } finally { f.close(); await disk.close(); }
+});
+
+test('feedback alone cannot be sent when there is none, so the chat never shows an empty card', async () => {
+  const f = fixture(async (_method, route) => route.includes('/feedback') ? { cursor: 3, feedback: [] } : summary);
+  try {
+    await assert.rejects(f.workspace.enqueue(f.task.id, '', 'empty-feedback', true, { feedback: true }), /no new review feedback/);
+    assert.equal(f.store.runs().length, 0);
   } finally { f.close(); }
 });

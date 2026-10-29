@@ -1,7 +1,13 @@
-type DraftStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
-type Message = { text: string; requestKey: string };
+import type { ReviewSummary } from '../shared.ts';
+export { reviewInstructions } from '../conversation.ts';
 
-export const reviewInstructions = 'Address the comments from this review round. Preserve accepted changes and do not reintroduce rejected edits.';
+type DraftStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+// Feedback sends the unsent review updates on their own; a skill runs with or without text.
+export type Message = { text: string; requestKey: string; feedback?: true; skill?: string };
+
+// The server counts undelivered feedback events, excluding those already queued.
+// Older summaries only report decision totals; a confirmed zero takes precedence.
+export const unsentReviewFeedback = (review: ReviewSummary | null) => review?.unsent ?? ['accepted', 'rejected', 'commented'].reduce((count, kind) => count + (review?.counts?.[kind] || 0), 0);
 
 // Keep the submission identity separate from text being edited while a request
 // is in flight. Feedback is its own submission and never consumes the draft.
@@ -31,14 +37,14 @@ export class ComposerDraft {
     this.changed();
   }
 
-  async submit(source: 'draft' | 'feedback', send: (message: Message) => Promise<unknown>): Promise<boolean> {
-    const text = source === 'draft' ? this.text : reviewInstructions;
-    if (this.sending || !text.trim()) return false;
+  async submit(source: 'draft' | 'feedback', send: (message: Message) => Promise<unknown>, skill?: string): Promise<boolean> {
+    const text = source === 'draft' ? this.text : '';
+    if (this.sending || (source === 'draft' && !text.trim() && !skill)) return false;
     this.sending = true; this.sendingSource = source;
     this.changed();
     const revision = this.revision;
     try {
-      await send({ text: text.trim(), requestKey: this.requestKeys[source] });
+      await send({ text: text.trim(), requestKey: this.requestKeys[source], ...(source === 'feedback' ? { feedback: true as const } : {}), ...(skill ? { skill } : {}) });
       if (source === 'draft' && this.revision === revision) {
         // A task can be reopened while its previous request is still pending.
         // Preserve a newer draft saved by that mounted composer or another tab.

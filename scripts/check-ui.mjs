@@ -11,7 +11,7 @@ await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
-const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const context = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 900 } });
 const page = await context.newPage();
 await page.clock.install();
 const pageErrors = [];
@@ -63,6 +63,8 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items') && history) return json({ items: history });
   if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'hello', taskId: task.id, type: 'assistant', text: 'The introduction is ready for review.', createdAt: 1 }] });
   if (url.pathname.endsWith('/git')) return json(gitState);
+  // Skills and the feedback bar have their own check (check-skills.mjs).
+  if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git/diff')) return json({ path: url.searchParams.get('path'), diff: 'diff --git a/main.tex b/main.tex\n--- a/main.tex\n+++ b/main.tex\n@@ -1,2 +1,2 @@\n-Old line.\n+New line.\n Context.\n', truncated: false });
   if (url.pathname.endsWith('/git/commit')) {
     const body = route.request().postDataJSON(); gitCommits.push(body);
@@ -131,6 +133,89 @@ try {
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).waitFor();
   assert.equal(await page.locator('html').getAttribute('lang'), 'en');
   assert.doesNotMatch(await page.locator('body').innerText(), /\p{Script=Han}/u);
+
+  // Appearance changes live in both documents without losing a chat draft.
+  const settingsButton = page.getByRole('button', { name: 'Settings', exact: true });
+  const settingsDialog = page.getByRole('dialog', { name: 'Settings' });
+  const closeSettings = async () => { await page.keyboard.press('Escape'); await settingsDialog.waitFor({ state: 'hidden' }); };
+  const chooseTheme = async name => { await settingsButton.click(); await settingsDialog.getByRole('radio', { name, exact: true }).check(); await closeSettings(); };
+  const themeIs = async value => {
+    await page.waitForFunction(value => document.documentElement.dataset.theme === value, value);
+    await page.frameLocator('.review-frame').locator(`html[data-theme="${value}"]`).waitFor();
+  };
+  await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('Preserve this draft while changing appearance.');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await themeIs('dark');
+  await chooseTheme('Light');
+  await themeIs('light');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await themeIs('light');
+  await chooseTheme('Dark');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await themeIs('dark');
+  assert.equal(await page.getByRole('textbox', { name: 'Instructions for Codex' }).inputValue(), 'Preserve this draft while changing appearance.');
+  assert.equal(await page.locator('.main').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(38, 39, 43)');
+  assert.equal(await page.locator('html').evaluate(el => getComputedStyle(el).colorScheme), 'dark');
+  await page.reload();
+  await settingsButton.click();
+  assert.equal(await settingsDialog.getByRole('radio', { name: 'Dark', exact: true }).isChecked(), true);
+  await closeSettings();
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Settings', 'Closing Settings returns focus to its button');
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
+  await themeIs('dark');
+  await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('');
+  await chooseTheme('System');
+  await themeIs('light');
+  console.log('PASS: System appearance, explicit overrides, saved preference, live review theme and draft preservation');
+
+  // The interface language switches live, reloads the review in it, and keeps the draft.
+  await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('Keep this draft across languages.');
+  await settingsButton.click();
+  await settingsDialog.getByRole('combobox', { name: 'Language' }).selectOption('zh-CN');
+  await page.getByRole('dialog', { name: '设置' }).getByText('外观', { exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN');
+  await page.getByRole('button', { name: '新任务', exact: true }).waitFor();
+  assert.equal(await page.getByRole('textbox', { name: '给 Codex 的指令' }).inputValue(), 'Keep this draft across languages.');
+  await page.waitForFunction(() => document.querySelector('.review-frame')?.getAttribute('src')?.endsWith('&lang=zh-CN'));
+  assert.match(await page.getByRole('link', { name: '在新标签页中打开审阅' }).getAttribute('href'), /&lang=zh-CN$/);
+  await page.reload();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('dialog', { name: '设置' }).getByRole('combobox', { name: '语言' }).selectOption('system');
+  await settingsDialog.waitFor();
+  await closeSettings();
+  assert.equal(await page.locator('html').getAttribute('lang'), 'en');
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
+  await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('');
+  console.log('PASS: Live interface language, saved choice, translated review address and draft preservation');
+
+  // Notifications: off until turned on, then a background tab announces a ready review.
+  await context.grantPermissions(['notifications'], { origin });
+  await page.evaluate(() => {
+    window.shown = [];
+    window.Notification = class { static permission = 'granted'; static requestPermission = async () => 'granted'; constructor(title, options) { window.shown.push({ title, body: options.body, tag: options.tag }); } close() {} };
+  });
+  await settingsButton.click();
+  const notifySwitch = settingsDialog.getByRole('switch', { name: 'Notifications' });
+  assert.equal(await notifySwitch.isChecked(), false);
+  await notifySwitch.check();
+  await settingsDialog.getByRole('button', { name: 'Send a test notification' }).click();
+  await settingsDialog.getByText(/^Sent\./).waitFor();
+  await closeSettings();
+  await page.evaluate(() => { document.hasFocus = () => false; });
+  const fixtureTask = snapshot.tasks.find(t => t.id === task.id);
+  fixtureTask.status = 'building';
+  await page.clock.runFor(3000);
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).getByText('Building PDF review').waitFor();
+  fixtureTask.status = 'reviewing';
+  await page.clock.runFor(3000);
+  await page.waitForFunction(() => window.shown.length === 2);
+  assert.deepEqual((await page.evaluate(() => window.shown))[1], { title: 'Review ready · 3 changes to decide', body: 'Clarify the introduction', tag: 'papilot:fixture-task-0001' });
+  await page.evaluate(() => { delete document.hasFocus; localStorage.removeItem('papilot:notifications'); });
+  await page.reload();
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
+  console.log('PASS: Notifications switch, test notification and background review alert');
 
   const switcher = page.getByRole('button', { name: 'Paper: Example paper', exact: true });
   await switcher.click();
@@ -400,8 +485,8 @@ try {
   const copy = page.getByRole('button', { name: 'Copy message' });
   await copy.click();
   await page.getByRole('button', { name: 'Copied' }).waitFor();
-  await page.getByText('1 comment not sent yet', { exact: true }).waitFor();
-  await page.getByText('1 review comment will be sent with this message', { exact: true }).waitFor();
+  await page.getByText('1 review update not sent yet', { exact: true }).waitFor();
+  await page.getByText('1 review update will be sent with this message', { exact: true }).waitFor();
   task.review.unsent = 0;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.getByRole('button', { name: 'Send feedback', exact: true }).waitFor({ state: 'hidden' });
@@ -409,7 +494,7 @@ try {
   delete task.review.unsent;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.getByRole('button', { name: 'Send feedback', exact: true }).waitFor();
-  console.log('PASS: The chat divider drags, nudges, persists and resets; replies copy; only unsent comments offer Send feedback');
+  console.log('PASS: The chat divider drags, nudges, persists and resets; replies copy; only unsent review updates offer Send feedback');
 
 
   await page.getByRole('button', { name: 'New task', exact: true }).click();
@@ -472,12 +557,24 @@ try {
   console.log('PASS: Enter starts a task, Shift+Enter adds a line, retrying creation retains the same task ID, and agent, model and effort are remembered per agent');
 
   const input = page.getByRole('textbox', { name: 'Instructions for Codex' });
+  const previousReview = structuredClone(task.review);
+  task.review = { state: 'done', round: 1, counts: { pending: 0, accepted: 1, rejected: 1, commented: 0 }, unsent: 2 };
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.getByText('2 review updates not sent yet', { exact: true }).waitFor();
   await input.fill('Keep this unsent draft.');
+  await page.screenshot({ path: 'test-results/send-review-decisions.png', fullPage: true });
   await page.getByRole('button', { name: 'Send feedback', exact: true }).click();
   await page.getByRole('button', { name: 'Send instructions', exact: true }).waitFor();
   await page.waitForFunction(() => !document.querySelector('.send-button').disabled);
   assert.equal(await input.inputValue(), 'Keep this unsent draft.');
-  assert.match(messages[0].text, /Address the comments/);
+  assert.equal(messages[0].feedback, true);
+  assert.equal(messages[0].text, '');
+  task.review.unsent = 0;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.getByRole('button', { name: 'Send feedback', exact: true }).waitFor({ state: 'hidden' });
+  task.review = previousReview;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.getByRole('button', { name: 'Send feedback', exact: true }).waitFor();
   holdMessage = new Promise(resolve => { releaseMessage = resolve; });
   await page.getByRole('button', { name: 'Send instructions', exact: true }).click();
   await page.getByText('Sending…', { exact: true }).waitFor();
@@ -844,7 +941,7 @@ try {
   // Opening on a task from a paper other than the first keeps New task on that paper.
   const otherPaper = { id: 'second-paper', name: 'Second paper', path: '/tmp/second', createdAt: 2 };
   const otherTask = { ...task, id: 'other-task-0001', projectId: otherPaper.id, name: 'p-other', title: 'Polish the second paper', status: 'reviewing', review: null };
-  const papers = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const papers = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 900 } });
   const papersPage = await papers.newPage();
   await papersPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? { ...snapshot, projects: [...snapshot.projects, otherPaper], tasks: [otherTask], requests: [] } : { items: [] } }));
   await papersPage.goto(origin);
@@ -856,7 +953,7 @@ try {
   await papers.close();
   console.log('PASS: New task stays on the paper of the task being read');
 
-  const restricted = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const restricted = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1280, height: 800 } });
   await restricted.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Storage blocked', 'SecurityError'); } }));
   const restrictedPage = await restricted.newPage();
   const restrictedErrors = [];

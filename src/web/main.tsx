@@ -1,15 +1,21 @@
-import { StrictMode, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { StrictMode, Suspense, lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
-import type { AgentId, AgentModel, Annotation, GitDiff, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Snapshot, Task, TimelineItem } from '../shared.ts';
-import { ComposerDraft, sendsMessage, taskTitle } from './composer.ts';
+import { isFeedbackPrompt } from '../conversation.ts';
+import type { AgentId, AgentModel, Annotation, FeedbackSummary, GitDiff, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
+import { SkillChip, SkillMenu, SkillSuggestions, matchSkills, skillQuery } from './skills.tsx';
+import { ComposerDraft, sendsMessage, taskTitle, unsentReviewFeedback } from './composer.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
 import { browserStorage } from './storage.ts';
-import { ReviewFrame } from './review-frame.tsx';
+import { ReviewFrame, reviewUrl } from './review-frame.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { DeleteTaskDialog } from './task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
+import { useTheme } from './theme.tsx';
+import { SettingsDialog } from './settings.tsx';
+import { locale, t, tn, useLanguage } from './i18n.ts';
+import { notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
 import { Markdown } from './markdown.tsx';
 import logo from './logo.svg';
 import { ChipSelect } from './chip-select.tsx';
@@ -25,29 +31,31 @@ const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(ne
 async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal, wait = body === undefined ? 15000 : 30000): Promise<T> {
   const timeout = AbortSignal.timeout(wait);
   try { const response = await fetch('/api' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Papilot-Token': token }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-    const value = await response.json(); if (!response.ok) throw new Error(value.error || 'Request failed. Please try again.'); return value;
+    const value = await response.json(); if (!response.ok) throw new Error(value.error || t('Request failed. Please try again.')); return value;
   }
   catch (error) {
-    if (timeout.aborted) throw new Error(body === undefined ? 'The connection is taking too long. Check your network and try again.' : 'The request timed out and may still be processing. Check the task status before retrying.');
+    if (timeout.aborted) throw new Error(body === undefined ? t('The connection is taking too long. Check your network and try again.') : t('The request timed out and may still be processing. Check the task status before retrying.'));
     throw error;
   }
 }
 const AGENT_IDS: AgentId[] = ['codex', 'claude', 'antigravity'];
 const AGENT_LABELS: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity' };
 const agentName = (task: Task) => AGENT_LABELS[task.agent || 'codex'] || 'Codex';
-const statusNames: Record<string, string> = { idle: 'Ready', queued: 'Queued', running: 'Codex is editing', waiting_input: 'Needs your reply', building: 'Building PDF review', reviewing: 'Ready for review', interrupted: 'Paused', failed: 'Needs attention', uncertain: 'Check task status', deleting: 'Deleting task' };
+const statusNames = (): Record<string, string> => ({ idle: t('Ready'), queued: t('Queued'), waiting_input: t('Needs your reply'), building: t('Building PDF review'), reviewing: t('Ready for review'), interrupted: t('Paused'), failed: t('Needs attention'), uncertain: t('Check task status'), deleting: t('Deleting task') });
 const ACTIVE = ['running', 'waiting_input', 'queued'];
 function Status({ task }: { task: Task }) {
   const done = task.status === 'reviewing' && task.review?.state === 'done';
-  return <span className={`status ${task.status}${done ? ' done' : ''}`}><i/>{done ? 'Review complete' : task.status === 'running' ? `${agentName(task)} is editing` : statusNames[task.status] || task.status}</span>;
+  return <span className={`status ${task.status}${done ? ' done' : ''}`}><i/>{done ? t('Review complete') : task.status === 'running' ? t('{agent} is editing', { agent: agentName(task) }) : statusNames()[task.status] || task.status}</span>;
 }
-function time(timestamp: number) { return new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }); }
+function time(timestamp: number) { return new Date(timestamp).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }); }
 function ago(timestamp: number) {
   const minutes = Math.floor((Date.now() - timestamp) / 60000);
-  if (minutes < 1) return 'now'; if (minutes < 60) return `${minutes}m`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}h`; if (minutes < 10080) return `${Math.floor(minutes / 1440)}d`;
-  return new Date(timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (minutes < 1) return t('now'); if (minutes < 60) return t('{n}m', { n: minutes });
+  if (minutes < 1440) return t('{n}h', { n: Math.floor(minutes / 60) }); if (minutes < 10080) return t('{n}d', { n: Math.floor(minutes / 1440) });
+  return new Date(timestamp).toLocaleDateString(locale(), { month: 'short', day: 'numeric' });
 }
+// "5m ago", or "just now".
+const agoText = (timestamp: number) => Date.now() - timestamp < 60000 ? t('just now') : t('{time} ago', { time: ago(timestamp) });
 const touch = () => window.matchMedia('(pointer: coarse)').matches;
 function useMedia(query: string) {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
@@ -60,12 +68,33 @@ function useMedia(query: string) {
 
 // One composer for new tasks and follow-ups: grows with its text, sends on
 // Enter (see sendsMessage), and keeps its actions inside the same surface.
-function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, autoFocus, inputRef, footer, action, large }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSubmit: () => void; readOnly?: boolean; autoFocus?: boolean; inputRef?: React.RefObject<HTMLTextAreaElement | null>; footer: React.ReactNode; action: React.ReactNode; large?: boolean }) {
+// With skills, "/" opens the skill menu; the chosen skill sits above the text
+// as a chip, the text becomes optional, and Backspace in an empty box removes it.
+function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, autoFocus, inputRef, footer, action, large, skills, skill, onSkill }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSubmit: () => void; readOnly?: boolean; autoFocus?: boolean; inputRef?: React.RefObject<HTMLTextAreaElement | null>; footer: React.ReactNode; action: React.ReactNode; large?: boolean; skills?: Skill[]; skill?: Skill | null; onSkill?: (skill: Skill | null) => void }) {
   const fallback = useRef<HTMLTextAreaElement>(null), input = inputRef || fallback;
+  const menuId = useId(), [dismissed, setDismissed] = useState<string | null>(null), [active, setActive] = useState(0);
+  const query = skills?.length && onSkill && !readOnly ? skillQuery(value) : null;
+  const open = query !== null && dismissed !== value, matches = open ? matchSkills(skills!, query) : [];
+  useEffect(() => setActive(0), [query]);
+  // Escape closes the menu until the text changes.
+  useEffect(() => { if (dismissed !== null && value !== dismissed) setDismissed(null); }, [value, dismissed]);
   useLayoutEffect(() => { const element = input.current; if (!element) return; element.style.height = 'auto'; element.style.height = `${element.scrollHeight}px`; }, [input, value]);
   useEffect(() => { if (autoFocus && !touch()) input.current?.focus(); }, [autoFocus, input]);
+  function pick(chosen: Skill) { onSkill?.(chosen); onChange(''); input.current?.focus(); }
+  function keyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (open && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && matches.length) { e.preventDefault(); setActive(index => (index + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length); return; }
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && matches.length) { e.preventDefault(); pick(matches[Math.min(active, matches.length - 1)]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setDismissed(value); return; }
+    }
+    if (e.key === 'Backspace' && skill && onSkill && !value && !readOnly) { e.preventDefault(); onSkill(null); return; }
+    if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); onSubmit(); }
+  }
   return <form className={'composer' + (large ? ' large' : '')} onSubmit={e => { e.preventDefault(); onSubmit(); }} onPointerDown={e => { if (e.target === e.currentTarget) { e.preventDefault(); input.current?.focus(); } }}>
-    <textarea ref={input} rows={1} aria-label={label} maxLength={20000} placeholder={placeholder} value={value} readOnly={readOnly} onChange={e => onChange(e.target.value)} onKeyDown={e => { if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); onSubmit(); } }}/>
+    {open && <SkillMenu id={menuId} skills={matches} active={active} onActive={setActive} onPick={pick}/>}
+    {skill && <div className="composer-skill"><SkillChip skill={skill} onRemove={onSkill && !readOnly ? () => { onSkill(null); input.current?.focus(); } : undefined}/>{skill.description && <span className="composer-skill-description">{skill.description}</span>}</div>}
+    <textarea ref={input} rows={1} aria-label={label} maxLength={20000} placeholder={skill ? skill.hint || t('Add details, or send to run the skill') : placeholder} value={value} readOnly={readOnly} onChange={e => onChange(e.target.value)} onKeyDown={keyDown}
+      {...(onSkill && skills?.length ? { 'aria-autocomplete': 'list' as const, 'aria-controls': open ? menuId : undefined, 'aria-activedescendant': open && matches.length ? `${menuId}-${Math.min(active, matches.length - 1)}` : undefined } : {})}/>
     <div className="composer-footer">{footer}{action}</div>
   </form>;
 }
@@ -76,10 +105,10 @@ function RequestCard({ request, agent, answerDrafts, onDone }: { request: Pendin
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const questions = request.method.endsWith('requestUserInput') ? request.params.questions || [] : [];
   async function respond(decision?: string) { setBusy(true); setError(''); try { await api('/requests/' + request.id, { decision, answers }); answerDrafts.delete(request.id); onDone(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
-  return <div className="request-card"><h3><Icon name={questions.length ? 'chat' : 'alert'} size={16}/>{questions.length ? `${agent} needs your input` : 'Approve this action'}</h3>
-    {questions.map((q: any) => <fieldset className="question" key={q.id}><legend>{q.question || q.header}</legend>{q.options?.length > 0 && <div className="answer-options">{q.options.map((option: any) => <button type="button" disabled={busy} aria-pressed={answers[q.id] === option.label} className={answers[q.id] === option.label ? 'selected' : ''} key={option.label} onClick={() => setAnswers({ ...answers, [q.id]: option.label })}>{option.label}{option.description && <small>{option.description}</small>}</button>)}</div>}<input disabled={busy} aria-label={q.question || q.header} placeholder="Or type your own answer" value={answers[q.id] || ''} onChange={e => setAnswers({ ...answers, [q.id]: e.target.value })}/></fieldset>)}
-    {!questions.length && <><p>{request.params.reason || `${agent} is requesting permission for this action.`}</p><pre>{request.params.command || (request.params.permissions ? JSON.stringify(request.params.permissions, null, 2) : request.params.grantRoot || 'Apply file changes')}</pre></>}
-    {error && <p className="inline-error" role="alert">{error}</p>}<div className="button-row">{!questions.length && <button disabled={busy} className="button secondary" onClick={() => void respond('decline')}>Decline</button>}<button disabled={busy || questions.some((q: any) => !answers[q.id]?.trim())} className="button primary" onClick={() => void respond(questions.length ? undefined : 'accept')}>{busy ? 'Submitting…' : questions.length ? `Reply to ${agent}` : 'Allow this action'}</button></div>
+  return <div className="request-card"><h3><Icon name={questions.length ? 'chat' : 'alert'} size={16}/>{questions.length ? t('{agent} needs your input', { agent }) : t('Approve this action')}</h3>
+    {questions.map((q: any) => <fieldset className="question" key={q.id}><legend>{q.question || q.header}</legend>{q.options?.length > 0 && <div className="answer-options">{q.options.map((option: any) => <button type="button" disabled={busy} aria-pressed={answers[q.id] === option.label} className={answers[q.id] === option.label ? 'selected' : ''} key={option.label} onClick={() => setAnswers({ ...answers, [q.id]: option.label })}>{option.label}{option.description && <small>{option.description}</small>}</button>)}</div>}<input disabled={busy} aria-label={q.question || q.header} placeholder={t('Or type your own answer')} value={answers[q.id] || ''} onChange={e => setAnswers({ ...answers, [q.id]: e.target.value })}/></fieldset>)}
+    {!questions.length && <><p>{request.params.reason || t('{agent} is requesting permission for this action.', { agent })}</p><pre>{request.params.command || (request.params.permissions ? JSON.stringify(request.params.permissions, null, 2) : request.params.grantRoot || t('Apply file changes'))}</pre></>}
+    {error && <p className="inline-error" role="alert">{error}</p>}<div className="button-row">{!questions.length && <button disabled={busy} className="button secondary" onClick={() => void respond('decline')}>{t('Decline')}</button>}<button disabled={busy || questions.some((q: any) => !answers[q.id]?.trim())} className="button primary" onClick={() => void respond(questions.length ? undefined : 'accept')}>{busy ? t('Submitting…') : questions.length ? t('Reply to {agent}', { agent }) : t('Allow this action')}</button></div>
   </div>;
 }
 
@@ -95,7 +124,7 @@ function CopyButton({ text }: { text: string }) {
     }
     setCopied(true);
   }
-  return <button type="button" className="message-action" aria-label={copied ? 'Copied' : 'Copy message'} onClick={() => void copy()}><Icon name={copied ? 'check' : 'copy'} size={14}/><span>{copied ? 'Copied' : 'Copy'}</span></button>;
+  return <button type="button" className="message-action" aria-label={copied ? t('Copied') : t('Copy message')} onClick={() => void copy()}><Icon name={copied ? 'check' : 'copy'} size={14}/><span>{copied ? t('Copied') : t('Copy')}</span></button>;
 }
 
 // Commands arrive wrapped in the login shell that ran them, and files with
@@ -107,28 +136,47 @@ const toolState = (item: TimelineItem) => item.status === 'inProgress' ? 'runnin
 
 // A first message built from PDF notes shows the notes, not the instructions around them.
 function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[] }) {
-  return <article className="message user notes-message" aria-label={`You, ${time(item.createdAt)}`}><div className="message-body" title={time(item.createdAt)}>
-    <div className="sent-notes-head"><Icon name="notes" size={14}/>{notes.length === 1 ? 'Note on the PDF' : `${notes.length} notes on the PDF`}</div>
+  return <article className="message user notes-message" aria-label={t('You, {time}', { time: time(item.createdAt) })}><div className="message-body" title={time(item.createdAt)}>
+    <div className="sent-notes-head"><Icon name="notes" size={14}/>{tn(notes.length, 'Note on the PDF', '{n} notes on the PDF')}</div>
     <ol className="sent-notes">{notes.map((note, index) => <li key={index}>
       <span className="sent-note-where">{note.where}</span>
-      {note.quote ? <blockquote>{note.quote}</blockquote> : <span className="sent-note-region">Marked region</span>}
+      {note.quote ? <blockquote>{note.quote}</blockquote> : <span className="sent-note-region">{t('Marked region')}</span>}
       <p>{note.comment}</p>
     </li>)}</ol>
   </div></article>;
 }
 
+// Review feedback as the author gave it: decisions as counts, comments as written.
+function FeedbackDetails({ feedback }: { feedback: FeedbackSummary }) {
+  const counts = [feedback.accepted && ['accepted', t('{n} accepted', { n: feedback.accepted })], feedback.rejected && ['rejected', t('{n} rejected', { n: feedback.rejected })], feedback.comments.length && ['commented', tn(feedback.comments.length, '{n} comment', '{n} comments')], feedback.undone && ['undone', t('{n} undone', { n: feedback.undone })], feedback.buildError && ['failed', t('build error')]].filter(Boolean) as string[][];
+  return <>
+    {counts.length > 0 && <div className="feedback-counts">{counts.map(([kind, text]) => <span key={kind} className={kind}>{text}</span>)}</div>}
+    {feedback.comments.length > 0 && <ol className="sent-notes">{feedback.comments.map((comment, index) => <li key={index}><span className="sent-note-where">{comment.where}</span><p>{comment.text}</p></li>)}</ol>}
+  </>;
+}
+
+function UserMessage({ item }: { item: TimelineItem }) {
+  const notes = readNotesInstructions(item.text);
+  if (notes) return <NotesMessage item={item} notes={notes}/>;
+  const { skill, feedback, sendsFeedback } = item.meta || {};
+  if (sendsFeedback || isFeedbackPrompt(item.text)) return <article className="message user notes-message" aria-label={t('You sent review feedback, {time}', { time: time(item.createdAt) })}><div className="message-body" title={time(item.createdAt)}>
+    <div className="sent-notes-head"><Icon name="paper" size={14}/>{feedback?.round ? t('Review feedback · Round {round}', { round: feedback.round }) : t('Review feedback')}</div>
+    {feedback && <FeedbackDetails feedback={feedback}/>}
+  </div></article>;
+  return <article className="message user" aria-label={t('You, {time}', { time: time(item.createdAt) })}><div className="message-body" title={time(item.createdAt)}>
+    {skill && <SkillChip skill={skill}/>}{skill && item.text ? '\n' : ''}{item.text}
+    {feedback && <details className="feedback-attachment"><summary><Icon name="paper" size={13}/>{feedback.round ? t('With review feedback · Round {round}', { round: feedback.round }) : t('With review feedback')}</summary><FeedbackDetails feedback={feedback}/></details>}
+  </div></article>;
+}
+
 function TimelineEntry({ item, agent, root }: { item: TimelineItem; agent: string; root: string }) {
-  if (item.type === 'user') {
-    const notes = readNotesInstructions(item.text);
-    if (notes) return <NotesMessage item={item} notes={notes}/>;
-    return <article className="message user" aria-label={`You, ${time(item.createdAt)}`}><div className="message-body" title={time(item.createdAt)}>{item.text}</div></article>;
-  }
+  if (item.type === 'user') return <UserMessage item={item}/>;
   if (item.type === 'assistant') return <article className="message assistant" aria-label={`${agent}, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
   const files = item.type === 'files' ? editedFiles(item, root) : [];
-  const label = item.type === 'command' ? shellCommand(item.text) || 'Run command' : item.type === 'files' ? (files.length === 1 ? `Edited ${files[0]}` : `Edited ${files.length} files`) : item.text || 'Run tool';
+  const label = item.type === 'command' ? shellCommand(item.text) || t('Run command') : item.type === 'files' ? (files.length === 1 ? t('Edited {file}', { file: files[0] }) : t('Edited {n} files', { n: files.length })) : item.text || t('Run tool');
   const detail = item.type === 'files' ? files.join('\n') : item.detail;
   const state = toolState(item);
-  return <details className={'tool-item ' + state}><summary><Icon name={item.type === 'command' ? 'terminal' : item.type === 'files' ? 'diff' : 'tool'} size={14}/><span className="tool-label">{label}</span>{state === 'running' ? <span className="spinner" aria-label="Running"/> : state && <span className="tool-status">{item.status === 'declined' ? 'Declined' : 'Failed'}</span>}</summary>{detail && <pre>{detail}</pre>}</details>;
+  return <details className={'tool-item ' + state}><summary><Icon name={item.type === 'command' ? 'terminal' : item.type === 'files' ? 'diff' : 'tool'} size={14}/><span className="tool-label">{label}</span>{state === 'running' ? <span className="spinner" aria-label={t('Running')}/> : state && <span className="tool-status">{item.status === 'declined' ? t('Declined') : t('Failed')}</span>}</summary>{detail && <pre>{detail}</pre>}</details>;
 }
 
 // Consecutive commands, edits and tool calls fold into one line that opens to the list.
@@ -136,8 +184,8 @@ function ToolGroup({ items, agent, root }: { items: TimelineItem[]; agent: strin
   const commands = items.filter(item => item.type === 'command').length, edits = items.filter(item => item.type === 'files');
   const files = [...new Set(edits.flatMap(item => editedFiles(item, root)))], tools = items.length - commands - edits.length;
   const running = items.some(item => toolState(item) === 'running'), failed = items.filter(item => toolState(item) === 'failed').length;
-  const parts = [commands ? `ran ${commands} ${commands === 1 ? 'command' : 'commands'}` : '', files.length ? (files.length === 1 ? `edited ${files[0]}` : `edited ${files.length} files`) : '', tools ? `used ${tools} ${tools === 1 ? 'tool' : 'tools'}` : ''].filter(Boolean).join(', ');
-  return <details className="tool-group"><summary><Icon name={commands ? 'terminal' : files.length ? 'diff' : 'tool'} size={14}/><span className="tool-group-label">{parts[0].toUpperCase() + parts.slice(1)}</span>{running ? <span className="spinner" aria-label="Running"/> : failed ? <span className="tool-status">{failed} failed</span> : null}<Icon name="chevronDown" size={13}/></summary>
+  const parts = [commands ? tn(commands, 'ran {n} command', 'ran {n} commands') : '', files.length ? (files.length === 1 ? t('edited {file}', { file: files[0] }) : t('edited {n} files', { n: files.length })) : '', tools ? tn(tools, 'used {n} tool', 'used {n} tools') : ''].filter(Boolean).join(t(', '));
+  return <details className="tool-group"><summary><Icon name={commands ? 'terminal' : files.length ? 'diff' : 'tool'} size={14}/><span className="tool-group-label">{parts[0].toUpperCase() + parts.slice(1)}</span>{running ? <span className="spinner" aria-label={t('Running')}/> : failed ? <span className="tool-status">{t('{n} failed', { n: failed })}</span> : null}<Icon name="chevronDown" size={13}/></summary>
     <div className="tool-group-items">{items.map(item => <TimelineEntry key={item.id} item={item} agent={agent} root={root}/>)}</div>
   </details>;
 }
@@ -151,8 +199,9 @@ function timelineEntries(items: TimelineItem[]) {
   return entries;
 }
 
-function Activity({ task, models, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing, openReview }: { task: Task; models: AgentModel[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void }) {
+function Activity({ task, models, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing, openReview, feedback }: { task: Task; models: AgentModel[]; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode }) {
   const { text: draft, sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
+  const [skill, setSkill] = useState<Skill | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const shouldFollow = useRef(true);
   const [following, setFollowing] = useState(true);
@@ -165,50 +214,60 @@ function Activity({ task, models, composer, answerDrafts, items, loading, loadEr
   }, []);
   async function submit(source: 'draft' | 'feedback') {
     if (composer.sending || ['uncertain', 'deleting'].includes(task.status)) return;
-    const pending = composer.submit(source, message => api('/tasks/' + task.id + '/messages', message));
-    try { if (await pending) { shouldFollow.current = true; refresh(); } }
+    const chosen = source === 'draft' ? skill : null;
+    const pending = composer.submit(source, message => api('/tasks/' + task.id + '/messages', message), chosen?.id);
+    try { if (await pending) { shouldFollow.current = true; if (chosen) setSkill(current => current === chosen ? null : current); refresh(); } }
     catch (e) { reportError(e); }
   }
   const active = ACTIVE.includes(task.status), blocked = ['uncertain', 'deleting'].includes(task.status);
-  const unsent = task.review?.unsent ?? task.review?.counts?.commented ?? 0;
-  const hint = task.status === 'deleting' ? 'This task is being deleted' : task.status === 'uncertain' ? 'Check task status before sending' : sendingSource === 'feedback' ? 'Sending feedback…' : sending ? 'Sending…'
-    : unsent ? `${unsent} review ${unsent === 1 ? 'comment' : 'comments'} will be sent with this message` : active ? `${agentName(task)} is working · new instructions run next` : touch() ? '' : 'Enter to send · Shift+Enter for a new line';
+  const unsent = unsentReviewFeedback(task.review);
+  const hint = task.status === 'deleting' ? t('This task is being deleted') : task.status === 'uncertain' ? t('Check task status before sending') : sendingSource === 'feedback' ? t('Sending feedback…') : sending ? t('Sending…')
+    : unsent ? tn(unsent, '{n} review update will be sent with this message', '{n} review updates will be sent with this message') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : touch() ? '' : skills.length ? t('Enter to send · / for skills') : t('Enter to send · Shift+Enter for a new line');
   // Name the model the next turn uses: the chosen one, or the host's current default.
   const model = models.find(m => m.id === task.model) || (task.model ? undefined : models.find(m => m.isDefault));
-  const modelName = model?.name || task.model || 'Default model';
-  return <section id="conversation-panel" className="activity-panel" aria-label={`${agentName(task)} conversation`}><div className="panel-heading"><span className="panel-title">Chat</span><span className="model-chip" title={`${agentName(task)} · ${task.model ? modelName : `the default model on this host${model ? ` (${model.name})` : ''}`}`}>{task.agent && task.agent !== 'codex' ? `${agentName(task)} · ` : ''}{modelName}{task.effort ? ` · ${effortName(task.effort)}` : ''}</span></div>
+  const modelName = model?.name || task.model || t('Default model');
+  return <section id="conversation-panel" className="activity-panel" aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading"><span className="panel-title">{t('Chat')}</span><span className="model-chip" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}>{task.agent && task.agent !== 'codex' ? `${agentName(task)} · ` : ''}{modelName}{task.effort ? ` · ${effortName(task.effort)}` : ''}</span></div>
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); } }}><div className="thread">
-      {loading && <p className="muted" role="status">Loading conversation…</p>}
-      {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary compact" onClick={retry}>Retry conversation</button></div>}
+      {loading && <p className="muted" role="status">{t('Loading conversation…')}</p>}
+      {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary compact" onClick={retry}>{t('Retry conversation')}</button></div>}
       {timelineEntries(items).map(entry => entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agentName(task)} root={task.worktree}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agentName(task)} root={task.worktree}/>)}
       {requests.map(r => <RequestCard key={r.id} request={r} agent={agentName(task)} answerDrafts={answerDrafts} onDone={refresh}/>)}
-      {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>{agentName(task)} is working on this task</div>}
-      {task.status === 'queued' && <p className="muted">Task saved. Waiting for an available {agentName(task)} session.</p>}
-      {openReview && task.status === 'reviewing' && task.review?.counts?.pending ? <div className="review-ready"><Icon name="paper" size={16}/><span>Round {task.review.round} is ready · {task.review.counts.pending} {task.review.counts.pending === 1 ? 'change' : 'changes'} to decide</span><button className="button secondary compact" onClick={openReview}>Open review</button></div> : null}
-      {task.error && <div className="task-error"><Icon name="alert" size={16}/><div><strong>This step needs attention</strong><p>{task.error}</p></div></div>}
-    </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>Latest messages</button>}</div>
+      {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>{t('{agent} is working on this task', { agent: agentName(task) })}</div>}
+      {task.status === 'queued' && <p className="muted">{t('Task saved. Waiting for an available {agent} session.', { agent: agentName(task) })}</p>}
+      {openReview && task.status === 'reviewing' && task.review?.counts?.pending ? <div className="review-ready"><Icon name="paper" size={16}/><span>{tn(task.review.counts.pending, 'Round {round} is ready · {n} change to decide', 'Round {round} is ready · {n} changes to decide', { round: task.review.round ?? '' })}</span><button className="button secondary compact" onClick={openReview}>{t('Open review')}</button></div> : null}
+      {feedback}
+      {task.error && <div className="task-error"><Icon name="alert" size={16}/><div><strong>{t('This step needs attention')}</strong><p>{task.error}</p></div></div>}
+    </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
     <div className="composer-wrap">
-      <Composer label={`Instructions for ${agentName(task)}`} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? 'Queue instructions for the next turn…' : 'Ask for another revision…'}
+      <Composer label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? t('Queue instructions for the next turn…') : t('Ask for another revision…')} skills={skills} skill={skill} onSkill={setSkill}
         footer={<span className="composer-hint">{hint}</span>}
         action={<div className="composer-actions">
-          {active && <button type="button" className="send-button stop" aria-label="Pause task" title={`Pause ${agentName(task)}`} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
-          {(!active || draft.trim() || sending) && <button aria-label="Send instructions" title="Send (Enter) · New line (Shift+Enter)" disabled={!draft.trim() || sending || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
+          {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
+          {(!active || draft.trim() || skill || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={(!draft.trim() && !skill) || sending || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
         </div>}/>
     </div>
   </section>;
 }
 
-function ReviewFeedback({ task, composer, refresh, reportError, onSent }: { task: Task; composer: ComposerDraft; refresh: () => void; reportError: (error: unknown) => void; onSent: () => void }) {
+// Comments go back to the agent for another round; so does a round that
+// rejected everything. Accepted changes are already in the manuscript, and
+// decisions alone reach the agent with the next message. Shown under the
+// review, or at the end of the chat when the review is hidden.
+function ReviewFeedback({ task, composer, refresh, reportError, onSent, card }: { task: Task; composer: ComposerDraft; refresh: () => void; reportError: (error: unknown) => void; onSent: () => void; card?: boolean }) {
   const { sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
-  // Older summaries have no unsent count; fall back to every commented change.
-  const count = task.review?.unsent ?? task.review?.counts?.commented ?? 0;
-  if (!count || task.status === 'deleting') return null;
+  const unsent = unsentReviewFeedback(task.review), comments = task.review?.comments ?? unsent;
+  const done = task.status === 'reviewing' && !task.review?.counts?.pending;
+  const count = unsent || comments;
+  if (!(comments > 0 || (done && unsent > 0 && !task.review?.counts?.accepted)) || task.status === 'deleting') return null;
   async function send() {
     if (task.status === 'uncertain') return;
     try { if (await composer.submit('feedback', message => api('/tasks/' + task.id + '/messages', message))) { refresh(); onSent(); } }
     catch (error) { reportError(error); }
   }
-  return <div className="review-feedback"><span><Icon name="chat" size={15}/>{count} {count === 1 ? 'comment' : 'comments'} not sent yet</span><button className="button primary compact" disabled={sending || task.status === 'uncertain'} onClick={() => void send()}>{sendingSource === 'feedback' ? 'Sending feedback…' : 'Send feedback'}<Icon name="arrowRight" size={14}/></button></div>;
+  return <div className={'review-feedback' + (card ? ' card' : '')}>
+    <span><Icon name="chat" size={15}/>{tn(count, '{n} review update not sent yet', '{n} review updates not sent yet')}</span>
+    <button className="button primary compact" title={t('Send your review decisions and comments to the agent')} disabled={sending || task.status === 'uncertain'} onClick={() => void send()}>{sendingSource === 'feedback' ? t('Sending feedback…') : t('Send feedback')}<Icon name="arrowRight" size={14}/></button>
+  </div>;
 }
 
 
@@ -217,22 +276,22 @@ function shortPath(value: string) { const parts = value.split('/').filter(Boolea
 function gitSummary(git: GitStatus | null) {
   if (!Array.isArray(git?.files)) return '';
   const sync = [git.ahead ? `↑${git.ahead}` : '', git.behind ? `↓${git.behind}` : ''].filter(Boolean).join(' ');
-  return [git.branch || 'detached', git.files.length ? `${git.files.length} changed` : 'clean', sync].filter(Boolean).join(' · ');
+  return [git.branch || t('detached'), git.files.length ? t('{n} changed', { n: git.files.length }) : t('clean'), sync].filter(Boolean).join(' · ');
 }
 
 // A source-control style summary: where the manuscript is, its last commit,
 // and what is not committed yet (accepted review changes land here).
 // LaTeX build output is left out of a commit unless chosen.
 const BUILD_OUTPUT = /\.(aux|log|out|toc|lof|lot|lol|fls|fdb_latexmk|synctex(\.gz)?|bbl|blg|bcf|run\.xml|nav|snm|vrb|xdv|dvi|idx|ilg|ind|glo|gls|glg|ist|thm|loa)$/;
-const GIT_NAMES: Record<string, string> = { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied', U: 'Conflict', '?': 'Untracked', T: 'Type changed' };
+const gitNames = (): Record<string, string> => ({ M: t('Modified'), A: t('Added'), D: t('Deleted'), R: t('Renamed'), C: t('Copied'), U: t('Conflict'), '?': t('Untracked'), T: t('Type changed') });
 
 function DiffView({ diff }: { diff: GitDiff }) {
   const all = diff.diff.split('\n'), start = all.findIndex(line => line.startsWith('@@'));
   const lines = start < 0 ? all.filter(line => line.startsWith('Binary')) : all.slice(start, start + 3000);
-  if (!lines.length) return <p className="git-diff-note">No textual changes.</p>;
+  if (!lines.length) return <p className="git-diff-note">{t('No textual changes.')}</p>;
   // A context line's leading space is non-breaking, so a long first word wraps in place.
   return <><pre className="git-diff">{lines.map((line, index) => <span key={index} className={line.startsWith('@@') ? 'hunk' : line[0] === '+' ? 'add' : line[0] === '-' ? 'del' : line.startsWith('\\') ? 'note' : undefined}>{line.startsWith(' ') ? '\u00a0' + line.slice(1) : line || ' '}{'\n'}</span>)}</pre>
-    {(diff.truncated || all.length - start > 3000) && <p className="git-diff-note">The diff is too long to show in full.</p>}</>;
+    {(diff.truncated || all.length - start > 3000) && <p className="git-diff-note">{t('The diff is too long to show in full.')}</p>}</>;
 }
 
 // A source-control panel: the branch and its remote, the last commit, and the
@@ -261,7 +320,7 @@ function GitPanel({ projectId, git, onStatus }: { projectId: string; git: GitSta
     api<GitDiff>(`/projects/${projectId}/git/diff?path=${encodeURIComponent(open)}`).then(result => { if (live) setDiff({ path: open, result, error: '' }); }, e => { if (live) setDiff({ path: open, result: null, error: e instanceof Error ? e.message : String(e) }); });
     return () => { live = false; };
   }, [projectId, open, openFile?.status, openFile?.lines?.join()]);
-  if (!git || !Array.isArray(git.files)) return <section className="git-panel" aria-label="Git status"><p className="git-clean">Reading Git status…</p></section>;
+  if (!git || !Array.isArray(git.files)) return <section className="git-panel" aria-label={t('Git status')}><p className="git-clean">{t('Reading Git status…')}</p></section>;
   const chosen = files.filter(file => !excluded.has(file.path));
   const added = files.reduce((sum, file) => sum + (file.lines?.[0] || 0), 0), removed = files.reduce((sum, file) => sum + (file.lines?.[1] || 0), 0);
   const saveMessage = (value: string) => { setMessage(value); if (value) browserStorage.setItem(draftKey, value); else browserStorage.removeItem(draftKey); };
@@ -275,68 +334,68 @@ function GitPanel({ projectId, git, onStatus }: { projectId: string; git: GitSta
   const commit = () => {
     const text = message.trim();
     if (!text || !chosen.length) return;
-    void run('commit', () => api(`/projects/${projectId}/git/commit`, { message: text, paths: chosen.map(file => file.path) }), result => { saveMessage(''); return `Committed ${result.commit}.`; });
+    void run('commit', () => api(`/projects/${projectId}/git/commit`, { message: text, paths: chosen.map(file => file.path) }), result => { saveMessage(''); return t('Committed {hash}.', { hash: result.commit ?? '' }); });
   };
   const remote = (action: 'fetch' | 'pull' | 'push') => void run(action, () => api(`/projects/${projectId}/git/${action}`, {}, undefined, 130000),
-    result => action === 'fetch' ? (result.git.behind ? `${result.git.behind} new ${result.git.behind === 1 ? 'commit' : 'commits'} on ${result.git.upstream}.` : 'Up to date with the remote.') : action === 'pull' ? 'Pulled the latest commits.' : `Pushed to ${result.git.upstream || 'the remote'}.`);
+    result => action === 'fetch' ? (result.git.behind ? tn(result.git.behind, '{n} new commit on {upstream}.', '{n} new commits on {upstream}.', { upstream: result.git.upstream ?? '' }) : t('Up to date with the remote.')) : action === 'pull' ? t('Pulled the latest commits.') : result.git.upstream ? t('Pushed to {upstream}.', { upstream: result.git.upstream }) : t('Pushed to the remote.'));
   const publish = !git.upstream && git.remote && git.branch;
-  return <section className="git-panel" aria-label="Git status" aria-busy={Boolean(busy)}>
-    <div className="git-branch"><Icon name="branch" size={16}/><code>{git.branch || 'detached HEAD'}</code>
-      {git.upstream && <span className="git-sync" title={`Compared with ${git.upstream}`}>{git.ahead || git.behind ? <>{git.ahead > 0 && <span>↑{git.ahead}</span>}{git.behind > 0 && <span>↓{git.behind}</span>}</> : 'up to date'}</span>}
+  return <section className="git-panel" aria-label={t('Git status')} aria-busy={Boolean(busy)}>
+    <div className="git-branch"><Icon name="branch" size={16}/><code>{git.branch || t('detached HEAD')}</code>
+      {git.upstream && <span className="git-sync" title={t('Compared with {upstream}', { upstream: git.upstream })}>{git.ahead || git.behind ? <>{git.ahead > 0 && <span>↑{git.ahead}</span>}{git.behind > 0 && <span>↓{git.behind}</span>}</> : t('up to date')}</span>}
       {git.remote && <span className="git-remote">
-        {git.upstream && git.behind > 0 && <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={() => remote('pull')}>{busy === 'pull' ? 'Pulling…' : 'Pull'}</button>}
-        {(git.upstream ? git.ahead > 0 : publish) && <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={() => remote('push')}>{busy === 'push' ? 'Pushing…' : git.upstream ? 'Push' : 'Publish branch'}</button>}
-        <button type="button" className="icon-button" aria-label="Fetch from the remote" title="Fetch from the remote" disabled={Boolean(busy)} onClick={() => remote('fetch')}>{busy === 'fetch' ? <span className="spinner"/> : <Icon name="refresh" size={15}/>}</button>
+        {git.upstream && git.behind > 0 && <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={() => remote('pull')}>{busy === 'pull' ? t('Pulling…') : t('Pull')}</button>}
+        {(git.upstream ? git.ahead > 0 : publish) && <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={() => remote('push')}>{busy === 'push' ? t('Pushing…') : git.upstream ? t('Push') : t('Publish branch')}</button>}
+        <button type="button" className="icon-button" aria-label={t('Fetch from the remote')} title={t('Fetch from the remote')} disabled={Boolean(busy)} onClick={() => remote('fetch')}>{busy === 'fetch' ? <span className="spinner"/> : <Icon name="refresh" size={15}/>}</button>
       </span>}
     </div>
-    {git.upstream && <p className="git-upstream">Tracking <code>{git.upstream}</code></p>}
-    {git.head && <div className="git-commit"><Icon name="commit" size={16}/><div><p>{git.head.subject}</p><small><code>{git.head.hash}</code> · {ago(git.head.date)} ago</small></div></div>}
+    {git.upstream && <p className="git-upstream">{t('Tracking')} <code>{git.upstream}</code></p>}
+    {git.head && <div className="git-commit"><Icon name="commit" size={16}/><div><p>{git.head.subject}</p><small><code>{git.head.hash}</code> · {agoText(git.head.date)}</small></div></div>}
     {error && <p className="inline-error git-message" role="alert">{error}</p>}
     {notice && !error && <p className="git-message git-notice" role="status"><Icon name="check" size={14}/>{notice}</p>}
-    <h3 className="git-section">{files.length > 0 && <input type="checkbox" aria-label="Include all changes" checked={chosen.length === files.length} ref={box => { if (box) box.indeterminate = chosen.length > 0 && chosen.length < files.length; }} onChange={event => setExcluded(event.target.checked ? new Set() : new Set(files.map(file => file.path)))}/>}<span>Uncommitted changes</span>{files.length > 0 && <span className="count">{files.length}</span>}{added || removed ? <span className="git-total"><ins>+{added}</ins> <del>−{removed}</del></span> : null}</h3>
+    <h3 className="git-section">{files.length > 0 && <input type="checkbox" aria-label={t('Include all changes')} checked={chosen.length === files.length} ref={box => { if (box) box.indeterminate = chosen.length > 0 && chosen.length < files.length; }} onChange={event => setExcluded(event.target.checked ? new Set() : new Set(files.map(file => file.path)))}/>}<span>{t('Uncommitted changes')}</span>{files.length > 0 && <span className="count">{files.length}</span>}{added || removed ? <span className="git-total"><ins>+{added}</ins> <del>−{removed}</del></span> : null}</h3>
     {files.length ? <>
       <form className="git-commit-form" onSubmit={event => { event.preventDefault(); commit(); }}>
-        <textarea aria-label="Commit message" placeholder="Commit message" rows={2} value={message} readOnly={busy === 'commit'} onChange={event => saveMessage(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, touch())) { event.preventDefault(); commit(); } }}/>
-        <button className="button primary" disabled={Boolean(busy) || !message.trim() || !chosen.length}>{busy === 'commit' ? 'Committing…' : chosen.length === files.length ? `Commit ${files.length === 1 ? '1 file' : `all ${files.length} files`}` : `Commit ${chosen.length} of ${files.length} files`}</button>
+        <textarea aria-label={t('Commit message')} placeholder={t('Commit message')} rows={2} value={message} readOnly={busy === 'commit'} onChange={event => saveMessage(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, touch())) { event.preventDefault(); commit(); } }}/>
+        <button className="button primary" disabled={Boolean(busy) || !message.trim() || !chosen.length}>{busy === 'commit' ? t('Committing…') : chosen.length === files.length ? tn(files.length, 'Commit 1 file', 'Commit all {n} files') : t('Commit {chosen} of {n} files', { chosen: chosen.length, n: files.length })}</button>
       </form>
       <ul className="git-files">{files.map(file => {
         const slash = file.path.lastIndexOf('/'), code = file.status === '?' ? 'U' : file.status, expanded = open === file.path;
         return <li key={file.path} className={expanded ? 'open' : undefined}>
           <div className="git-row">
-            <input type="checkbox" aria-label={`Include ${file.path}`} checked={!excluded.has(file.path)} onChange={event => setExcluded(current => { const next = new Set(current); if (event.target.checked) next.delete(file.path); else next.add(file.path); return next; })}/>
-            <button type="button" className="git-file" aria-expanded={expanded} title={`${GIT_NAMES[file.status] || file.status}: ${file.from ? `${file.from} → ` : ''}${file.path}`} onClick={() => setOpen(expanded ? '' : file.path)}>
+            <input type="checkbox" aria-label={t('Include {path}', { path: file.path })} checked={!excluded.has(file.path)} onChange={event => setExcluded(current => { const next = new Set(current); if (event.target.checked) next.delete(file.path); else next.add(file.path); return next; })}/>
+            <button type="button" className="git-file" aria-expanded={expanded} title={`${gitNames()[file.status] || file.status}: ${file.from ? `${file.from} → ` : ''}${file.path}`} onClick={() => setOpen(expanded ? '' : file.path)}>
               <span className="git-name">{file.path.slice(slash + 1)}</span>{slash > 0 && <span className="git-dir">{file.path.slice(0, slash)}</span>}
             </button>
             {file.lines && <span className="git-lines"><ins>+{file.lines[0]}</ins> <del>−{file.lines[1]}</del></span>}
-            <span className={'git-code s-' + (file.status === '?' ? 'u' : file.status.toLowerCase())} aria-label={GIT_NAMES[file.status] || file.status}>{code}</span>
+            <span className={'git-code s-' + (file.status === '?' ? 'u' : file.status.toLowerCase())} aria-label={gitNames()[file.status] || file.status}>{code}</span>
           </div>
-          {expanded && <div className="git-diff-wrap" aria-label={`Changes in ${file.path}`} role="region">
-            {diff?.path === file.path && diff.result ? <DiffView diff={diff.result}/> : diff?.error ? <p className="inline-error">{diff.error}</p> : <p className="git-diff-note">Loading the diff…</p>}
+          {expanded && <div className="git-diff-wrap" aria-label={t('Changes in {path}', { path: file.path })} role="region">
+            {diff?.path === file.path && diff.result ? <DiffView diff={diff.result}/> : diff?.error ? <p className="inline-error">{diff.error}</p> : <p className="git-diff-note">{t('Loading the diff…')}</p>}
           </div>}
         </li>;
       })}</ul>
-    </> : <p className="git-clean"><Icon name="check" size={15}/>No uncommitted changes</p>}
+    </> : <p className="git-clean"><Icon name="check" size={15}/>{t('No uncommitted changes')}</p>}
   </section>;
 }
 
-function noteWhere(note: Annotation) { return `Page ${note.page + 1}` + (note.source ? ` · ${note.source.file}:${note.source.lines[0]}${note.source.lines[1] !== note.source.lines[0] ? `–${note.source.lines[1]}` : ''}` : ''); }
+function noteWhere(note: Annotation) { return t('Page {n}', { n: note.page + 1 }) + (note.source ? ` · ${note.source.file}:${note.source.lines[0]}${note.source.lines[1] !== note.source.lines[0] ? `–${note.source.lines[1]}` : ''}` : ''); }
 
 interface NoteActions { add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>; remove: (note: Annotation) => void; send: () => void; sending: boolean; options: React.ReactNode }
 
 function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void }) {
   const list = useRef<HTMLOListElement>(null);
   useEffect(() => { if (active) list.current?.querySelector(`[data-note="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active]);
-  return <section className="notes-panel" aria-label="PDF notes">
+  return <section className="notes-panel" aria-label={t('PDF notes')}>
     {notes.length ? <ol ref={list} className="note-list">{notes.map((note, index) => <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
-      <div className="note-head"><button type="button" className="note-number" aria-label={`Show note ${index + 1} on the page`} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}</span><button type="button" className="icon-button" aria-label={`Delete note ${index + 1}`} title="Delete note" onClick={() => actions.remove(note)}><Icon name="close" size={14}/></button></div>
-      {note.source?.excerpt ? <pre className="note-source" title={`${note.source.file}, the LaTeX that produced the marked region`}>{note.source.excerpt}</pre> : note.quote && <blockquote>{note.quote}</blockquote>}
+      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} onClick={() => actions.remove(note)}><Icon name="close" size={14}/></button></div>
+      {note.source?.excerpt ? <pre className="note-source" title={t('{file}, the LaTeX that produced the marked region', { file: note.source.file })}>{note.source.excerpt}</pre> : note.quote && <blockquote>{note.quote}</blockquote>}
       <p>{note.comment}</p>
-      {note.key !== currentKey && <small className="muted">Marked on an earlier version of the PDF.</small>}
+      {note.key !== currentKey && <small className="muted">{t('Marked on an earlier version of the PDF.')}</small>}
     </li>)}</ol>
-      : <p className="muted notes-empty">Select text in the PDF and choose Add note, or use Mark region for a figure or equation. All notes go to the agent as one task.</p>}
+      : <p className="muted notes-empty">{t('Select text in the PDF and choose Add note, or use Mark region for a figure or equation. All notes go to the agent as one task.')}</p>}
     <div className="notes-send">
       <div className="composer-options">{actions.options}</div>
-      <button type="button" className="button primary" disabled={!notes.length || actions.sending} onClick={actions.send}>{actions.sending ? 'Sending…' : `Send ${notes.length || ''} ${notes.length === 1 ? 'note' : 'notes'} to the agent`.replace('  ', ' ')}</button>
+      <button type="button" className="button primary" disabled={!notes.length || actions.sending} onClick={actions.send}>{actions.sending ? t('Sending…') : notes.length ? tn(notes.length, 'Send {n} note to the agent', 'Send {n} notes to the agent') : t('Send notes to the agent')}</button>
     </div>
   </section>;
 }
@@ -359,26 +418,26 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
     requestAnimationFrame(() => pdf.current?.goToNote(note));
   }
   return <div className={'manuscript show-' + view}>
-    <section className="manuscript-pages" aria-label="PDF preview" aria-busy={!build || build.status === 'building'}>
+    <section className="manuscript-pages" aria-label={t('PDF preview')} aria-busy={!build || build.status === 'building'}>
       {error && <div className="manuscript-note error" role="alert">{error}</div>}
-      {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>The manuscript did not compile.</strong><pre>{build.error}</pre></div>}
-      {build?.status === 'building' && build.key && <div className="manuscript-note">Compiling the latest changes…</div>}
-      {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">Opening the PDF…</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion}
+      {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>{t('The manuscript did not compile.')}</strong><pre>{build.error}</pre></div>}
+      {build?.status === 'building' && build.key && <div className="manuscript-note">{t('Compiling the latest changes…')}</div>}
+      {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion}
           onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('notes'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection}/></Suspense>
-        : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>Compiling the PDF…</h2><p>The first build of a paper can take a minute.</p></div>}
+        : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2><p>{t('The first build of a paper can take a minute.')}</p></div>}
     </section>
-    <aside className="manuscript-side" aria-label="Contents, Notes and Git">
-      <div className="side-tabs" role="tablist" aria-label="PDF panels">
-        <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}>Contents</button>
-        <button role="tab" aria-selected={side === 'notes'} onClick={() => setView('notes')}>Notes{notes.length > 0 && <span className="count">{notes.length}</span>}</button>
+    <aside className="manuscript-side" aria-label={t('Contents, Notes and Git')}>
+      <div className="side-tabs" role="tablist" aria-label={t('PDF panels')}>
+        <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}>{t('Contents')}</button>
+        <button role="tab" aria-selected={side === 'notes'} onClick={() => setView('notes')}>{t('Notes')}{notes.length > 0 && <span className="count">{notes.length}</span>}</button>
         <button role="tab" aria-selected={side === 'git'} onClick={() => setView('git')}>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
       </div>
-      {side === 'contents' ? <nav className="contents-panel" aria-label="PDF contents">
+      {side === 'contents' ? <nav className="contents-panel" aria-label={t('PDF contents')}>
         {outline.length ? <ol>{outline.map((item, index) => <li key={index}>
           <button type="button" aria-current={index === section ? 'location' : undefined} style={{ paddingLeft: 12 + Math.min(item.level, 4) * 14 }} onClick={() => goTo(item)}>
             <span>{item.title}</span><span className="contents-page">{item.page}</span>
           </button>
-        </li>)}</ol> : <p className="muted">{build?.key ? 'This PDF has no bookmarks.' : 'Contents will appear when the PDF is ready.'}</p>}
+        </li>)}</ol> : <p className="muted">{build?.key ? t('This PDF has no bookmarks.') : t('Contents will appear when the PDF is ready.')}</p>}
       </nav> : side === 'git' ? <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit}/> : <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>}
     </aside>
   </div>;
@@ -407,6 +466,8 @@ function App() {
   const formTaskId = useRef(uuid());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
+  const [newSkill, setNewSkill] = useState<Skill | null>(null);
+  const [skills, setSkills] = useState<{ projectId: string; list: Skill[] }>({ projectId: '', list: [] });
   // The agent, and each agent's model and reasoning effort, are remembered for
   // every new task, whether it starts from the composer or from PDF notes.
   const [agentChoice, setAgentChoice] = useState<AgentId>(() => { const saved = browserStorage.getItem('papilot:agent'); return saved === 'claude' || saved === 'antigravity' ? saved : 'codex'; });
@@ -451,6 +512,9 @@ function App() {
   const building = useRef(false);
   const [chatWidth, setChatWidth] = useState(() => Number(browserStorage.getItem('papilot:chat-width')) || 0);
   const [form, setForm] = useState({ path: '', name: '' });
+  // Appearance, language and notifications live in Settings; a new language re-renders everything.
+  const theme = useTheme(), { language } = useLanguage();
+  const [settings, setSettings] = useState(false);
   const selectedRef = useRef(selected); selectedRef.current = selected;
   const loaded = useRef(false);
   useEffect(() => {
@@ -502,10 +566,12 @@ function App() {
     try {
       if (fresh) snapshotRequest.cancel();
       await snapshotRequest.run('state', signal => api('/state', undefined, signal), next => {
-        const selection = selectedRef.current;
-        const removed = snapshotRef.current?.tasks.find(t => t.id === selection && !next.tasks.some(nextTask => nextTask.id === selection));
+        const selection = selectedRef.current, previous = snapshotRef.current;
+        const removed = previous?.tasks.find(t => t.id === selection && !next.tasks.some(nextTask => nextTask.id === selection));
         if (removed) setProjectId(removed.projectId);
         token = next.csrf; snapshotRef.current = next; setState(next); setOnline(true); setConnectionError('');
+        // Tell the author what changed while they were in another tab or app.
+        if (previous && notifying() && (document.hidden || !document.hasFocus())) for (const alert of taskAlerts(previous, next)) notify(alert, id => { setSelected(id); setSidebar(false); });
         for (const id of composers.current.keys()) if (!next.tasks.some(t => t.id === id)) { composers.current.delete(id); timelineCache.current.delete(id); browserStorage.removeItem('papilot:draft:' + id); }
         setDeleteTarget(current => current && !next.tasks.some(t => t.id === current.id) ? null : current);
         for (const id of answerDrafts.current.keys()) if (!next.requests.some(r => r.id === id)) answerDrafts.current.delete(id);
@@ -523,7 +589,8 @@ function App() {
     function start() {
       const cycle = ++generation;
       clearTimeout(timer); events?.close(); events = undefined;
-      if (document.hidden || !navigator.onLine) { snapshotRequest.cancel(); timelineRequest.cancel(); if (!navigator.onLine) { setOnline(false); setConnectionError('You are offline. Your draft is kept in this browser.'); } return; }
+      // A hidden tab stops reading the host, unless it has notifications to give.
+      if ((document.hidden && !notifying()) || !navigator.onLine) { snapshotRequest.cancel(); timelineRequest.cancel(); if (!navigator.onLine) { setOnline(false); setConnectionError(t('You are offline. Your draft is kept in this browser.')); } return; }
       if (canStreamUpdates(protocol)) {
         events = new EventSource('/api/events');
         events.addEventListener('change', () => { if (cycle === generation) void refresh(); });
@@ -532,7 +599,7 @@ function App() {
         await refresh();
         if (cycle !== generation) return;
         const busy = snapshotRef.current?.tasks.some(t => ['running', 'waiting_input', 'queued', 'building'].includes(t.status));
-        timer = setTimeout(() => void poll(), events?.readyState === EventSource.OPEN ? 10000 : busy ? 1000 : 2500);
+        timer = setTimeout(() => void poll(), events?.readyState === EventSource.OPEN ? 10000 : document.hidden ? 5000 : busy ? 1000 : 2500);
       }
       void poll();
     }
@@ -540,7 +607,8 @@ function App() {
     document.addEventListener('visibilitychange', start);
     window.addEventListener('online', start);
     window.addEventListener('offline', start);
-    return () => { generation++; clearTimeout(timer); events?.close(); snapshotRequest.cancel(); timelineRequest.cancel(); document.removeEventListener('visibilitychange', start); window.removeEventListener('online', start); window.removeEventListener('offline', start); };
+    const unsubscribe = subscribeNotifications(start);
+    return () => { generation++; clearTimeout(timer); events?.close(); snapshotRequest.cancel(); timelineRequest.cancel(); unsubscribe(); document.removeEventListener('visibilitychange', start); window.removeEventListener('online', start); window.removeEventListener('offline', start); };
   }, [refresh, snapshotRequest, timelineRequest]);
   useEffect(() => {
     browserStorage.setItem('papilot:task', selected);
@@ -582,18 +650,19 @@ function App() {
     for (const [key, value] of Object.entries(change)) browserStorage.setItem(`papilot:${key}:${agentChoice}`, value);
   };
   const agentOptions = (disabled: boolean) => <>
-    <ChipSelect label="Agent" disabled={disabled} value={agentChoice} onChange={value => { setAgentChoice(value as AgentId); browserStorage.setItem('papilot:agent', value); }} options={AGENT_IDS.map(id => ({ value: id, label: AGENT_LABELS[id] + (unavailable(id) ? ' · unavailable' : '') }))}/>
-    <ChipSelect label="Model" disabled={disabled} value={agent.model} onChange={value => remember({ model: value })} options={[{ value: '', label: 'Default model' }, ...models.map(m => ({ value: m.id, label: m.name }))]}/>
+    <ChipSelect label={t('Agent')} disabled={disabled} value={agentChoice} onChange={value => { setAgentChoice(value as AgentId); browserStorage.setItem('papilot:agent', value); }} options={AGENT_IDS.map(id => ({ value: id, label: AGENT_LABELS[id] + (unavailable(id) ? t(' · unavailable') : '') }))}/>
+    <ChipSelect label={t('Model')} disabled={disabled} value={agent.model} onChange={value => remember({ model: value })} options={[{ value: '', label: t('Default model') }, ...models.map(m => ({ value: m.id, label: m.name }))]}/>
     {modelInfo && <EffortPicker efforts={modelInfo.efforts} value={agent.effort} fallback={modelInfo.defaultEffort} disabled={disabled} onChange={value => remember({ effort: value })}/>}
   </>;
   async function createTask() {
-    const text = newDraft.trim(), target = project?.id || projectId;
-    if (!text || creating || !target) return;
+    const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
+    if ((!text && !skill) || creating || !target) return;
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
-      const t = await api('/tasks', { projectId: target, title: taskTitle(text), instructions: text, agent: agent.agent, model: agent.model, effort: agent.effort, id: formTaskId.current });
-      formTaskId.current = uuid(); setNewDraft(''); setSelected(t.id); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
+      const title = skill ? (text ? `${skill.name}: ${taskTitle(text)}` : skill.name).slice(0, 120) : taskTitle(text);
+      const t = await api('/tasks', { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, id: formTaskId.current });
+      formTaskId.current = uuid(); setNewDraft(''); setNewSkill(null); setSelected(t.id); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
       await refresh(true);
     } catch (e) { setCreateError(e instanceof Error ? e.message : String(e)); } finally { setCreating(false); }
   }
@@ -672,19 +741,35 @@ function App() {
     window.addEventListener('focus', focus);
     return () => { stopped = true; clearTimeout(timer); window.removeEventListener('focus', focus); };
   }, [manuscriptOpen, project?.id, loadManuscript]);
+  // Accepting a change updates the working tree, so the status reloads with
+  // the tasks' reviews as well as every 20 seconds.
+  const reviewKey = (state?.tasks || []).filter(t => t.projectId === project?.id).map(t => `${t.review?.files?.join()}:${t.review?.counts?.accepted}`).join('|');
   useEffect(() => {
     if (!project || manuscriptOpen) return;
     const load = () => void api<GitStatus>(`/projects/${project.id}/git`).then(status => setGit({ projectId: project.id, status })).catch(() => undefined);
     load(); const timer = setInterval(load, 20000);
     return () => clearInterval(timer);
-  }, [project?.id, manuscriptOpen]);
+  }, [project?.id, manuscriptOpen, reviewKey]);
+  // A skill chosen for one paper may not exist on another.
+  useEffect(() => setNewSkill(null), [project?.id]);
+  // Skills come from Papilot, the data folder and the paper's .papilot/skills,
+  // read again on return to the window so a new skill file appears.
+  useEffect(() => {
+    if (!project) return;
+    let live = true;
+    const load = () => void api<{ skills?: Skill[] }>(`/projects/${project.id}/skills`).then(result => { if (live) setSkills({ projectId: project.id, list: Array.isArray(result.skills) ? result.skills : [] }); }, () => undefined);
+    load(); window.addEventListener('focus', load);
+    return () => { live = false; window.removeEventListener('focus', load); };
+  }, [project?.id]);
   const projectGit = git.projectId === project?.id ? git.status : null;
+  const projectSkills = skills.projectId === project?.id ? skills.list : [];
+  const updateGit = (projectId: string, status: GitStatus) => { setGit({ projectId, status }); setManuscript(current => current.projectId === projectId && current.data ? { ...current, data: { ...current.data, git: status } } : current); };
   const manuscriptData = manuscript.projectId === project?.id ? manuscript : { data: null, error: '' };
   const notes = manuscriptData.data?.annotations || [];
   const withNotes = (update: (list: Annotation[]) => Annotation[]) => setManuscript(current => current.data ? { ...current, data: { ...current.data, annotations: update(current.data.annotations || []) } } : current);
   const noteActions: NoteActions = {
     async add(page, rect, rects, quote, comment) {
-      if (!project || !manuscriptData.data?.build.key) throw new Error('Wait for the PDF to compile.');
+      if (!project || !manuscriptData.data?.build.key) throw new Error(t('Wait for the PDF to compile.'));
       const note = await api<Annotation>(`/projects/${project.id}/annotations`, { key: manuscriptData.data.build.key, page, rect, ...(rects.length ? { rects, quote } : {}), comment });
       withNotes(list => [...list, note]); setActiveNote(note.id); setRegion(false);
       if (!mobile) setManuscriptView('notes');
@@ -715,118 +800,126 @@ function App() {
   const active = Boolean(task && ACTIVE.includes(task.status));
   const conversationVisible = mobile ? mobileTab === 'conversation' : layout !== 'review';
   const pause = () => { if (task) void action('/tasks/' + task.id + '/interrupt'); };
+  // With only the chat in view, the feedback bar moves to the end of the conversation.
+  const chatOnly = mobile ? mobileTab === 'conversation' : layout === 'conversation';
+  const reviewFeedback = (card: boolean) => task && <ReviewFeedback key={'review-feedback:' + task.id} card={card} task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError}
+    onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>;
   const reviewTools = task && fullPdfUrl ? <>
-    <a className="button ghost compact full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" aria-label="Full PDF" title={`Open the full PDF after round ${task.review?.round}`}><Icon name="paper" size={14}/><span>Full PDF</span></a>
-    <button type="button" className="icon-button" aria-label="Build review" title="Build the review again" disabled={['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) || taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="refresh" size={15}/></button>
-    <a className="icon-button" href={`/review/${task.projectId}/?task=${task.name}`} target="_blank" rel="noreferrer" aria-label="Open review in new tab" title="Open review in new tab"><Icon name="external" size={15}/></a>
+    <a className="button ghost compact full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" aria-label={t('Full PDF')} title={t('Open the full PDF after round {round}', { round: task.review?.round ?? '' })}><Icon name="paper" size={14}/><span>{t('Full PDF')}</span></a>
+    <button type="button" className="icon-button" aria-label={t('Build review')} title={t('Build the review again')} disabled={['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) || taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="refresh" size={15}/></button>
+    <a className="icon-button" href={reviewUrl(task)} target="_blank" rel="noreferrer" aria-label={t('Open review in new tab')} title={t('Open review in new tab')}><Icon name="external" size={15}/></a>
   </> : null;
 
   // The paper name in the header renames the paper in place, like a task title in the sidebar.
   const paperName = !project ? <span className="project-name">Papilot</span>
     : renamingPaper ? <form className="paper-rename" onSubmit={e => { e.preventDefault(); refocusPaper.current = true; e.currentTarget.querySelector('input')?.blur(); }}>
-      <input name="name" aria-label={`Rename ${project.name}`} defaultValue={project.name} maxLength={120} size={Math.min(40, Math.max(12, project.name.length + 2))} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void renamePaper(project, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocusPaper.current = true; e.currentTarget.value = project.name; e.currentTarget.blur(); } }}/>
+      <input name="name" aria-label={t('Rename {name}', { name: project.name })} defaultValue={project.name} maxLength={120} size={Math.min(40, Math.max(12, project.name.length + 2))} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void renamePaper(project, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocusPaper.current = true; e.currentTarget.value = project.name; e.currentTarget.blur(); } }}/>
     </form>
-    : <button className="project-name" aria-label={`Rename paper: ${project.name}`} title={`${project.name} · Click to rename`} onClick={() => setRenamingPaper(true)}>{project.name}</button>;
+    : <button className="project-name" aria-label={t('Rename paper: {name}', { name: project.name })} title={t('{name} · Click to rename', { name: project.name })} onClick={() => setRenamingPaper(true)}>{project.name}</button>;
 
   return <div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
-    <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label="Papers and tasks">
-      <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setPage('home'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a><button className="icon-button" aria-label="Hide task list" title="Hide task list" onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
-      <div className="sidebar-section"><span>Paper</span></div>
+    <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label={t('Papers and tasks')}>
+      <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setPage('home'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a><button className="icon-button" aria-label={t('Hide task list')} title={t('Hide task list')} onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
+      <div className="sidebar-section"><span>{t('Paper')}</span></div>
       <div className="sidebar-actions">
-        {state?.projects.length && project ? <ActionMenu label={`Paper: ${project.name}`} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
+        {state?.projects.length && project ? <ActionMenu label={t('Paper: {name}', { name: project.name })} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
           ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); } })),
-          { label: 'Add paper…', icon: 'plus', divider: true, select: () => openProject() },
+          { label: t('Add paper…'), icon: 'plus', divider: true, select: () => openProject() },
         ]}><span className="project-switcher-name">{project.name}</span><Icon name="updown" size={14}/></ActionMenu>
-          : <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="plus" size={16}/>Add paper</button>}
-        {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><Icon name="paper" size={16}/><span className="nav-label">PDF</span>{gitSummary(projectGit) && <span className="nav-meta" title="Git status of the manuscript">{gitSummary(projectGit)}</span>}</button>}
-        <button className={'nav-link new-task' + (!task && !manuscriptOpen && project ? ' active' : '')} aria-current={!task && !manuscriptOpen && project ? 'page' : undefined} disabled={!state} onClick={() => newTask()}><Icon name="compose" size={16}/><span className="nav-label">New task</span></button>
+          : <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button>}
+        {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><Icon name="paper" size={16}/><span className="nav-label">PDF</span>{gitSummary(projectGit) && <span className="nav-meta" title={t('Git status of the manuscript')}>{gitSummary(projectGit)}</span>}</button>}
+        <button className={'nav-link new-task' + (!task && !manuscriptOpen && project ? ' active' : '')} aria-current={!task && !manuscriptOpen && project ? 'page' : undefined} disabled={!state} onClick={() => newTask()}><Icon name="compose" size={16}/><span className="nav-label">{t('New task')}</span></button>
       </div>
-      <div className="sidebar-section"><span>Tasks</span>{tasks.length > 0 && <span className="count">{tasks.length}</span>}</div>
-      <nav className="task-list" aria-label="Task list">{tasks.length ? [...tasks].reverse().map(t => <div key={t.id} data-task={t.id} className={'task-row ' + (t.id === selected ? 'active' : '')}>
-        {renaming === t.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); refocus.current = t.id; e.currentTarget.querySelector('input')?.blur(); }}>
-          <input name="title" aria-label={`Rename ${t.title}`} defaultValue={t.title} maxLength={120} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void rename(t, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocus.current = t.id; e.currentTarget.value = t.title; e.currentTarget.blur(); } }}/>
+      <div className="sidebar-section"><span>{t('Tasks')}</span>{tasks.length > 0 && <span className="count">{tasks.length}</span>}</div>
+      <nav className="task-list" aria-label={t('Task list')}>{tasks.length ? [...tasks].reverse().map(row => <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '')}>
+        {renaming === row.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); refocus.current = row.id; e.currentTarget.querySelector('input')?.blur(); }}>
+          <input name="title" aria-label={t('Rename {name}', { name: row.title })} defaultValue={row.title} maxLength={120} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void rename(row, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocus.current = row.id; e.currentTarget.value = row.title; e.currentTarget.blur(); } }}/>
         </form>
-        : <button aria-current={t.id === selected ? 'page' : undefined} className={'task-link ' + (t.id === selected ? 'active' : '')} onClick={() => { setSelected(t.id); setSidebar(false); }} onDoubleClick={() => { if (t.status !== 'deleting') setRenaming(t.id); }}><span className="task-title">{t.title}</span><span className="task-meta"><Status task={t}/><span className="task-time">{ago(t.updatedAt)}</span></span></button>}
-        {t.review?.counts?.pending ? <span className="task-badge" title={`${t.review.counts.pending} changes to decide`}>{t.review.counts.pending}</span> : null}
-        <ActionMenu label={`Task actions for ${t.title}`} actions={[
-          ...(t.status === 'deleting' ? [] : [{ label: 'Rename…', icon: 'pencil', select: () => setRenaming(t.id) }]),
-          ...(ACTIVE.includes(t.status) ? [{ label: 'Pause task', icon: 'pause', disabled: pendingActions.has('/tasks/' + t.id), select: () => void action('/tasks/' + t.id + '/interrupt') }] : []),
-          ...(t.status === 'uncertain' ? [{ label: 'Check status', icon: 'refresh', disabled: pendingActions.has('/tasks/' + t.id), select: () => void action('/tasks/' + t.id + '/reconcile') }] : []),
-          { label: t.status === 'deleting' ? 'Retry deletion…' : 'Delete task…', icon: 'trash', danger: true, select: () => setDeleteTarget(t) },
+        : <button aria-current={row.id === selected ? 'page' : undefined} className={'task-link ' + (row.id === selected ? 'active' : '')} onClick={() => { setSelected(row.id); setSidebar(false); }} onDoubleClick={() => { if (row.status !== 'deleting') setRenaming(row.id); }}><span className="task-title">{row.title}</span><span className="task-meta"><Status task={row}/><span className="task-time">{ago(row.updatedAt)}</span></span></button>}
+        {row.review?.counts?.pending ? <span className="task-badge" title={tn(row.review.counts.pending, '{n} change to decide', '{n} changes to decide')}>{row.review.counts.pending}</span> : null}
+        <ActionMenu label={t('Task actions for {title}', { title: row.title })} actions={[
+          ...(row.status === 'deleting' ? [] : [{ label: t('Rename…'), icon: 'pencil', select: () => setRenaming(row.id) }]),
+          ...(ACTIVE.includes(row.status) ? [{ label: t('Pause task'), icon: 'pause', disabled: pendingActions.has('/tasks/' + row.id), select: () => void action('/tasks/' + row.id + '/interrupt') }] : []),
+          ...(row.status === 'uncertain' ? [{ label: t('Check status'), icon: 'refresh', disabled: pendingActions.has('/tasks/' + row.id), select: () => void action('/tasks/' + row.id + '/reconcile') }] : []),
+          { label: row.status === 'deleting' ? t('Retry deletion…') : t('Delete task…'), icon: 'trash', danger: true, select: () => setDeleteTarget(row) },
         ]}/>
-      </div>) : <div className="task-list-empty">{state?.projects.length ? 'No tasks yet. Start one with New task.' : 'Add a paper to get started.'}</div>}</nav>
+      </div>) : <div className="task-list-empty">{state?.projects.length ? t('No tasks yet. Start one with New task.') : t('Add a paper to get started.')}</div>}</nav>
+      <div className="sidebar-preferences"><button className="nav-link settings-link" aria-haspopup="dialog" onClick={() => setSettings(true)}><Icon name="settings" size={16}/><span className="nav-label">{t('Settings')}</span></button></div>
       {/* A healthy, idle host needs no status line; the connection banner also covers a lost host. */}
-      {state && (!online || running > 0) && <div className="sidebar-footer"><div className="host-status"><span className={'connection-dot ' + (online ? 'connected' : '')}/><span>Host</span><span className="host-state">{online ? 'Connected' : 'Reconnecting'}</span></div>{running > 0 && <div className="host-caption">{running} {running === 1 ? 'active task' : 'active tasks'}</div>}</div>}
+      {state && (!online || running > 0) && <div className="sidebar-footer"><div className="host-status"><span className={'connection-dot ' + (online ? 'connected' : '')}/><span>{t('Host')}</span><span className="host-state">{online ? t('Connected') : t('Reconnecting')}</span></div>{running > 0 && <div className="host-caption">{tn(running, '{n} active task', '{n} active tasks')}</div>}</div>}
     </aside>
-    {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label="Close task list" onClick={() => setSidebar(false)}/>}
+    {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label={t('Close task list')} onClick={() => setSidebar(false)}/>}
     <main className="main" inert={narrow && sidebar}><header className="topbar">
-      {(narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label="Show task list" title="Show task list" aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/></button>}
+      {(narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/></button>}
       <div className="breadcrumb">{!mobile && <>{paperName}{(task || manuscriptOpen) && <span className="slash">/</span>}</>}{task ? <div className="task-identity"><h1 title={task.title}>{task.title}</h1><Status task={task}/></div>
-        : manuscriptOpen ? <div className="task-identity"><h1>PDF</h1><span className={'status ' + (manuscriptData.data?.build.status === 'failed' ? 'failed' : manuscriptData.data?.build.status === 'ready' ? 'idle' : 'building')}><i/>{!manuscriptData.data ? 'Loading' : manuscriptData.data.build.status === 'building' ? 'Compiling' : manuscriptData.data.build.status === 'failed' ? 'Build failed' : `Compiled ${ago(manuscriptData.data.build.builtAt || Date.now())} ago`.replace('now ago', 'just now')}</span></div>
+        : manuscriptOpen ? <div className="task-identity"><h1>PDF</h1><span className={'status ' + (manuscriptData.data?.build.status === 'failed' ? 'failed' : manuscriptData.data?.build.status === 'ready' ? 'idle' : 'building')}><i/>{!manuscriptData.data ? t('Loading') : manuscriptData.data.build.status === 'building' ? t('Compiling') : manuscriptData.data.build.status === 'failed' ? t('Build failed') : t('Compiled {time}', { time: agoText(manuscriptData.data.build.builtAt || Date.now()) })}</span></div>
         : mobile && paperName}</div>
       {manuscriptOpen && project && <>
         <div className="task-state-actions">
-          {mobile ? <ActionMenu label="PDF options" actions={[
-            { label: 'Recompile', icon: 'refresh', select: () => void loadManuscript(project.id, true) },
-            ...(manuscriptData.data?.build.key ? [{ label: 'Open the PDF file', icon: 'external', href: `/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}` }] : []),
+          {mobile ? <ActionMenu label={t('PDF options')} actions={[
+            { label: t('Recompile'), icon: 'refresh', select: () => void loadManuscript(project.id, true) },
+            ...(manuscriptData.data?.build.key ? [{ label: t('Open the PDF file'), icon: 'external', href: `/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}` }] : []),
           ]}/> : <>
-            <button className="button ghost compact" title="Compile the PDF again" onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={14}/>Recompile</button>
-            {manuscriptData.data?.build.key && <a className="button ghost compact" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" title="Open the PDF file in a new tab"><Icon name="external" size={14}/>Open PDF</a>}
+            <button className="button ghost compact" title={t('Compile the PDF again')} onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={14}/>{t('Recompile')}</button>
+            {manuscriptData.data?.build.key && <a className="button ghost compact" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" title={t('Open the PDF file in a new tab')}><Icon name="external" size={14}/>{t('Open PDF')}</a>}
           </>}
         </div>
-        {mobile && <div className="view-selector" role="group" aria-label="PDF view">
+        {mobile && <div className="view-selector" role="group" aria-label={t('PDF view')}>
           <button aria-label="PDF" aria-pressed={manuscriptView === 'pdf'} onClick={() => setManuscriptView('pdf')}><Icon name="paper" size={16}/><span>PDF</span></button>
-          <button aria-label="Contents" aria-pressed={manuscriptView === 'contents'} onClick={() => { setManuscriptView('contents'); setRegion(false); }}><Icon name="list" size={16}/><span>Contents</span></button>
-          <button aria-label={notes.length ? `Notes, ${notes.length}` : 'Notes'} aria-pressed={manuscriptView === 'notes'} onClick={() => { setManuscriptView('notes'); setRegion(false); }}><Icon name="notes" size={16}/><span>Notes</span>{notes.length ? <b className="view-count" aria-hidden="true">{notes.length}</b> : null}</button>
-          <button aria-label={projectGit?.files?.length ? `Git, ${projectGit.files.length} changed` : 'Git'} aria-pressed={manuscriptView === 'git'} onClick={() => { setManuscriptView('git'); setRegion(false); }}><Icon name="diff" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
+          <button aria-label={t('Contents')} aria-pressed={manuscriptView === 'contents'} onClick={() => { setManuscriptView('contents'); setRegion(false); }}><Icon name="list" size={16}/><span>{t('Contents')}</span></button>
+          <button aria-label={notes.length ? t('Notes, {n}', { n: notes.length }) : t('Notes')} aria-pressed={manuscriptView === 'notes'} onClick={() => { setManuscriptView('notes'); setRegion(false); }}><Icon name="notes" size={16}/><span>{t('Notes')}</span>{notes.length ? <b className="view-count" aria-hidden="true">{notes.length}</b> : null}</button>
+          <button aria-label={projectGit?.files?.length ? t('Git, {n} changed', { n: projectGit.files.length }) : 'Git'} aria-pressed={manuscriptView === 'git'} onClick={() => { setManuscriptView('git'); setRegion(false); }}><Icon name="diff" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
         </div>}
       </>}
       {task && <>
         <div className="task-state-actions">
-          {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>Retry deletion</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}><Icon name="refresh" size={14}/>Check status</button> : active && !conversationVisible ? <button className="button secondary compact" aria-label="Pause task" title={`Pause ${agentName(task)}`} disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={pause}><Icon name="pause" size={14}/><span className="button-label">Pause</span></button> : task.error ? <button className="button secondary compact" onClick={() => { setMobileTab('conversation'); setLayout('conversation'); }}>View details</button> : null}
+          {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>{t('Retry deletion')}</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}><Icon name="refresh" size={14}/>{t('Check status')}</button> : active && !conversationVisible ? <button className="button secondary compact" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={pause}><Icon name="pause" size={14}/><span className="button-label">{t('Pause')}</span></button> : task.error ? <button className="button secondary compact" onClick={() => { setMobileTab('conversation'); setLayout('conversation'); }}>{t('View details')}</button> : null}
         </div>
-        <div className="view-selector" role="group" aria-label="Workspace view">{mobile ? <>
-          <button aria-label={pending ? `Review, ${pending} to decide` : 'Review'} aria-pressed={mobileTab === 'review'} onClick={() => setMobileTab('review')}><Icon name="paper" size={16}/><span>Review</span>{pending > 0 && <b className="view-count" aria-hidden="true">{pending}</b>}</button>
-          <button aria-label={replyNeeded ? 'Chat (reply needed)' : 'Chat'} aria-pressed={mobileTab === 'conversation'} onClick={() => setMobileTab('conversation')}><Icon name="chat" size={16}/><span>Chat</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
+        <div className="view-selector" role="group" aria-label={t('Workspace view')}>{mobile ? <>
+          <button aria-label={pending ? t('Review, {n} to decide', { n: pending }) : t('Review')} aria-pressed={mobileTab === 'review'} onClick={() => setMobileTab('review')}><Icon name="paper" size={16}/><span>{t('Review')}</span>{pending > 0 && <b className="view-count" aria-hidden="true">{pending}</b>}</button>
+          <button aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} aria-pressed={mobileTab === 'conversation'} onClick={() => setMobileTab('conversation')}><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
         </> : <>
-          <button aria-label="Review" title="PDF review only" aria-pressed={layout === 'review'} onClick={() => { setLayout('review'); setMobileTab('review'); }}><Icon name="paper" size={16}/><span>Review</span></button>
-          <button aria-label="Split" title="Review and chat side by side" aria-pressed={layout === 'split'} onClick={() => setLayout('split')}><Icon name="split" size={16}/><span>Split</span></button>
-          <button aria-label={replyNeeded ? 'Chat (reply needed)' : 'Chat'} title="Chat only" aria-pressed={layout === 'conversation'} onClick={() => { setLayout('conversation'); setMobileTab('conversation'); }}><Icon name="chat" size={16}/><span>Chat</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
+          <button aria-label={t('Review')} title={t('PDF review only')} aria-pressed={layout === 'review'} onClick={() => { setLayout('review'); setMobileTab('review'); }}><Icon name="paper" size={16}/><span>{t('Review')}</span></button>
+          <button aria-label={t('Split')} title={t('Review and chat side by side')} aria-pressed={layout === 'split'} onClick={() => setLayout('split')}><Icon name="split" size={16}/><span>{t('Split')}</span></button>
+          <button aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} title={t('Chat only')} aria-pressed={layout === 'conversation'} onClick={() => { setLayout('conversation'); setMobileTab('conversation'); }}><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
         </>}</div>
       </>}
     </header>
-      {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>Connection lost. Showing the last update; your draft is kept.</span><button onClick={() => void refresh(true)}>Retry connection</button></div>}
-      {state && bannerRuntime && (!bannerRuntime.connected || !bannerRuntime.authenticated) && <div className="runtime-banner"><Icon name="alert" size={15}/><span>{bannerRuntime.error || `Connecting to ${AGENT_LABELS[bannerAgent]}…`}</span><button disabled={pendingActions.has('/reconnect')} onClick={() => void action('/reconnect')}>{pendingActions.has('/reconnect') ? 'Connecting…' : 'Reconnect'}</button></div>}
+      {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>{t('Connection lost. Showing the last update; your draft is kept.')}</span><button onClick={() => void refresh(true)}>{t('Retry connection')}</button></div>}
+      {state && bannerRuntime && (!bannerRuntime.connected || !bannerRuntime.authenticated) && <div className="runtime-banner"><Icon name="alert" size={15}/><span>{bannerRuntime.error || t('Connecting to {agent}…', { agent: AGENT_LABELS[bannerAgent] })}</span><button disabled={pendingActions.has('/reconnect')} onClick={() => void action('/reconnect')}>{pendingActions.has('/reconnect') ? t('Connecting…') : t('Reconnect')}</button></div>}
       {task ? <div className={`task-grid layout-${layout} show-${mobileTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
-          {!mobile && layout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat panel" aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title="Drag to resize · Double-click to reset" onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
-          <section id="review-panel" className="review-panel" aria-label="PDF review">
-          {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>The latest review build failed.</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>Retry build</button></div>}
-          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>Deletion is in progress</h2><p>This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} tools={reviewTools}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? 'Building PDF review…' : 'No review yet'}</h2><p>{task.status === 'building' ? 'The review will appear when the build finishes.' : 'PDF changes will appear here after Codex finishes editing.'}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>Build review</button>}</div>}
-          <ReviewFeedback task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError} onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>
-        </section><Activity key={task.id} task={task} models={runtimes[task.agent || 'codex']?.models || []} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} openReview={(mobile ? mobileTab === 'conversation' : layout === 'conversation') ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} onGit={status => { setGit({ projectId: project.id, status }); setManuscript(current => current.projectId === project.id && current.data ? { ...current, data: { ...current.data, git: status } } : current); }}/>
-      : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>Opening your workspace</h1><p className="home-copy" role="status">{connectionError || 'Connecting to your papers and tasks…'}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>Retry connection</button>}</div></div>
+          {!mobile && layout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label={t('Resize chat panel')} aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title={t('Drag to resize · Double-click to reset')} onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
+          <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
+          {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('The latest review build failed.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
+          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} tools={reviewTools} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); if (selectedRef.current === task.id) { setMobileTab('conversation'); setLayout('split'); } }}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? t('Building PDF review…') : t('No review yet')}</h2><p>{task.status === 'building' ? t('The review will appear when the build finishes.') : t('PDF changes will appear here after {agent} finishes editing.', { agent: agentName(task) })}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Build review')}</button>}</div>}
+          {!chatOnly && reviewFeedback(false)}
+        </section><Activity key={task.id} task={task} models={runtimes[task.agent || 'codex']?.models || []} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? reviewFeedback(true) : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
+      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} onGit={status => updateGit(project.id, status)}/>
+      : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>{t('Opening your workspace')}</h1><p className="home-copy" role="status">{connectionError || t('Connecting to your papers and tasks…')}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>{t('Retry connection')}</button>}</div></div>
       : project ? <div className="home"><div className="home-inner compose">
           <img className="home-logo" src={logo} alt=""/>
-          <h1>What are we revising next?</h1>
-          <Composer large autoFocus inputRef={newTaskInput} label="Describe the revision" value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder="Describe the revision, what to preserve, and how to judge the result…"
+          <h1>{t('What are we revising next?')}</h1>
+          <Composer large autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={projectSkills.length ? t('Describe the revision, or type / for a skill…') : t('Describe the revision, what to preserve, and how to judge the result…')}
+            skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
             footer={<div className="composer-options">
               {agentOptions(creating)}
             </div>}
-            action={<button className="send-button" type="submit" aria-label="Start task" title="Start task (Enter)" disabled={creating || !newDraft.trim()} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+            action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || (!newDraft.trim() && !newSkill)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+          <SkillSuggestions skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
           {createError && <p className="inline-error home-error" role="alert">{createError}</p>}
-          {unavailable(agentChoice) && <p className="inline-error home-error" role="status">{AGENT_LABELS[agentChoice]} is unavailable on this host: {runtimes[agentChoice]?.error}</p>}
+          {unavailable(agentChoice) && <p className="inline-error home-error" role="status">{t('{agent} is unavailable on this host: {error}', { agent: AGENT_LABELS[agentChoice], error: runtimes[agentChoice]?.error ?? '' })}</p>}
           {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
         </div></div>
-      : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>Add your first paper</h1><p className="home-copy">Connect a LaTeX Git repository on this host. An agent edits it in isolated worktrees, and you review every change as a PDF diff.</p><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>Add paper</button></div></div>}
+      : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><p className="home-copy">{t('Connect a LaTeX Git repository on this host. An agent edits it in isolated worktrees, and you review every change as a PDF diff.')}</p><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button></div></div>}
     </main>
-    {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
+    {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
+    {settings && <SettingsDialog theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
-    {modal && <dialog ref={modalRef} onKeyDown={keepDialogFocus} className="modal-backdrop" aria-labelledby="modal-title" onCancel={e => { e.preventDefault(); if (!busy) setModal(null); }} onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section className="modal"><button className="modal-close icon-button" aria-label="Close" disabled={busy} onClick={() => setModal(null)}><Icon name="close"/></button><h2 id="modal-title">Add a paper</h2><p className="modal-description">Choose an existing LaTeX Git repository on this host. It needs at least one commit and must compile with latexmk.</p><form onSubmit={e => void saveProject(e)}>
-      <label>Repository path<input required maxLength={4000} value={form.path} onChange={e => setForm({ ...form, path: e.target.value })} placeholder="/Users/you/papers/my-paper" autoComplete="off" spellCheck={false}/></label>
-      <label>Display name (optional)<input maxLength={120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="My research paper"/></label>
+    {modal && <dialog ref={modalRef} onKeyDown={keepDialogFocus} className="modal-backdrop" aria-labelledby="modal-title" onCancel={e => { e.preventDefault(); if (!busy) setModal(null); }} onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section className="modal"><button className="modal-close icon-button" aria-label={t('Close')} disabled={busy} onClick={() => setModal(null)}><Icon name="close"/></button><h2 id="modal-title">{t('Add a paper')}</h2><p className="modal-description">{t('Choose an existing LaTeX Git repository on this host. It needs at least one commit and must compile with latexmk.')}</p><form onSubmit={e => void saveProject(e)}>
+      <label>{t('Repository path')}<input required maxLength={4000} value={form.path} onChange={e => setForm({ ...form, path: e.target.value })} placeholder={t('/Users/you/papers/my-paper')} autoComplete="off" spellCheck={false}/></label>
+      <label>{t('Display name (optional)')}<input maxLength={120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={t('My research paper')}/></label>
       {error && <p className="inline-error" role="alert">{error}</p>}
-      <div className="button-row"><button type="button" className="button secondary" disabled={busy} onClick={() => setModal(null)}>Cancel</button><button disabled={busy} className="button primary" type="submit">{busy ? 'Adding…' : 'Add paper'}</button></div>
+      <div className="button-row"><button type="button" className="button secondary" disabled={busy} onClick={() => setModal(null)}>{t('Cancel')}</button><button disabled={busy} className="button primary" type="submit">{busy ? t('Adding…') : t('Add paper')}</button></div>
     </form></section></dialog>}
   </div>;
 }

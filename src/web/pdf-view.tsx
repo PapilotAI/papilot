@@ -10,6 +10,8 @@ import { ChipSelect } from './chip-select.tsx';
 import { sendsMessage } from './composer.ts';
 import { Icon } from './icons.tsx';
 import { browserStorage } from './storage.ts';
+import { mergeLines } from './note-geometry.ts';
+import { t } from './i18n.ts';
 
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
 
@@ -28,7 +30,7 @@ const touch = () => window.matchMedia('(pointer: coarse)').matches;
 const unit = (value: number) => Math.min(1, Math.max(0, value));
 const percent = ([x0, y0, x1, y1]: Rect): React.CSSProperties => ({ left: `${x0 * 100}%`, top: `${y0 * 100}%`, width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%` });
 const bounds = (rects: Rect[]): Rect => [Math.min(...rects.map(r => r[0])), Math.min(...rects.map(r => r[1])), Math.max(...rects.map(r => r[2])), Math.max(...rects.map(r => r[3]))];
-const zooms = [{ value: 'page-width', label: 'Fit width' }, { value: 'page-fit', label: 'Fit page' }, ...[0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map(scale => ({ value: String(scale), label: `${scale * 100}%` }))];
+const zooms = () => [{ value: 'page-width', label: t('Fit width') }, { value: 'page-fit', label: t('Fit page') }, ...[0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map(scale => ({ value: String(scale), label: `${scale * 100}%` }))];
 
 // A note covers whole words: a drag that starts or ends inside a word takes
 // all of it, so the quote is readable and the highlight matches it. Only a
@@ -94,18 +96,6 @@ function tagSpots(firsts: Rect[]) {
   });
 }
 
-// Text layers report one rectangle per span; join those on the same line so a
-// selection is stored and highlighted line by line.
-export function mergeLines(rects: Rect[]) {
-  const lines: Rect[] = [];
-  for (const r of [...rects].sort((a, b) => a[1] - b[1] || a[0] - b[0])) {
-    const line = lines.find(l => Math.abs((l[1] + l[3]) / 2 - (r[1] + r[3]) / 2) < Math.min(l[3] - l[1], r[3] - r[1]) / 2 && r[0] <= l[2] + 0.02);
-    if (line) { line[0] = Math.min(line[0], r[0]); line[1] = Math.min(line[1], r[1]); line[2] = Math.max(line[2], r[2]); line[3] = Math.max(line[3], r[3]); }
-    else lines.push([...r]);
-  }
-  return lines;
-}
-
 // PDF bookmarks (hyperref writes them) with the page and height each one opens.
 async function readOutline(document: PDFDocumentProxy) {
   const items: OutlineItem[] = [];
@@ -136,9 +126,9 @@ export function NoteEditor({ rect, onSave, onCancel }: { rect: Rect; onSave: (co
   // Open below the marked text, or above it when it ends near the bottom of the page.
   const below = rect[3] < 0.75;
   return <form className="note-editor" style={{ left: `min(${rect[0] * 100}%, calc(100% - min(340px, 100%)))`, ...(below ? { top: `calc(${rect[3] * 100}% + 8px)` } : { bottom: `calc(${(1 - rect[1]) * 100}% + 8px)` }) }} onPointerDown={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); void save(); }}>
-    <textarea autoFocus aria-label="Note for the agent" placeholder="What should change here?" rows={3} value={text} readOnly={busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel(); } else if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); void save(); } }}/>
+    <textarea autoFocus aria-label={t('Note for the agent')} placeholder={t('What should change here?')} rows={3} value={text} readOnly={busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel(); } else if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); void save(); } }}/>
     {error && <p className="inline-error" role="alert">{error}</p>}
-    <div className="button-row"><button type="button" className="button secondary compact" disabled={busy} onClick={onCancel}>Cancel</button><button className="button primary compact" disabled={busy || !text.trim()}>{busy ? 'Adding…' : 'Add note'}</button></div>
+    <div className="button-row"><button type="button" className="button secondary compact" disabled={busy} onClick={onCancel}>{t('Cancel')}</button><button className="button primary compact" disabled={busy || !text.trim()}>{busy ? t('Adding…') : t('Add note')}</button></div>
   </form>;
 }
 
@@ -315,47 +305,47 @@ export const PdfView = forwardRef<PdfHandle, {
     setEditing(null); latest.current.setRegion(false);
   }
   const section = props.outline[props.section];
-  const zoomLabel = zooms.find(option => option.value === zoom.value) ? zoom.value : String(Math.round(zoom.scale * 100) / 100);
-  const zoomOptions = zooms.some(option => option.value === zoomLabel) ? zooms : [...zooms, { value: zoomLabel, label: `${Math.round(zoom.scale * 100)}%` }];
+  const presets = zooms(), zoomLabel = presets.find(option => option.value === zoom.value) ? zoom.value : String(Math.round(zoom.scale * 100) / 100);
+  const zoomOptions = presets.some(option => option.value === zoomLabel) ? presets : [...presets, { value: zoomLabel, label: `${Math.round(zoom.scale * 100)}%` }];
 
   return <div className={'pdf-view' + (props.region ? ' marking' : '')}>
-    <div className="pdf-toolbar" role="toolbar" aria-label="PDF controls">
+    <div className="pdf-toolbar" role="toolbar" aria-label={t('PDF controls')}>
       <div className="pdf-section" title={section?.title}><span className="pdf-section-title">{section?.title || 'PDF'}</span></div>
       <div className="pdf-pager">
-        <button type="button" className="icon-button" aria-label="Previous page" disabled={page <= 1} onClick={() => tools.current?.viewer.previousPage()}><Icon name="chevronUp" size={16}/></button>
-        <input aria-label="Page number" inputMode="numeric" value={pageInput} onChange={e => setPageInput(e.target.value.replace(/\D/g, ''))} onFocus={e => e.currentTarget.select()} onBlur={() => setPageInput(String(page))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); goToPage(); e.currentTarget.blur(); } }}/>
+        <button type="button" className="icon-button" aria-label={t('Previous page')} disabled={page <= 1} onClick={() => tools.current?.viewer.previousPage()}><Icon name="chevronUp" size={16}/></button>
+        <input aria-label={t('Page number')} inputMode="numeric" value={pageInput} onChange={e => setPageInput(e.target.value.replace(/\D/g, ''))} onFocus={e => e.currentTarget.select()} onBlur={() => setPageInput(String(page))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); goToPage(); e.currentTarget.blur(); } }}/>
         <span className="pdf-pages">/ {pages || '–'}</span>
-        <button type="button" className="icon-button" aria-label="Next page" disabled={page >= pages} onClick={() => tools.current?.viewer.nextPage()}><Icon name="chevronDown" size={16}/></button>
+        <button type="button" className="icon-button" aria-label={t('Next page')} disabled={page >= pages} onClick={() => tools.current?.viewer.nextPage()}><Icon name="chevronDown" size={16}/></button>
       </div>
       <div className="pdf-zoom">
-        <button type="button" className="icon-button" aria-label="Zoom out" title="Zoom out (⌘−)" onClick={() => tools.current?.viewer.decreaseScale()}><Icon name="minus" size={16}/></button>
-        <ChipSelect className="zoom-chip" label="Zoom" value={zoomLabel} options={zoomOptions} onChange={value => { if (tools.current) tools.current.viewer.currentScaleValue = value; }}/>
-        <button type="button" className="icon-button" aria-label="Zoom in" title="Zoom in (⌘+)" onClick={() => tools.current?.viewer.increaseScale()}><Icon name="plus" size={16}/></button>
+        <button type="button" className="icon-button" aria-label={t('Zoom out')} title={t('Zoom out (⌘−)')} onClick={() => tools.current?.viewer.decreaseScale()}><Icon name="minus" size={16}/></button>
+        <ChipSelect className="zoom-chip" label={t('Zoom')} value={zoomLabel} options={zoomOptions} onChange={value => { if (tools.current) tools.current.viewer.currentScaleValue = value; }}/>
+        <button type="button" className="icon-button" aria-label={t('Zoom in')} title={t('Zoom in (⌘+)')} onClick={() => tools.current?.viewer.increaseScale()}><Icon name="plus" size={16}/></button>
       </div>
-      <button type="button" className={'icon-button' + (findOpen ? ' active' : '')} aria-label="Find in PDF" aria-pressed={findOpen} title="Find (⌘F)" onClick={() => { if (findOpen) closeFind(); else setFindOpen(true); }}><Icon name="search" size={16}/></button>
-      <button type="button" className={'icon-button region-toggle' + (props.region ? ' active' : '')} aria-label="Mark region" aria-pressed={props.region} title="Mark a figure or region" onClick={() => props.setRegion(!props.region)}><Icon name="region" size={16}/></button>
+      <button type="button" className={'icon-button' + (findOpen ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={findOpen} title={t('Find (⌘F)')} onClick={() => { if (findOpen) closeFind(); else setFindOpen(true); }}><Icon name="search" size={16}/></button>
+      <button type="button" className={'icon-button region-toggle' + (props.region ? ' active' : '')} aria-label={t('Mark region')} aria-pressed={props.region} title={t('Mark a figure or region')} onClick={() => props.setRegion(!props.region)}><Icon name="region" size={16}/></button>
     </div>
     {findOpen && <div className="pdf-find">
       <Icon name="search" size={15}/>
-      <input ref={findInput} autoFocus aria-label="Search the PDF" placeholder="Find in PDF" value={query} onChange={e => { setQuery(e.target.value); search(false, false, e.target.value); }} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); search(true, e.shiftKey); } else if (e.key === 'Escape') { e.preventDefault(); closeFind(); } }}/>
-      <span className="pdf-find-count" aria-live="polite">{query ? notFound ? 'No matches' : matches.total ? `${matches.current} of ${matches.total}` : '' : ''}</span>
-      <button type="button" className="icon-button" aria-label="Previous match" disabled={!matches.total} onClick={() => search(true, true)}><Icon name="chevronUp" size={16}/></button>
-      <button type="button" className="icon-button" aria-label="Next match" disabled={!matches.total} onClick={() => search(true)}><Icon name="chevronDown" size={16}/></button>
-      <button type="button" className="icon-button" aria-label="Close search" onClick={closeFind}><Icon name="close" size={15}/></button>
+      <input ref={findInput} autoFocus aria-label={t('Search the PDF')} placeholder={t('Find in PDF')} value={query} onChange={e => { setQuery(e.target.value); search(false, false, e.target.value); }} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); search(true, e.shiftKey); } else if (e.key === 'Escape') { e.preventDefault(); closeFind(); } }}/>
+      <span className="pdf-find-count" aria-live="polite">{query ? notFound ? t('No matches') : matches.total ? t('{current} of {total}', { current: matches.current, total: matches.total }) : '' : ''}</span>
+      <button type="button" className="icon-button" aria-label={t('Previous match')} disabled={!matches.total} onClick={() => search(true, true)}><Icon name="chevronUp" size={16}/></button>
+      <button type="button" className="icon-button" aria-label={t('Next match')} disabled={!matches.total} onClick={() => search(true)}><Icon name="chevronDown" size={16}/></button>
+      <button type="button" className="icon-button" aria-label={t('Close search')} onClick={closeFind}><Icon name="close" size={15}/></button>
     </div>}
-    {props.region && <div className="pdf-hint">Drag across the page to mark a figure, equation or region. Press Escape to stop.</div>}
+    {props.region && <div className="pdf-hint">{t('Drag across the page to mark a figure, equation or region. Press Escape to stop.')}</div>}
     <div className="pdf-scroll-host">
-      <div ref={container} className="pdf-container" tabIndex={0} aria-label="PDF pages">
+      <div ref={container} className="pdf-container" tabIndex={0} aria-label={t('PDF pages')}>
         <div ref={inner} className="pdfViewer"/>
       </div>
-      {(loading || error) && <div className="review-loading"><p role={error ? 'alert' : 'status'}>{error ? `The PDF could not be opened: ${error}` : 'Opening the PDF…'}</p></div>}
+      {(loading || error) && <div className="review-loading"><p role={error ? 'alert' : 'status'}>{error ? t('The PDF could not be opened: {error}', { error }) : t('Opening the PDF…')}</p></div>}
     </div>
     {[...layers].map(([number, layer]) => createPortal(<Fragment>
       {(() => {
         const notes = props.notes.filter(({ note }) => note.page === number - 1), spots = tagSpots(notes.map(({ note }) => (note.rects?.length ? note.rects : [note.rect])[0]));
         return notes.map(({ note, number: label }, index) => <Fragment key={note.id}>
           {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} style={percent(rect)}/>)}
-          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} style={spots[index]} aria-label={`Note ${label}: ${note.comment}`} title={note.comment} onClick={() => props.onSelect(note)}>{label}</button>
+          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} style={spots[index]} aria-label={t('Note {n}: {comment}', { n: label, comment: note.comment })} title={note.comment} onClick={() => props.onSelect(note)}>{label}</button>
         </Fragment>);
       })()}
       {props.region && <div className="region-capture"
@@ -371,7 +361,7 @@ export const PdfView = forwardRef<PdfHandle, {
           if (current && (current.rect[2] - current.rect[0] > 0.015 || current.rect[3] - current.rect[1] > 0.01)) setEditing({ page: current.page, rect: current.rect, rects: [], quote: '' });
         }}/>}
       {draft?.page === number - 1 && <div className="note-box draft" style={percent(draft.rect)}/>}
-      {selection?.page === number - 1 && !editing && <button type="button" className="add-note" style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={startNote}><Icon name="pencil" size={14}/>Add note</button>}
+      {selection?.page === number - 1 && !editing && <button type="button" className="add-note" style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={startNote}><Icon name="pencil" size={14}/>{t('Add note')}</button>}
       {editing?.page === number - 1 && <>
         {(editing.rects.length ? editing.rects : [editing.rect]).map((rect, index) => <div key={index} className={(editing.rects.length ? 'note-mark' : 'note-box') + ' draft'} style={percent(rect)}/>)}
         <NoteEditor rect={editing.rect} onCancel={() => { setEditing(null); }} onSave={save}/>

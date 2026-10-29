@@ -11,6 +11,7 @@ import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson,
 import { authorize } from './security.ts';
 import { fullPaperPdf } from './pdf.ts';
 import { Manuscripts, annotationTask, gitCommit, gitDiff, gitRemote, gitStatus } from './manuscript.ts';
+import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import type { AgentId } from '../shared.ts';
 
 const store = new Store(path.join(DATA, 'papilot.sqlite'));
@@ -46,9 +47,14 @@ const effort = (value: unknown) => typeof value === 'string' && /^[a-z]{1,16}$/.
 const string = (value: unknown, name: string, max = 20000) => { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
 app.post('/api/projects', async request => { const b = request.body as any; return workspace.addProject(string(b.path, 'Repository path', 4000), b.name ? string(b.name, 'Paper name', 120) : undefined); });
 app.post<{ Params: { id: string } }>('/api/projects/:id/rename', request => workspace.renameProject(request.params.id, string((request.body as any).name, 'Paper name', 120)));
+// A skill's name: what the author typed after "/".
+const skillName = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,47}$/.test(value) ? value : undefined;
+// Text the author may leave empty when a skill or review feedback says enough.
+const optional = (value: unknown, name: string) => value === undefined || value === '' ? '' : string(value, name);
+app.get<{ Params: { id: string } }>('/api/projects/:id/skills', request => ({ skills: loadSkills(store.project(request.params.id).path).map(listedSkill) }));
 app.post('/api/tasks', async request => {
-  const b = request.body as any;
-  return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: string(b.instructions, 'Instructions'), agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort) });
+  const b = request.body as any, skill = skillName(b.skill);
+  return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: skill ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort) });
 });
 app.get<{ Params: { id: string } }>('/api/tasks/:id/items', request => { store.task(request.params.id); return { items: store.items(request.params.id) }; });
 app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string } }>('/api/tasks/:id/pdf', async (request, reply) => {
@@ -61,8 +67,10 @@ app.get<{ Params: { id: string }; Querystring: { round?: string; version?: strin
   return reply.type('application/pdf').header('Content-Disposition', `${request.query.download === '1' ? 'attachment' : 'inline'}; filename="${filename}"`).sendFile(path.basename(pdf), path.dirname(pdf), { cacheControl: false });
 });
 app.post<{ Params: { id: string } }>('/api/tasks/:id/messages', async request => {
-  const b = request.body as any;
-  return workspace.enqueue(request.params.id, string(b.text, 'Revision instructions'), string(b.requestKey, 'Request ID', 100), true);
+  const b = request.body as any, task = store.task(request.params.id), feedback = b.feedback === true, name = skillName(b.skill);
+  const skill = name ? findSkill(store.project(task.projectId).path, name) : undefined;
+  const text = feedback || skill ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
+  return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback });
 });
 app.post<{ Params: { id: string } }>('/api/tasks/:id/rename', request => workspace.renameTask(request.params.id, string((request.body as any).title, 'Task title', 120)));
 app.post<{ Params: { id: string } }>('/api/tasks/:id/interrupt', request => workspace.interrupt(request.params.id).then(() => ({ ok: true })));
@@ -193,7 +201,13 @@ await app.listen({ host: '127.0.0.1', port: PORT });
 store.recover();
 console.log(`Papilot is running at http://127.0.0.1:${PORT}${PUBLIC_ORIGIN ? `\nRemote: ${PUBLIC_ORIGIN}` : ''}`);
 void workspace.connect();
-for (const task of store.tasks().filter(t => t.status === 'building')) { store.updateTask(task.id, { status: 'interrupted', error: 'The server restarted during the PDF build. Check the review and rebuild it if needed.' }); void workspace.refresh(task.id); }
+// Recompute cached feedback counts, including decisions from before this restart.
+for (const task of store.tasks()) {
+  if (task.status === 'building') {
+    store.updateTask(task.id, { status: 'interrupted', error: 'The server restarted during the PDF build. Check the review and rebuild it if needed.' });
+    void workspace.refresh(task.id);
+  } else if (task.review?.round && task.status !== 'deleting') void workspace.refresh(task.id);
+}
 let shuttingDown = false;
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   if (shuttingDown) return; shuttingDown = true; workspace.close();

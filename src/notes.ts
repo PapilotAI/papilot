@@ -7,6 +7,11 @@ const QUOTE = '   PDF text: "', REGION = '   Marked region: a figure, equation o
 
 export interface NoteSummary { where: string; quote: string; comment: string }
 
+export function reviewNotesInstructions(notes: NoteSummary[]) {
+  const items = notes.map((note, index) => `${index + 1}. ${note.where}\n${note.quote ? `${QUOTE}${note.quote}"` : REGION}${NOTE}${note.comment.trim().replace(/\n/g, '\n   ')}`);
+  return `${PREAMBLE} These notes refer to the displayed review round and its Before, After or Unchanged text. Region coordinates are percentages of the displayed PDF strip (left, top, right, bottom); any quoted text for a region is nearby context. Read the current source before editing. Preserve accepted changes and do not reintroduce rejected edits unless a note explicitly asks for it.\n\n${items.join('\n\n')}`;
+}
+
 export function notesInstructions(notes: Annotation[]) {
   const items = notes.map((note, index) => {
     const where = [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : ''].filter(Boolean).join(' · ');

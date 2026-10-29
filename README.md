@@ -63,7 +63,7 @@ Diff files, commit the ones you choose, then pull and push without leaving the p
 </tr>
 </table>
 
-Also: 🤖 **Codex, Claude or Antigravity**, each with your own login · 🌳 **every task in its own Git worktree**, up to two at once · 📱 **runs on your computer**, and you can open it from your phone.
+Also: ✨ **skills** such as Polish, Proofread and Check math, one `/` away, plus your own · 🤖 **Codex, Claude or Antigravity**, each with your own login · 🌳 **every task in its own Git worktree**, up to two at once · 🌗 **light and dark** · 📱 **runs on your computer**, and you can open it from your phone.
 
 ## 🚀 Quick start
 

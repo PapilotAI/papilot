@@ -139,10 +139,11 @@ export class ClaudeAgent extends Adapter {
       this.ready = true;
     } finally { finish(); probe.close(); }
   }
-  // Claude tasks need an API key (or a cloud provider's own credentials):
-  // Anthropic does not accept a Claude subscription login through the SDK.
+  // Claude tasks need an API key, an ANTHROPIC_AUTH_TOKEN (for a gateway or an
+  // Anthropic-compatible ANTHROPIC_BASE_URL), or a cloud provider's own
+  // credentials: Anthropic does not accept a Claude subscription login through the SDK.
   protected account() {
-    const account = this.info.account, keyed = Boolean(account?.apiKeySource && !['none', 'oauth'].includes(account.apiKeySource));
+    const account = this.info.account, keyed = Boolean(account?.apiKeySource && !['none', 'oauth'].includes(account.apiKeySource)) || account?.tokenSource === 'ANTHROPIC_AUTH_TOKEN';
     const external = Boolean(account?.apiProvider && account.apiProvider !== 'firstParty');
     if (keyed || external) return { account: { email: account?.email, type: external ? account!.apiProvider : 'API key' }, requiresOpenaiAuth: false };
     return { account: null, requiresOpenaiAuth: true, reason: CLAUDE_KEY };

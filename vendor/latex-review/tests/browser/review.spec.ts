@@ -261,7 +261,7 @@ test("comments retain drafts and reach agent feedback with their source location
   await expect(page.locator('.change[data-state="commented"]')).toHaveCount(1);
   await expect(
     page.locator('.change-map-mark[data-state="commented"]'),
-  ).toHaveCount(1);
+  ).toHaveCount(0);
   const response = await page.request.get(
     "/api/tasks/tighten-design/feedback?after=0",
   );
@@ -325,11 +325,12 @@ async function expectMapAligned(page: Page) {
           track = document.querySelector<HTMLElement>(".change-map")!,
           articles = [...root.querySelectorAll<HTMLElement>("[data-stop]")],
           marks = [...track.querySelectorAll<HTMLElement>(".change-map-mark")];
-        if (marks.length !== articles.length) return Infinity;
         return Math.max(
-          ...marks.map((mark, index) => {
+          0,
+          ...marks.map((mark) => {
+            const article = articles.find(article => article.dataset.stop === mark.dataset.stopIndex)!;
             const documentPosition =
-              (articles[index].getBoundingClientRect().top -
+              (article.getBoundingClientRect().top -
                 root.getBoundingClientRect().top +
                 root.scrollTop) /
               root.scrollHeight;
@@ -384,10 +385,9 @@ test("change map navigates with pointer and keyboard and follows review layout c
     .first()
     .getByRole("button", { name: "Accept", exact: true })
     .click();
-  await expect(marks.first()).toHaveAttribute("data-state", "accepted");
-  await expect(marks.first()).toHaveAccessibleName(
-    /Change 1 · accepted · paper\/sections\/design.tex/,
-  );
+  await expect(marks).toHaveCount(last);
+  await expect(changes.first().locator('.change-head')).toBeHidden();
+  await expect(marks.first()).toHaveAttribute("data-stop-index", "1");
   await expectMapAligned(page);
   await page.keyboard.press(
     process.platform === "darwin" ? "Meta+z" : "Control+z",
