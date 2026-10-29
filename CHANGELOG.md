@@ -4,6 +4,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-29
+
 ### Added
 
 - Skills: type `/` in any prompt, or pick a suggestion on the new-task page, to run **Polish**, **Proofread**, **Shorten**, **Check math**, **Consistency**, **Fix LaTeX warnings** or **Address reviewers** without writing the prompt. Add your own as Markdown files in `~/.papilot/skills` or a paper's `.papilot/skills`.
@@ -47,6 +49,7 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/cu1ch3n/papilot/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/cu1ch3n/papilot/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/cu1ch3n/papilot/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/cu1ch3n/papilot/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/cu1ch3n/papilot/releases/tag/v0.1.0
