@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
+import { ChipSelect } from './chip-select.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { LANGUAGES, browserLanguage, setLanguage, t, useLanguage, type LanguageChoice } from './i18n.ts';
 import { setNotifications, testNotification, useNotifications } from './notifications.ts';
@@ -42,11 +43,9 @@ export function SettingsDialog({ theme, onTheme, onClose }: { theme: Theme; onTh
         </div>
       </div>
       <div className="settings-row">
-        <label className="settings-name" htmlFor="settings-language">{t('Language')}</label>
-        <select id="settings-language" value={choice} onChange={event => setLanguage(event.target.value as LanguageChoice)}>
-          <option value="system">{t('Browser default ({language})', { language: browserName })}</option>
-          {LANGUAGES.map(item => <option key={item.id} value={item.id} lang={item.id}>{item.name}</option>)}
-        </select>
+        <span className="settings-name">{t('Language')}</span>
+        <ChipSelect label={t('Language')} value={choice} onChange={value => setLanguage(value as LanguageChoice)}
+          options={[{ value: 'system', label: t('Browser default ({language})', { language: browserName }) }, ...LANGUAGES.map(item => ({ value: item.id, label: item.name }))]}/>
       </div>
       <div className="settings-row settings-notifications">
         <div className="settings-text">
