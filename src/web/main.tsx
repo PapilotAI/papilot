@@ -369,10 +369,11 @@ function GitPanel({ projectId, git, onStatus, writer }: { projectId: string; git
     void run('commit', () => api(`/projects/${projectId}/git/commit`, { message: text, paths: chosen.map(file => file.path) }), result => { saveMessage(''); return t('Committed {hash}.', { hash: result.commit ?? '' }); });
   };
   // Like Cursor's generate button: the chosen agent reads the chosen files' changes.
+  // An empty box takes a message already written for them; a full one asks for a new one.
   async function generate() {
     if (busy || !chosen.length) return;
     setBusy('message'); setError(''); setNotice('');
-    try { saveMessage((await api<{ message: string }>(`/projects/${projectId}/git/message`, { paths: chosen.map(file => file.path), agent: writer.agent, model: writer.model || undefined }, undefined, 130000)).message); }
+    try { saveMessage((await api<{ message: string }>(`/projects/${projectId}/git/message`, { paths: chosen.map(file => file.path), agent: writer.agent, fresh: Boolean(message.trim()) }, undefined, 130000)).message); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(''); }
   }
@@ -1005,7 +1006,7 @@ function App() {
     {settings && <SettingsDialog theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)}/>}
     {peopleOpen && <PeopleDialog api={api} projects={state?.projects || []} ago={agoText} onClose={() => setPeopleOpen(false)}/>}
     {task && commitFor === task.id && <CommitDialog branch={projectGit?.branch ?? null} files={ready} remote={Boolean(projectGit?.remote)} agent={agentName(task)} onClose={() => setCommitFor('')}
-      generate={() => api<{ message: string }>(`/projects/${task.projectId}/git/message`, { paths: ready, agent: task.agent || 'codex', model: task.model || undefined }, undefined, 130000).then(result => result.message)}
+      generate={fresh => api<{ message: string }>(`/projects/${task.projectId}/git/message`, { paths: ready, agent: task.agent || 'codex', fresh }, undefined, 130000).then(result => result.message)}
       commit={async (message, push) => {
         const result = await api<{ commit: string; git: GitStatus; pushError?: string }>(`/tasks/${task.id}/commit`, { message, push }, undefined, 130000);
         updateGit(task.projectId, result.git);

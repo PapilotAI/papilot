@@ -151,7 +151,7 @@ try {
   const commitDialog = page.getByRole('dialog', { name: 'Commit to main' });
   await expect(commitDialog.getByRole('textbox', { name: 'Commit message' })).toHaveValue('Explain the method');
   await expect(commitDialog.getByText('main.tex', { exact: true })).toBeVisible();
-  assert.deepEqual(messageRequests, [{ paths: ['main.tex'], agent: 'codex' }]);
+  assert.deepEqual(messageRequests, [{ paths: ['main.tex'], agent: 'codex', fresh: false }]);
   await commitDialog.getByRole('button', { name: 'Commit and push', exact: true }).click();
   await expect(commitDialog).toBeHidden();
   assert.deepEqual(commitRequests, [{ message: 'Explain the method', push: true }]);

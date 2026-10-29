@@ -132,10 +132,11 @@ export async function buildApp(options: AppOptions) {
     return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => ({ commit: await gitCommit(project.path, message, paths), git: await gitStatus(project.path) })));
   });
   const paths = (value: unknown): string[] => Array.isArray(value) ? value.filter((p: unknown): p is string => typeof p === 'string').slice(0, 5000) : [];
-  // An agent writes a commit message for the chosen files; nothing is written.
+  // An agent writes a commit message for the chosen files, or a fresh one
+  // instead of the message it already wrote for them; nothing is written.
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/message', project(), request => {
     const b = request.body as any;
-    return workspace.commitMessage(store.project(request.params.id).id, paths(b.paths), { agent: b.agent === undefined ? undefined : agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined });
+    return workspace.commitMessage(store.project(request.params.id).id, paths(b.paths), { agent: b.agent === undefined ? undefined : agent(b.agent), fresh: b.fresh === true });
   });
   // A merge in progress is resolved by an agent, committed, or abandoned.
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/resolve', project(), request => {
@@ -273,6 +274,7 @@ export async function buildApp(options: AppOptions) {
             if (task) {
               store.updateTask(task.id, { error: null });
               await workspace.refresh(task.id);
+              void workspace.prepareCommitMessage(task.id);
             }
           }
           return rewriteReviewJson(value, prefix);

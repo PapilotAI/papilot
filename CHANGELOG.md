@@ -8,6 +8,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 - **People**: invite an advisor or co-authors to chosen papers. They sign in with a passkey at a public HTTPS address (`PAPILOT_ACCOUNT_ORIGIN`, for example Tailscale Funnel on port 10000), see only the papers you share, and can work in them as you do. Their messages and notes show their name. You can unshare a paper, remove a device or a person at any time, and get your own passkey to use the public address. Invite only people you would trust with access to the computer Papilot runs on: agents and builds can read any file on it.
 
+### Changed
+
+- Commit messages are written by the agent's small model (GPT Luna, Claude Haiku or Gemini Flash, when the agent offers one), and a finished review's message is written as soon as you decide the last change, so **Commit…** usually opens with it ready. The generate button writes a new one.
+
 ## [0.3.0] - 2026-10-29
 
 ### Added

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Store } from '../src/server/store.ts';
-import { Workspace, accountUsage, acceptedFiles, agentModel } from '../src/server/workspace.ts';
+import { Workspace, accountUsage, acceptedFiles, agentModel, lightModel } from '../src/server/workspace.ts';
 import { findSkill } from '../src/server/skills.ts';
 import { reviewInstructions } from '../src/conversation.ts';
 import { RpcResponseError, type Codex } from '../src/server/codex.ts';
@@ -971,6 +971,14 @@ test('feedback alone cannot be sent when there is none, so the chat never shows 
   } finally { f.close(); }
 });
 
+test('a commit message goes to the small model each agent offers, when it offers one', () => {
+  const model = (id: string, name = id) => ({ id, name, isDefault: false, efforts: [], defaultEffort: null });
+  assert.equal(lightModel([model('gpt-6.1-sol'), model('gpt-6-luna'), model('gpt-5.6-luna')])?.id, 'gpt-6-luna');
+  assert.equal(lightModel([model('opus', 'Opus 5.5'), model('sonnet', 'Sonnet 5.5'), model('haiku', 'Haiku 5.5')])?.id, 'haiku');
+  assert.equal(lightModel([model('gemini-4-argon', 'Gemini 4 Argon'), model('gemini-3.8-flash', 'Gemini 3.8 Flash')])?.id, 'gemini-3.8-flash');
+  assert.equal(lightModel([model('gemini-4-argon', 'Gemini 4 Argon'), model('custom', 'Custom')]), undefined);
+});
+
 test('an agent writes a commit message from the chosen changes, in a read-only turn it does not keep', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-message-'));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
@@ -984,23 +992,46 @@ test('an agent writes a commit message from the chosen changes, in a read-only t
     f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: root, createdAt: 1 });
     f.store.updateTask(f.task.id, { title: 'Tighten the opening', review: { state: 'done', round: 1, counts: {}, files: ['main.tex'] } });
     f.codex.ready = true;
-    f.workspace.runtimes.codex.models = [{ id: 'fast', name: 'Fast', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }];
+    f.workspace.runtimes.codex.models = [
+      { id: 'gpt-6.1-sol', name: 'GPT-6.1-Sol', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' },
+      { id: 'gpt-6-luna', name: 'GPT-6-Luna', isDefault: false, efforts: ['low', 'medium'], defaultEffort: 'medium' },
+    ];
+    const replies = ['```\nTighten the opening sentence.\n```', 'Shorten the opening sentence'];
     f.codex.handler = async method => {
       if (method === 'thread/start') return { thread: { id: 'commit-thread' } };
+      const text = replies.shift();
       setImmediate(() => {
-        f.codex.emit('notification', { method: 'item/completed', params: { threadId: 'commit-thread', turnId: 'commit-turn', item: { id: 'reply', type: 'agentMessage', text: '```\nTighten the opening sentence.\n```' } } });
+        f.codex.emit('notification', { method: 'item/completed', params: { threadId: 'commit-thread', turnId: 'commit-turn', item: { id: 'reply', type: 'agentMessage', text } } });
         f.codex.emit('notification', { method: 'turn/completed', params: { threadId: 'commit-thread', turn: { id: 'commit-turn', status: 'completed' } } });
       });
       return { turn: { id: 'commit-turn' } };
     };
     assert.deepEqual(await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'claude' }), { message: 'Tighten the opening sentence', agent: 'codex' });
     const start = f.codex.calls.find(call => call.method === 'thread/start')!.params, turn = f.codex.calls.find(call => call.method === 'turn/start')!.params;
-    assert.deepEqual([start.cwd, start.sandbox, start.approvalPolicy, start.ephemeral, start.model, turn.effort], [root, 'read-only', 'never', true, 'fast', 'low']);
+    assert.deepEqual([start.cwd, start.sandbox, start.approvalPolicy, start.ephemeral, start.model, turn.effort], [root, 'read-only', 'never', true, 'gpt-6-luna', 'low']);
     const prompt: string = turn.input[0].text;
     for (const part of ['- Draft the introduction', '- Tighten the opening', 'M main.tex', '+Tighter opening.']) assert.ok(prompt.includes(part), part);
     assert.ok(!prompt.includes('notes.md'), 'files that were not chosen stay out');
     // The reply belongs to no task, so no chat shows it.
     assert.deepEqual(f.store.items(f.task.id), []);
+    // The same changes get the same message at once, unless a fresh one is asked for.
+    const turns = () => f.codex.calls.filter(call => call.method === 'turn/start').length;
+    assert.deepEqual(await f.workspace.commitMessage(f.task.projectId, ['main.tex']), { message: 'Tighten the opening sentence', agent: 'codex' });
+    assert.equal(turns(), 1);
+    assert.deepEqual(await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { fresh: true }), { message: 'Shorten the opening sentence', agent: 'codex' });
+    assert.equal(turns(), 2);
+    assert.equal((await f.workspace.commitMessage(f.task.projectId, ['main.tex'])).message, 'Shorten the opening sentence');
+    // Once the author has decided every change, the review's message is written ahead.
+    fs.writeFileSync(path.join(root, 'main.tex'), 'An even tighter opening.\n');
+    replies.push('Tighten the opening again');
+    f.store.updateTask(f.task.id, { status: 'reviewing', review: { state: 'done', round: 1, counts: { pending: 1 }, files: ['main.tex'] } });
+    await f.workspace.prepareCommitMessage(f.task.id);
+    assert.equal(turns(), 2, 'a review with undecided changes waits');
+    f.store.updateTask(f.task.id, { review: { state: 'done', round: 1, counts: { accepted: 1 }, files: ['main.tex'] } });
+    await f.workspace.prepareCommitMessage(f.task.id);
+    assert.equal(turns(), 3);
+    assert.equal((await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'codex' })).message, 'Tighten the opening again');
+    assert.equal(turns(), 3);
     f.codex.ready = false;
     await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex']), /Sign in to Codex, Claude or Antigravity/);
   } finally { f.close(); fs.rmSync(root, { recursive: true, force: true }); }

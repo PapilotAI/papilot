@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
@@ -43,6 +43,10 @@ const FIXABLE = /^(Some edits are outside the task scope|The revised document co
 const BUILD_FIX = 'build-fix-';
 
 const AGENTS: AgentId[] = ['codex', 'claude', 'antigravity'];
+// The small model an agent offers for short text such as a commit message,
+// by the names agents give them (GPT Luna and mini, Claude Haiku, Gemini Flash).
+const LIGHT = /\b(?:luna|mini|nano|haiku|flash|lite)\b/i;
+export const lightModel = (models: AgentModel[]) => models.find(model => LIGHT.test(model.id) || LIGHT.test(model.name));
 // A commit message's agent sees the changes in its prompt and needs no tools.
 const commitInstructions = 'You write Git commit messages for the repository of a LaTeX paper. Reply with the commit message only, without a preamble, quotes or a code fence: a subject line in the imperative mood under 72 characters and, only when the change needs more explanation, a blank line and a body of a few short plain sentences. Describe what changed in the paper, such as its wording, sections, equations, figures or references, rather than listing files. Follow the style and language of the recent commit subjects, or write in English when there are none. Everything you need is in the message: do not run commands, read files or edit anything.';
 // A merge's agent edits the conflicted files in the manuscript checkout and nothing else.
@@ -72,6 +76,9 @@ export class Workspace extends EventEmitter {
   private flushTimer: NodeJS.Timeout | null = null;
   private connecting: Promise<void> | null = null;
   private usageTimers = new Map<AgentId, NodeJS.Timeout>();
+  // Commit messages by agent, model and prompt, kept or still being written,
+  // so one written ahead for a finished review is there when the dialog opens.
+  private messages = new Map<string, Promise<{ message: string; agent: AgentId }>>();
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.agents = { codex, claude: others.claude || new ClaudeAgent(), antigravity: others.antigravity || new AntigravityAgent() };
@@ -537,13 +544,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   }
   // The agent that writes a commit message or resolves a merge: the one the
   // author chose, or else the first that is signed in, with the chosen model
-  // or the default one.
-  private helper(choice: { agent?: AgentId; model?: string }, task: string) {
+  // or the default one; light asks for the agent's small model when it has one.
+  private helper(choice: { agent?: AgentId; model?: string }, task: string, light = false) {
     const usable = (id: AgentId) => this.agents[id].ready && this.runtimes[id].authenticated;
     const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(usable);
     if (!id) throw new Error(`Sign in to Codex, Claude or Antigravity to ${task}.`);
     const models = this.runtimes[id].models;
-    return { id, model: models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
+    return { id, model: (light ? lightModel(models) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
   }
   // One turn on a thread the agent does not keep, outside any task: its
   // reply is returned and no chat shows it.
@@ -570,9 +577,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     });
   }
   // Writes a commit message for the chosen manuscript files, like Cursor's
-  // generate button: one read-only turn with the lightest reasoning the model offers.
-  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string } = {}) {
-    const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message');
+  // generate button: one read-only turn on the agent's small model, with the
+  // lightest reasoning it offers. The same changes get the message already
+  // written, or being written, for them unless the author asks for a fresh one.
+  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; fresh?: boolean } = {}) {
+    const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', true);
     const { files, patch, recent } = await commitChanges(project.path, paths);
     const tasks = this.store.tasks().filter(task => task.projectId === projectId && task.review?.files?.some(file => paths.includes(file))).map(task => task.title);
     const prompt = [
@@ -581,10 +590,29 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       `Changed files:\n${files.map(file => `${file.status === '?' ? 'A' : file.status} ${file.from ? `${file.from} -> ` : ''}${file.path}`).join('\n')}`,
       `Diff:\n${patch}`,
     ].filter(Boolean).join('\n\n');
-    const reply = await this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions: commitInstructions, prompt, model, effort: model?.efforts[0], timeout: 120000, what: 'write a commit message' });
-    const message = commitMessageFrom(reply);
-    if (!message) throw new Error(`${AGENT_NAMES[id]} did not return a commit message. Try again.`);
-    return { message, agent: id };
+    const key = createHash('sha256').update(`${id}\0${model?.id ?? ''}\0${prompt}`).digest('hex'), kept = this.messages.get(key);
+    if (kept && !choice.fresh) return kept;
+    const written = this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions: commitInstructions, prompt, model, effort: model?.efforts[0], timeout: 120000, what: 'write a commit message' }).then(reply => {
+      const message = commitMessageFrom(reply);
+      if (!message) throw new Error(`${AGENT_NAMES[id]} did not return a commit message. Try again.`);
+      return { message, agent: id };
+    });
+    // Only the latest few messages are kept, and never a failed one.
+    this.messages.delete(key); this.messages.set(key, written);
+    for (const old of this.messages.keys()) { if (this.messages.size <= 20) break; this.messages.delete(old); }
+    written.catch(() => { if (this.messages.get(key) === written) this.messages.delete(key); });
+    return written;
+  }
+  // A finished review offers to commit what it accepted, so after the
+  // author's last decision its commit message is written ahead.
+  async prepareCommitMessage(taskId: string) {
+    try {
+      const task = this.store.task(taskId), files = task.review?.files || [];
+      if (task.status !== 'reviewing' || task.review?.counts?.pending || !files.length) return;
+      const project = this.store.project(task.projectId), git = await gitStatus(project.path);
+      const paths = git.merging ? [] : files.filter(file => git.files.some(item => item.path === file));
+      if (paths.length) await this.commitMessage(project.id, paths, { agent: this.agentOf(task) });
+    } catch { /* The commit dialog writes the message when it opens. */ }
   }
   // Resolves a merge's conflicts in the manuscript checkout itself: the agent
   // edits only the conflicted files, at the model's default reasoning, and
