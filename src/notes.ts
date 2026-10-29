@@ -14,7 +14,7 @@ export function reviewNotesInstructions(notes: NoteSummary[]) {
 
 export function notesInstructions(notes: Annotation[]) {
   const items = notes.map((note, index) => {
-    const where = [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : ''].filter(Boolean).join(' · ');
+    const where = [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : '', note.author ? `from ${note.author.name}` : ''].filter(Boolean).join(' · ');
     const source = note.source?.excerpt ? ['   LaTeX source of the marked region:', '   ```latex', ...note.source.excerpt.split('\n').map(line => '   ' + line), '   ```'] : [];
     return [`${index + 1}. ${where}`, ...source, note.quote ? `${QUOTE}${note.quote}"` : REGION, `${NOTE.slice(1)}${note.comment.trim().replace(/\n/g, '\n   ')}`].join('\n');
   });

@@ -62,7 +62,7 @@
     "doctor": "node bin/papilot.mjs doctor",
     "service:install": "tsx scripts/service.ts install",
     "service:stop": "tsx scripts/service.ts stop",
-    "test:ui": "npm run build && node scripts/check-ui.mjs && node scripts/check-review-notes.mjs && node --import tsx scripts/check-review-flow.mjs && node scripts/check-skills.mjs",
+    "test:ui": "npm run build && node scripts/check-ui.mjs && node scripts/check-review-notes.mjs && node --import tsx scripts/check-review-flow.mjs && node scripts/check-skills.mjs && node --import tsx scripts/check-accounts.mjs",
     "site": "node scripts/build-site.mjs",
     "site:video": "node scripts/build-site.mjs --video",
     "prepack": "npm run build && npm run setup:review"
@@ -70,6 +70,7 @@
   "dependencies": {
     "@fastify/compress": "^9.2.2",
     "@fastify/static": "^10.1.7",
+    "@simplewebauthn/server": "^14.0.3",
     "commander": "^15.0.0",
     "diff": "^9.0.0",
     "fastify": "^5.12.7",
@@ -80,6 +81,7 @@
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.311",
     "@openai/codex": "0.164.0",
+    "@simplewebauthn/browser": "^14.0.0",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

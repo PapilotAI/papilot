@@ -1,234 +1,30 @@
-import Fastify from 'fastify';
-import { registerFrontend } from './frontend.ts';
-import compress from '@fastify/compress';
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { Store } from './store.ts';
 import { Workspace } from './workspace.ts';
-import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER, VERSION } from './paths.ts';
-import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState } from './review.ts';
-import { authorize } from './security.ts';
-import { fullPaperPdf } from './pdf.ts';
-import { Manuscripts, annotationTask, gitAbortMerge, gitCommit, gitDiff, gitFinishMerge, gitIgnore, gitRemote, gitStatus } from './manuscript.ts';
-import { findSkill, listedSkill, loadSkills } from './skills.ts';
-import type { AgentId } from '../shared.ts';
+import { Accounts } from './accounts.ts';
+import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER, VERSION, ACCOUNT_ORIGIN, ACCOUNT_PORT } from './paths.ts';
+import { accountHsts, accountProblem } from './security.ts';
+import { Manuscripts } from './manuscript.ts';
+import { buildApp, gitQueue } from './app.ts';
 
+const problem = accountProblem(ACCOUNT_ORIGIN, ACCOUNT_PORT, PORT, PUBLIC_ORIGIN);
+if (problem) { console.error(problem); process.exit(1); }
 const store = new Store(path.join(DATA, 'papilot.sqlite'));
 const workspace = new Workspace(store);
-const manuscripts = new Manuscripts();
-const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
-const csrf = randomBytes(32).toString('base64url');
-const equals = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
-await app.register(compress);
-app.addHook('onRequest', async (request, reply) => {
-  reply.header('X-Content-Type-Options', 'nosniff').header('Referrer-Policy', 'same-origin').header('X-Frame-Options', 'SAMEORIGIN').header('Cache-Control', 'no-store');
-  const denied = authorize(request.headers, request.raw.socket.remoteAddress, PORT, PUBLIC_ORIGIN, OWNER);
-  if (denied) return reply.code(403).send({ error: denied });
-  if (request.method === 'POST' && !request.url.startsWith('/review/') && !equals(String(request.headers['x-papilot-token'] || ''), csrf)) return reply.code(403).send({ error: 'This page has expired. Refresh it and try again.' });
-});
-app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
-app.get('/api/health', () => ({ ok: true, name: 'Papilot', version: VERSION }));
-app.get('/api/state', () => ({ ...workspace.snapshot(), csrf }));
-app.get('/api/events', (request, reply) => {
-  reply.hijack();
-  reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-  reply.raw.write('event: change\ndata: {}\n\n');
-  let timer: NodeJS.Timeout | undefined;
-  const change = () => { timer ??= setTimeout(() => { timer = undefined; reply.raw.write('event: change\ndata: {}\n\n'); }, 400); };
-  workspace.on('change', change);
-  const heartbeat = setInterval(() => reply.raw.write(': heartbeat\n\n'), 15000);
-  reply.raw.on('close', () => { clearInterval(heartbeat); if (timer) clearTimeout(timer); workspace.off('change', change); });
-});
-app.post('/api/reconnect', async () => { await workspace.connect(); return workspace.runtime; });
-// Codex names reasoning efforts with short lowercase words (low, medium, xhigh).
-const agent = (value: unknown): AgentId => value === 'claude' || value === 'antigravity' ? value : 'codex';
-const effort = (value: unknown) => typeof value === 'string' && /^[a-z]{1,16}$/.test(value) ? value : undefined;
-const string = (value: unknown, name: string, max = 20000) => { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
-app.post('/api/projects', async request => { const b = request.body as any; return workspace.addProject(string(b.path, 'Repository path', 4000), b.name ? string(b.name, 'Paper name', 120) : undefined); });
-app.post<{ Params: { id: string } }>('/api/projects/:id/rename', request => workspace.renameProject(request.params.id, string((request.body as any).name, 'Paper name', 120)));
-// A skill's name: what the author typed after "/".
-const skillName = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,47}$/.test(value) ? value : undefined;
-// Text the author may leave empty when a skill or review feedback says enough.
-const optional = (value: unknown, name: string) => value === undefined || value === '' ? '' : string(value, name);
-app.get<{ Params: { id: string } }>('/api/projects/:id/skills', request => ({ skills: loadSkills(store.project(request.params.id).path).map(listedSkill) }));
-app.post('/api/tasks', async request => {
-  const b = request.body as any, skill = skillName(b.skill);
-  return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: skill ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort) });
-});
-app.get<{ Params: { id: string } }>('/api/tasks/:id/items', request => { store.task(request.params.id); return { items: store.items(request.params.id) }; });
-app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string } }>('/api/tasks/:id/pdf', async (request, reply) => {
-  const task = store.task(request.params.id), project = store.project(task.projectId);
-  const round = request.query.round === undefined ? task.review?.round : Number(request.query.round);
-  const side = request.query.version || 'after';
-  if (!round || !Number.isSafeInteger(round) || round < 1 || (side !== 'before' && side !== 'after')) return reply.code(400).send({ error: 'Select an existing review round and either the before or after PDF.' });
-  const pdf = await fullPaperPdf(project.path, task.name, round, side);
-  const filename = `papilot-${task.name}-r${round}-${side}.pdf`;
-  return reply.type('application/pdf').header('Content-Disposition', `${request.query.download === '1' ? 'attachment' : 'inline'}; filename="${filename}"`).sendFile(path.basename(pdf), path.dirname(pdf), { cacheControl: false });
-});
-app.post<{ Params: { id: string } }>('/api/tasks/:id/messages', async request => {
-  const b = request.body as any, task = store.task(request.params.id), feedback = b.feedback === true, name = skillName(b.skill);
-  const skill = name ? findSkill(store.project(task.projectId).path, name) : undefined;
-  const text = feedback || skill ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
-  return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback });
-});
-// Commits what the author accepted from this task, with the message they confirmed.
-app.post<{ Params: { id: string } }>('/api/tasks/:id/commit', request => {
-  const task = store.task(request.params.id), b = request.body as any;
-  return serialGit(task.projectId, () => workspace.commitTask(task.id, string(b.message, 'Commit message', 5000), b.push === true));
-});
-app.post<{ Params: { id: string } }>('/api/tasks/:id/rename', request => workspace.renameTask(request.params.id, string((request.body as any).title, 'Task title', 120)));
-app.post<{ Params: { id: string } }>('/api/tasks/:id/interrupt', request => workspace.interrupt(request.params.id).then(() => ({ ok: true })));
-app.post<{ Params: { id: string } }>('/api/tasks/:id/delete', request => {
-  if ((request.body as any)?.confirm !== true) throw new Error('Confirm permanent task deletion before continuing.');
-  return workspace.deleteTask(request.params.id);
-});
-app.post<{ Params: { id: string } }>('/api/tasks/:id/reconcile', request => workspace.reconcile(request.params.id));
-app.post<{ Params: { id: string } }>('/api/tasks/:id/publish', request => {
-  const task = store.task(request.params.id); if (['running', 'waiting_input', 'building'].includes(task.status)) throw new Error('This task is busy. Wait for it to finish or pause it first.');
-  void workspace.publish(task.id); return { ok: true };
-});
-// The manuscript preview compiles each paper's working tree and reports its Git status.
-app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));
-app.get<{ Params: { id: string } }>('/api/projects/:id/git', request => gitStatus(store.project(request.params.id).path));
-// Git writes to one repository run one at a time; each returns the new status.
-const gitQueue = new Map<string, Promise<unknown>>();
-function serialGit<T>(projectId: string, work: () => Promise<T>) {
-  const run = (gitQueue.get(projectId) || Promise.resolve()).catch(() => {}).then(work);
-  gitQueue.set(projectId, run);
-  return run.finally(() => { if (gitQueue.get(projectId) === run) gitQueue.delete(projectId); });
-}
-app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/projects/:id/git/diff', request => gitDiff(store.project(request.params.id).path, string(request.query.path, 'File path', 4096)));
-app.post<{ Params: { id: string } }>('/api/projects/:id/git/commit', request => {
-  const project = store.project(request.params.id), b = request.body as any;
-  const message = string(b.message, 'Commit message', 5000), paths = Array.isArray(b.paths) ? b.paths.filter((p: unknown) => typeof p === 'string').slice(0, 5000) : [];
-  return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => ({ commit: await gitCommit(project.path, message, paths), git: await gitStatus(project.path) })));
-});
-const paths = (value: unknown): string[] => Array.isArray(value) ? value.filter((p: unknown): p is string => typeof p === 'string').slice(0, 5000) : [];
-// An agent writes a commit message for the chosen files; nothing is written.
-app.post<{ Params: { id: string } }>('/api/projects/:id/git/message', request => {
-  const b = request.body as any;
-  return workspace.commitMessage(store.project(request.params.id).id, paths(b.paths), { agent: b.agent === undefined ? undefined : agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined });
-});
-// A merge in progress is resolved by an agent, committed, or abandoned.
-app.post<{ Params: { id: string } }>('/api/projects/:id/git/resolve', request => {
-  const project = store.project(request.params.id), b = request.body as any;
-  return serialGit(project.id, () => workspace.resolveConflicts(project.id, { agent: b.agent === undefined ? undefined : agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined }));
-});
-app.post<{ Params: { id: string } }>('/api/projects/:id/git/finish', request => {
-  const project = store.project(request.params.id);
-  return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => ({ commit: await gitFinishMerge(project.path), git: await gitStatus(project.path) })));
-});
-app.post<{ Params: { id: string } }>('/api/projects/:id/git/abort', request => {
-  const project = store.project(request.params.id);
-  return serialGit(project.id, async () => { await gitAbortMerge(project.path); return { git: await gitStatus(project.path) }; });
-});
-// Chosen untracked build files go into .gitignore by kind.
-app.post<{ Params: { id: string } }>('/api/projects/:id/git/ignore', request => {
-  const project = store.project(request.params.id);
-  return serialGit(project.id, async () => ({ git: await gitIgnore(project.path, paths((request.body as any).paths)) }));
-});
-app.post<{ Params: { id: string; action: string } }>('/api/projects/:id/git/:action', request => {
-  const project = store.project(request.params.id), action = request.params.action;
-  if (action !== 'fetch' && action !== 'pull' && action !== 'merge' && action !== 'push') throw Object.assign(new Error('Unknown Git action.'), { statusCode: 404 });
-  return serialGit(project.id, async () => { await gitRemote(project.path, action); return { git: await gitStatus(project.path) }; });
-});
-app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path, true)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));
-// Notes marked on the manuscript PDF become one agent task when sent.
-app.post<{ Params: { id: string } }>('/api/projects/:id/annotations', async request => {
-  const project = store.project(request.params.id), b = request.body as any;
-  const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] > value[0] && value[3] > value[1];
-  if (!isRect(b.rect)) throw new Error('Select text or mark a region on the page first.');
-  const rects = Array.isArray(b.rects) ? b.rects.slice(0, 80).filter(isRect) : [];
-  const comment = string(b.comment, 'Note', 4000), key = string(b.key, 'Preview key', 64), page = Number(b.page);
-  const selected = typeof b.quote === 'string' ? b.quote.slice(0, 2000) : '';
-  const { quote, source } = await manuscripts.locate(project.id, key, page, b.rect, rects, selected);
-  return store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(rects.length ? { rects } : {}), comment, quote, source, createdAt: Date.now() });
-});
-app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/delete', request => { store.deleteAnnotation(store.project(request.params.id).id, request.params.note); return { ok: true }; });
-app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', async request => {
-  const project = store.project(request.params.id), b = request.body as any, id = string(b.id, 'Task ID', 64);
-  const existing = store.tasks().find(task => task.id === id);
-  if (existing) return existing;
-  const notes = store.annotations(project.id).filter(note => !note.taskId);
-  if (!notes.length) throw new Error('Mark a region on the PDF and add a note first.');
-  const { title, instructions } = annotationTask(notes);
-  const task = await workspace.createTask({ id, projectId: project.id, title, instructions, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort) });
-  for (const note of notes) store.saveAnnotation({ ...note, taskId: task.id });
-  return task;
-});
-// Exact word places for the PDF view's selection layer; immutable per build key.
-app.get<{ Params: { id: string }; Querystring: { key?: string; page?: string } }>('/api/projects/:id/manuscript/words', async (request, reply) => {
-  const project = store.project(request.params.id);
-  const words = await manuscripts.words(project.id, String(request.query.key || ''), Number(request.query.page));
-  return reply.header('Cache-Control', 'private, max-age=31536000, immutable').send(words);
-});
-app.get<{ Params: { id: string }; Querystring: { key?: string; download?: string } }>('/api/projects/:id/manuscript.pdf', (request, reply) => {
-  const project = store.project(request.params.id), pdf = manuscripts.pdf(project.id, String(request.query.key || ''));
-  const name = (project.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'manuscript') + '.pdf';
-  // Each key names one immutable build, so the viewer can cache and range-read it.
-  return reply.type('application/pdf').header('Content-Disposition', `${request.query.download === '1' ? 'attachment' : 'inline'}; filename="${name}"`).header('Cache-Control', 'private, max-age=31536000, immutable').sendFile(path.basename(pdf), path.dirname(pdf), { cacheControl: false });
-});
-app.post<{ Params: { id: string } }>('/api/requests/:id', request => { workspace.answer(request.params.id, request.body as any); return { ok: true }; });
+const accounts = new Accounts(store, ACCOUNT_ORIGIN || null);
+const shared = {
+  store, workspace, accounts, manuscripts: new Manuscripts(), csrf: randomBytes(32).toString('base64url'), serialGit: gitQueue(),
+  dist: fs.existsSync(path.join(ROOT, 'dist/index.html')) ? path.join(ROOT, 'dist') : null, version: VERSION,
+};
+const apps = [await buildApp({ ...shared, listener: { kind: 'local', port: PORT, publicOrigin: PUBLIC_ORIGIN, owner: OWNER } })];
+if (ACCOUNT_ORIGIN) apps.push(await buildApp({ ...shared, listener: { kind: 'account', origin: ACCOUNT_ORIGIN, hsts: accountHsts(ACCOUNT_ORIGIN, PUBLIC_ORIGIN) } }));
 
-app.route<{ Params: { projectId: string; '*': string } }>({
-  method: ['GET', 'POST'], url: '/review/:projectId/*', handler: async (request, reply) => {
-    const project = store.project(request.params.projectId);
-    const route = '/' + request.params['*'];
-    if (route.includes('..') || !allowedReviewRoute(route, request.method)) return reply.code(404).send({ error: 'Review resource not found.' });
-    const client = await reviewClient(project.path);
-    if (request.method === 'POST') {
-      if (!equals(String(request.headers['x-review-token'] || ''), client.token)) return reply.code(403).send({ error: 'This review page has expired. Refresh it and try again.' });
-    }
-    const reviewTask = request.method === 'POST' ? store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]) : undefined;
-    const writesFiles = route.endsWith('/undo') || (route.endsWith('/decide') && (request.body as any)?.action !== 'comment');
-    if (request.method === 'POST' && writesFiles) string((request.body as any)?.id, 'Review action ID', 80);
-    const forward = async () => {
-      const search = new URL(request.url, 'http://localhost').search;
-      const response = await fetch(client.url + route + search, {
-        method: request.method, headers: { 'Content-Type': 'application/json', 'X-Review-Token': client.token },
-        ...(request.method === 'POST' ? { body: JSON.stringify(request.body) } : {}),
-        signal: AbortSignal.timeout(120000), redirect: 'error',
-      });
-      reply.code(response.status);
-      const type = response.headers.get('content-type') || 'application/octet-stream';
-      const prefix = `/review/${project.id}`;
-      if (type.includes('application/json')) {
-        const value = await response.json();
-        if (reviewTask && writesFiles && !confirmedReviewResponse(response.status, value, reviewTask.name)) throw new Error('The review engine could not confirm this action. Select Check status before continuing.');
-        if (!response.ok && request.method === 'POST' && (value as any).error) {
-          const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
-          if (task) store.updateTask(task.id, { error: 'Review action failed: ' + (value as any).error });
-        }
-        if (response.ok && request.method === 'POST') {
-          const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
-          if (task) {
-            store.updateTask(task.id, { error: null });
-            await workspace.refresh(task.id);
-          }
-        }
-        return rewriteReviewJson(value, prefix);
-      }
-      if (reviewTask && writesFiles) throw new Error('The review engine returned an unexpected response. Select Check status before continuing.');
-      reply.type(type);
-      if (type.includes('text/html')) return rewriteReviewHtml(await response.text(), prefix);
-      const cache = response.headers.get('cache-control'); if (cache && route.startsWith('/files/')) reply.header('Cache-Control', cache);
-      if (route.startsWith('/assets/')) reply.header('Cache-Control', 'private, max-age=31536000, immutable');
-      return Buffer.from(await response.arrayBuffer());
-    };
-    if (request.method === 'POST' && !reviewTask) throw new Error('This review task does not belong to this workspace.');
-    const result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown> } : undefined) : forward());
-    return annotateReviewState(result, store.tasks().filter(task => task.projectId === project.id));
-  },
-});
-
-if (fs.existsSync(path.join(ROOT, 'dist/index.html'))) {
-  await registerFrontend(app, path.join(ROOT, 'dist'));
-} else app.get('/', (_request, reply) => reply.type('text/plain').send('Papilot: run npm run build, then restart the server.'));
-
-await app.listen({ host: '127.0.0.1', port: PORT });
+await apps[0].listen({ host: '127.0.0.1', port: PORT });
+if (apps[1]) await apps[1].listen({ host: '127.0.0.1', port: ACCOUNT_PORT });
 store.recover();
-console.log(`Papilot is running at http://127.0.0.1:${PORT}${PUBLIC_ORIGIN ? `\nRemote: ${PUBLIC_ORIGIN}` : ''}`);
+console.log(`Papilot is running at http://127.0.0.1:${PORT}${PUBLIC_ORIGIN ? `\nRemote: ${PUBLIC_ORIGIN}` : ''}${ACCOUNT_ORIGIN ? `\nSign-in for invited people: ${ACCOUNT_ORIGIN} (forwarded to 127.0.0.1:${ACCOUNT_PORT})` : ''}`);
 void workspace.connect();
 // Recompute cached feedback counts, including decisions from before this restart.
 for (const task of store.tasks()) {
@@ -237,9 +33,11 @@ for (const task of store.tasks()) {
     void workspace.refresh(task.id);
   } else if (task.review?.round && task.status !== 'deleting') void workspace.refresh(task.id);
 }
+// Expired invites and sessions are removed as they lapse.
+setInterval(() => accounts.purge(), 3600000).unref();
 let shuttingDown = false;
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   if (shuttingDown) return; shuttingDown = true; workspace.close();
-  void app.close().finally(() => { store.close(); process.exit(0); });
+  void Promise.all(apps.map(app => app.close())).finally(() => { store.close(); process.exit(0); });
   setTimeout(() => process.exit(0), 2500).unref();
 });

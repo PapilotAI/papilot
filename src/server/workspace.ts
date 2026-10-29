@@ -13,7 +13,7 @@ import { findSkill, type SkillFile } from './skills.ts';
 import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
 import { commitMessageFrom } from '../commit.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
-import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure } from '../shared.ts';
+import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -137,10 +137,12 @@ export class Workspace extends EventEmitter {
     this.store.saveProject(project); return project;
   }
   // A task can start from a skill; its instructions are then the author's own words, possibly none.
-  async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; agent?: AgentId; model?: string; effort?: string; id: string }) {
+  async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; agent?: AgentId; model?: string; effort?: string; id: string; author?: Author }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
-    const existing = this.store.tasks().find(t => t.id === input.id); if (existing) return existing;
+    // A retried request returns its task; an ID from another paper is refused.
+    const existing = this.store.tasks().find(t => t.id === input.id);
+    if (existing) { if (existing.projectId !== input.projectId) throw new Error('Invalid task ID.'); return existing; }
     if (this.preparing.has(input.id)) throw new Error('This task is being created. Refresh in a moment.');
     this.preparing.add(input.id);
     try {
@@ -153,14 +155,14 @@ export class Workspace extends EventEmitter {
         worktree: info.worktree, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.saveTask(task);
-      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill });
+      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill, author: input.author });
       return this.store.task(task.id);
     } finally { this.preparing.delete(input.id); }
   }
   // The author's message, a skill run with or without one, the review
   // feedback alone, or a build the agent broke. The chat keeps what happened;
   // the agent gets the prompt.
-  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; feedback?: boolean; build?: BuildFailure } = {}) {
+  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const existing = this.store.runByKey(requestKey);
@@ -179,7 +181,7 @@ export class Workspace extends EventEmitter {
       if (task.error) prompt += '\n\nLatest task/review error:\n' + task.error + '\nThe latest accepted manuscript is at ' + this.store.project(task.projectId).path + '. You may read it to understand accepted changes, but must only edit your isolated task worktree. Prepare a revised proposal for another review; never write to or accept changes in the manuscript checkout.';
     }
     const run: Run = { id: randomUUID(), taskId, requestKey, prompt, feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null };
-    const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}) };
+    const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}), ...(options.author ? { author: options.author } : {}) };
     const saved = this.store.transaction(() => {
       // Feedback loading yields to other requests. Recheck identity, queue, and
       // task status together before committing; none of the earlier reads own a lock.

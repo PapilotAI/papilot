@@ -1,9 +1,9 @@
-import { StrictMode, Suspense, lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { StrictMode, Suspense, createContext, lazy, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
-import type { AgentId, AgentModel, Annotation, FeedbackSummary, GitDiff, GitFile, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
+import type { AgentId, AgentModel, Annotation, Author, FeedbackSummary, GitDiff, GitFile, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem, Viewer } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillSuggestions, matchSkills, skillQuery } from './skills.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, unsentReviewFeedback } from './composer.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
@@ -16,6 +16,9 @@ import { Icon } from './icons.tsx';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog } from './settings.tsx';
 import { CommitDialog } from './commit-dialog.tsx';
+import { PeopleDialog } from './people-dialog.tsx';
+import { Invite, SignIn } from './sign-in.tsx';
+import { forgetBrowserState, isSignedOut, setSignedOut, useSignedOut } from './session.ts';
 import { locale, t, tn, useLanguage } from './i18n.ts';
 import { notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
 import { Markdown } from './markdown.tsx';
@@ -33,6 +36,8 @@ const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(ne
 async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal, wait = body === undefined ? 15000 : 30000): Promise<T> {
   const timeout = AbortSignal.timeout(wait);
   try { const response = await fetch('/api' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Papilot-Token': token }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+    // At the public URL, a lapsed or revoked session shows the sign-in page.
+    if (response.status === 401 && (!route.startsWith('/auth/') || route === '/auth/logout')) { setSignedOut(true); throw new Error(t('Sign in to continue.')); }
     const value = await response.json(); if (!response.ok) throw new Error(value.error || t('Request failed. Please try again.')); return value;
   }
   catch (error) {
@@ -136,9 +141,22 @@ const taskPath = (file: string, root: string) => root && file.startsWith(root + 
 const editedFiles = (item: TimelineItem, root: string) => item.text.split('\n').filter(Boolean).map(file => taskPath(file, root));
 const toolState = (item: TimelineItem) => item.status === 'inProgress' ? 'running' : item.status && item.status !== 'completed' ? 'failed' : '';
 
+// Who is looking, so messages and notes from other people show their names.
+const ViewerContext = createContext<Viewer | null>(null);
+// A message's sender: the viewer, or someone else by name. A message without
+// an author is the owner's.
+function useSender(author: Author | undefined) {
+  const viewer = useContext(ViewerContext);
+  const mine = !viewer || (author ? author.id === viewer.id : viewer.role === 'owner');
+  return { mine, name: mine ? '' : author?.name || viewer?.owner || '' };
+}
+const senderLabel = (sender: { mine: boolean; name: string }, at: number) => sender.mine ? t('You, {time}', { time: time(at) }) : t('{name}, {time}', { name: sender.name, time: time(at) });
+const SenderName = ({ sender }: { sender: { mine: boolean; name: string } }) => sender.mine ? null : <div className="message-author">{sender.name}</div>;
+
 // A first message built from PDF notes shows the notes, not the instructions around them.
 function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[] }) {
-  return <article className="message user notes-message" aria-label={t('You, {time}', { time: time(item.createdAt) })}><div className="message-body" title={time(item.createdAt)}>
+  const sender = useSender(item.meta?.author);
+  return <article className="message user notes-message" aria-label={senderLabel(sender, item.createdAt)}><SenderName sender={sender}/><div className="message-body" title={time(item.createdAt)}>
     <div className="sent-notes-head"><Icon name="notes" size={14}/>{tn(notes.length, 'Note on the PDF', '{n} notes on the PDF')}</div>
     <ol className="sent-notes">{notes.map((note, index) => <li key={index}>
       <span className="sent-note-where">{note.where}</span>
@@ -158,6 +176,7 @@ function FeedbackDetails({ feedback }: { feedback: FeedbackSummary }) {
 }
 
 function UserMessage({ item, agent }: { item: TimelineItem; agent: string }) {
+  const sender = useSender(item.meta?.author);
   const notes = readNotesInstructions(item.text);
   if (notes) return <NotesMessage item={item} notes={notes}/>;
   const { skill, feedback, sendsFeedback, build } = item.meta || {};
@@ -166,11 +185,11 @@ function UserMessage({ item, agent }: { item: TimelineItem; agent: string }) {
     <div className="sent-notes-head"><Icon name="alert" size={14}/>{t('Build failed · sent to {agent}', { agent })}</div>
     <p className="build-error">{[build.error, ...build.details].join('\n')}</p>
   </div></article>;
-  if (sendsFeedback || isFeedbackPrompt(item.text)) return <article className="message user notes-message" aria-label={t('You sent review feedback, {time}', { time: time(item.createdAt) })}><div className="message-body" title={time(item.createdAt)}>
+  if (sendsFeedback || isFeedbackPrompt(item.text)) return <article className="message user notes-message" aria-label={sender.mine ? t('You sent review feedback, {time}', { time: time(item.createdAt) }) : t('{name} sent review feedback, {time}', { name: sender.name, time: time(item.createdAt) })}><SenderName sender={sender}/><div className="message-body" title={time(item.createdAt)}>
     <div className="sent-notes-head"><Icon name="paper" size={14}/>{feedback?.round ? t('Review feedback · Round {round}', { round: feedback.round }) : t('Review feedback')}</div>
     {feedback && <FeedbackDetails feedback={feedback}/>}
   </div></article>;
-  return <article className="message user" aria-label={t('You, {time}', { time: time(item.createdAt) })}><div className="message-body" title={time(item.createdAt)}>
+  return <article className="message user" aria-label={senderLabel(sender, item.createdAt)}><SenderName sender={sender}/><div className="message-body" title={time(item.createdAt)}>
     {skill && <SkillChip skill={skill}/>}{skill && item.text ? '\n' : ''}{item.text}
     {feedback && <details className="feedback-attachment"><summary><Icon name="paper" size={13}/>{feedback.round ? t('With review feedback · Round {round}', { round: feedback.round }) : t('With review feedback')}</summary><FeedbackDetails feedback={feedback}/></details>}
   </div></article>;
@@ -438,7 +457,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Ann
   useEffect(() => { if (active) list.current?.querySelector(`[data-note="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active]);
   return <section className="notes-panel" aria-label={t('PDF notes')}>
     {notes.length ? <ol ref={list} className="note-list">{notes.map((note, index) => <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
-      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} onClick={() => actions.remove(note)}><Icon name="close" size={14}/></button></div>
+      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} onClick={() => actions.remove(note)}><Icon name="close" size={14}/></button></div>
       {note.source?.excerpt ? <pre className="note-source" title={t('{file}, the LaTeX that produced the marked region', { file: note.source.file })}>{note.source.excerpt}</pre> : note.quote && <blockquote>{note.quote}</blockquote>}
       <p>{note.comment}</p>
       {note.key !== currentKey && <small className="muted">{t('Marked on an earlier version of the PDF.')}</small>}
@@ -567,7 +586,7 @@ function App() {
   const [form, setForm] = useState({ path: '', name: '' });
   // Appearance, language and notifications live in Settings; a new language re-renders everything.
   const theme = useTheme(), { language } = useLanguage();
-  const [settings, setSettings] = useState(false);
+  const [settings, setSettings] = useState(false), [peopleOpen, setPeopleOpen] = useState(false);
   const selectedRef = useRef(selected); selectedRef.current = selected;
   const loaded = useRef(false);
   useEffect(() => {
@@ -677,6 +696,13 @@ function App() {
   if (task && !composers.current.has(task.id)) composers.current.set(task.id, new ComposerDraft('papilot:draft:' + task.id, browserStorage, uuid));
   const fullPdfUrl = task?.status !== 'deleting' && task?.review?.round ? `/api/tasks/${task.id}/pdf?round=${task.review.round}` : '';
   const project = state?.projects.find(p => p.id === (task?.projectId || projectId)) || state?.projects[0];
+  // Older servers send no viewer: whoever is looking is the owner.
+  const viewer = state?.viewer, owner = !viewer || viewer.role === 'owner';
+  // A session that already ended signs out too.
+  async function signOut() {
+    try { await api('/auth/logout', {}); } catch (e) { if (!isSignedOut()) { reportError(e); return; } }
+    forgetBrowserState(); setSignedOut(true);
+  }
   const tasks = state?.tasks.filter(t => !project || t.projectId === project.id) || [];
   const running = state?.tasks.filter(t => ['running', 'waiting_input', 'building'].includes(t.status)).length || 0;
   function openProject() { modalOpener.current = document.activeElement as HTMLElement | null; setError(''); setForm({ path: '', name: '' }); setModal('project'); }
@@ -875,16 +901,16 @@ function App() {
     </form>
     : <button className="project-name" aria-label={t('Rename paper: {name}', { name: project.name })} title={t('{name} · Click to rename', { name: project.name })} onClick={() => setRenamingPaper(true)}>{project.name}</button>;
 
-  return <div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
+  return <ViewerContext.Provider value={viewer || null}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
     <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label={t('Papers and tasks')}>
       <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setPage('home'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a><button className="icon-button" aria-label={t('Hide task list')} title={t('Hide task list')} onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
       <div className="sidebar-section"><span>{t('Paper')}</span></div>
       <div className="sidebar-actions">
         {state?.projects.length && project ? <ActionMenu label={t('Paper: {name}', { name: project.name })} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
           ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); } })),
-          { label: t('Add paper…'), icon: 'plus', divider: true, select: () => openProject() },
+          ...(owner ? [{ label: t('Add paper…'), icon: 'plus', divider: true, select: () => openProject() }] : []),
         ]}><span className="project-switcher-name">{project.name}</span><Icon name="updown" size={14}/></ActionMenu>
-          : <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button>}
+          : owner && <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button>}
         {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><Icon name="paper" size={16}/><span className="nav-label">PDF</span>{gitSummary(projectGit) && <span className="nav-meta" title={t('Git status of the manuscript')}>{gitSummary(projectGit)}</span>}</button>}
         <button className={'nav-link new-task' + (!task && !manuscriptOpen && project ? ' active' : '')} aria-current={!task && !manuscriptOpen && project ? 'page' : undefined} disabled={!state} onClick={() => newTask()}><Icon name="compose" size={16}/><span className="nav-label">{t('New task')}</span></button>
       </div>
@@ -902,7 +928,11 @@ function App() {
           { label: row.status === 'deleting' ? t('Retry deletion…') : t('Delete task…'), icon: 'trash', danger: true, select: () => setDeleteTarget(row) },
         ]}/>
       </div>) : <div className="task-list-empty">{state?.projects.length ? t('No tasks yet. Start one with New task.') : t('Add a paper to get started.')}</div>}</nav>
-      <div className="sidebar-preferences"><button className="nav-link settings-link" aria-haspopup="dialog" onClick={() => setSettings(true)}><Icon name="settings" size={16}/><span className="nav-label">{t('Settings')}</span></button></div>
+      <div className="sidebar-preferences">
+        {owner && <button className="nav-link settings-link" aria-haspopup="dialog" onClick={() => setPeopleOpen(true)}><Icon name="people" size={16}/><span className="nav-label">{t('People')}</span></button>}
+        <button className="nav-link settings-link" aria-haspopup="dialog" onClick={() => setSettings(true)}><Icon name="settings" size={16}/><span className="nav-label">{t('Settings')}</span></button>
+        {viewer?.listener === 'account' && <button className="nav-link settings-link" onClick={() => void signOut()}><Icon name="signOut" size={16}/><span className="nav-label">{t('Sign out')}</span><span className="nav-meta">{viewer.name}</span></button>}
+      </div>
       {/* A healthy, idle host needs no status line; the connection banner also covers a lost host. */}
       {state && (!online || running > 0) && <div className="sidebar-footer"><div className="host-status"><span className={'connection-dot ' + (online ? 'connected' : '')}/><span>{t('Host')}</span><span className="host-state">{online ? t('Connected') : t('Reconnecting')}</span></div>{running > 0 && <div className="host-caption">{tn(running, '{n} active task', '{n} active tasks')}</div>}</div>}
     </aside>
@@ -968,10 +998,12 @@ function App() {
           {unavailable(agentChoice) && <p className="inline-error home-error" role="status">{t('{agent} is unavailable on this host: {error}', { agent: AGENT_LABELS[agentChoice], error: runtimes[agentChoice]?.error ?? '' })}</p>}
           {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
         </div></div>
+      : !owner ? <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('No papers yet')}</h1><p className="home-copy">{t('No papers have been shared with you yet. Papers appear here as soon as {name} shares them.', { name: viewer?.owner || '' })}</p></div></div>
       : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><p className="home-copy">{t('Connect a LaTeX Git repository on this host. An agent edits it in isolated worktrees, and you review every change as a PDF diff.')}</p><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button></div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
     {settings && <SettingsDialog theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)}/>}
+    {peopleOpen && <PeopleDialog api={api} projects={state?.projects || []} ago={agoText} onClose={() => setPeopleOpen(false)}/>}
     {task && commitFor === task.id && <CommitDialog branch={projectGit?.branch ?? null} files={ready} remote={Boolean(projectGit?.remote)} agent={agentName(task)} onClose={() => setCommitFor('')}
       generate={() => api<{ message: string }>(`/projects/${task.projectId}/git/message`, { paths: ready, agent: task.agent || 'codex', model: task.model || undefined }, undefined, 130000).then(result => result.message)}
       commit={async (message, push) => {
@@ -989,7 +1021,17 @@ function App() {
       {error && <p className="inline-error" role="alert">{error}</p>}
       <div className="button-row"><button type="button" className="button secondary" disabled={busy} onClick={() => setModal(null)}>{t('Cancel')}</button><button disabled={busy} className="button primary" type="submit">{busy ? t('Adding…') : t('Add paper')}</button></div>
     </form></section></dialog>}
-  </div>;
+  </div></ViewerContext.Provider>;
 }
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App/></StrictMode>);
+// The public URL shows the sign-in page to anyone without a session, and an
+// invite link its own page; the workspace mounts only once signed in.
+function Root() {
+  const signedOut = useSignedOut();
+  const [inviting, setInviting] = useState(location.pathname === '/invite');
+  const signedIn = () => { setInviting(false); setSignedOut(false); };
+  if (inviting) return <Invite api={api} onDone={signedIn}/>;
+  return signedOut ? <SignIn api={api} onSignedIn={signedIn}/> : <App/>;
+}
+
+createRoot(document.getElementById('root')!).render(<StrictMode><Root/></StrictMode>);

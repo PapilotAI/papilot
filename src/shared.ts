@@ -20,7 +20,9 @@ export interface TimelineItem { id: string; taskId: string; type: string; text: 
 // A user message can run a skill or carry review feedback; the chat shows
 // those as what they are rather than as the prompt the agent receives.
 // Papilot itself sends the agent a build its own edits broke.
-export interface MessageMeta { skill?: { id: string; name: string }; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure }
+export interface MessageMeta { skill?: { id: string; name: string }; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
+// Who wrote a message or note; none means the owner.
+export interface Author { id: string; name: string }
 // A failed review build as the engine reports it; log is the compiler log's path.
 export interface BuildFailure { error: string; details: string[]; log?: string }
 export interface FeedbackSummary { round: number | null; accepted: number; rejected: number; undone: number; comments: { where: string; text: string }[]; buildError?: boolean }
@@ -32,11 +34,21 @@ export interface AgentModel { id: string; name: string; isDefault: boolean; effo
 export interface UsageWindow { usedPercent: number; minutes: number | null; resetsAt: number | null }
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
 export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null }
-export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string }
+export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; viewer?: Viewer }
+// Who is looking: the owner on this Mac or Tailscale (local), or a person
+// signed in with a passkey at the public URL (account). Older servers send none.
+// owner names the owner, whose messages carry no author.
+export interface Viewer { id: string; name: string; role: 'owner' | 'member'; listener: 'local' | 'account'; owner: string }
+// A person the owner invited, as the People dialog shows them. joined means
+// they have registered at least one passkey; projects are the shared papers.
+export interface Person { id: string; name: string; role: 'owner' | 'member'; joined: boolean; projects: string[]; lastSeenAt: number | null; devices: Device[] }
+// A passkey or a signed-in browser session, either of which the owner can revoke.
+export interface Device { id: string; kind: 'passkey' | 'session'; label: string; createdAt: number; lastUsedAt: number | null }
+export interface People { origin: string | null; people: Person[] }
 export interface GitFile { path: string; status: string; staged: boolean; lines?: [number, number]; from?: string }
 // merging is a merge in progress, with the files whose conflict markers remain.
 export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null; remote?: boolean; merging?: { message: string; conflicts: string[] } | null }
 export interface GitDiff { path: string; diff: string; truncated: boolean }
 export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean }
-export interface Annotation { id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string }
+export interface Annotation { id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author }
 export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }
