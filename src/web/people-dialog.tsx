@@ -50,9 +50,9 @@ export function PeopleDialog({ api, projects, ago, onClose }: { api: Api; projec
     <section className="modal people-dialog">
       <button className="modal-close icon-button" aria-label={t('Close')} onClick={close}><Icon name="close"/></button>
       <h2 id="people-title">{t('People')}</h2>
-      <p className="modal-description">{t('People you invite sign in with a passkey at the public address and can do everything you can in the papers you share with them, including approving the commands agents run on this Mac and pushing with its Git credentials.')}</p>
-      <p className="people-warning"><Icon name="alert" size={15}/><span>{t('Agents and builds can read any file on this Mac, including your other papers. Invite only people you would trust with this Mac.')}</span></p>
-      {people && !people.origin && <p className="people-setup">{t('To invite people, give Papilot a public HTTPS address: set PAPILOT_ACCOUNT_ORIGIN and forward it to this Mac, as the Collaborators section of the guide describes.')}</p>}
+      <p className="modal-description">{t('People you invite sign in with a passkey at the public address and can do everything you can in the papers you share with them, including approving the commands agents run on this host and pushing with its Git credentials.')}</p>
+      <p className="people-warning"><Icon name="alert" size={15}/><span>{t('Agents and builds can read any file on this host, including your other papers. Invite only people you would trust with access to it.')}</span></p>
+      {people && !people.origin && <p className="people-setup">{t('To invite people, give Papilot a public HTTPS address: set PAPILOT_ACCOUNT_ORIGIN and forward it to this host, as the Collaborators section of the guide describes.')}</p>}
       {people?.origin && <form className="people-invite" onSubmit={event => { event.preventDefault(); if (name.trim()) void invite(); }}>
         <label>{t('Invite someone')}<input value={name} maxLength={80} onChange={event => setName(event.target.value)} placeholder={t('Their name, as others will see it')} autoComplete="off"/></label>
         {papers(shared, (id, on) => setShared(current => on ? [...current, id] : current.filter(other => other !== id)), busy === 'invite', t('Papers they can open'))}

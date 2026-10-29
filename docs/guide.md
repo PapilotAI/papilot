@@ -148,7 +148,7 @@ Papilot reads the skills again when you return to its window, so a new skill fil
 Papilot binds **only to 127.0.0.1**. Configure a private Tailscale Serve endpoint and the exact owner login shown by your tailnet. The server verifies the remote Host, browser Origin, and Tailscale identity supplied by the local proxy.
 
 ```sh
-export PAPILOT_PUBLIC_ORIGIN=https://your-mac.your-tailnet.ts.net:8443
+export PAPILOT_PUBLIC_ORIGIN=https://your-host.your-tailnet.ts.net:8443
 export PAPILOT_TAILSCALE_LOGIN=your-tailscale-login
 papilot service install   # npm run service:install in a source checkout
 tailscale serve --bg --https=8443 http://127.0.0.1:7274
@@ -159,7 +159,7 @@ This uses a separate HTTPS port so an existing service on 443 can stay in place.
 If certificate issuance cannot reach Let's Encrypt, use a private HTTP endpoint over the encrypted tailnet instead:
 
 ```sh
-export PAPILOT_PUBLIC_ORIGIN=http://your-mac.your-tailnet.ts.net:8081
+export PAPILOT_PUBLIC_ORIGIN=http://your-host.your-tailnet.ts.net:8081
 export PAPILOT_TAILSCALE_LOGIN=your-tailscale-login
 papilot service install
 tailscale serve --bg --http=8081 http://127.0.0.1:7274
@@ -189,12 +189,12 @@ The workspace uses short, non-overlapping polling on HTTP/1 connections so multi
 
 You can invite other people, such as an advisor or co-authors, to work on chosen papers. They sign in at a public HTTPS address with a passkey (Face ID, Touch ID, Windows Hello or a phone) and install nothing. Papilot never stores a password.
 
-**Invite only people you would trust with this Mac.** In the papers you share, an invited person can do everything you can: start tasks, chat with agents, approve the commands agents ask to run on this Mac, accept or reject changes, add notes, and commit and push with this Mac's Git credentials. Papilot shows them only the papers you share. But agents, LaTeX builds (including a paper's `latexmkrc`) and approved commands run as you and can read any file on this Mac, including your other papers. So sharing limits what Papilot shows and allows, not what someone determined could reach.
+**Invite only people you would trust with access to the host.** In the papers you share, an invited person can do everything you can: start tasks, chat with agents, approve the commands agents ask to run on the host, accept or reject changes, add notes, and commit and push with the host's Git credentials. Papilot shows them only the papers you share. But agents, LaTeX builds (including a paper's `latexmkrc`) and approved commands run as you and can read any file on the host, including your other papers. So sharing limits what Papilot shows and allows, not what someone determined could reach.
 
 The public address has its own local port, separate from your tailnet endpoint. With Tailscale Funnel, which allows only ports 443, 8443 and 10000, use 10000 so it leaves your Serve endpoint on 8443 alone:
 
 ```sh
-export PAPILOT_ACCOUNT_ORIGIN=https://your-mac.your-tailnet.ts.net:10000
+export PAPILOT_ACCOUNT_ORIGIN=https://your-host.your-tailnet.ts.net:10000
 papilot service install
 tailscale funnel --bg --https=10000 http://127.0.0.1:7275
 ```
@@ -207,9 +207,9 @@ Open **People** in the sidebar to manage access:
 - Tick or untick a person's papers at any time. The change applies to their next request, and their open tabs update at once.
 - **Invite link for a new device** adds a passkey on another device, or replaces a lost one.
 - Each passkey and signed-in browser is listed and can be removed on its own. **Sign out everywhere** ends all of a person's sessions, and **Remove…** deletes the person, their passkeys and their sessions.
-- **Sign in from anywhere** gives you a link (valid for 15 minutes) to create your own passkey, so you can use the public address too. There you are the owner, as on this Mac.
+- **Sign in from anywhere** gives you a link (valid for 15 minutes) to create your own passkey, so you can use the public address too. There you are the owner, as on the host itself.
 
-Sessions last 30 days from last use and at most 90 days. Invited people cannot add papers or manage people; those stay with you. Their messages and PDF notes show their name. Review comments and Git commits do not record who made them yet. Passkeys belong to the address's host name, so renaming the Mac or the tailnet means everyone needs a new invite.
+Sessions last 30 days from last use and at most 90 days. Invited people cannot add papers or manage people; those stay with you. Their messages and PDF notes show their name. Review comments and Git commits do not record who made them yet. Passkeys belong to the address's host name, so renaming the host or the tailnet means everyone needs a new invite.
 
 ## Configuration
 

@@ -35,7 +35,7 @@ export interface UsageWindow { usedPercent: number; minutes: number | null; rese
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
 export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null }
 export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; viewer?: Viewer }
-// Who is looking: the owner on this Mac or Tailscale (local), or a person
+// Who is looking: the owner on this host or Tailscale (local), or a person
 // signed in with a passkey at the public URL (account). Older servers send none.
 // owner names the owner, whose messages carry no author.
 export interface Viewer { id: string; name: string; role: 'owner' | 'member'; listener: 'local' | 'account'; owner: string }

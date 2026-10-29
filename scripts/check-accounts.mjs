@@ -1,5 +1,5 @@
 // End-to-end check of accounts and sharing against a real Papilot server: the
-// owner invites someone from this Mac, who joins at the public URL with a
+// owner invites someone from the host, who joins at the public URL with a
 // passkey (Chrome's virtual authenticator), sees only the shared paper, signs
 // out and back in, and loses access when unshared and removed.
 // Run with: node --import tsx scripts/check-accounts.mjs (after npm run build).
@@ -38,7 +38,7 @@ const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHA
 const errors = [];
 const pass = label => console.log('PASS: ' + label);
 try {
-  // The owner, on this Mac, adds both papers and opens People.
+  // The owner, on the host, adds both papers and opens People.
   const ownerContext = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 900 } });
   const owner = await ownerContext.newPage(); owner.on('pageerror', e => errors.push('owner: ' + e.message));
   await owner.goto(local);
@@ -52,7 +52,7 @@ try {
   await owner.reload();
   await owner.getByRole('button', { name: 'People' }).click();
   const people = owner.getByRole('dialog', { name: 'People' });
-  await expect(people.getByText('Invite only people you would trust with this Mac.', { exact: false })).toBeVisible();
+  await expect(people.getByText('Invite only people you would trust with access to it.', { exact: false })).toBeVisible();
   await people.getByLabel('Invite someone').fill('Ada');
   await people.getByRole('group', { name: 'Papers they can open' }).getByLabel('Thesis').check();
   await people.getByRole('button', { name: 'Create invite link' }).click();

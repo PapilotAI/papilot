@@ -13,7 +13,7 @@ import type { Author, PendingRequest, Snapshot, Viewer as ViewerInfo } from '../
 // { project | task | request: param }: a signed-in person who can see the
 // paper that the named route parameter (or body field, from: 'body') belongs to
 export type Access = 'public' | 'any' | 'owner' | { project: string; from?: 'body' } | { task: string } | { request: string };
-// The local listener serves this Mac and the owner's Tailscale Serve endpoint;
+// The local listener serves this host and the owner's Tailscale Serve endpoint;
 // the account listener serves the public URL, where people sign in with passkeys.
 // hsts is off when the tailnet endpoint uses plain HTTP on the same host name,
 // which a year of HSTS would break.
@@ -77,7 +77,7 @@ export class Limiter {
     return true;
   }
 }
-// Every public connection reaches Papilot from the proxy on this Mac, which
+// Every public connection reaches Papilot from the proxy on this host, which
 // appends the client's address last. An IPv6 client counts by its /64, since
 // one host can use any address in it.
 export function clientAddress(request: FastifyRequest) {

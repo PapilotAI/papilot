@@ -153,7 +153,7 @@ test('adding papers and managing people stay with the owner', async () => {
       const response = await f.remote.inject({ method, url, headers: f.as, ...(method === 'POST' ? { payload: { path: '/', name: 'x', projects: ['grant'] } } : {}) });
       assert.equal(response.statusCode, 403, url);
     }
-    // The owner shares from this Mac, and a removed person's next request asks them to sign in.
+    // The owner shares from the host, and a removed person's next request asks them to sign in.
     const people = (await f.local.inject({ url: '/api/people', headers: LOCAL })).json();
     assert.deepEqual(people.people.map((p: any) => [p.name, p.role, p.joined]), [[f.accounts.owner().name, 'owner', false], ['Ada', 'member', true]]);
     const removed = await f.local.inject({ method: 'POST', url: `/api/people/${f.ada.id}/remove`, headers: { ...LOCAL, 'x-papilot-token': 'local-csrf' } });
@@ -210,7 +210,7 @@ test('messages from an invited person carry their name; the owner\'s carry none'
   } finally { await f.close(); }
 });
 
-test('this Mac and the tailnet keep working as before, and refuse Funnel traffic', async () => {
+test('this host and the tailnet keep working as before, and refuse Funnel traffic', async () => {
   const f = await fixture();
   try {
     const state = (await f.local.inject({ url: '/api/state', headers: LOCAL })).json();

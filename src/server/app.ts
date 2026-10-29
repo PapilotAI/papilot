@@ -30,7 +30,7 @@ export interface AppOptions {
   connectReview?: typeof reviewClient;
 }
 
-// One Fastify instance per listener: the local one for this Mac and Tailscale,
+// One Fastify instance per listener: the local one for this host and Tailscale,
 // the account one for the public URL. Both serve the same workspace.
 export async function buildApp(options: AppOptions) {
   const { listener, store, workspace, manuscripts, accounts, serialGit } = options, connectReview = options.connectReview || reviewClient;
@@ -77,7 +77,7 @@ export async function buildApp(options: AppOptions) {
   const agent = (value: unknown): AgentId => value === 'claude' || value === 'antigravity' ? value : 'codex';
   const effort = (value: unknown) => typeof value === 'string' && /^[a-z]{1,16}$/.test(value) ? value : undefined;
   const string = (value: unknown, name: string, max = 20000) => { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
-  // Adding a paper names a folder on this Mac, so only the owner can.
+  // Adding a paper names a folder on this host, so only the owner can.
   app.post('/api/projects', owner, async request => { const b = request.body as any; return workspace.addProject(string(b.path, 'Repository path', 4000), b.name ? string(b.name, 'Paper name', 120) : undefined); });
   app.post<{ Params: { id: string } }>('/api/projects/:id/rename', project(), request => workspace.renameProject(request.params.id, string((request.body as any).name, 'Paper name', 120)));
   // A skill's name: what the author typed after "/".
