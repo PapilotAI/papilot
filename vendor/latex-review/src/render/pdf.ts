@@ -54,6 +54,40 @@ export interface Raster {
   stride: number;
   pixels: Uint8Array;
 }
+// mupdf.js's walk turns each character into a string with String.fromCharCode,
+// which keeps only the low 16 bits: math italic 𝐹 (U+1D439) arrives as the
+// Hangul syllable 퐹 (U+D439). The JSON export spells every line correctly, one
+// code point per character, so a character comes from there whenever the two
+// agree on its low 16 bits.
+export function walkText(
+  text: mupdf.StructuredText,
+  walker: Parameters<mupdf.StructuredText["walk"]>[0],
+) {
+  const lines = (
+    JSON.parse(text.asJSON()) as { blocks: { lines?: { text: string }[] }[] }
+  ).blocks.flatMap((b) => (b.lines ?? []).map((l) => Array.from(l.text)));
+  let next = 0,
+    line: string[] = [],
+    index = 0;
+  text.walk({
+    ...walker,
+    beginLine: (...args) => {
+      line = lines[next++] ?? [];
+      index = 0;
+      walker.beginLine?.(...args);
+    },
+    onChar: (c, ...args) => {
+      const full = line[index++];
+      walker.onChar?.(
+        full !== undefined &&
+          (full.codePointAt(0)! & 0xffff) === c.charCodeAt(0)
+          ? full
+          : c,
+        ...args,
+      );
+    },
+  });
+}
 export class PdfPage {
   private columns?: boolean;
   raw: mupdf.Page;
@@ -73,7 +107,7 @@ export class PdfPage {
       "preserve-whitespace,preserve-ligatures",
     );
     let block: TextBlock, line: Line;
-    text.walk({
+    walkText(text, {
       beginTextBlock: (rect) => {
         block = { rect, text: "", lines: [] };
         this.blocks.push(block);

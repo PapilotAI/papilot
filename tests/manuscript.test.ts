@@ -172,6 +172,21 @@ test('word places come from the printed glyphs, one per word, in reading order',
   await assert.rejects(pdfWords(fixture, 2), /not part of the manuscript/);
 });
 
+test('word text keeps characters beyond U+FFFF, such as math italic letters', async () => {
+  // A font whose ToUnicode maps A and B to 𝐹 and 𝐺, the way pdfTeX writes math fonts.
+  const mupdf = await import('mupdf'), document = new mupdf.PDFDocument();
+  const font = document.addSimpleFont(new mupdf.Font('Times-Roman'));
+  font.resolve().put('ToUnicode', document.addStream('/CIDInit /ProcSet findresource begin 12 dict begin begincmap 1 begincodespacerange <00> <FF> endcodespacerange 1 beginbfrange <41> <42> <D835DC39> endbfrange endcmap CMapName currentdict /CMap defineresource pop end end', {}));
+  const resources = document.addObject(document.newDictionary()), fonts = document.newDictionary();
+  fonts.put('F1', font); resources.put('Font', fonts);
+  document.insertPage(-1, document.addPage([0, 0, 200, 100], 0, resources, 'BT /F1 12 Tf 20 50 Td (AB) Tj ET'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-math-'));
+  try {
+    fs.writeFileSync(path.join(root, 'math.pdf'), document.saveToBuffer('').asUint8Array());
+    assert.deepEqual((await pdfWords(path.join(root, 'math.pdf'), 0)).words.map(word => word[0]), ['𝐹𝐺']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('build output goes into .gitignore by kind, and a commit message reads only the chosen changes', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-ignore-'));
   const run = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();

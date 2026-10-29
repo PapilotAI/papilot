@@ -210,13 +210,13 @@ export async function workingTree(root: string) {
 }
 
 async function engine() {
-  const [{ Builder }, { Repo }, { loadProject }, { mupdf, PdfDocument, containsCenter }] = await Promise.all([
+  const [{ Builder }, { Repo }, { loadProject }, { mupdf, PdfDocument, containsCenter, walkText }] = await Promise.all([
     import(pathToFileURL(path.join(ENGINE, 'src/core/build.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/git.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/render/pdf.ts')).href),
   ]);
-  return { Builder, Repo, loadProject, mupdf, PdfDocument, containsCenter };
+  return { Builder, Repo, loadProject, mupdf, PdfDocument, containsCenter, walkText };
 }
 
 // `synctex edit` maps a PDF position (big points from the top-left corner) to
@@ -293,7 +293,7 @@ export function sourceExcerpt(file: string, [start, end]: [number, number], limi
 // the page's top left. pdf.js lays a whole line out in a stand-in font and
 // drifts from the printed words mid-line; per-word runs cannot drift.
 export async function pdfWords(pdf: string, page: number) {
-  const { PdfDocument } = await engine();
+  const { PdfDocument, walkText } = await engine();
   const document = new PdfDocument(pdf);
   try {
     if (!Number.isInteger(page) || page < 0 || page >= document.length) throw Object.assign(new Error('That page is not part of the manuscript.'), { statusCode: 400 });
@@ -301,7 +301,7 @@ export async function pdfWords(pdf: string, page: number) {
     const words: { text: string; left: number; right: number; baseline: number; size: number; eol: boolean }[] = [];
     let word: (typeof words)[number] | null = null;
     const text = raw.toStructuredText('preserve-whitespace');
-    text.walk({
+    walkText(text, {
       beginLine: () => { word = null; },
       onChar: (c: string, origin: [number, number], _font: unknown, size: number, quad: number[]) => {
         if (/\s/u.test(c)) { word = null; return; }
