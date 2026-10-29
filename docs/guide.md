@@ -224,6 +224,8 @@ The app reuses the existing review viewer, including its lazy images and immutab
 
 `scripts/verify-demo.ts --allow-example-writes` is an opt-in integration check for the generated sample only. After two real Codex tasks and a reviewer-requested second round, it checks conflict rejection, accepted changes from independent worktrees, undo, and proxied SVG delivery. Its safety check requires the exact `.papilot/example-paper` project and the recorded smoke-test task IDs; it will not run against an arbitrary manuscript.
 
+To release, set the version in `package.json` and `package-lock.json`, give it a `## [x.y.z] - date` section in `CHANGELOG.md`, commit, and push a `vx.y.z` tag. The **Release** workflow checks that the tag, `package.json` and the CHANGELOG agree, runs the type check and tests, publishes to npm and creates the GitHub release from that CHANGELOG section. npm accepts the workflow through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so publishing needs no token or one-time code. Rerunning a failed release skips the steps that already succeeded.
+
 ## Review engine
 
 `vendor/latex-review` is based on the existing MIT-licensed `latex-review-skill`. Its upstream revision is recorded in `UPSTREAM_COMMIT`; its license and source are preserved. A small viewer integration honors Papilot's decision availability state. Papilot uses the engine's public HTTP interface and does not write its SQLite database. The embedded review gateway only exposes review assets and review decisions, not shutdown or task-deletion endpoints.
