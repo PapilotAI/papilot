@@ -58,7 +58,7 @@ Jump to any section from the contents, search every page and zoom in sharply. Se
 <td width="50%" valign="top">
 <img src="docs/assets/feature-git.png" alt="The Git panel with a diff and a commit message">
 <h3>🌿 Commit when you're happy</h3>
-Diff files, commit the ones you choose, then pull and push without leaving the page.
+Diff files and commit the ones you choose, with a commit message an agent writes. Pull and push, or merge a coauthor's changes and let an agent resolve the conflicts.
 </td>
 </tr>
 </table>

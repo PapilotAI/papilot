@@ -40,7 +40,7 @@ const renames = [];
 const paperRenames = [];
 const gitState = { remote: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false }] };
 const originalGit = structuredClone(gitState);
-const gitCommits = [], gitActions = [];
+const gitCommits = [], gitActions = [], gitIgnores = [], gitMessages = [];
 const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true };
 let annotations = [];
 const noteSends = [];
@@ -70,6 +70,28 @@ await page.route('**/api/**', async route => {
     const body = route.request().postDataJSON(); gitCommits.push(body);
     Object.assign(gitState, { files: gitState.files.filter(file => !body.paths.includes(file.path)), ahead: gitState.ahead + 1, head: { hash: 'def5678', subject: body.message, date: 2 } });
     return json({ commit: 'def5678', git: gitState });
+  }
+  if (url.pathname.endsWith('/git/ignore')) {
+    const body = route.request().postDataJSON(); gitIgnores.push(body);
+    gitState.files = [...gitState.files.filter(file => !body.paths.includes(file.path)), { path: '.gitignore', status: '?', staged: false }];
+    return json({ git: gitState });
+  }
+  if (url.pathname.endsWith('/git/message')) { gitMessages.push(route.request().postDataJSON()); return json({ message: 'Tighten the introduction', agent: 'codex' }); }
+  // A merge stops at a conflict in main.tex; the agent resolves it; the merge commits.
+  if (url.pathname.endsWith('/git/merge')) {
+    gitActions.push('merge');
+    Object.assign(gitState, { files: [{ path: 'main.tex', status: 'U', staged: false }], merging: { message: "Merge branch 'main' of origin", conflicts: ['main.tex'] } });
+    return json({ git: gitState });
+  }
+  if (url.pathname.endsWith('/git/resolve')) {
+    gitActions.push(route.request().postDataJSON());
+    gitState.merging = { ...gitState.merging, conflicts: [] };
+    return json({ summary: 'Kept **both** openings.', remaining: [], agent: 'codex', git: gitState });
+  }
+  if (url.pathname.endsWith('/git/finish')) {
+    gitActions.push('finish');
+    Object.assign(gitState, { files: [], merging: null, ahead: 2, behind: 0, head: { hash: 'aaa1111', subject: "Merge branch 'main' of origin", date: 3 } });
+    return json({ commit: 'aaa1111', git: gitState });
   }
   if (/\/git\/(fetch|pull|push)$/.test(url.pathname)) { const action = url.pathname.split('/').pop(); gitActions.push(action); if (action === 'push') gitState.ahead = 0; return json({ git: gitState }); }
   if (url.pathname.endsWith('/manuscript')) return json({ git: gitState, build: manuscriptBuild, annotations });
@@ -428,6 +450,7 @@ try {
   const notesTask = noteSends[0].id;
   snapshot.tasks = snapshot.tasks.filter(t => t.id !== notesTask);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  gitState.files.push({ path: 'main.aux', status: '?', staged: false }, { path: 'main.log', status: '?', staged: false });
   await pdfLink.click();
   await page.getByRole('heading', { name: 'PDF', exact: true }).waitFor();
   await page.getByRole('tab', { name: /^Git/ }).click();
@@ -438,7 +461,15 @@ try {
   assert.match(gitText, /^main\s+↑1/);
   assert.match(gitText, /Tracking origin\/main/);
   assert.match(gitText, /Draft the introduction\s+abc1234/);
-  assert.equal(await gitPanel.getByLabel('Untracked').innerText(), 'U');
+  // Build output starts unticked and goes into .gitignore, one pattern per kind.
+  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include main.aux' }).isChecked(), false);
+  await gitPanel.getByText('2 build files', { exact: true }).waitFor();
+  await gitPanel.getByRole('button', { name: 'Add to .gitignore', exact: true }).click();
+  await gitPanel.getByRole('status').filter({ hasText: 'Added 2 patterns to .gitignore.' }).waitFor();
+  assert.deepEqual(gitIgnores, [{ paths: ['main.aux', 'main.log'] }]);
+  assert.equal(await gitPanel.getByText('main.aux', { exact: true }).count(), 0);
+  assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include .gitignore' }).isChecked(), true);
+  assert.equal(await gitPanel.getByLabel('Untracked').first().innerText(), 'U');
   // Changes can be read as diffs, chosen and committed, then pushed.
   assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include main.tex' }).isChecked(), true);
   assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include notes.md' }).isChecked(), true);
@@ -446,18 +477,39 @@ try {
   await gitPanel.getByRole('region', { name: 'Changes in main.tex' }).getByText('+New line.', { exact: true }).waitFor();
   await gitPanel.getByRole('checkbox', { name: 'Include notes.md' }).uncheck();
   assert.equal(await gitPanel.getByRole('checkbox', { name: 'Include all changes' }).evaluate(box => box.indeterminate), true);
-  assert.equal(await gitPanel.getByRole('button', { name: 'Commit 1 of 2 files' }).isDisabled(), true);
+  assert.equal(await gitPanel.getByRole('button', { name: 'Commit 2 of 3 files' }).isDisabled(), true);
+  // The chosen agent writes the message for the chosen files.
   const commitMessage = gitPanel.getByRole('textbox', { name: 'Commit message' });
-  await commitMessage.fill('Tighten the introduction');
+  await gitPanel.getByRole('button', { name: 'Generate commit message', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Commit message"]')?.value === 'Tighten the introduction');
+  assert.deepEqual(gitMessages.map(body => body.paths), [['main.tex', '.gitignore']]);
+  assert.ok(['codex', 'claude', 'antigravity'].includes(gitMessages[0].agent));
   await commitMessage.press('Enter');
   await gitPanel.getByRole('status').filter({ hasText: 'Committed def5678.' }).waitFor();
-  assert.deepEqual(gitCommits, [{ message: 'Tighten the introduction', paths: ['main.tex'] }]);
+  assert.deepEqual(gitCommits, [{ message: 'Tighten the introduction', paths: ['main.tex', '.gitignore'] }]);
   assert.equal(await commitMessage.inputValue(), '');
   assert.match(await gitPanel.innerText(), /Tighten the introduction\s+def5678/);
   await gitPanel.getByRole('button', { name: 'Push', exact: true }).click();
   await gitPanel.getByRole('status').filter({ hasText: 'Pushed to origin/main.' }).waitFor();
   assert.deepEqual(gitActions, ['push']);
   assert.equal(await gitPanel.getByRole('button', { name: 'Push', exact: true }).count(), 0);
+  // A branch and upstream that both moved on merge instead of pulling.
+  Object.assign(gitState, { ahead: 1, behind: 2 });
+  await gitPanel.getByRole('button', { name: 'Fetch from the remote', exact: true }).click();
+  await gitPanel.getByRole('button', { name: 'Merge', exact: true }).click();
+  const merge = gitPanel.getByRole('group', { name: 'Merge in progress' });
+  await merge.getByText('Merging: 1 file has conflicts', { exact: true }).waitFor();
+  assert.equal(await gitPanel.getByLabel('Conflict').innerText(), '!');
+  assert.equal(await gitPanel.getByRole('textbox', { name: 'Commit message' }).count(), 0);
+  assert.equal(await gitPanel.getByRole('button', { name: 'Push', exact: true }).count(), 0);
+  await merge.getByRole('button', { name: /^Resolve with / }).click();
+  await gitPanel.getByRole('status').filter({ hasText: 'Conflicts resolved. Read the diffs, then commit the merge.' }).waitFor();
+  assert.equal(await merge.locator('.git-merge-summary strong').innerText(), 'both');
+  assert.ok(['codex', 'claude', 'antigravity'].includes(gitActions.at(-1).agent));
+  await merge.getByRole('button', { name: 'Commit merge', exact: true }).click();
+  await gitPanel.getByRole('status').filter({ hasText: 'Committed aaa1111.' }).waitFor();
+  assert.equal(await merge.count(), 0);
+  assert.deepEqual(gitActions.filter(action => typeof action === 'string'), ['push', 'fetch', 'merge', 'finish']);
   Object.assign(gitState, structuredClone(originalGit));
   assert.equal(await page.getByRole('link', { name: 'Open PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
   await page.getByRole('button', { name: 'Recompile', exact: true }).waitFor();
@@ -707,7 +759,9 @@ try {
     assert.ok(send.x >= 0 && send.x + send.width <= width);
     if (width < 681) {
       await page.getByRole('button', { name: /Review/ }).first().click();
-      await page.locator('.review-tools').getByRole('button', { name: 'Build review', exact: true }).waitFor();
+      // A phone keeps Full PDF; Build review and the new-tab link make room for the review's own bar.
+      await page.locator('.review-tools').getByRole('link', { name: 'Full PDF', exact: true }).waitFor();
+      assert.equal(await page.locator('.review-tools').getByRole('link', { name: 'Open review in new tab', exact: true }).isVisible(), false);
       await page.screenshot({ path: `test-results/english-mobile-${width}.png`, fullPage: true });
     }
     const drawerToggle = page.getByRole('button', { name: 'Show task list', exact: true });

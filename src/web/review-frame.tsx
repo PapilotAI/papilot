@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { Task } from '../shared.ts';
 import { ReviewNotes } from './review-notes.tsx';
 import themeStyles from './theme.css?inline';
@@ -24,6 +25,12 @@ function compactReviewFrame(doc: Document, reserve: number) {
     .source-code ins{background:var(--green-soft);color:var(--green)}
     .remark{background:var(--accent-soft)}.histories,.caption{background:var(--bg-subtle);color:var(--text-2)}
     .toast.error{background:var(--red-soft);color:var(--red)}
+    /* Papilot's commit step at the end of the completion card. */
+    .review-complete{align-items:center}
+    .review-complete-actions .commit-state{font-size:13px;color:var(--text-3)}
+    .review-complete-actions .commit-button{display:inline-flex;align-items:center;height:28px;padding:0 12px;border:1px solid var(--line-strong);border-radius:7px;background:var(--bg);color:var(--text);font:500 13px var(--sans);cursor:pointer;box-shadow:0 1px 2px rgb(0 0 0/.06)}
+    .review-complete-actions .commit-button:hover{background:var(--bg-subtle);border-color:var(--line-hover)}
+    .review-complete-actions .commit-button:focus-visible{outline:none;box-shadow:var(--ring)}
     /* Page images follow the theme like the manuscript's PDF. They are
        transparent: the sheet is the paper, and the before/after rows tint it. */
     .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}.sheet{background:var(--pdf-page)}
@@ -140,7 +147,19 @@ function compactReviewFrame(doc: Document, reserve: number) {
     .bar .ghost.history{display:inline-flex;align-items:center;justify-content:center;width:28px;padding:0;font-size:0}
     .bar .history::before{content:"";width:15px;height:15px;background:currentColor;-webkit-mask:var(--icon-history) center/contain no-repeat;mask:var(--icon-history) center/contain no-repeat}
     @media(max-width:680px){.bar .ghost.history{width:36px}}
-    @media(max-width:620px){.bar .ghost.round{display:none}}
+    /* The batch decisions keep one line, with their count as a badge. The bar
+       is a container measured without the room Papilot's PDF tools take, so it
+       gives way in steps whatever their width or the language: first the meter
+       and the shortcuts button (the ? key still opens them), then the labels,
+       leaving each icon with its count, and last the counts. The buttons keep
+       their full names for screen readers and tooltips. */
+    .bar{container:review-bar/inline-size}
+    .bar .accept-all,.bar .reject-all{flex-shrink:0;white-space:nowrap}
+    .bar .batch-count{margin-left:0;background:var(--bg-muted);color:var(--text-2)}
+    @container review-bar (max-width:440px){.bar .meter,.bar .ghost.round{display:none}}
+    @container review-bar (max-width:370px){.bar .identity{visibility:hidden}}
+    @container review-bar (max-width:300px){.bar .batch-label{display:none}.bar .accept-all,.bar .reject-all{padding:0 8px}}
+    @container review-bar (max-width:170px){.bar .batch-count{display:none}}
     :root{--icon-history:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12a9 9 0 1 0 2.6-6.4L3 8'/><path d='M3 3v5h5M12 7v5l3 2'/></svg>")}
   `;
   doc.documentElement.dataset.theme = window.document.documentElement.dataset.theme;
@@ -168,7 +187,8 @@ function cropMargins(doc: Document) {
 
 // The iframe can finish loading an HTTP error or an empty document. Wait for the
 // actual viewer, keep watching slow startup, and let the user retry safely.
-export function ReviewFrame({ task, tools, onSendNotes }: { task: Task; tools?: ReactNode; onSendNotes: (message: { text: string; requestKey: string }) => Promise<void> }) {
+// completion is the next step shown in the viewer's card once every change is decided.
+export function ReviewFrame({ task, tools, completion, onSendNotes }: { task: Task; tools?: ReactNode; completion?: ReactNode; onSendNotes: (message: { text: string; requestKey: string }) => Promise<void> }) {
   const [document, setDocument] = useState<Document | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
@@ -228,9 +248,19 @@ export function ReviewFrame({ task, tools, onSendNotes }: { task: Task; tools?: 
     return () => themeObserver.disconnect();
   }, [document]);
   const ready = phase === 'ready';
+  const [slot, setSlot] = useState<Element | null>(null);
+  useEffect(() => {
+    if (!document || !ready) { setSlot(null); return; }
+    const find = () => setSlot(document.querySelector('.review-complete-actions'));
+    find();
+    const watch = new MutationObserver(find);
+    watch.observe(document.body, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, [document, ready]);
   return <div className={'review-viewport' + (ready ? '' : ' review-pending')} aria-busy={!ready}>
     <iframe ref={frame} key={`${attempt}:${shown}`} title={t('{title} PDF change review', { title: task.title })} src={reviewUrl(task)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     <div ref={toolbar} className="review-tools"><ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>{tools}</div>
+    {slot && completion ? createPortal(completion, slot) : null}
     {!ready && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}
   </div>;
 }

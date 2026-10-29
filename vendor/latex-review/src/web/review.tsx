@@ -667,9 +667,7 @@ export function ReviewApp({
           {actionBar(index)}
           {kindLabel && <span className="change-kind">{kindLabel}</span>}
           {status !== "pending" && (
-            <span className="badge">
-              {t(STATE[status] ?? status)}
-            </span>
+            <span className="badge">{t(STATE[status] ?? status)}</span>
           )}
           <button
             className="link copy-reference"
@@ -855,10 +853,12 @@ export function ReviewApp({
                   "Accept the {n} undecided changes in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
                 )
               }
+              aria-label={t("Accept all ({n})", { n: count.pending })}
               aria-describedby={state?.decisionLock ? "review-lock" : undefined}
               onClick={() => void decide("accept", undecided)}
             >
-              {t("Accept all ({n})", { n: count.pending })}
+              <span className="batch-label">{t("Accept all")}</span>
+              <span className="batch-count">{count.pending}</span>
             </button>
           )}
           {count.pending > 1 && (
@@ -878,10 +878,12 @@ export function ReviewApp({
                   "Reject the {n} undecided changes in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
                 )
               }
+              aria-label={t("Reject all ({n})", { n: count.pending })}
               aria-describedby={state?.decisionLock ? "review-lock" : undefined}
               onClick={() => void decide("reject", undecided)}
             >
-              {t("Reject all ({n})", { n: count.pending })}
+              <span className="batch-label">{t("Reject all")}</span>
+              <span className="batch-count">{count.pending}</span>
             </button>
           )}
           {/* "All decided" would repeat the meter's "N of N decided". */}
@@ -958,7 +960,9 @@ export function ReviewApp({
               title={
                 state.decisionLock ||
                 t("Undo {action} · {changes}", {
-                  action: t(ACTION[state.undo.kind] ?? state.undo.kind).toLowerCase(),
+                  action: t(
+                    ACTION[state.undo.kind] ?? state.undo.kind,
+                  ).toLowerCase(),
                   changes: tn(
                     undoChanges.length,
                     "Change {list}",
@@ -976,7 +980,9 @@ export function ReviewApp({
             className="ghost"
             onClick={() => {
               if (pinned)
-                location.href = withLanguage(`?task=${encodeURIComponent(task)}`);
+                location.href = withLanguage(
+                  `?task=${encodeURIComponent(task)}`,
+                );
               else {
                 setHistory(false);
                 setCurrent(nextPending(stops, decisions));
@@ -1074,6 +1080,8 @@ export function ReviewApp({
                               : "There are no new changes to review. Previous decisions are available in History.",
                 )}
               </span>
+              {/* A host such as Papilot puts its next step here, for example a commit. */}
+              <div className="review-complete-actions" />
             </div>
           )}
           <div className="document">
@@ -1113,7 +1121,9 @@ export function ReviewApp({
                 {detail.loose.length > 0 && (
                   <section className="part">
                     <h2 className="part-title">
-                      {detail.sections.length ? t("Other changes") : t("Changes")}
+                      {detail.sections.length
+                        ? t("Other changes")
+                        : t("Changes")}
                     </h2>
                     {detail.loose.map((block) => change(block, index++, false))}
                   </section>

@@ -63,7 +63,9 @@ try {
   // Comments go back to the agent; in the chat-only view the bar ends the conversation.
   task.review = { ...task.review, unsent: 4, comments: 1 }; await sync();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
-  await expect(page.locator('.thread .review-feedback.card')).toContainText('4 review updates not sent yet');
+  await expect(page.locator('.thread .review-feedback.card:not(.commit-card)')).toContainText('4 review updates not sent yet');
+  // The accepted change is in the manuscript; committing it is offered, not required.
+  await expect(page.locator('.thread .commit-card')).toContainText('Accepted changes are not committed yet');
   await page.getByRole('button', { name: 'Split', exact: true }).click();
   await page.getByRole('button', { name: 'Send feedback', exact: true }).click();
   await expect.poll(() => messages.length).toBe(1);

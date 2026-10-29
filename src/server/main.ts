@@ -10,7 +10,7 @@ import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER, VERSION } from './paths.ts';
 import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState } from './review.ts';
 import { authorize } from './security.ts';
 import { fullPaperPdf } from './pdf.ts';
-import { Manuscripts, annotationTask, gitCommit, gitDiff, gitRemote, gitStatus } from './manuscript.ts';
+import { Manuscripts, annotationTask, gitAbortMerge, gitCommit, gitDiff, gitFinishMerge, gitIgnore, gitRemote, gitStatus } from './manuscript.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import type { AgentId } from '../shared.ts';
 
@@ -72,6 +72,11 @@ app.post<{ Params: { id: string } }>('/api/tasks/:id/messages', async request =>
   const text = feedback || skill ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
   return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback });
 });
+// Commits what the author accepted from this task, with the message they confirmed.
+app.post<{ Params: { id: string } }>('/api/tasks/:id/commit', request => {
+  const task = store.task(request.params.id), b = request.body as any;
+  return serialGit(task.projectId, () => workspace.commitTask(task.id, string(b.message, 'Commit message', 5000), b.push === true));
+});
 app.post<{ Params: { id: string } }>('/api/tasks/:id/rename', request => workspace.renameTask(request.params.id, string((request.body as any).title, 'Task title', 120)));
 app.post<{ Params: { id: string } }>('/api/tasks/:id/interrupt', request => workspace.interrupt(request.params.id).then(() => ({ ok: true })));
 app.post<{ Params: { id: string } }>('/api/tasks/:id/delete', request => {
@@ -97,11 +102,35 @@ app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/projec
 app.post<{ Params: { id: string } }>('/api/projects/:id/git/commit', request => {
   const project = store.project(request.params.id), b = request.body as any;
   const message = string(b.message, 'Commit message', 5000), paths = Array.isArray(b.paths) ? b.paths.filter((p: unknown) => typeof p === 'string').slice(0, 5000) : [];
-  return serialGit(project.id, async () => ({ commit: await gitCommit(project.path, message, paths), git: await gitStatus(project.path) }));
+  return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => ({ commit: await gitCommit(project.path, message, paths), git: await gitStatus(project.path) })));
+});
+const paths = (value: unknown): string[] => Array.isArray(value) ? value.filter((p: unknown): p is string => typeof p === 'string').slice(0, 5000) : [];
+// An agent writes a commit message for the chosen files; nothing is written.
+app.post<{ Params: { id: string } }>('/api/projects/:id/git/message', request => {
+  const b = request.body as any;
+  return workspace.commitMessage(store.project(request.params.id).id, paths(b.paths), { agent: b.agent === undefined ? undefined : agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined });
+});
+// A merge in progress is resolved by an agent, committed, or abandoned.
+app.post<{ Params: { id: string } }>('/api/projects/:id/git/resolve', request => {
+  const project = store.project(request.params.id), b = request.body as any;
+  return serialGit(project.id, () => workspace.resolveConflicts(project.id, { agent: b.agent === undefined ? undefined : agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined }));
+});
+app.post<{ Params: { id: string } }>('/api/projects/:id/git/finish', request => {
+  const project = store.project(request.params.id);
+  return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => ({ commit: await gitFinishMerge(project.path), git: await gitStatus(project.path) })));
+});
+app.post<{ Params: { id: string } }>('/api/projects/:id/git/abort', request => {
+  const project = store.project(request.params.id);
+  return serialGit(project.id, async () => { await gitAbortMerge(project.path); return { git: await gitStatus(project.path) }; });
+});
+// Chosen untracked build files go into .gitignore by kind.
+app.post<{ Params: { id: string } }>('/api/projects/:id/git/ignore', request => {
+  const project = store.project(request.params.id);
+  return serialGit(project.id, async () => ({ git: await gitIgnore(project.path, paths((request.body as any).paths)) }));
 });
 app.post<{ Params: { id: string; action: string } }>('/api/projects/:id/git/:action', request => {
   const project = store.project(request.params.id), action = request.params.action;
-  if (action !== 'fetch' && action !== 'pull' && action !== 'push') throw Object.assign(new Error('Unknown Git action.'), { statusCode: 404 });
+  if (action !== 'fetch' && action !== 'pull' && action !== 'merge' && action !== 'push') throw Object.assign(new Error('Unknown Git action.'), { statusCode: 404 });
   return serialGit(project.id, async () => { await gitRemote(project.path, action); return { git: await gitStatus(project.path) }; });
 });
 app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path, true)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));

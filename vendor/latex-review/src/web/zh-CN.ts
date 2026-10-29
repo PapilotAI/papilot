@@ -50,6 +50,8 @@ export const zhCN: Record<string, string> = {
   "{decided} of {total} decided": "已决定 {decided}/{total}",
   "Accept all ({n})": "全部接受（{n}）",
   "Reject all ({n})": "全部拒绝（{n}）",
+  "Accept all": "全部接受",
+  "Reject all": "全部拒绝",
   "Accept the {n} undecided change in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.":
     "接受本轮 {n} 处待定修改。已决定和已评论的修改保持不变。撤销会还原整批操作。",
   "Accept the {n} undecided changes in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.":

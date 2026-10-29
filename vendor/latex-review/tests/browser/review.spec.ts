@@ -185,11 +185,16 @@ test("Reject all decides only undecided changes and one undo restores the batch"
     .click();
   await expect(page.locator('.change[data-state="accepted"]')).toHaveCount(1);
   const rejectAll = page.getByRole("button", { name: /^Reject all \(\d+\)$/ });
-  const undecided = Number(/\((\d+)\)/.exec((await rejectAll.textContent())!)![1]);
+  const undecided = Number(
+    await rejectAll.locator(".batch-count").textContent(),
+  );
   expect(undecided).toBeGreaterThan(0);
   expect(undecided).toBeLessThan(7);
   await expect(
-    page.getByRole("button", { name: `Accept all (${undecided})`, exact: true }),
+    page.getByRole("button", {
+      name: `Accept all (${undecided})`,
+      exact: true,
+    }),
   ).toBeVisible();
   await rejectAll.click();
   await expect(page.getByText("7 of 7 decided", { exact: true })).toBeVisible();
@@ -328,7 +333,9 @@ async function expectMapAligned(page: Page) {
         return Math.max(
           0,
           ...marks.map((mark) => {
-            const article = articles.find(article => article.dataset.stop === mark.dataset.stopIndex)!;
+            const article = articles.find(
+              (article) => article.dataset.stop === mark.dataset.stopIndex,
+            )!;
             const documentPosition =
               (article.getBoundingClientRect().top -
                 root.getBoundingClientRect().top +
@@ -386,7 +393,7 @@ test("change map navigates with pointer and keyboard and follows review layout c
     .getByRole("button", { name: "Accept", exact: true })
     .click();
   await expect(marks).toHaveCount(last);
-  await expect(changes.first().locator('.change-head')).toBeHidden();
+  await expect(changes.first().locator(".change-head")).toBeHidden();
   await expect(marks.first()).toHaveAttribute("data-stop-index", "1");
   await expectMapAligned(page);
   await page.keyboard.press(

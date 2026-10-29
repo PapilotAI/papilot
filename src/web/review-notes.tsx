@@ -117,7 +117,7 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
   const blocked = task.status === 'uncertain' || task.status === 'deleting';
   return <>
     <button type="button" className="icon-button" aria-label={t('Mark region')} title={t('Mark a region in the review PDF')} aria-pressed={region} disabled={!doc || busy || Boolean(draft.editing)} onClick={() => { setRegion(!region); setOpen(false); setSelection(null); }}><Icon name="region" size={15}/></button>
-    <button type="button" className="button ghost compact review-notes-toggle" aria-label={draft.notes.length ? t('Review notes, {n}', { n: draft.notes.length }) : t('Review notes')} aria-pressed={open} disabled={!doc} onClick={() => setOpen(!open)}><Icon name="notes" size={15}/><span>{draft.notes.length || t('Notes')}</span></button>
+    <button type="button" className="button ghost compact review-notes-toggle" aria-label={draft.notes.length ? t('Review notes, {n}', { n: draft.notes.length }) : t('Review notes')} aria-pressed={open} disabled={!doc} onClick={() => setOpen(!open)}><Icon name="notes" size={15}/>{draft.notes.length ? <span>{draft.notes.length}</span> : <span className="review-notes-label">{t('Notes')}</span>}</button>
     {doc && createPortal(<style>{styles}</style>, doc.head)}
     {layers.map(layer => createPortal(<Fragment>
       {draft.notes.filter(note => note.strip === layer.key).map(note => <Fragment key={note.id}>

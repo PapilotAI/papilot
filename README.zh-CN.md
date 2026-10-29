@@ -58,7 +58,7 @@
 <td width="50%" valign="top">
 <img src="docs/assets/feature-git.png" alt="带差异和提交信息的 Git 面板">
 <h3>🌿 满意了再提交</h3>
-查看差异，只提交你勾选的文件，pull 和 push 都不用离开页面。
+查看差异，只提交你勾选的文件，提交信息可以让 agent 来写。可以 pull、push，也可以合并合作者的改动，冲突交给 agent 解决。
 </td>
 </tr>
 </table>

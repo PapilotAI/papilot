@@ -2,7 +2,7 @@ export type TaskStatus = 'idle' | 'queued' | 'running' | 'waiting_input' | 'buil
 export interface Project { id: string; name: string; path: string; createdAt: number }
 // unsent counts review updates the agent has not received; comments are the
 // ones that ask for a revision. files are the manuscript files this task's
-// accepted changes touched, relative to the repository root.
+// accepted changes touched since its last commit, relative to the repository root.
 export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: { phase: string; status: string; error?: string; details?: string[] } | null }
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface Task {
@@ -12,6 +12,8 @@ export interface Task {
   error: string | null; review: ReviewSummary | null;
   pauseVersion?: number; pendingRunId?: string | null;
   pendingReview?: PendingReview | null;
+  // The task's last commit from its review, and the accepted text it included.
+  committed?: { hash: string; accepted: string; at: number } | null;
 }
 export interface Run { id: string; taskId: string; requestKey: string; prompt: string; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null }
 export interface TimelineItem { id: string; taskId: string; type: string; text: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta }
@@ -32,7 +34,8 @@ export interface Usage { plan: string | null; windows: UsageWindow[]; credits: {
 export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null }
 export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string }
 export interface GitFile { path: string; status: string; staged: boolean; lines?: [number, number]; from?: string }
-export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null; remote?: boolean }
+// merging is a merge in progress, with the files whose conflict markers remain.
+export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null; remote?: boolean; merging?: { message: string; conflicts: string[] } | null }
 export interface GitDiff { path: string; diff: string; truncated: boolean }
 export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean }
 export interface Annotation { id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string }

@@ -18,7 +18,8 @@ const task = { id: 'review-flow-fixture', projectId: 'paper', name: 'flow', titl
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
 let latest = 1, serial = 0, undo = null;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
-const actions = [], writes = [];
+const actions = [], writes = [], messageRequests = [], commitRequests = [];
+let gitFiles = [];
 const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: null });
 function update() {
   const values = Object.values(rounds[latest]);
@@ -39,7 +40,12 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: [] } });
-  if (url.pathname.endsWith('/git')) return route.fulfill({ json: { files: [] } });
+  if (url.pathname.endsWith('/git')) return route.fulfill({ json: { branch: 'main', upstream: 'origin/main', remote: true, ahead: 0, behind: 0, head: null, files: gitFiles } });
+  if (url.pathname.endsWith('/git/message')) { messageRequests.push(route.request().postDataJSON()); return route.fulfill({ json: { message: 'Explain the method', agent: 'codex' } }); }
+  if (url.pathname.endsWith('/commit')) {
+    commitRequests.push(route.request().postDataJSON()); gitFiles = []; task.review.files = [];
+    return route.fulfill({ json: { commit: 'abc1234', git: { branch: 'main', upstream: 'origin/main', remote: true, ahead: 0, behind: 0, head: { hash: 'abc1234', subject: 'Explain the method', date: 2 }, files: [] } } });
+  }
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/messages')) { task.status = 'running'; task.review.unsent = 0; return route.fulfill({ json: { ok: true } }); }
   throw Error(`Unexpected app request ${url.pathname}`);
@@ -72,6 +78,20 @@ const sync = async () => page.evaluate(() => window.dispatchEvent(new Event('onl
 try {
   await page.goto(origin);
   await viewer().locator('.change.current').waitFor();
+  // Accept all and Reject all stay on one line and clear of Papilot's PDF
+  // tools; a narrow split pane shows each icon with its count.
+  const batch = () => viewer().locator('.bar').evaluate(bar => {
+    const room = bar.getBoundingClientRect().right - parseFloat(getComputedStyle(bar).paddingRight);
+    return [...bar.querySelectorAll('.accept-all,.reject-all,.history')].map(button => {
+      const box = button.getBoundingClientRect(), label = button.querySelector('.batch-label');
+      return `${button.getAttribute('aria-label') || button.textContent}${box.height <= 36 ? '' : ' wraps'}${box.right <= room + 0.5 ? '' : ' under the tools'}${label && getComputedStyle(label).display === 'none' ? ' icon' : ''}`;
+    }).join(' · ');
+  });
+  for (const [width, icons] of [[1440, ''], [1100, ''], [1000, ' icon']]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect.poll(batch).toBe(`Accept all (4)${icons} · Reject all (4)${icons} · History`);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await viewer().locator('.change.current').getByRole('button', { name: 'Accept', exact: true }).click();
   const accepted = viewer().locator('[data-stop="0"]');
   await expect(accepted.locator('.change-head')).toBeHidden();
@@ -120,8 +140,23 @@ try {
   await viewer().locator('.source-unit').filter({ hasText: 'main.tex · lines 4–4' }).getByRole('button', { name: 'Reject', exact: true }).click();
   await expect(viewer().locator('.mixed-reviewed .side:visible')).toHaveCount(0);
   await expect(viewer().getByText('Reviewed changes · View in History', { exact: true })).toBeVisible();
+  // A finished review offers to commit what the task accepted; the agent writes the message.
+  task.review.files = ['main.tex']; gitFiles = [{ path: 'main.tex', status: 'M', staged: false }];
+  await sync();
+  const card = viewer().locator('.review-complete');
+  await expect(card.getByText('Not committed yet', { exact: true })).toBeVisible();
   fs.mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/review-completed.png', fullPage: true });
+  await card.getByRole('button', { name: 'Commit…', exact: true }).click();
+  const commitDialog = page.getByRole('dialog', { name: 'Commit to main' });
+  await expect(commitDialog.getByRole('textbox', { name: 'Commit message' })).toHaveValue('Explain the method');
+  await expect(commitDialog.getByText('main.tex', { exact: true })).toBeVisible();
+  assert.deepEqual(messageRequests, [{ paths: ['main.tex'], agent: 'codex' }]);
+  await commitDialog.getByRole('button', { name: 'Commit and push', exact: true }).click();
+  await expect(commitDialog).toBeHidden();
+  assert.deepEqual(commitRequests, [{ message: 'Explain the method', push: true }]);
+  await expect(card.getByText('Committed abc1234 and pushed.', { exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Commit…' })).toHaveCount(0);
   // A new round replaces the current review. Earlier rounds are inspection only.
   latest = 2; rounds[2] = { new: 'pending' }; task.review.round = 2; task.review.unsent = 0; update();
   await sync();

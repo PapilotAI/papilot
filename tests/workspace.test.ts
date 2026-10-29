@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -970,6 +971,41 @@ test('feedback alone cannot be sent when there is none, so the chat never shows 
   } finally { f.close(); }
 });
 
+test('an agent writes a commit message from the chosen changes, in a read-only turn it does not keep', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-message-'));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+  const f = fixture();
+  try {
+    git('init', '-q', '-b', 'main');
+    for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@localhost'], ['commit.gpgsign', 'false']]) git('config', key, value);
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Original opening.\n'); fs.writeFileSync(path.join(root, 'notes.md'), 'Notes.\n');
+    git('add', '.'); git('commit', '-qm', 'Draft the introduction');
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Tighter opening.\n'); fs.writeFileSync(path.join(root, 'notes.md'), 'Not chosen.\n');
+    f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: root, createdAt: 1 });
+    f.store.updateTask(f.task.id, { title: 'Tighten the opening', review: { state: 'done', round: 1, counts: {}, files: ['main.tex'] } });
+    f.codex.ready = true;
+    f.workspace.runtimes.codex.models = [{ id: 'fast', name: 'Fast', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }];
+    f.codex.handler = async method => {
+      if (method === 'thread/start') return { thread: { id: 'commit-thread' } };
+      setImmediate(() => {
+        f.codex.emit('notification', { method: 'item/completed', params: { threadId: 'commit-thread', turnId: 'commit-turn', item: { id: 'reply', type: 'agentMessage', text: '```\nTighten the opening sentence.\n```' } } });
+        f.codex.emit('notification', { method: 'turn/completed', params: { threadId: 'commit-thread', turn: { id: 'commit-turn', status: 'completed' } } });
+      });
+      return { turn: { id: 'commit-turn' } };
+    };
+    assert.deepEqual(await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'claude' }), { message: 'Tighten the opening sentence', agent: 'codex' });
+    const start = f.codex.calls.find(call => call.method === 'thread/start')!.params, turn = f.codex.calls.find(call => call.method === 'turn/start')!.params;
+    assert.deepEqual([start.cwd, start.sandbox, start.approvalPolicy, start.ephemeral, start.model, turn.effort], [root, 'read-only', 'never', true, 'fast', 'low']);
+    const prompt: string = turn.input[0].text;
+    for (const part of ['- Draft the introduction', '- Tighten the opening', 'M main.tex', '+Tighter opening.']) assert.ok(prompt.includes(part), part);
+    assert.ok(!prompt.includes('notes.md'), 'files that were not chosen stay out');
+    // The reply belongs to no task, so no chat shows it.
+    assert.deepEqual(f.store.items(f.task.id), []);
+    f.codex.ready = false;
+    await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex']), /Sign in to Codex, Claude or Antigravity/);
+  } finally { f.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a build the agent broke goes back to it once, and its instructions name what the review covers', async () => {
   const jobs: Record<string, object> = {
     'job-1': { status: 'failed', error: 'Some edits are outside the task scope: docs/coverage.md', details: ['Allowed: main'], next: 'Undo edits outside the scope, then publish again.' },
@@ -1025,4 +1061,83 @@ test('a build that fails for reasons outside the agent\'s edits is not sent back
     assert.equal(f.store.task(f.task.id).status, 'failed');
     assert.equal(f.store.task(f.task.id).error, 'The comparison baseline could not be compiled.\n! Undefined control sequence.');
   } finally { f.close(); }
+});
+
+test('an agent resolves a merge in the manuscript checkout, and review writes wait for the merge', async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-resolve-'));
+  const run = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  const remote = path.join(base, 'remote.git'), root = path.join(base, 'paper'), other = path.join(base, 'other');
+  const clone = (target: string) => { run(base, 'clone', '-q', remote, target); for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@localhost'], ['commit.gpgsign', 'false']]) run(target, 'config', key, value); };
+  const edit = (cwd: string, text: string, message: string) => { fs.writeFileSync(path.join(cwd, 'main.tex'), text); run(cwd, 'commit', '-qam', message); };
+  const f = fixture();
+  try {
+    run(base, 'init', '-q', '--bare', '-b', 'main', remote); clone(root);
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Opening.\n'); run(root, 'add', '.'); run(root, 'commit', '-qm', 'Start'); run(root, 'push', '-q', '-u', 'origin', 'main');
+    clone(other); edit(other, 'Their opening.\n', 'Reword the opening'); run(other, 'push', '-q');
+    edit(root, 'My opening.\n', 'Rewrite the opening'); run(root, 'fetch', '-q');
+    try { run(root, 'merge', '--no-edit', 'origin/main'); } catch { /* The conflict is the point. */ }
+    f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: root, createdAt: 1 });
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => undefined), /Finish or abort the merge/);
+    f.codex.ready = true;
+    f.workspace.runtimes.codex.models = [{ id: 'deep', name: 'Deep', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }];
+    f.codex.handler = async method => {
+      if (method === 'thread/start') return { thread: { id: 'merge-thread' } };
+      fs.writeFileSync(path.join(root, 'main.tex'), 'My opening, as reworded.\n');
+      setImmediate(() => {
+        f.codex.emit('notification', { method: 'item/completed', params: { threadId: 'merge-thread', item: { id: 'reply', type: 'agentMessage', text: 'Kept your rewrite and their wording.' } } });
+        f.codex.emit('notification', { method: 'turn/completed', params: { threadId: 'merge-thread', turn: { id: 'merge-turn', status: 'completed' } } });
+      });
+      return { turn: { id: 'merge-turn' } };
+    };
+    const result = await f.workspace.resolveConflicts(f.task.projectId);
+    assert.deepEqual([result.summary, result.remaining, result.agent, result.git.merging?.conflicts], ['Kept your rewrite and their wording.', [], 'codex', []]);
+    const start = f.codex.calls.find(call => call.method === 'thread/start')!.params, turn = f.codex.calls.find(call => call.method === 'turn/start')!.params;
+    assert.deepEqual([start.cwd, start.sandbox, start.approvalPolicy, start.ephemeral, turn.effort], [root, 'workspace-write', 'never', true, 'high']);
+    for (const part of ['- main.tex', '- Rewrite the opening', '- Reword the opening', 'origin/main']) assert.ok(turn.input[0].text.includes(part), part);
+    await assert.rejects(f.workspace.resolveConflicts(f.task.projectId), /No file has conflict markers left/);
+  } finally { f.close(); fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('a task commits only what it accepted since its last commit, never during a review write, and can push', async () => {
+  const { Fixture, METHOD, fakeRound } = await import(new URL('../vendor/latex-review/tests/ts/helpers.ts', import.meta.url).href);
+  const disk = new Fixture();
+  const app = disk.app();
+  const f = fixture();
+  try {
+    const target = app.tasks.create('p-task', 'Accept twice', [], ['paper']);
+    disk.edit(target, METHOD, 'Method sentence 2.', 'First accepted sentence.');
+    disk.edit(target, METHOD, 'Detail sentence 15.', 'Second accepted sentence.');
+    disk.write('notes.txt', 'Not part of the task.');
+    f.store.saveProject({ id: f.task.projectId, name: 'Temporary paper', path: disk.root, createdAt: 1 });
+    await assert.rejects(f.workspace.commitTask(f.task.id, 'Nothing yet'), /no accepted changes/);
+    const round = fakeRound(app, target.name);
+    app.review.decide(target.name, { id: 'accept-first', action: 'accept', round: round.number, changes: [round.units[0].id] });
+    assert.deepEqual(await acceptedFiles(disk.root, target.name), [METHOD]);
+    const first = await f.workspace.commitTask(f.task.id, 'Accept the first sentence', true);
+    assert.equal(app.repo.text(['log', '-1', '--format=%s']).trim(), 'Accept the first sentence');
+    assert.equal(app.repo.text(['show', '--name-only', '--format=', 'HEAD']).trim(), METHOD);
+    assert.deepEqual(first.git.files.map((file: { path: string }) => file.path), ['notes.txt']);
+    assert.match(first.pushError ?? '', /no remote/);
+    assert.equal(f.store.task(f.task.id).committed?.hash, first.commit);
+    // Someone edits the same file by hand: it is not this task's to commit.
+    fs.writeFileSync(path.join(disk.root, METHOD), fs.readFileSync(path.join(disk.root, METHOD), 'utf8') + '\nA hand edit.\n');
+    await f.workspace.refresh(f.task.id);
+    assert.deepEqual(f.store.task(f.task.id).review?.files, []);
+    await assert.rejects(f.workspace.commitTask(f.task.id, 'Not mine'), /no accepted changes left/);
+    // Accepting more makes the file this task's again.
+    app.review.decide(target.name, { id: 'accept-second', action: 'accept', round: round.number, changes: [round.units[1].id] });
+    await f.workspace.refresh(f.task.id);
+    assert.deepEqual(f.store.task(f.task.id).review?.files, [METHOD]);
+    // A review write in progress on the paper holds the commit back, and the reverse.
+    const gate = deferred<void>();
+    const write = f.workspace.reviewWrite(f.task.id, true, () => gate.promise);
+    await assert.rejects(f.workspace.commitTask(f.task.id, 'Too early'), /review action/);
+    gate.resolve(); await write;
+    const committing = f.workspace.exclusiveCommit(f.task.projectId, () => new Promise(resolve => setTimeout(resolve, 20)));
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => undefined), /commit is in progress/);
+    await committing;
+    const second = await f.workspace.commitTask(f.task.id, 'Accept the second sentence');
+    assert.equal(second.pushError, undefined);
+    assert.equal(f.store.task(f.task.id).committed?.hash, second.commit);
+  } finally { f.close(); await disk.close(); }
 });

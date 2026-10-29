@@ -4,9 +4,18 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- A finished review offers an optional **Commit…**: the task's agent writes the message, and **Commit and push** pushes too. Accepted changes are still in the manuscript without it.
+- The Git panel's ✨ button writes the commit message, like Cursor's: the agent you chose reads the ticked files' changes and follows the style of your recent commits.
+- When your branch and its upstream have both changed, the Git panel offers **Merge**; an agent resolves the conflicts, and you read the diffs, then **Commit merge** or **Abort merge**.
+- Untracked build output (LaTeX's `.aux`, `.log` and the like, minted's cache, `.DS_Store`) gets **Add to .gitignore**, which adds one pattern per kind of file.
+
 ### Fixed
 
 - A task no longer stops at **This step needs attention** when the agent's own edits stop the PDF build, for example by also editing a project note outside the paper's source folder. The agent gets the error and fixes it in one more turn, and its instructions now say which files the review covers.
+- Build output in the Git panel is unticked from the moment it appears, so a quick commit cannot include it.
+- **Accept all** and **Reject all** no longer break onto two lines or slide under the PDF tools in a narrow review panel or on a phone. Their count is a badge, and the toolbar makes room in steps, down to each button's icon and count.
 
 ## [0.2.0] - 2026-10-29
 

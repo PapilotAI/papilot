@@ -7,8 +7,9 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { ENGINE } from './paths.ts';
-import type { Annotation, GitStatus, ManuscriptBuild } from '../shared.ts';
+import type { Annotation, GitFile, GitStatus, ManuscriptBuild } from '../shared.ts';
 import { notesInstructions } from '../notes.ts';
+import { ignorePattern } from '../commit.ts';
 
 type Rect = [number, number, number, number];
 
@@ -57,8 +58,26 @@ export async function gitStatus(root: string): Promise<GitStatus> {
     git(root, ['remote']).catch(() => ''),
   ]);
   const [hash, subject, time] = head.trim().split('\0');
-  return { ...parseStatus(status, numstat), head: hash ? { hash, subject, date: Number(time) * 1000 } : null, remote: Boolean(remotes.trim()) };
+  const parsed = parseStatus(status, numstat), dir = gitDir(root);
+  // A merge in progress names the files whose conflict markers remain.
+  const merging = dir && fs.existsSync(path.join(dir, 'MERGE_HEAD'))
+    ? { message: readText(path.join(dir, 'MERGE_MSG')).split('\n')[0] || 'Merge', conflicts: parsed.files.filter(file => file.status === 'U' && conflictMarkers(root, file.path)).map(file => file.path) }
+    : null;
+  return { ...parsed, head: hash ? { hash, subject, date: Number(time) * 1000 } : null, remote: Boolean(remotes.trim()), merging };
 }
+const readText = (file: string) => { try { return fs.readFileSync(file, 'utf8'); } catch { return ''; } };
+// The repository's Git directory: .git, or where a .git file points.
+function gitDir(root: string) {
+  try {
+    const dot = path.join(root, '.git');
+    return fs.statSync(dot).isFile() ? path.resolve(root, readText(dot).replace(/^gitdir:\s*/, '').trim()) : dot;
+  } catch { return null; }
+}
+export function mergeInProgress(root: string) {
+  const dir = gitDir(root);
+  return Boolean(dir && fs.existsSync(path.join(dir, 'MERGE_HEAD')));
+}
+export const conflictMarkers = (root: string, file: string) => /^(?:<{7}|>{7})(?: |$)/m.test(readText(path.join(root, file)));
 
 // Paths from the browser are matched against the changed files, and Git reads
 // them literally, so a name cannot act as a pathspec pattern.
@@ -69,17 +88,51 @@ const DIFF_LIMIT = 400_000;
 export async function gitDiff(root: string, file: string) {
   const entry = (await gitStatus(root)).files.find(item => item.path === file);
   if (!entry) throw Object.assign(new Error('That file has no uncommitted changes.'), { statusCode: 404 });
-  const diff = entry.status === '?'
-    // `git diff --no-index` exits with 1 when the files differ.
-    ? await exec('git', ['diff', '--no-index', '--no-color', '--', '/dev/null', file], { cwd: root, maxBuffer: 64 * 1024 * 1024 }).then(r => r.stdout, (e: { stdout?: string }) => e.stdout || '')
-    : await git(root, ['diff', '--no-color', '--find-renames', 'HEAD', '--', ...(entry.from ? [entry.from] : []), file], literal);
+  const diff = await fileDiff(root, entry);
   return { path: file, diff: diff.slice(0, DIFF_LIMIT), truncated: diff.length > DIFF_LIMIT };
+}
+function fileDiff(root: string, entry: GitFile) {
+  return entry.status === '?'
+    // `git diff --no-index` exits with 1 when the files differ.
+    ? exec('git', ['diff', '--no-index', '--no-color', '--', '/dev/null', entry.path], { cwd: root, maxBuffer: 64 * 1024 * 1024 }).then(r => r.stdout, (e: { stdout?: string }) => e.stdout || '')
+    : git(root, ['diff', '--no-color', '--find-renames', 'HEAD', '--', ...(entry.from ? [entry.from] : []), entry.path], literal);
+}
+
+// What a commit message is written from: the chosen files' diffs, each
+// shortened so that a large change still fits, and the repository's recent
+// commit subjects, whose style and language the message follows.
+export async function commitChanges(root: string, paths: string[]) {
+  const files = (await gitStatus(root)).files.filter(item => paths.includes(item.path));
+  if (!files.length) throw new Error('Select at least one changed file.');
+  let patch = '';
+  for (const [index, file] of files.entries()) {
+    if (patch.length > 40_000) { patch += `\n[${files.length - index} more changed files are not shown.]\n`; break; }
+    const diff = await fileDiff(root, file);
+    patch += diff.length > 8_000 ? `${diff.slice(0, 8_000)}\n[The rest of this file's diff is not shown.]\n` : diff;
+  }
+  const recent = (await git(root, ['log', '-8', '--format=%s']).catch(() => '')).split('\n').filter(Boolean);
+  return { files, patch, recent };
+}
+
+// Adds the patterns for the chosen untracked build files to the repository's
+// .gitignore, one per kind of file and each only once, so they leave the list
+// of changes. The .gitignore is then a change to commit like any other.
+export async function gitIgnore(root: string, paths: string[]) {
+  const patterns = [...new Set((await gitStatus(root)).files.filter(item => item.status === '?' && paths.includes(item.path)).map(item => ignorePattern(item.path)).filter((pattern): pattern is string => Boolean(pattern)))];
+  if (!patterns.length) throw new Error('None of the chosen files is build output that can be ignored.');
+  const file = path.join(root, '.gitignore');
+  const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  const present = new Set(current.split(/\r?\n/).map(line => line.trim()));
+  const missing = patterns.filter(pattern => !present.has(pattern) && !present.has('/' + pattern));
+  if (missing.length) fs.writeFileSync(file, `${current}${current && !current.endsWith('\n') ? '\n' : ''}${current.trim() ? '\n' : ''}# Build output\n${missing.join('\n')}\n`);
+  return gitStatus(root);
 }
 
 // Commit exactly the chosen files as they are on disk. Changes staged
 // elsewhere for other files stay staged and out of this commit.
 export async function gitCommit(root: string, message: string, paths: string[]) {
-  const files = (await gitStatus(root)).files.filter(item => paths.includes(item.path));
+  const status = await gitStatus(root), files = status.files.filter(item => paths.includes(item.path));
+  if (status.merging) throw new Error('Finish or abort the merge before committing other changes.');
   if (!files.length) throw new Error('Select at least one changed file to commit.');
   if (files.some(item => item.status === 'U')) throw new Error('Resolve the merge conflicts in the selected files before committing.');
   // A rename is already staged, so only its new path is added; the commit
@@ -91,19 +144,47 @@ export async function gitCommit(root: string, message: string, paths: string[]) 
 
 // Fetch, fast-forward pull and push use the host's Git credentials. Nothing
 // may prompt, so a missing credential fails instead of hanging.
-export async function gitRemote(root: string, action: 'fetch' | 'pull' | 'push') {
+export async function gitRemote(root: string, action: 'fetch' | 'pull' | 'merge' | 'push') {
   const status = await gitStatus(root);
   if (!status.remote) throw new Error('This repository has no remote.');
+  if (status.merging && action !== 'fetch') throw new Error('Finish or abort the merge first.');
   if (action === 'fetch') await gitAction(root, ['fetch', '--prune'], 120_000);
-  else if (action === 'pull') {
+  else if (action === 'pull' || action === 'merge') {
     if (!status.upstream) throw new Error('This branch does not track a remote branch yet.');
-    await gitAction(root, ['pull', '--ff-only'], 120_000);
+    // Pull only fast-forwards. Merge also joins a branch that has diverged
+    // from its upstream; conflicts leave the merge in progress to resolve.
+    if (action === 'pull') await gitAction(root, ['pull', '--ff-only'], 120_000);
+    else await gitAction(root, ['pull', '--no-rebase', '--ff', '--no-edit'], 120_000).catch(error => { if (!mergeInProgress(root)) throw error; });
   } else if (status.upstream) await gitAction(root, ['push'], 120_000);
   else {
     if (!status.branch) throw new Error('Check out a branch before pushing.');
     const remotes = (await git(root, ['remote'])).split('\n').filter(Boolean);
     await gitAction(root, ['push', '-u', remotes.includes('origin') ? 'origin' : remotes[0], status.branch], 120_000);
   }
+}
+
+// A merge in progress ends with its commit once no conflict markers remain,
+// or is abandoned, restoring the files as they were before it.
+export async function gitFinishMerge(root: string) {
+  const status = await gitStatus(root);
+  if (!status.merging) throw new Error('No merge is in progress.');
+  if (status.merging.conflicts.length) throw new Error(`Resolve the conflicts in ${status.merging.conflicts.join(', ')} first.`);
+  const resolved = status.files.filter(item => item.status === 'U').map(item => item.path);
+  if (resolved.length) await gitAction(root, ['add', '-A', '--', ...resolved]);
+  await gitAction(root, ['commit', '--no-edit']);
+  return (await git(root, ['rev-parse', '--short', 'HEAD'])).trim();
+}
+export async function gitAbortMerge(root: string) {
+  if (!mergeInProgress(root)) throw new Error('No merge is in progress.');
+  await gitAction(root, ['merge', '--abort']);
+}
+// What an agent needs to resolve a merge's conflicts: the files with markers
+// and the commits on each side.
+export async function mergeConflicts(root: string) {
+  const status = await gitStatus(root);
+  if (!status.merging) throw new Error('No merge is in progress.');
+  const subjects = async (range: string) => (await git(root, ['log', '-12', '--format=%s', range]).catch(() => '')).split('\n').filter(Boolean);
+  return { files: status.merging.conflicts, branch: status.branch || 'HEAD', upstream: status.upstream || 'the remote branch', ours: await subjects('MERGE_HEAD..HEAD'), theirs: await subjects('HEAD..MERGE_HEAD') };
 }
 
 // Git's own message, without the usage noise, becomes the error the user sees.

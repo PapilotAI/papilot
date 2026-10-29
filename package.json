@@ -36,6 +36,7 @@
     "src/shared.ts",
     "src/notes.ts",
     "src/conversation.ts",
+    "src/commit.ts",
     "skills",
     "dist",
     "scripts/demo.ts",

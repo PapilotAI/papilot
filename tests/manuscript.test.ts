@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { anchor, annotationTask, gitCommit, gitDiff, gitRemote, gitStatus, parseStatus, parseSynctex, pdfWords, settleLines, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
+import { anchor, annotationTask, commitChanges, gitAbortMerge, gitCommit, gitDiff, gitFinishMerge, gitIgnore, gitRemote, gitStatus, mergeConflicts, parseStatus, parseSynctex, pdfWords, settleLines, sourceExcerpt, workingTree } from '../src/server/manuscript.ts';
 import { readNotesInstructions } from '../src/notes.ts';
 import type { Annotation } from '../src/shared.ts';
 
@@ -170,4 +170,91 @@ test('word places come from the printed glyphs, one per word, in reading order',
   assert.ok(fixtureWord[1] + fixtureWord[4] < sentence[1], 'A word ends before the next begins');
   assert.equal(words.filter(word => word[5]).length >= 2, true, 'Line ends are marked');
   await assert.rejects(pdfWords(fixture, 2), /not part of the manuscript/);
+});
+
+test('build output goes into .gitignore by kind, and a commit message reads only the chosen changes', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-ignore-'));
+  const run = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  try {
+    run('init', '-q', '-b', 'main');
+    for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@localhost'], ['commit.gpgsign', 'false']]) run('config', key, value);
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Original.\n'); fs.writeFileSync(path.join(root, '.gitignore'), '*.pdf');
+    run('add', '.'); run('commit', '-qm', 'Start the paper');
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Changed.\n');
+    for (const file of ['main.aux', 'main.log', 'chapter.aux', 'main.synctex.gz', 'figure.tex']) fs.writeFileSync(path.join(root, file), 'x\n');
+    fs.mkdirSync(path.join(root, '_minted-main')); fs.writeFileSync(path.join(root, '_minted-main', 'style.pygstyle'), 'x\n');
+    const chosen = ['main.aux', 'main.log', 'chapter.aux', 'main.synctex.gz', '_minted-main/style.pygstyle', 'figure.tex', 'main.tex'];
+    const status = await gitIgnore(root, chosen);
+    // One pattern per kind; files that are not build output, and tracked files, stay.
+    assert.equal(fs.readFileSync(path.join(root, '.gitignore'), 'utf8'), '*.pdf\n\n# Build output\n_minted*/\n*.aux\n*.log\n*.synctex.gz\n');
+    assert.deepEqual(status.files.map(file => file.path).sort(), ['.gitignore', 'figure.tex', 'main.tex']);
+    // A pattern already present is not repeated.
+    fs.writeFileSync(path.join(root, 'notes.aux'), 'x\n'); fs.appendFileSync(path.join(root, '.gitignore'), '!notes.aux\n');
+    await assert.rejects(gitIgnore(root, ['figure.tex']), /None of the chosen files/);
+    await gitIgnore(root, ['notes.aux']);
+    assert.equal(fs.readFileSync(path.join(root, '.gitignore'), 'utf8').match(/^\*\.aux$/gm)?.length, 1);
+    const changes = await commitChanges(root, ['main.tex', 'figure.tex']);
+    assert.deepEqual(changes.files.map(file => file.path), ['main.tex', 'figure.tex']);
+    assert.match(changes.patch, /-Original\.\n\+Changed\./);
+    assert.match(changes.patch, /\+x/);
+    assert.doesNotMatch(changes.patch, /gitignore/);
+    assert.deepEqual(changes.recent, ['Start the paper']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a branch that diverged from its upstream merges, and a conflicted merge is finished or abandoned', async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-merge-'));
+  const run = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  const remote = path.join(base, 'remote.git'), mine = path.join(base, 'mine'), theirs = path.join(base, 'theirs');
+  const clone = (target: string) => {
+    run(base, 'clone', '-q', remote, target);
+    for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@localhost'], ['commit.gpgsign', 'false'], ['core.hooksPath', path.join(base, 'no-hooks')], ['pull.ff', 'only']]) run(target, 'config', key, value);
+  };
+  const edit = (root: string, file: string, text: string, message: string) => { fs.writeFileSync(path.join(root, file), text); run(root, 'add', file); run(root, 'commit', '-qm', message); };
+  try {
+    run(base, 'init', '-q', '--bare', '-b', 'main', remote);
+    clone(mine);
+    edit(mine, 'main.tex', 'Intro.\nMethod.\n', 'Start'); edit(mine, 'refs.bib', 'A\n', 'Add references'); run(mine, 'push', '-q', '-u', 'origin', 'main');
+    clone(theirs);
+    // Changes to different files merge on their own, even where pull.ff=only.
+    edit(theirs, 'refs.bib', 'A\nB\n', 'Cite B'); run(theirs, 'push', '-q');
+    edit(mine, 'main.tex', 'Intro.\nBetter method.\n', 'Improve the method'); await gitRemote(mine, 'fetch');
+    let status = await gitStatus(mine);
+    assert.deepEqual([status.ahead, status.behind, status.merging], [1, 1, null]);
+    await assert.rejects(gitRemote(mine, 'pull'), /fast-forward/i);
+    await gitRemote(mine, 'merge');
+    status = await gitStatus(mine);
+    assert.deepEqual([status.ahead, status.behind, status.merging, fs.readFileSync(path.join(mine, 'refs.bib'), 'utf8')], [2, 0, null, 'A\nB\n']);
+    run(mine, 'push', '-q');
+    // The same line changed on both sides stops the merge at a conflict.
+    run(theirs, 'pull', '-q');
+    edit(theirs, 'main.tex', 'Intro.\nTheir method.\n', 'Reword the method');
+    run(theirs, 'push', '-q');
+    edit(mine, 'main.tex', 'Intro.\nMy method.\n', 'Rewrite the method');
+    fs.writeFileSync(path.join(mine, 'notes.md'), 'Draft.\n');
+    await gitRemote(mine, 'merge');
+    status = await gitStatus(mine);
+    assert.match(status.merging!.message, /^Merge branch 'main'/);
+    assert.deepEqual(status.merging!.conflicts, ['main.tex']);
+    assert.deepEqual(await mergeConflicts(mine), { files: ['main.tex'], branch: 'main', upstream: 'origin/main', ours: ['Rewrite the method'], theirs: ['Reword the method'] });
+    await assert.rejects(gitCommit(mine, 'Other work', ['notes.md']), /Finish or abort the merge/);
+    await assert.rejects(gitRemote(mine, 'push'), /Finish or abort the merge/);
+    await assert.rejects(gitFinishMerge(mine), /Resolve the conflicts in main.tex first/);
+    // Once no markers remain the merge commits, leaving unrelated files alone.
+    fs.writeFileSync(path.join(mine, 'main.tex'), 'Intro.\nMy method, reworded.\n');
+    assert.deepEqual((await gitStatus(mine)).merging!.conflicts, []);
+    const hash = await gitFinishMerge(mine);
+    assert.equal(run(mine, 'rev-list', '--parents', '-n', '1', hash).split(' ').length, 3);
+    status = await gitStatus(mine);
+    assert.deepEqual([status.merging, status.files.map(file => file.path)], [null, ['notes.md']]);
+    // Abandoning a conflicted merge restores the branch as it was.
+    run(mine, 'push', '-q'); run(theirs, 'pull', '-q');
+    edit(theirs, 'main.tex', 'Intro.\nTheirs again.\n', 'Change it again'); run(theirs, 'push', '-q');
+    edit(mine, 'main.tex', 'Intro.\nMine again.\n', 'Mine again');
+    await gitRemote(mine, 'merge');
+    assert.ok((await gitStatus(mine)).merging);
+    await gitAbortMerge(mine);
+    assert.deepEqual([(await gitStatus(mine)).merging, fs.readFileSync(path.join(mine, 'main.tex'), 'utf8')], [null, 'Intro.\nMine again.\n']);
+    await assert.rejects(gitAbortMerge(mine), /No merge is in progress/);
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });

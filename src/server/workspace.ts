@@ -11,6 +11,8 @@ import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } f
 import { VERSION } from './paths.ts';
 import { findSkill, type SkillFile } from './skills.ts';
 import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
+import { commitMessageFrom } from '../commit.ts';
+import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
 import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -41,6 +43,10 @@ const FIXABLE = /^(Some edits are outside the task scope|The revised document co
 const BUILD_FIX = 'build-fix-';
 
 const AGENTS: AgentId[] = ['codex', 'claude', 'antigravity'];
+// A commit message's agent sees the changes in its prompt and needs no tools.
+const commitInstructions = 'You write Git commit messages for the repository of a LaTeX paper. Reply with the commit message only, without a preamble, quotes or a code fence: a subject line in the imperative mood under 72 characters and, only when the change needs more explanation, a blank line and a body of a few short plain sentences. Describe what changed in the paper, such as its wording, sections, equations, figures or references, rather than listing files. Follow the style and language of the recent commit subjects, or write in English when there are none. Everything you need is in the message: do not run commands, read files or edit anything.';
+// A merge's agent edits the conflicted files in the manuscript checkout and nothing else.
+const mergeInstructions = 'You resolve Git merge conflicts in the repository of a LaTeX paper. Edit only the files listed as conflicted, and in each one remove every conflict marker (<<<<<<<, ||||||| , =======, >>>>>>>) so that the text reads as one coherent version. Keep the changes from both sides wherever they are compatible; where both sides rewrote the same passage, combine their intent, and where they truly contradict each other, prefer the version that is more complete and correct and say so. Keep the LaTeX valid: balanced environments and braces, labels, references and citations. You may read any file to understand the context. Do not edit other files, and do not run Git commands that change the repository, such as add, commit, merge, checkout, reset, restore or stash: the author reviews the result and commits the merge.';
 const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [] });
 
 export class Workspace extends EventEmitter {
@@ -53,6 +59,8 @@ export class Workspace extends EventEmitter {
   private loaded = new Set<string>();
   private preparing = new Set<string>();
   private reviewWrites = new Set<string>();
+  // Papers with a commit in progress: no review write may change their files meanwhile.
+  private committing = new Set<string>();
   private commentWrites = new Map<string, number>();
   private deletions = new Set<string>();
   private publishing = new Set<string>();
@@ -451,6 +459,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       }
     }
     if (this.active.has(taskId) || this.publishing.has(taskId) || BUSY.has(task.status) || task.status === 'queued') throw new Error('Pause the task before accepting, rejecting, or undoing changes. Wait for any PDF build to finish.');
+    if (this.committing.has(task.projectId)) throw new Error('A commit is in progress. Try again when it finishes.');
+    if (mergeInProgress(this.store.project(task.projectId).path)) throw new Error('Finish or abort the merge in the Git panel before accepting, rejecting, or undoing changes.');
     if (this.reviewWrites.has(taskId)) throw new Error('A review action is already in progress. Wait for it to finish.');
     this.reviewWrites.add(taskId);
     if (pending) this.store.updateTask(taskId, { pendingReview: { ...pending, previousStatus: task.status } });
@@ -509,7 +519,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       const project = this.store.project(task.projectId), client = await this.connectReview(project.path);
       const summary = await client.get(taskRoute(task.name));
       const { unsent, comments } = await this.unsentReviewFeedback(client, this.store.task(taskId));
-      const files = await acceptedFiles(project.path, task.name);
+      const files = await acceptedFiles(project.path, task.name, task.committed?.accepted);
       const current = this.store.task(taskId);
       if (current.status !== 'deleting') this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent, comments, files } });
     } catch { /* The task remains visible even if its project is temporarily unavailable. */ }
@@ -522,6 +532,105 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     const feedback = await client.get<{ feedback?: { kind?: string }[] }>(`${taskRoute(task.name)}/feedback?after=${after}`);
     const items = feedback.feedback || [];
     return { unsent: items.length, comments: items.filter(item => item.kind === 'comment' || item.kind === 'note').length };
+  }
+  // The agent that writes a commit message or resolves a merge: the one the
+  // author chose, or else the first that is signed in, with the chosen model
+  // or the default one.
+  private helper(choice: { agent?: AgentId; model?: string }, task: string) {
+    const usable = (id: AgentId) => this.agents[id].ready && this.runtimes[id].authenticated;
+    const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(usable);
+    if (!id) throw new Error(`Sign in to Codex, Claude or Antigravity to ${task}.`);
+    const models = this.runtimes[id].models;
+    return { id, model: models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
+  }
+  // One turn on a thread the agent does not keep, outside any task: its
+  // reply is returned and no chat shows it.
+  private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; timeout: number; what: string }) {
+    const agent = this.agents[id], name = AGENT_NAMES[id];
+    const thread = await agent.request('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.sandbox, ephemeral: true, developerInstructions: options.instructions, ...(options.model ? { model: options.model.id } : {}) });
+    const threadId = thread.thread.id;
+    return new Promise<string>((resolve, reject) => {
+      let text = '', turnId = '';
+      const listen = (message: any) => {
+        const p = message.params || {};
+        if (p.threadId !== threadId) return;
+        if (message.method === 'item/completed' && p.item?.type === 'agentMessage') text = p.item.text || text;
+        else if (message.method === 'turn/completed') finish(p.turn?.status === 'completed' ? null : new Error(p.turn?.error?.message || `${name} stopped before it could ${options.what}.`));
+      };
+      const timer = setTimeout(() => {
+        if (turnId) agent.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
+        finish(new Error(`${name} did not ${options.what} in time. Try again.`));
+      }, options.timeout);
+      const finish = (error: Error | null) => { clearTimeout(timer); agent.off('notification', listen); if (error) reject(error); else resolve(text); };
+      agent.on('notification', listen);
+      agent.request('turn/start', { threadId, input: [{ type: 'text', text: options.prompt }], cwd: options.cwd, ...(options.effort ? { effort: options.effort } : {}) })
+        .then(result => { turnId = result?.turn?.id || ''; }, error => finish(error instanceof Error ? error : new Error(String(error))));
+    });
+  }
+  // Writes a commit message for the chosen manuscript files, like Cursor's
+  // generate button: one read-only turn with the lightest reasoning the model offers.
+  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string } = {}) {
+    const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message');
+    const { files, patch, recent } = await commitChanges(project.path, paths);
+    const tasks = this.store.tasks().filter(task => task.projectId === projectId && task.review?.files?.some(file => paths.includes(file))).map(task => task.title);
+    const prompt = [
+      recent.length ? `Recent commit subjects in this repository:\n${recent.map(subject => `- ${subject}`).join('\n')}` : 'This repository has no commits yet.',
+      tasks.length ? `Papilot tasks whose accepted changes are in these files:\n${tasks.map(title => `- ${title}`).join('\n')}` : '',
+      `Changed files:\n${files.map(file => `${file.status === '?' ? 'A' : file.status} ${file.from ? `${file.from} -> ` : ''}${file.path}`).join('\n')}`,
+      `Diff:\n${patch}`,
+    ].filter(Boolean).join('\n\n');
+    const reply = await this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions: commitInstructions, prompt, model, effort: model?.efforts[0], timeout: 120000, what: 'write a commit message' });
+    const message = commitMessageFrom(reply);
+    if (!message) throw new Error(`${AGENT_NAMES[id]} did not return a commit message. Try again.`);
+    return { message, agent: id };
+  }
+  // Resolves a merge's conflicts in the manuscript checkout itself: the agent
+  // edits only the conflicted files, at the model's default reasoning, and
+  // leaves committing the merge to the author once they have read the diffs.
+  async resolveConflicts(projectId: string, choice: { agent?: AgentId; model?: string } = {}) {
+    const project = this.store.project(projectId), { id, model } = this.helper(choice, 'resolve conflicts');
+    const { files, branch, upstream, ours, theirs } = await mergeConflicts(project.path);
+    if (!files.length) throw new Error('No file has conflict markers left. Commit the merge.');
+    const list = (items: string[]) => items.length ? items.map(item => `- ${item}`).join('\n') : '- (none listed)';
+    const prompt = [
+      `${branch} is being merged with ${upstream} in ${project.path}, and these files have conflicts:\n${list(files)}`,
+      `Commits on ${branch} since the two diverged:\n${list(ours)}`,
+      `Commits from ${upstream} being merged in:\n${list(theirs)}`,
+      'Resolve every conflict in those files, then reply with a short summary for the author: how you resolved each conflict, and any place where you had to choose one side.',
+    ].join('\n\n');
+    const summary = await this.oneOff(id, { cwd: project.path, sandbox: 'workspace-write', instructions: mergeInstructions, prompt, model, effort: model?.defaultEffort, timeout: 600000, what: 'resolve the conflicts' });
+    return { summary: summary.trim(), remaining: files.filter(file => conflictMarkers(project.path, file)), agent: id, git: await gitStatus(project.path) };
+  }
+  // Commits what the author accepted from this task since its last commit,
+  // with the message they confirmed, and pushes it if they asked. Other
+  // uncommitted files stay as they are; a file another task also changed is
+  // committed as it is on disk.
+  async commitTask(taskId: string, message: string, push = false) {
+    const task = this.store.task(taskId);
+    if (task.status === 'deleting') throw new Error('This task is being deleted.');
+    if (task.pendingReview) throw new Error('Wait for the current review action before committing.');
+    const project = this.store.project(task.projectId);
+    return this.exclusiveCommit(project.id, async () => {
+      const accepted = await acceptedCommit(project.path, task.name);
+      const files = accepted ? await acceptedFiles(project.path, task.name, this.store.task(taskId).committed?.accepted) : [];
+      const paths = (await gitStatus(project.path)).files.filter(file => files.includes(file.path)).map(file => file.path);
+      if (!paths.length) throw new Error('This task has no accepted changes left to commit.');
+      const hash = await gitCommit(project.path, message, paths);
+      this.store.updateTask(taskId, { committed: { hash, accepted: accepted!, at: Date.now() } });
+      void this.refresh(taskId);
+      // The commit stands even when the push fails; the author can push again.
+      let pushError: string | undefined;
+      if (push) try { await gitRemote(project.path, 'push'); } catch (error) { pushError = errorText(error); }
+      return { commit: hash, git: await gitStatus(project.path), ...(pushError ? { pushError } : {}) };
+    });
+  }
+  // A commit reads the working tree that accepting, rejecting and undoing
+  // write, so neither starts while the other runs on the same paper.
+  async exclusiveCommit<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+    if (this.committing.has(projectId)) throw new Error('A commit is already in progress. Wait for it to finish.');
+    if ([...this.reviewWrites].some(id => this.store.task(id).projectId === projectId)) throw new Error('Wait for the current review action before committing.');
+    this.committing.add(projectId);
+    try { return await work(); } finally { this.committing.delete(projectId); }
   }
   renameTask(taskId: string, title: string) {
     if (this.store.task(taskId).status === 'deleting') throw new Error('This task is being deleted.');
@@ -567,10 +676,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
 
 // The review engine records each task's accepted text as a commit beside the
 // one it started from; their difference is what the task put in the
-// manuscript. A rename counts as both of its paths.
-export async function acceptedFiles(root: string, name: string) {
+// manuscript, and the difference from the accepted text at the task's last
+// commit is what it has added since. A rename counts as both of its paths.
+export async function acceptedFiles(root: string, name: string, since?: string) {
   try {
-    const { stdout } = await execute('git', ['-C', root, 'diff', '--name-only', '--no-renames', '-z', `refs/latex-review/${name}/base`, `refs/latex-review/${name}/accepted`, '--']);
+    const { stdout } = await execute('git', ['-C', root, 'diff', '--name-only', '--no-renames', '-z', since || `refs/latex-review/${name}/base`, `refs/latex-review/${name}/accepted`, '--']);
     return stdout.split('\0').filter(Boolean);
   } catch { return []; }
+}
+export async function acceptedCommit(root: string, name: string) {
+  try { return (await execute('git', ['-C', root, 'rev-parse', '--verify', '-q', `refs/latex-review/${name}/accepted^{commit}`])).stdout.trim() || undefined; }
+  catch { return undefined; }
 }

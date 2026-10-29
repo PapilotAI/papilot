@@ -61,6 +61,18 @@ export const zhCN: Record<string, string> = {
   'Pulling…': '正在拉取…', 'Pull': '拉取', 'Pushing…': '正在推送…', 'Push': '推送', 'Publish branch': '发布分支', 'Fetch from the remote': '从远程获取',
   'Tracking': '跟踪', 'Include all changes': '包含全部改动', 'Uncommitted changes': '未提交的改动', 'Commit message': '提交信息', 'Committing…': '正在提交…',
   'Commit 1 file': '提交 1 个文件', 'Commit all {n} files': '提交全部 {n} 个文件', 'Commit {chosen} of {n} files': '提交 {n} 个文件中的 {chosen} 个',
+  'Generate commit message': '生成提交信息', 'Write a commit message for the chosen files with {agent}': '让 {agent} 为选中的文件写提交信息', '{agent} is writing a commit message…': '{agent} 正在写提交信息…',
+  '{n} build file': '{n} 个构建文件', '{n} build files': '{n} 个构建文件', 'Untracked build output. Add to .gitignore adds:': '未跟踪的构建产物。加入 .gitignore 会添加：', 'Add to .gitignore': '加入 .gitignore',
+  'Not committed yet': '尚未提交', 'Commit…': '提交…', 'Accepted changes are not committed yet': '接受的改动尚未提交', 'Commit to {branch}': '提交到 {branch}', 'Commit': '提交',
+  'What this task accepted, in {n} file:': '此任务接受的改动，共 {n} 个文件：', 'What this task accepted, in {n} files:': '此任务接受的改动，共 {n} 个文件：',
+  'Commit and push': '提交并推送', 'Committing and pushing…': '正在提交并推送…', 'Committed {hash} and pushed.': '已提交 {hash} 并推送。',
+  'Merge': '合并', 'Merging…': '正在合并…', '{branch} and {upstream} have both changed. Merge brings in the remote commits.': '{branch} 和 {upstream} 都有新提交。合并会引入远端的提交。',
+  'Merged {upstream}.': '已合并 {upstream}。', 'The merge stopped at conflicts.': '合并遇到了冲突。', 'Merge in progress': '合并进行中',
+  'Merging: {n} file has conflicts': '合并中：{n} 个文件有冲突', 'Merging: {n} files have conflicts': '合并中：{n} 个文件有冲突', 'Merging: no conflicts left': '合并中：冲突已全部解决',
+  'Resolve with {agent}': '让 {agent} 解决', '{agent} is resolving…': '{agent} 正在解决…', '{agent} on the merge': '{agent} 对这次合并的说明',
+  '{n} file still has conflicts.': '还有 {n} 个文件有冲突。', '{n} files still have conflicts.': '还有 {n} 个文件有冲突。', 'Conflicts resolved. Read the diffs, then commit the merge.': '冲突已解决。看过各文件的改动后，提交这次合并。',
+  'Commit merge': '提交合并', 'Abort merge': '放弃合并', 'Aborting…': '正在放弃…', 'The merge was abandoned.': '已放弃这次合并。',
+  'Added {n} pattern to .gitignore.': '已向 .gitignore 添加 {n} 条规则。', 'Added {n} patterns to .gitignore.': '已向 .gitignore 添加 {n} 条规则。',
   'Include {path}': '包含 {path}', 'Changes in {path}': '{path} 的改动', 'Loading the diff…': '正在加载差异…', 'No uncommitted changes': '没有未提交的改动',
 
   // PDF and notes

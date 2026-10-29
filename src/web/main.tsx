@@ -2,7 +2,8 @@ import { StrictMode, Suspense, lazy, useCallback, useEffect, useId, useLayoutEff
 import { createRoot } from 'react-dom/client';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { isFeedbackPrompt } from '../conversation.ts';
-import type { AgentId, AgentModel, Annotation, FeedbackSummary, GitDiff, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
+import { ignorePattern } from '../commit.ts';
+import type { AgentId, AgentModel, Annotation, FeedbackSummary, GitDiff, GitFile, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillSuggestions, matchSkills, skillQuery } from './skills.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, unsentReviewFeedback } from './composer.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
@@ -14,6 +15,7 @@ import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog } from './settings.tsx';
+import { CommitDialog } from './commit-dialog.tsx';
 import { locale, t, tn, useLanguage } from './i18n.ts';
 import { notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
 import { Markdown } from './markdown.tsx';
@@ -254,6 +256,14 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
   </section>;
 }
 
+// The files a finished review accepted from this task since its last commit
+// that are still uncommitted in the manuscript. Committing them is optional.
+function commitReady(task: Task, git: GitStatus | null) {
+  if (!Array.isArray(git?.files) || git.merging || task.status !== 'reviewing' || task.review?.counts?.pending) return [];
+  const changed = new Set(git.files.map(file => file.path));
+  return (task.review?.files || []).filter(file => changed.has(file));
+}
+
 // Comments go back to the agent for another round; so does a round that
 // rejected everything. Accepted changes are already in the manuscript, and
 // decisions alone reach the agent with the next message. Shown under the
@@ -286,8 +296,10 @@ function gitSummary(git: GitStatus | null) {
 
 // A source-control style summary: where the manuscript is, its last commit,
 // and what is not committed yet (accepted review changes land here).
-// LaTeX build output is left out of a commit unless chosen.
-const BUILD_OUTPUT = /\.(aux|log|out|toc|lof|lot|lol|fls|fdb_latexmk|synctex(\.gz)?|bbl|blg|bcf|run\.xml|nav|snm|vrb|xdv|dvi|idx|ilg|ind|glo|gls|glg|ist|thm|loa)$/;
+// Untracked build output is left out of a commit unless chosen, and can go
+// into .gitignore. An agent can write the commit message.
+type CommitWriter = { agent: AgentId; model?: string };
+const ignorable = (file: GitFile) => file.status === '?' && Boolean(ignorePattern(file.path));
 const gitNames = (): Record<string, string> => ({ M: t('Modified'), A: t('Added'), D: t('Deleted'), R: t('Renamed'), C: t('Copied'), U: t('Conflict'), '?': t('Untracked'), T: t('Type changed') });
 
 function DiffView({ diff }: { diff: GitDiff }) {
@@ -303,20 +315,15 @@ function DiffView({ diff }: { diff: GitDiff }) {
 // uncommitted changes with their diffs. Chosen files are committed exactly as
 // they are on disk; fetch, pull (fast-forward only) and push use the host's
 // Git credentials.
-function GitPanel({ projectId, git, onStatus }: { projectId: string; git: GitStatus | null; onStatus: (status: GitStatus) => void }) {
+function GitPanel({ projectId, git, onStatus, writer }: { projectId: string; git: GitStatus | null; onStatus: (status: GitStatus) => void; writer: CommitWriter }) {
   const draftKey = `papilot:commit:${projectId}`;
   const [message, setMessage] = useState(() => browserStorage.getItem(draftKey) || '');
-  const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
-  const seen = useRef(new Set<string>());
+  // The files the author ticked or unticked; any other file is included unless it is build output.
+  const [picked, setPicked] = useState<Map<string, boolean>>(() => new Map());
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
+  const [resolution, setResolution] = useState<{ agent: string; summary: string } | null>(null);
   const [open, setOpen] = useState(''), [diff, setDiff] = useState<{ path: string; result: GitDiff | null; error: string } | null>(null);
   const files = git?.files || [];
-  // New build output starts unchecked; everything else starts checked.
-  useEffect(() => {
-    const fresh = files.filter(file => !seen.current.has(file.path));
-    fresh.forEach(file => seen.current.add(file.path));
-    if (fresh.some(file => file.status === '?' && BUILD_OUTPUT.test(file.path))) setExcluded(current => new Set([...current, ...fresh.filter(file => file.status === '?' && BUILD_OUTPUT.test(file.path)).map(file => file.path)]));
-  }, [files.map(file => file.path).join('\0')]);
   const openFile = files.find(file => file.path === open);
   useEffect(() => {
     if (!openFile) { setDiff(null); return; }
@@ -326,10 +333,11 @@ function GitPanel({ projectId, git, onStatus }: { projectId: string; git: GitSta
     return () => { live = false; };
   }, [projectId, open, openFile?.status, openFile?.lines?.join()]);
   if (!git || !Array.isArray(git.files)) return <section className="git-panel" aria-label={t('Git status')}><p className="git-clean">{t('Reading Git status…')}</p></section>;
-  const chosen = files.filter(file => !excluded.has(file.path));
+  const included = (file: GitFile) => picked.get(file.path) ?? !ignorable(file), chosen = files.filter(included);
+  const pick = (paths: string[], on: boolean) => setPicked(current => new Map([...current, ...paths.map(path => [path, on] as const)]));
   const added = files.reduce((sum, file) => sum + (file.lines?.[0] || 0), 0), removed = files.reduce((sum, file) => sum + (file.lines?.[1] || 0), 0);
   const saveMessage = (value: string) => { setMessage(value); if (value) browserStorage.setItem(draftKey, value); else browserStorage.removeItem(draftKey); };
-  async function run(action: string, work: () => Promise<{ git: GitStatus; commit?: string }>, done: (result: { git: GitStatus; commit?: string }) => string) {
+  async function run<R extends { git: GitStatus }>(action: string, work: () => Promise<R>, done: (result: R) => string) {
     if (busy) return;
     setBusy(action); setError(''); setNotice('');
     try { const result = await work(); onStatus(result.git); setNotice(done(result)); }
@@ -341,15 +349,37 @@ function GitPanel({ projectId, git, onStatus }: { projectId: string; git: GitSta
     if (!text || !chosen.length) return;
     void run('commit', () => api(`/projects/${projectId}/git/commit`, { message: text, paths: chosen.map(file => file.path) }), result => { saveMessage(''); return t('Committed {hash}.', { hash: result.commit ?? '' }); });
   };
-  const remote = (action: 'fetch' | 'pull' | 'push') => void run(action, () => api(`/projects/${projectId}/git/${action}`, {}, undefined, 130000),
-    result => action === 'fetch' ? (result.git.behind ? tn(result.git.behind, '{n} new commit on {upstream}.', '{n} new commits on {upstream}.', { upstream: result.git.upstream ?? '' }) : t('Up to date with the remote.')) : action === 'pull' ? t('Pulled the latest commits.') : result.git.upstream ? t('Pushed to {upstream}.', { upstream: result.git.upstream }) : t('Pushed to the remote.'));
+  // Like Cursor's generate button: the chosen agent reads the chosen files' changes.
+  async function generate() {
+    if (busy || !chosen.length) return;
+    setBusy('message'); setError(''); setNotice('');
+    try { saveMessage((await api<{ message: string }>(`/projects/${projectId}/git/message`, { paths: chosen.map(file => file.path), agent: writer.agent, model: writer.model || undefined }, undefined, 130000)).message); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(''); }
+  }
+  const ignored = files.filter(ignorable), patterns = [...new Set(ignored.map(file => ignorePattern(file.path)))];
+  const ignore = () => void run('ignore', () => api(`/projects/${projectId}/git/ignore`, { paths: ignored.map(file => file.path) }), () => tn(patterns.length, 'Added {n} pattern to .gitignore.', 'Added {n} patterns to .gitignore.'));
+  const remote = (action: 'fetch' | 'pull' | 'merge' | 'push') => void run(action, () => api<{ git: GitStatus }>(`/projects/${projectId}/git/${action}`, {}, undefined, 130000),
+    result => action === 'fetch' ? (result.git.behind ? tn(result.git.behind, '{n} new commit on {upstream}.', '{n} new commits on {upstream}.', { upstream: result.git.upstream ?? '' }) : t('Up to date with the remote.'))
+      : action === 'pull' ? t('Pulled the latest commits.')
+      : action === 'merge' ? (result.git.merging ? t('The merge stopped at conflicts.') : t('Merged {upstream}.', { upstream: git.upstream ?? '' }))
+      : result.git.upstream ? t('Pushed to {upstream}.', { upstream: result.git.upstream }) : t('Pushed to the remote.'));
   const publish = !git.upstream && git.remote && git.branch;
+  // A branch and its upstream that have both moved on are merged; conflicts
+  // go to an agent, then the author reads the diffs and commits the merge.
+  const merging = git.merging, diverged = Boolean(git.upstream && git.ahead > 0 && git.behind > 0 && !merging);
+  const resolve = () => void run('resolve', () => api<{ git: GitStatus; summary: string; remaining: string[]; agent: AgentId }>(`/projects/${projectId}/git/resolve`, { agent: writer.agent, model: writer.model || undefined }, undefined, 620000),
+    result => { setResolution({ agent: AGENT_LABELS[result.agent], summary: result.summary }); return result.remaining.length ? tn(result.remaining.length, '{n} file still has conflicts.', '{n} files still have conflicts.') : t('Conflicts resolved. Read the diffs, then commit the merge.'); });
+  const finish = () => void run('finish', () => api<{ git: GitStatus; commit: string }>(`/projects/${projectId}/git/finish`, {}), result => { setResolution(null); return t('Committed {hash}.', { hash: result.commit }); });
+  const abort = () => void run('abort', () => api<{ git: GitStatus }>(`/projects/${projectId}/git/abort`, {}), () => { setResolution(null); return t('The merge was abandoned.'); });
   return <section className="git-panel" aria-label={t('Git status')} aria-busy={Boolean(busy)}>
     <div className="git-branch"><Icon name="branch" size={16}/><code>{git.branch || t('detached HEAD')}</code>
       {git.upstream && <span className="git-sync" title={t('Compared with {upstream}', { upstream: git.upstream })}>{git.ahead || git.behind ? <>{git.ahead > 0 && <span>↑{git.ahead}</span>}{git.behind > 0 && <span>↓{git.behind}</span>}</> : t('up to date')}</span>}
       {git.remote && <span className="git-remote">
-        {git.upstream && git.behind > 0 && <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={() => remote('pull')}>{busy === 'pull' ? t('Pulling…') : t('Pull')}</button>}
-        {(git.upstream ? git.ahead > 0 : publish) && <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={() => remote('push')}>{busy === 'push' ? t('Pushing…') : git.upstream ? t('Push') : t('Publish branch')}</button>}
+        {!merging && git.upstream && git.behind > 0 && (diverged
+          ? <button type="button" className="button secondary compact" title={t('{branch} and {upstream} have both changed. Merge brings in the remote commits.', { branch: git.branch ?? '', upstream: git.upstream })} disabled={Boolean(busy)} onClick={() => remote('merge')}>{busy === 'merge' ? t('Merging…') : t('Merge')}</button>
+          : <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={() => remote('pull')}>{busy === 'pull' ? t('Pulling…') : t('Pull')}</button>)}
+        {!merging && (git.upstream ? git.ahead > 0 : publish) && <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={() => remote('push')}>{busy === 'push' ? t('Pushing…') : git.upstream ? t('Push') : t('Publish branch')}</button>}
         <button type="button" className="icon-button" aria-label={t('Fetch from the remote')} title={t('Fetch from the remote')} disabled={Boolean(busy)} onClick={() => remote('fetch')}>{busy === 'fetch' ? <span className="spinner"/> : <Icon name="refresh" size={15}/>}</button>
       </span>}
     </div>
@@ -357,22 +387,38 @@ function GitPanel({ projectId, git, onStatus }: { projectId: string; git: GitSta
     {git.head && <div className="git-commit"><Icon name="commit" size={16}/><div><p>{git.head.subject}</p><small><code>{git.head.hash}</code> · {agoText(git.head.date)}</small></div></div>}
     {error && <p className="inline-error git-message" role="alert">{error}</p>}
     {notice && !error && <p className="git-message git-notice" role="status"><Icon name="check" size={14}/>{notice}</p>}
-    <h3 className="git-section">{files.length > 0 && <input type="checkbox" aria-label={t('Include all changes')} checked={chosen.length === files.length} ref={box => { if (box) box.indeterminate = chosen.length > 0 && chosen.length < files.length; }} onChange={event => setExcluded(event.target.checked ? new Set() : new Set(files.map(file => file.path)))}/>}<span>{t('Uncommitted changes')}</span>{files.length > 0 && <span className="count">{files.length}</span>}{added || removed ? <span className="git-total"><ins>+{added}</ins> <del>−{removed}</del></span> : null}</h3>
+    {merging && <div className={'git-merge' + (merging.conflicts.length ? '' : ' resolved')} role="group" aria-label={t('Merge in progress')}>
+      <p><strong>{merging.conflicts.length ? tn(merging.conflicts.length, 'Merging: {n} file has conflicts', 'Merging: {n} files have conflicts') : t('Merging: no conflicts left')}</strong><span>{merging.message}</span></p>
+      {resolution && <div className="git-merge-summary markdown" aria-label={t('{agent} on the merge', { agent: resolution.agent })}><Markdown text={resolution.summary}/></div>}
+      <div className="button-row">
+        <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={abort}>{busy === 'abort' ? t('Aborting…') : t('Abort merge')}</button>
+        {merging.conflicts.length
+          ? <button type="button" className="button primary compact" disabled={Boolean(busy)} onClick={resolve}>{busy === 'resolve' ? <><span className="spinner"/>{t('{agent} is resolving…', { agent: AGENT_LABELS[writer.agent] })}</> : <><Icon name="spark" size={14}/>{t('Resolve with {agent}', { agent: AGENT_LABELS[writer.agent] })}</>}</button>
+          : <button type="button" className="button primary compact" disabled={Boolean(busy)} onClick={finish}>{busy === 'finish' ? t('Committing…') : t('Commit merge')}</button>}
+      </div>
+    </div>}
+    <h3 className="git-section">{files.length > 0 && !merging && <input type="checkbox" aria-label={t('Include all changes')} checked={chosen.length === files.length} ref={box => { if (box) box.indeterminate = chosen.length > 0 && chosen.length < files.length; }} onChange={event => pick(files.map(file => file.path), event.target.checked)}/>}<span>{t('Uncommitted changes')}</span>{files.length > 0 && <span className="count">{files.length}</span>}{added || removed ? <span className="git-total"><ins>+{added}</ins> <del>−{removed}</del></span> : null}</h3>
     {files.length ? <>
-      <form className="git-commit-form" onSubmit={event => { event.preventDefault(); commit(); }}>
-        <textarea aria-label={t('Commit message')} placeholder={t('Commit message')} rows={2} value={message} readOnly={busy === 'commit'} onChange={event => saveMessage(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, touch())) { event.preventDefault(); commit(); } }}/>
+      {ignored.length > 0 && !merging && <div className="git-ignore" title={t('Untracked build output. Add to .gitignore adds:') + '\n' + patterns.join('\n')}><span>{tn(ignored.length, '{n} build file', '{n} build files')}</span><button type="button" className="button ghost compact" disabled={Boolean(busy)} onClick={ignore}>{busy === 'ignore' ? t('Adding…') : t('Add to .gitignore')}</button></div>}
+      {!merging && <form className="git-commit-form" onSubmit={event => { event.preventDefault(); commit(); }}>
+        <div className="git-message-box">
+          <textarea aria-label={t('Commit message')} placeholder={busy === 'message' ? t('{agent} is writing a commit message…', { agent: AGENT_LABELS[writer.agent] }) : t('Commit message')} rows={2} value={message} readOnly={busy === 'commit' || busy === 'message'} onChange={event => saveMessage(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, touch())) { event.preventDefault(); commit(); } }}/>
+          <button type="button" className="icon-button git-generate" aria-label={t('Generate commit message')} title={t('Write a commit message for the chosen files with {agent}', { agent: AGENT_LABELS[writer.agent] })} disabled={Boolean(busy) || !chosen.length} onClick={() => void generate()}>{busy === 'message' ? <span className="spinner"/> : <Icon name="spark" size={15}/>}</button>
+        </div>
         <button className="button primary" disabled={Boolean(busy) || !message.trim() || !chosen.length}>{busy === 'commit' ? t('Committing…') : chosen.length === files.length ? tn(files.length, 'Commit 1 file', 'Commit all {n} files') : t('Commit {chosen} of {n} files', { chosen: chosen.length, n: files.length })}</button>
-      </form>
+      </form>}
       <ul className="git-files">{files.map(file => {
-        const slash = file.path.lastIndexOf('/'), code = file.status === '?' ? 'U' : file.status, expanded = open === file.path;
+        // A conflicted file shows ! until its markers are gone, then as modified.
+        const status = file.status === 'U' && merging && !merging.conflicts.includes(file.path) ? 'M' : file.status;
+        const slash = file.path.lastIndexOf('/'), code = status === '?' ? 'U' : status === 'U' ? '!' : status, expanded = open === file.path;
         return <li key={file.path} className={expanded ? 'open' : undefined}>
           <div className="git-row">
-            <input type="checkbox" aria-label={t('Include {path}', { path: file.path })} checked={!excluded.has(file.path)} onChange={event => setExcluded(current => { const next = new Set(current); if (event.target.checked) next.delete(file.path); else next.add(file.path); return next; })}/>
+            {!merging && <input type="checkbox" aria-label={t('Include {path}', { path: file.path })} checked={included(file)} onChange={event => pick([file.path], event.target.checked)}/>}
             <button type="button" className="git-file" aria-expanded={expanded} title={`${gitNames()[file.status] || file.status}: ${file.from ? `${file.from} → ` : ''}${file.path}`} onClick={() => setOpen(expanded ? '' : file.path)}>
               <span className="git-name">{file.path.slice(slash + 1)}</span>{slash > 0 && <span className="git-dir">{file.path.slice(0, slash)}</span>}
             </button>
             {file.lines && <span className="git-lines"><ins>+{file.lines[0]}</ins> <del>−{file.lines[1]}</del></span>}
-            <span className={'git-code s-' + (file.status === '?' ? 'u' : file.status.toLowerCase())} aria-label={gitNames()[file.status] || file.status}>{code}</span>
+            <span className={'git-code s-' + (status === '?' ? 'u' : status === 'U' ? 'conflict' : status.toLowerCase())} aria-label={gitNames()[status] || status}>{code}</span>
           </div>
           {expanded && <div className="git-diff-wrap" aria-label={t('Changes in {path}', { path: file.path })} role="region">
             {diff?.path === file.path && diff.result ? <DiffView diff={diff.result}/> : diff?.error ? <p className="inline-error">{diff.error}</p> : <p className="git-diff-note">{t('Loading the diff…')}</p>}
@@ -406,7 +452,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Ann
 }
 
 type ManuscriptPanel = 'pdf' | 'contents' | 'notes' | 'git';
-function ManuscriptView({ project, data, error, view, setView, region, setRegion, active, setActive, actions, onGit }: { onGit: (status: GitStatus) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
+function ManuscriptView({ project, data, error, view, setView, region, setRegion, active, setActive, actions, onGit, writer }: { onGit: (status: GitStatus) => void; writer: CommitWriter; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
   const build = data?.build, notes = data?.annotations || [];
   const pdf = useRef<PdfHandle>(null);
   const [outline, setOutline] = useState<OutlineItem[]>([]), [section, setSection] = useState(-1);
@@ -443,7 +489,7 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
             <span>{item.title}</span><span className="contents-page">{item.page}</span>
           </button>
         </li>)}</ol> : <p className="muted">{build?.key ? t('This PDF has no bookmarks.') : t('Contents will appear when the PDF is ready.')}</p>}
-      </nav> : side === 'git' ? <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit}/> : <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>}
+      </nav> : side === 'git' ? <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit} writer={writer}/> : <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>}
     </aside>
   </div>;
 }
@@ -466,6 +512,8 @@ function App() {
   const sidebarRef = useRef<HTMLElement>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [modal, setModal] = useState<'project' | null>(null);
+  // The task whose commit dialog is open, and what each commit from a review card did.
+  const [commitFor, setCommitFor] = useState(''), [commitNotes, setCommitNotes] = useState<Record<string, string>>({});
   const modalRef = useRef<HTMLDialogElement>(null);
   const modalOpener = useRef<HTMLElement | null>(null);
   const formTaskId = useRef(uuid());
@@ -807,12 +855,17 @@ function App() {
   const pause = () => { if (task) void action('/tasks/' + task.id + '/interrupt'); };
   // With only the chat in view, the feedback bar moves to the end of the conversation.
   const chatOnly = mobile ? mobileTab === 'conversation' : layout === 'conversation';
+  // A finished review can be committed from its card in the viewer, or from
+  // the end of the chat when the review is hidden.
+  const ready = task ? commitReady(task, projectGit) : [];
+  const commitStep = task && (ready.length ? <><span className="commit-state">{t('Not committed yet')}</span><button type="button" className="commit-button" onClick={() => setCommitFor(task.id)}>{t('Commit…')}</button></>
+    : commitNotes[task.id] ? <span className="commit-state">{commitNotes[task.id]}</span> : null);
   const reviewFeedback = (card: boolean) => task && <ReviewFeedback key={'review-feedback:' + task.id} card={card} task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError}
     onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>;
   const reviewTools = task && fullPdfUrl ? <>
     <a className="button ghost compact full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" aria-label={t('Full PDF')} title={t('Open the full PDF after round {round}', { round: task.review?.round ?? '' })}><Icon name="paper" size={14}/><span>{t('Full PDF')}</span></a>
-    <button type="button" className="icon-button" aria-label={t('Build review')} title={t('Build the review again')} disabled={['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) || taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="refresh" size={15}/></button>
-    <a className="icon-button" href={reviewUrl(task)} target="_blank" rel="noreferrer" aria-label={t('Open review in new tab')} title={t('Open review in new tab')}><Icon name="external" size={15}/></a>
+    <button type="button" className="icon-button review-rebuild" aria-label={t('Build review')} title={t('Build the review again')} disabled={['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) || taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="refresh" size={15}/></button>
+    <a className="icon-button review-open" href={reviewUrl(task)} target="_blank" rel="noreferrer" aria-label={t('Open review in new tab')} title={t('Open review in new tab')}><Icon name="external" size={15}/></a>
   </> : null;
 
   // The paper name in the header renames the paper in place, like a task title in the sidebar.
@@ -896,10 +949,10 @@ function App() {
           {!mobile && layout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label={t('Resize chat panel')} aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title={t('Drag to resize · Double-click to reset')} onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
           <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
           {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('The latest review build failed.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
-          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} tools={reviewTools} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); if (selectedRef.current === task.id) { setMobileTab('conversation'); setLayout('split'); } }}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? t('Building PDF review…') : t('No review yet')}</h2><p>{task.status === 'building' ? t('The review will appear when the build finishes.') : t('PDF changes will appear here after {agent} finishes editing.', { agent: agentName(task) })}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Build review')}</button>}</div>}
+          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} tools={reviewTools} completion={commitStep} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); if (selectedRef.current === task.id) { setMobileTab('conversation'); setLayout('split'); } }}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? t('Building PDF review…') : t('No review yet')}</h2><p>{task.status === 'building' ? t('The review will appear when the build finishes.') : t('PDF changes will appear here after {agent} finishes editing.', { agent: agentName(task) })}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Build review')}</button>}</div>}
           {!chatOnly && reviewFeedback(false)}
-        </section><Activity key={task.id} task={task} models={runtimes[task.agent || 'codex']?.models || []} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? reviewFeedback(true) : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} onGit={status => updateGit(project.id, status)}/>
+        </section><Activity key={task.id} task={task} models={runtimes[task.agent || 'codex']?.models || []} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{ready.length > 0 && <div className="review-feedback card commit-card"><span><Icon name="commit" size={15}/>{t('Accepted changes are not committed yet')}</span><button className="button secondary compact" onClick={() => setCommitFor(task.id)}>{t('Commit…')}</button></div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
+      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} onGit={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }}/>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>{t('Opening your workspace')}</h1><p className="home-copy" role="status">{connectionError || t('Connecting to your papers and tasks…')}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>{t('Retry connection')}</button>}</div></div>
       : project ? <div className="home"><div className="home-inner compose">
           <img className="home-logo" src={logo} alt=""/>
@@ -919,6 +972,16 @@ function App() {
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
     {settings && <SettingsDialog theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)}/>}
+    {task && commitFor === task.id && <CommitDialog branch={projectGit?.branch ?? null} files={ready} remote={Boolean(projectGit?.remote)} agent={agentName(task)} onClose={() => setCommitFor('')}
+      generate={() => api<{ message: string }>(`/projects/${task.projectId}/git/message`, { paths: ready, agent: task.agent || 'codex', model: task.model || undefined }, undefined, 130000).then(result => result.message)}
+      commit={async (message, push) => {
+        const result = await api<{ commit: string; git: GitStatus; pushError?: string }>(`/tasks/${task.id}/commit`, { message, push }, undefined, 130000);
+        updateGit(task.projectId, result.git);
+        setCommitNotes(current => ({ ...current, [task.id]: push && !result.pushError ? t('Committed {hash} and pushed.', { hash: result.commit }) : t('Committed {hash}.', { hash: result.commit }) }));
+        setCommitFor('');
+        if (result.pushError) reportError(result.pushError);
+        void refresh(true);
+      }}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
     {modal && <dialog ref={modalRef} onKeyDown={keepDialogFocus} className="modal-backdrop" aria-labelledby="modal-title" onCancel={e => { e.preventDefault(); if (!busy) setModal(null); }} onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section className="modal"><button className="modal-close icon-button" aria-label={t('Close')} disabled={busy} onClick={() => setModal(null)}><Icon name="close"/></button><h2 id="modal-title">{t('Add a paper')}</h2><p className="modal-description">{t('Choose an existing LaTeX Git repository on this host. It needs at least one commit and must compile with latexmk.')}</p><form onSubmit={e => void saveProject(e)}>
       <label>{t('Repository path')}<input required maxLength={4000} value={form.path} onChange={e => setForm({ ...form, path: e.target.value })} placeholder={t('/Users/you/papers/my-paper')} autoComplete="off" spellCheck={false}/></label>
