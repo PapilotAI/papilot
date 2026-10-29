@@ -146,10 +146,15 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number) {
       .change-head .actions button{flex:1 1 auto;min-width:0;height:44px;gap:5px;padding:0 4px;border-radius:11px;font-size:14.5px}
       .change-head .actions .nav{flex:0 0 auto;width:28px;min-width:28px;padding:0}.change-head .position{min-width:30px;font-size:11.5px}
       .change-head .actions .undo{flex:0 0 auto;margin-left:0;padding:0 6px;font-size:14px}
-      .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;bottom:70px;transform:none;max-height:calc(100% - 86px);overflow:auto}
-      .composer textarea{font-size:16px;max-height:min(140px,30vh)}.composer button{min-height:44px}
+/* A comment is written in a card under the toolbar, clear of the
+         keyboard, in place of the change's decisions. */
+      .composer{left:0!important;right:0!important;width:auto!important;max-width:none;top:48px;bottom:auto;transform:none;max-height:calc(100% - 48px - var(--keyboard,0px));overflow:auto;border-width:0 0 1px;border-radius:0 0 16px 16px}
+      #root:has(>.composer) .change-head .dock{display:none}
+      .composer textarea{font-size:16px;min-height:76px;max-height:min(140px,30vh);resize:none}.composer button{min-height:44px}
+      .composer-row{justify-content:flex-end;gap:8px}.composer-row .muted{display:none}
       .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-crop-scale,1));margin-left:calc(-100% * var(--pdf-crop-scale,1) * var(--pdf-crop-shift,0))}
-      .side,.context{overflow-x:hidden}
+      /* Clip only the cropped margins: a selection handle may reach above its line. */
+      .side,.context{overflow-x:clip}
     }
     @media(max-width:480px){.bar .identity,.bar .meter{display:none}.bar .bar-end{gap:4px}}
     @media(max-width:400px){.change-head .position{display:none}}
@@ -271,6 +276,19 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     const themeObserver = new MutationObserver(sync);
     themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
     return () => themeObserver.disconnect();
+  }, [document]);
+  // The viewer's cards for writing stay above the keyboard. The workspace fits
+  // itself above the keyboard, but not while the page is zoomed; the cards
+  // then shorten by the part of the viewer the keyboard covers.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!document || !viewport) return;
+    const sync = () => {
+      const box = frame.current?.getBoundingClientRect(); if (!box) return;
+      document.documentElement.style.setProperty('--keyboard', `${Math.max(0, Math.round(box.bottom - viewport.offsetTop - viewport.height))}px`);
+    };
+    sync(); viewport.addEventListener('resize', sync); viewport.addEventListener('scroll', sync); window.addEventListener('resize', sync);
+    return () => { viewport.removeEventListener('resize', sync); viewport.removeEventListener('scroll', sync); window.removeEventListener('resize', sync); };
   }, [document]);
   const ready = phase === 'ready';
   const [slot, setSlot] = useState<Element | null>(null);

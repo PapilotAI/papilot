@@ -11,6 +11,7 @@ import { sendsMessage } from './composer.ts';
 import { Icon } from './icons.tsx';
 import { browserStorage } from './storage.ts';
 import { mergeLines } from './note-geometry.ts';
+import { touchSelection } from './touch-select.ts';
 import { t } from './i18n.ts';
 
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
@@ -24,7 +25,8 @@ document.head.append(styles);
 export type Rect = [number, number, number, number];
 export interface OutlineItem { title: string; level: number; dest: unknown; page: number; top: number | null }
 export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note: Annotation) => void }
-interface Selection { page: number; rects: Rect[]; quote: string }
+// A touch selection also has its ends: the edge of its first and last word, with that line's top and bottom.
+interface Selection { page: number; rects: Rect[]; quote: string; handles?: { from: [number, number, number]; to: [number, number, number] } }
 
 const touch = () => window.matchMedia('(pointer: coarse)').matches;
 const unit = (value: number) => Math.min(1, Math.max(0, value));
@@ -154,7 +156,8 @@ export const PdfView = forwardRef<PdfHandle, {
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [findOpen, setFindOpen] = useState(false), [query, setQuery] = useState(''), [matches, setMatches] = useState({ current: 0, total: 0 }), [notFound, setNotFound] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [editing, setEditing] = useState<{ page: number; rect: Rect; rects: Rect[]; quote: string } | null>(null);
+  const [editing, setEditing] = useState<{ page: number; rect: Rect; rects: Rect[]; quote: string } | null>(null), editingRef = useRef(editing); editingRef.current = editing;
+  const picking = useRef<ReturnType<typeof touchSelection> | null>(null);
   const [draft, updateDraft] = useState<{ page: number; rect: Rect } | null>(null), draftRef = useRef(draft);
   const setDraft = (value: typeof draft) => { draftRef.current = value; updateDraft(value); };
   const origin = useRef<{ page: number; x: number; y: number; box: DOMRect } | null>(null);
@@ -229,6 +232,7 @@ export const PdfView = forwardRef<PdfHandle, {
     // A text selection on one page offers "Add note" beside it.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const select = () => {
+      if (picking.current?.active()) return;
       const current = document.getSelection();
       if (!current || current.isCollapsed || !current.rangeCount) { setSelection(null); return; }
       const { range, before, after } = wholeWords(current.getRangeAt(0)), node = range.startContainer, element = node instanceof Element ? node : node.parentElement;
@@ -243,8 +247,30 @@ export const PdfView = forwardRef<PdfHandle, {
     };
     const selectionChange = () => { clearTimeout(timer); timer = setTimeout(select, 120); };
     document.addEventListener('selectionchange', selectionChange);
+    // Touch screens select words with Papilot's own handles and menu (style.css
+    // turns native selection off there). Each text run is one word.
+    picking.current = touchSelection<HTMLElement>(box, {
+      target: element => element.closest('.textLayer')?.closest<HTMLElement>('.page') ?? undefined,
+      units: page => ({ units: Array.from(page.querySelectorAll<HTMLElement>('.textLayer span')).filter(span => !span.firstElementChild), line: (_, index) => index }),
+      blocked: () => latest.current.region || Boolean(editingRef.current),
+      menu: '.add-note',
+      onSelect: ({ target: pageDiv, units, from, to }) => {
+        const frame = pageDiv.getBoundingClientRect(), range = document.createRange(), last = units[to].firstChild;
+        // A word followed by another carries the space; the selection stops before it.
+        range.setStart(units[from], 0);
+        if (last?.nodeType === Node.TEXT_NODE) range.setEnd(last, (last.textContent || '').trimEnd().length); else range.setEnd(units[to], units[to].childNodes.length);
+        const rects = mergeLines(Array.from(range.getClientRects()).filter(r => r.width > 1 && r.height > 1)
+          .map(r => [unit((r.left - frame.left) / frame.width), unit((r.top - frame.top) / frame.height), unit((r.right - frame.left) / frame.width), unit((r.bottom - frame.top) / frame.height)] as Rect));
+        // Words that end a line carry no space, so the runs are joined with one.
+        const quote = units.slice(from, to + 1).map(span => span.textContent).join(' ').replace(/\s+/g, ' ').trim();
+        if (!rects.length || !quote) return;
+        const [first, end] = [rects[0], rects[rects.length - 1]];
+        setSelection({ page: Number(pageDiv.dataset.pageNumber) - 1, rects, quote, handles: { from: [first[0], first[1], first[3]], to: [end[2], end[1], end[3]] } });
+      },
+      onClear: () => setSelection(null),
+    });
     return () => {
-      clearTimeout(timer);
+      clearTimeout(timer); picking.current?.stop(); picking.current = null;
       document.removeEventListener('selectionchange', selectionChange);
       box.removeEventListener('wheel', wheel); box.removeEventListener('touchstart', touchStart); box.removeEventListener('touchmove', touchMove); box.removeEventListener('touchend', touchEnd);
       viewer.cleanup(); void loaded.current?.loadingTask.destroy(); loaded.current = null; tools.current = null; layerMap.current.clear();
@@ -298,7 +324,7 @@ export const PdfView = forwardRef<PdfHandle, {
   function startNote() {
     if (!selection) return;
     setEditing({ page: selection.page, rect: bounds(selection.rects), rects: selection.rects, quote: selection.quote });
-    document.getSelection()?.removeAllRanges(); setSelection(null);
+    document.getSelection()?.removeAllRanges(); picking.current?.reset(); setSelection(null);
   }
   async function save(comment: string) {
     if (!editing) return;
@@ -363,7 +389,11 @@ export const PdfView = forwardRef<PdfHandle, {
           if (current && (current.rect[2] - current.rect[0] > 0.015 || current.rect[3] - current.rect[1] > 0.01)) setEditing({ page: current.page, rect: current.rect, rects: [], quote: '' });
         }}/>}
       {draft?.page === number - 1 && <div className="note-box draft" style={percent(draft.rect)}/>}
-      {selection?.page === number - 1 && !editing && <button type="button" className="add-note" style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={startNote}><Icon name="pencil" size={14}/>{t('Add note')}</button>}
+      {selection?.handles && selection.page === number - 1 && !editing && <>
+        {selection.rects.map((rect, index) => <div key={index} className="note-mark draft" style={percent(rect)}/>)}
+        {(['from', 'to'] as const).map(end => { const [x, top, bottom] = selection.handles![end]; return <span key={end} className="select-handle" data-end={end} style={{ left: `${x * 100}%`, top: `${top * 100}%`, height: `${(bottom - top) * 100}%` }}/>; })}
+      </>}
+      {selection?.page === number - 1 && !editing && <button type="button" className={'add-note' + (selection.handles ? ' touch' : '')} style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={startNote}><Icon name="pencil" size={14}/>{t('Add note')}</button>}
       {editing?.page === number - 1 && <>
         {(editing.rects.length ? editing.rects : [editing.rect]).map((rect, index) => <div key={index} className={(editing.rects.length ? 'note-mark' : 'note-box') + ' draft'} style={percent(rect)}/>)}
         <NoteEditor rect={editing.rect} onCancel={() => { setEditing(null); }} onSave={save}/>

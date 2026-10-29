@@ -23,4 +23,25 @@
 .review-notes-panel li+li{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
 .review-notes-panel button.review-note-location{text-align:left;background:none;padding:0;font-size:12px;color:var(--text-2);overflow-wrap:anywhere}
 .review-notes-panel .review-notes-error{color:var(--red)}
-@media(max-width:680px){.review-notes-panel{bottom:76px;max-height:calc(100% - 140px)}.review-notes-panel textarea{font-size:16px}.review-notes-panel button{min-height:36px}}
+/* Touch screens select PDF text with Papilot's highlight, handles and menu
+   (touch-select.ts), so the system's selection menu never covers it. */
+@media(pointer:coarse){.pdf-strip,.pdf-strip .pdf-text,.pdf-strip .pdf-glyph{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}}
+.select-handle{position:absolute;width:2px;margin-left:-1px;background:#2563eb;pointer-events:auto;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.select-handle::before{content:"";position:absolute;inset:-16px -15px}
+.select-handle::after{content:"";position:absolute;left:-5px;width:12px;height:12px;border-radius:50%;background:#2563eb}
+.select-handle[data-end=from]::after{top:-11px}.select-handle[data-end=to]::after{bottom:-11px}
+.review-select-menu{position:fixed;z-index:19;transform:translateX(-50%);font-family:var(--sans);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.review-select-menu button{height:40px;padding:0 18px;border:0;border-radius:20px;background:#2563eb;color:#fff;font:500 15px/1 var(--sans);white-space:nowrap;box-shadow:0 4px 16px rgb(0 0 0/.25);cursor:pointer}
+/* On phones the notes are a card under the review's 48px toolbar, like a
+   compose screen: the keyboard rises from below and never covers it, so
+   Safari has no need to scroll the page. The change's decisions wait meanwhile. */
+@media(max-width:680px){
+  .review-notes-panel{left:0;right:0;top:48px;bottom:auto;width:auto;max-height:calc(100% - 48px - var(--keyboard,0px));padding:12px 14px 14px;border-width:0 0 1px;border-radius:0 0 16px 16px}
+  body:has(.review-notes-panel) .change-head .dock{display:none}
+  .review-notes-panel header{margin-bottom:6px}
+  .review-notes-panel form small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .review-notes-panel form blockquote{max-height:none;margin:6px 0 8px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+  .review-notes-panel textarea{font-size:16px;min-height:76px;resize:none}
+  .review-notes-panel button{min-height:40px}
+  .review-notes-panel footer button{padding:0 16px}
+}
