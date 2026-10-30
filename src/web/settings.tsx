@@ -6,9 +6,8 @@ import { LANGUAGES, browserLanguage, setLanguage, t, useLanguage, type LanguageC
 import { setNotifications, testNotification, useNotifications } from './notifications.ts';
 import type { Theme } from './theme.tsx';
 
-// Preferences for this browser: appearance, interface language and
-// notifications. Each takes effect at once; there is nothing to save.
-export function SettingsDialog({ theme, onTheme, onClose }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void }) {
+// Browser preferences and workspace management share one sidebar entry.
+export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, accountName }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; onPeople?: () => void; onSignOut?: () => void; accountName?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { choice } = useLanguage();
   const notifications = useNotifications();
@@ -32,7 +31,6 @@ export function SettingsDialog({ theme, onTheme, onClose }: { theme: Theme; onTh
     <section className="modal settings-dialog">
       <button className="modal-close icon-button" aria-label={t('Close')} onClick={onClose}><Icon name="close"/></button>
       <h2 id="settings-title">{t('Settings')}</h2>
-      <p className="modal-description">{t('These preferences apply to this browser.')}</p>
       <div className="settings-row">
         <span className="settings-name" id="settings-appearance">{t('Appearance')}</span>
         <div className="segmented" role="radiogroup" aria-labelledby="settings-appearance">
@@ -57,6 +55,10 @@ export function SettingsDialog({ theme, onTheme, onClose }: { theme: Theme; onTh
       {on && <div className="settings-test">
         <button type="button" className="button secondary compact" onClick={() => setTest(testNotification() ? 'sent' : 'failed')}><Icon name="bell" size={14}/>{t('Send a test notification')}</button>
         {test && <span role="status">{test === 'sent' ? t('Sent. If nothing appeared, allow notifications for this browser in your system settings.') : t('This browser could not show the notification.')}</span>}
+      </div>}
+      {(onPeople || onSignOut) && <div className="settings-navigation">
+        {onPeople && <button type="button" className="settings-navigation-row" aria-haspopup="dialog" onClick={onPeople}><Icon name="people" size={17}/><span>{t('People')}</span><Icon name="chevronRight" size={15}/></button>}
+        {onSignOut && <button type="button" className="settings-navigation-row" onClick={onSignOut}><Icon name="signOut" size={17}/><span>{t('Sign out')}</span>{accountName && <small>{accountName}</small>}</button>}
       </div>}
     </section>
   </dialog>;

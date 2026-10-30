@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { parseSkill } from '../src/server/skills.ts';
 import { browserLanguage, t, tn } from '../src/web/i18n.ts';
 import { zhCN } from '../src/web/zh-CN.ts';
 
@@ -11,6 +12,11 @@ function messages() {
   for (const file of fs.readdirSync('src/web')) {
     if (!/\.tsx?$/.test(file) || file === 'i18n.ts' || file === 'zh-CN.ts') continue;
     for (const match of fs.readFileSync(`src/web/${file}`, 'utf8').matchAll(pattern)) for (const text of match.slice(1)) if (text !== undefined) found.add(text);
+  }
+  // Built-in skill labels and descriptions arrive as data from the server.
+  for (const file of fs.readdirSync('skills').filter(file => file.endsWith('.md'))) {
+    const skill = parseSkill(fs.readFileSync(`skills/${file}`, 'utf8'), file, 'builtin');
+    if (skill) { found.add(skill.name); found.add(skill.description); }
   }
   return found;
 }

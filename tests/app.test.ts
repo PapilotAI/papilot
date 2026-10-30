@@ -146,6 +146,68 @@ test('an unshared paper answers exactly like one that does not exist', async () 
   } finally { await f.close(); }
 });
 
+test('task and PDF note submissions both carry the chosen service tier', async () => {
+  const f = await fixture();
+  try {
+    const inputs: Parameters<Workspace['createTask']>[0][] = [];
+    f.workspace.createTask = async input => { inputs.push(input); return { ...task(input.id, input.projectId), serviceTier: input.serviceTier }; };
+    f.store.saveAnnotation({ id: 'note', projectId: 'thesis', key: 'pdf', page: 0, rect: [0, 0, 1, 1], quote: 'Text', comment: 'Shorten.', source: null, createdAt: 1 });
+    const created = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'tier-task-test-01', projectId: 'thesis', title: 'Revise', instructions: 'Revise.', serviceTier: 'priority' } });
+    const notes = await f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations/send', headers: f.as, payload: { id: 'tier-task-test-02', serviceTier: 'default' } });
+    assert.equal(created.statusCode, 200);
+    assert.equal(notes.statusCode, 200);
+    assert.deepEqual(inputs.map(input => input.serviceTier), ['priority', 'default']);
+    const invalid = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'tier-task-test-03', projectId: 'thesis', title: 'Revise', instructions: 'Revise.', serviceTier: true } });
+    assert.equal(invalid.statusCode, 400);
+    assert.equal(inputs.length, 2);
+  } finally { await f.close(); }
+});
+
+test('one task carries PDF notes, a skill and the overall request; retries leave newer notes pending', async () => {
+  const f = await fixture();
+  try {
+    const note = { id: 'combined-note', projectId: 'thesis', key: 'pdf', page: 0, rect: [0, 0, 1, 1] as [number, number, number, number], quote: 'Original sentence.', comment: 'Shorten this.', source: { file: 'main.tex', lines: [10, 12] as [number, number], excerpt: 'Original source.' }, createdAt: 1 };
+    f.store.saveAnnotation(note);
+    const payload = { id: 'combined-task-0001', projectId: 'thesis', title: 'Polish the marked text', instructions: 'Keep all technical terms.', skill: 'polish', annotations: [note.id] };
+    const sent = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
+    assert.equal(sent.statusCode, 200, sent.body);
+    const [item] = f.store.items(payload.id), run = f.store.runByKey('initial-' + payload.id)!;
+    assert.equal(item.text, payload.instructions);
+    assert.deepEqual(item.meta?.skill, { id: 'polish', name: 'Polish' });
+    assert.deepEqual(item.meta?.notes, [{ where: 'Page 1 · main.tex lines 10–12', quote: note.quote, comment: note.comment }]);
+    assert.match(run.prompt, /<skill name="Polish">/);
+    assert.match(run.prompt, /Overall request:\nKeep all technical terms\./);
+    assert.match(run.prompt, /Original source\./);
+    assert.match(run.prompt, /Note: Shorten this\./);
+    assert.equal(f.store.annotations('thesis')[0].taskId, payload.id);
+    f.store.saveAnnotation({ ...note, id: 'later-note' });
+    const retried = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { ...payload, annotations: [note.id, 'later-note'] } });
+    assert.equal(retried.statusCode, 200, retried.body);
+    assert.equal(retried.json().id, payload.id);
+    assert.equal(f.store.items(payload.id).length, 1);
+    assert.equal(f.store.annotations('thesis').find(note => note.id === 'later-note')?.taskId, undefined);
+    const notesOnly = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { ...payload, id: 'notes-only-task-01', instructions: '', skill: undefined, annotations: ['later-note'] } });
+    assert.equal(notesOnly.statusCode, 200, notesOnly.body);
+    assert.equal(f.store.items('notes-only-task-01')[0].text, '');
+    assert.equal(f.store.items('notes-only-task-01')[0].meta?.notes?.length, 1);
+  } finally { await f.close(); }
+});
+
+test('task attachments must be pending notes from the selected paper', async () => {
+  const f = await fixture();
+  try {
+    const note = { id: 'foreign-note', projectId: 'grant', key: 'pdf', page: 0, rect: [0, 0, 1, 1] as [number, number, number, number], quote: '', comment: 'Private note.', source: null, createdAt: 1 };
+    f.store.saveAnnotation(note);
+    f.store.saveAnnotation({ ...note, id: 'sent-note', projectId: 'thesis', taskId: 'thesis-task' });
+    for (const annotations of [['foreign-note'], ['missing-note'], ['sent-note'], [42], 'not-an-array']) {
+      const response = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'invalid-notes-0001', projectId: 'thesis', title: 'Revise', instructions: '', annotations } });
+      assert.equal(response.statusCode, 400, response.body);
+    }
+    assert.equal(f.store.tasks().length, 2);
+    assert.equal(f.store.annotations('grant')[0].taskId, undefined);
+  } finally { await f.close(); }
+});
+
 test('adding papers and managing people stay with the owner', async () => {
   const f = await fixture();
   try {

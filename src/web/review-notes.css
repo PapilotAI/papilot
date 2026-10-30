@@ -23,6 +23,9 @@
 .review-notes-panel li+li{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
 .review-notes-panel button.review-note-location{text-align:left;background:none;padding:0;font-size:12px;color:var(--text-2);overflow-wrap:anywhere}
 .review-notes-panel .review-notes-error{color:var(--red)}
+.review-notes-empty{text-align:center;padding:8px 0;color:var(--text-2)}
+.review-note-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.review-note-actions button{display:flex;flex-direction:column;align-items:center;gap:7px;min-height:68px;padding:10px 6px}
 /* Touch screens select PDF text with Papilot's highlight, handles and menu
    (touch-select.ts), so the system's selection menu never covers it. */
 @media(pointer:coarse){.pdf-strip,.pdf-strip .pdf-text,.pdf-strip .pdf-glyph{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}}

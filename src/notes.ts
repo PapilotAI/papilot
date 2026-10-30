@@ -1,24 +1,27 @@
-import type { Annotation } from './shared.ts';
+import type { Annotation, NoteSummary } from './shared.ts';
+export type { NoteSummary } from './shared.ts';
 
 // PDF notes reach the agent as one plain-text message. The chat shows that
 // message as the notes again, so the format and its reader live together.
 const PREAMBLE = 'Revise the manuscript according to these notes the author marked on the compiled PDF.';
 const QUOTE = '   PDF text: "', REGION = '   Marked region: a figure, equation or other non-text area', NOTE = '\n   Note: ';
 
-export interface NoteSummary { where: string; quote: string; comment: string }
+const noteWhere = (note: Annotation) => [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : '', note.author ? `from ${note.author.name}` : ''].filter(Boolean).join(' · ');
+export const summarizeNotes = (notes: Annotation[]): NoteSummary[] => notes.map(note => ({ where: noteWhere(note), quote: note.quote, comment: note.comment }));
 
 export function reviewNotesInstructions(notes: NoteSummary[]) {
   const items = notes.map((note, index) => `${index + 1}. ${note.where}\n${note.quote ? `${QUOTE}${note.quote}"` : REGION}${NOTE}${note.comment.trim().replace(/\n/g, '\n   ')}`);
   return `${PREAMBLE} These notes refer to the displayed review round and its Before, After or Unchanged text. Region coordinates are percentages of the displayed PDF strip (left, top, right, bottom); any quoted text for a region is nearby context. Read the current source before editing. Preserve accepted changes and do not reintroduce rejected edits unless a note explicitly asks for it.\n\n${items.join('\n\n')}`;
 }
 
-export function notesInstructions(notes: Annotation[]) {
+export function notesInstructions(notes: Annotation[], request = '') {
   const items = notes.map((note, index) => {
-    const where = [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : '', note.author ? `from ${note.author.name}` : ''].filter(Boolean).join(' · ');
+    const where = noteWhere(note);
     const source = note.source?.excerpt ? ['   LaTeX source of the marked region:', '   ```latex', ...note.source.excerpt.split('\n').map(line => '   ' + line), '   ```'] : [];
     return [`${index + 1}. ${where}`, ...source, note.quote ? `${QUOTE}${note.quote}"` : REGION, `${NOTE.slice(1)}${note.comment.trim().replace(/\n/g, '\n   ')}`].join('\n');
   });
-  return `${PREAMBLE} SyncTeX mapped each marked region to the LaTeX file and lines that produced it; the PDF text is what the author saw. Read the current source before editing, and change only what the notes ask for.\n\n${items.join('\n\n')}`;
+  const scope = request.trim() ? `follow both the overall request and the notes.\n\nOverall request:\n${request.trim()}` : 'change only what the notes ask for.';
+  return `${PREAMBLE} SyncTeX mapped each marked region to the LaTeX file and lines that produced it; the PDF text is what the author saw. Read the current source before editing, and ${scope}\n\n${items.join('\n\n')}`;
 }
 
 // The notes in a message written by notesInstructions, or null for any other message.

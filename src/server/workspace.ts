@@ -12,18 +12,26 @@ import { VERSION } from './paths.ts';
 import { findSkill, type SkillFile } from './skills.ts';
 import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
 import { commitMessageFrom } from '../commit.ts';
+import { notesInstructions, summarizeNotes } from '../notes.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
-import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author } from '../shared.ts';
+import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 // A Codex model/list entry with the reasoning efforts it supports.
-export const agentModel = (m: any): AgentModel => ({
-  id: m.model || m.id, name: m.displayName || m.model || m.id, isDefault: Boolean(m.isDefault),
-  efforts: (m.supportedReasoningEfforts || []).map((e: any) => e?.reasoningEffort).filter((e: unknown) => typeof e === 'string'),
-  defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null,
-});
+export const agentModel = (m: any): AgentModel => {
+  // New catalogs name the wire tier explicitly; older ones advertise only "fast".
+  const fast = Array.isArray(m.serviceTiers)
+    ? m.serviceTiers.find((tier: any) => typeof tier?.id === 'string' && (tier.name === 'Fast' || tier.id === 'fast' || tier.id === 'priority'))
+    : m.additionalSpeedTiers?.includes('fast') ? { id: 'priority' } : undefined;
+  return {
+    id: m.model || m.id, name: m.displayName || m.model || m.id, isDefault: Boolean(m.isDefault),
+    efforts: (m.supportedReasoningEfforts || []).map((e: any) => e?.reasoningEffort).filter((e: unknown) => typeof e === 'string'),
+    defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null,
+    ...(fast ? { fastMode: { serviceTier: fast.id, description: typeof fast.description === 'string' ? fast.description : '' } } : {}),
+  };
+};
 // An account/rateLimits/read response as the usage Papilot shows; null when
 // the account reports neither limits nor credits (for example, an API key).
 export function accountUsage(response: any): Usage | null {
@@ -62,6 +70,7 @@ export class Workspace extends EventEmitter {
   private active = new Map<string, Run>();
   private loaded = new Set<string>();
   private preparing = new Set<string>();
+  private preparingNotes = new Set<string>();
   private reviewWrites = new Set<string>();
   // Papers with a commit in progress: no review write may change their files meanwhile.
   private committing = new Set<string>();
@@ -143,33 +152,49 @@ export class Workspace extends EventEmitter {
     const project = { ...this.store.project(projectId), name };
     this.store.saveProject(project); return project;
   }
-  // A task can start from a skill; its instructions are then the author's own words, possibly none.
-  async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; agent?: AgentId; model?: string; effort?: string; id: string; author?: Author }) {
+  // A task combines the author's words, an optional skill and selected PDF notes.
+  async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     // A retried request returns its task; an ID from another paper is refused.
     const existing = this.store.tasks().find(t => t.id === input.id);
     if (existing) { if (existing.projectId !== input.projectId) throw new Error('Invalid task ID.'); return existing; }
+    if (input.serviceTier !== undefined) {
+      if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
+      const models = this.runtimes.codex.models;
+      const model = input.model ? models.find(model => model.id === input.model) : models.find(model => model.isDefault);
+      if (input.serviceTier !== 'default' && input.serviceTier !== model?.fastMode?.serviceTier) throw new Error('Fast mode is not available for this model.');
+    }
     if (this.preparing.has(input.id)) throw new Error('This task is being created. Refresh in a moment.');
     this.preparing.add(input.id);
+    let notes: Annotation[] = [], claimed: string[] = [];
     try {
       const project = this.store.project(input.projectId), skill = input.skill ? findSkill(project.path, input.skill) : undefined;
-      if (!skill && !input.instructions.trim()) throw new Error('Describe the revision, or choose a skill.');
+      const available = new Map(this.store.annotations(project.id).filter(note => !note.taskId).map(note => [note.id, note]));
+      notes = [...new Set(input.annotations || [])].map(id => {
+        const note = available.get(id);
+        if (!note) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
+        if (this.preparingNotes.has(id)) throw new Error('A selected PDF note is already being sent. Wait for that task to finish creating.');
+        return note;
+      });
+      claimed = notes.map(note => note.id); claimed.forEach(id => this.preparingNotes.add(id));
+      if (!skill && !notes.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
+      const instructions = notes.length ? notesInstructions(notes, input.instructions) : input.instructions;
       const client = await this.connectReview(project.path);
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
       const info = await client.post('/api/tasks', { name, title: input.title });
-      const task: Task = { id: input.id, projectId: project.id, name, title: input.title, instructions: skill ? skillPrompt(skill, input.instructions) : input.instructions,
-        worktree: info.worktree, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, status: 'idle',
+      const task: Task = { id: input.id, projectId: project.id, name, title: input.title, instructions: skill ? skillPrompt(skill, instructions) : instructions,
+        worktree: info.worktree, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.saveTask(task);
-      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill, author: input.author });
+      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill, notes, author: input.author });
       return this.store.task(task.id);
-    } finally { this.preparing.delete(input.id); }
+    } finally { this.preparing.delete(input.id); claimed.forEach(id => this.preparingNotes.delete(id)); }
   }
   // The author's message, a skill run with or without one, the review
   // feedback alone, or a build the agent broke. The chat keeps what happened;
   // the agent gets the prompt.
-  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
+  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; notes?: Annotation[]; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const existing = this.store.runByKey(requestKey);
@@ -177,7 +202,8 @@ export class Workspace extends EventEmitter {
     if (task.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
     const pauseVersion = task.pauseVersion || 0;
     if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
-    let prompt = options.build ? buildFixPrompt(options.build) : options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, text) : text.trim(), cursor = task.feedbackCursor;
+    const instructions = options.notes?.length ? notesInstructions(options.notes, text) : text.trim();
+    let prompt = options.build ? buildFixPrompt(options.build) : options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, instructions) : instructions, cursor = task.feedbackCursor;
     let summary: FeedbackSummary | undefined;
     if (includeFeedback) {
       const client = await this.connectReview(this.store.project(task.projectId).path);
@@ -188,7 +214,7 @@ export class Workspace extends EventEmitter {
       if (task.error) prompt += '\n\nLatest task/review error:\n' + task.error + '\nThe latest accepted manuscript is at ' + this.store.project(task.projectId).path + '. You may read it to understand accepted changes, but must only edit your isolated task worktree. Prepare a revised proposal for another review; never write to or accept changes in the manuscript checkout.';
     }
     const run: Run = { id: randomUUID(), taskId, requestKey, prompt, feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null };
-    const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}), ...(options.author ? { author: options.author } : {}) };
+    const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(options.notes?.length ? { notes: summarizeNotes(options.notes) } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}), ...(options.author ? { author: options.author } : {}) };
     const saved = this.store.transaction(() => {
       // Feedback loading yields to other requests. Recheck identity, queue, and
       // task status together before committing; none of the earlier reads own a lock.
@@ -203,6 +229,7 @@ export class Workspace extends EventEmitter {
       if ((current.pauseVersion || 0) !== pauseVersion) throw new Error('The task was paused before these instructions were queued. Your draft has been kept.');
       if (current.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
       this.store.saveRun(run);
+      for (const note of options.notes || []) this.store.saveAnnotation({ ...note, taskId });
       if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null });
       this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
       return run;
@@ -261,7 +288,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     }
     this.store.updateTask(task.id, { pendingRunId: run.id });
     let result: any;
-    try { result = await agent.request('turn/start', { threadId: task.threadId, input: [{ type: 'text', text: run.prompt }], cwd: task.worktree, clientUserMessageId: run.id, ...(task.effort ? { effort: task.effort } : {}) }); }
+    try { result = await agent.request('turn/start', { threadId: task.threadId, input: [{ type: 'text', text: run.prompt }], cwd: task.worktree, clientUserMessageId: run.id, ...(task.effort ? { effort: task.effort } : {}), ...(this.agentOf(task) === 'codex' && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
     catch (error) {
       if (this.active.get(task.id)?.id !== run.id) return;
       if (error instanceof RpcResponseError) throw error;

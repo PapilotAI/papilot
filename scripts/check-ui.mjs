@@ -17,7 +17,7 @@ await page.clock.install();
 const pageErrors = [];
 page.on('pageerror', error => pageErrors.push(error.message));
 const task = { id: 'fixture-task-0001', projectId: 'fixture-paper', name: 'p-fixture', title: 'Clarify the introduction', instructions: 'Keep the technical meaning.', worktree: '/tmp/fixture', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 3, commented: 1 } } };
-const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' }], usage: { plan: 'pro', windows: [{ usedPercent: 83, minutes: 10080, resetsAt: Date.now() + 3 * 86_400_000 }], credits: { unlimited: false, balance: 12418.76 }, reached: false } } };
+const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: '2x speed, increased usage' } }], usage: { plan: 'pro', windows: [{ usedPercent: 83, minutes: 10080, resetsAt: Date.now() + 3 * 86_400_000 }], credits: { unlimited: false, balance: 12418.76 }, reached: false } } };
 // Claude is available with its own models; Antigravity is not installed.
 snapshot.runtimes = { codex: snapshot.runtime, claude: { connected: true, authenticated: true, account: 'Claude Max', error: null, models: [{ id: 'opus', name: 'Opus 5.5', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: null }, { id: 'haiku', name: 'Haiku 5.5', isDefault: false, efforts: ['low', 'medium', 'high'], defaultEffort: null }] }, antigravity: { connected: false, authenticated: false, account: null, error: 'spawn agy ENOENT', models: [] } };
 const messages = [];
@@ -48,6 +48,7 @@ const fixturePdf = fs.readFileSync('tests/fixtures/outline.pdf');
 // The server's word places for the fixture PDF (tests/manuscript.test.ts keeps them current).
 const fixtureWords = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 const interruptions = [];
+let reconnects = 0;
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
@@ -58,6 +59,7 @@ await page.route('**/api/**', async route => {
     if (heldState) { const hold = heldState; heldState = null; stateStarted?.(); await hold; }
     return json(captured);
   }
+  if (url.pathname === '/api/reconnect') { reconnects++; return json({ ok: true }); }
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/items') && itemsFailure) return route.fulfill({ status: 503, json: { error: 'Conversation temporarily unavailable.' } });
   if (url.pathname.endsWith('/items') && history) return json({ items: history });
@@ -100,12 +102,6 @@ await page.route('**/api/**', async route => {
   }
   if (/\/git\/(fetch|pull|push)$/.test(url.pathname)) { const action = url.pathname.split('/').pop(); gitActions.push(action); if (action === 'push') gitState.ahead = 0; return json({ git: gitState }); }
   if (url.pathname.endsWith('/manuscript')) return json({ git: gitState, build: manuscriptBuild, annotations });
-  if (url.pathname.endsWith('/annotations/send')) {
-    const body = route.request().postDataJSON(); noteSends.push(body);
-    const created = { ...task, id: body.id, name: 'p-notes', title: 'Address a PDF note', status: 'queued', review: null };
-    snapshot.tasks.push(created); annotations = [];
-    return json(created);
-  }
   if (url.pathname.endsWith('/delete') && url.pathname.includes('/annotations/')) { const id = url.pathname.split('/')[5]; annotations = annotations.filter(note => note.id !== id); return json({ ok: true }); }
   if (url.pathname.endsWith('/annotations')) {
     const body = route.request().postDataJSON();
@@ -133,7 +129,14 @@ await page.route('**/api/**', async route => {
     return json({ ok: true });
   }
   if (url.pathname === '/api/tasks' && route.request().method() === 'POST') {
-    creates.push(route.request().postDataJSON());
+    const body = route.request().postDataJSON();
+    if (body.annotations?.length) {
+      noteSends.push(body);
+      const created = { ...task, id: body.id, name: 'p-notes', title: body.title, status: 'queued', review: null };
+      snapshot.tasks.push(created); annotations = annotations.filter(note => !body.annotations.includes(note.id));
+      return json(created);
+    }
+    creates.push(body);
     if (failCreate) return route.fulfill({ status: 503, json: { error: 'Connection lost. Try again.' } });
     if (!snapshot.tasks.some(t => t.id === createResult.id)) snapshot.tasks.push(createResult);
     return json(createResult);
@@ -153,7 +156,7 @@ async function openDelete(title = task.title) {
 
 try {
   await page.goto(origin);
-  await page.getByRole('heading', { name: 'What are we revising next?' }).waitFor();
+  await page.getByRole('textbox', { name: 'Describe the revision' }).waitFor();
   assert.equal(await page.locator('.sidebar-footer').count(), 0, 'A connected, idle host shows no status line');
   assert.equal(await page.getByRole('alert').count(), 0);
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
@@ -203,7 +206,7 @@ try {
   await page.getByRole('dialog', { name: '设置' }).getByText('外观', { exact: true }).waitFor();
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN');
-  await page.getByRole('button', { name: '新任务', exact: true }).waitFor();
+  await page.getByRole('button', { name: '设置', exact: true }).waitFor();
   assert.equal(await page.getByRole('textbox', { name: '给 Codex 的指令' }).inputValue(), 'Keep this draft across languages.');
   await page.waitForFunction(() => document.querySelector('.review-frame')?.getAttribute('src')?.endsWith('&lang=zh-CN'));
   assert.match(await page.getByRole('link', { name: '在新标签页中打开审阅' }).getAttribute('href'), /&lang=zh-CN$/);
@@ -284,12 +287,14 @@ try {
   await paperName.waitFor();
   assert.equal(paperRenames.length, 2);
   console.log('PASS: Papers rename from their name in the header; Escape cancels and Enter saves the trimmed name');
-  await page.getByRole('button', { name: 'New task', exact: true }).click();
+  await page.locator('.manuscript-link').click();
+  await page.getByRole('tab', { name: 'New task', exact: true }).click();
   const prompt = page.getByRole('textbox', { name: 'Describe the revision' });
   await prompt.waitFor();
-  assert.equal(await prompt.evaluate(el => el === document.activeElement), true);
   assert.equal(await page.getByRole('button', { name: 'Start task' }).isDisabled(), true);
-  assert.equal(await page.getByRole('button', { name: 'New task', exact: true }).getAttribute('aria-current'), 'page');
+  assert.equal(await page.getByRole('tab', { name: 'New task', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await page.getByRole('region', { name: 'PDF preview', exact: true }).isVisible(), true);
+  assert.equal(await page.locator('.home').count(), 0);
   assert.equal(await page.getByText(/Proofread|Each task edits its own Git worktree/).count(), 0);
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   console.log('PASS: English UI, stale selection recovery, paper menu, modal focus containment, Escape, focus restoration, and the new-task composer');
@@ -326,14 +331,14 @@ try {
   const pdfLink = page.locator('.manuscript-link');
   await pdfLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
   await pdfLink.click();
-  await page.getByRole('heading', { name: 'PDF', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
   assert.equal(await pdfLink.getAttribute('aria-current'), 'page');
   const pdfPages = page.locator('.pdfViewer .page');
   await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().waitFor();
   assert.equal(await pdfPages.count(), 2);
   assert.equal(await page.getByLabel('Page number').inputValue(), '1');
-  // Contents sits immediately before Notes and keeps the bookmarks beside the PDF.
-  assert.deepEqual((await page.getByRole('tablist', { name: 'PDF panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Contents', 'Notes', 'Git 2']);
+  // Notes belong to New task; Contents keeps the bookmarks beside the PDF.
+  assert.deepEqual((await page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['New task', 'Contents', 'Git 2']);
   await page.getByRole('tab', { name: 'Contents', exact: true }).click();
   const contents = page.getByRole('navigation', { name: 'PDF contents' });
   assert.deepEqual((await contents.getByRole('button').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
@@ -341,6 +346,18 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
   assert.equal(await page.locator('.pdf-section-title').innerText(), 'Results');
   assert.equal(await contents.getByRole('button', { name: /^Results/ }).getAttribute('aria-current'), 'location');
+  const mountedPdf = await pdfPages.first().elementHandle();
+  await page.locator('.manuscript-link').click();
+  await page.getByRole('tab', { name: 'New task', exact: true }).click();
+  await prompt.fill('Keep this draft beside the PDF.');
+  assert.equal(await mountedPdf.evaluate(el => el.isConnected), true, 'Opening New task keeps the PDF mounted');
+  assert.equal(await page.getByLabel('Page number').inputValue(), '2');
+  await page.getByRole('tab', { name: 'Contents', exact: true }).click();
+  await page.getByRole('tab', { name: 'New task', exact: true }).click();
+  assert.equal(await prompt.inputValue(), 'Keep this draft beside the PDF.');
+  await page.screenshot({ path: 'test-results/new-task-beside-pdf.png', fullPage: true });
+  await prompt.fill('');
+  await page.getByRole('tab', { name: 'Contents', exact: true }).click();
   await page.getByLabel('Page number').fill('1');
   await page.getByLabel('Page number').press('Enter');
   await page.waitForFunction(() => document.querySelector('.pdf-section-title').textContent === 'Introduction');
@@ -375,8 +392,10 @@ try {
   await findBox.press('Escape');
   await findBox.waitFor({ state: 'hidden' });
   // Select text, write a note, cancel it, delete one, then send another.
-  await page.getByRole('tab', { name: 'Notes', exact: true }).click();
+  await page.getByRole('tab', { name: 'New task', exact: true }).click();
   const notesPanel = page.getByRole('region', { name: 'PDF notes' });
+  await notesPanel.getByRole('button', { name: 'Text note', exact: true }).click();
+  assert.equal(await page.getByLabel('PDF pages', { exact: true }).evaluate(el => el === document.activeElement), true);
   // Where a word is printed, in page pixels, from the server's word places.
   const printed = async text => {
     const words = fixtureWords[0], word = words.words.find(w => w[0] === text), box = await pdfPages.first().boundingBox();
@@ -434,7 +453,7 @@ try {
   await page.getByRole('button', { name: 'Note 1: Shorten this sentence.' }).waitFor({ state: 'hidden' });
   assert.equal(annotations.length, 0);
   // A region marks a figure or equation that has no text to select.
-  await page.getByRole('button', { name: 'Mark region', exact: true }).click();
+  await notesPanel.getByRole('button', { name: 'Region note', exact: true }).click();
   const firstPage = await pdfPages.first().boundingBox();
   await page.mouse.move(firstPage.x + firstPage.width * 0.2, firstPage.y + firstPage.height * 0.3);
   await page.mouse.down();
@@ -448,16 +467,22 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Mark region', exact: true }).getAttribute('aria-pressed'), 'false');
   assert.equal(annotations[0].rects, undefined);
   assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
-  await notesPanel.getByRole('button', { name: 'Send 1 note to the agent' }).click();
-  await page.getByRole('heading', { name: 'Address a PDF note' }).waitFor();
+  await notesPanel.getByText('1 note attached', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('tab', { name: 'Notes', exact: true }).count(), 0);
+  assert.equal(await prompt.inputValue(), '');
+  await page.getByRole('button', { name: 'Start task', exact: true }).click();
+  await page.getByRole('heading', { name: 'Define the operator here' }).waitFor();
   assert.equal(noteSends.length, 1);
   assert.ok(noteSends[0].id.length >= 16);
+  assert.deepEqual(noteSends[0].annotations, ['note-1']);
+  assert.equal(noteSends[0].instructions, '');
+  assert.equal(annotations.length, 0);
   const notesTask = noteSends[0].id;
   snapshot.tasks = snapshot.tasks.filter(t => t.id !== notesTask);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   gitState.files.push({ path: 'main.aux', status: '?', staged: false, unstaged: true }, { path: 'main.log', status: '?', staged: false, unstaged: true });
   await pdfLink.click();
-  await page.getByRole('heading', { name: 'PDF', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
   await page.getByRole('tab', { name: /^Git/ }).click();
   const gitPanel = page.getByRole('region', { name: 'Git status' });
   await gitPanel.getByText('main.tex', { exact: true }).waitFor();
@@ -549,59 +574,95 @@ try {
   task.review.unsent = 0;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.getByRole('button', { name: 'Send feedback', exact: true }).waitFor({ state: 'hidden' });
-  await page.getByText('Enter to send · Shift+Enter for a new line', { exact: true }).waitFor();
+  assert.equal(await page.locator('.composer-hint').count(), 0);
   delete task.review.unsent;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.getByRole('button', { name: 'Send feedback', exact: true }).waitFor();
   console.log('PASS: The chat divider drags, nudges, persists and resets; replies copy; only unsent review updates offer Send feedback');
 
 
-  await page.getByRole('button', { name: 'New task', exact: true }).click();
+  await page.locator('.manuscript-link').click();
+  await page.getByRole('tab', { name: 'New task', exact: true }).click();
   await prompt.fill('Shorten the introduction.');
   await prompt.press('Shift+Enter');
   await prompt.pressSequentially('Preserve the technical content.');
   await prompt.press('Enter');
-  await page.locator('.home').getByRole('alert').waitFor();
+  await page.locator('.new-task-panel').getByRole('alert').waitFor();
   assert.equal(await prompt.inputValue(), 'Shorten the introduction.\nPreserve the technical content.');
-  // The new-task page shows the Codex account's usage.
+  // The new-task panel shows the Codex account's usage.
   const usage = page.getByRole('region', { name: 'Codex usage' });
+  await usage.locator('summary').click();
   assert.equal(await usage.getByRole('meter', { name: 'Weekly limit used' }).getAttribute('aria-valuenow'), '83');
   assert.match(await usage.innerText(), /Pro[\s\S]*Weekly limit[\s\S]*83% used[\s\S]*resets [\s\S]*12,418 credits/);
-  // Agent, model and reasoning effort are chosen beside the prompt and remembered.
-  const agentChip = page.getByRole('combobox', { name: 'Agent', exact: true });
-  const modelChip = page.getByRole('combobox', { name: 'Model', exact: true });
-  assert.equal(await agentChip.inputValue(), 'codex');
-  assert.deepEqual(await agentChip.locator('option').allInnerTexts(), ['Codex', 'Claude', 'Antigravity · unavailable']);
-  const effortChip = page.getByRole('button', { name: /^Reasoning effort/ });
-  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Medium');
+  await usage.locator('summary').click();
+  // All settings share one compact trigger, and fast mode follows model support.
+  const settingsTrigger = page.getByRole('button', { name: 'Agent settings', exact: true });
+  const agentSettings = page.getByRole('dialog', { name: 'Agent settings', exact: true });
+  await settingsTrigger.click();
+  const agentChoices = agentSettings.getByRole('radiogroup', { name: 'Agent', exact: true });
+  const chooseAgent = name => agentChoices.getByRole('radio', { name, exact: true }).click();
+  const modelChip = agentSettings.getByRole('combobox', { name: 'Model', exact: true });
+  const effortChoice = agentSettings.getByRole('slider', { name: 'Reasoning effort', exact: true });
+  const fastMode = agentSettings.getByRole('switch', { name: 'Fast mode' });
+  assert.equal(await agentChoices.getByRole('radio', { name: 'Codex', exact: true }).getAttribute('aria-checked'), 'true');
+  assert.deepEqual(await agentChoices.getByRole('radio').allInnerTexts(), ['Codex', 'Claude', 'Antigravity']);
+  assert.match(await settingsTrigger.innerText(), /Medium/);
+  assert.equal(await fastMode.count(), 0);
   await modelChip.selectOption('deep-model');
-  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: High');
-  await effortChip.click();
-  const effortSlider = page.getByRole('slider', { name: 'Reasoning effort' });
-  assert.equal(await effortSlider.evaluate(el => el === document.activeElement), true);
-  await page.keyboard.press('ArrowRight');
-  assert.equal(await effortSlider.getAttribute('aria-valuetext'), 'Extra high');
+  assert.match(await settingsTrigger.innerText(), /High/);
+  await effortChoice.press('End');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Extra high');
+  await fastMode.check();
   await page.keyboard.press('Escape');
-  await effortSlider.waitFor({ state: 'hidden' });
-  assert.equal(await effortChip.evaluate(el => el === document.activeElement), true);
-  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Extra high');
-  // A model without that effort uses its own default; the choice returns with the model.
+  await agentSettings.waitFor({ state: 'hidden' });
+  assert.equal(await settingsTrigger.evaluate(el => el === document.activeElement), true);
+  assert.match(await settingsTrigger.getAttribute('title'), /Extra high.*Fast/);
+  await settingsTrigger.click();
   await modelChip.selectOption('fast-model');
-  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Medium');
+  assert.match(await settingsTrigger.innerText(), /Medium/);
+  assert.equal(await fastMode.count(), 0);
   await modelChip.selectOption('deep-model');
-  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Extra high');
-  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:model:codex'), localStorage.getItem('papilot:effort:codex')]), ['deep-model', 'xhigh']);
-  // Each agent lists its own models and keeps its own choice.
-  await agentChip.selectOption('claude');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Extra high');
+  assert.equal(await fastMode.isChecked(), true);
+  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:model:codex'), localStorage.getItem('papilot:effort:codex'), localStorage.getItem('papilot:fast:codex')]), ['deep-model', 'xhigh', 'true']);
+  await chooseAgent('Claude');
   assert.deepEqual(await modelChip.locator('option').allInnerTexts(), ['Default model', 'Opus 5.5', 'Haiku 5.5']);
-  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Default');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Model default');
+  await effortChoice.press('Home');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Low');
+  await agentSettings.getByRole('button', { name: 'Model default', exact: true }).click();
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Model default');
+  assert.equal(await fastMode.count(), 0);
   await modelChip.selectOption('haiku');
-  await agentChip.selectOption('antigravity');
-  await page.locator('.home').getByText('Antigravity is unavailable on this host: spawn agy ENOENT').waitFor();
-  await agentChip.selectOption('codex');
+  await agentChoices.getByRole('radio', { name: 'Claude', exact: true }).press('ArrowRight');
+  await agentSettings.getByRole('status').getByText('spawn agy ENOENT', { exact: true }).waitFor();
+  assert.equal(await page.locator('.runtime-banner').count(), 0);
+  assert.equal(await page.locator('.new-task-panel > .inline-error[role=status]').count(), 0);
+  await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/state')), agentSettings.getByRole('button', { name: 'Reconnect', exact: true }).click()]);
+  assert.equal(reconnects, 1);
+  assert.equal(await agentSettings.isVisible(), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await settingsTrigger.locator('.agent-status-mark').count(), 1);
+  await settingsTrigger.click();
+  await agentSettings.getByRole('status').getByText('spawn agy ENOENT', { exact: true }).waitFor();
+  // Long diagnostics expand within the same menu; choosing another agent clears them.
+  const claudeRuntime = structuredClone(snapshot.runtimes.claude);
+  Object.assign(snapshot.runtimes.claude, { connected: false, authenticated: false, error: 'Claude needs an Anthropic API key: Start Papilot with ANTHROPIC_API_KEY set to use Claude.' });
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await chooseAgent('Claude');
+  await agentSettings.getByRole('status').getByText('Claude needs an Anthropic API key', { exact: true }).waitFor();
+  await agentSettings.getByText('Connection details', { exact: true }).click();
+  await agentSettings.getByText(snapshot.runtimes.claude.error, { exact: true }).waitFor();
+  await chooseAgent('Codex');
+  assert.equal(await agentSettings.locator('.agent-connection').count(), 0);
+  assert.equal(await settingsTrigger.locator('.agent-status-mark').count(), 0);
+  snapshot.runtimes.claude = claudeRuntime;
   assert.equal(await modelChip.inputValue(), 'deep-model');
-  assert.equal(await effortChip.getAttribute('aria-label'), 'Reasoning effort: Extra high');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Extra high');
+  assert.equal(await fastMode.isChecked(), true);
   assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:claude')]), ['codex', 'haiku']);
+  await page.screenshot({ path: 'test-results/agent-settings.png', fullPage: true });
+  await page.keyboard.press('Escape');
   failCreate = false;
   await page.getByRole('button', { name: 'Start task' }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
@@ -609,6 +670,7 @@ try {
   assert.equal(creates[1].agent, 'codex');
   assert.equal(creates[1].model, 'deep-model');
   assert.equal(creates[1].effort, 'xhigh');
+  assert.equal(creates[1].serviceTier, 'priority');
   assert.equal(creates[0].id, creates[1].id);
   assert.equal(creates[1].title, 'Shorten the introduction');
   assert.equal(creates[1].instructions, 'Shorten the introduction.\nPreserve the technical content.');
@@ -722,7 +784,8 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await stateCaptured;
   createResult = { ...secondTask, id: 'fixture-task-0003', title: 'A newly created task' };
-  await page.getByRole('button', { name: 'New task', exact: true }).click();
+  await page.locator('.manuscript-link').click();
+  await page.getByRole('tab', { name: 'New task', exact: true }).click();
   await prompt.fill(createResult.title + '\nKeep this new task selected.');
   await page.getByRole('button', { name: 'Start task' }).click();
   await page.getByRole('heading', { name: createResult.title }).waitFor();
@@ -820,10 +883,8 @@ try {
       assert.equal(await pdfPage.isVisible(), false);
       await page.getByRole('button', { name: 'PDF', exact: true }).click();
       await pdfPage.waitFor();
-      await drawerToggle.click();
       await page.getByRole('button', { name: 'New task', exact: true }).click();
-      await page.locator('.sidebar').waitFor({ state: 'hidden' });
-      await prompt.fill('A task from the drawer\nKeep the mobile conversation visible.');
+      await prompt.fill('A task beside the PDF\nKeep the mobile conversation visible.');
       await page.getByRole('button', { name: 'Start task' }).click();
       await input.waitFor();
       assert.equal(await page.locator('.sidebar').isVisible(), false);
@@ -1004,11 +1065,12 @@ try {
   const otherTask = { ...task, id: 'other-task-0001', projectId: otherPaper.id, name: 'p-other', title: 'Polish the second paper', status: 'reviewing', review: null };
   const papers = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 900 } });
   const papersPage = await papers.newPage();
-  await papersPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? { ...snapshot, projects: [...snapshot.projects, otherPaper], tasks: [otherTask], requests: [] } : { items: [] } }));
+  await papersPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? { ...snapshot, projects: [...snapshot.projects, otherPaper], tasks: [otherTask], requests: [] } : { items: [], build: { status: 'building' }, git: { files: [] } } }));
   await papersPage.goto(origin);
   await papersPage.getByRole('heading', { name: otherTask.title }).waitFor();
   assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
-  await papersPage.getByRole('button', { name: 'New task', exact: true }).click();
+  await papersPage.locator('.manuscript-link').click();
+  await papersPage.getByRole('tab', { name: 'New task', exact: true }).click();
   await papersPage.getByRole('textbox', { name: 'Describe the revision' }).waitFor();
   assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
   await papers.close();

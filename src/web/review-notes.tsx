@@ -84,6 +84,13 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
   const writing = open && Boolean(draft.editing);
   const sending = useRef(false);
   const touch = useRef<ReturnType<typeof touchSelection> | null>(null);
+  useEffect(() => {
+    if (!region || !doc) return;
+    const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setRegion(false); setDrag(null); origin.current = null; } };
+    doc.addEventListener('keydown', cancel, true); document.addEventListener('keydown', cancel, true);
+    return () => { doc.removeEventListener('keydown', cancel, true); document.removeEventListener('keydown', cancel, true); };
+  }, [doc, region]);
+  function annotate(region: boolean) { setRegion(region); setOpen(false); touch.current?.reset(); setSelection(null); doc?.defaultView?.focus(); }
   function update(value: Draft) { browserStorage.setItem(storageKey, JSON.stringify(value)); setDraft(value); }
   useEffect(() => {
     if (!doc) return;
@@ -178,7 +185,7 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
   }
   const blocked = task.status === 'uncertain' || task.status === 'deleting';
   return <>
-    <button type="button" className="icon-button" aria-label={t('Mark region')} title={t('Mark a region in the review PDF')} aria-pressed={region} disabled={!doc || busy || writing} onClick={() => { setRegion(!region); setOpen(false); touch.current?.reset(); setSelection(null); }}><Icon name="region" size={15}/></button>
+    <button type="button" className="icon-button" aria-label={t('Mark region')} title={t('Mark region')} aria-pressed={region} disabled={!doc || busy || writing} onClick={() => annotate(!region)}><Icon name="region" size={15}/></button>
     <button type="button" className="button ghost compact review-notes-toggle" aria-label={draft.notes.length ? t('Review notes, {n}', { n: draft.notes.length }) : t('Review notes')} aria-pressed={open} disabled={!doc} onClick={() => open ? close() : setOpen(true)}><Icon name="notes" size={15}/>{draft.notes.length ? <span>{draft.notes.length}</span> : <span className="review-notes-label">{t('Notes')}</span>}</button>
     {doc && createPortal(<style>{styles}</style>, doc.head)}
     {layers.map(layer => createPortal(<Fragment>
@@ -217,13 +224,12 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
       const layer = layers.find(layer => layer.key === selection.strip);
       return layer ? createPortal(<SelectionMenu doc={doc} layer={layer} selection={selection} onAdd={() => edit(selection)}/>, doc.body) : null;
     })()}
-    {doc && (open || region) && createPortal(<aside className="review-notes-panel" aria-label={t('Review PDF notes')} onKeyDown={e => {
+    {doc && open && !region && createPortal(<aside className="review-notes-panel" aria-label={t('Review PDF notes')} onKeyDown={e => {
       // Do not let the review engine interpret note-editor shortcuts as decisions.
       e.stopPropagation();
       if (e.key === 'Escape' && !busy) close();
     }}>
-      <header><strong>{region ? t('Mark region') : draft.notes.length ? t('Review notes ({n})', { n: draft.notes.length }) : t('Review notes')}</strong><button type="button" aria-label={t('Close review notes')} onClick={close}>×</button></header>
-      {region ? <p>{t('Drag over a figure, equation or paragraph to add a note.')}</p> : <>
+      <header><strong>{draft.notes.length ? t('Review notes ({n})', { n: draft.notes.length }) : t('Review notes')}</strong><button type="button" aria-label={t('Close review notes')} onClick={close}>×</button></header>
         {draft.editing ? <form onSubmit={e => { e.preventDefault(); save(); }}>
           <small>{draft.editing.where}</small>
           {draft.editing.quote && <blockquote>{draft.editing.quote}</blockquote>}
@@ -234,12 +240,14 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
             <div><button className="review-note-location" onClick={() => { layers.find(layer => layer.key === note.strip)?.strip.scrollIntoView({ block: 'center' }); setOpen(false); }}>{index + 1}. {note.where}</button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={busy} onClick={() => update({ ...draft, notes: draft.notes.filter(item => item.id !== note.id), requestKey: uuid() })}>×</button></div>
             {note.quote && <blockquote>{note.quote}</blockquote>}<p>{note.comment}</p>
             {note.round !== task.review?.round && <small>{t('Marked on an earlier review round.')}</small>}
-          </li>)}</ol> : <p>{t('Select text in the review PDF and choose Add note, or use Mark region. Notes can also be added to accepted, rejected and unchanged text.')}</p>}
+          </li>)}</ol> : <div className="review-notes-empty"><p>{t('No notes yet')}</p><div className="review-note-actions">
+            <button type="button" onClick={() => annotate(false)}><Icon name="textSelect" size={16}/>{t('Text note')}</button>
+            <button type="button" onClick={() => annotate(true)}><Icon name="region" size={16}/>{t('Region note')}</button>
+          </div></div>}
           {error && <p className="review-notes-error" role="alert">{error}</p>}
           {blocked && <p>{t('Check the task status before sending notes.')}</p>}
-          <footer><button className="primary" disabled={!draft.notes.length || busy || blocked} onClick={() => void send()}>{busy ? t('Sending…') : draft.notes.length ? tn(draft.notes.length, 'Send {n} note to the agent', 'Send {n} notes to the agent') : t('Send notes to the agent')}</button></footer>
+          {draft.notes.length > 0 && <footer><button className="primary" aria-label={busy ? t('Sending…') : tn(draft.notes.length, 'Send {n} note to the agent', 'Send {n} notes to the agent')} disabled={busy || blocked} onClick={() => void send()}>{busy ? t('Sending…') : tn(draft.notes.length, 'Send {n} note', 'Send {n} notes')}</button></footer>}
         </>}
-      </>}
     </aside>, doc.body)}
   </>;
 }

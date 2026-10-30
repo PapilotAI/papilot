@@ -4,7 +4,7 @@ import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
 import type { AgentId, AgentModel, Annotation, Author, FeedbackSummary, GitDiff, GitFile, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem, Viewer } from '../shared.ts';
-import { SkillChip, SkillMenu, SkillSuggestions, matchSkills, skillQuery } from './skills.tsx';
+import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, unsentReviewFeedback } from './composer.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -23,8 +23,7 @@ import { locale, t, tn, useLanguage } from './i18n.ts';
 import { notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
 import { Markdown } from './markdown.tsx';
 import logo from './logo.svg';
-import { ChipSelect } from './chip-select.tsx';
-import { EffortPicker, effortName } from './effort-picker.tsx';
+import { AgentConnectionNotice, AgentPicker, effortName } from './agent-picker.tsx';
 import { UsageSummary } from './usage.tsx';
 import type { OutlineItem, PdfHandle, Rect } from './pdf-view.tsx';
 // pdf.js is large, so the PDF view loads the first time it opens.
@@ -99,8 +98,8 @@ function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, aut
   }
   return <form className={'composer' + (large ? ' large' : '')} onSubmit={e => { e.preventDefault(); onSubmit(); }} onPointerDown={e => { if (e.target === e.currentTarget) { e.preventDefault(); input.current?.focus(); } }}>
     {open && <SkillMenu id={menuId} skills={matches} active={active} onActive={setActive} onPick={pick}/>}
-    {skill && <div className="composer-skill"><SkillChip skill={skill} onRemove={onSkill && !readOnly ? () => { onSkill(null); input.current?.focus(); } : undefined}/>{skill.description && <span className="composer-skill-description">{skill.description}</span>}</div>}
-    <textarea ref={input} rows={1} aria-label={label} maxLength={20000} placeholder={skill ? skill.hint || t('Add details, or send to run the skill') : placeholder} value={value} readOnly={readOnly} onChange={e => onChange(e.target.value)} onKeyDown={keyDown}
+    {skill && <div className="composer-skill"><SkillChip skill={skill} onRemove={onSkill && !readOnly ? () => { onSkill(null); input.current?.focus(); } : undefined}/></div>}
+    <textarea ref={input} rows={1} aria-label={label} maxLength={20000} placeholder={skill ? (skill.source !== 'builtin' && skill.hint) || t('Details (optional)') : placeholder} value={value} readOnly={readOnly} onChange={e => onChange(e.target.value)} onKeyDown={keyDown}
       {...(onSkill && skills?.length ? { 'aria-autocomplete': 'list' as const, 'aria-controls': open ? menuId : undefined, 'aria-activedescendant': open && matches.length ? `${menuId}-${Math.min(active, matches.length - 1)}` : undefined } : {})}/>
     <div className="composer-footer">{footer}{action}</div>
   </form>;
@@ -157,6 +156,8 @@ const SenderName = ({ sender }: { sender: { mine: boolean; name: string } }) => 
 function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[] }) {
   const sender = useSender(item.meta?.author);
   return <article className="message user notes-message" aria-label={senderLabel(sender, item.createdAt)}><SenderName sender={sender}/><div className="message-body" title={time(item.createdAt)}>
+    {item.meta?.skill && <SkillChip skill={item.meta.skill}/>}
+    {item.meta?.notes && item.text && <p className="notes-request">{item.text}</p>}
     <div className="sent-notes-head"><Icon name="notes" size={14}/>{tn(notes.length, 'Note on the PDF', '{n} notes on the PDF')}</div>
     <ol className="sent-notes">{notes.map((note, index) => <li key={index}>
       <span className="sent-note-where">{note.where}</span>
@@ -177,7 +178,7 @@ function FeedbackDetails({ feedback }: { feedback: FeedbackSummary }) {
 
 function UserMessage({ item, agent }: { item: TimelineItem; agent: string }) {
   const sender = useSender(item.meta?.author);
-  const notes = readNotesInstructions(item.text);
+  const notes = item.meta?.notes || readNotesInstructions(item.text);
   if (notes) return <NotesMessage item={item} notes={notes}/>;
   const { skill, feedback, sendsFeedback, build } = item.meta || {};
   // Papilot sent the agent a build its own edits broke.
@@ -225,7 +226,8 @@ function timelineEntries(items: TimelineItem[]) {
   return entries;
 }
 
-function Activity({ task, models, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing, openReview, feedback }: { task: Task; models: AgentModel[]; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode }) {
+function Activity({ task, models, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing, openReview, feedback, connection }: { task: Task; models: AgentModel[]; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
+  const input = useRef<HTMLTextAreaElement>(null);
   const { text: draft, sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
   const [skill, setSkill] = useState<Skill | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -248,11 +250,11 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
   const active = ACTIVE.includes(task.status), blocked = ['uncertain', 'deleting'].includes(task.status);
   const unsent = unsentReviewFeedback(task.review);
   const hint = task.status === 'deleting' ? t('This task is being deleted') : task.status === 'uncertain' ? t('Check task status before sending') : sendingSource === 'feedback' ? t('Sending feedback…') : sending ? t('Sending…')
-    : unsent ? tn(unsent, '{n} review update will be sent with this message', '{n} review updates will be sent with this message') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : touch() ? '' : skills.length ? t('Enter to send · / for skills') : t('Enter to send · Shift+Enter for a new line');
+    : unsent ? tn(unsent, '{n} review update will be sent with this message', '{n} review updates will be sent with this message') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : '';
   // Name the model the next turn uses: the chosen one, or the host's current default.
   const model = models.find(m => m.id === task.model) || (task.model ? undefined : models.find(m => m.isDefault));
   const modelName = model?.name || task.model || t('Default model');
-  return <section id="conversation-panel" className="activity-panel" aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading"><span className="panel-title">{t('Chat')}</span><span className="model-chip" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}>{task.agent && task.agent !== 'codex' ? `${agentName(task)} · ` : ''}{modelName}{task.effort ? ` · ${effortName(task.effort)}` : ''}</span></div>
+  return <section id="conversation-panel" className="activity-panel" aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading"><span className="panel-title">{t('Chat')}</span><span className="model-chip" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}>{task.agent && task.agent !== 'codex' ? `${agentName(task)} · ` : ''}{modelName}{task.effort ? ` · ${effortName(task.effort)}` : ''}{task.serviceTier && task.serviceTier !== 'default' ? ` · ${t('Fast')}` : ''}</span></div>
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); } }}><div className="thread">
       {loading && <p className="muted" role="status">{t('Loading conversation…')}</p>}
       {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary compact" onClick={retry}>{t('Retry conversation')}</button></div>}
@@ -265,8 +267,9 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
       {task.error && <div className="task-error"><Icon name="alert" size={16}/><div><strong>{t('This step needs attention')}</strong><p>{task.error}</p></div></div>}
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
     <div className="composer-wrap">
-      <Composer label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? t('Queue instructions for the next turn…') : t('Ask for another revision…')} skills={skills} skill={skill} onSkill={setSkill}
-        footer={<span className="composer-hint">{hint}</span>}
+      {connection}
+      <Composer inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? t('Queue instructions for the next turn…') : t('Ask for another revision…')} skills={skills} skill={skill} onSkill={setSkill}
+        footer={<div className="composer-options"><SkillPicker skills={skills} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/>{hint && <span className="composer-hint">{hint}</span>}</div>}
         action={<div className="composer-actions">
           {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
           {(!active || draft.trim() || skill || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={(!draft.trim() && !skill) || sending || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
@@ -451,23 +454,25 @@ function GitPanel({ projectId, git, onStatus, writer }: { projectId: string; git
 
 function noteWhere(note: Annotation) { return t('Page {n}', { n: note.page + 1 }) + (note.source ? ` · ${note.source.file}:${note.source.lines[0]}${note.source.lines[1] !== note.source.lines[0] ? `–${note.source.lines[1]}` : ''}` : ''); }
 
-interface NoteActions { add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>; remove: (note: Annotation) => void; send: () => void; sending: boolean; options: React.ReactNode }
+interface NoteActions { add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>; remove: (note: Annotation) => void; sending: boolean }
 
-function NotesPanel({ notes, currentKey, active, actions, onShow }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void }) {
+function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void; onAnnotate: (region: boolean) => void }) {
   const list = useRef<HTMLOListElement>(null);
   useEffect(() => { if (active) list.current?.querySelector(`[data-note="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active]);
   return <section className="notes-panel" aria-label={t('PDF notes')}>
-    {notes.length ? <ol ref={list} className="note-list">{notes.map((note, index) => <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
-      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} onClick={() => actions.remove(note)}><Icon name="close" size={14}/></button></div>
+    <div className="draft-notes-head">
+      {notes.length > 0 && <span>{tn(notes.length, '{n} note attached', '{n} notes attached')}</span>}
+      <div className="note-entry-actions">
+        <button type="button" className="button ghost compact" disabled={!currentKey || actions.sending} onClick={() => onAnnotate(false)}><Icon name="textSelect" size={14}/>{t('Text note')}</button>
+        <button type="button" className="button ghost compact" disabled={!currentKey || actions.sending} onClick={() => onAnnotate(true)}><Icon name="region" size={14}/>{t('Region note')}</button>
+      </div>
+    </div>
+    {notes.length > 0 && <ol ref={list} className="note-list">{notes.map((note, index) => <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
+      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={actions.sending} onClick={() => actions.remove(note)}><Icon name="close" size={14}/></button></div>
       {note.source?.excerpt ? <pre className="note-source" title={t('{file}, the LaTeX that produced the marked region', { file: note.source.file })}>{note.source.excerpt}</pre> : note.quote && <blockquote>{note.quote}</blockquote>}
       <p>{note.comment}</p>
       {note.key !== currentKey && <small className="muted">{t('Marked on an earlier version of the PDF.')}</small>}
-    </li>)}</ol>
-      : <p className="muted notes-empty">{t('Select text in the PDF and choose Add note, or use Mark region for a figure or equation. All notes go to the agent as one task.')}</p>}
-    <div className="notes-send">
-      <div className="composer-options">{actions.options}</div>
-      <button type="button" className="button primary" disabled={!notes.length || actions.sending} onClick={actions.send}>{actions.sending ? t('Sending…') : notes.length ? tn(notes.length, 'Send {n} note to the agent', 'Send {n} notes to the agent') : t('Send notes to the agent')}</button>
-    </div>
+    </li>)}</ol>}
   </section>;
 }
 
@@ -481,8 +486,8 @@ function ModeSwitch({ mode, onMode }: { mode: PdfMode; onMode: (mode: PdfMode) =
   </div>;
 }
 
-type ManuscriptPanel = 'pdf' | 'contents' | 'notes' | 'git';
-function ManuscriptView({ project, data, error, view, setView, region, setRegion, active, setActive, actions, onGit, writer, reportError }: { onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
+type ManuscriptPanel = 'pdf' | 'task' | 'contents' | 'git';
+function ManuscriptView({ project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, onGit, writer, reportError }: { newTask: (notes: React.ReactNode) => React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
   const build = data?.build, notes = data?.annotations || [], git = data?.git;
   const pdf = useRef<PdfHandle>(null);
   const [mode, setMode] = useState<PdfMode>('pdf'), [committing, setCommitting] = useState(false);
@@ -495,7 +500,7 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
   const [outline, setOutline] = useState<OutlineItem[]>([]), [section, setSection] = useState(-1);
   const numbered = notes.map((note, index) => ({ note, number: index + 1 }));
   const phone = () => window.matchMedia('(max-width: 680px)').matches;
-  const side = view === 'pdf' ? 'notes' : view;
+  const side = view === 'pdf' ? 'task' : view;
   function goTo(item: OutlineItem) {
     if (phone()) setView('pdf');
     requestAnimationFrame(() => pdf.current?.goTo(item));
@@ -504,6 +509,12 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
     setActive(note.id);
     if (phone()) setView('pdf');
     requestAnimationFrame(() => pdf.current?.goToNote(note));
+  }
+  function annotate(region: boolean) {
+    setMode('pdf'); setRegion(region);
+    if (phone()) setView('pdf');
+    if (!phone() && mode === 'pdf') pdf.current?.focus();
+    else requestAnimationFrame(() => pdf.current?.focus());
   }
   return <div className={'manuscript show-' + view}>
     {mode === 'changes' ? <section className="manuscript-pages" aria-label={t('Uncommitted changes in the PDF')}>
@@ -514,22 +525,22 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
       {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>{t('The manuscript did not compile.')}</strong><pre>{build.error}</pre></div>}
       {build?.status === 'building' && build.key && <div className="manuscript-note">{t('Compiling the latest changes…')}</div>}
       {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion}
-          onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('notes'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher}/></Suspense>
-        : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2><p>{t('The first build of a paper can take a minute.')}</p></div>}
+          onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('task'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher}/></Suspense>
+        : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
     </section>}
-    <aside className="manuscript-side" aria-label={t('Contents, Notes and Git')}>
-      <div className="side-tabs" role="tablist" aria-label={t('PDF panels')}>
+    <aside className="manuscript-side" aria-label={t('Manuscript panels')}>
+      <div className="side-tabs" role="tablist" aria-label={t('Manuscript panels')}>
+        <button role="tab" aria-selected={side === 'task'} onClick={() => setView('task')}>{t('New task')}{notes.length > 0 && <span className="count" aria-hidden="true">{notes.length}</span>}</button>
         <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}>{t('Contents')}</button>
-        <button role="tab" aria-selected={side === 'notes'} onClick={() => setView('notes')}>{t('Notes')}{notes.length > 0 && <span className="count">{notes.length}</span>}</button>
         <button role="tab" aria-selected={side === 'git'} onClick={() => setView('git')}>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
       </div>
-      {side === 'contents' ? <nav className="contents-panel" aria-label={t('PDF contents')}>
+      {side === 'task' ? newTask(<NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/>) : side === 'contents' ? <nav className="contents-panel" aria-label={t('PDF contents')}>
         {outline.length ? <ol>{outline.map((item, index) => <li key={index}>
           <button type="button" aria-current={index === section ? 'location' : undefined} style={{ paddingLeft: 12 + Math.min(item.level, 4) * 14 }} onClick={() => goTo(item)}>
             <span>{item.title}</span><span className="contents-page">{item.page}</span>
           </button>
         </li>)}</ol> : <p className="muted">{build?.key ? t('This PDF has no bookmarks.') : t('Contents will appear when the PDF is ready.')}</p>}
-      </nav> : side === 'git' ? <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit} writer={writer}/> : <NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show}/>}
+      </nav> : <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit} writer={writer}/>}
     </aside>
     {committing && <CommitDialog branch={git?.branch ?? null} files={staged} staged remote={Boolean(git?.remote)} agent={AGENT_LABELS[writer.agent]} onClose={() => setCommitting(false)}
       generate={fresh => api<{ message: string }>(`/projects/${project.id}/git/message`, { paths: staged, staged: true, agent: writer.agent, fresh }, undefined, 130000).then(result => result.message)}
@@ -575,7 +586,8 @@ function App() {
   const [agentPrefs, setAgentPrefs] = useState(() => Object.fromEntries(AGENT_IDS.map(id => [id, {
     model: browserStorage.getItem(`papilot:model:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:model') : null) ?? '',
     effort: browserStorage.getItem(`papilot:effort:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:effort') : null) ?? '',
-  }])) as Record<AgentId, { model: string; effort: string }>);
+    fast: browserStorage.getItem(`papilot:fast:${id}`) === 'true',
+  }])) as Record<AgentId, { model: string; effort: string; fast: boolean }>);
   const [creating, setCreating] = useState(false), [createError, setCreateError] = useState('');
   const [busy, setBusy] = useState(false), [sidebar, setSidebar] = useState(false);
   const actionRequests = useRef(new Set<string>());
@@ -602,12 +614,9 @@ function App() {
     document.querySelector<HTMLElement>('.breadcrumb .project-name')?.focus();
     refocusPaper.current = false;
   }, [renamingPaper]);
-  const [page, setPage] = useState<'home' | 'manuscript'>('home');
-  const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'notes');
+  const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'task');
   const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
-  const [sendingNotes, setSendingNotes] = useState(false);
-  const notesTaskId = useRef(uuid());
   const [manuscript, setManuscript] = useState<{ projectId: string; data: Manuscript | null; error: string }>({ projectId: '', data: null, error: '' });
   const [git, setGit] = useState<{ projectId: string; status: GitStatus | null }>({ projectId: '', status: null });
   const building = useRef(false);
@@ -735,11 +744,6 @@ function App() {
   const tasks = state?.tasks.filter(t => !project || t.projectId === project.id) || [];
   const running = state?.tasks.filter(t => ['running', 'waiting_input', 'building'].includes(t.status)).length || 0;
   function openProject() { modalOpener.current = document.activeElement as HTMLElement | null; setError(''); setForm({ path: '', name: '' }); setModal('project'); }
-  function newTask() {
-    setSelected(''); setPage('home'); setSidebar(false);
-    if (!state?.projects.length) openProject();
-    else requestAnimationFrame(() => newTaskInput.current?.focus());
-  }
   async function saveProject(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError('');
     try { const p = await api('/projects', { path: form.path, name: form.name }); setProjectId(p.id); setSelected(''); setModal(null); setSidebar(false); await refresh(true); }
@@ -752,25 +756,27 @@ function App() {
   const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;
   const modelInfo = models.find(m => m.id === chosenModel) || models.find(m => m.isDefault);
-  const agent = { agent: agentChoice, model: chosenModel, effort: modelInfo && !modelInfo.efforts.includes(pref.effort) ? '' : pref.effort };
-  const remember = (change: Partial<{ model: string; effort: string }>) => {
+  const agent = { agent: agentChoice, model: chosenModel, effort: modelInfo && !modelInfo.efforts.includes(pref.effort) ? '' : pref.effort, serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
+  const remember = (change: Partial<{ model: string; effort: string; fast: boolean }>) => {
     setAgentPrefs(current => ({ ...current, [agentChoice]: { ...current[agentChoice], ...change } }));
-    for (const [key, value] of Object.entries(change)) browserStorage.setItem(`papilot:${key}:${agentChoice}`, value);
+    for (const [key, value] of Object.entries(change)) browserStorage.setItem(`papilot:${key}:${agentChoice}`, String(value));
   };
-  const agentOptions = (disabled: boolean) => <>
-    <ChipSelect label={t('Agent')} disabled={disabled} value={agentChoice} onChange={value => { setAgentChoice(value as AgentId); browserStorage.setItem('papilot:agent', value); }} options={AGENT_IDS.map(id => ({ value: id, label: AGENT_LABELS[id] + (unavailable(id) ? t(' · unavailable') : '') }))}/>
-    <ChipSelect label={t('Model')} disabled={disabled} value={agent.model} onChange={value => remember({ model: value })} options={[{ value: '', label: t('Default model') }, ...models.map(m => ({ value: m.id, label: m.name }))]}/>
-    {modelInfo && <EffortPicker efforts={modelInfo.efforts} value={agent.effort} fallback={modelInfo.defaultEffort} disabled={disabled} onChange={value => remember({ effort: value })}/>}
-  </>;
+  const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast} models={models}
+    agents={AGENT_IDS.map(id => ({ value: id, label: AGENT_LABELS[id], unavailable: unavailable(id) }))}
+    runtime={runtimes[agentChoice]} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}
+    onAgent={value => { setAgentChoice(value); browserStorage.setItem('papilot:agent', value); }} onChange={remember}/>;
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
-    if ((!text && !skill) || creating || !target) return;
+    if ((!text && !skill && !notes.length) || creating || !target) return;
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
-      const title = skill ? (text ? `${skill.name}: ${taskTitle(text)}` : skill.name).slice(0, 120) : taskTitle(text);
-      const t = await api('/tasks', { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, id: formTaskId.current });
-      formTaskId.current = uuid(); setNewDraft(''); setNewSkill(null); setSelected(t.id); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
+      const title = skill ? (text ? `${skillName(skill)}: ${taskTitle(text)}` : skillName(skill)).slice(0, 120) : text ? taskTitle(text) : notes.length === 1 ? taskTitle(notes[0].comment) : t('Address {n} PDF notes', { n: notes.length });
+      const created = await api<Task>('/tasks', { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), ...(notes.length ? { annotations: notes.map(note => note.id) } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, serviceTier: agent.serviceTier, id: formTaskId.current });
+      formTaskId.current = uuid(); setNewDraft(''); setNewSkill(null); setSelected(created.id); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
+      // Reload pending notes from the server: a retry may have returned an
+      // earlier successful task, while newer notes still belong to the draft.
+      if (notes.length) void loadManuscript(target);
       await refresh(true);
     } catch (e) { setCreateError(e instanceof Error ? e.message : String(e)); } finally { setCreating(false); }
   }
@@ -790,7 +796,7 @@ function App() {
     if (selectedRef.current === id) setSelected('');
     setState(previous => previous ? { ...previous, tasks: previous.tasks.filter(t => t.id !== id), requests: previous.requests.filter(r => r.taskId !== id) } : previous);
     void refresh(true);
-    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(sidebarShown ? '.sidebar .new-task' : '.topbar .sidebar-toggle')?.focus());
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(sidebarShown ? '.sidebar .manuscript-link' : '.topbar .sidebar-toggle')?.focus());
   }
   function hideSidebar() {
     if (narrow) { setSidebar(false); return; }
@@ -831,7 +837,7 @@ function App() {
     if (next === null) return;
     event.preventDefault(); setChatWidth(Math.min(Math.max(next, 300), max));
   }
-  const manuscriptOpen = !task && page === 'manuscript' && Boolean(project);
+  const manuscriptOpen = !task && Boolean(project);
   const loadManuscript = useCallback(async (projectId: string, rebuild = false) => {
     try {
       const data = await api<Manuscript>(`/projects/${projectId}/manuscript`, rebuild ? {} : undefined);
@@ -880,28 +886,16 @@ function App() {
       if (!project || !manuscriptData.data?.build.key) throw new Error(t('Wait for the PDF to compile.'));
       const note = await api<Annotation>(`/projects/${project.id}/annotations`, { key: manuscriptData.data.build.key, page, rect, ...(rects.length ? { rects, quote } : {}), comment });
       withNotes(list => [...list, note]); setActiveNote(note.id); setRegion(false);
-      if (!mobile) setManuscriptView('notes');
+      if (!mobile) setManuscriptView('task');
     },
     remove(note) {
       if (!project) return;
       withNotes(list => list.filter(item => item.id !== note.id));
       void api(`/projects/${project.id}/annotations/${note.id}/delete`, {}).catch(e => { reportError(e); void loadManuscript(project.id); });
     },
-    // The task ID is kept until sending succeeds, so a retry cannot create a second task.
-    async send() {
-      if (!project || sendingNotes) return;
-      setSendingNotes(true);
-      try {
-        const created = await api<Task>(`/projects/${project.id}/annotations/send`, { id: notesTaskId.current, agent: agent.agent, model: agent.model, effort: agent.effort });
-        notesTaskId.current = uuid(); withNotes(() => []); setSelected(created.id); setMobileTab('conversation'); setLayout('split');
-        await refresh(true);
-      } catch (e) { reportError(e); } finally { setSendingNotes(false); }
-    },
-    sending: sendingNotes, options: agentOptions(sendingNotes),
+    sending: creating,
   };
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
-  // The banner follows the agent in view: the task's, or the one chosen for a new task.
-  const bannerAgent: AgentId = task ? task.agent || 'codex' : agentChoice, bannerRuntime = runtimes[bannerAgent];
   useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, project?.name]);
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
@@ -930,9 +924,25 @@ function App() {
     </form>
     : <button className="project-name" aria-label={t('Rename paper: {name}', { name: project.name })} title={t('{name} · Click to rename', { name: project.name })} onClick={() => setRenamingPaper(true)}>{project.name}</button>;
 
+  const newTaskPanel = (attachments: React.ReactNode) => <section className={'new-task-panel' + (notes.length ? ' has-notes' : '')} aria-label={t('New task')}>
+    <div className="new-task-start">
+    {!notes.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
+    {attachments}
+    <Composer autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={notes.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
+      skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
+      footer={<div className="composer-options">
+        <SkillPicker skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
+        {agentOptions(creating)}
+      </div>}
+      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || (!newDraft.trim() && !newSkill && !notes.length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+    {createError && <p className="inline-error" role="alert">{createError}</p>}
+    {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
+    </div>
+  </section>;
+
   return <ViewerContext.Provider value={viewer || null}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
     <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label={t('Papers and tasks')}>
-      <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); setPage('home'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a><button className="icon-button" aria-label={t('Hide task list')} title={t('Hide task list')} onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
+      <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a><button className="icon-button" aria-label={t('Hide task list')} title={t('Hide task list')} onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
       <div className="sidebar-section"><span>{t('Paper')}</span></div>
       <div className="sidebar-actions">
         {state?.projects.length && project ? <ActionMenu label={t('Paper: {name}', { name: project.name })} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
@@ -940,8 +950,7 @@ function App() {
           ...(owner ? [{ label: t('Add paper…'), icon: 'plus', divider: true, select: () => openProject() }] : []),
         ]}><span className="project-switcher-name">{project.name}</span><Icon name="updown" size={14}/></ActionMenu>
           : owner && <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button>}
-        {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><Icon name="paper" size={16}/><span className="nav-label">PDF</span>{gitSummary(projectGit) && <span className="nav-meta" title={t('Git status of the manuscript')}>{gitSummary(projectGit)}</span>}</button>}
-        <button className={'nav-link new-task' + (!task && !manuscriptOpen && project ? ' active' : '')} aria-current={!task && !manuscriptOpen && project ? 'page' : undefined} disabled={!state} onClick={() => newTask()}><Icon name="compose" size={16}/><span className="nav-label">{t('New task')}</span></button>
+        {project && <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><Icon name="pdf" size={16}/><span className="nav-label">{t('Manuscript')}</span>{gitSummary(projectGit) && <span className="nav-meta" title={t('Git status of the manuscript')}>{gitSummary(projectGit)}</span>}</button>}
       </div>
       <div className="sidebar-section"><span>{t('Tasks')}</span>{tasks.length > 0 && <span className="count">{tasks.length}</span>}</div>
       <nav className="task-list" aria-label={t('Task list')}>{tasks.length ? [...tasks].reverse().map(row => <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '')}>
@@ -956,11 +965,9 @@ function App() {
           ...(row.status === 'uncertain' ? [{ label: t('Check status'), icon: 'refresh', disabled: pendingActions.has('/tasks/' + row.id), select: () => void action('/tasks/' + row.id + '/reconcile') }] : []),
           { label: row.status === 'deleting' ? t('Retry deletion…') : t('Delete task…'), icon: 'trash', danger: true, select: () => setDeleteTarget(row) },
         ]}/>
-      </div>) : <div className="task-list-empty">{state?.projects.length ? t('No tasks yet. Start one with New task.') : t('Add a paper to get started.')}</div>}</nav>
+      </div>) : <div className="task-list-empty">{t('No tasks yet')}</div>}</nav>
       <div className="sidebar-preferences">
-        {owner && <button className="nav-link settings-link" aria-haspopup="dialog" onClick={() => setPeopleOpen(true)}><Icon name="people" size={16}/><span className="nav-label">{t('People')}</span></button>}
         <button className="nav-link settings-link" aria-haspopup="dialog" onClick={() => setSettings(true)}><Icon name="settings" size={16}/><span className="nav-label">{t('Settings')}</span></button>
-        {viewer?.listener === 'account' && <button className="nav-link settings-link" onClick={() => void signOut()}><Icon name="signOut" size={16}/><span className="nav-label">{t('Sign out')}</span><span className="nav-meta">{viewer.name}</span></button>}
       </div>
       {/* A healthy, idle host needs no status line; the connection banner also covers a lost host. */}
       {state && (!online || running > 0) && <div className="sidebar-footer"><div className="host-status"><span className={'connection-dot ' + (online ? 'connected' : '')}/><span>{t('Host')}</span><span className="host-state">{online ? t('Connected') : t('Reconnecting')}</span></div>{running > 0 && <div className="host-caption">{tn(running, '{n} active task', '{n} active tasks')}</div>}</div>}
@@ -969,11 +976,11 @@ function App() {
     <main className="main" inert={narrow && sidebar}><header className="topbar">
       {(narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/></button>}
       <div className="breadcrumb">{!mobile && <>{paperName}{(task || manuscriptOpen) && <span className="slash">/</span>}</>}{task ? <div className="task-identity"><h1 title={task.title}>{task.title}</h1><Status task={task}/></div>
-        : manuscriptOpen ? <div className="task-identity"><h1>PDF</h1><span className={'status ' + (manuscriptData.data?.build.status === 'failed' ? 'failed' : manuscriptData.data?.build.status === 'ready' ? 'idle' : 'building')}><i/>{!manuscriptData.data ? t('Loading') : manuscriptData.data.build.status === 'building' ? t('Compiling') : manuscriptData.data.build.status === 'failed' ? t('Build failed') : t('Compiled {time}', { time: agoText(manuscriptData.data.build.builtAt || Date.now()) })}</span></div>
+        : manuscriptOpen ? <div className="task-identity"><h1>{t('Manuscript')}</h1><span className={'status ' + (manuscriptData.data?.build.status === 'failed' ? 'failed' : manuscriptData.data?.build.status === 'ready' ? 'idle' : 'building')}><i/>{!manuscriptData.data ? t('Loading') : manuscriptData.data.build.status === 'building' ? t('Compiling') : manuscriptData.data.build.status === 'failed' ? t('Build failed') : t('Compiled {time}', { time: agoText(manuscriptData.data.build.builtAt || Date.now()) })}</span></div>
         : mobile && paperName}</div>
       {manuscriptOpen && project && <>
         <div className="task-state-actions">
-          {mobile ? <ActionMenu label={t('PDF options')} actions={[
+          {mobile ? <ActionMenu label={t('Manuscript options')} actions={[
             { label: t('Recompile'), icon: 'refresh', select: () => void loadManuscript(project.id, true) },
             ...(manuscriptData.data?.build.key ? [{ label: t('Open the PDF file'), icon: 'external', href: `/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}` }] : []),
           ]}/> : <>
@@ -981,10 +988,10 @@ function App() {
             {manuscriptData.data?.build.key && <a className="button ghost compact" href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer" title={t('Open the PDF file in a new tab')}><Icon name="external" size={14}/>{t('Open PDF')}</a>}
           </>}
         </div>
-        {mobile && <div className="view-selector" role="group" aria-label={t('PDF view')}>
-          <button aria-label="PDF" aria-pressed={manuscriptView === 'pdf'} onClick={() => setManuscriptView('pdf')}><Icon name="paper" size={16}/><span>PDF</span></button>
+        {mobile && <div className="view-selector" role="group" aria-label={t('Manuscript view')}>
+          <button aria-label="PDF" aria-pressed={manuscriptView === 'pdf'} onClick={() => setManuscriptView('pdf')}><Icon name="pdf" size={16}/><span>PDF</span></button>
+          <button aria-label={t('New task')} aria-pressed={manuscriptView === 'task'} onClick={() => { setManuscriptView('task'); setRegion(false); }}><Icon name="compose" size={16}/><span>{t('New task')}</span>{notes.length > 0 && <b className="view-count" aria-hidden="true">{notes.length}</b>}</button>
           <button aria-label={t('Contents')} aria-pressed={manuscriptView === 'contents'} onClick={() => { setManuscriptView('contents'); setRegion(false); }}><Icon name="list" size={16}/><span>{t('Contents')}</span></button>
-          <button aria-label={notes.length ? t('Notes, {n}', { n: notes.length }) : t('Notes')} aria-pressed={manuscriptView === 'notes'} onClick={() => { setManuscriptView('notes'); setRegion(false); }}><Icon name="notes" size={16}/><span>{t('Notes')}</span>{notes.length ? <b className="view-count" aria-hidden="true">{notes.length}</b> : null}</button>
           <button aria-label={projectGit?.files?.length ? t('Git, {n} changed', { n: projectGit.files.length }) : 'Git'} aria-pressed={manuscriptView === 'git'} onClick={() => { setManuscriptView('git'); setRegion(false); }}><Icon name="diff" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
         </div>}
       </>}
@@ -1003,35 +1010,20 @@ function App() {
       </>}
     </header>
       {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>{t('Connection lost. Showing the last update; your draft is kept.')}</span><button onClick={() => void refresh(true)}>{t('Retry connection')}</button></div>}
-      {state && bannerRuntime && (!bannerRuntime.connected || !bannerRuntime.authenticated) && <div className="runtime-banner"><Icon name="alert" size={15}/><span>{bannerRuntime.error || t('Connecting to {agent}…', { agent: AGENT_LABELS[bannerAgent] })}</span><button disabled={pendingActions.has('/reconnect')} onClick={() => void action('/reconnect')}>{pendingActions.has('/reconnect') ? t('Connecting…') : t('Reconnect')}</button></div>}
       {task ? <div className={`task-grid layout-${layout} show-${mobileTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
           {!mobile && layout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label={t('Resize chat panel')} aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title={t('Drag to resize · Double-click to reset')} onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
           <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
           {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('The latest review build failed.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
-          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} tools={reviewTools} completion={commitStep} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); if (selectedRef.current === task.id) { setMobileTab('conversation'); setLayout('split'); } }}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? t('Building PDF review…') : t('No review yet')}</h2><p>{task.status === 'building' ? t('The review will appear when the build finishes.') : t('PDF changes will appear here after {agent} finishes editing.', { agent: agentName(task) })}</p>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Build review')}</button>}</div>}
+          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} tools={reviewTools} completion={commitStep} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); }}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? t('Building PDF review…') : t('No review yet')}</h2>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Build review')}</button>}</div>}
           {!chatOnly && reviewFeedback(false)}
-        </section><Activity key={task.id} task={task} models={runtimes[task.agent || 'codex']?.models || []} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{ready.length > 0 && <div className="review-feedback card commit-card"><span><Icon name="commit" size={15}/>{t('Accepted changes are not committed yet')}</span><button className="button secondary compact" onClick={() => setCommitFor(task.id)}>{t('Commit…')}</button></div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} onGit={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} reportError={reportError}/>
+        </section><Activity key={task.id} task={task} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} models={runtimes[task.agent || 'codex']?.models || []} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{ready.length > 0 && <div className="review-feedback card commit-card"><span><Icon name="commit" size={15}/>{t('Accepted changes are not committed yet')}</span><button className="button secondary compact" onClick={() => setCommitFor(task.id)}>{t('Commit…')}</button></div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
+      : manuscriptOpen && project ? <ManuscriptView project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} onGit={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} reportError={reportError}/>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>{t('Opening your workspace')}</h1><p className="home-copy" role="status">{connectionError || t('Connecting to your papers and tasks…')}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>{t('Retry connection')}</button>}</div></div>
-      : project ? <div className="home"><div className="home-inner compose">
-          <img className="home-logo" src={logo} alt=""/>
-          <h1>{t('What are we revising next?')}</h1>
-          <Composer large autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={projectSkills.length ? t('Describe the revision, or type / for a skill…') : t('Describe the revision, what to preserve, and how to judge the result…')}
-            skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
-            footer={<div className="composer-options">
-              {agentOptions(creating)}
-            </div>}
-            action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || (!newDraft.trim() && !newSkill)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
-          <SkillSuggestions skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
-          {createError && <p className="inline-error home-error" role="alert">{createError}</p>}
-          {unavailable(agentChoice) && <p className="inline-error home-error" role="status">{t('{agent} is unavailable on this host: {error}', { agent: AGENT_LABELS[agentChoice], error: runtimes[agentChoice]?.error ?? '' })}</p>}
-          {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
-        </div></div>
       : !owner ? <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('No papers yet')}</h1><p className="home-copy">{t('No papers have been shared with you yet. Papers appear here as soon as {name} shares them.', { name: viewer?.owner || '' })}</p></div></div>
-      : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><p className="home-copy">{t('Connect a LaTeX Git repository on this host. An agent edits it in isolated worktrees, and you review every change as a PDF diff.')}</p><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button></div></div>}
+      : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button></div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
-    {settings && <SettingsDialog theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)}/>}
+    {settings && <SettingsDialog theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} onPeople={owner ? () => setPeopleOpen(true) : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name}/>}
     {peopleOpen && <PeopleDialog api={api} projects={state?.projects || []} ago={agoText} onClose={() => setPeopleOpen(false)}/>}
     {task && commitFor === task.id && <CommitDialog branch={projectGit?.branch ?? null} files={ready} remote={Boolean(projectGit?.remote)} agent={agentName(task)} onClose={() => setCommitFor('')}
       generate={fresh => api<{ message: string }>(`/projects/${task.projectId}/git/message`, { paths: ready, agent: task.agent || 'codex', fresh }, undefined, 130000).then(result => result.message)}
@@ -1044,7 +1036,7 @@ function App() {
         void refresh(true);
       }}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
-    {modal && <dialog ref={modalRef} onKeyDown={keepDialogFocus} className="modal-backdrop" aria-labelledby="modal-title" onCancel={e => { e.preventDefault(); if (!busy) setModal(null); }} onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section className="modal"><button className="modal-close icon-button" aria-label={t('Close')} disabled={busy} onClick={() => setModal(null)}><Icon name="close"/></button><h2 id="modal-title">{t('Add a paper')}</h2><p className="modal-description">{t('Choose an existing LaTeX Git repository on this host. It needs at least one commit and must compile with latexmk.')}</p><form onSubmit={e => void saveProject(e)}>
+    {modal && <dialog ref={modalRef} onKeyDown={keepDialogFocus} className="modal-backdrop" aria-labelledby="modal-title" onCancel={e => { e.preventDefault(); if (!busy) setModal(null); }} onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section className="modal"><button className="modal-close icon-button" aria-label={t('Close')} disabled={busy} onClick={() => setModal(null)}><Icon name="close"/></button><h2 id="modal-title">{t('Add a paper')}</h2><p className="modal-description">{t('LaTeX Git repository · Requires a commit and latexmk')}</p><form onSubmit={e => void saveProject(e)}>
       <label>{t('Repository path')}<input required maxLength={4000} value={form.path} onChange={e => setForm({ ...form, path: e.target.value })} placeholder={t('/Users/you/papers/my-paper')} autoComplete="off" spellCheck={false}/></label>
       <label>{t('Display name (optional)')}<input maxLength={120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={t('My research paper')}/></label>
       {error && <p className="inline-error" role="alert">{error}</p>}

@@ -50,8 +50,14 @@ try {
     ids.push((await response.json()).id);
   }
   await owner.reload();
-  await owner.getByRole('button', { name: 'People' }).click();
+  await owner.getByRole('button', { name: 'Settings', exact: true }).click();
+  await owner.getByRole('button', { name: 'People', exact: true }).click();
   const people = owner.getByRole('dialog', { name: 'People' });
+  await expect(owner.locator('.sidebar-preferences button')).toHaveCount(1);
+  await people.getByRole('button', { name: 'Close', exact: true }).click();
+  const ownerSettings = owner.getByRole('dialog', { name: 'Settings', exact: true });
+  await expect(ownerSettings.getByRole('button', { name: 'People', exact: true })).toBeFocused();
+  await ownerSettings.getByRole('button', { name: 'People', exact: true }).click();
   await expect(people.getByText('Invite only people you would trust with access to it.', { exact: false })).toBeVisible();
   await people.getByLabel('Invite someone').fill('Ada');
   await people.getByRole('group', { name: 'Papers they can open' }).getByLabel('Thesis').check();
@@ -85,7 +91,10 @@ try {
   await expect(ada.getByRole('menuitemradio')).toHaveCount(1);
   await expect(ada.getByText('Add paper…')).toHaveCount(0);
   await ada.keyboard.press('Escape');
+  await expect(ada.locator('.sidebar-preferences button')).toHaveCount(1);
+  await ada.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(ada.getByRole('button', { name: 'People' })).toHaveCount(0);
+  await ada.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
   const hidden = await ada.evaluate(async id => (await fetch(`/api/projects/${id}/git`)).status, ids[1]);
   assert.equal(hidden, 400, 'another paper answers like a missing one');
   const added = await ada.evaluate(async () => (await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status);
@@ -104,6 +113,7 @@ try {
   pass('Messages show who wrote them: "You" for Ada, "Ada" for the owner');
 
   // Signing out clears the session; the passkey signs back in.
+  await ada.getByRole('button', { name: 'Settings', exact: true }).click();
   await ada.getByRole('button', { name: /Sign out/ }).click();
   await expect(ada.getByRole('heading', { name: 'Sign in to Papilot' })).toBeVisible();
   assert.equal((await adaContext.cookies()).filter(c => c.name === '__Host-papilot-session').length, 0);
@@ -112,7 +122,8 @@ try {
   pass('Sign out, then sign in again with the passkey');
 
   // The owner unshares Thesis; Ada's open tab follows, then removal signs her out.
-  await owner.getByRole('button', { name: 'People' }).click();
+  await owner.getByRole('button', { name: 'Settings', exact: true }).click();
+  await owner.getByRole('button', { name: 'People', exact: true }).click();
   await people.getByRole('group', { name: 'Papers Ada can open' }).getByLabel('Thesis').uncheck();
   await expect(ada.getByRole('heading', { name: 'No papers yet' })).toBeVisible({ timeout: 15000 });
   await people.getByRole('button', { name: 'Remove…' }).click();

@@ -7,7 +7,7 @@ export interface ReviewSummary { state: string; round: number | null; counts: Re
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface Task {
   id: string; projectId: string; name: string; title: string; instructions: string;
-  worktree: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null;
+  worktree: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
   error: string | null; review: ReviewSummary | null;
   pauseVersion?: number; pendingRunId?: string | null;
@@ -20,7 +20,8 @@ export interface TimelineItem { id: string; taskId: string; type: string; text: 
 // A user message can run a skill or carry review feedback; the chat shows
 // those as what they are rather than as the prompt the agent receives.
 // Papilot itself sends the agent a build its own edits broke.
-export interface MessageMeta { skill?: { id: string; name: string }; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
+export interface NoteSummary { where: string; quote: string; comment: string }
+export interface MessageMeta { skill?: { id: string; name: string }; notes?: NoteSummary[]; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
 // Who wrote a message or note; none means the owner.
 export interface Author { id: string; name: string }
 // A failed review build as the engine reports it; log is the compiler log's path.
@@ -29,7 +30,7 @@ export interface FeedbackSummary { round: number | null; accepted: number; rejec
 export interface Skill { id: string; name: string; description: string; hint: string; source: 'builtin' | 'user' | 'paper' }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
 export type AgentId = 'codex' | 'claude' | 'antigravity';
-export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort: string | null }
+export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort: string | null; fastMode?: { serviceTier: string; description: string } }
 // The account's included usage: rolling windows (minutes long, reset time in ms) and credits.
 export interface UsageWindow { usedPercent: number; minutes: number | null; resetsAt: number | null }
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }

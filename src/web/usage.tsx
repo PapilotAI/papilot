@@ -1,5 +1,6 @@
 import type { Usage, UsageWindow } from '../shared.ts';
 import { locale, t } from './i18n.ts';
+import { Icon } from './icons.tsx';
 
 const plans: Record<string, string> = { pro: 'Pro', plus: 'Plus', team: 'Team', business: 'Business', enterprise: 'Enterprise', edu: 'Edu', free: 'Free', go: 'Go' };
 
@@ -39,9 +40,24 @@ function Limit({ window, reached }: { window: UsageWindow; reached: boolean }) {
 // The agent account's included usage, as the agent reports it for this host.
 export function UsageSummary({ usage, agent = 'Codex' }: { usage: Usage; agent?: string }) {
   const credits = usage.credits;
+  const primary = usage.windows.reduce<UsageWindow | undefined>((highest, window) => !highest || window.usedPercent > highest.usedPercent ? window : highest, undefined);
+  const used = primary ? Math.round(primary.usedPercent) : 0;
+  const tone = usage.reached || used >= 90 ? 'critical' : used >= 75 ? 'warning' : '';
+  const balance = credits ? credits.unlimited ? t('Unlimited credits') : credits.balance !== null ? t('{n} credits', { n: Math.floor(credits.balance).toLocaleString(locale()) }) : t('Credits available') : '';
   return <section className="usage" aria-label={t('{agent} usage', { agent })}>
-    <span className="usage-account">{agent}{usage.plan && <span className="usage-plan">{plans[usage.plan] || usage.plan}</span>}</span>
-    {usage.windows.map((window, index) => <Limit key={index} window={window} reached={usage.reached}/>)}
-    {credits && <span className="usage-credits">{credits.unlimited ? t('Unlimited credits') : credits.balance !== null ? t('{n} credits', { n: Math.floor(credits.balance).toLocaleString(locale()) }) : t('Credits available')}</span>}
+    <details key={agent}>
+      <summary className={tone} aria-label={t('{agent} usage details', { agent })}>
+        <span className="usage-account">{agent}{usage.plan && <span className="usage-plan">{plans[usage.plan] || usage.plan}</span>}</span>
+        <span className="usage-overview" title={primary ? windowName(primary.minutes) : undefined}>
+          {primary && <span className="usage-bar" aria-hidden="true"><span style={{ width: `${used}%` }}/></span>}
+          <span className="usage-value">{usage.reached ? t('Limit reached') : primary ? t('{used}% used', { used }) : balance}</span>
+        </span>
+        <Icon name="chevronDown" size={13}/>
+      </summary>
+      <div className="usage-details">
+        {usage.windows.map((window, index) => <Limit key={index} window={window} reached={usage.reached}/>)}
+        {credits && <span className="usage-credits">{balance}</span>}
+      </div>
+    </details>
   </section>;
 }

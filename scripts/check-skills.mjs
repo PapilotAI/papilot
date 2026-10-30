@@ -30,14 +30,29 @@ const items = [
   { id: 'u3', taskId: task.id, type: 'user', text: 'Address the comments from this review round. Preserve accepted changes and do not reintroduce rejected edits.', createdAt: 4 },
 ];
 const creates = [], messages = [];
+let annotations = [], failCreate = false;
+const taskItems = new Map();
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = data => route.fulfill({ json: data });
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/skills')) return json({ skills });
-  if (url.pathname.endsWith('/items')) return json({ items });
+  if (url.pathname.endsWith('/items')) return json({ items: taskItems.get(url.pathname.split('/')[3]) || items });
   if (url.pathname.endsWith('/git')) return json(git);
-  if (url.pathname === '/api/tasks') { const body = route.request().postDataJSON(); creates.push(body); const created = { ...task, id: body.id, title: body.title, review: null, status: 'queued' }; snapshot.tasks.push(created); return json(created); }
+  if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1 }, annotations });
+  if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
+  if (url.pathname.endsWith('/manuscript/words')) return json(JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'))[Number(url.searchParams.get('page'))]);
+  if (url.pathname === '/api/tasks') {
+    const body = route.request().postDataJSON(); creates.push(body);
+    if (failCreate) return route.fulfill({ status: 503, json: { error: 'Connection lost. Try again.' } });
+    const created = { ...task, id: body.id, title: body.title, review: null, status: 'queued' };
+    const attached = annotations.filter(note => body.annotations?.includes(note.id));
+    if (attached.length) {
+      taskItems.set(body.id, [{ id: 'combined', taskId: body.id, type: 'user', text: body.instructions, createdAt: 1, meta: { skill: skills.find(skill => skill.id === body.skill), notes: attached.map(note => ({ where: `Page ${note.page + 1}`, quote: note.quote, comment: note.comment })) } }]);
+      annotations = annotations.filter(note => !body.annotations.includes(note.id));
+    }
+    snapshot.tasks.push(created); return json(created);
+  }
   if (url.pathname.endsWith('/messages')) { messages.push(route.request().postDataJSON()); return json({ ok: true }); }
   throw new Error(`Unexpected app request ${url.pathname}`);
 });
@@ -74,7 +89,7 @@ try {
 
   // "/" lists skills in the follow-up composer; the chosen one runs without text.
   const followUp = page.getByRole('textbox', { name: 'Instructions for Codex' });
-  await expect(page.getByText('Enter to send · / for skills', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add skill', exact: true })).toBeVisible();
   await followUp.fill('/');
   await expect(page.getByRole('option')).toHaveCount(3);
   await followUp.press('ArrowDown');
@@ -82,7 +97,7 @@ try {
   await followUp.press('Enter');
   await expect(page.locator('.composer-skill .skill-chip')).toContainText('Proofread');
   await expect(followUp).toHaveValue('');
-  await expect(followUp).toHaveAttribute('placeholder', 'Which part? Leave empty for the whole paper');
+  await expect(followUp).toHaveAttribute('placeholder', 'Details (optional)');
   await followUp.press('Backspace');
   await expect(page.locator('.composer-skill')).toHaveCount(0);
   await followUp.fill('/ven');
@@ -96,15 +111,67 @@ try {
   assert.equal(messages[1].skill, 'venue'); assert.equal(messages[1].text, '');
   await expect(page.locator('.composer-skill')).toHaveCount(0);
 
-  // The new-task page starts from a suggested skill.
-  await page.getByRole('button', { name: 'New task', exact: true }).click();
-  await page.getByRole('group', { name: 'Start from a skill' }).getByRole('button', { name: 'Proofread' }).click();
-  await expect(page.getByRole('group', { name: 'Start from a skill' }).getByRole('button', { name: 'Proofread' })).toHaveAttribute('aria-pressed', 'true');
+  // The new-task panel beside the PDF starts from a suggested skill.
+  await page.locator('.manuscript-link').click();
+  await page.getByRole('tab', { name: 'New task', exact: true }).click();
+  await page.getByRole('button', { name: 'Add skill', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Proofread', exact: true }).click();
+  await expect(page.locator('.composer-skill .skill-chip')).toContainText('Proofread');
   await page.keyboard.type('Section 2 only.');
   await page.screenshot({ path: 'test-results/skill-new-task.png' });
   await page.keyboard.press('Enter');
   await expect.poll(() => creates.length).toBe(1);
   assert.equal(creates[0].skill, 'proofread'); assert.equal(creates[0].instructions, 'Section 2 only.'); assert.equal(creates[0].title, 'Proofread: Section 2 only');
+
+  // Notes, a skill and the overall request share one draft and survive a failure.
+  annotations = [
+    { id: 'draft-note-1', projectId: 'paper', key: 'fixture', page: 0, rect: [0.1, 0.1, 0.4, 0.2], quote: 'The introduction.', comment: 'Make this clearer.', source: null, createdAt: 1 },
+    { id: 'draft-note-2', projectId: 'paper', key: 'fixture', page: 1, rect: [0.1, 0.1, 0.4, 0.2], quote: '', comment: 'Explain this diagram.', source: null, createdAt: 2 },
+  ];
+  await page.locator('.manuscript-link').click();
+  await page.getByRole('tab', { name: 'New task', exact: true }).click();
+  await expect(page.getByText('2 notes attached', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Notes', exact: true })).toHaveCount(0);
+  const draft = page.getByRole('textbox', { name: 'Describe the revision', exact: true });
+  await expect(draft).toHaveAttribute('placeholder', 'Add overall instructions (optional)');
+  await page.getByRole('button', { name: 'Show note 2 on the page' }).click();
+  await expect(page.getByLabel('Page number')).toHaveValue('2');
+  await draft.fill('/pol'); await draft.press('Enter');
+  await draft.fill('Keep all technical terms.');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Settings' }).getByRole('combobox', { name: 'Language' }).selectOption('zh-CN');
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('已附加 2 条批注', { exact: true })).toBeVisible();
+  await page.screenshot({ path: 'test-results/merged-task-notes.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
+  await expect(page.getByText('已附加 2 条批注', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '开始任务', exact: true })).toBeInViewport();
+  await page.screenshot({ path: 'test-results/merged-task-notes-mobile.png' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('dialog', { name: '设置' }).getByRole('combobox', { name: '语言' }).selectOption('en');
+  await page.keyboard.press('Escape');
+  failCreate = true;
+  await page.getByRole('button', { name: 'Start task', exact: true }).click();
+  await expect(page.getByText('Connection lost. Try again.', { exact: true })).toBeVisible();
+  await expect(draft).toHaveValue('Keep all technical terms.');
+  await expect(page.locator('.composer-skill .skill-chip')).toHaveText('Polish');
+  await expect(page.getByText('2 notes attached', { exact: true })).toBeVisible();
+  failCreate = false;
+  await page.getByRole('button', { name: 'Start task', exact: true }).click();
+  await expect.poll(() => creates.length).toBe(3);
+  assert.equal(creates[1].id, creates[2].id);
+  assert.deepEqual(creates[2].annotations, ['draft-note-1', 'draft-note-2']);
+  assert.equal(creates[2].skill, 'polish');
+  assert.equal(creates[2].instructions, 'Keep all technical terms.');
+  await expect(page.locator('.thread .notes-request')).toHaveText('Keep all technical terms.');
+  await expect(page.locator('.thread .notes-message .skill-chip')).toHaveText('Polish');
+  await expect(page.locator('.thread .sent-notes li')).toHaveCount(2);
+  await page.locator('.manuscript-link').click();
+  await expect(page.locator('.note-list li')).toHaveCount(0);
+  await expect(draft).toHaveValue('');
+  await expect(page.locator('.composer-skill')).toHaveCount(0);
   assert.deepEqual(errors, []);
-  console.log('PASS: Skills from "/" and suggestions; skills, feedback and math in the chat; feedback only for comments');
+  console.log('PASS: Skills, feedback and math; merged notes/skill/request draft on desktop and mobile, failure/retry, and combined chat history');
 } finally { await browser.close(); await server.close(); }

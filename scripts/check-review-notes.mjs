@@ -50,6 +50,15 @@ try {
   assert.equal(await page.locator('.markdown ul ul li').textContent(), 'Nested item');
   await page.locator('.file-reference').click();
   await page.getByRole('button', { name: 'Copied path' }).waitFor();
+  // Empty notes offer the tools directly; region mode leaves the page clear.
+  await page.getByRole('button', { name: 'Review notes', exact: true }).click();
+  await frame().getByRole('button', { name: 'Region note', exact: true }).click();
+  await frame().locator('.review-region-capture').first().waitFor();
+  assert.equal(await frame().getByRole('complementary', { name: 'Review PDF notes' }).count(), 0);
+  await page.keyboard.press('Escape');
+  await frame().locator('.review-region-capture').first().waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Review notes', exact: true }).click();
+  await frame().getByRole('button', { name: 'Text note', exact: true }).click();
   // Closing a note before writing it leaves the next selection free.
   await selectText('[data-state="accepted"] .pdf-glyph');
   await frame().getByRole('button', { name: 'Close review notes' }).click();

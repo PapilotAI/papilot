@@ -24,7 +24,7 @@ document.head.append(styles);
 
 export type Rect = [number, number, number, number];
 export interface OutlineItem { title: string; level: number; dest: unknown; page: number; top: number | null }
-export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note: Annotation) => void }
+export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note: Annotation) => void; focus: () => void }
 // A touch selection also has its ends: the edge of its first and last word, with that line's top and bottom.
 interface Selection { page: number; rects: Rect[]; quote: string; handles?: { from: [number, number, number]; to: [number, number, number] } }
 
@@ -163,6 +163,7 @@ export const PdfView = forwardRef<PdfHandle, {
   const origin = useRef<{ page: number; x: number; y: number; box: DOMRect } | null>(null);
 
   useImperativeHandle(ref, () => ({
+    focus() { container.current?.focus({ preventScroll: true }); },
     goTo(item) { latest.current.onSection(latest.current.outline.indexOf(item)); void tools.current?.links.goToDestination(item.dest as string | unknown[]); },
     goToNote(note) {
       const div = tools.current?.viewer.getPageView(note.page)?.div, box = container.current;
@@ -361,7 +362,6 @@ export const PdfView = forwardRef<PdfHandle, {
       <button type="button" className="icon-button" aria-label={t('Next match')} disabled={!matches.total} onClick={() => search(true)}><Icon name="chevronDown" size={16}/></button>
       <button type="button" className="icon-button" aria-label={t('Close search')} onClick={closeFind}><Icon name="close" size={15}/></button>
     </div>}
-    {props.region && <div className="pdf-hint">{t('Drag across the page to mark a figure, equation or region. Press Escape to stop.')}</div>}
     <div className="pdf-scroll-host">
       <div ref={container} className="pdf-container" tabIndex={0} aria-label={t('PDF pages')}>
         <div ref={inner} className="pdfViewer"/>

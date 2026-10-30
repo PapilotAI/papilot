@@ -19,6 +19,7 @@ export const zhCN: Record<string, string> = {
   'now': '刚刚', '{n}m': '{n} 分钟', '{n}h': '{n} 小时', '{n}d': '{n} 天', 'just now': '刚刚', '{time} ago': '{time}前',
 
   // Chat
+  'Details (optional)': '补充说明（选填）', 'What would you like to change?': '想修改什么？',
   'Add details, or send to run the skill': '补充细节，或直接发送以运行技能',
   '{agent} needs your input': '{agent} 需要你的回答', 'Approve this action': '批准此操作', 'Or type your own answer': '或输入你自己的回答',
   '{agent} is requesting permission for this action.': '{agent} 请求执行此操作的权限。', 'Apply file changes': '应用文件修改',
@@ -76,15 +77,23 @@ export const zhCN: Record<string, string> = {
   'Stage {path}': '暂存 {path}', 'Staged': '已暂存', 'Partly staged': '部分暂存', 'Not staged': '未暂存', 'Changes in {path}': '{path} 的改动', 'Loading the diff…': '正在加载差异…', 'No uncommitted changes': '没有未提交的改动',
 
   // PDF and notes
+  '{n} note attached': '已附加 {n} 条批注', '{n} notes attached': '已附加 {n} 条批注',
+  'Add overall instructions (optional)': '补充整体修改要求（选填）', 'Address {n} PDF notes': '处理 {n} 条 PDF 批注',
   'Page {n}': '第 {n} 页', 'PDF notes': 'PDF 批注', 'Show note {n} on the page': '在页面上显示批注 {n}', 'Delete note {n}': '删除批注 {n}', 'Delete note': '删除批注',
   '{file}, the LaTeX that produced the marked region': '{file}，生成所标记区域的 LaTeX 源码', 'Marked on an earlier version of the PDF.': '标记于较早版本的 PDF。',
   'Select text in the PDF and choose Add note, or use Mark region for a figure or equation. All notes go to the agent as one task.': '在 PDF 中选中文字后选择“添加批注”，或用“标记区域”框选图表或公式。所有批注会作为一个任务发送给智能体。',
   'Send {n} note to the agent': '把 {n} 条批注发送给智能体', 'Send {n} notes to the agent': '把 {n} 条批注发送给智能体', 'Send notes to the agent': '把批注发送给智能体',
   'PDF preview': 'PDF 预览', 'The manuscript did not compile.': '稿件编译失败。', 'Compiling the latest changes…': '正在编译最新改动…', 'Opening the PDF…': '正在打开 PDF…',
   'Compiling the PDF…': '正在编译 PDF…', 'The first build of a paper can take a minute.': '论文第一次编译可能需要一分钟。',
-  'Contents, Notes and Git': '目录、批注和 Git', 'PDF panels': 'PDF 面板', 'Contents': '目录', 'Notes': '批注', 'PDF contents': 'PDF 目录',
+  'Describe a change to this paper, or select text in the PDF to add a note.': '描述你想对这篇论文做的修改，也可以选中 PDF 中的文字添加批注。',
+  'Manuscript panels': '稿件面板', 'Contents': '目录', 'Notes': '批注', 'PDF contents': 'PDF 目录',
   'This PDF has no bookmarks.': '此 PDF 没有书签。', 'Contents will appear when the PDF is ready.': 'PDF 就绪后会显示目录。',
   'You are offline. Your draft is kept in this browser.': '你已离线。草稿保存在此浏览器中。',
+  'Agent settings': '智能体设置', 'Add skill': '添加技能', 'Fast': '快速', 'Fast mode': '快速模式', 'Ultra': '超强',
+  'No notes yet': '暂无批注', 'Text note': '文字批注', 'Region note': '区域批注', 'Send {n} note': '发送 {n} 条批注', 'Send {n} notes': '发送 {n} 条批注',
+  'No tasks yet': '暂无任务', 'No matching skills': '没有匹配的技能', 'LaTeX Git repository · Requires a commit and latexmk': 'LaTeX Git 仓库 · 需有提交记录并安装 latexmk',
+  '{agent} is unavailable': '{agent} 不可用', 'Connection details': '连接详情',
+  'Default ({value})': '默认（{value}）', 'Faster responses; may use more of your limit.': '响应更快，可能消耗更多额度。',
   'Agent': '智能体', ' · unavailable': ' · 不可用', 'Model': '模型', 'Wait for the PDF to compile.': '请等待 PDF 编译完成。',
   'Fit width': '适合宽度', 'Fit page': '适合页面', 'Note for the agent': '给智能体的批注', 'What should change here?': '这里应该怎么改？', 'Add note': '添加批注', 'Adding…': '正在添加…',
   'PDF controls': 'PDF 控件', 'Previous page': '上一页', 'Page number': '页码', 'Next page': '下一页',
@@ -109,15 +118,15 @@ export const zhCN: Record<string, string> = {
   // Sidebar and header
   'Rename {name}': '重命名 {name}', 'Rename paper: {name}': '重命名论文：{name}', '{name} · Click to rename': '{name} · 点击重命名',
   'Papers and tasks': '论文和任务', 'Hide task list': '隐藏任务列表', 'Paper': '论文', 'Paper: {name}': '论文：{name}', 'Add paper…': '添加论文…', 'Add paper': '添加论文',
-  'Git status of the manuscript': '稿件的 Git 状态', 'New task': '新任务', 'Tasks': '任务', 'Task list': '任务列表',
+  'Manuscript': '稿件', 'Git status of the manuscript': '稿件的 Git 状态', 'New task': '新任务', 'Tasks': '任务', 'Task list': '任务列表',
   '{n} change to decide': '{n} 处修改待定', '{n} changes to decide': '{n} 处修改待定', 'Task actions for {title}': '{title} 的任务操作',
   'Rename…': '重命名…', 'Check status': '检查状态', 'Retry deletion…': '重试删除…', 'Delete task…': '删除任务…',
-  'No tasks yet. Start one with New task.': '还没有任务。用“新任务”开始一个。', 'Add a paper to get started.': '添加一篇论文即可开始。',
+  'No tasks yet. Start one from Manuscript.': '还没有任务。在“稿件”中创建一个。', 'Add a paper to get started.': '添加一篇论文即可开始。',
   'Settings': '设置', 'Host': '主机', 'Connected': '已连接', 'Reconnecting': '正在重新连接', '{n} active task': '{n} 个活动任务', '{n} active tasks': '{n} 个活动任务',
   'Close task list': '关闭任务列表', 'Show task list': '显示任务列表',
   'Loading': '加载中', 'Compiling': '编译中', 'Build failed': '编译失败', 'Compiled {time}': '{time}编译',
-  'PDF options': 'PDF 选项', 'Recompile': '重新编译', 'Open the PDF file': '打开 PDF 文件', 'Compile the PDF again': '重新编译 PDF',
-  'Open the PDF file in a new tab': '在新标签页中打开 PDF 文件', 'Open PDF': '打开 PDF', 'PDF view': 'PDF 视图', 'Notes, {n}': '批注，{n} 条', 'Git, {n} changed': 'Git，{n} 处改动',
+  'Manuscript options': '稿件选项', 'Recompile': '重新编译', 'Open the PDF file': '打开 PDF 文件', 'Compile the PDF again': '重新编译 PDF',
+  'Open the PDF file in a new tab': '在新标签页中打开 PDF 文件', 'Open PDF': '打开 PDF', 'Manuscript view': '稿件视图', 'Notes, {n}': '批注，{n} 条', 'Git, {n} changed': 'Git，{n} 处改动',
   'Retry deletion': '重试删除', 'Pause': '暂停', 'View details': '查看详情', 'Workspace view': '工作区视图',
   'Review, {n} to decide': '审阅，{n} 处待定', 'Review': '审阅', 'Chat (reply needed)': '对话（需要回复）', 'PDF review only': '只看 PDF 审阅',
   'Split': '分栏', 'Review and chat side by side': '审阅和对话并排', 'Chat only': '只看对话',
@@ -160,6 +169,15 @@ export const zhCN: Record<string, string> = {
   'This browser could not show the notification.': '此浏览器无法显示这条通知。',
 
   // Skills
+  'Polish': '润色', 'Proofread': '校对', 'Shorten': '精简', 'Check math': '检查数学',
+  'Consistency': '统一表述', 'Fix LaTeX warnings': '修复 LaTeX 警告', 'Address reviewers': '回应审稿意见',
+  'Improve clarity and flow, keeping the meaning': '保留原意，让表达更清晰、行文更流畅',
+  'Fix typos, grammar and punctuation without rewording': '修正错别字、语法和标点，不改写原文',
+  'Cut length without losing content': '保留内容，精简篇幅',
+  'Find errors in notation, equations and proofs': '检查符号、公式和证明中的错误',
+  'Unify terms, notation, spelling and references': '统一术语、符号、拼写和引用',
+  'Resolve undefined references, overfull boxes and other build warnings': '修复未定义的引用、内容溢出等编译警告',
+  'Revise for reviewer comments and draft a point-by-point reply': '根据审稿意见修改论文，并起草逐条回复',
   'Skills': '技能', 'This paper': '本论文', 'Yours': '你的', 'No skill matches. Press Enter to send the text as it is.': '没有匹配的技能。按 Enter 直接发送文字。',
   'Skill: {name}': '技能：{name}', 'Remove the {name} skill': '移除技能 {name}', 'Start from a skill': '从技能开始',
 
@@ -175,6 +193,7 @@ export const zhCN: Record<string, string> = {
   'Weekly limit': '每周额度', 'Daily limit': '每日额度', '{n}-day limit': '{n} 天额度', '{n}-hour limit': '{n} 小时额度', '{n}-minute limit': '{n} 分钟额度', 'Usage limit': '用量额度',
   'resets now': '即将重置', 'resets in {hours} h {minutes} min': '{hours} 小时 {minutes} 分钟后重置', 'resets in {minutes} min': '{minutes} 分钟后重置', 'resets {time}': '{time} 重置',
   '{name} used': '{name}已用', '{used}% used': '已用 {used}%', 'Limit reached': '已达上限', '{agent} usage': '{agent} 用量',
+  '{agent} usage details': '{agent} 用量详情',
   'Unlimited credits': '无限额度', '{n} credits': '{n} 点额度', 'Credits available': '有可用额度',
 
   // Accounts and people

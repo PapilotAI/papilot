@@ -868,6 +868,48 @@ test('account usage keeps the limit windows, plan and credits Codex reports', ()
   assert.equal(accountUsage(undefined), null);
 });
 
+test('Fast mode uses the catalog tier and preserves older catalogs without inventing support', () => {
+  assert.deepEqual(agentModel({ id: 'fast', serviceTiers: [{ id: 'priority', name: 'Fast', description: '2x speed' }] }).fastMode, { serviceTier: 'priority', description: '2x speed' });
+  assert.deepEqual(agentModel({ id: 'older', additionalSpeedTiers: ['fast'] }).fastMode, { serviceTier: 'priority', description: '' });
+  assert.equal(agentModel({ id: 'standard', serviceTiers: [], additionalSpeedTiers: ['fast'] }).fastMode, undefined);
+  assert.equal(agentModel({ id: 'plain' }).fastMode, undefined);
+});
+
+test('tasks persist the chosen service tier, and reject unsupported Fast mode before creating a worktree', async () => {
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/unused' } : summary);
+  try {
+    f.workspace.runtime.models = [agentModel({ id: 'model', isDefault: true, serviceTiers: [{ id: 'priority', name: 'Fast' }] })];
+    const input = { id: 'fast-task-test-01', projectId: 'paper', title: 'Revise', instructions: 'Revise.', serviceTier: 'priority' };
+    const created = await f.workspace.createTask(input);
+    assert.equal(f.store.task(created.id).serviceTier, 'priority');
+    const retry = await f.workspace.createTask({ ...input, serviceTier: 'default' });
+    assert.equal(retry.serviceTier, 'priority', 'a retry cannot change an existing task');
+    const before = f.calls.length;
+    await assert.rejects(f.workspace.createTask({ ...input, id: 'fast-task-test-02', model: 'unsupported' }), /Fast mode is not available/);
+    await assert.rejects(f.workspace.createTask({ ...input, id: 'fast-task-test-03', agent: 'claude' }), /only available for Codex/);
+    await assert.rejects(f.workspace.createTask({ ...input, id: 'fast-task-test-04', serviceTier: 'unknown' }), /Fast mode is not available/);
+    assert.equal(f.calls.length, before);
+    const standard = await f.workspace.createTask({ ...input, id: 'fast-task-test-05', serviceTier: 'default' });
+    assert.equal(standard.serviceTier, 'default');
+  } finally { f.close(); }
+});
+
+test('Codex receives the saved Fast or explicit standard tier without changing reasoning', async () => {
+  for (const serviceTier of ['priority', 'default', undefined]) {
+    const f = fixture();
+    try {
+      f.codex.ready = true;
+      f.store.updateTask(f.task.id, { effort: 'xhigh', serviceTier });
+      await f.workspace.enqueue(f.task.id, 'Next revision.', 'next', false);
+      await tick();
+      const turn = f.codex.calls.find(call => call.method === 'turn/start')!;
+      assert.equal(turn.params.effort, 'xhigh');
+      assert.equal(turn.params.serviceTier, serviceTier);
+      if (serviceTier === undefined) assert.equal('serviceTier' in turn.params, false, 'older tasks retain their host configuration');
+    } finally { f.close(); }
+  }
+});
+
 test('a task runs on its own agent: turns, approvals and pausing go to that agent only', async () => {
   const claude = new FakeCodex();
   const f = fixture(undefined, { claude });
@@ -921,6 +963,29 @@ test('a skill runs as its instructions while the chat keeps the author\'s words'
     const item = f.store.items(f.task.id).find(entry => entry.id === run.id)!;
     assert.equal(item.text, 'Only the abstract.');
     assert.deepEqual(item.meta, { skill: { id: 'proofread', name: 'Proofread' } });
+  } finally { f.close(); }
+});
+
+test('a failed task keeps its notes, and concurrent submissions cannot send the same note twice', async () => {
+  const gate = deferred<any>();
+  let fail = true;
+  const f = fixture(async () => { if (fail) throw new Error('Review service unavailable'); return gate.promise; });
+  try {
+    const note = { id: 'draft-note', projectId: f.task.projectId, key: 'pdf', page: 0, rect: [0, 0, 1, 1] as [number, number, number, number], quote: 'A sentence.', comment: 'Clarify.', source: null, createdAt: 1 };
+    f.store.saveAnnotation(note);
+    const input = { id: 'notes-retry-task-01', projectId: f.task.projectId, title: 'Clarify', instructions: '', annotations: [note.id] };
+    await assert.rejects(f.workspace.createTask(input), /Review service unavailable/);
+    assert.equal(f.store.annotations(note.projectId)[0].taskId, undefined);
+    fail = false;
+    const creating = f.workspace.createTask(input);
+    await assert.rejects(f.workspace.createTask({ ...input, id: 'notes-other-task-01' }), /already being sent/);
+    gate.resolve({ worktree: '/unused/notes-task' });
+    const created = await creating;
+    assert.equal(created.id, input.id);
+    assert.equal(f.store.annotations(note.projectId)[0].taskId, input.id);
+    assert.equal(f.store.items(input.id).length, 1);
+    assert.equal((await f.workspace.createTask(input)).id, input.id);
+    await assert.rejects(f.workspace.createTask({ ...input, id: 'notes-other-task-01' }), /no longer available/);
   } finally { f.close(); }
 });
 

@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './icons.tsx';
 
-export interface MenuAction { id?: string; label: string; detail?: string; hint?: string; indent?: number; select?: () => void; href?: string; disabled?: boolean; danger?: boolean; checked?: boolean; icon?: string; divider?: boolean }
+export interface MenuAction { id?: string; label: string; title?: string; detail?: string; hint?: string; indent?: number; select?: () => void; href?: string; disabled?: boolean; danger?: boolean; checked?: boolean; icon?: string; divider?: boolean }
 
 // Native popovers escape scrolling containers and handle outside clicks without
 // making the rest of the workspace modal. Each menu keeps its own task identity.
 // The trigger defaults to a "more" button; pass children for a labelled trigger.
-export function ActionMenu({ label, actions, children, className = 'icon-button more-button', menuClassName = '', align = 'end' }: { label: string; actions: MenuAction[]; children?: ReactNode; className?: string; menuClassName?: string; align?: 'start' | 'end' }) {
+export function ActionMenu({ label, actions, children, className = 'icon-button more-button', menuClassName = '', align = 'end', disabled }: { label: string; actions: MenuAction[]; children?: ReactNode; className?: string; menuClassName?: string; align?: 'start' | 'end'; disabled?: boolean }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -14,9 +14,9 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
   useEffect(() => {
     if (!open) return;
     const dismiss = () => menu.current?.hidePopover();
-    // Scrolling the page moves the trigger away, so the menu closes; scrolling
-    // a long menu itself, such as a paper's contents, keeps it open.
-    const scroll = (event: Event) => { if (!(event.target instanceof Node && menu.current?.contains(event.target))) dismiss(); };
+    // Close when a scrolling ancestor moves the trigger, but leave independent
+    // panes (including a PDF finishing its load) and the menu itself alone.
+    const scroll = (event: Event) => { if (event.target instanceof Node && event.target.contains(trigger.current) && !menu.current?.contains(event.target)) dismiss(); };
     window.addEventListener('resize', dismiss); document.addEventListener('scroll', scroll, true);
     return () => { window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
   }, [open]);
@@ -37,7 +37,7 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
   }
   const radio = actions.some(action => action.checked !== undefined);
   return <span className="menu-anchor">
-    <button ref={trigger} type="button" className={className} aria-label={label} title={children ? undefined : label} aria-haspopup="menu" aria-expanded={open} popoverTarget={id} onClick={event => {
+    <button ref={trigger} type="button" className={className} aria-label={label} title={label} disabled={disabled} aria-haspopup="menu" aria-expanded={open} popoverTarget={id} onClick={event => {
       event.preventDefault(); if (menu.current?.matches(':popover-open')) close(); else show();
     }} onKeyDown={event => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); show(event.key === 'ArrowUp'); }
@@ -57,10 +57,10 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
       }
     }}>
       {actions.map(action => {
-        const content = <>{action.icon ? <Icon name={action.icon} size={16}/> : radio && <span className="menu-check">{action.checked && <Icon name="check" size={16}/>}</span>}<span className="menu-label">{action.label}{action.detail && <small className="menu-detail" aria-hidden="true">{action.detail}</small>}</span>{action.hint && <span className="menu-hint" aria-hidden="true">{action.hint}</span>}</>;
+        const content = <>{action.icon ? <Icon name={action.icon} size={16}/> : radio && <span className="menu-check">{action.checked && <Icon name="check" size={16}/>}</span>}<span className="menu-label">{action.label}{action.detail && <small className="menu-detail" aria-hidden="true">{action.detail}</small>}</span>{action.hint && <span className="menu-hint" aria-hidden="true">{action.hint}</span>}{action.icon && action.checked && <span className="menu-check"><Icon name="check" size={16}/></span>}</>;
         const item = action.href
-          ? <a key={action.id || action.label} role="menuitem" href={action.href} target="_blank" rel="noreferrer" onClick={close}>{content}</a>
-          : <button key={action.id || action.label} type="button" role={action.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={action.checked} disabled={action.disabled} className={action.danger ? 'danger-text' : undefined} data-indent={action.indent || undefined} style={action.indent ? { paddingLeft: 10 + action.indent * 14 } : undefined} onClick={() => { close(); trigger.current?.focus(); action.select?.(); }}>{content}</button>;
+          ? <a key={action.id || action.label} role="menuitem" title={action.title} href={action.href} target="_blank" rel="noreferrer" onClick={close}>{content}</a>
+          : <button key={action.id || action.label} type="button" title={action.title} role={action.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={action.checked} disabled={action.disabled} className={action.danger ? 'danger-text' : undefined} data-indent={action.indent || undefined} style={action.indent ? { paddingLeft: 10 + action.indent * 14 } : undefined} onClick={() => { close(); trigger.current?.focus(); action.select?.(); }}>{content}</button>;
         return action.divider ? [<div key={action.label + '-divider'} role="separator" className="menu-separator"/>, item] : item;
       })}
     </div>
