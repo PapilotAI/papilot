@@ -3,17 +3,21 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, codeVersion } from "../runtime.ts";
 import { Builder, BuildError } from "./build.ts";
-import { diffUnits, scopeViolations } from "./changes.ts";
+import { diffUnits, scopeViolations, withUnits } from "./changes.ts";
 import { isFigure } from "./config.ts";
 import { now, readJson, writeJson } from "./files.ts";
 import { runAsync } from "./process.ts";
 import type { App } from "../server.ts";
 import type {
+  BuildInfo,
+  Effect,
   Job,
   JobResult,
+  PlaceView,
   RenderedRound,
   RenderRequest,
   Round,
+  Unit,
 } from "../types.ts";
 export class PublishError extends Error {
   constructor(
@@ -26,8 +30,12 @@ export class PublishError extends Error {
   }
 }
 class Stale extends Error {}
-export async function render(output: string, request: RenderRequest) {
-  const file = path.join(output, "request.json");
+async function work(output: string, request: object) {
+  // Its own name, as several requests may render into one round's folder.
+  const file = path.join(
+    output,
+    `request-${randomBytes(4).toString("hex")}.json`,
+  );
   writeJson(file, request);
   try {
     await runAsync(
@@ -47,8 +55,133 @@ export async function render(output: string, request: RenderRequest) {
       ],
       "Fix the renderer error, then publish again.",
     );
+  } finally {
+    fs.rmSync(file, { force: true });
   }
-  fs.rmSync(file, { force: true });
+}
+// Variant builds one round may compile to find the edits behind changes.
+const VARIANTS = 16;
+// The edits behind each change of the whole documents, found by compiling.
+// An edit that prints nothing of its own, such as a macro definition, is
+// compiled alone onto the accepted text: the changes that build makes are
+// exactly what accepting it makes. Changes outside every crop that those
+// builds leave unexplained are found by halving the other edits: each half is
+// compiled alone, and a change one half makes has its cause there. A change
+// neither half makes needs edits from both, so it lists the whole group, as
+// it does when a variant does not compile or cannot be compared, or the limit
+// is reached; a silent edit past the limit joins the halving.
+export async function attribute(
+  units: Unit[],
+  changes: { within: string[] }[],
+  silent: string[],
+  shown: (units: Unit[]) => Promise<boolean[] | null>,
+) {
+  let budget = VARIANTS;
+  const causes = changes.map(() => new Set<string>()),
+    pool = units.filter((u) => !silent.includes(u.id)),
+    compiled = async (group: Unit[]) => {
+      budget--;
+      try {
+        return await shown(group);
+      } catch (error) {
+        if (error instanceof BuildError) return null;
+        throw error;
+      }
+    };
+  for (const id of silent) {
+    const unit = units.find((u) => u.id === id)!,
+      seen = budget > 0 ? await compiled([unit]) : null;
+    if (!seen) pool.push(unit);
+    else seen.forEach((s, i) => s && causes[i].add(id));
+  }
+  const all = (group: Unit[], indices: number[]) =>
+    indices.forEach((i) => group.forEach((u) => causes[i].add(u.id)));
+  const split = async (group: Unit[], indices: number[]): Promise<void> => {
+    if (!indices.length) return;
+    if (group.length === 1 || budget < 2) return all(group, indices);
+    const halves = [
+        group.slice(0, Math.ceil(group.length / 2)),
+        group.slice(Math.ceil(group.length / 2)),
+      ],
+      seen: boolean[][] = [];
+    for (const half of halves) {
+      const result = await compiled(half);
+      if (!result) return all(group, indices);
+      seen.push(result);
+    }
+    all(
+      group,
+      indices.filter((i) => !seen[0][i] && !seen[1][i]),
+    );
+    await split(
+      halves[0],
+      indices.filter((i) => seen[0][i]),
+    );
+    await split(
+      halves[1],
+      indices.filter((i) => seen[1][i]),
+    );
+  };
+  await split(
+    pool.length ? pool : units,
+    changes.flatMap((c, i) => (!c.within.length && !causes[i].size ? [i] : [])),
+  );
+  return causes.map((set) =>
+    units.map((u) => u.id).filter((id) => set.has(id)),
+  );
+}
+// Renders a comparison. `variant` compiles the accepted text with only some
+// of the edits; without it, changes outside every crop list every edit.
+export async function render(
+  output: string,
+  request: RenderRequest,
+  variant?: (units: Unit[]) => Promise<BuildInfo>,
+) {
+  await work(output, request);
+  const file = path.join(output, "attribute.json");
+  if (!fs.existsSync(file)) return;
+  const { changes, silent, cards } = readJson<{
+    changes: { effect: Effect; within: string[] }[];
+    silent: string[];
+    cards: RenderRequest["cards"];
+  }>(file, { changes: [], silent: [], cards: undefined });
+  fs.rmSync(file);
+  const effects = changes.map((c) => c.effect),
+    causes = variant
+      ? await attribute(request.units, changes, silent, async (units) => {
+          await work(output, {
+            ...request,
+            new: await variant(units),
+            effects,
+          });
+          const shown = path.join(output, "shown.json"),
+            result = readJson<boolean[] | null>(shown, null);
+          fs.rmSync(shown, { force: true });
+          return result;
+        })
+      : changes.map((c) =>
+          c.within.length ? [] : request.units.map((u) => u.id),
+        );
+  await work(output, { ...request, causes, cards });
+}
+// The places of an edit past those rendered with its round.
+export async function more(output: string, unit: string) {
+  const file = path.join(output, `places-${unit}.json`);
+  if (!fs.existsSync(file)) {
+    const saved = readJson<{ old: BuildInfo; new: BuildInfo } | null>(
+      path.join(output, "places.json"),
+      null,
+    );
+    if (!saved) return [];
+    if (![saved.old, saved.new].every((b) => fs.existsSync(b.pdf)))
+      throw new PublishError(
+        "The builds of this round were removed.",
+        [],
+        "Publish again to see every place.",
+      );
+    await work(output, { more: unit });
+  }
+  return readJson<PlaceView[]>(file, []);
 }
 export class Publisher {
   private pruning: Promise<void> | null = null;
@@ -277,14 +410,23 @@ export class Publisher {
       builds: [seed, old, next].filter((b) => b !== null).map((b) => b.key),
     };
     try {
-      await render(output, {
-        main: project.main,
-        source_dir: project.source_dir,
-        figures: project.figures,
-        old,
-        new: next,
-        units,
-      });
+      await render(
+        output,
+        {
+          main: project.main,
+          source_dir: project.source_dir,
+          figures: project.figures,
+          old,
+          new: next,
+          units,
+        },
+        (subset) =>
+          builder.build(
+            withUnits(app.repo, before, after, subset),
+            targets,
+            seed,
+          ),
+      );
       if (app.review.lastChange(name) !== decided) throw new Stale();
       fs.rmSync(final, { recursive: true, force: true });
       fs.renameSync(output, final);

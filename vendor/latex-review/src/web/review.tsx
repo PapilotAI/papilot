@@ -10,6 +10,7 @@ import type {
   ActionKind,
   ChangeBlock,
   PageState,
+  PlaceView,
   RoundDetail,
   Strip,
   Unit,
@@ -113,6 +114,10 @@ export function ReviewApp({
     [error, setError] = useState(""),
     [toast, setToast] = useState(""),
     [openSource, setOpenSource] = useState<Set<number>>(new Set()),
+    // Places past the first few of each edit, keyed by round and edit.
+    [more, setMore] = useState<
+      Record<string, PlaceView[] | "loading" | { error: string }>
+    >({}),
     [composer, setComposer] = useState<Composer | null>(null),
     [draft, setDraft] = useState(""),
     [help, setHelp] = useState(false),
@@ -129,6 +134,14 @@ export function ReviewApp({
       [detail],
     ),
     stops = useMemo(() => (detail ? buildStops(detail) : []), [detail]),
+    // An edit's places show under the first change that includes it.
+    firstStop = useMemo(() => {
+      const found = new Map<string, number>();
+      stops.forEach((stop, i) =>
+        stop.units.forEach((id) => found.has(id) || found.set(id, i)),
+      );
+      return found;
+    }, [stops]),
     locations = useMemo(
       () =>
         stops.map((stop) =>
@@ -649,6 +662,93 @@ export function ReviewApp({
       </div>
     );
   };
+  async function loadPlaces(id: string) {
+    const round = detail!.round,
+      key = `${round}:${id}`;
+    setMore((m) => ({ ...m, [key]: "loading" }));
+    try {
+      const { places } = await api<{ places: PlaceView[] }>(
+        `/rounds/${round}/effects/${encodeURIComponent(id)}`,
+      );
+      setMore((m) => ({ ...m, [key]: places }));
+    } catch (error) {
+      setMore((m) => ({ ...m, [key]: { error: (error as Error).message } }));
+    }
+  }
+  // Where an edit changes the PDF away from its own lines, such as the uses
+  // of a macro it redefines. The places have no buttons: the edit's decide
+  // them all.
+  function effects(
+    unit: Unit & Partial<VisualUnit>,
+    clean: boolean,
+  ): ReactNode {
+    const { total, shown } = unit.effects!,
+      loaded = more[`${detail!.round}:${unit.id}`],
+      places = [...shown, ...(Array.isArray(loaded) ? loaded : [])],
+      strips = (items: Strip[], side: "before" | "after") =>
+        items.length > 0 && (
+          <div
+            className={`side ${side}`}
+            aria-label={side === "before" ? t("Before") : t("After")}
+          >
+            {items.map((image) => (
+              <PdfStrip
+                key={image.src}
+                image={image}
+                base={detail!.files}
+                label={side === "before" ? t("Before") : t("After")}
+                clean={clean}
+              />
+            ))}
+          </div>
+        );
+    return (
+      <section className="effects" key={unit.id}>
+        <p className="effects-head">
+          {tn(total, "Affects {n} place", "Affects {n} places")}
+        </p>
+        {places.map((place, i) => (
+          <div className="place" key={i}>
+            <p className="place-where">
+              {t("p. {pages}", { pages: place.page })}
+              {place.section ? ` · ${place.section}` : ""}
+              {place.with
+                ? ` · ${t("with {changes}", {
+                    changes: place.with
+                      .map((id) =>
+                        firstStop.has(id)
+                          ? t("Change {n}", { n: firstStop.get(id)! + 1 })
+                          : (units.get(id)?.file ?? id),
+                      )
+                      .join(", "),
+                  })}`
+                : ""}
+            </p>
+            {strips(place.before, "before")}
+            {strips(place.after, "after")}
+          </div>
+        ))}
+        {total > places.length && (
+          <button
+            className="link more-places"
+            disabled={loaded === "loading"}
+            onClick={() => void loadPlaces(unit.id)}
+          >
+            {loaded === "loading"
+              ? t("Loading…")
+              : tn(
+                  total - places.length,
+                  "Show {n} more",
+                  "Show {n} more",
+                )}
+          </button>
+        )}
+        {loaded && typeof loaded === "object" && "error" in loaded && (
+          <p className="caption">{loaded.error}</p>
+        )}
+      </section>
+    );
+  }
   function change(
     block: ChangeBlock,
     index: number,
@@ -679,7 +779,13 @@ export function ReviewApp({
       location = describeLocation(known, t),
       kindLabel = block.reflow
         ? t("Reflow")
-        : [...new Set(known.map((u) => u.visual ?? "unmapped"))]
+        : [
+            ...new Set(
+              known
+                .filter((u) => !(u.effects && u.visual === "unmapped"))
+                .map((u) => u.visual ?? "unmapped"),
+            ),
+          ]
             .filter((kind) => kind !== "text")
             .map((kind) => t(KIND[kind]))
             .join(", ");
@@ -875,6 +981,9 @@ export function ReviewApp({
             ))}
           </div>
         )}
+        {known
+          .filter((u) => u.effects && firstStop.get(u.id) === index)
+          .map((u) => effects(u, Boolean(resolved)))}
       </article>
     );
   }

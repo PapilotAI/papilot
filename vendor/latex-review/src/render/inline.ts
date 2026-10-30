@@ -18,8 +18,9 @@ import { Build, sectionIntervals, type Box, type Intervals } from "./locate.ts";
 import { containsCenter, intersect, intersects, PdfDocument } from "./pdf.ts";
 import { textChanges } from "./pdfdiff.ts";
 const RUN_GAP = 3,
-  JOIN_GAP = 90,
   MARGIN = 900;
+// Changed regions closer than this share one crop.
+export const JOIN_GAP = 90;
 export interface Row {
   page: number;
   rect: Rect;

@@ -134,6 +134,20 @@ export function warnings(text: string) {
     ),
   ].sort();
 }
+// The date every build of a day prints, so that a build kept from an earlier
+// day differs from today's in its text alone, not in \today. TeX reads it
+// from SOURCE_DATE_EPOCH; noon UTC of the local date shows the local date in
+// every time zone. A SOURCE_DATE_EPOCH set by the user is kept as it is.
+export function buildDate(now = new Date(), env = process.env) {
+  return env.SOURCE_DATE_EPOCH
+    ? { SOURCE_DATE_EPOCH: env.SOURCE_DATE_EPOCH }
+    : {
+        SOURCE_DATE_EPOCH: String(
+          Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12) / 1000,
+        ),
+        FORCE_SOURCE_DATE: "1",
+      };
+}
 export class Builder {
   cache: string;
   constructor(
@@ -199,6 +213,7 @@ export class Builder {
       );
     }
     const tree = this.repo.treeId(rev, p.source_dir),
+      date = buildDate(),
       key = hash(
         JSON.stringify([
           tree,
@@ -206,6 +221,7 @@ export class Builder {
           seed?.key ?? null,
           signature(p),
           version,
+          date,
           hash(fs.readFileSync(fileURLToPath(import.meta.url))),
         ]),
       ).slice(0, 32),
@@ -277,6 +293,7 @@ export class Builder {
       try {
         await runAsync("latexmk", args, {
           cwd,
+          env: { ...process.env, ...date },
           timeout: 1800000,
           output: (chunk) => fs.writeSync(fd, chunk),
         });

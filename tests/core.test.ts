@@ -46,6 +46,9 @@ test('remote access requires the configured Tailscale identity and matching brow
 test('review proxy only exposes review routes and keeps assets on the remote origin', () => {
   assert.ok(allowedReviewRoute('/api/tasks/p-test/rounds/1', 'GET'));
   assert.ok(allowedReviewRoute('/api/tasks/p-test/decide', 'POST'));
+  assert.ok(allowedReviewRoute('/api/tasks/p-test/rounds/1/effects/c001', 'GET'));
+  assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/effects/../x', 'GET'), false);
+  assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/effects/c001', 'POST'), false);
   assert.equal(allowedReviewRoute('/api/shutdown', 'POST'), false);
   assert.equal(allowedReviewRoute('/api/tasks/p-test/finish', 'POST'), false);
   assert.equal(allowedReviewRoute('/api/tasks', 'POST'), false);

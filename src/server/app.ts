@@ -268,6 +268,8 @@ export async function buildApp(options: AppOptions) {
     return changes.state(project.id, project.path, csrfFor(request.viewer!), Number.isSafeInteger(round) && round > 0 ? round : undefined);
   });
   app.get<{ Params: { projectId: string; number: string } }>('/review/:projectId/api/changes/rounds/:number', changesAccess, request => changes.detail(store.project(request.params.projectId).id, Number(request.params.number)));
+  app.get<{ Params: { projectId: string; number: string; unit: string } }>('/review/:projectId/api/changes/rounds/:number/effects/:unit', changesAccess, request =>
+    changes.effects(store.project(request.params.projectId).id, Number(request.params.number), request.params.unit));
   app.get<{ Params: { projectId: string; number: string; file: string } }>('/review/:projectId/changes/files/:number/:file', changesAccess, (request, reply) => {
     const file = changes.file(store.project(request.params.projectId).id, Number(request.params.number), request.params.file);
     return reply.header('Cache-Control', 'private, max-age=31536000, immutable').type(file.endsWith('.svg') ? 'image/svg+xml' : 'image/png').send(fs.createReadStream(file));
