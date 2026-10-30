@@ -12,3 +12,24 @@ export function mergeLines(rects: Rect[]) {
   return lines;
 }
 
+// The glyph a finger points at: the nearest box, preferring the touched line.
+// Boxes are null for spaces, and points farther than `reach` select nothing.
+export function nearestGlyph(boxes: (Rect | null)[], x: number, y: number, reach = Infinity) {
+  let best = -1, score = reach;
+  boxes.forEach((box, i) => {
+    if (!box) return;
+    const [left, top, right, bottom] = box;
+    const distance = 4 * Math.max(top - y, 0, y - bottom) + Math.max(left - x, 0, x - right);
+    if (distance < score) { score = distance; best = i; }
+  });
+  return best;
+}
+
+// The word around a glyph: the run of non-space glyphs on its line.
+export function wordAround(glyphs: { text: string; line: unknown }[], index: number): [number, number] {
+  const line = glyphs[index].line, inWord = (i: number) => glyphs[i]?.line === line && !/\s/u.test(glyphs[i].text);
+  let from = index, to = index;
+  while (inWord(from - 1)) from--;
+  while (inWord(to + 1)) to++;
+  return [from, to];
+}

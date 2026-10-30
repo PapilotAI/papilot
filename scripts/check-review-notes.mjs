@@ -50,6 +50,9 @@ try {
   assert.equal(await page.locator('.markdown ul ul li').textContent(), 'Nested item');
   await page.locator('.file-reference').click();
   await page.getByRole('button', { name: 'Copied path' }).waitFor();
+  // Closing a note before writing it leaves the next selection free.
+  await selectText('[data-state="accepted"] .pdf-glyph');
+  await frame().getByRole('button', { name: 'Close review notes' }).click();
   await selectText('[data-state="rejected"] .pdf-glyph');
   const noteInput = frame().getByRole('textbox', { name: 'Note for the agent' });
   assert.equal(await noteInput.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(38, 39, 43)');

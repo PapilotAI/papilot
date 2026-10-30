@@ -1096,6 +1096,9 @@ body {
   height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr;
+  /* An auto column grows to the widest unbreakable content, such as a long
+     file path, and pushes the bar and the paper past a phone's screen. */
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
 }
 .review-body {
