@@ -181,8 +181,10 @@ export function renderRound(
       ),
       cards: Card[] = [],
       result: RenderedRound = { units: {}, sections: [], loose: [] };
-    for (const unit of request.units) {
-      const card: Card = {
+    for (const [index, unit] of request.units.entries()) {
+      // The pass after variant builds reuses the first pass's cards rather
+      // than asking SyncTeX again.
+      const card: Card = request.cards?.[index] ?? {
           id: unit.id,
           file: unit.file,
           ...classify(old, next, unit, body, figureFiles),
@@ -203,12 +205,13 @@ export function renderRound(
       };
     }
     const changes = changesOf(old, next, cards),
-      // An edit that prints no change of its own, such as a macro
-      // definition, changes the PDF only away from its lines.
+      // An edit that prints nothing of its own, such as a macro definition,
+      // changes the PDF only away from its lines. An edit of comments or
+      // line breaks alone has no crop and changes nothing.
       silent = cards.filter(
         (c) =>
-          c.comparison !== "text" &&
-          !(c.comparison === "identical" && !c.pairs.length),
+          c.comparison === "unmapped" ||
+          (c.comparison === "identical" && c.pairs.length > 0),
       );
     if (
       request.units.length > 1 &&
@@ -218,6 +221,7 @@ export function renderRound(
       writeJson(path.join(out, "attribute.json"), {
         changes,
         silent: silent.map((c) => c.id),
+        cards,
       });
       return null;
     }
@@ -302,7 +306,10 @@ export function renderMore(out: string, unit: string): PlaceView[] {
     units: Record<string, Place[]>;
   } | null>(path.join(out, "places.json"), null);
   const list = saved?.units[unit]?.slice(SHOWN) ?? [];
-  if (!saved || !list.length) return [];
+  if (!saved || !list.length) {
+    writeJson(file, []);
+    return [];
+  }
   const old = new Build(saved.old, saved.main, saved.source_dir),
     next = new Build(saved.new, saved.main, saved.source_dir);
   try {

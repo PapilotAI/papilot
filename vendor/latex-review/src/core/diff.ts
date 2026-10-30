@@ -2,10 +2,19 @@ import { diffArrays } from "diff";
 import type { Op } from "../types.ts";
 /** Stable line/token opcodes shared by source and PDF comparisons. */
 export function opcodes<T>(a: T[], b: T[]): Op[] {
+  return toOpcodes(diffArrays(a, b));
+}
+/** Like opcodes, or null when the comparison takes longer than `timeout`
+ * milliseconds. */
+export function opcodesWithin<T>(a: T[], b: T[], timeout: number) {
+  const parts = diffArrays(a, b, { timeout });
+  return parts ? toOpcodes(parts) : null;
+}
+function toOpcodes<T>(parts: ReturnType<typeof diffArrays<T>>): Op[] {
   const result: Op[] = [];
   let i = 0,
     j = 0;
-  for (const part of diffArrays(a, b)) {
+  for (const part of parts) {
     const n = part.value.length;
     if (!part.added && !part.removed) {
       result.push(["equal", i, i + n, j, j + n]);

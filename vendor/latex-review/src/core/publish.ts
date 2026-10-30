@@ -59,8 +59,7 @@ async function work(output: string, request: object) {
     fs.rmSync(file, { force: true });
   }
 }
-// Variant builds one round may compile to find the edits behind changes
-// outside every edit's crops.
+// Variant builds one round may compile to find the edits behind changes.
 const VARIANTS = 16;
 // The edits behind each change of the whole documents, found by compiling.
 // An edit that prints nothing of its own, such as a macro definition, is
@@ -69,16 +68,19 @@ const VARIANTS = 16;
 // builds leave unexplained are found by halving the other edits: each half is
 // compiled alone, and a change one half makes has its cause there. A change
 // neither half makes needs edits from both, so it lists the whole group, as
-// it does when a variant does not compile or the limit is reached.
+// it does when a variant does not compile or cannot be compared, or the limit
+// is reached; a silent edit past the limit joins the halving.
 export async function attribute(
   units: Unit[],
   changes: { within: string[] }[],
   silent: string[],
-  shown: (units: Unit[]) => Promise<boolean[]>,
+  shown: (units: Unit[]) => Promise<boolean[] | null>,
 ) {
+  let budget = VARIANTS;
   const causes = changes.map(() => new Set<string>()),
     pool = units.filter((u) => !silent.includes(u.id)),
     compiled = async (group: Unit[]) => {
+      budget--;
       try {
         return await shown(group);
       } catch (error) {
@@ -88,11 +90,10 @@ export async function attribute(
     };
   for (const id of silent) {
     const unit = units.find((u) => u.id === id)!,
-      seen = await compiled([unit]);
+      seen = budget > 0 ? await compiled([unit]) : null;
     if (!seen) pool.push(unit);
     else seen.forEach((s, i) => s && causes[i].add(id));
   }
-  let budget = VARIANTS;
   const all = (group: Unit[], indices: number[]) =>
     indices.forEach((i) => group.forEach((u) => causes[i].add(u.id)));
   const split = async (group: Unit[], indices: number[]): Promise<void> => {
@@ -104,7 +105,6 @@ export async function attribute(
       ],
       seen: boolean[][] = [];
     for (const half of halves) {
-      budget--;
       const result = await compiled(half);
       if (!result) return all(group, indices);
       seen.push(result);
@@ -140,10 +140,11 @@ export async function render(
   await work(output, request);
   const file = path.join(output, "attribute.json");
   if (!fs.existsSync(file)) return;
-  const { changes, silent } = readJson<{
+  const { changes, silent, cards } = readJson<{
     changes: { effect: Effect; within: string[] }[];
     silent: string[];
-  }>(file, { changes: [], silent: [] });
+    cards: RenderRequest["cards"];
+  }>(file, { changes: [], silent: [], cards: undefined });
   fs.rmSync(file);
   const effects = changes.map((c) => c.effect),
     causes = variant
@@ -154,14 +155,14 @@ export async function render(
             effects,
           });
           const shown = path.join(output, "shown.json"),
-            result = readJson<boolean[]>(shown, []);
+            result = readJson<boolean[] | null>(shown, null);
           fs.rmSync(shown, { force: true });
           return result;
         })
       : changes.map((c) =>
           c.within.length ? [] : request.units.map((u) => u.id),
         );
-  await work(output, { ...request, causes });
+  await work(output, { ...request, causes, cards });
 }
 // The places of an edit past those rendered with its round.
 export async function more(output: string, unit: string) {

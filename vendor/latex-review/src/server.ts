@@ -10,7 +10,7 @@ import { CONFIG_NAME, loadProject, type Project } from "./core/config.ts";
 import { Store } from "./core/store.ts";
 import { Tasks } from "./core/tasks.ts";
 import { Review } from "./core/review.ts";
-import { more, Publisher } from "./core/publish.ts";
+import { more, PublishError, Publisher } from "./core/publish.ts";
 import { acquireLock, now, readJson, writeJson } from "./core/files.ts";
 import { stopAll } from "./core/process.ts";
 import type { ActionKind } from "./types.ts";
@@ -176,20 +176,31 @@ export function createServer(app: App) {
       "/api/tasks/:name/rounds/:number/effects/:unit",
       async (request, reply) => {
         const { name, number, unit } = request.params;
-        app.review.round(name, Number(number));
         if (!/^\d+$/.test(number) || !/^c\d+$/.test(unit))
           return reply.code(404).send({ error: "No such change" });
-        return {
-          places: await more(
-            path.join(
-              app.state,
-              "rounds",
-              name,
-              String(Number(number)).padStart(3, "0"),
+        try {
+          app.review.round(name, Number(number));
+        } catch {
+          return reply.code(404).send({ error: "No such round" });
+        }
+        try {
+          return {
+            places: await more(
+              path.join(
+                app.state,
+                "rounds",
+                name,
+                String(Number(number)).padStart(3, "0"),
+              ),
+              unit,
             ),
-            unit,
-          ),
-        };
+          };
+        } catch (error) {
+          if (!(error instanceof PublishError)) throw error;
+          return reply
+            .code(409)
+            .send({ error: `${error.message} ${error.next}`.trim() });
+        }
       },
     );
     server.get<{ Params: { name: string; number: string; file: string } }>(

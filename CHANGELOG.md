@@ -8,6 +8,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 - The PDF review lists the places an edit changes away from its own lines under that edit: the uses of a redefined macro, equations and references renumbered after an inserted equation, a new bibliography entry. The first three are shown and **Show N more** renders the rest. The places have no buttons; deciding the edit decides them. When a round has several edits, Papilot compiles the accepted text with some of them to tell which edit causes each change, so such a round can take longer to build.
 
+### Changed
+
+- Every PDF build of a day prints the same date: Papilot sets TeX's `SOURCE_DATE_EPOCH` to the local date, unless you set it, so `\today` shows today and `\time` shows 12:00. A build kept from an earlier day is rebuilt rather than compared with today's.
+
 ## [0.5.0] - 2026-10-29
 
 ### Added

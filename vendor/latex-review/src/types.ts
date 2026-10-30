@@ -238,6 +238,8 @@ export interface RenderRequest {
   /** The edits that cause each change of the whole documents, found by
    * compiling variants when the round has more than one edit. */
   causes?: string[][];
+  /** The cards of the first pass, reused with `causes`. */
+  cards?: Card[];
 }
 /** Words of the old and new PDF that changed, as ranges of each document's
  * words in reading order. */

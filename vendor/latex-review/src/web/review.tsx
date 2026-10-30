@@ -713,12 +713,14 @@ export function ReviewApp({
               {t("p. {pages}", { pages: place.page })}
               {place.section ? ` · ${place.section}` : ""}
               {place.with
-                ? ` · ${t("with {files}", {
-                    files: [
-                      ...new Set(
-                        place.with.map((id) => units.get(id)?.file ?? id),
-                      ),
-                    ].join(", "),
+                ? ` · ${t("with {changes}", {
+                    changes: place.with
+                      .map((id) =>
+                        firstStop.has(id)
+                          ? t("Change {n}", { n: firstStop.get(id)! + 1 })
+                          : (units.get(id)?.file ?? id),
+                      )
+                      .join(", "),
                   })}`
                 : ""}
             </p>

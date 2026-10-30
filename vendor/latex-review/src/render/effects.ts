@@ -1,11 +1,12 @@
-import { opcodes } from "../core/diff.ts";
+import { opcodesWithin } from "../core/diff.ts";
 import { JOIN_GAP, snap, type Strips } from "./inline.ts";
 import { entryFor, position, textBounds, type Build } from "./locate.ts";
-import { containsCenter, union } from "./pdf.ts";
+import { containsCenter, union, type PdfDocument } from "./pdf.ts";
 import { extract, mergeRects, tokens, type Glyph } from "./pdfdiff.ts";
 import type {
   Card,
   Effect,
+  Op,
   Mark,
   Pair,
   Place,
@@ -28,29 +29,79 @@ const MOVED = 20;
 export interface Words {
   glyphs: Glyph[];
   tokens: ReturnType<typeof tokens>;
+  /** The tokens of each printed line, as [start, end) ranges. */
+  lines: [number, number][];
+}
+// Running heads and page numbers belong to the page, not the text, and text
+// that moves to another page passes them. A line at the top or bottom edge
+// of a page is one when, without the page's own number, it is empty or
+// recurs at that height on another page, as running heads do: "12 Chapter
+// 1" and "14 Chapter 1" recur, while section numbers such as "1.3" and "2.7"
+// that open two pages do not.
+export function furniture(document: Pick<PdfDocument, "length" | "page">) {
+  const edges = Array.from({ length: document.length }, (_, number) => {
+      const page = document.page(number),
+        lines = page.lines.filter((l) => l.text.trim());
+      if (!lines.length) return [];
+      const top = Math.min(...lines.map((l) => l.rect[1])),
+        bottom = Math.max(...lines.map((l) => l.rect[3])),
+        label = new RegExp(
+          `(^|\\s)${page.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=\\s|$)`,
+          "g",
+        );
+      return lines
+        .filter((l) => l.rect[1] - top < 2 || bottom - l.rect[3] < 2)
+        .map((line) => ({
+          rect: line.rect,
+          key: `${Math.round(line.rect[1])}:${line.text.replace(label, " ").trim().replace(/\s+/g, " ")}`,
+        }));
+    }),
+    pages = new Map<string, Set<number>>();
+  edges.forEach((lines, number) =>
+    lines.forEach(({ key }) =>
+      pages.set(key, (pages.get(key) ?? new Set()).add(number)),
+    ),
+  );
+  return edges.map((lines) =>
+    lines
+      .filter(({ key }) => key.endsWith(":") || pages.get(key)!.size > 1)
+      .map(({ rect }) => rect),
+  );
 }
 const read = new WeakMap<Build, Words>();
-// Every word of the page bodies in reading order, without running heads and
-// page numbers, which change whenever text moves to another page.
+// Every word of the pages in reading order, line by line, without their
+// furniture.
 export function words(build: Build): Words {
   const known = read.get(build);
   if (known) return known;
   const document = build.document,
-    bodies = Array.from({ length: document.length }, (_, number) => {
-      const page = document.page(number),
-        [top, bottom] = build.margins.body(page);
-      return {
-        page: number,
-        clip: [0, top, page.width, bottom] as Rect,
-        label: page.label,
-      };
-    }),
-    [glyphs] = extract(document, bodies),
-    result = { glyphs, tokens: tokens(glyphs) };
+    edges = furniture(document),
+    lines = Array.from({ length: document.length }, (_, number) => {
+      const page = document.page(number);
+      return page.lines
+        .filter(
+          (line) =>
+            line.text.trim() &&
+            !edges[number].some((rect) => containsCenter(rect, line.rect)),
+        )
+        .map((line) => ({ page: number, clip: line.rect, label: page.label }));
+    }).flat(),
+    // Each line is its own position, so a glyph's pair is its line.
+    glyphs = extract(document, lines)[0],
+    list = tokens(glyphs),
+    ranges: [number, number][] = [];
+  list.forEach((token, i) => {
+    const line = glyphs[token.start].pair;
+    ranges[line] = [ranges[line]?.[0] ?? i, i + 1];
+  });
+  const result = { glyphs, tokens: list, lines: ranges.filter(Boolean) };
   read.set(build, result);
   return result;
 }
-export function differences(a: Words, b: Words): Effect[] {
+// The comparison gives up past this long, on documents changed throughout,
+// and the round then lists no effects.
+const PATIENCE = 5000;
+export function differences(a: Words, b: Words): Effect[] | null {
   const text = (w: Words, i: number, j: number) =>
       w.tokens
         .slice(i, j)
@@ -58,34 +109,57 @@ export function differences(a: Words, b: Words): Effect[] {
         .join(" "),
     long = (text: string) =>
       text.replace(/[^\p{L}\p{N}]/gu, "").length >= MOVED,
-    ops = opcodes(
-      a.tokens.map((t) => t.text),
-      b.tokens.map((t) => t.text),
-    ).filter((op) => op[0] !== "equal"),
-    removed = new Map<string, number>(),
+    deadline = Date.now() + PATIENCE,
+    within = <T>(x: T[], y: T[]) =>
+      opcodesWithin(x, y, Math.max(1, deadline - Date.now()));
+  // Lines first, as the engine compares a section's rows: a whole printed
+  // line rarely recurs, so the words of an inserted paragraph cannot pair
+  // with like words pages away. Then words, within the lines that differ.
+  const rows = within(
+    a.lines.map(([i, j]) => text(a, i, j)),
+    b.lines.map(([x, y]) => text(b, x, y)),
+  );
+  if (!rows) return null;
+  const at = (w: Words, line: number) => w.lines[line]?.[0] ?? w.tokens.length,
+    changed: Op[] = [];
+  for (const [tag, i, j, x, y] of rows) {
+    if (tag === "equal") continue;
+    const [i0, j0, x0, y0] = [at(a, i), at(a, j), at(b, x), at(b, y)],
+      ops = within(
+        a.tokens.slice(i0, j0).map((t) => t.text),
+        b.tokens.slice(x0, y0).map((t) => t.text),
+      );
+    if (!ops) return null;
+    for (const [kind, p, q, r, t] of ops)
+      if (kind !== "equal")
+        changed.push([kind, i0 + p, i0 + q, x0 + r, x0 + t]);
+  }
+  const removed = new Map<string, number>(),
     added = new Map<string, number>(),
     count = (counts: Map<string, number>, key: string) =>
       counts.set(key, (counts.get(key) ?? 0) + 1);
-  for (const [tag, i, j, x, y] of ops) {
+  for (const [tag, i, j, x, y] of changed) {
     if (tag === "delete" && long(text(a, i, j))) count(removed, text(a, i, j));
     if (tag === "insert" && long(text(b, x, y))) count(added, text(b, x, y));
   }
-  const moved = (
-    counts: Map<string, number>,
-    other: Map<string, number>,
-    key: string,
-  ) => {
-    if (!other.get(key)) return false;
-    other.set(key, other.get(key)! - 1);
-    counts.set(key, counts.get(key)! - 1);
-    return true;
-  };
-  return ops
+  // As many removals and additions of a run as pair up are moves.
+  const pairs = (counts: Map<string, number>, other: Map<string, number>) =>
+      new Map(
+        [...counts].map(([key, n]) => [key, Math.min(n, other.get(key) ?? 0)]),
+      ),
+    left = pairs(removed, added),
+    right = pairs(added, removed),
+    moved = (budget: Map<string, number>, key: string) => {
+      const n = budget.get(key) ?? 0;
+      if (n > 0) budget.set(key, n - 1);
+      return n > 0;
+    };
+  return changed
     .filter(([tag, i, j, x, y]) =>
-      tag === "delete" && removed.get(text(a, i, j))
-        ? !moved(removed, added, text(a, i, j))
-        : tag === "insert" && added.get(text(b, x, y))
-          ? !moved(added, removed, text(b, x, y))
+      tag === "delete"
+        ? !moved(left, text(a, i, j))
+        : tag === "insert"
+          ? !moved(right, text(b, x, y))
           : true,
     )
     .map(([, i, j, x, y]) => ({ old: [i, j], new: [x, y] }));
@@ -107,7 +181,7 @@ export function changesOf(old: Build, next: Build, cards: Card[]) {
           );
         }),
       );
-  return differences(a, b).map((effect) => ({
+  return (differences(a, b) ?? []).map((effect) => ({
     effect,
     within: cards
       .filter(
@@ -122,33 +196,40 @@ export function changesOf(old: Build, next: Build, cards: Card[]) {
 // old document.
 const meets = ([i, j]: [number, number], [a, b]: [number, number]) =>
   i < j && a < b ? a < j && b > i : a <= j && b >= i;
-// Which changes a variant build also makes to the old build.
+// Which changes a variant build also makes to the old build, or null when
+// the comparison gave up.
 export function shownBy(old: Build, variant: Build, effects: Effect[]) {
   const changes = differences(words(old), words(variant));
-  return effects.map((effect) =>
-    changes.some((change) => meets(effect.old, change.old)),
+  return (
+    changes &&
+    effects.map((effect) =>
+      changes.some((change) => meets(effect.old, change.old)),
+    )
   );
 }
-// The lines a run of words occupies, one position per page. A side with no
-// words shows the line where they would be.
+// The lines a run of words occupies, one position per column of each page.
+// A side with no words shows the line where they would be.
 function positions(build: Build, w: Words, [i, j]: [number, number]) {
   let glyphs = glyphsOf(w, [i, j]);
   if (!glyphs.length) {
     const near = w.tokens[i - 1] ?? w.tokens[i];
     glyphs = near ? w.glyphs.slice(near.start, near.end) : [];
   }
-  const pages = new Map<number, Rect>();
-  for (const glyph of glyphs)
-    pages.set(
+  const parts = new Map<string, [number, number, Rect]>();
+  for (const glyph of glyphs) {
+    const column = build.document.page(glyph.page).column(glyph.rect),
+      key = `${glyph.page}:${column}`,
+      part = parts.get(key);
+    parts.set(key, [
       glyph.page,
-      pages.has(glyph.page)
-        ? union(pages.get(glyph.page)!, glyph.rect)
-        : glyph.rect,
-    );
-  return [...pages].map(([number, rect]): Position => {
+      column,
+      part ? union(part[2], glyph.rect) : glyph.rect,
+    ]);
+  }
+  return [...parts.values()].map(([number, column, rect]): Position => {
     const page = build.document.page(number),
       [left, right] = textBounds(page),
-      [columnLeft, columnRight] = page.columnBounds(page.column(rect)),
+      [columnLeft, columnRight] = page.columnBounds(column),
       x0 = Math.max(left, columnLeft),
       x1 = Math.min(right, columnRight);
     // Take in every printed line the crop cuts through, so a tall brace or
@@ -178,8 +259,8 @@ function positions(build: Build, w: Words, [i, j]: [number, number]) {
     };
   });
 }
-// The section a place in the PDF belongs to: the last heading before it.
-function sectionAt(build: Build, at: Position) {
+// The section a point of the PDF belongs to: the last heading before it.
+function sectionAt(build: Build, at: number, y: number) {
   const toc = build.document.outline;
   let found: [string, number, number] | null = null;
   for (const node of build.outline) {
@@ -189,7 +270,7 @@ function sectionAt(build: Build, at: Position) {
     } catch {
       continue;
     }
-    const before = page < at.page || (page === at.page && top <= at.clip[3]);
+    const before = page < at || (page === at && top <= y);
     if (
       before &&
       (!found || page > found[1] || (page === found[1] && top >= found[2]))
@@ -288,10 +369,18 @@ export function placesOf(
             after_marks: marks(draft.added, draft.right[i], "added"),
           }),
         ),
-        at = draft.right[0] ?? draft.left[0];
+        shown = draft.right.length ? draft.right : draft.left,
+        // The section of the first changed word, which a crop can start
+        // above or end below.
+        first = draft.added[0] ?? draft.removed[0],
+        anchor = first
+          ? sectionAt(draft.added[0] ? next : old, first.page, first.rect[1])
+          : shown[0]
+            ? sectionAt(next, shown[0].page, shown[0].clip[1])
+            : null;
       return {
-        page: at?.label ?? "",
-        section: at ? sectionAt(draft.right[0] ? next : old, at) : null,
+        page: [...new Set(shown.map((p) => p.label))].join(", "),
+        section: anchor,
         pairs,
         ...(draft.with.length ? { with: draft.with } : {}),
       };

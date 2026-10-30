@@ -109,7 +109,7 @@ export const zhCN: Record<string, string> = {
   "Continued: only line breaks moved here.": "续：这里只有换行位置变化。",
   "Affects {n} place": "影响 {n} 处",
   "Affects {n} places": "影响 {n} 处",
-  "with {files}": "需与 {files} 一起",
+  "with {changes}": "需与{changes}一起",
   "Show {n} more": "再显示 {n} 处",
   "Loading…": "正在加载…",
   "Your comment: ": "你的评论：",
