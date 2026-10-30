@@ -1271,7 +1271,8 @@ try {
   const otherTask = { ...task, id: 'other-task-0001', projectId: otherPaper.id, name: 'p-other', title: 'Polish the second paper', status: 'reviewing', review: null };
   const papers = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 900 } });
   const papersPage = await papers.newPage();
-  await papersPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? { ...snapshot, projects: [...snapshot.projects, otherPaper], tasks: [otherTask], requests: [] } : { items: [], build: { status: 'building' }, git: { files: [] } } }));
+  const paperState = { ...snapshot, projects: [...snapshot.projects, otherPaper], tasks: [otherTask], requests: [] };
+  await papersPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? paperState : { items: [], build: { status: 'building' }, git: { files: [] } } }));
   await papersPage.goto(origin);
   await papersPage.getByRole('heading', { name: otherTask.title }).waitFor();
   assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
@@ -1279,8 +1280,35 @@ try {
   await papersPage.getByRole('tab', { name: 'New task', exact: true }).click();
   await papersPage.getByRole('textbox', { name: 'Describe the revision' }).waitFor();
   assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
+  // A saved empty task means the manuscript. A newer task in another paper
+  // must not steal the page on reload, nor change the selected paper.
+  const unrelatedTask = { ...otherTask, id: 'unrelated-task', projectId: snapshot.projects[0].id, title: 'A newer task in the first paper' };
+  paperState.tasks.push(unrelatedTask);
+  const manuscriptDraft = papersPage.getByRole('textbox', { name: 'Describe the revision' });
+  await manuscriptDraft.fill('Continue editing this paper after reload.');
+  await papersPage.reload();
+  await manuscriptDraft.waitFor();
+  assert.equal(await manuscriptDraft.inputValue(), 'Continue editing this paper after reload.');
+  assert.equal(await papersPage.locator('.task-grid').count(), 0);
+  assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
+  assert.deepEqual(await papersPage.evaluate(() => [localStorage.getItem('papilot:task'), localStorage.getItem('papilot:project')]), ['', otherPaper.id]);
+  await papersPage.getByRole('button', { name: new RegExp('^' + otherTask.title) }).click();
+  await papersPage.getByRole('heading', { name: otherTask.title, exact: true }).waitFor();
+  await papersPage.reload();
+  await papersPage.getByRole('heading', { name: otherTask.title, exact: true }).waitFor();
+  assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
+  // A task removed while the page was closed falls back to its manuscript,
+  // and the next reload must keep that explicit manuscript selection.
+  paperState.tasks = [unrelatedTask];
+  await papersPage.reload(); await manuscriptDraft.waitFor();
+  await papersPage.reload(); await manuscriptDraft.waitFor();
+  assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
+  paperState.projects = snapshot.projects;
+  await papersPage.reload(); await manuscriptDraft.waitFor();
+  assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), `Paper: ${snapshot.projects[0].name}`);
+  assert.equal(await papersPage.evaluate(() => localStorage.getItem('papilot:project')), snapshot.projects[0].id);
   await papers.close();
-  console.log('PASS: New task stays on the paper of the task being read');
+  console.log('PASS: Reload restores the manuscript or selected task and its paper, preserves drafts, and recovers from removed tasks and papers');
 
   const restricted = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1280, height: 800 } });
   await restricted.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Storage blocked', 'SecurityError'); } }));

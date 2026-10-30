@@ -647,8 +647,9 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
 
 function App() {
   const [state, setState] = useState<Snapshot | null>(null);
-  const [selected, setSelected] = useState(browserStorage.getItem('papilot:task') || '');
-  const [projectId, setProjectId] = useState('');
+  const [savedTask] = useState(() => browserStorage.getItem('papilot:task'));
+  const [selected, setSelected] = useState(savedTask || '');
+  const [projectId, setProjectId] = useState(() => browserStorage.getItem('papilot:project') || '');
   const [timeline, setTimeline] = useState<{ taskId: string; items: TimelineItem[] }>({ taskId: '', items: [] });
   const [itemsLoading, setItemsLoading] = useState(false);
   const [timelineError, setTimelineError] = useState({ taskId: '', message: '' });
@@ -792,12 +793,13 @@ function App() {
         setDeleteTarget(current => current && !next.tasks.some(t => t.id === current.id) ? null : current);
         for (const id of answerDrafts.current.keys()) if (!next.requests.some(r => r.id === id)) answerDrafts.current.delete(id);
         if (selection && !next.tasks.some(t => t.id === selection)) setSelected('');
-        if (!loaded.current) { loaded.current = true; if (!selection) setSelected(next.tasks.filter(task => !task.archivedAt).at(-1)?.id || ''); }
+        // An empty saved task is the manuscript, not a missing preference.
+        if (!loaded.current) { loaded.current = true; if (savedTask === null && !selection) setSelected(next.tasks.filter(task => !task.archivedAt).at(-1)?.id || ''); }
       });
       const selection = selectedRef.current;
       if (!document.hidden && selection && snapshotRef.current?.tasks.some(t => t.id === selection)) await refreshTimeline(selection);
     } catch (e) { setOnline(false); setConnectionError(e instanceof Error ? e.message : String(e)); }
-  }, [snapshotRequest, refreshTimeline]);
+  }, [snapshotRequest, refreshTimeline, savedTask]);
   useEffect(() => {
     let generation = 0, timer: ReturnType<typeof setTimeout> | undefined;
     let events: EventSource | undefined;
@@ -833,13 +835,18 @@ function App() {
     if (selected && snapshotRef.current?.tasks.some(t => t.id === selected)) void refreshTimeline(selected);
     return () => timelineRequest.cancel();
   }, [selected, refreshTimeline, timelineRequest]);
-  useEffect(() => { if (!projectId && state?.projects.length) setProjectId(state.projects[0].id); }, [state, projectId]);
   const task = state?.tasks.find(t => t.id === selected);
-  // The paper follows the task being read, so New task and PDF stay on that paper.
-  useEffect(() => { if (task?.projectId) setProjectId(task.projectId); }, [task?.projectId]);
   if (task && !composers.current.has(task.id)) composers.current.set(task.id, new ComposerDraft('papilot:draft:' + task.id, browserStorage, uuid));
   const fullPdfUrl = task?.status !== 'deleting' && task?.review?.round ? `/api/tasks/${task.id}/pdf?round=${task.review.round}` : '';
   const project = state?.projects.find(p => p.id === (task?.projectId || projectId)) || state?.projects[0];
+  // Remember the paper even when its manuscript is open, and replace stale
+  // paper IDs only after the host has returned the accessible papers.
+  useEffect(() => {
+    if (!state) return;
+    const id = project?.id || '';
+    setProjectId(id);
+    browserStorage.setItem('papilot:project', id);
+  }, [project?.id, Boolean(state)]);
   useEffect(() => { setTaskSearch(''); setShowArchived(false); }, [project?.id]);
   useEffect(() => { if (task) setShowArchived(Boolean(task.archivedAt)); }, [task?.id]);
   // Older servers send no viewer: whoever is looking is the owner.
