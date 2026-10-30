@@ -1,7 +1,7 @@
 @import "./theme.css";
 
 /* A modern workspace with a manuscript voice: system sans for the interface,
-   TeX Gyre Pagella only for titles (brand, paper, task and page headings), and
+   TeX Gyre Pagella only for paper and page headings, and
    Inconsolata for code. Clean neutral greys with one clear blue for primary
    actions, links and selection, soft radii and layered surfaces. The embedded
    review viewer receives matching values in review-frame.tsx. */
@@ -66,14 +66,14 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 /* Sidebar */
 .sidebar{width:272px;flex-shrink:0;background:var(--sidebar);border-right:1px solid var(--line);padding:0 10px 10px;display:flex;flex-direction:column;height:100dvh}
 .sidebar-collapsed>.sidebar{display:none}
-.sidebar-header{display:flex;align-items:center;justify-content:space-between;height:58px;flex-shrink:0;padding:0 2px 0 8px}
-.brand{display:flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font:400 20px/1 var(--serif);letter-spacing:-.005em}
-.brand-mark{width:24px;height:24px;display:block}
+.sidebar-header{display:flex;align-items:center;justify-content:space-between;height:44px;flex-shrink:0;padding:0 4px 0 10px}
+.brand{display:flex;align-items:center;gap:7px;color:var(--text-2);text-decoration:none;font:500 13px/1 var(--sans)}
+.brand-mark{width:18px;height:18px;display:block}
 .sidebar-section{display:flex;align-items:center;gap:6px;padding:0 10px;margin:0 0 4px;font-size:12px;font-weight:500;color:var(--text-3)}
 .count{font-size:11.5px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--text-3)}
-.sidebar-actions{display:flex;flex-direction:column;gap:1px;margin-bottom:16px}
+.sidebar-actions{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
 .sidebar-actions>.menu-anchor{display:flex}
-.project-switcher{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:6px 10px;margin-bottom:6px;border-radius:var(--r-md);font:400 17px/1.3 var(--serif);text-align:left;color:var(--text);transition:background-color .15s}
+.project-switcher{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:6px 10px;margin-bottom:2px;border-radius:var(--r);font:400 18px/1.3 var(--serif);text-align:left;color:var(--text);transition:background-color .15s}
 .project-switcher:hover,.project-switcher[aria-expanded=true]{background:var(--bg-hover)}
 .project-switcher>svg{color:var(--text-3)}
 .project-switcher-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -84,10 +84,10 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .nav-link.active>svg{color:var(--accent)}
 .nav-label{flex-shrink:0}
 .nav-meta{flex:1;min-width:0;text-align:right;font-size:12px;font-weight:400;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.manuscript-link{position:relative;min-height:40px;gap:8px;font-weight:500}
-.manuscript-link>svg:last-child{margin-left:auto}
-.manuscript-link.active{background:transparent}
-.manuscript-link.active::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:2px;border-radius:1px;background:var(--accent)}
+.manuscript-link{min-height:36px;gap:8px;font-weight:400}
+.manuscript-link.active{background:var(--bg-hover);font-weight:400}
+.manuscript-link.active>svg{color:var(--text-3)}
+.manuscript-link .nav-meta{font-size:11.5px}
 .manuscript-link:active:not(:disabled){background:var(--bg-active)}
 .add-project{border:1px dashed var(--line-strong);min-height:40px;margin-bottom:6px}
 .task-list{overflow:auto;flex:1;margin:0 -4px;padding:2px 4px}
@@ -111,12 +111,14 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .task-row:hover .more-button,.task-row:focus-within .more-button,.task-row .more-button[aria-expanded=true]{opacity:1}
 @media(hover:none){.task-row .more-button{opacity:1}}
 .task-list-empty{font-size:13px;color:var(--text-3);padding:8px 10px;line-height:1.6}
-.task-list-heading{min-height:28px;padding-right:2px}
+.task-list-heading{min-height:28px;margin-bottom:0;padding-right:6px}
 .archive-toggle{margin-left:auto}
+.task-list-heading .archive-toggle{width:26px;height:26px}
 .archive-toggle[aria-pressed=true]{color:var(--accent);background:var(--bg-hover)}
-.task-search{display:flex;align-items:center;gap:7px;flex-shrink:0;min-height:34px;margin:0 4px 8px;padding:0 8px;border:1px solid transparent;border-radius:var(--r);color:var(--text-3);background:var(--bg-muted)}
-.task-search:focus-within{border-color:var(--accent);box-shadow:var(--ring)}
-.task-search input{min-width:0;flex:1;width:100%;padding:7px 0;border:0;outline:none;background:transparent;box-shadow:none;font-size:13px;color:var(--text)}
+.task-search{display:flex;align-items:center;gap:7px;flex-shrink:0;min-height:30px;margin:0 0 6px;padding:0 10px;border:1px solid transparent;border-radius:var(--r);color:var(--text-3);background:transparent;transition:background-color .12s,border-color .12s}
+.task-search:hover{background:var(--bg-hover)}
+.task-search:focus-within{background:var(--bg);border-color:var(--accent);box-shadow:var(--ring)}
+.task-search input{min-width:0;flex:1;width:100%;padding:5px 0;border:0;outline:none;background:transparent;box-shadow:none;font-size:12.5px;color:var(--text)}
 .task-search input::-webkit-search-cancel-button{display:none}
 .task-search .icon-button{width:24px;height:24px;flex-shrink:0}
 .task-rename{flex:1;min-width:0;padding:5px 4px 5px 6px}
@@ -862,13 +864,16 @@ body.resizing iframe{pointer-events:none}
   .pdf-container .pdfViewer{padding:10px 0 40px}
   .pdf-container .pdfViewer.removePageBorders .page{margin-bottom:10px}
   .add-note{height:40px;font-size:14px}
-  .sidebar-header{height:58px}
+  .sidebar-header{height:48px}
   .sidebar .icon-button{width:44px;height:44px}
+  .task-list-heading{padding-right:0}
   .project-switcher{min-height:44px}
   .nav-link,.add-project{min-height:44px;font-size:15px}
   .sidebar-footer .settings-link{min-height:44px}
   .task-link{min-height:56px;padding:10px 4px 10px 10px}
   .task-title{font-size:15px}
+  .task-search{min-height:40px}
+  .task-search input{font-size:16px}
   .task-row .more-button{width:44px;height:44px}
   .task-rename input{height:44px;font-size:16px}
   .message-action{height:36px}
