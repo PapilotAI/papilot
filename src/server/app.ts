@@ -191,7 +191,27 @@ export async function buildApp(options: AppOptions) {
     const by = author(request.viewer);
     return store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(rects.length ? { rects } : {}), comment, quote, source, createdAt: Date.now(), ...(by ? { author: by } : {}) });
   });
-  app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/delete', project(), request => { store.deleteAnnotation(store.project(request.params.id).id, request.params.note); return { ok: true }; });
+  app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note', project(), request => {
+    const note = store.annotation(request.params.id, request.params.note);
+    if (workspace.annotationSending(note.id)) throw new Error('This note is being sent. Wait for the task to finish creating.');
+    if (note.taskId) throw new Error('This note has already been sent.');
+    if (note.deletedAt !== undefined) throw new Error('This note has been deleted. Undo the deletion first.');
+    return store.saveAnnotation({ ...note, comment: string((request.body as any)?.comment, 'Note', 4000) });
+  });
+  app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/delete', project(), request => {
+    const note = store.annotation(request.params.id, request.params.note);
+    if (workspace.annotationSending(note.id)) throw new Error('This note is being sent. Wait for the task to finish creating.');
+    store.deleteAnnotation(request.params.id, request.params.note); return { ok: true };
+  });
+  app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/restore', project(), request => {
+    const note = store.annotation(request.params.id, request.params.note);
+    if (workspace.annotationSending(note.id)) throw new Error('This note is being sent. Wait for the task to finish creating.');
+    if (note.taskId) throw new Error('This note has already been sent.');
+    const { deletedAt: _, ...restored } = note;
+    store.saveAnnotation(restored);
+    // Return the original order, including any notes added since the deletion.
+    return { annotations: store.annotations(request.params.id).filter(note => !note.taskId) };
+  });
   app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', project(), async request => {
     const project = store.project(request.params.id), b = request.body as any, id = string(b.id, 'Task ID', 64);
     // A retried send returns its task; an ID from another paper is refused.

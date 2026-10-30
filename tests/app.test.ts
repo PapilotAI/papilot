@@ -193,6 +193,64 @@ test('one task carries PDF notes, a skill and the overall request; retries leave
   } finally { await f.close(); }
 });
 
+test('notes can be edited, deleted and restored in order without changing their PDF anchors or authors', async () => {
+  const f = await fixture();
+  try {
+    const note = { id: 'editable-note', projectId: 'thesis', key: 'pdf', page: 2, rect: [0.1, 0.2, 0.6, 0.3] as [number, number, number, number], rects: [[0.1, 0.2, 0.6, 0.3]] as [number, number, number, number][], quote: 'Original sentence.', comment: 'Shorten.', source: { file: 'main.tex', lines: [10, 12] as [number, number], excerpt: 'Original source.' }, createdAt: 1, author: { id: f.ada.id, name: 'Ada' } };
+    f.store.saveAnnotation(note); f.store.saveAnnotation({ ...note, id: 'next-note' });
+    const post = (suffix: string, payload: Record<string, unknown> = {}) => f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations/editable-note' + suffix, headers: f.as, payload });
+    for (const comment of ['', '  ', 'x'.repeat(4001), 42]) assert.equal((await post('', { comment })).statusCode, 400);
+    const edited = await post('', { comment: '  Keep the technical terms.  ', quote: 'Forged quote', author: { name: 'Someone else' }, page: 9 });
+    const expected = { ...note, comment: 'Keep the technical terms.' };
+    assert.equal(edited.statusCode, 200, edited.body); assert.deepEqual(edited.json(), expected);
+    assert.equal((await post('/delete')).statusCode, 200);
+    assert.equal((await post('/delete')).statusCode, 200, 'deletion is safe to retry');
+    assert.deepEqual(f.store.annotations('thesis').map(note => note.id), ['next-note']);
+    assert.equal((await post('', { comment: 'Cannot edit a deleted note.' })).statusCode, 400);
+    const sendDeleted = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'deleted-note-task-01', projectId: 'thesis', title: 'Revise', instructions: '', annotations: [note.id] } });
+    assert.equal(sendDeleted.statusCode, 400);
+    f.store.saveAnnotation({ ...note, id: 'newer-note' });
+    const restored = await post('/restore');
+    assert.equal(restored.statusCode, 200, restored.body);
+    assert.deepEqual(restored.json().annotations.map((note: any) => note.id), ['editable-note', 'next-note', 'newer-note']);
+    assert.deepEqual(restored.json().annotations[0], expected);
+    assert.equal((await post('/restore')).statusCode, 200);
+    assert.equal(f.store.annotations('thesis').length, 3, 'restore retries do not duplicate notes');
+    // A paper ID cannot be used to alter a note from another paper.
+    f.store.saveAnnotation({ ...note, id: 'private-note', projectId: 'grant' });
+    for (const suffix of ['', '/delete', '/restore']) {
+      const response = await f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations/private-note' + suffix, headers: f.as, payload: { comment: 'Changed' } });
+      assert.equal(response.statusCode, 400);
+    }
+    assert.equal(f.store.annotations('grant')[0].comment, note.comment);
+    const sent = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'edited-note-task-01', projectId: 'thesis', title: 'Revise', instructions: '', annotations: [note.id] } });
+    assert.equal(sent.statusCode, 200, sent.body);
+    assert.equal(f.store.items('edited-note-task-01')[0].meta?.notes?.[0].comment, expected.comment);
+    for (const suffix of ['', '/delete', '/restore']) assert.equal((await post(suffix, { comment: 'Too late' })).statusCode, 400);
+  } finally { await f.close(); }
+});
+
+test('notes being submitted cannot be edited or deleted while task creation awaits the review service', async () => {
+  const f = await fixture();
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  try {
+    f.store.saveAnnotation({ id: 'sending-note', projectId: 'thesis', key: 'pdf', page: 0, rect: [0, 0, 1, 1], quote: '', comment: 'Keep this text.', source: null, createdAt: 1 });
+    const workspace = f.workspace as any, connect = workspace.connectReview;
+    let entered!: () => void;
+    const waiting = new Promise<void>(resolve => { entered = resolve; });
+    workspace.connectReview = async (...args: any[]) => { entered(); await pending; return connect(...args); };
+    const creating = f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'sending-note-task-01', projectId: 'thesis', title: 'Revise', instructions: '', annotations: ['sending-note'] } }).then(result => result);
+    await waiting;
+    for (const suffix of ['', '/delete', '/restore']) {
+      const response = await f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations/sending-note' + suffix, headers: f.as, payload: { comment: 'Changed' } });
+      assert.equal(response.statusCode, 400); assert.match(response.json().error, /being sent/);
+    }
+    release(); assert.equal((await creating).statusCode, 200);
+    assert.equal(f.store.items('sending-note-task-01')[0].meta?.notes?.[0].comment, 'Keep this text.');
+  } finally { release(); await f.close(); }
+});
+
 test('task attachments must be pending notes from the selected paper', async () => {
   const f = await fixture();
   try {

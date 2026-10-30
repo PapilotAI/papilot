@@ -43,6 +43,8 @@ const originalGit = structuredClone(gitState);
 const gitCommits = [], gitActions = [], gitIgnores = [], gitMessages = [], gitStages = [];
 const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true };
 let annotations = [];
+const deletedNotes = new Map();
+let failNoteEdit = false, failNoteDelete = false, failNoteRestore = false;
 const noteSends = [];
 const fixturePdf = fs.readFileSync('tests/fixtures/outline.pdf');
 // The server's word places for the fixture PDF (tests/manuscript.test.ts keeps them current).
@@ -102,7 +104,21 @@ await page.route('**/api/**', async route => {
   }
   if (/\/git\/(fetch|pull|push)$/.test(url.pathname)) { const action = url.pathname.split('/').pop(); gitActions.push(action); if (action === 'push') gitState.ahead = 0; return json({ git: gitState }); }
   if (url.pathname.endsWith('/manuscript')) return json({ git: gitState, build: manuscriptBuild, annotations });
-  if (url.pathname.endsWith('/delete') && url.pathname.includes('/annotations/')) { const id = url.pathname.split('/')[5]; annotations = annotations.filter(note => note.id !== id); return json({ ok: true }); }
+  if (url.pathname.endsWith('/delete') && url.pathname.includes('/annotations/')) {
+    if (failNoteDelete) return route.fulfill({ status: 503, json: { error: 'Could not delete. Try again.' } });
+    const id = url.pathname.split('/')[5]; deletedNotes.set(id, { note: annotations.find(note => note.id === id), index: annotations.findIndex(note => note.id === id) });
+    annotations = annotations.filter(note => note.id !== id); return json({ ok: true });
+  }
+  if (url.pathname.endsWith('/restore') && url.pathname.includes('/annotations/')) {
+    if (failNoteRestore) return route.fulfill({ status: 503, json: { error: 'Could not restore. Try again.' } });
+    const removed = deletedNotes.get(url.pathname.split('/')[5]); annotations.splice(removed.index, 0, removed.note);
+    return json({ annotations });
+  }
+  if (/\/annotations\/[^/]+$/.test(url.pathname)) {
+    if (failNoteEdit) return route.fulfill({ status: 503, json: { error: 'Could not save. Try again.' } });
+    const note = annotations.find(note => note.id === url.pathname.split('/')[5]);
+    note.comment = route.request().postDataJSON().comment; return json(note);
+  }
   if (url.pathname.endsWith('/annotations')) {
     const body = route.request().postDataJSON();
     const note = { id: `note-${annotations.length + 1}`, projectId: task.projectId, quote: 'The marked fixture sentence.', ...body, source: { file: 'main.tex', lines: [10, 12], excerpt: 'The marked \\emph{fixture} sentence.' }, createdAt: 1 };
@@ -435,10 +451,53 @@ try {
   noteBox = page.getByRole('textbox', { name: 'Note for the agent' });
   await noteBox.fill('Only these words.');
   await noteBox.press('Enter');
-  await page.getByRole('button', { name: 'Note 1: Only these words.' }).waitFor();
+  await page.getByRole('button', { name: 'Note 1: Only these words.', exact: true }).waitFor();
   assert.equal(annotations[0].quote, 'sentence about');
+  // Clicking the comment edits it; failed saves keep the text, and Cancel changes nothing.
+  const anchor = structuredClone(annotations[0]);
+  await notesPanel.getByRole('button', { name: 'Edit note 1: Only these words.' }).click();
+  const editingNote = notesPanel.getByRole('textbox', { name: 'Edit note 1', exact: true });
+  await editingNote.fill('');
+  assert.equal(await notesPanel.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Start task', exact: true }).isDisabled(), true);
+  await editingNote.fill('Discarded edit.'); await editingNote.press('Escape');
+  assert.equal(annotations[0].comment, 'Only these words.');
+  await notesPanel.getByRole('button', { name: 'Edit note 1: Only these words.' }).click();
+  await editingNote.fill('Only these words, please.');
+  failNoteEdit = true;
+  await notesPanel.getByRole('button', { name: 'Save', exact: true }).click();
+  await notesPanel.getByRole('alert').waitFor();
+  assert.equal(await editingNote.inputValue(), 'Only these words, please.');
+  failNoteEdit = false;
+  await editingNote.press('Enter');
+  await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor();
+  assert.deepEqual(annotations[0], { ...anchor, comment: 'Only these words, please.' });
+  await page.reload();
+  await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor();
+  failNoteDelete = true;
   await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
-  await page.getByRole('button', { name: 'Note 1: Only these words.' }).waitFor({ state: 'hidden' });
+  await notesPanel.getByRole('alert').waitFor(); assert.equal(annotations.length, 1);
+  failNoteDelete = false;
+  await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
+  await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor({ state: 'hidden' });
+  assert.equal(await notesPanel.locator('.note-undo').count(), 0, 'no dedicated undo UI');
+  // Text fields keep native undo even when a deleted annotation can be restored.
+  await prompt.fill(''); await prompt.pressSequentially('Undo this text');
+  await prompt.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+  assert.ok((await prompt.inputValue()).length < 'Undo this text'.length, 'native undo edits the text');
+  assert.equal(annotations.length, 0); await prompt.fill('');
+  await notesPanel.getByRole('button', { name: 'Text note', exact: true }).focus();
+  await page.keyboard.press('Meta+Shift+z');
+  assert.equal(annotations.length, 0, 'redo is not interpreted as undo');
+  failNoteRestore = true;
+  await page.keyboard.press('Meta+z');
+  await notesPanel.getByRole('alert').waitFor(); assert.equal(annotations.length, 0);
+  failNoteRestore = false;
+  await page.keyboard.press('Control+z');
+  await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor();
+  assert.deepEqual(annotations[0], { ...anchor, comment: 'Only these words, please.' });
+  await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
+  await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor({ state: 'hidden' });
   noteBox = await selectText();
   await noteBox.fill('Shorten this sentence.');
   await noteBox.press('Enter');
@@ -447,10 +506,10 @@ try {
   assert.equal(annotations[0].key, 'fixture');
   assert.equal(annotations[0].quote, 'Fixture sentence about');
   assert.ok(annotations[0].rects.length >= 1 && annotations[0].rects.every(([x0, y0, x1, y1]) => x0 < x1 && y0 < y1 && y1 < 0.5));
-  await page.getByRole('button', { name: 'Note 1: Shorten this sentence.' }).waitFor();
+  await page.getByRole('button', { name: 'Note 1: Shorten this sentence.', exact: true }).waitFor();
   assert.ok(await page.locator('.note-mark').count() >= 1);
   await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
-  await page.getByRole('button', { name: 'Note 1: Shorten this sentence.' }).waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Note 1: Shorten this sentence.', exact: true }).waitFor({ state: 'hidden' });
   assert.equal(annotations.length, 0);
   // A region marks a figure or equation that has no text to select.
   await notesPanel.getByRole('button', { name: 'Region note', exact: true }).click();

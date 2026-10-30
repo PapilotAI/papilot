@@ -87,6 +87,50 @@ try {
   await frame().getByRole('textbox', { name: 'Note for the agent' }).fill('Check the spacing in this region.');
   await frame().getByRole('button', { name: 'Add note', exact: true }).click();
   await page.getByRole('button', { name: 'Review notes, 3', exact: true }).waitFor();
+  // Existing comments edit in place, preserving the exact marked text and geometry.
+  const savedDraft = () => page.evaluate(() => JSON.parse(localStorage.getItem('papilot:review-notes:review-notes-fixture')));
+  const originalNotes = (await savedDraft()).notes;
+  await frame().getByRole('button', { name: 'Edit note 2: Keep this accepted paragraph.' }).click();
+  await noteInput.fill('Keep this accepted paragraph and its citation.');
+  await page.reload();
+  await noteInput.waitFor();
+  assert.equal(await noteInput.inputValue(), 'Keep this accepted paragraph and its citation.', 'unfinished edits survive reload');
+  await frame().getByRole('button', { name: 'Save', exact: true }).click();
+  await frame().getByRole('button', { name: 'Edit note 2: Keep this accepted paragraph and its citation.' }).waitFor();
+  assert.deepEqual((await savedDraft()).notes[1], { ...originalNotes[1], comment: 'Keep this accepted paragraph and its citation.' });
+  await frame().getByRole('button', { name: 'Edit note 2: Keep this accepted paragraph and its citation.' }).click();
+  await noteInput.fill('Discard this edit.');
+  await noteInput.press('Escape');
+  assert.equal((await savedDraft()).editing, null);
+  assert.equal((await savedDraft()).notes[1].comment, 'Keep this accepted paragraph and its citation.');
+  // Consecutive deletes can each be undone, including after a reload.
+  const beforeDelete = (await savedDraft()).notes;
+  await frame().getByRole('button', { name: 'Delete review note 2' }).click();
+  await frame().getByRole('button', { name: 'Delete review note 1' }).click();
+  assert.equal(await frame().locator('.review-note-tag').count(), 1);
+  await frame().getByRole('button', { name: /^Edit note 1:/ }).click();
+  await noteInput.fill(''); await noteInput.pressSequentially('Undo this text');
+  await noteInput.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+  assert.ok((await noteInput.inputValue()).length < 'Undo this text'.length, 'native undo edits the text');
+  assert.equal((await savedDraft()).notes.length, 1, 'text undo must not restore a deleted note');
+  await frame().getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.reload();
+  await page.getByRole('button', { name: 'Review notes, 1', exact: true }).click();
+  assert.equal(await frame().locator('.note-undo').count(), 0, 'no dedicated undo UI');
+  // The first shortcut starts in the parent toolbar; the second is inside the iframe.
+  await frame().locator('body').evaluate(body => {
+    const win = body.ownerDocument.defaultView;
+    win.reviewUndoKeys = 0;
+    win.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key === 'z') win.reviewUndoKeys++; });
+  });
+  await page.keyboard.press('Meta+z');
+  await page.getByRole('button', { name: 'Review notes, 2', exact: true }).waitFor();
+  await frame().getByRole('button', { name: /^Edit note 1:/ }).focus();
+  await page.keyboard.press('Control+z');
+  await page.getByRole('button', { name: 'Review notes, 3', exact: true }).waitFor();
+  assert.deepEqual((await savedDraft()).notes, beforeDelete);
+  assert.equal(await frame().locator('.review-note-tag').count(), 3);
+  assert.equal(await frame().locator('body').evaluate(body => body.ownerDocument.defaultView.reviewUndoKeys), 0, 'restoring a note must not also undo a review decision');
   fs.mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/review-notes-desktop.png', fullPage: true });
   await frame().getByRole('button', { name: 'Send 3 notes to the agent' }).click();
@@ -103,6 +147,7 @@ try {
   assert.match(messages[1].text, /After · Change 2/);
   assert.match(messages[1].text, /Unchanged text · Region in displayed strip/);
   assert.match(messages[1].text, /Thank you to my friends and family/);
+  assert.match(messages[1].text, /Keep this accepted paragraph and its citation\./);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: /^Review/ }).first().click();
   await page.getByRole('button', { name: 'Review notes', exact: true }).click();
@@ -123,6 +168,23 @@ try {
   assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   await page.screenshot({ path: 'test-results/review-notes-mobile.png', fullPage: true });
+  // Editing remains usable on the narrowest phone layout, without an undo bar.
+  await page.evaluate(note => localStorage.setItem('papilot:review-notes:review-notes-fixture', JSON.stringify({ notes: [note], requestKey: 'mobile-note', editing: null })), originalNotes[0]);
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.reload();
+  await page.getByRole('button', { name: 'Review notes, 1', exact: true }).click();
+  await frame().getByRole('button', { name: /^Edit note 1:/ }).click();
+  await noteInput.fill('Keep the names.');
+  const inputBounds = await noteInput.boundingBox();
+  assert.ok(inputBounds.x >= 0 && inputBounds.x + inputBounds.width <= 320);
+  await page.screenshot({ path: 'test-results/review-note-edit-mobile.png', fullPage: true });
+  await frame().getByRole('button', { name: 'Save', exact: true }).click();
+  await frame().getByRole('button', { name: 'Delete review note 1' }).click();
+  await page.screenshot({ path: 'test-results/review-note-undo-mobile.png', fullPage: true });
+  assert.equal(await frame().locator('.note-undo').count(), 0);
+  await page.keyboard.press('Meta+z');
+  await frame().getByRole('button', { name: 'Edit note 1: Keep the names.', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
   assert.deepEqual(errors, []);
-  console.log('PASS: Review notes on rejected, accepted and unchanged text; region marking; persistence; retry identity; Markdown; mobile layout');
+  console.log('PASS: Review notes; edit and cancel; Command/Ctrl+Z restores deleted notes; native text undo; iframe shortcut isolation; persistence; retry identity; 320px mobile editing');
 } finally { await browser.close(); await server.close(); }

@@ -513,6 +513,10 @@ body.resizing iframe{pointer-events:none}
 .note-list blockquote{margin:0 0 6px;padding-left:10px;border-left:3px solid var(--line-strong);font-size:13px;line-height:1.5;font-style:italic;color:var(--text-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .note-source{margin:0 0 8px;padding:7px 9px;max-height:7.5em;overflow:auto;background:var(--bg-subtle);border:1px solid var(--line);border-radius:var(--r);font:12px/1.5 var(--mono);color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere}
 .note-list p{margin:0;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.note-edit textarea{display:block;width:100%;min-height:80px;resize:vertical;padding:8px;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
+.note-edit textarea:focus{outline:2px solid var(--accent-line);border-color:var(--primary)}
+.note-edit .button-row{justify-content:flex-end;margin-top:8px}
+@media(pointer:coarse){.note-edit textarea{font-size:16px}}
 .note-entry-actions{display:flex;align-items:center;gap:4px}
 .note-entry-actions .button{gap:5px;font-size:12px;padding:0 6px}
 .note-entry-actions .button svg{color:var(--text-2)}

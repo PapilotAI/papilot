@@ -39,9 +39,18 @@ export class Store extends EventEmitter {
   runByKey(key: string) { const row = this.db.prepare('SELECT data FROM runs WHERE request_key=?').get(key) as { data: string } | undefined; return row ? JSON.parse(row.data) as Run : undefined; }
   items(taskId: string) { return (this.db.prepare('SELECT data FROM items WHERE task_id=? ORDER BY created,rowid').all(taskId) as { data: string }[]).map(r => JSON.parse(r.data) as TimelineItem); }
   saveItem(item: TimelineItem) { this.db.prepare('INSERT INTO items VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(item.id, item.taskId, item.createdAt, JSON.stringify(item)); this.emit('change'); }
-  annotations(projectId: string) { return (this.db.prepare('SELECT data FROM annotations WHERE project_id=? ORDER BY rowid').all(projectId) as { data: string }[]).map(r => JSON.parse(r.data) as Annotation); }
+  annotations(projectId: string) { return (this.db.prepare('SELECT data FROM annotations WHERE project_id=? ORDER BY rowid').all(projectId) as { data: string }[]).map(r => JSON.parse(r.data) as Annotation).filter(note => note.deletedAt === undefined); }
+  annotation(projectId: string, id: string) {
+    const row = this.db.prepare('SELECT data FROM annotations WHERE id=? AND project_id=?').get(id, projectId) as { data: string } | undefined;
+    if (!row) throw new Error('Note not found.');
+    return JSON.parse(row.data) as Annotation;
+  }
   saveAnnotation(a: Annotation) { this.db.prepare('INSERT INTO annotations VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(a.id, a.projectId, JSON.stringify(a)); this.emit('change'); return a; }
-  deleteAnnotation(projectId: string, id: string) { this.db.prepare('DELETE FROM annotations WHERE id=? AND project_id=?').run(id, projectId); this.emit('change'); }
+  deleteAnnotation(projectId: string, id: string) {
+    const note = this.annotation(projectId, id);
+    if (note.taskId) throw new Error('This note has already been sent.');
+    this.saveAnnotation({ ...note, deletedAt: note.deletedAt ?? Date.now() });
+  }
   taskDeleted(id: string) { return Boolean(this.db.prepare('SELECT 1 FROM deleted_tasks WHERE id=?').get(id)); }
   deleteTask(id: string) {
     this.transaction(() => {

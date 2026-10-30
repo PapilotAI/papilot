@@ -6,13 +6,15 @@ import { Icon } from './icons.tsx';
 import { browserStorage } from './storage.ts';
 import { sendsMessage } from './composer.ts';
 import styles from './review-notes.css?inline';
+import noteStyles from './note-controls.css?inline';
 import { mergeLines, type Rect } from './note-geometry.ts';
 import { touchSelection } from './touch-select.ts';
 import { t, tn } from './i18n.ts';
+import { useNoteUndo } from './use-note-undo.ts';
 
 type Mark = { strip: string; round: number; where: string; quote: string; rects: Rect[]; region: boolean };
 type Note = Mark & { id: string; comment: string };
-type Draft = { notes: Note[]; requestKey: string; editing: (Mark & { comment: string }) | null };
+type Draft = { notes: Note[]; requestKey: string; editing: (Mark & { comment: string; id?: string }) | null; deleted?: { note: Note; index: number }[] };
 type Layer = { strip: HTMLElement; element: HTMLElement; key: string; round: number };
 // A touch selection's ends: the edge of its first and last glyph, with that line's top and bottom.
 type Handles = { from: [number, number, number]; to: [number, number, number] };
@@ -84,6 +86,12 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
   const writing = open && Boolean(draft.editing);
   const sending = useRef(false);
   const touch = useRef<ReturnType<typeof touchSelection> | null>(null);
+  useNoteUndo(() => {
+    // When the notes panel is closed, the review owns its normal Undo shortcut.
+    if (!doc || !current.current.open || !current.current.draft.deleted?.length) return false;
+    if (!current.current.busy && !current.current.draft.editing && !current.current.region) undo();
+    return true;
+  }, doc);
   useEffect(() => {
     if (!region || !doc) return;
     const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setRegion(false); setDrag(null); origin.current = null; } };
@@ -91,7 +99,7 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
     return () => { doc.removeEventListener('keydown', cancel, true); document.removeEventListener('keydown', cancel, true); };
   }, [doc, region]);
   function annotate(region: boolean) { setRegion(region); setOpen(false); touch.current?.reset(); setSelection(null); doc?.defaultView?.focus(); }
-  function update(value: Draft) { browserStorage.setItem(storageKey, JSON.stringify(value)); setDraft(value); }
+  function update(value: Draft) { current.current.draft = value; browserStorage.setItem(storageKey, JSON.stringify(value)); setDraft(value); }
   useEffect(() => {
     if (!doc) return;
     const mounted = new Map<HTMLElement, Layer>();
@@ -153,8 +161,19 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
   }, [doc, task.review?.round]);
   // Text written for a note that was closed unsaved moves to the new place.
   function edit({ handles: _, ...mark }: Selected) {
-    update({ ...current.current.draft, editing: { ...mark, comment: current.current.draft.editing?.comment || '' } });
+    const value = current.current.draft;
+    update({ ...value, editing: { ...mark, comment: value.editing?.id ? '' : value.editing?.comment || '' } });
     touch.current?.reset(); setSelection(null); setRegion(false); setOpen(true); doc?.getSelection()?.removeAllRanges();
+  }
+  function editNote(note: Note) {
+    update({ ...current.current.draft, editing: { ...note } }); setError('');
+    touch.current?.reset(); setSelection(null);
+  }
+  function finishEdit() {
+    const value = current.current.draft, id = value.editing?.id;
+    update({ ...value, editing: null });
+    if (!value.notes.length) setOpen(false);
+    if (id) requestAnimationFrame(() => doc?.querySelector<HTMLButtonElement>(`[data-note="${id}"] .note-comment`)?.focus());
   }
   // Closing drops a note with nothing written yet.
   function close() {
@@ -165,7 +184,21 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
   function save() {
     const value = current.current.draft, editing = value.editing;
     if (!editing?.comment.trim() || busy) return;
-    update({ notes: [...value.notes, { ...editing, comment: editing.comment.trim(), id: uuid() }], editing: null, requestKey: uuid() });
+    const note = { ...editing, comment: editing.comment.trim(), id: editing.id || uuid() };
+    update({ ...value, notes: editing.id ? value.notes.map(item => item.id === note.id ? note : item) : [...value.notes, note], requestKey: uuid() });
+    finishEdit();
+  }
+  function remove(note: Note) {
+    const value = current.current.draft;
+    update({ ...value, notes: value.notes.filter(item => item.id !== note.id), deleted: [...(value.deleted || []), { note, index: value.notes.indexOf(note) }], requestKey: uuid() });
+    setError('');
+  }
+  function undo() {
+    const value = current.current.draft, deleted = [...(value.deleted || [])], removed = deleted.pop();
+    if (!removed) return;
+    const notes = [...value.notes]; notes.splice(removed.index, 0, removed.note);
+    update({ ...value, notes, deleted, requestKey: uuid() }); setError('');
+    requestAnimationFrame(() => doc?.querySelector<HTMLButtonElement>(`[data-note="${removed.note.id}"] .note-comment`)?.focus());
   }
   async function send() {
     if (sending.current || !draft.notes.length || draft.editing) return;
@@ -187,7 +220,7 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
   return <>
     <button type="button" className="icon-button" aria-label={t('Mark region')} title={t('Mark region')} aria-pressed={region} disabled={!doc || busy || writing} onClick={() => annotate(!region)}><Icon name="region" size={15}/></button>
     <button type="button" className="button ghost compact review-notes-toggle" aria-label={draft.notes.length ? t('Review notes, {n}', { n: draft.notes.length }) : t('Review notes')} aria-pressed={open} disabled={!doc} onClick={() => open ? close() : setOpen(true)}><Icon name="notes" size={15}/>{draft.notes.length ? <span>{draft.notes.length}</span> : <span className="review-notes-label">{t('Notes')}</span>}</button>
-    {doc && createPortal(<style>{styles}</style>, doc.head)}
+    {doc && createPortal(<style>{styles + noteStyles}</style>, doc.head)}
     {layers.map(layer => createPortal(<Fragment>
       {draft.notes.filter(note => note.strip === layer.key).map(note => <Fragment key={note.id}>
         {note.rects.map((rect, i) => <div key={i} className={note.region ? 'review-note-box' : 'review-note-mark'} style={percent(rect)}/>)}
@@ -227,18 +260,18 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
     {doc && open && !region && createPortal(<aside className="review-notes-panel" aria-label={t('Review PDF notes')} onKeyDown={e => {
       // Do not let the review engine interpret note-editor shortcuts as decisions.
       e.stopPropagation();
-      if (e.key === 'Escape' && !busy) close();
+      if (e.key === 'Escape' && !busy) { if (draft.editing?.id) finishEdit(); else close(); }
     }}>
       <header><strong>{draft.notes.length ? t('Review notes ({n})', { n: draft.notes.length }) : t('Review notes')}</strong><button type="button" aria-label={t('Close review notes')} onClick={close}>×</button></header>
         {draft.editing ? <form onSubmit={e => { e.preventDefault(); save(); }}>
           <small>{draft.editing.where}</small>
           {draft.editing.quote && <blockquote>{draft.editing.quote}</blockquote>}
-          <textarea autoFocus aria-label={t('Note for the agent')} rows={3} placeholder={t('What should change here?')} value={draft.editing.comment} onChange={e => update({ ...draft, editing: { ...draft.editing!, comment: e.target.value } })} onKeyDown={e => { if (sendsMessage(e.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { e.preventDefault(); save(); } }}/>
-          <footer><button type="button" onClick={() => { update({ ...draft, editing: null }); if (!draft.notes.length) setOpen(false); }}>{t('Cancel')}</button><button className="primary" disabled={!draft.editing.comment.trim()}>{t('Add note')}</button></footer>
+          <textarea autoFocus aria-label={t('Note for the agent')} rows={3} maxLength={4000} placeholder={t('What should change here?')} value={draft.editing.comment} onChange={e => update({ ...draft, editing: { ...draft.editing!, comment: e.target.value } })} onKeyDown={e => { if (sendsMessage(e.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { e.preventDefault(); save(); } }}/>
+          <footer><button type="button" onClick={finishEdit}>{t('Cancel')}</button><button className="primary" disabled={!draft.editing.comment.trim()}>{draft.editing.id ? t('Save') : t('Add note')}</button></footer>
         </form> : <>
-          {draft.notes.length ? <ol>{draft.notes.map((note, index) => <li key={note.id}>
-            <div><button className="review-note-location" onClick={() => { layers.find(layer => layer.key === note.strip)?.strip.scrollIntoView({ block: 'center' }); setOpen(false); }}>{index + 1}. {note.where}</button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={busy} onClick={() => update({ ...draft, notes: draft.notes.filter(item => item.id !== note.id), requestKey: uuid() })}>×</button></div>
-            {note.quote && <blockquote>{note.quote}</blockquote>}<p>{note.comment}</p>
+          {draft.notes.length ? <ol>{draft.notes.map((note, index) => <li key={note.id} data-note={note.id}>
+            <div><button className="review-note-location" onClick={() => { layers.find(layer => layer.key === note.strip)?.strip.scrollIntoView({ block: 'center' }); setOpen(false); }}>{index + 1}. {note.where}</button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={busy} onClick={() => remove(note)}>×</button></div>
+            {note.quote && <blockquote>{note.quote}</blockquote>}<button type="button" className="note-comment" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={busy} onClick={() => editNote(note)}><span>{note.comment}</span><Icon name="pencil" size={13}/></button>
             {note.round !== task.review?.round && <small>{t('Marked on an earlier review round.')}</small>}
           </li>)}</ol> : <div className="review-notes-empty"><p>{t('No notes yet')}</p><div className="review-note-actions">
             <button type="button" onClick={() => annotate(false)}><Icon name="textSelect" size={16}/>{t('Text note')}</button>

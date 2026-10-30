@@ -25,10 +25,12 @@ import { Markdown } from './markdown.tsx';
 import logo from './logo.svg';
 import { AgentConnectionNotice, AgentPicker, effortName } from './agent-picker.tsx';
 import { UsageSummary } from './usage.tsx';
+import { useNoteUndo } from './use-note-undo.ts';
 import type { OutlineItem, PdfHandle, Rect } from './pdf-view.tsx';
 // pdf.js is large, so the PDF view loads the first time it opens.
 const PdfView = lazy(() => import('./pdf-view.tsx').then(module => ({ default: module.PdfView })));
 import './style.css';
+import './note-controls.css';
 
 let token = '';
 const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), b => b.toString(16).padStart(2, '0')).join('');
@@ -454,25 +456,71 @@ function GitPanel({ projectId, git, onStatus, writer }: { projectId: string; git
 
 function noteWhere(note: Annotation) { return t('Page {n}', { n: note.page + 1 }) + (note.source ? ` · ${note.source.file}:${note.source.lines[0]}${note.source.lines[1] !== note.source.lines[0] ? `–${note.source.lines[1]}` : ''}` : ''); }
 
-interface NoteActions { add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>; remove: (note: Annotation) => void; sending: boolean }
+interface NoteActions {
+  add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>;
+  edit: (note: Annotation, comment: string) => Promise<void>;
+  remove: (note: Annotation) => Promise<void>;
+  restore: (note: Annotation) => Promise<void>;
+  onEditing: (editing: boolean) => void;
+  sending: boolean;
+}
 
 function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void; onAnnotate: (region: boolean) => void }) {
   const list = useRef<HTMLOListElement>(null);
+  const [editing, setEditing] = useState<{ id: string; comment: string } | null>(null);
+  const [deleted, setDeleted] = useState<Annotation[]>([]);
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const locked = busy || actions.sending;
+  const restoring = useRef(false);
+  useNoteUndo(() => {
+    const note = deleted.at(-1);
+    if (!note) return false;
+    if (!locked && !editing && !restoring.current) {
+      restoring.current = true;
+      void change(async () => {
+        await actions.restore(note); setDeleted(previous => previous.slice(0, -1));
+        requestAnimationFrame(() => focusNote(note.id));
+      }).finally(() => { restoring.current = false; });
+    }
+    return true;
+  });
+  const onEditing = actions.onEditing;
+  useEffect(() => { onEditing(Boolean(editing) || busy); return () => onEditing(false); }, [editing, busy, onEditing]);
   useEffect(() => { if (active) list.current?.querySelector(`[data-note="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active]);
+  const focusNote = (id: string) => list.current?.querySelector<HTMLButtonElement>(`[data-note="${id}"] .note-comment`)?.focus();
+  async function change(work: () => Promise<void>) {
+    if (locked) return;
+    setBusy(true); setError('');
+    try { await work(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+  function finish(id: string) { setEditing(null); requestAnimationFrame(() => focusNote(id)); }
+  function save(note: Annotation) {
+    if (!editing?.comment.trim()) return;
+    void change(async () => { await actions.edit(note, editing.comment.trim()); finish(note.id); });
+  }
   return <section className="notes-panel" aria-label={t('PDF notes')}>
     <div className="draft-notes-head">
       {notes.length > 0 && <span>{tn(notes.length, '{n} note attached', '{n} notes attached')}</span>}
       <div className="note-entry-actions">
-        <button type="button" className="button ghost compact" disabled={!currentKey || actions.sending} onClick={() => onAnnotate(false)}><Icon name="textSelect" size={14}/>{t('Text note')}</button>
-        <button type="button" className="button ghost compact" disabled={!currentKey || actions.sending} onClick={() => onAnnotate(true)}><Icon name="region" size={14}/>{t('Region note')}</button>
+        <button type="button" className="button ghost compact" disabled={!currentKey || locked || Boolean(editing)} onClick={() => onAnnotate(false)}><Icon name="textSelect" size={14}/>{t('Text note')}</button>
+        <button type="button" className="button ghost compact" disabled={!currentKey || locked || Boolean(editing)} onClick={() => onAnnotate(true)}><Icon name="region" size={14}/>{t('Region note')}</button>
       </div>
     </div>
     {notes.length > 0 && <ol ref={list} className="note-list">{notes.map((note, index) => <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
-      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={actions.sending} onClick={() => actions.remove(note)}><Icon name="close" size={14}/></button></div>
+      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); setDeleted(previous => [...previous, note]); })}><Icon name="close" size={14}/></button></div>
       {note.source?.excerpt ? <pre className="note-source" title={t('{file}, the LaTeX that produced the marked region', { file: note.source.file })}>{note.source.excerpt}</pre> : note.quote && <blockquote>{note.quote}</blockquote>}
-      <p>{note.comment}</p>
+      {editing?.id === note.id ? <form className="note-edit" onSubmit={e => { e.preventDefault(); save(note); }}>
+        <textarea autoFocus aria-label={t('Edit note {n}', { n: index + 1 })} value={editing.comment} rows={3} maxLength={4000} disabled={locked}
+          onChange={e => setEditing({ id: note.id, comment: e.target.value })} onKeyDown={e => {
+            if (e.key === 'Escape' && !locked) { e.preventDefault(); e.stopPropagation(); setError(''); finish(note.id); }
+            else if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); save(note); }
+          }}/>
+        <div className="button-row"><button type="button" className="button ghost compact" disabled={locked} onClick={() => { setError(''); finish(note.id); }}>{t('Cancel')}</button><button className="button primary compact" disabled={locked || !editing.comment.trim()}>{busy ? t('Saving…') : t('Save')}</button></div>
+      </form> : <button type="button" className="note-comment" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={locked || Boolean(editing)} onClick={() => { setError(''); setEditing({ id: note.id, comment: note.comment }); }}><span>{note.comment}</span><Icon name="pencil" size={13}/></button>}
       {note.key !== currentKey && <small className="muted">{t('Marked on an earlier version of the PDF.')}</small>}
     </li>)}</ol>}
+    {error && <p className="inline-error" role="alert">{error}</p>}
   </section>;
 }
 
@@ -534,7 +582,7 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
         <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}>{t('Contents')}</button>
         <button role="tab" aria-selected={side === 'git'} onClick={() => setView('git')}>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
       </div>
-      {side === 'task' ? newTask(<NotesPanel notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/>) : side === 'contents' ? <nav className="contents-panel" aria-label={t('PDF contents')}>
+      {side === 'task' ? newTask(<NotesPanel key={project.id} notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/>) : side === 'contents' ? <nav className="contents-panel" aria-label={t('PDF contents')}>
         {outline.length ? <ol>{outline.map((item, index) => <li key={index}>
           <button type="button" aria-current={index === section ? 'location' : undefined} style={{ paddingLeft: 12 + Math.min(item.level, 4) * 14 }} onClick={() => goTo(item)}>
             <span>{item.title}</span><span className="contents-page">{item.page}</span>
@@ -617,7 +665,9 @@ function App() {
   const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'task');
   const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
+  const [noteEditing, setNoteEditing] = useState(false);
   const [manuscript, setManuscript] = useState<{ projectId: string; data: Manuscript | null; error: string }>({ projectId: '', data: null, error: '' });
+  const manuscriptRequest = useRef(0);
   const [git, setGit] = useState<{ projectId: string; status: GitStatus | null }>({ projectId: '', status: null });
   const building = useRef(false);
   const [chatWidth, setChatWidth] = useState(() => Number(browserStorage.getItem('papilot:chat-width')) || 0);
@@ -767,7 +817,7 @@ function App() {
     onAgent={value => { setAgentChoice(value); browserStorage.setItem('papilot:agent', value); }} onChange={remember}/>;
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
-    if ((!text && !skill && !notes.length) || creating || !target) return;
+    if ((!text && !skill && !notes.length) || creating || noteEditing || !target) return;
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
@@ -839,11 +889,13 @@ function App() {
   }
   const manuscriptOpen = !task && Boolean(project);
   const loadManuscript = useCallback(async (projectId: string, rebuild = false) => {
+    const request = ++manuscriptRequest.current;
     try {
       const data = await api<Manuscript>(`/projects/${projectId}/manuscript`, rebuild ? {} : undefined);
+      if (request !== manuscriptRequest.current) return;
       building.current = data.build.status === 'building';
       setManuscript({ projectId, data, error: '' }); setGit({ projectId, status: data.git });
-    } catch (e) { setManuscript(current => ({ projectId, data: current.projectId === projectId ? current.data : null, error: e instanceof Error ? e.message : String(e) })); }
+    } catch (e) { if (request === manuscriptRequest.current) setManuscript(current => ({ projectId, data: current.projectId === projectId ? current.data : null, error: e instanceof Error ? e.message : String(e) })); }
   }, []);
   // Poll quickly while the preview compiles; otherwise recheck the working tree now and then.
   useEffect(() => {
@@ -853,7 +905,7 @@ function App() {
     void tick();
     const focus = () => void loadManuscript(project.id);
     window.addEventListener('focus', focus);
-    return () => { stopped = true; clearTimeout(timer); window.removeEventListener('focus', focus); };
+    return () => { stopped = true; ++manuscriptRequest.current; clearTimeout(timer); window.removeEventListener('focus', focus); };
   }, [manuscriptOpen, project?.id, loadManuscript]);
   // Accepting a change updates the working tree, so the status reloads with
   // the tasks' reviews as well as every 20 seconds.
@@ -880,7 +932,11 @@ function App() {
   const updateGit = (projectId: string, status: GitStatus) => { setGit({ projectId, status }); setManuscript(current => current.projectId === projectId && current.data ? { ...current, data: { ...current.data, git: status } } : current); };
   const manuscriptData = manuscript.projectId === project?.id ? manuscript : { data: null, error: '' };
   const notes = manuscriptData.data?.annotations || [];
-  const withNotes = (update: (list: Annotation[]) => Annotation[]) => setManuscript(current => current.data ? { ...current, data: { ...current.data, annotations: update(current.data.annotations || []) } } : current);
+  const withNotes = (update: (list: Annotation[]) => Annotation[]) => {
+    // A poll started before this write must not put an old comment or a deleted note back.
+    ++manuscriptRequest.current;
+    setManuscript(current => current.projectId === project?.id && current.data ? { ...current, data: { ...current.data, annotations: update(current.data.annotations || []) } } : current);
+  };
   const noteActions: NoteActions = {
     async add(page, rect, rects, quote, comment) {
       if (!project || !manuscriptData.data?.build.key) throw new Error(t('Wait for the PDF to compile.'));
@@ -888,11 +944,19 @@ function App() {
       withNotes(list => [...list, note]); setActiveNote(note.id); setRegion(false);
       if (!mobile) setManuscriptView('task');
     },
-    remove(note) {
-      if (!project) return;
-      withNotes(list => list.filter(item => item.id !== note.id));
-      void api(`/projects/${project.id}/annotations/${note.id}/delete`, {}).catch(e => { reportError(e); void loadManuscript(project.id); });
+    async edit(note, comment) {
+      const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, { comment });
+      withNotes(list => list.map(item => item.id === note.id ? saved : item));
     },
+    async remove(note) {
+      await api(`/projects/${note.projectId}/annotations/${note.id}/delete`, {});
+      withNotes(list => list.filter(item => item.id !== note.id));
+    },
+    async restore(note) {
+      const restored = await api<{ annotations: Annotation[] }>(`/projects/${note.projectId}/annotations/${note.id}/restore`, {});
+      withNotes(() => restored.annotations); setActiveNote(note.id);
+    },
+    onEditing: setNoteEditing,
     sending: creating,
   };
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
@@ -934,7 +998,7 @@ function App() {
         <SkillPicker skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
         {agentOptions(creating)}
       </div>}
-      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || (!newDraft.trim() && !newSkill && !notes.length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || noteEditing || (!newDraft.trim() && !newSkill && !notes.length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
     </div>

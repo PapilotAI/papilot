@@ -153,6 +153,7 @@ export class Workspace extends EventEmitter {
     this.store.saveProject(project); return project;
   }
   // A task combines the author's words, an optional skill and selected PDF notes.
+  annotationSending(id: string) { return this.preparingNotes.has(id); }
   async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
