@@ -87,6 +87,7 @@ export const zhCN: Record<string, string> = {
   'You are offline. Your draft is kept in this browser.': '你已离线。草稿保存在此浏览器中。',
   'Agent settings': '智能体设置', 'Add skill': '添加技能', 'Fast': '快速', 'Fast mode': '快速模式', 'Ultra': '超强',
   'No notes yet': '暂无批注', 'Region note': '区域批注', 'Send {n} note': '发送 {n} 条批注', 'Send {n} notes': '发送 {n} 条批注',
+  'or select text to annotate': '或选中文字批注',
   'Edit note': '编辑批注', 'Edit note {n}': '编辑批注 {n}', 'Edit note {n}: {comment}': '编辑批注 {n}：{comment}',
   'Save': '保存', 'Saving…': '正在保存…',
   'Pending review': '待审阅', 'Accepted': '已接受', 'Rejected': '已拒绝', 'Revision requested': '需再修改', 'Partly reviewed': '部分已审阅',

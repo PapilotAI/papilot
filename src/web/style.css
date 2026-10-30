@@ -516,6 +516,8 @@ body.resizing iframe{pointer-events:none}
 .git-panel{flex:1;min-height:0;overflow:auto;padding:4px 0 24px}
 .notes-panel{flex:1;min-height:0;display:flex;flex-direction:column}
 .draft-notes-head{flex:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px;padding-bottom:6px;font-size:12px;color:var(--text-3)}
+.note-entry-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+.note-entry-hint{font-size:12px;white-space:nowrap}
 .note-list{flex:1;min-height:0;overflow:auto;list-style:none;margin:0;padding:4px}
 .note-list li{padding:10px 10px 12px 12px;margin-bottom:6px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg);transition:border-color .15s,box-shadow .15s}
 .note-list li:hover{border-color:var(--line-strong)}
@@ -532,7 +534,6 @@ body.resizing iframe{pointer-events:none}
 .note-edit textarea:focus{outline:2px solid var(--accent-line);border-color:var(--primary)}
 .note-edit .button-row{justify-content:flex-end;margin-top:8px}
 @media(pointer:coarse){.note-edit textarea{font-size:16px}}
-.note-entry-actions{display:flex;align-items:center;gap:4px}
 .note-entry-actions .button{gap:5px;font-size:12px;padding:0 6px}
 .note-entry-actions .button svg{color:var(--text-2)}
 .skills-picker-menu>button>svg{flex-shrink:0}

@@ -512,6 +512,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
       {notes.length > 0 && <span>{tn(notes.length, '{n} note attached', '{n} notes attached')}</span>}
       <div className="note-entry-actions">
         <button type="button" className="button ghost compact" disabled={!currentKey || locked || Boolean(editing)} onClick={() => onAnnotate(true)}><Icon name="region" size={14}/>{t('Region note')}</button>
+        <span className="note-entry-hint">{t('or select text to annotate')}</span>
       </div>
     </div>
     {notes.length > 0 && <ol ref={list} className="note-list">{notes.map((note, index) => <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
