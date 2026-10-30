@@ -137,6 +137,7 @@ test('an unshared paper answers exactly like one that does not exist', async () 
       assert.ok(a.statusCode >= 400, label);
     };
     await same('paper', { url: '/api/projects/grant/git' }, { url: '/api/projects/nope/git' });
+    await same('worktrees and history', { url: '/api/projects/grant/git/overview' }, { url: '/api/projects/nope/git/overview' });
     await same('paper PDF', { url: '/api/projects/grant/manuscript.pdf?key=x' }, { url: '/api/projects/nope/manuscript.pdf?key=x' });
     await same('notes', { method: 'POST', url: '/api/projects/grant/annotations/send', payload: { id: 'new-task-id-0001' } }, { method: 'POST', url: '/api/projects/nope/annotations/send', payload: { id: 'new-task-id-0001' } });
     await same('review', { url: '/review/grant/api/tasks' }, { url: '/review/nope/api/tasks' });

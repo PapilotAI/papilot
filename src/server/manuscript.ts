@@ -15,7 +15,7 @@ type Rect = [number, number, number, number];
 
 const exec = promisify(execFile);
 async function git(root: string, args: string[], env: NodeJS.ProcessEnv = {}) {
-  return (await exec('git', args, { cwd: root, env: { ...process.env, ...env }, maxBuffer: 64 * 1024 * 1024 })).stdout;
+  return (await exec('git', args, { cwd: root, timeout: 30_000, env: { ...process.env, ...env }, maxBuffer: 64 * 1024 * 1024 })).stdout;
 }
 
 // Porcelain v2 keeps paths with spaces intact under -z and reports branch,
@@ -53,7 +53,7 @@ export function parseStatus(output: string, numstat: string): Omit<GitStatus, 'h
 
 export async function gitStatus(root: string): Promise<GitStatus> {
   const [status, numstat, head, remotes] = await Promise.all([
-    git(root, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all']),
+    git(root, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'], { GIT_OPTIONAL_LOCKS: '0' }),
     git(root, ['diff', '--numstat', '-z', 'HEAD']).catch(() => ''),
     git(root, ['log', '-1', '--format=%h%x00%s%x00%ct']).catch(() => ''),
     git(root, ['remote']).catch(() => ''),

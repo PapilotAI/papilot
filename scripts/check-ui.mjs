@@ -42,6 +42,22 @@ const renames = [];
 const paperRenames = [];
 const gitState = { remote: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, unstaged: true, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false, unstaged: true }] };
 const originalGit = structuredClone(gitState);
+let overviewFailure = false;
+const overview = () => ({
+  worktrees: [
+    { path: '/tmp/fixture', branch: gitState.branch, head: gitState.head.hash, current: true, bare: false, status: gitState },
+    { taskId: task.id, path: '/tmp/paper-tasks/revise-introduction', branch: 'review/introduction', head: 'bbb2222', current: false, bare: false, locked: 'Proposal in progress', status: { branch: 'review/introduction', upstream: null, ahead: 0, behind: 0, head: { hash: 'bbb2222', subject: 'Explain the contribution', date: 2 }, files: [{ path: 'sections/introduction.tex', status: 'M', staged: true, unstaged: true }, { path: 'references.bib', status: '?', staged: false, unstaged: true }] } },
+    { path: '/tmp/paper-tasks/experiment', branch: null, head: 'ccc3333', current: false, bare: false, status: { branch: null, upstream: null, ahead: 0, behind: 0, head: { hash: 'ccc3333', subject: 'Try another proof', date: 2 }, files: [] } },
+    { path: '/tmp/paper-tasks/removed', branch: 'old-proposal', head: 'aaa0000', current: false, bare: false, status: null, prunable: 'gitdir file points to non-existent location', error: 'Could not read this worktree.' },
+  ],
+  commits: [
+    { hash: gitState.head.hash, parents: ['aaa1110', 'bbb2222'], subject: gitState.head.subject, author: 'Cui Chen', date: 1720000000000, refs: ['main'] },
+    { hash: 'bbb2222', parents: ['aaa0000'], subject: 'Explain the contribution', author: 'Cui Chen', date: 1719990000000, refs: ['review/introduction'] },
+    { hash: 'aaa1110', parents: ['aaa0000'], subject: 'Refine the abstract', author: 'Cui Chen', date: 1719980000000, refs: ['origin/main'] },
+    { hash: 'ccc3333', parents: ['aaa0000'], subject: 'Try another proof', author: 'Cui Chen', date: 1719970000000, refs: [] },
+    { hash: 'aaa0000', parents: [], subject: 'Initial manuscript', author: 'Cui Chen', date: 1719960000000, refs: [] },
+  ], truncated: false,
+});
 const gitCommits = [], gitActions = [], gitIgnores = [], gitMessages = [], gitStages = [];
 const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true };
 let annotations = [];
@@ -70,6 +86,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items') && history) return json({ items: history });
   if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'hello', taskId: task.id, type: 'assistant', text: 'The introduction is ready for review.', createdAt: 1 }] });
   if (url.pathname.endsWith('/git')) return json(gitState);
+  if (url.pathname.endsWith('/git/overview')) return overviewFailure ? route.fulfill({ status: 503, json: { error: 'Repository unavailable.' } }) : json(overview());
   // Skills and the feedback bar have their own check (check-skills.mjs).
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git/diff')) return json({ path: url.searchParams.get('path'), diff: 'diff --git a/main.tex b/main.tex\n--- a/main.tex\n+++ b/main.tex\n@@ -1,2 +1,2 @@\n-Old line.\n+New line.\n Context.\n', truncated: false });
@@ -597,9 +614,34 @@ try {
   await gitPanel.getByText('main.tex', { exact: true }).waitFor();
   await gitPanel.getByText('notes.md', { exact: true }).waitFor();
   const gitText = await gitPanel.innerText();
-  assert.match(gitText, /^main\s+↑1/);
-  assert.match(gitText, /Tracking origin\/main/);
+  assert.match(gitText, /^main\s/);
+  assert.match(await gitPanel.locator('.git-branch').innerText(), /↑1/);
+  assert.equal(await gitPanel.locator('.git-sync').getAttribute('title'), 'Tracking origin/main');
   assert.match(gitText, /Draft the introduction\s+abc1234/);
+  const worktrees = gitPanel.getByRole('region', { name: 'Worktrees', exact: true });
+  const proposalTree = worktrees.locator(`[data-task-id="${task.id}"]`);
+  await proposalTree.getByText(task.title, { exact: true }).waitFor();
+  await proposalTree.locator('.status').filter({ hasText: 'Ready for review' }).waitFor();
+  assert.ok((await proposalTree.boundingBox()).height <= 56, 'Worktrees use compact rows');
+  assert.equal(await worktrees.locator('.git-worktree').count(), 4);
+  await worktrees.getByText('Status unavailable', { exact: true }).waitFor();
+  const graph = gitPanel.getByRole('region', { name: 'Commit graph', exact: true });
+  assert.equal(await graph.locator('.git-graph-row').count(), 5);
+  await graph.getByRole('button', { name: task.title, exact: true }).waitFor();
+  assert.ok((await graph.locator('.git-graph-row').first().boundingBox()).height <= 48, 'Graph rows no longer reserve three lines');
+  await proposalTree.locator('.git-worktree-button').click();
+  await worktrees.getByText('sections/introduction.tex', { exact: true }).waitFor();
+  assert.equal(await graph.locator('.highlighted').getAttribute('data-commit'), 'bbb2222');
+  await proposalTree.locator('.git-worktree-button').click();
+  await graph.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/git-overview-desktop.png' });
+  overviewFailure = true;
+  await worktrees.getByRole('button', { name: 'Refresh worktrees and history' }).click();
+  await worktrees.getByRole('alert').filter({ hasText: 'Showing the last update.' }).waitFor();
+  assert.equal(await worktrees.locator('.git-worktree').count(), 4, 'A failed refresh keeps the last known worktrees');
+  overviewFailure = false;
+  await worktrees.getByRole('button', { name: 'Retry', exact: true }).click();
+  await worktrees.getByRole('alert').waitFor({ state: 'detached' });
   // Build output goes into .gitignore, one pattern per kind.
   assert.equal(await gitPanel.getByRole('checkbox', { name: 'Stage main.aux' }).isChecked(), false);
   await gitPanel.getByText('2 build files', { exact: true }).waitFor();
@@ -656,7 +698,7 @@ try {
   assert.equal(await pdfToolbar.getByRole('link', { name: 'Open PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
   await pdfToolbar.getByRole('button', { name: 'Recompile', exact: true }).waitFor();
   assert.equal(await page.title(), 'Example paper · Papilot');
-  await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
+  await worktrees.getByRole('button', { name: `Open task: ${task.title}`, exact: true }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
   console.log('PASS: Each paper has a PDF view with contents, paging, zoom and find; text and region notes are added, deleted and sent as one task; Git changes are diffed, committed and pushed');
 
@@ -1033,6 +1075,10 @@ try {
       await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
       await page.getByRole('button', { name: 'Git, 2 changed' }).click();
       await page.getByRole('region', { name: 'Git status' }).getByText('main.tex', { exact: true }).waitFor();
+      await page.getByRole('region', { name: 'Worktrees', exact: true }).locator(`[data-task-id="${task.id}"]`).waitFor();
+      await page.getByRole('region', { name: 'Commit graph', exact: true }).scrollIntoViewIfNeeded();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
+      await page.screenshot({ path: `test-results/git-overview-mobile-${width}.png` });
       assert.equal(await pdfPage.isVisible(), false);
       await page.getByRole('button', { name: 'PDF', exact: true }).click();
       await pdfPage.waitFor();

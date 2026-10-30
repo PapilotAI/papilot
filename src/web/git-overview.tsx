@@ -1,0 +1,123 @@
+import { useEffect, useState, type ReactNode } from 'react';
+import type { GitOverview, GitStatus, GitWorktree, Task } from '../shared.ts';
+import { graphRows } from './git-graph.ts';
+import { Icon } from './icons.tsx';
+import { locale, t, tn } from './i18n.ts';
+import './git-overview.css';
+
+export function GitCounts({ status }: { status: GitStatus }) {
+  const conflicts = status.merging?.conflicts.length ?? status.files.filter(file => file.status === 'U').length;
+  const staged = status.files.filter(file => file.staged && file.status !== 'U').length;
+  const unstaged = status.files.filter(file => file.unstaged && file.status !== '?').length;
+  const untracked = status.files.filter(file => file.status === '?').length;
+  return <span className="git-status-counts">
+    {!status.files.length && <span className="is-clean"><Icon name="check" size={12}/>{t('clean')}</span>}
+    {conflicts > 0 && <span className="has-conflicts">{t('{n} conflicts', { n: conflicts })}</span>}
+    {staged > 0 && <span>{t('{n} staged', { n: staged })}</span>}
+    {unstaged > 0 && <span>{t('{n} unstaged', { n: unstaged })}</span>}
+    {untracked > 0 && <span>{t('{n} untracked', { n: untracked })}</span>}
+    {status.merging && <span className="has-conflicts">{t('Merge in progress')}</span>}
+  </span>;
+}
+
+const treeName = (tree: GitWorktree) => tree.branch || (tree.bare ? t('Bare repository') : t('detached HEAD'));
+const colors = ['var(--accent)', 'var(--green)', 'var(--graph-purple)', 'var(--amber-text)', 'var(--graph-pink)'];
+
+export function GitRepository({ git, load, tasks, onOpenTask, taskStatus }: { git: GitStatus; load: (signal: AbortSignal) => Promise<GitOverview>; tasks: Task[]; onOpenTask: (id: string) => void; taskStatus: (task: Task) => ReactNode }) {
+  const [data, setData] = useState<GitOverview | null>(null), [error, setError] = useState('');
+  const [loading, setLoading] = useState(true), [refresh, setRefresh] = useState(0);
+  const [selectedPath, setSelectedPath] = useState(''), [expandedPath, setExpandedPath] = useState('');
+  // Refresh after local Git changes, and poll other worktrees even when this
+  // checkout stays unchanged. Aborting old requests prevents stale overwrites.
+  const revision = JSON.stringify([git.head?.hash, git.branch, git.ahead, git.behind, git.files, git.merging]);
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function update() {
+      if (document.hidden) { timer = setTimeout(update, 10_000); return; }
+      setLoading(true);
+      try {
+        const result = await load(controller.signal);
+        if (!controller.signal.aborted) { setData(result); setError(''); }
+      } catch (e) {
+        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!controller.signal.aborted) { setLoading(false); timer = setTimeout(update, 10_000); }
+      }
+    }
+    void update();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [load, revision, refresh]);
+  const worktrees = data?.worktrees || [];
+  const taskById = new Map(tasks.map(task => [task.id, task]));
+  const taskFor = (tree: GitWorktree) => tree.taskId ? taskById.get(tree.taskId) : undefined;
+  const label = (tree: GitWorktree) => taskFor(tree)?.title || (tree.current ? t('Manuscript') : treeName(tree));
+  const selected = worktrees.find(tree => tree.path === selectedPath) || worktrees.find(tree => tree.current);
+  const graph = graphRows(data?.commits || []), graphWidth = 20 + graph.lanes * 16;
+  return <div className="git-repository">
+    <section aria-label={t('Worktrees')}>
+      <div className="git-overview-heading"><h3><Icon name="branch" size={14}/>{t('Worktrees')}{data && <span className="count">{worktrees.length}</span>}</h3>
+        <button type="button" className="icon-button" aria-label={t('Refresh worktrees and history')} title={t('Refresh worktrees and history')} disabled={loading} onClick={() => setRefresh(value => value + 1)}>{loading ? <span className="spinner"/> : <Icon name="refresh" size={14}/>}</button>
+      </div>
+      {error && <p className="inline-error git-overview-note" role="alert">{t('Could not refresh the repository.')}{data && <> {t('Showing the last update.')}</>} <span>{error}</span><button type="button" className="button ghost compact" onClick={() => setRefresh(value => value + 1)}>{t('Retry')}</button></p>}
+      {!data && !error && <p className="git-overview-note" role="status">{t('Reading worktrees and history…')}</p>}
+      <ul className="git-worktrees">{worktrees.map(tree => {
+        const status = tree.current ? git : tree.status, expanded = expandedPath === tree.path, task = taskFor(tree);
+        return <li key={tree.path} className={'git-worktree' + (tree.path === selected?.path ? ' selected' : '')} data-task-id={task?.id}>
+          <div className="git-worktree-row">
+          <button type="button" className="git-worktree-button" aria-expanded={expanded} onClick={() => { setSelectedPath(tree.path); setExpandedPath(expanded ? '' : tree.path); }}>
+            <span className="git-worktree-title"><Icon name={expanded ? 'chevronDown' : 'chevronRight'} size={12}/><strong title={label(tree)}>{label(tree)}</strong>{task?.archivedAt && <span title={t('Archived task')} aria-label={t('Archived task')}><Icon name="archive" size={12}/></span>}{tree.current && <span className="git-current-badge">{t('Current')}</span>}{task && taskStatus(task)}</span>
+            <span className="git-worktree-meta">
+              {status ? <GitCounts status={status}/> : <span className="git-worktree-unavailable">{tree.bare ? t('Bare repository') : t('Status unavailable')}</span>}
+              {status?.upstream && (status.ahead > 0 || status.behind > 0) && <span className="git-worktree-sync" title={t('Compared with {upstream}', { upstream: status.upstream })}>↑{status.ahead} ↓{status.behind}</span>}
+              {tree.locked !== undefined && <span className="git-worktree-flag" title={tree.locked}>{t('Locked')}</span>}
+              {tree.prunable !== undefined && <span className="git-worktree-flag" title={tree.prunable}>{t('Missing worktree')}</span>}
+            </span>
+          </button>
+          {task && <button type="button" className="icon-button git-open-task" aria-label={t('Open task: {title}', { title: task.title })} title={t('Open task: {title}', { title: task.title })} onClick={() => onOpenTask(task.id)}><Icon name="arrowRight" size={14}/></button>}
+          </div>
+          {expanded && <div className="git-worktree-detail">
+            <p className="git-worktree-branch"><Icon name="branch" size={12}/><code>{treeName(tree)}</code>{tree.head && <code>{tree.head.slice(0, 7)}</code>}{!task && !tree.current && <span>{t('No linked task')}</span>}</p>
+            <p className="git-worktree-path">{tree.path}</p>
+            {status?.head && <p>{status.head.subject}</p>}
+            {status?.upstream ? <p className="git-worktree-tracking"><code>{status.upstream}</code><span>{t('{ahead} ahead · {behind} behind', { ahead: status.ahead, behind: status.behind })}</span></p> : status && <p>{t('No upstream branch')}</p>}
+            {tree.error && <p className="inline-error">{t('Could not read this worktree.')}</p>}
+            {tree.locked && <p>{t('Locked')}: {tree.locked}</p>}{tree.prunable && <p>{t('Missing worktree')}: {tree.prunable}</p>}
+            {status && status.files.length > 0 && <ul className="git-worktree-files" aria-label={t('Changed files in {branch}', { branch: label(tree) })}>{status.files.map(file => <li key={file.path}><code className={file.status === 'U' ? 'has-conflicts' : ''}>{file.status === '?' ? '?' : file.status}</code><span>{file.path}</span>{file.staged && <small>{t('Staged')}</small>}</li>)}</ul>}
+          </div>}
+        </li>;
+      })}</ul>
+      {data && worktrees.length === 1 && <p className="git-overview-note">{t('No other worktrees in this repository.')}</p>}
+    </section>
+    <section className="git-history" aria-label={t('Commit graph')}>
+      <div className="git-overview-heading"><h3 title={t('Branches and worktrees at each commit. Select a worktree to highlight its HEAD.')}><Icon name="commit" size={14}/>{t('Commit graph')}</h3><span>{t('Newest first')}</span></div>
+      {data && !graph.rows.length && <p className="git-overview-note">{t('No commits yet')}</p>}
+      {graph.rows.length > 0 && <>
+        {selected?.head && !graph.rows.some(row => row.commit.hash === selected.head) && <p className="git-overview-note">{t('This worktree’s HEAD is outside the displayed history.')}</p>}
+        <div className="git-graph-scroll"><ol className="git-graph-list" style={{ minWidth: graphWidth + 220 }}>{graph.rows.map(row => {
+          const { commit, lane } = row, trees = worktrees.filter(tree => tree.head === commit.hash), highlighted = selected?.head === commit.hash;
+          const x = (column: number) => 12 + column * 16;
+          const refs = commit.refs.filter(ref => !trees.some(tree => taskFor(tree) && tree.branch === ref));
+          return <li key={commit.hash} className={'git-graph-row' + (highlighted ? ' highlighted' : '')} data-commit={commit.hash}>
+            <div className="git-graph-rail" style={{ width: graphWidth }} aria-hidden="true">
+              <svg viewBox={`0 0 ${graphWidth} 100`} preserveAspectRatio="none" className="git-graph-lines">
+                {row.edges.filter(edge => !edge.parent).map((edge, index) => <path key={'through' + index} d={`M ${x(edge.from)} 0 L ${x(edge.from)} 50 C ${x(edge.from)} 75 ${x(edge.to)} 75 ${x(edge.to)} 100`} stroke={colors[edge.to % colors.length]}/>) }
+                {row.incoming && <path d={`M ${x(lane)} 0 V 50`} stroke={colors[lane % colors.length]}/>}
+                {row.edges.filter(edge => edge.parent).map((edge, index) => <path key={'parent' + index} d={`M ${x(lane)} 50 C ${x(lane)} 75 ${x(edge.to)} 75 ${x(edge.to)} 100`} stroke={colors[edge.to % colors.length]}/>)}
+              </svg>
+              <span className={'git-graph-dot' + (commit.parents.length > 1 ? ' merge' : '')} style={{ left: x(lane), background: colors[lane % colors.length] }}/>
+            </div>
+            <div className="git-graph-content">
+              <div className="git-graph-subject"><p title={`${commit.subject}\n${commit.author} · ${new Date(commit.date).toLocaleString(locale())}`}>{commit.subject}</p><code title={commit.hash}>{commit.hash.slice(0, 7)}</code></div>
+              {(trees.length > 0 || refs.length > 0) && <div className="git-graph-refs">
+                {trees.map(tree => <button type="button" key={tree.path} className={'git-graph-ref worktree-ref' + (tree.current ? ' current-ref' : '')} title={`${label(tree)}\n${treeName(tree)}\n${tree.path}`} onClick={() => { setSelectedPath(tree.path); setExpandedPath(tree.path); }}><Icon name={taskFor(tree) ? 'chat' : 'branch'} size={10}/><span>{label(tree)}</span></button>)}
+                {refs.map(ref => <span key={ref} className="git-graph-ref" title={ref}>{ref}</span>)}
+              </div>}
+            </div>
+          </li>;
+        })}</ol></div>
+        <p className="git-overview-note git-history-end">{data?.truncated ? t('Showing the latest {n} commits. Older history is not shown.', { n: graph.rows.length }) : tn(graph.rows.length, '{n} commit', '{n} commits')}</p>
+      </>}
+    </section>
+  </div>;
+}
