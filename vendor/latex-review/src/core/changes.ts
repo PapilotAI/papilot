@@ -76,6 +76,31 @@ export function applyUnits(
     a.splice(i, j - i, ...b.slice(x, y));
   return Buffer.from(a.join(""));
 }
+// The tree of `before`, a commit or a tree, with only these units of
+// `after` applied.
+export function withUnits(
+  repo: Repo,
+  before: string,
+  after: string,
+  units: Unit[],
+) {
+  const files = [...new Set(units.map((u) => u.file))],
+    old = repo.blobs(before, files),
+    next = repo.blobs(after, files);
+  return repo.treeWith(
+    before,
+    Object.fromEntries(
+      files.map((f) => [
+        f,
+        applyUnits(
+          old[f],
+          next[f],
+          units.filter((u) => u.file === f),
+        ),
+      ]),
+    ),
+  );
+}
 export function revertUnits(
   old: Buffer | null,
   next: Buffer | null,

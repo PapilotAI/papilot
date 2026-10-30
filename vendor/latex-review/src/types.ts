@@ -204,6 +204,24 @@ export interface VisualUnit {
   visual: Visual;
   pages: string[];
   section: string | null;
+  /** Where the PDF changes away from this edit's own lines: how many
+   * places, and the first ones rendered. The rest render on request. */
+  effects?: { total: number; shown: PlaceView[] };
+}
+/** A place where an edit changes the PDF away from its own lines, such as a
+ * use of a redefined macro. `with` lists the other edits it also needs. */
+export interface Place {
+  page: string;
+  section: string | null;
+  pairs: Pair[];
+  with?: string[];
+}
+export interface PlaceView {
+  page: string;
+  section: string | null;
+  before: Strip[];
+  after: Strip[];
+  with?: string[];
 }
 export interface RenderedRound {
   units: Record<string, VisualUnit>;
@@ -217,6 +235,15 @@ export interface RenderRequest {
   old: BuildInfo;
   new: BuildInfo;
   units: Unit[];
+  /** The edits that cause each change of the whole documents, found by
+   * compiling variants when the round has more than one edit. */
+  causes?: string[][];
+}
+/** Words of the old and new PDF that changed, as ranges of each document's
+ * words in reading order. */
+export interface Effect {
+  old: [number, number];
+  new: [number, number];
 }
 export interface History {
   round: number;

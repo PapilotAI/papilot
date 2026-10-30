@@ -107,6 +107,11 @@ export const zhCN: Record<string, string> = {
   "No visible change in the PDF; see the LaTeX source.":
     "PDF 中没有可见变化，请查看 LaTeX 源码。",
   "Continued: only line breaks moved here.": "续：这里只有换行位置变化。",
+  "Affects {n} place": "影响 {n} 处",
+  "Affects {n} places": "影响 {n} 处",
+  "with {files}": "需与 {files} 一起",
+  "Show {n} more": "再显示 {n} 处",
+  "Loading…": "正在加载…",
   "Your comment: ": "你的评论：",
   "lines {start}–{end}": "第 {start}–{end} 行",
   "Binary file changed.": "二进制文件已更改。",

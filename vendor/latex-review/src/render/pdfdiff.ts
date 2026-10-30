@@ -3,7 +3,7 @@ import type { Mark, Position, Rect } from "../types.ts";
 import { containsCenter, PdfDocument, union, type Raster } from "./pdf.ts";
 export const normalize = (text: string) =>
   text.normalize("NFKC").replaceAll("\u00ad", "");
-interface Glyph {
+export interface Glyph {
   text: string;
   rect: Rect;
   pair: number;
@@ -72,7 +72,7 @@ export function extract(
   }
   return [glyphs, words];
 }
-function tokens(glyphs: Glyph[]) {
+export function tokens(glyphs: Glyph[]) {
   const result: { text: string; start: number; end: number }[] = [];
   let previousWord = false;
   glyphs.forEach((glyph, i) => {

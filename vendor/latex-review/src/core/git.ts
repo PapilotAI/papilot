@@ -234,7 +234,11 @@ export class Repo {
     contents: Record<string, Buffer | null>,
     message: string,
   ) {
-    const tree = temporary("latex-review-index-", (folder) => {
+    return this.commitTree(this.treeWith(parent, contents), parent, message);
+  }
+  // The tree of `base`, a commit or a tree, with these files replaced.
+  treeWith(parent: string, contents: Record<string, Buffer | null>) {
+    return temporary("latex-review-index-", (folder) => {
       const env = {
         ...process.env,
         GIT_INDEX_FILE: path.join(folder, "index"),
@@ -256,7 +260,6 @@ export class Repo {
       }
       return this.text(["write-tree"], { env });
     });
-    return this.commitTree(tree, parent, message);
   }
   export(rev: string, folder: string, destination: string) {
     fs.mkdirSync(destination, { recursive: true });

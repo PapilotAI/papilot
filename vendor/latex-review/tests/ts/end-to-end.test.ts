@@ -4,9 +4,11 @@ import path from "node:path";
 import { it, expect } from "vitest";
 import { App } from "../../src/server.ts";
 import { Builder, BuildError } from "../../src/core/build.ts";
+import { more } from "../../src/core/publish.ts";
 import { which } from "../../src/core/process.ts";
 import { prepareDemo, applyDemo } from "../../examples/demo.ts";
 import { Fixture, METHOD } from "./helpers.ts";
+import type { Strip } from "../../src/types.ts";
 const tex = Boolean(which("latexmk") && which("pdflatex"));
 it.skipIf(!tex)(
   "retains shell-helper tracebacks in diagnostics and the saved build log",
@@ -307,4 +309,98 @@ This uses the \sharedmacro{} from Chapter~\ref{one}.
     }
   },
   120000,
+);
+it.skipIf(!tex)(
+  "lists the places an edit changes away from its lines under that edit",
+  async () => {
+    const f = new Fixture();
+    f.write("paper/macros.tex", "\\newcommand{\\method}{MacroNet}\n");
+    // Each use on its own page, so each is a place of its own.
+    const uses = ["Introduction", "Method", "Analysis", "Discussion", "Outlook"]
+      .map((title) => `\\section{${title}}\nWe use \\method{} here.\n\\newpage`)
+      .join("\n");
+    f.write(
+      "paper/main.tex",
+      String.raw`\documentclass{article}
+\usepackage{hyperref}
+\input{macros}
+\title{Where Macros Point}
+\author{Test}
+\begin{document}
+\maketitle
+${uses}
+\section{Results}
+The results follow.
+\end{document}
+`,
+    );
+    f.repo.run(["add", "."]);
+    f.repo.run(["commit", "-qm", "macro fixture"]);
+    const app = f.app();
+    const publish = async (name: string) => {
+      const job = app.publisher.submit(name);
+      await app.publisher.join();
+      const done = app.publisher.job(job.id);
+      expect(done.status, JSON.stringify(done.result)).toBe("done");
+    };
+    const blocks = (name: string) => {
+      const detail = app.review.roundDetail(name, 1);
+      return [
+        ...detail.sections.flatMap((s) =>
+          s.blocks.flatMap((b) => (b.kind === "change" ? [b.units] : [])),
+        ),
+        ...detail.loose.map((b) => b.units),
+      ];
+    };
+    try {
+      // The definition prints nothing; it keeps the only card, and its
+      // places are the five uses, the first three rendered.
+      const single = app.tasks.create("rename");
+      f.edit(single, "paper/macros.tex", "MacroNet", "MacroFormer");
+      await publish(single.name);
+      const [unit] = app.review.roundDetail(single.name, 1).units;
+      expect(blocks(single.name)).toEqual([[unit.id]]);
+      expect(unit.effects?.total).toBe(5);
+      expect(unit.effects?.shown.map((p) => p.section)).toEqual([
+        "1 Introduction",
+        "2 Method",
+        "3 Analysis",
+      ]);
+      const text = (strips: Strip[]) =>
+        strips
+          .flatMap((s) => s.text ?? [])
+          .map((l) => l.text)
+          .join(" ");
+      expect(text(unit.effects!.shown[0].after)).toContain("MacroFormer");
+      expect(text(unit.effects!.shown[0].before)).toContain("MacroNet");
+      const folder = path.join(app.state, "rounds", single.name, "001"),
+        rest = await more(folder, unit.id);
+      expect(rest.map((p) => p.section)).toEqual(["4 Discussion", "5 Outlook"]);
+      expect(rest.every((p) => p.after.length === 1)).toBe(true);
+
+      // With other edits in the round, compiling the definition alone tells
+      // its places apart from the other edits' own changes.
+      const mixed = app.tasks.create("mixed");
+      f.edit(mixed, "paper/macros.tex", "MacroNet", "MacroFormer");
+      f.edit(
+        mixed,
+        "paper/main.tex",
+        "Where Macros Point",
+        "Where Do Macros Point",
+      );
+      f.edit(mixed, "paper/main.tex", "results follow", "results follow below");
+      await publish(mixed.name);
+      const units = app.review.roundDetail(mixed.name, 1).units,
+        of = (file: string, line: number) =>
+          units.find((u) => u.file === file && u.new_start === line)!;
+      expect(of("paper/macros.tex", 1).effects?.total).toBe(5);
+      expect(of("paper/main.tex", 4).effects).toBeUndefined();
+      expect(units.filter((u) => u.effects).map((u) => u.file)).toEqual([
+        "paper/macros.tex",
+      ]);
+    } finally {
+      await f.close();
+    }
+  },
+  300000,
 );

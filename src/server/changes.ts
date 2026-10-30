@@ -27,14 +27,17 @@ const conflict = (message: string) => Object.assign(new Error(message), { status
 
 async function engine() {
   const load = (file: string) => import(pathToFileURL(path.join(ENGINE, file)).href);
-  const [{ Builder, BuildError }, { Repo }, { loadProject, isFigure }, { diffUnits, revertUnits, splitLines, textOf }, { opcodes }, { render }] = await Promise.all(
+  const [{ Builder, BuildError }, { Repo }, { loadProject, isFigure }, { diffUnits, revertUnits, withUnits, splitLines, textOf }, { opcodes }, { render, more }] = await Promise.all(
     ['src/core/build.ts', 'src/core/git.ts', 'src/core/config.ts', 'src/core/changes.ts', 'src/core/diff.ts', 'src/core/publish.ts'].map(load));
-  return { Builder, BuildError, Repo, loadProject, isFigure, diffUnits, revertUnits, splitLines, textOf, opcodes, render } as {
+  return { Builder, BuildError, Repo, loadProject, isFigure, diffUnits, revertUnits, withUnits, splitLines, textOf, opcodes, render, more } as {
     Builder: any; BuildError: any; Repo: any; loadProject: (root: string) => any; isFigure: (project: any, file: string) => boolean;
     diffUnits: (repo: any, before: string, after: string, isFigure: (file: string) => boolean) => Unit[];
     revertUnits: (old: Buffer | null, next: Buffer | null, units: Unit[]) => Buffer | null;
+    withUnits: (repo: any, before: string, after: string, units: Unit[]) => string;
     splitLines: (text: string) => string[]; textOf: (data: Buffer | null) => string | null;
-    opcodes: (a: string[], b: string[]) => Op[]; render: (output: string, request: unknown) => Promise<void>;
+    opcodes: (a: string[], b: string[]) => Op[];
+    render: (output: string, request: unknown, variant?: (units: Unit[]) => Promise<unknown>) => Promise<void>;
+    more: (output: string, unit: string) => Promise<unknown[]>;
   };
 }
 
@@ -129,7 +132,7 @@ export class Changes {
     const job: Job = { key, phase: 'build', status: 'running', created: Date.now() };
     comparison.job = job;
     void (async () => {
-      const { Builder, BuildError, Repo, loadProject, render } = await engine();
+      const { Builder, BuildError, Repo, loadProject, withUnits, render } = await engine();
       const project = loadProject(root), repo = new Repo(root), number = comparison.next++;
       const units = await this.units(projectId, root, snapshot), folder = path.join(this.dir, projectId, String(number));
       let warnings: string[] = [];
@@ -142,7 +145,10 @@ export class Changes {
         };
         const old = await build(snapshot.before!, 'The last commit could not be compiled.'), next = await build(snapshot.after, 'The working tree could not be compiled.');
         job.phase = 'render';
-        await render(folder, { main: project.main, source_dir: project.source_dir, figures: project.figures, old, new: next, units });
+        // The engine compiles the commit with some of the changes when it must
+        // tell which of them changes the PDF elsewhere, such as a macro's uses.
+        await render(folder, { main: project.main, source_dir: project.source_dir, figures: project.figures, old, new: next, units },
+          (subset: Unit[]) => builder.build(withUnits(repo, snapshot.before!, snapshot.after, subset), ['full']));
         warnings = next.warnings.filter((warning: string) => !old.warnings.includes(warning));
       } else fs.writeFileSync(path.join(folder, 'round.json'), JSON.stringify({ units: {}, sections: [], loose: [] }));
       comparison.rounds.push({ number, before: snapshot.before!, after: snapshot.after, units, folder, warnings, decisions: {} });
@@ -195,6 +201,15 @@ export class Changes {
       units: round.units.map(unit => ({ ...unit, ...render.units[unit.id] })), sections: render.sections, loose: render.loose,
       warnings: round.warnings, files: `/review/${projectId}/changes/files/${round.number}/`,
     };
+  }
+
+  // The places a change alters away from its own lines, past those the
+  // comparison rendered, rendered into its folder when first asked for.
+  async effects(projectId: string, number: number, unit: string) {
+    const round = this.comparison(projectId).rounds.find(item => item.number === number);
+    if (!round || !/^c\d+$/.test(unit)) throw Object.assign(new Error('This comparison is out of date. Refresh the page.'), { statusCode: 404 });
+    const { more } = await engine();
+    return { places: await more(round.folder, unit) };
   }
 
   file(projectId: string, number: number, name: string) {

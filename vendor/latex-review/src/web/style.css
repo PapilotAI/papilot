@@ -418,6 +418,24 @@ kbd {
   font-size: 12px;
   color: var(--muted);
 }
+.effects {
+  padding: 6px 0 10px;
+  border-top: 1px solid var(--line);
+}
+.effects-head,
+.place-where {
+  margin: 0;
+  padding: 4px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.effects-head {
+  font-weight: 600;
+}
+.more-places {
+  margin: 6px 14px 0;
+  font-size: 12px;
+}
 
 .change.current {
   box-shadow: 0 0 0 2px var(--accent);
