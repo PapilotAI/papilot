@@ -39,24 +39,22 @@ You read and mark up the PDF the way a supervisor marks up a draft. An AI agent 
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-note.png" alt="A note on a selected passage of the PDF">
+<img src="docs/assets/feature-note-appinn.jpeg" alt="A note on a selected passage of the PDF">
 <h3>📝 Mark up the PDF</h3>
 Select a sentence or circle an equation and say what should change. SyncTeX hands the agent the exact LaTeX lines.
 </td>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-review.png" alt="A change shown before and after, with Accept and Reject">
+<img src="docs/assets/feature-review-appinn.jpeg" alt="A change shown before and after, with Accept and Reject">
 <h3>✅ Approve change by change</h3>
 Each edit comes back as a typeset diff. Accept, reject or comment on it, and undo any decision.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-contents.png" alt="The PDF viewer with its contents menu open">
 <h3>📖 Read it like a real PDF</h3>
 Jump to any section from the contents, search every page and zoom in sharply. Selecting text picks exactly the printed words.
 </td>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-git.png" alt="The Git panel with a diff and a commit message">
 <h3>🌿 Commit when you're happy</h3>
 Diff files and commit the ones you choose, with a commit message an agent writes. Pull and push, or merge a coauthor's changes and let an agent resolve the conflicts.
 </td>
@@ -135,6 +133,10 @@ The **[guide](docs/guide.md)** covers every part of the workspace, the configura
 If Papilot saves you time on a paper, a ⭐ helps other researchers find it.
 
 <a href="https://github.com/cu1ch3n/papilot/graphs/contributors"><img src="https://contrib.rocks/image?repo=cu1ch3n/papilot" alt="Papilot contributors"></a>
+
+## 🔗 Friends
+
+[LINUX DO](https://linux.do/)
 
 ## 📄 License
 

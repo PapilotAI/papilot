@@ -39,24 +39,22 @@
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-note.png" alt="在 PDF 选中的段落上写批注">
+<img src="docs/assets/feature-note-appinn.jpeg" alt="在 PDF 选中的段落上写批注">
 <h3>📝 在 PDF 上批注</h3>
 选中一句话或框出一个公式，写下要怎么改。SyncTeX 会把对应的 LaTeX 行准确交给智能体。
 </td>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-review.png" alt="改动的修改前后对比，带接受和拒绝按钮">
+<img src="docs/assets/feature-review-appinn.jpeg" alt="改动的修改前后对比，带接受和拒绝按钮">
 <h3>✅ 逐条点头</h3>
 每处改动都以排版后的差异呈现。接受、拒绝或评论，任何决定都能撤销。
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-contents.png" alt="打开目录菜单的 PDF 阅读器">
 <h3>📖 像本地 PDF 一样阅读</h3>
 用目录随意跳转，全文搜索，缩放清晰。选中的文字与印出的词完全对齐。
 </td>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-git.png" alt="带差异和提交信息的 Git 面板">
 <h3>🌿 满意了再提交</h3>
 查看差异，只提交你勾选的文件，提交信息可以让 agent 来写。可以 pull、push，也可以合并合作者的改动，冲突交给 agent 解决。
 </td>
@@ -135,6 +133,10 @@ npm run build && npm start
 如果 Papilot 帮你省下了改论文的时间，点个 ⭐ 能让更多研究者发现它。
 
 <a href="https://github.com/cu1ch3n/papilot/graphs/contributors"><img src="https://contrib.rocks/image?repo=cu1ch3n/papilot" alt="Papilot 贡献者"></a>
+
+## 🔗 友情链接
+
+[LINUX DO](https://linux.do/) 是一个交流技术、分享开源项目的中文社区。Papilot 认同真诚、友善、团结、专业的社区理念，欢迎大家去发现有趣的项目、交流使用经验。
 
 ## 📄 许可证
 
