@@ -4,13 +4,21 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-30
+
 ### Added
 
 - The PDF review lists the places an edit changes away from its own lines under that edit: the uses of a redefined macro, equations and references renumbered after an inserted equation, a new bibliography entry. The first three are shown and **Show N more** renders the rest. The places have no buttons; deciding the edit decides them. When a round has several edits, Papilot compiles the accepted text with some of them to tell which edit causes each change, so such a round can take longer to build.
 
 ### Changed
 
+- On touch screens, the review and the PDF view select text with Papilot's own highlight, handles and **Add note** menu instead of the system's, which covered Papilot's: a long press picks a word, dragging extends it, and the handles move its ends.
 - Every PDF build of a day prints the same date: Papilot sets TeX's `SOURCE_DATE_EPOCH` to the local date, unless you set it, so `\today` shows today and `\time` shows 12:00. A build kept from an earlier day is rebuilt rather than compared with today's.
+
+### Fixed
+
+- On phones, a long file path no longer widens the review past the screen, which cut the diff in half and put its buttons under the PDF tools.
+- On phones, notes and comments are written in a card under the review toolbar, which the keyboard never covers. A note closed before it is written no longer blocks the next selection, and one left half-written reopens after a reload.
 
 ## [0.5.0] - 2026-10-29
 
@@ -97,7 +105,8 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/cu1ch3n/papilot/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/cu1ch3n/papilot/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/cu1ch3n/papilot/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/cu1ch3n/papilot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/cu1ch3n/papilot/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cu1ch3n/papilot/compare/v0.2.0...v0.3.0
