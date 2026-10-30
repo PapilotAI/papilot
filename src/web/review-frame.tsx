@@ -252,6 +252,14 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
       compactReviewFrame(doc, reserve, leadWidth);
       setDocument(doc);
       frame.current?.contentWindow?.addEventListener('latex-review:decided', () => decided.current?.());
+      // The viewer scrolls only its paper. Revealing or focusing something can
+      // scroll its document or #root too, overflow hidden or not, which slides
+      // the viewer's bar out from under our tools and the paper in; put them back.
+      const root = doc.getElementById('root');
+      doc.addEventListener('scroll', event => {
+        const scrolled = event.target === doc ? doc.scrollingElement : event.target === root ? root : null;
+        if (scrolled && (scrolled.scrollTop || scrolled.scrollLeft)) scrolled.scrollTo(0, 0);
+      }, true);
       // Strips render after the viewer starts; re-measure the text edges when they change.
       let pending: ReturnType<typeof setTimeout> | undefined;
       cropper.current?.disconnect();

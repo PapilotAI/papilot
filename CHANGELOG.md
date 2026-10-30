@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Fixed
+
+- The review's own bar stays under Papilot's PDF tools. When something scrolled the whole review page rather than its paper, the bar slid away and the tools sat over the PDF.
+
 ## [0.6.0] - 2026-10-30
 
 ### Added
