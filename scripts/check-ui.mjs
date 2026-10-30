@@ -261,7 +261,7 @@ try {
   const fixtureTask = snapshot.tasks.find(t => t.id === task.id);
   fixtureTask.status = 'building';
   await page.clock.runFor(3000);
-  await page.getByRole('button', { name: /^Clarify the introduction/ }).getByText('Building PDF review').waitFor();
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).getByText('Preparing task results').waitFor();
   fixtureTask.status = 'reviewing';
   await page.clock.runFor(3000);
   await page.waitForFunction(() => window.shown.length === 2);
@@ -345,7 +345,7 @@ try {
   const reviewTools = page.locator('.review-tools');
   assert.equal(await reviewTools.getByRole('link', { name: 'Full PDF', exact: true }).getAttribute('href'), '/api/tasks/fixture-task-0001/pdf?round=1');
   assert.equal(await reviewTools.getByRole('link', { name: 'Open review in new tab', exact: true }).getAttribute('href'), '/review/fixture-paper/?task=p-fixture');
-  assert.equal(await reviewTools.getByRole('button', { name: 'Build review', exact: true }).isDisabled(), false);
+  assert.equal(await reviewTools.getByRole('button', { name: 'Regenerate PDF comparison', exact: true }).isDisabled(), false);
   assert.equal(await reviewTools.getByRole('combobox').count() + await reviewTools.getByRole('button', { name: 'Review options' }).count(), 0);
   // Menus open from the keyboard on the first item and return focus on Escape.
   const taskMenu = page.getByRole('button', { name: `Task actions for ${task.title}`, exact: true });
@@ -982,7 +982,7 @@ try {
     assert.ok(send.x >= 0 && send.x + send.width <= width);
     if (width < 681) {
       await page.getByRole('button', { name: /Review/ }).first().click();
-      // A phone keeps Full PDF; Build review and the new-tab link make room for the review's own bar.
+      // A phone keeps Full PDF; Regenerate PDF comparison and the new-tab link make room for the review's own bar.
       await page.locator('.review-tools').getByRole('link', { name: 'Full PDF', exact: true }).waitFor();
       assert.equal(await page.locator('.review-tools').getByRole('link', { name: 'Open review in new tab', exact: true }).isVisible(), false);
       await page.screenshot({ path: `test-results/english-mobile-${width}.png`, fullPage: true });

@@ -11,9 +11,9 @@ export const zhCN: Record<string, string> = {
   'The request timed out and may still be processing. Check the task status before retrying.': '请求超时，可能仍在处理中。重试前请先检查任务状态。',
 
   // Task status
-  'Ready': '就绪', 'Queued': '排队中', 'Needs your reply': '等待你的回复', 'Building PDF review': '正在生成 PDF 审阅', 'Ready for review': '待审阅',
+  'Ready': '就绪', 'Queued': '排队中', 'Needs your reply': '等待你的回复', 'Preparing task results': '正在整理任务结果', 'Ready for review': '待审阅',
   'Paused': '已暂停', 'Needs attention': '需要处理', 'Check task status': '请检查任务状态', 'Deleting task': '正在删除任务',
-  'Review complete': '审阅完成', '{agent} is editing': '{agent} 正在编辑',
+  'Review complete': '审阅完成', 'Completed': '已完成', '{agent} is working': '{agent} 正在处理',
 
   // Time
   'now': '刚刚', '{n}m': '{n} 分钟', '{n}h': '{n} 小时', '{n}d': '{n} 天', 'just now': '刚刚', '{time} ago': '{time}前',
@@ -42,7 +42,7 @@ export const zhCN: Record<string, string> = {
   '{agent} is working on this task': '{agent} 正在处理此任务', 'Task saved. Waiting for an available {agent} session.': '任务已保存。正在等待可用的 {agent} 会话。',
   '{n} change to review': '{n} 处修改待审阅', '{n} changes to review': '{n} 处修改待审阅',
   'Open review': '打开审阅', 'This step needs attention': '此步骤需要处理', 'Latest messages': '最新消息',
-  'Instructions for {agent}': '给 {agent} 的指令', 'Queue instructions for the next turn…': '添加后续指令…', 'Ask for another revision…': '提出新的修改要求…',
+  'Instructions for {agent}': '给 {agent} 的指令', 'Queue instructions for the next turn…': '添加后续指令…', 'Ask a question or request changes…': '继续提问，或提出修改要求…',
   'Pause task': '暂停任务', 'Pause {agent}': '暂停 {agent}', 'Send instructions': '发送指令', 'Send (Enter) · New line (Shift+Enter)': '发送（Enter）· 换行（Shift+Enter）',
 
   // Review feedback
@@ -112,7 +112,7 @@ export const zhCN: Record<string, string> = {
   'Delete review note {n}': '删除审阅批注 {n}',
   'Marked on earlier changes.': '标记于之前的修改。',
   'Check the task status before sending notes.': '发送批注前请先检查任务状态。',
-  'Full PDF': '完整 PDF', 'Open the full PDF': '打开完整 PDF', 'Build review': '生成审阅', 'Build the review again': '重新生成审阅',
+  'Full PDF': '完整 PDF', 'Open the full PDF': '打开完整 PDF', 'Generate PDF comparison': '生成 PDF 对比', 'Regenerate PDF comparison': '重新生成 PDF 对比',
   'Open review in new tab': '在新标签页中打开审阅',
 
   // Sidebar and header
@@ -131,9 +131,15 @@ export const zhCN: Record<string, string> = {
   'Connection lost. Showing the last update; your draft is kept.': '连接已断开。正在显示最近一次更新，你的草稿仍然保留。', 'Retry connection': '重新连接',
   'Connecting to {agent}…': '正在连接 {agent}…', 'Connecting…': '正在连接…', 'Reconnect': '重新连接',
   'Resize chat panel': '调整对话面板宽度', 'Drag to resize · Double-click to reset': '拖动调整宽度 · 双击还原',
-  'PDF review': 'PDF 审阅', 'The latest review build failed.': '最近一次审阅生成失败。', 'Retry build': '重新生成',
+  'PDF review': 'PDF 审阅', 'Could not generate the PDF comparison.': 'PDF 对比生成失败。', 'Retry build': '重新生成',
   'Deletion is in progress': '正在删除', 'This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.': '在确认工作树清理完成之前，此任务会保留。如果连接中断，请使用“重试删除”。',
-  'Building PDF review…': '正在生成 PDF 审阅…', 'No review yet': '还没有审阅',
+  'Preparing task results…': '正在整理任务结果…', 'PDF comparison': 'PDF 修改对比', 'No manuscript changes': '本次没有修改论文',
+  'This task did not change the manuscript. Read the answer in the chat.': '本次任务没有改动论文，请在对话中查看回复。',
+  'Only manuscript changes need a PDF comparison. Answers to questions are in the chat.': '只有论文改动需要对比，问答内容直接在对话中查看。',
+  'Checking for manuscript changes. A PDF comparison is generated only when needed.': '正在检查论文是否有改动，有改动时才会生成 PDF 对比。',
+  'If the task changes the manuscript, a PDF comparison will appear here. Otherwise, read the answer in the chat.': '如果任务修改了论文，这里会显示 PDF 对比；问答回复在对话中查看。',
+  'Reply in the chat to continue. A PDF comparison is needed only if the manuscript changes.': '请先在对话中回复，让任务继续。只有论文改动才需要 PDF 对比。',
+  'Confirm whether the task is still running before generating a PDF comparison.': '请先确认任务是否仍在运行，再生成 PDF 对比。',
 
   // Home
   'Opening your workspace': '正在打开工作区', 'Connecting to your papers and tasks…': '正在连接你的论文和任务…', 'What are we revising next?': '接下来要修改什么？',

@@ -52,11 +52,14 @@ async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal,
 const AGENT_IDS: AgentId[] = ['codex', 'claude', 'antigravity'];
 const AGENT_LABELS: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity' };
 const agentName = (task: Task) => AGENT_LABELS[task.agent || 'codex'] || 'Codex';
-const statusNames = (): Record<string, string> => ({ idle: t('Ready'), queued: t('Queued'), waiting_input: t('Needs your reply'), building: t('Building PDF review'), reviewing: t('Ready for review'), interrupted: t('Paused'), failed: t('Needs attention'), uncertain: t('Check task status'), deleting: t('Deleting task') });
+// A finished publication with no round is a valid answer-only result. Keep
+// earlier comparisons available when a follow-up answer makes no new edits.
+const noManuscriptChanges = (task: Task) => task.status === 'reviewing' && task.review?.round === null && task.review.state !== 'build_failed' && !task.review.counts.pending;
+const statusNames = (): Record<string, string> => ({ idle: t('Ready'), queued: t('Queued'), waiting_input: t('Needs your reply'), building: t('Preparing task results'), reviewing: t('Ready for review'), interrupted: t('Paused'), failed: t('Needs attention'), uncertain: t('Check task status'), deleting: t('Deleting task') });
 const ACTIVE = ['running', 'waiting_input', 'queued'];
 function Status({ task }: { task: Task }) {
-  const done = task.status === 'reviewing' && task.review?.state === 'done';
-  return <span className={`status ${task.status}${done ? ' done' : ''}`}><i/>{done ? t('Review complete') : task.status === 'running' ? t('{agent} is editing', { agent: agentName(task) }) : statusNames()[task.status] || task.status}</span>;
+  const answered = noManuscriptChanges(task), done = task.status === 'reviewing' && task.review?.state === 'done';
+  return <span className={`status ${task.status}${done || answered ? ' done' : ''}`}><i/>{answered ? t('Completed') : done ? t('Review complete') : task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : statusNames()[task.status] || task.status}</span>;
 }
 function time(timestamp: number) { return new Date(timestamp).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }); }
 function ago(timestamp: number) {
@@ -277,7 +280,7 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
     <div className="composer-wrap">
       {connection}
-      <Composer inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? t('Queue instructions for the next turn…') : t('Ask for another revision…')} skills={skills} skill={skill} onSkill={setSkill}
+      <Composer inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? t('Queue instructions for the next turn…') : t('Ask a question or request changes…')} skills={skills} skill={skill} onSkill={setSkill}
         footer={<div className="composer-options"><SkillPicker skills={skills} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/><span className="composer-model" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}><ModelLabel model={modelName} effort={task.effort || model?.defaultEffort} fast={Boolean(task.serviceTier && task.serviceTier !== 'default')}/></span></div>}
         action={<div className="composer-actions">
           {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
@@ -530,6 +533,30 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
     </li>)}</ol>}
     {error && <p className="inline-error" role="alert">{error}</p>}
   </section>;
+}
+
+function PendingComparison({ task, busy, onBuild }: { task: Task; busy: boolean; onBuild: () => void }) {
+  const answered = noManuscriptChanges(task);
+  let title = answered ? t('No manuscript changes') : t('PDF comparison');
+  let detail = answered ? t('This task did not change the manuscript. Read the answer in the chat.') : t('Only manuscript changes need a PDF comparison. Answers to questions are in the chat.');
+  if (task.status === 'building') {
+    title = t('Preparing task results…');
+    detail = t('Checking for manuscript changes. A PDF comparison is generated only when needed.');
+  } else if (task.status === 'running' || task.status === 'queued') {
+    title = task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : t('Queued');
+    detail = t('If the task changes the manuscript, a PDF comparison will appear here. Otherwise, read the answer in the chat.');
+  } else if (task.status === 'waiting_input') {
+    title = t('Needs your reply');
+    detail = t('Reply in the chat to continue. A PDF comparison is needed only if the manuscript changes.');
+  } else if (task.status === 'uncertain') {
+    title = t('Check task status');
+    detail = t('Confirm whether the task is still running before generating a PDF comparison.');
+  }
+  return <div className="review-placeholder">
+    <div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name={answered ? 'chat' : 'diff'} size={22}/>}</div>
+    <h2>{title}</h2><p>{detail}</p>
+    {!answered && ['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button type="button" className="button secondary" disabled={busy} onClick={onBuild}>{t('Generate PDF comparison')}</button>}
+  </div>;
 }
 
 // The PDF page shows the manuscript as it is, or what changed since the last
@@ -1017,10 +1044,14 @@ function App() {
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
   const active = Boolean(task && ACTIVE.includes(task.status));
-  const conversationVisible = mobile ? mobileTab === 'conversation' : layout !== 'review';
+  const answerOnly = Boolean(task && (noManuscriptChanges(task) || (active && task.review?.round === null)));
+  // Do not save this as the author's layout preference: switching back to a
+  // task with manuscript changes should restore their chosen review layout.
+  const taskLayout = answerOnly ? 'conversation' : layout, taskTab = answerOnly ? 'conversation' : mobileTab;
+  const conversationVisible = mobile ? taskTab === 'conversation' : taskLayout !== 'review';
   const pause = () => { if (task) void action('/tasks/' + task.id + '/interrupt'); };
   // With only the chat in view, the feedback bar moves to the end of the conversation.
-  const chatOnly = mobile ? mobileTab === 'conversation' : layout === 'conversation';
+  const chatOnly = mobile ? taskTab === 'conversation' : taskLayout === 'conversation';
   // A finished review can be committed from its card in the viewer, or from
   // the end of the chat when the review is hidden.
   const ready = task ? commitReady(task, projectGit) : [];
@@ -1039,18 +1070,18 @@ function App() {
         <div className="task-state-actions">
           {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>{t('Retry deletion')}</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}><Icon name="refresh" size={14}/>{t('Check status')}</button> : active && !conversationVisible ? <button className="button secondary compact" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={pause}><Icon name="pause" size={14}/><span className="button-label">{t('Pause')}</span></button> : task.error ? <button className="button secondary compact" onClick={() => { setMobileTab('conversation'); setLayout('conversation'); }}>{t('View details')}</button> : null}
         </div>
-        <div className="view-selector" role="group" aria-label={t('Workspace view')}>{mobile ? <>
+        {!answerOnly && <div className="view-selector" role="group" aria-label={t('Workspace view')}>{mobile ? <>
           <button aria-label={pending ? t('Review, {n} to decide', { n: pending }) : t('Review')} aria-pressed={mobileTab === 'review'} onClick={() => setMobileTab('review')}><Icon name="paper" size={16}/><span>{t('Review')}</span>{pending > 0 && <b className="view-count" aria-hidden="true">{pending}</b>}</button>
           <button aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} aria-pressed={mobileTab === 'conversation'} onClick={() => setMobileTab('conversation')}><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
         </> : <>
           <button aria-label={t('Review')} title={t('PDF review only')} aria-pressed={layout === 'review'} onClick={() => selectLayout('review')}><Icon name="paper" size={16}/><span>{t('Review')}</span></button>
           <button aria-label={t('Split')} title={t('Review and chat side by side')} aria-pressed={layout === 'split'} onClick={() => selectLayout('split')}><Icon name="split" size={16}/><span>{t('Split')}</span></button>
           <button aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} title={t('Chat only')} aria-pressed={layout === 'conversation'} onClick={() => selectLayout('conversation')}><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
-        </>}</div>
+        </>}</div>}
   </>;
   const reviewTools = task && fullPdfUrl ? <>
     <a className="icon-button full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" aria-label={t('Full PDF')} title={t('Open the full PDF')}><Icon name="pdf" size={16}/></a>
-    <button type="button" className="icon-button review-rebuild" aria-label={t('Build review')} title={t('Build the review again')} disabled={['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) || taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="refresh" size={16}/></button>
+    <button type="button" className="icon-button review-rebuild" aria-label={t('Regenerate PDF comparison')} title={t('Regenerate PDF comparison')} disabled={['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) || taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="refresh" size={16}/></button>
     <a className="icon-button review-open" href={reviewUrl(task)} target="_blank" rel="noreferrer" aria-label={t('Open review in new tab')} title={t('Open review in new tab')}><Icon name="external" size={16}/></a>
   </> : null;
 
@@ -1134,12 +1165,12 @@ function App() {
         {sidebarToggle}{taskControls}{manuscriptNavigation}
       </div>}
       {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>{t('Connection lost. Showing the last update; your draft is kept.')}</span><button onClick={() => void refresh(true)}>{t('Retry connection')}</button></div>}
-      {task ? <div className={`task-grid layout-${layout} show-${mobileTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
-          {!mobile && layout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label={t('Resize chat panel')} aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title={t('Drag to resize · Double-click to reset')} onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
+      {task ? <div className={`task-grid layout-${taskLayout} show-${taskTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
+          {!mobile && taskLayout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label={t('Resize chat panel')} aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title={t('Drag to resize · Double-click to reset')} onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
           <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
           {!mobile && !chatOnly && (!task.review?.round || task.status === 'deleting') && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}<div className="panel-tools">{!conversationVisible && taskControls}</div></div>}
-          {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('The latest review build failed.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
-          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} lead={!mobile && !chatOnly ? sidebarToggle : null} tools={<>{reviewTools}{!mobile && !conversationVisible && taskControls}</>} completion={commitStep} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); }}/> : <div className="review-placeholder"><div className="placeholder-icon">{task.status === 'building' ? <span className="spinner large"/> : <Icon name="paper" size={22}/>}</div><h2>{task.status === 'building' ? t('Building PDF review…') : t('No review yet')}</h2>{['idle', 'interrupted', 'failed', 'reviewing'].includes(task.status) && <button className="button secondary" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Build review')}</button>}</div>}
+          {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('Could not generate the PDF comparison.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
+          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} lead={!mobile && !chatOnly ? sidebarToggle : null} tools={<>{reviewTools}{!mobile && !conversationVisible && taskControls}</>} completion={commitStep} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); }}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>}
           {!chatOnly && reviewFeedback(false)}
         </section><Activity key={task.id} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} models={runtimes[task.agent || 'codex']?.models || []} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{ready.length > 0 && <div className="review-feedback card commit-card"><span><Icon name="commit" size={15}/>{t('Accepted changes are not committed yet')}</span><button className="button secondary compact" onClick={() => setCommitFor(task.id)}>{t('Commit…')}</button></div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
       : manuscriptOpen && project ? <ManuscriptView navigation={!mobile ? sidebarToggle : null} project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} onGit={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} reportError={reportError}/>
