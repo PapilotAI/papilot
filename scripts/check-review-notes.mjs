@@ -50,15 +50,13 @@ try {
   assert.equal(await page.locator('.markdown ul ul li').textContent(), 'Nested item');
   await page.locator('.file-reference').click();
   await page.getByRole('button', { name: 'Copied path' }).waitFor();
-  // Empty notes offer the tools directly; region mode leaves the page clear.
+  // Region mode leaves the page clear; text is selected directly without a mode button.
   await page.getByRole('button', { name: 'Review notes', exact: true }).click();
   await frame().getByRole('button', { name: 'Region note', exact: true }).click();
   await frame().locator('.review-region-capture').first().waitFor();
   assert.equal(await frame().getByRole('complementary', { name: 'Review PDF notes' }).count(), 0);
   await page.keyboard.press('Escape');
   await frame().locator('.review-region-capture').first().waitFor({ state: 'hidden' });
-  await page.getByRole('button', { name: 'Review notes', exact: true }).click();
-  await frame().getByRole('button', { name: 'Text note', exact: true }).click();
   // Closing a note before writing it leaves the next selection free.
   await selectText('[data-state="accepted"] .pdf-glyph');
   await frame().getByRole('button', { name: 'Close review notes' }).click();
@@ -143,11 +141,13 @@ try {
   await page.getByRole('button', { name: 'Review notes', exact: true }).waitFor();
   assert.equal(messages.length, 2);
   assert.deepEqual(messages[0], messages[1], 'retry after reload uses the same submission identity');
-  assert.match(messages[1].text, /Round 1 · PDF page x · Before · Change 1 · main\/frontmatter\/acknowledgments.tex:26–43/);
-  assert.match(messages[1].text, /After · Change 2/);
-  assert.match(messages[1].text, /Unchanged text · Region in displayed strip/);
-  assert.match(messages[1].text, /Thank you to my friends and family/);
-  assert.match(messages[1].text, /Keep this accepted paragraph and its citation\./);
+  assert.equal(messages[1].text, '');
+  assert.match(messages[1].notes[0].where, /Round 1 · PDF page x · Before · Change 1 · main\/frontmatter\/acknowledgments.tex:26–43/);
+  assert.match(messages[1].notes[1].where, /After · Change 2/);
+  assert.match(messages[1].notes[2].where, /Unchanged text · Region in displayed strip/);
+  assert.equal(messages[1].notes[0].quote, 'Thank you to my friends and family.');
+  assert.equal(messages[1].notes[1].comment, 'Keep this accepted paragraph and its citation.');
+  assert.deepEqual(messages[1].notes[0].anchor, { round: 1, sources: [{ file: 'main/frontmatter/acknowledgments.tex', lines: [26, 43] }] });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: /^Review/ }).first().click();
   await page.getByRole('button', { name: 'Review notes', exact: true }).click();

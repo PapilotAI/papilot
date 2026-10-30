@@ -12,9 +12,9 @@ import { VERSION } from './paths.ts';
 import { findSkill, type SkillFile } from './skills.ts';
 import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
 import { commitMessageFrom } from '../commit.ts';
-import { notesInstructions, summarizeNotes } from '../notes.ts';
+import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
-import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation } from '../shared.ts';
+import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation, NoteSummary } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -195,7 +195,7 @@ export class Workspace extends EventEmitter {
   // The author's message, a skill run with or without one, the review
   // feedback alone, or a build the agent broke. The chat keeps what happened;
   // the agent gets the prompt.
-  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; notes?: Annotation[]; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
+  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; notes?: Annotation[]; reviewNotes?: NoteSummary[]; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const existing = this.store.runByKey(requestKey);
@@ -203,7 +203,7 @@ export class Workspace extends EventEmitter {
     if (task.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
     const pauseVersion = task.pauseVersion || 0;
     if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
-    const instructions = options.notes?.length ? notesInstructions(options.notes, text) : text.trim();
+    const instructions = options.notes?.length ? notesInstructions(options.notes, text) : options.reviewNotes?.length ? reviewNotesInstructions(options.reviewNotes) : text.trim();
     let prompt = options.build ? buildFixPrompt(options.build) : options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, instructions) : instructions, cursor = task.feedbackCursor;
     let summary: FeedbackSummary | undefined;
     if (includeFeedback) {
@@ -214,8 +214,8 @@ export class Workspace extends EventEmitter {
       if (feedback.feedback?.length || feedback.build_error) prompt += '\n\nPapilot review feedback (bound to the specified review round and source changes):\n' + JSON.stringify(feedback, null, 2);
       if (task.error) prompt += '\n\nLatest task/review error:\n' + task.error + '\nThe latest accepted manuscript is at ' + this.store.project(task.projectId).path + '. You may read it to understand accepted changes, but must only edit your isolated task worktree. Prepare a revised proposal for another review; never write to or accept changes in the manuscript checkout.';
     }
-    const run: Run = { id: randomUUID(), taskId, requestKey, prompt, feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null };
-    const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(options.notes?.length ? { notes: summarizeNotes(options.notes) } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}), ...(options.author ? { author: options.author } : {}) };
+    const run: Run = { id: randomUUID(), taskId, requestKey, prompt, feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null, reviewRound: 0 };
+    const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(options.notes?.length ? { notes: summarizeNotes(options.notes) } : options.reviewNotes?.length ? { notes: options.reviewNotes } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}), ...(options.author ? { author: options.author } : {}) };
     const saved = this.store.transaction(() => {
       // Feedback loading yields to other requests. Recheck identity, queue, and
       // task status together before committing; none of the earlier reads own a lock.
@@ -232,7 +232,7 @@ export class Workspace extends EventEmitter {
       this.store.saveRun(run);
       for (const note of options.notes || []) this.store.saveAnnotation({ ...note, taskId });
       if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null });
-      this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
+      this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build || options.reviewNotes?.length ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
       return run;
     });
     this.schedule();
@@ -521,10 +521,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     if (this.publishing.has(taskId) || (!automatic && (BUSY.has(task.status) || task.status === 'queued'))) throw new Error('This task is busy. Wait for it to finish or pause it first.');
     this.publishing.add(taskId);
     this.store.updateTask(taskId, { status: 'building', error: null });
-    return this.buildReview(task, Boolean(after && !after.requestKey.startsWith(BUILD_FIX))).finally(() => { this.publishing.delete(taskId); this.schedule(); });
+    return this.buildReview(task, Boolean(after && !after.requestKey.startsWith(BUILD_FIX)), after?.id).finally(() => { this.publishing.delete(taskId); this.schedule(); });
   }
-  private async buildReview(task: Task, sendBack: boolean) {
+  private async buildReview(task: Task, sendBack: boolean, after?: string) {
     const taskId = task.id;
+    const unlinked = this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && (run.reviewRound === 0 || (run.reviewRound === undefined && run.id === after))).map(run => run.id);
     try {
       const client = await this.connectReview(this.store.project(task.projectId).path);
       const job = await client.post(`${taskRoute(task.name)}/publish`, {});
@@ -533,7 +534,12 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         const current = await client.get(`/api/jobs/${job.job}`);
         const summary = await client.get(taskRoute(task.name));
         this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, job: current } });
-        if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') break;
+        if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') {
+          // Freeze the result round for these instructions. Later follow-ups
+          // have their own results and cannot silently replace these links.
+          for (const run of this.store.runs().filter(run => unlinked.includes(run.id))) this.store.saveRun({ ...run, reviewRound: current.outcome === 'empty' || current.outcome === 'unchanged' ? null : current.round ?? summary.round ?? null });
+          break;
+        }
         if (current.status === 'failed') {
           const failure: BuildFailure = { error: current.error || 'PDF build failed.', details: current.details || [], ...(current.log ? { log: current.log } : {}) };
           // Instructions the author queued meanwhile go first; the build after them sends any error that remains.
@@ -693,6 +699,14 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   renameTask(taskId: string, title: string) {
     if (this.store.task(taskId).status === 'deleting') throw new Error('This task is being deleted.');
     return this.store.updateTask(taskId, { title });
+  }
+  archiveTask(taskId: string, archived: boolean) {
+    if (typeof archived !== 'boolean') throw new Error('Choose whether to archive or restore the task.');
+    const task = this.store.task(taskId);
+    if (task.status === 'deleting') throw new Error('This task is being deleted.');
+    if (Boolean(task.archivedAt) === archived) return task;
+    // Archiving only organizes the list; the conversation, review and any run remain intact.
+    return this.store.updateTask(taskId, { archivedAt: archived ? Date.now() : null });
   }
   async deleteTask(taskId: string): Promise<{ ok: true }> {
     if (this.preparing.has(taskId)) throw new Error('Wait for task creation to finish before deleting it.');

@@ -14,7 +14,8 @@ import { type Manuscripts, annotationTask, gitAbortMerge, gitCommit, gitDiff, gi
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { type Accounts, deviceLabel } from './accounts.ts';
 import { type Listener, Limiter, SESSION_COOKIE, author, clientAddress, cookie, equals, guard, viewerInfo, visibleSnapshot } from './access.ts';
-import type { AgentId } from '../shared.ts';
+import type { AgentId, NoteSummary } from '../shared.ts';
+import { taskNoteResults } from './note-results.ts';
 
 // Git writes to one repository run one at a time; each returns the new status.
 // Both listeners share one queue, so the owner and a collaborator take turns.
@@ -87,7 +88,7 @@ export async function buildApp(options: AppOptions) {
   // A skill's name: what the author typed after "/".
   const skillName = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,47}$/.test(value) ? value : undefined;
   // Text the author may leave empty when a skill or review feedback says enough.
-  const optional = (value: unknown, name: string) => value === undefined || value === '' ? '' : string(value, name);
+  const optional = (value: unknown, name: string, max = 20000) => value === undefined || value === '' ? '' : string(value, name, max);
   app.get<{ Params: { id: string } }>('/api/projects/:id/skills', project(), request => ({ skills: loadSkills(store.project(request.params.id).path).map(listedSkill) }));
   app.post('/api/tasks', { config: { access: { project: 'projectId', from: 'body' } } }, async request => {
     const b = request.body as any, skill = skillName(b.skill);
@@ -96,6 +97,10 @@ export async function buildApp(options: AppOptions) {
     return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: skill || annotations?.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
   });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/items', task, request => { store.task(request.params.id); return { items: store.items(request.params.id) }; });
+  app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {
+    const task = store.task(request.params.id), client = await connectReview(store.project(task.projectId).path);
+    return { notes: await taskNoteResults(task, store.items(task.id), store.runs().filter(run => run.taskId === task.id), client) };
+  });
   app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
     const task = store.task(request.params.id), project = store.project(task.projectId);
     const round = request.query.round === undefined ? task.review?.round : Number(request.query.round);
@@ -108,8 +113,22 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/messages', task, async request => {
     const b = request.body as any, task = store.task(request.params.id), feedback = b.feedback === true, name = skillName(b.skill);
     const skill = name ? findSkill(store.project(task.projectId).path, name) : undefined;
-    const text = feedback || skill ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
-    return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, author: author(request.viewer) });
+    let reviewNotes: NoteSummary[] | undefined;
+    if (b.notes !== undefined) {
+      if (!Array.isArray(b.notes) || !b.notes.length || b.notes.length > 500 || feedback || skill) throw new Error('Select valid review notes.');
+      reviewNotes = b.notes.map((note: any) => {
+        if (!note || typeof note !== 'object') throw new Error('Select valid review notes.');
+        const anchor = note.anchor;
+        if (anchor && (!Array.isArray(anchor.sources) || anchor.sources.length > 40 || (anchor.round !== undefined && (!Number.isSafeInteger(anchor.round) || anchor.round < 1 || anchor.round > (task.review?.round || 0))))) throw new Error('Invalid note location.');
+        const sources = anchor?.sources.map((source: any) => {
+          if (!source || !Array.isArray(source.lines) || source.lines.length !== 2 || !source.lines.every((line: unknown) => Number.isSafeInteger(line) && Number(line) >= 1) || source.lines[1] < source.lines[0]) throw new Error('Invalid note location.');
+          return { file: string(source.file, 'Source file', 4096), lines: source.lines as [number, number] };
+        });
+        return { ...(note.id ? { id: string(note.id, 'Note ID', 100) } : {}), where: string(note.where, 'Note location', 4000), quote: optional(note.quote, 'PDF text', 2000), comment: string(note.comment, 'Note', 4000), ...(anchor ? { anchor: { sources, ...(anchor.round ? { round: anchor.round } : {}) } } : {}) };
+      });
+    }
+    const text = feedback || skill || reviewNotes ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
+    return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, reviewNotes, author: author(request.viewer) });
   });
   // Commits what the author accepted from this task, with the message they confirmed.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit', task, request => {
@@ -117,6 +136,7 @@ export async function buildApp(options: AppOptions) {
     return serialGit(task.projectId, () => workspace.commitTask(task.id, string(b.message, 'Commit message', 5000), b.push === true));
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/rename', task, request => workspace.renameTask(request.params.id, string((request.body as any).title, 'Task title', 120)));
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/archive', task, request => workspace.archiveTask(request.params.id, (request.body as any)?.archived));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/interrupt', task, request => workspace.interrupt(request.params.id).then(() => ({ ok: true })));
   // Deleting a task that is already gone succeeds, so a lost response can be retried; a hidden one answers the same.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/delete', { config: { access: { task: 'id' }, hidden: 'ok' } }, request => {

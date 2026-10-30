@@ -9,18 +9,24 @@ export interface Task {
   id: string; projectId: string; name: string; title: string; instructions: string;
   worktree: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
+  archivedAt?: number | null;
   error: string | null; review: ReviewSummary | null;
   pauseVersion?: number; pendingRunId?: string | null;
   pendingReview?: PendingReview | null;
   // The task's last commit from its review, and the accepted text it included.
   committed?: { hash: string; accepted: string; at: number } | null;
 }
-export interface Run { id: string; taskId: string; requestKey: string; prompt: string; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null }
+// reviewRound is 0 while awaiting a result, null when no changes were produced,
+// or the published round. Older runs omit it.
+export interface Run { id: string; taskId: string; requestKey: string; prompt: string; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null; reviewRound?: number | null }
 export interface TimelineItem { id: string; taskId: string; type: string; text: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta }
 // A user message can run a skill or carry review feedback; the chat shows
 // those as what they are rather than as the prompt the agent receives.
 // Papilot itself sends the agent a build its own edits broke.
-export interface NoteSummary { where: string; quote: string; comment: string }
+export interface NoteAnchor { sources: { file: string; lines: [number, number] }[]; round?: number }
+export interface NoteSummary { where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor }
+export interface NoteChange { round: number; stop: number; units: string[]; state: 'pending' | 'accepted' | 'rejected' | 'commented' | 'mixed'; match: 'source' | 'quote' }
+export interface NoteResult { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
 export interface MessageMeta { skill?: { id: string; name: string }; notes?: NoteSummary[]; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
 // Who wrote a message or note; none means the owner.
 export interface Author { id: string; name: string }

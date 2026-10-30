@@ -53,7 +53,7 @@ try {
   await owner.getByRole('button', { name: 'Settings', exact: true }).click();
   await owner.getByRole('button', { name: 'People', exact: true }).click();
   const people = owner.getByRole('dialog', { name: 'People' });
-  await expect(owner.locator('.sidebar-preferences button')).toHaveCount(1);
+  await expect(owner.locator('.sidebar-footer button')).toHaveCount(1);
   await people.getByRole('button', { name: 'Close', exact: true }).click();
   const ownerSettings = owner.getByRole('dialog', { name: 'Settings', exact: true });
   await expect(ownerSettings.getByRole('button', { name: 'People', exact: true })).toBeFocused();
@@ -91,7 +91,7 @@ try {
   await expect(ada.getByRole('menuitemradio')).toHaveCount(1);
   await expect(ada.getByText('Add paper…')).toHaveCount(0);
   await ada.keyboard.press('Escape');
-  await expect(ada.locator('.sidebar-preferences button')).toHaveCount(1);
+  await expect(ada.locator('.sidebar-footer button')).toHaveCount(1);
   await ada.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(ada.getByRole('button', { name: 'People' })).toHaveCount(0);
   await ada.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();

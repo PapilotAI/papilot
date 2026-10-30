@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { Task } from '../shared.ts';
+import type { NoteSummary, Task } from '../shared.ts';
 import { ReviewNotes } from './review-notes.tsx';
 import themeStyles from './theme.css?inline';
 import { language, t, useLanguage } from './i18n.ts';
+import { useNoteResults } from './note-results.tsx';
+import { ReviewNoteConnections } from './review-note-connections.tsx';
 
 // The viewer reads the interface language from its address.
-export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>) => `/review/${task.projectId}/?task=${task.name}${language() === 'en' ? '' : `&lang=${language()}`}`;
+export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number) => `/review/${task.projectId}/?task=${task.name}${round ? `&round=${round}&history=1` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
 // The same viewer shows a paper's uncommitted changes against its last commit.
 export const changesUrl = (projectId: string) => `/review/${projectId}/?changes=1${language() === 'en' ? '' : `&lang=${language()}`}`;
 
@@ -14,7 +16,7 @@ export const changesUrl = (projectId: string) => `/review/${projectId}/?changes=
 // navigation and the task title that the workspace already provides. Its bar
 // becomes the review toolbar; Papilot's PDF tools sit in the reserved space
 // on the right, and anything it leads with on the left.
-function compactReviewFrame(doc: Document, reserve: number, lead: number) {
+function compactReviewFrame(doc: Document, reserve: number, lead: number, changes: boolean) {
   if (!doc || doc.getElementById('papilot-embed-style')) return;
   doc.documentElement.style.setProperty('--papilot-tools', `${reserve}px`);
   doc.documentElement.style.setProperty('--papilot-lead', `${lead}px`);
@@ -39,10 +41,11 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number) {
        transparent: the sheet is the paper, and the before/after rows tint it. */
     .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}.sheet{background:var(--pdf-page)}
     :root[data-theme="dark"]{--before:#432c30;--after:#28392d}
-    .bar{display:flex;align-items:center;height:44px;min-height:44px;padding:0 calc(var(--papilot-tools,0px) + 12px) 0 calc(var(--papilot-lead,0px) + 14px);gap:12px;flex-wrap:nowrap;overflow:hidden}
+    .bar{display:flex;align-items:center;height:var(--papilot-bar-height,44px);min-height:var(--papilot-bar-height,44px);padding:0 max(14px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + 14px);gap:12px;flex-wrap:nowrap;overflow:hidden}
     .bar .overview-link,.bar .identity h1{display:none}
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
     .bar .identity span{font-size:13px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis}
+    ${changes ? '.bar .identity span{display:none}' : ''}
     .bar .meter{display:flex;order:initial;width:auto;font-size:13px}
     .bar .bar-end{margin-left:0;gap:6px}
     .bar .ghost{font-size:13px;font-weight:500;height:28px;padding:0 10px;border-radius:7px}
@@ -135,7 +138,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number) {
     .part-title{font-size:15px;margin:6px 0 10px}
     .side .pdf-strip,.context .pdf-strip{max-width:none}
     @media(max-width:680px){
-      .bar{height:48px;min-height:48px;padding-left:calc(var(--papilot-lead,0px) + 12px);gap:8px}.bar .ghost{min-height:36px;font-size:12px}
+      .bar{height:var(--papilot-bar-height,48px);min-height:var(--papilot-bar-height,48px);padding-left:calc(var(--papilot-lead,0px) + 12px);gap:8px}.bar .ghost{min-height:36px;font-size:12px}
       .bar .ghost.round{display:none}.bar .identity span,.bar .meter{font-size:12px}
       .change-map{display:none}.review-body>#paper{padding-left:8px;padding-right:8px;padding-bottom:84px}
       .side.before::after,.side.after::after{content:none}
@@ -164,9 +167,8 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number) {
     /* History is an icon like the PDF tools beside it, so the batch decisions
        keep their room. In a narrow pane it takes the place of the shortcuts
        button (the ? key still opens them). */
-    .bar .ghost.history{display:inline-flex;align-items:center;justify-content:center;width:28px;padding:0;font-size:0}
-    .bar .history::before{content:"";width:15px;height:15px;background:currentColor;-webkit-mask:var(--icon-history) center/contain no-repeat;mask:var(--icon-history) center/contain no-repeat}
-    @media(max-width:680px){.bar .ghost.history{width:36px}}
+    .bar .ghost.history{display:inline-flex;align-items:center;justify-content:center;width:var(--papilot-button-size,30px);height:var(--papilot-button-size,30px);min-height:0;padding:0;font-size:0}
+    .bar .history::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-history) center/contain no-repeat;mask:var(--icon-history) center/contain no-repeat}
     /* The batch decisions keep one line, with their count as a badge. The bar
        is a container measured without the room Papilot's PDF tools take, so it
        gives way in steps whatever their width or the language: first the meter
@@ -210,7 +212,9 @@ function cropMargins(doc: Document) {
 // completion is the next step shown in the viewer's card once every change is decided.
 // Without a task the frame shows the paper's uncommitted changes (changesOf),
 // and the viewer's own waiting message shows while they are compared.
-export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNotes, onDecided }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onSendNotes?: (message: { text: string; requestKey: string }) => Promise<void>; onDecided?: () => void }) {
+export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNotes, onDecided }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onSendNotes?: (message: { text: string; requestKey: string; notes?: NoteSummary[] }) => Promise<void>; onDecided?: () => void }) {
+  const noteLinks = useNoteResults(), linksRef = useRef(noteLinks); linksRef.current = noteLinks;
+  const linkedRound = task ? noteLinks?.focus?.change.round : undefined;
   const [document, setDocument] = useState<Document | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const toolbar = useRef<HTMLDivElement>(null), leading = useRef<HTMLDivElement>(null);
@@ -226,7 +230,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     setPhase('loading');
     const timer = setTimeout(() => setPhase(value => value === 'loading' ? 'slow' : value), 15000);
     return () => { clearTimeout(timer); observer.current?.disconnect(); cropper.current?.disconnect(); };
-  }, [attempt, shown]);
+  }, [attempt, shown, linkedRound]);
   useEffect(() => {
     const element = toolbar.current; if (!element) return;
     const observer = new ResizeObserver(() => setReserve(Math.ceil(element.offsetWidth)));
@@ -242,16 +246,21 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
       const root = frame.current?.contentDocument?.documentElement;
       root?.style.setProperty('--papilot-tools', `${reserve}px`);
       root?.style.setProperty('--papilot-lead', `${leadWidth}px`);
+      if (toolbar.current) {
+        root?.style.setProperty('--papilot-bar-height', `${toolbar.current.offsetHeight}px`);
+        const button = toolbar.current.querySelector<HTMLElement>('.icon-button');
+        if (button) root?.style.setProperty('--papilot-button-size', `${button.offsetWidth}px`);
+      }
     } catch { /* A browser error document may be inaccessible. */ }
-  }, [reserve, leadWidth]);
+  }, [reserve, leadWidth, document]);
   function loaded() {
     observer.current?.disconnect();
     try {
       const doc = frame.current?.contentDocument;
       if (!doc || (!doc.getElementById('root') && !doc.getElementById('paper'))) { setPhase('error'); return; }
-      compactReviewFrame(doc, reserve, leadWidth);
+      compactReviewFrame(doc, reserve, leadWidth, Boolean(changesOf));
       setDocument(doc);
-      frame.current?.contentWindow?.addEventListener('latex-review:decided', () => decided.current?.());
+      frame.current?.contentWindow?.addEventListener('latex-review:decided', () => { decided.current?.(); linksRef.current?.reload(); });
       // The viewer scrolls only its paper. Revealing or focusing something can
       // scroll its document or #root too, overflow hidden or not, which slides
       // the viewer's bar out from under our tools and the paper in; put them back.
@@ -309,7 +318,8 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     return () => watch.disconnect();
   }, [document, ready]);
   return <div className={'review-viewport' + (ready ? '' : ' review-pending')} aria-busy={!ready}>
-    <iframe ref={frame} key={`${attempt}:${shown}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
+    <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
+    {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
     {lead && <div ref={leading} className="review-lead">{lead}</div>}
     <div ref={toolbar} className="review-tools">{task && onSendNotes && <ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>}{tools}</div>
     {slot && completion ? createPortal(completion, slot) : null}

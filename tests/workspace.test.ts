@@ -171,6 +171,26 @@ test('publication reserves the worktree and rejects duplicate builds and review 
   } finally { gate.resolve({ status: 'done' }); f.close(); }
 });
 
+test('publication records each completed run result once and treats no new edits as no result', async () => {
+  let round = 2, outcome = 'published';
+  const f = fixture(async (_method, route) => route.includes('/jobs/') ? { status: 'done', outcome, round } : route.endsWith('/publish') ? { job: 'job' } : { ...summary, round });
+  try {
+    const run: Run = { id: 'finished-notes', taskId: f.task.id, requestKey: 'notes', prompt: 'Revise the notes.', status: 'completed', createdAt: 1, finishedAt: 2, reviewRound: 0 };
+    f.store.saveRun(run);
+    f.store.saveRun({ ...run, id: 'legacy-notes', requestKey: 'legacy', reviewRound: undefined });
+    await f.workspace.publish(f.task.id);
+    assert.equal(f.store.runByKey('notes')?.reviewRound, 2);
+    assert.equal(f.store.runByKey('legacy')?.reviewRound, undefined, 'a new build cannot claim historical requests');
+    round = 3;
+    await f.workspace.publish(f.task.id);
+    assert.equal(f.store.runByKey('notes')?.reviewRound, 2, 'later proposals cannot replace the original result');
+    f.store.saveRun({ ...run, id: 'ignored-notes', requestKey: 'ignored' });
+    outcome = 'unchanged';
+    await f.workspace.publish(f.task.id);
+    assert.equal(f.store.runByKey('ignored')?.reviewRound, null, 'an ignored request must not point at an older proposal');
+  } finally { f.close(); }
+});
+
 test('comments remain available during an active turn while file decisions are blocked', async () => {
   const f = fixture();
   try {
@@ -251,6 +271,38 @@ test('renaming a task changes only its title and is blocked during deletion', ()
     f.store.updateTask(f.task.id, { status: 'deleting' });
     assert.throws(() => f.workspace.renameTask(f.task.id, 'Another title'), /being deleted/);
   } finally { f.close(); }
+});
+
+test('archiving survives a restart, retains task history and review, and restores idempotently', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-archive-'));
+  const file = path.join(dir, 'state.db'), f = fixture(undefined, { file });
+  try {
+    f.store.updateTask(f.task.id, { review: summary, committed: { hash: 'abc', accepted: 'text', at: 1 } });
+    f.store.saveItem({ id: 'message', taskId: f.task.id, type: 'user', text: 'Keep this conversation.', createdAt: 1 });
+    const before = f.store.task(f.task.id), items = f.store.items(f.task.id);
+    const archived = f.workspace.archiveTask(f.task.id, true);
+    assert.ok(archived.archivedAt);
+    assert.deepEqual({ ...archived, archivedAt: undefined, updatedAt: before.updatedAt }, { ...before, archivedAt: undefined });
+    assert.deepEqual(f.workspace.archiveTask(f.task.id, true), archived);
+    await f.workspace.refresh(f.task.id);
+    assert.equal(f.store.task(f.task.id).archivedAt, archived.archivedAt, 'review updates preserve the archive');
+    const reopened = new Store(file);
+    try {
+      reopened.recover();
+      assert.equal(reopened.task(f.task.id).archivedAt, archived.archivedAt);
+      assert.deepEqual(reopened.items(f.task.id), items);
+      assert.deepEqual(reopened.task(f.task.id).committed, before.committed);
+    } finally { reopened.close(); }
+    const restored = f.workspace.archiveTask(f.task.id, false);
+    assert.equal(restored.archivedAt, null);
+    assert.deepEqual(f.workspace.archiveTask(f.task.id, false), restored);
+    assert.deepEqual(f.store.items(f.task.id), items);
+    assert.equal(f.calls.some(call => call.method === 'POST'), false, 'archiving never writes to the review engine');
+    f.store.updateTask(f.task.id, { status: 'running' });
+    assert.equal(f.workspace.archiveTask(f.task.id, true).status, 'running', 'archiving does not interrupt a running task');
+    f.store.updateTask(f.task.id, { status: 'deleting' });
+    assert.throws(() => f.workspace.archiveTask(f.task.id, false), /being deleted/);
+  } finally { f.close(); fs.rmSync(dir, { recursive: true }); }
 });
 
 test('renaming a paper changes only its display name', () => {

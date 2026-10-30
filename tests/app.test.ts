@@ -50,7 +50,7 @@ async function fixture() {
   const session = String(joined.headers['set-cookie']).split(';')[0];
   const state = (await remote.inject({ url: '/api/state', headers: { ...REMOTE, cookie: session } })).json();
   const as = { ...REMOTE, origin: ORIGIN, cookie: session, 'x-papilot-token': state.csrf };
-  return { store, workspace, accounts, local, remote, ada, joined, session, state, as, async close() { await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
+  return { store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
 }
 
 test('an invited person signs in at the public URL and sees only the papers shared with them', async () => {
@@ -112,6 +112,21 @@ test('public requests need the right origin, the session token and no other site
   } finally { await f.close(); }
 });
 
+test('archive API persists and restores shared tasks and rejects malformed requests', async () => {
+  const f = await fixture();
+  try {
+    const archive = (payload: object) => f.remote.inject({ method: 'POST', url: '/api/tasks/thesis-task/archive', headers: f.as, payload });
+    for (const payload of [{}, { archived: 'true' }, { archived: null }]) assert.equal((await archive(payload)).statusCode, 400);
+    assert.equal(f.store.task('thesis-task').archivedAt, undefined);
+    const archived = await archive({ archived: true });
+    assert.equal(archived.statusCode, 200);
+    assert.ok(archived.json().archivedAt);
+    const snapshot = (await f.remote.inject({ url: '/api/state', headers: { ...REMOTE, cookie: f.session } })).json();
+    assert.equal(snapshot.tasks[0].archivedAt, archived.json().archivedAt);
+    assert.equal((await archive({ archived: false })).json().archivedAt, null);
+  } finally { await f.close(); }
+});
+
 test('an unshared paper answers exactly like one that does not exist', async () => {
   const f = await fixture();
   try {
@@ -127,6 +142,7 @@ test('an unshared paper answers exactly like one that does not exist', async () 
     await same('review', { url: '/review/grant/api/tasks' }, { url: '/review/nope/api/tasks' });
     await same('task', { url: '/api/tasks/grant-task/items' }, { url: '/api/tasks/nope/items' });
     await same('task write', { method: 'POST', url: '/api/tasks/grant-task/interrupt', payload: {} }, { method: 'POST', url: '/api/tasks/nope/interrupt', payload: {} });
+    await same('task archive', { method: 'POST', url: '/api/tasks/grant-task/archive', payload: { archived: true } }, { method: 'POST', url: '/api/tasks/nope/archive', payload: { archived: true } });
     await same('approval', { method: 'POST', url: '/api/requests/grant-request', payload: { decision: 'accept' } }, { method: 'POST', url: '/api/requests/nope', payload: { decision: 'accept' } });
     await same('new task', { method: 'POST', url: '/api/tasks', payload: { id: 'new-task-id-0002', projectId: 'grant', title: 'T', instructions: 'Edit.' } }, { method: 'POST', url: '/api/tasks', payload: { id: 'new-task-id-0002', projectId: 'nope', title: 'T', instructions: 'Edit.' } });
     assert.equal(f.store.task('grant-task').status, 'reviewing');
@@ -174,7 +190,7 @@ test('one task carries PDF notes, a skill and the overall request; retries leave
     const [item] = f.store.items(payload.id), run = f.store.runByKey('initial-' + payload.id)!;
     assert.equal(item.text, payload.instructions);
     assert.deepEqual(item.meta?.skill, { id: 'polish', name: 'Polish' });
-    assert.deepEqual(item.meta?.notes, [{ where: 'Page 1 · main.tex lines 10–12', quote: note.quote, comment: note.comment }]);
+    assert.deepEqual(item.meta?.notes, [{ id: note.id, where: 'Page 1 · main.tex lines 10–12', quote: note.quote, comment: note.comment, anchor: { sources: [{ file: 'main.tex', lines: [10, 12] }] } }]);
     assert.match(run.prompt, /<skill name="Polish">/);
     assert.match(run.prompt, /Overall request:\nKeep all technical terms\./);
     assert.match(run.prompt, /Original source\./);
@@ -190,6 +206,41 @@ test('one task carries PDF notes, a skill and the overall request; retries leave
     assert.equal(notesOnly.statusCode, 200, notesOnly.body);
     assert.equal(f.store.items('notes-only-task-01')[0].text, '');
     assert.equal(f.store.items('notes-only-task-01')[0].meta?.notes?.length, 1);
+  } finally { await f.close(); }
+});
+
+test('review notes retain their anchors and link only to their own task result', async () => {
+  const f = await fixture();
+  try {
+    f.store.updateTask('thesis-task', { review: { state: 'reviewing', round: 1, counts: { pending: 1 } } });
+    f.review.get = async (route: string) => (route.includes('/feedback') ? { cursor: 0, feedback: [] } : route.includes('/rounds/') ? {
+      round: 2, units: [{ id: 'c1', file: 'main.tex', old_start: 10, old_end: 12, old_text: 'Original technical sentence.', new_text: 'Short sentence.' }],
+      sections: [], loose: [{ kind: 'change', units: ['c1'] }],
+    } : { decisions: { c1: 'accepted' } }) as any;
+    const note = { id: 'review-note', where: 'Round 1 · Before · main.tex:10–12', quote: 'Original technical sentence.', comment: 'Shorten this.', anchor: { round: 1, sources: [{ file: 'main.tex', lines: [10, 12] }] } };
+    const payload = { requestKey: 'review-note-request', text: '', notes: [note] };
+    for (const invalid of [[], [null], [{ ...note, anchor: { round: 99, sources: [] } }], [{ ...note, anchor: { sources: [{ file: 'main.tex', lines: [12, 10] }] } }]]) {
+      const response = await f.remote.inject({ method: 'POST', url: '/api/tasks/thesis-task/messages', headers: f.as, payload: { ...payload, notes: invalid } });
+      assert.equal(response.statusCode, 400);
+    }
+    const sent = await f.remote.inject({ method: 'POST', url: '/api/tasks/thesis-task/messages', headers: f.as, payload });
+    assert.equal(sent.statusCode, 200, sent.body);
+    assert.deepEqual(f.store.items('thesis-task')[0].meta?.notes, [note]);
+    assert.equal(f.store.items('thesis-task')[0].text, '');
+    assert.match(sent.json().prompt, /Shorten this\./);
+    assert.match(sent.json().prompt, /Original technical sentence\./);
+    const waiting = await f.remote.inject({ url: '/api/tasks/thesis-task/note-results', headers: f.as });
+    assert.equal(waiting.json().notes[0].state, 'waiting');
+    f.store.saveRun({ ...sent.json(), status: 'completed', reviewRound: 2 });
+    f.store.updateTask('thesis-task', { status: 'reviewing', review: { state: 'reviewing', round: 2, counts: { accepted: 1 } } });
+    const result = await f.remote.inject({ url: '/api/tasks/thesis-task/note-results', headers: f.as });
+    assert.equal(result.statusCode, 200, result.body);
+    assert.equal(result.json().notes[0].changes[0].round, 2);
+    assert.equal(result.json().notes[0].changes[0].state, 'accepted');
+    const denied = await f.remote.inject({ url: '/api/tasks/grant-task/note-results', headers: f.as });
+    assert.ok(denied.statusCode >= 400);
+    const retry = await f.remote.inject({ method: 'POST', url: '/api/tasks/thesis-task/messages', headers: f.as, payload });
+    assert.equal(retry.json().id, sent.json().id); assert.equal(f.store.items('thesis-task').length, 1);
   } finally { await f.close(); }
 });
 

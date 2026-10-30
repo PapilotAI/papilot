@@ -1,4 +1,4 @@
-import type { Annotation, NoteSummary } from './shared.ts';
+import type { Annotation, NoteAnchor, NoteSummary } from './shared.ts';
 export type { NoteSummary } from './shared.ts';
 
 // PDF notes reach the agent as one plain-text message. The chat shows that
@@ -7,7 +7,22 @@ const PREAMBLE = 'Revise the manuscript according to these notes the author mark
 const QUOTE = '   PDF text: "', REGION = '   Marked region: a figure, equation or other non-text area', NOTE = '\n   Note: ';
 
 const noteWhere = (note: Annotation) => [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : '', note.author ? `from ${note.author.name}` : ''].filter(Boolean).join(' · ');
-export const summarizeNotes = (notes: Annotation[]): NoteSummary[] => notes.map(note => ({ where: noteWhere(note), quote: note.quote, comment: note.comment }));
+export const summarizeNotes = (notes: Annotation[]): NoteSummary[] => notes.map(note => ({ id: note.id, where: noteWhere(note), quote: note.quote, comment: note.comment, anchor: { sources: note.source ? [{ file: note.source.file, lines: note.source.lines }] : [] } }));
+
+// Also recover anchors from older messages, whose locations were only text.
+export function noteAnchor(note: NoteSummary): NoteAnchor {
+  if (note.anchor) return note.anchor;
+  const round = note.where.match(/^Round (\d+)\b/), sources: NoteAnchor['sources'] = [];
+  for (const place of note.where.split(/ · |; /)) {
+    const match = place.match(/^(.+?)(?::| lines? )(\d+(?:[–-]\d+)?(?:,\s*\d+(?:[–-]\d+)?)*)$/);
+    if (!match) continue;
+    for (const range of match[2].split(/,\s*/)) {
+      const [start, end] = range.split(/[–-]/).map(Number);
+      sources.push({ file: match[1], lines: [start, end ?? start] });
+    }
+  }
+  return { sources, ...(round ? { round: Number(round[1]) } : {}) };
+}
 
 export function reviewNotesInstructions(notes: NoteSummary[]) {
   const items = notes.map((note, index) => `${index + 1}. ${note.where}\n${note.quote ? `${QUOTE}${note.quote}"` : REGION}${NOTE}${note.comment.trim().replace(/\n/g, '\n   ')}`);

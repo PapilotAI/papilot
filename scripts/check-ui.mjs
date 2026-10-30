@@ -35,6 +35,8 @@ let history = null;
 let reviewFailure = false;
 let reviewStarting = false;
 let deleteFailure = false;
+let archiveFailure = false;
+const archives = [];
 const deletions = [];
 const renames = [];
 const paperRenames = [];
@@ -54,6 +56,7 @@ let reconnects = 0;
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
+  if (url.pathname.endsWith('/note-results')) return route.fulfill({ json: { notes: [] } });
   const json = data => route.fulfill({ json: data });
   if (url.pathname === '/api/state') {
     if (stateFailure) return route.fulfill({ status: 503, json: { error: 'Host unavailable.' } });
@@ -129,6 +132,11 @@ await page.route('**/api/**', async route => {
   if (url.pathname.startsWith('/api/projects/') && url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); paperRenames.push({ id, ...body }); const paper = snapshot.projects.find(p => p.id === id); paper.name = body.name; return json(paper); }
   if (url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); renames.push({ id, ...body }); snapshot.tasks.find(t => t.id === id).title = body.title; return json(snapshot.tasks.find(t => t.id === id)); }
   if (url.pathname.endsWith('/interrupt')) { const id = url.pathname.split('/')[3]; interruptions.push(id); snapshot.tasks.find(t => t.id === id).status = 'interrupted'; return json({ ok: true }); }
+  if (url.pathname.endsWith('/archive')) {
+    if (archiveFailure) return route.fulfill({ status: 503, json: { error: 'Could not archive. Try again.' } });
+    const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); archives.push({ id, ...body });
+    const target = snapshot.tasks.find(t => t.id === id); target.archivedAt = body.archived ? Date.now() : null; return json(target);
+  }
   if (url.pathname.endsWith('/delete')) {
     const id = url.pathname.split('/')[3];
     deletions.push({ id, body: route.request().postDataJSON() });
@@ -173,7 +181,7 @@ async function openDelete(title = task.title) {
 try {
   await page.goto(origin);
   await page.getByRole('textbox', { name: 'Describe the revision' }).waitFor();
-  assert.equal(await page.locator('.sidebar-footer').count(), 0, 'A connected, idle host shows no status line');
+  assert.equal(await page.locator('.host-status').count(), 0, 'A connected, idle host shows no status line');
   assert.equal(await page.getByRole('alert').count(), 0);
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).waitFor();
@@ -353,13 +361,40 @@ try {
   await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().waitFor();
   assert.equal(await pdfPages.count(), 2);
   assert.equal(await page.getByLabel('Page number').inputValue(), '1');
+  const manuscriptDivider = page.getByRole('separator', { name: 'Resize manuscript panel' });
+  const manuscriptSide = page.locator('.manuscript-side');
+  const originalSideWidth = Math.round((await manuscriptSide.boundingBox()).width);
+  await manuscriptDivider.focus(); await page.keyboard.press('ArrowLeft');
+  await page.waitForFunction(width => Math.round(document.querySelector('.manuscript-side').getBoundingClientRect().width) === width, originalSideWidth + 24);
+  const manuscriptHandle = await manuscriptDivider.boundingBox();
+  await page.mouse.move(manuscriptHandle.x + 4, manuscriptHandle.y + 300); await page.mouse.down();
+  await page.mouse.move(manuscriptHandle.x - 116, manuscriptHandle.y + 300, { steps: 5 }); await page.mouse.up();
+  const widenedSide = Math.round((await manuscriptSide.boundingBox()).width);
+  assert.equal(widenedSide, originalSideWidth + 144);
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:manuscript-width')), String(widenedSide));
+  await page.reload(); await manuscriptDivider.waitFor();
+  assert.equal(Math.round((await manuscriptSide.boundingBox()).width), widenedSide, 'manuscript width survives a reload');
+  await page.setViewportSize({ width: 1000, height: 900 });
+  assert.ok(Math.round((await manuscriptSide.boundingBox()).width) <= 368, 'a narrow desktop clamps the saved width');
+  await page.setViewportSize({ width: 800, height: 900 });
+  await manuscriptDivider.waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(() => document.body.classList.contains('resizing')), false);
+  await page.setViewportSize({ width: 1440, height: 900 }); await manuscriptDivider.waitFor();
+  assert.equal(Math.round((await manuscriptSide.boundingBox()).width), widenedSide);
+  await manuscriptDivider.focus(); await page.keyboard.press('End');
+  await page.waitForFunction(() => Math.round(document.querySelector('.manuscript-side').getBoundingClientRect().width) === 300);
+  await manuscriptDivider.dblclick();
+  assert.equal(Math.round((await manuscriptSide.boundingBox()).width), originalSideWidth);
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:manuscript-width')), null);
+  await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().waitFor();
+  console.log('PASS: Manuscript panel resizes with pointer and keyboard, persists, clamps on narrow screens and resets');
   // Notes belong to New task; Contents keeps the bookmarks beside the PDF.
   assert.deepEqual((await page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['New task', 'Contents', 'Git 2']);
   await page.getByRole('tab', { name: 'Contents', exact: true }).click();
   const contents = page.getByRole('navigation', { name: 'PDF contents' });
   assert.deepEqual((await contents.getByRole('button').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
   await contents.getByRole('button', { name: /^Results/ }).click();
-  await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
+  await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2' && document.querySelector('.pdf-section-title')?.textContent === 'Results');
   assert.equal(await page.locator('.pdf-section-title').innerText(), 'Results');
   assert.equal(await contents.getByRole('button', { name: /^Results/ }).getAttribute('aria-current'), 'location');
   const mountedPdf = await pdfPages.first().elementHandle();
@@ -410,8 +445,6 @@ try {
   // Select text, write a note, cancel it, delete one, then send another.
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
   const notesPanel = page.getByRole('region', { name: 'PDF notes' });
-  await notesPanel.getByRole('button', { name: 'Text note', exact: true }).click();
-  assert.equal(await page.getByLabel('PDF pages', { exact: true }).evaluate(el => el === document.activeElement), true);
   // Where a word is printed, in page pixels, from the server's word places.
   const printed = async text => {
     const words = fixtureWords[0], word = words.words.find(w => w[0] === text), box = await pdfPages.first().boundingBox();
@@ -486,7 +519,7 @@ try {
   await prompt.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
   assert.ok((await prompt.inputValue()).length < 'Undo this text'.length, 'native undo edits the text');
   assert.equal(annotations.length, 0); await prompt.fill('');
-  await notesPanel.getByRole('button', { name: 'Text note', exact: true }).focus();
+  await notesPanel.getByRole('button', { name: 'Region note', exact: true }).focus();
   await page.keyboard.press('Meta+Shift+z');
   assert.equal(annotations.length, 0, 'redo is not interpreted as undo');
   failNoteRestore = true;
@@ -602,8 +635,9 @@ try {
   assert.equal(await merge.count(), 0);
   assert.deepEqual(gitActions.filter(action => typeof action === 'string'), ['push', 'fetch', 'merge', 'finish']);
   Object.assign(gitState, structuredClone(originalGit));
-  assert.equal(await page.getByRole('link', { name: 'Open PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
-  await page.getByRole('button', { name: 'Recompile', exact: true }).waitFor();
+  const pdfToolbar = page.getByRole('toolbar', { name: 'PDF controls' });
+  assert.equal(await pdfToolbar.getByRole('link', { name: 'Open PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
+  await pdfToolbar.getByRole('button', { name: 'Recompile', exact: true }).waitFor();
   assert.equal(await page.title(), 'Example paper · Papilot');
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
@@ -810,6 +844,45 @@ try {
   assert.equal(await page.getByRole('button', { name: /^Check the notation and symbols/ }).evaluate(el => el === document.activeElement), true);
   assert.equal(await page.locator('.task-link.active').innerText(), activeBeforeMenu);
   console.log('PASS: Tasks rename inline from their menu; Escape cancels and Enter saves without changing the selection');
+
+  const taskSearch = page.getByRole('searchbox', { name: 'Search tasks', exact: true });
+  await taskSearch.fill('  SYMBOLS notation  ');
+  assert.equal(await page.locator('.task-link').count(), 1);
+  assert.match(await page.locator('.task-link').innerText(), /Check the notation/);
+  await taskSearch.fill('technical meaning');
+  assert.equal(await page.locator('.task-link').count(), 2, 'search includes initial instructions');
+  await taskSearch.fill('不存在的任务');
+  await page.getByText('No matching tasks', { exact: true }).waitFor();
+  await taskSearch.press('Escape');
+  assert.equal(await page.locator('.task-link').count(), 2);
+  const renamedMenu = page.getByRole('button', { name: `Task actions for ${secondTask.title}`, exact: true });
+  archiveFailure = true;
+  await renamedMenu.click(); await page.getByRole('menuitem', { name: 'Archive task', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'Could not archive' }).waitFor();
+  assert.equal(await page.locator('.task-link').count(), 2, 'failed archive keeps the task visible');
+  await page.getByRole('button', { name: 'Dismiss error', exact: true }).click(); archiveFailure = false;
+  await renamedMenu.click(); await page.getByRole('menuitem', { name: 'Archive task', exact: true }).click();
+  await page.getByRole('button', { name: /^Check the notation/ }).waitFor({ state: 'hidden' });
+  assert.equal(await page.locator('.task-link.active').innerText(), activeBeforeMenu, 'archiving another task preserves selection');
+  await page.getByRole('button', { name: 'Show archived tasks', exact: true }).click();
+  assert.equal(await page.locator('.task-link').count(), 1);
+  await taskSearch.fill('symbols'); assert.equal(await page.locator('.task-link').count(), 1);
+  await page.getByRole('button', { name: 'Clear task search', exact: true }).click();
+  await page.getByRole('button', { name: /^Check the notation/ }).click();
+  await input.waitFor();
+  await renamedMenu.click(); await page.getByRole('menuitem', { name: 'Restore task', exact: true }).click();
+  await page.getByRole('button', { name: 'Show archived tasks', exact: true }).waitFor();
+  assert.equal(await page.locator('.task-link').count(), 2);
+  assert.match(await page.locator('.task-link.active').innerText(), /Check the notation/);
+  await renamedMenu.click(); await page.getByRole('menuitem', { name: 'Archive task', exact: true }).click();
+  await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
+  await page.reload(); await page.getByRole('button', { name: 'Show archived tasks', exact: true }).waitFor();
+  assert.equal(await page.locator('.task-link').count(), 1, 'archived tasks stay hidden after reload');
+  await page.getByRole('button', { name: 'Show archived tasks', exact: true }).click();
+  await renamedMenu.click(); await page.getByRole('menuitem', { name: 'Restore task', exact: true }).click();
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).click(); await input.waitFor();
+  assert.deepEqual(archives.map(item => item.archived), [true, false, true, false]);
+  console.log('PASS: Tasks search by title and instructions, archive without losing history, and restore from the archive');
 
 
   await input.fill('Only send this once.');
@@ -1023,7 +1096,8 @@ try {
   const sentNotes = page.locator('.notes-message');
   await sentNotes.waitFor();
   assert.equal(await sentNotes.locator('.sent-notes-head').innerText(), 'Note on the PDF');
-  assert.equal(await sentNotes.locator('.sent-note-where').innerText(), 'Page 1 · main.tex line 10');
+  assert.equal(await sentNotes.locator('.sent-note-number').innerText(), '1');
+  assert.equal(await sentNotes.locator('.sent-note-location').innerText(), 'Page 1 · main.tex line 10');
   assert.equal(await sentNotes.locator('blockquote').innerText(), 'Small Steps, Clearer Papers');
   assert.equal(await sentNotes.locator('p').innerText(), 'Make the title plainer.');
   assert.doesNotMatch(await page.locator('.thread').innerText(), /SyncTeX|```/);
@@ -1035,7 +1109,8 @@ try {
   assert.deepEqual(await work.locator('.tool-label').allInnerTexts(), ['cat main.tex', 'git status --short', 'Edited main.tex']);
   assert.equal(await page.locator('.thread > .tool-item .tool-label').innerText(), 'latexmk -pdf main.tex');
   // A task on the host's default model names that model.
-  assert.equal(await page.locator('.model-chip').innerText(), 'Fast model');
+  assert.equal(await page.locator('.composer-model .agent-model-name').innerText(), 'Fast model');
+  assert.equal(await page.locator('.composer-model .agent-model-label small').innerText(), 'Medium');
   console.log('PASS: Notes sent from the PDF read as notes, and consecutive commands fold into one line with task paths');
 
   history = Array.from({ length: 120 }, (_, i) => ({ id: `history-${i}`, taskId: task.id, type: 'assistant', text: `Message ${i}: A detailed review of the argument.`, createdAt: i + 1 }));

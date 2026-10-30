@@ -144,6 +144,7 @@ export const PdfView = forwardRef<PdfHandle, {
   onSelect: (note: Annotation) => void; outline: OutlineItem[]; section: number;
   onOutline: (items: OutlineItem[]) => void; onSection: (index: number) => void;
   lead?: ReactNode;
+  tools?: ReactNode;
 }>(function PdfView(props, ref) {
   const latest = useRef(props); latest.current = props;
   const container = useRef<HTMLDivElement>(null), inner = useRef<HTMLDivElement>(null), findInput = useRef<HTMLInputElement>(null);
@@ -339,7 +340,7 @@ export const PdfView = forwardRef<PdfHandle, {
   return <div className={'pdf-view' + (props.region ? ' marking' : '')}>
     <div className="pdf-toolbar" role="toolbar" aria-label={t('PDF controls')}>
       {props.lead}
-      <div className="pdf-section" title={section?.title}><span className="pdf-section-title">{section?.title || 'PDF'}</span></div>
+      <div className="pdf-section" title={section?.title}>{section?.title && <span className="pdf-section-title">{section.title}</span>}</div>
       <div className="pdf-pager">
         <button type="button" className="icon-button" aria-label={t('Previous page')} disabled={page <= 1} onClick={() => tools.current?.viewer.previousPage()}><Icon name="chevronUp" size={16}/></button>
         <input aria-label={t('Page number')} inputMode="numeric" value={pageInput} onChange={e => setPageInput(e.target.value.replace(/\D/g, ''))} onFocus={e => e.currentTarget.select()} onBlur={() => setPageInput(String(page))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); goToPage(); e.currentTarget.blur(); } }}/>
@@ -353,6 +354,7 @@ export const PdfView = forwardRef<PdfHandle, {
       </div>
       <button type="button" className={'icon-button' + (findOpen ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={findOpen} title={t('Find (⌘F)')} onClick={() => { if (findOpen) closeFind(); else setFindOpen(true); }}><Icon name="search" size={16}/></button>
       <button type="button" className={'icon-button region-toggle' + (props.region ? ' active' : '')} aria-label={t('Mark region')} aria-pressed={props.region} title={t('Mark a figure or region')} onClick={() => props.setRegion(!props.region)}><Icon name="region" size={16}/></button>
+      {props.tools}
     </div>
     {findOpen && <div className="pdf-find">
       <Icon name="search" size={15}/>

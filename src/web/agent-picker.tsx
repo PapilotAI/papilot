@@ -6,6 +6,11 @@ import { t } from './i18n.ts';
 const names = (): Record<string, string> => ({ none: t('None'), minimal: t('Minimal'), low: t('Low'), medium: t('Medium'), high: t('High'), xhigh: t('Extra high'), max: t('Max'), ultra: t('Ultra') });
 export const effortName = (id: string) => names()[id] || id[0].toUpperCase() + id.slice(1);
 
+// The picker and an existing conversation use the same compact model label.
+export function ModelLabel({ model, effort, fast }: { model: string; effort?: string | null; fast?: boolean }) {
+  return <span className="agent-model-label"><span className="agent-model-name">{model}</span>{effort && <small>{effortName(effort)}</small>}{fast && <Icon name="bolt" size={13}/>}</span>;
+}
+
 export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect }: { name: string; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void }) {
   if (!runtime || (runtime.connected && runtime.authenticated)) return null;
   const error = runtime.error || '', first = error.split(/:\s|\.\s/)[0];
@@ -74,7 +79,7 @@ export function AgentPicker({ agents, agent, models, model, effort, fast, runtim
     <button ref={trigger} type="button" className="agent-picker-trigger" aria-label={t('Agent settings')} title={summary + (disconnected ? ` · ${t('{agent} is unavailable', { agent: agentName })}` : '')} aria-haspopup="dialog" aria-expanded={open} aria-controls={id} disabled={disabled}
       onClick={() => panel.current?.matches(':popover-open') ? panel.current.hidePopover() : show()}
       onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); show(); } }}>
-      <span>{modelName}</span>{currentEffort && <small>{effortName(currentEffort)}</small>}{fastMode && fast && <Icon name="bolt" size={13}/>}<Icon name="chevronDown" size={13}/>{disconnected && <span className="agent-status-mark"><Icon name="alert" size={13}/></span>}
+      <ModelLabel model={modelName} effort={currentEffort} fast={Boolean(fastMode && fast)}/><Icon name="chevronDown" size={13}/>{disconnected && <span className="agent-status-mark"><Icon name="alert" size={13}/></span>}
     </button>
     <div ref={panel} id={id} popover="auto" role="dialog" aria-label={t('Agent settings')} className="agent-picker-panel" onToggle={event => {
       const shown = (event.nativeEvent as ToggleEvent).newState === 'open'; setOpen(shown);

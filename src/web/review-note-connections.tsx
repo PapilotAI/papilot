@@ -1,0 +1,53 @@
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { NoteResult } from '../shared.ts';
+import { useNoteResults } from './note-results.tsx';
+import { Icon } from './icons.tsx';
+import { t } from './i18n.ts';
+
+type Place = { element: HTMLElement; slot: HTMLElement; notes: NoteResult[]; stop: number; round: number };
+export function ReviewNoteConnections({ doc, round }: { doc: Document | null; round: number }) {
+  const links = useNoteResults(), latest = useRef(links); latest.current = links;
+  const [places, setPlaces] = useState<Place[]>([]);
+  const jumped = useRef<{ doc: Document; sequence: number } | null>(null);
+  useEffect(() => {
+    if (!doc || !links) return;
+    const slots = new Map<HTMLElement, HTMLElement>();
+    const scan = () => {
+      const shown = Number(doc.documentElement.dataset.papilotRound) || round;
+      const next: Place[] = [];
+      for (const element of doc.querySelectorAll<HTMLElement>('.change[data-stop]')) {
+        const stop = Number(element.dataset.stop), notes = links.notes.filter(note => note.changes.some(change => change.round === shown && change.stop === stop));
+        const header = element.querySelector<HTMLElement>('.change-head');
+        if (!notes.length || !header) continue;
+        let slot = slots.get(element);
+        if (!slot) { slot = doc.createElement('span'); slot.className = 'papilot-note-links'; header.append(slot); slots.set(element, slot); }
+        else if (slot.parentElement !== header) header.append(slot);
+        next.push({ element, slot, notes, stop, round: shown });
+      }
+      for (const [element, slot] of slots) if (!next.some(place => place.element === element)) { slot.remove(); slots.delete(element); }
+      setPlaces(previous => previous.length === next.length && previous.every((place, i) => place.slot === next[i].slot && place.element === next[i].element && place.round === next[i].round && place.notes.length === next[i].notes.length && place.notes.every((note, n) => note === next[i].notes[n])) ? previous : next);
+    };
+    scan();
+    const observer = new MutationObserver(scan); observer.observe(doc.body, { childList: true, subtree: true });
+    doc.defaultView?.addEventListener('papilot:round', scan);
+    return () => { observer.disconnect(); doc.defaultView?.removeEventListener('papilot:round', scan); slots.forEach((slot, element) => { slot.remove(); element.classList.remove('papilot-linked-change'); }); };
+  }, [doc, links?.notes, round]);
+  useEffect(() => {
+    const focus = links?.focus;
+    for (const place of places) place.element.classList.toggle('papilot-linked-change', Boolean(focus && focus.change.round === place.round && focus.change.stop === place.stop));
+    if (!doc || !focus || (jumped.current?.doc === doc && jumped.current.sequence === focus.sequence)) return;
+    const place = places.find(place => place.round === focus.change.round && place.stop === focus.change.stop);
+    if (!place) return;
+    place.element.click(); place.element.scrollIntoView({ block: 'center' }); place.element.focus({ preventScroll: true });
+    jumped.current = { doc, sequence: focus.sequence };
+  }, [doc, places, links?.focus]);
+  if (!doc || !links) return null;
+  return <>{createPortal(<style>{`
+    .papilot-note-links{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px;order:5}
+    .papilot-note-links button{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg-muted);color:var(--text-2);font:12px/1.5 var(--sans);cursor:pointer}
+    .papilot-note-links button:hover,.papilot-note-links button:focus-visible{color:var(--primary);border-color:var(--primary)}
+    .papilot-linked-change{outline:2px solid var(--primary);outline-offset:-2px}
+    @media(max-width:680px){.papilot-note-links button{min-height:32px}}
+  `}</style>, doc.head)}{places.map(place => createPortal(<>{place.notes.map(note => <button key={note.key} type="button" title={note.note.comment} aria-label={t('Show note {n}: {comment}', { n: note.index + 1, comment: note.note.comment })} onClick={event => { event.stopPropagation(); latest.current?.showNote(note.key); }}><Icon name="notes" size={12}/>{t('Note {n}', { n: note.index + 1 })}</button>)}</>, place.slot, `${place.round}:${place.stop}`))}</>;
+}

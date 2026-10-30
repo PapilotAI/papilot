@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Task } from '../shared.ts';
-import { reviewNotesInstructions } from '../notes.ts';
+import type { NoteSummary, Task } from '../shared.ts';
+import { noteAnchor } from '../notes.ts';
 import { Icon } from './icons.tsx';
 import { browserStorage } from './storage.ts';
 import { sendsMessage } from './composer.ts';
@@ -72,7 +72,7 @@ function SelectionMenu({ doc, layer, selection, onAdd }: { doc: Document; layer:
 
 // Notes belong to the task and the exact displayed round/strip. They do not
 // change accept/reject decisions, and are sent through the normal task queue.
-export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task: Task; onSend: (message: { text: string; requestKey: string }) => Promise<void> }) {
+export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task: Task; onSend: (message: { text: string; requestKey: string; notes?: NoteSummary[] }) => Promise<void> }) {
   const storageKey = `papilot:review-notes:${task.id}`;
   const [draft, setDraft] = useState(() => load(storageKey));
   const [layers, setLayers] = useState<Layer[]>([]);
@@ -205,9 +205,9 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
     sending.current = true; setBusy(true); setError('');
     const submitted = draft;
     try {
-      await onSend({ requestKey: submitted.requestKey, text: reviewNotesInstructions(submitted.notes.map(note => ({
-        where: note.where + (note.region ? ` · Region in displayed strip: ${note.rects[0].map(v => `${Math.round(v * 100)}%`).join(', ')}` : ''), quote: note.quote, comment: note.comment,
-      }))) });
+      await onSend({ requestKey: submitted.requestKey, text: '', notes: submitted.notes.map(note => ({
+        id: note.id, where: note.where + (note.region ? ` · Region in displayed strip: ${note.rects[0].map(v => `${Math.round(v * 100)}%`).join(', ')}` : ''), quote: note.quote, comment: note.comment, anchor: { ...noteAnchor(note), round: note.round },
+      })) });
       // A different mount may have saved more notes while this request was pending.
       const saved = load(storageKey);
       if (saved.requestKey === submitted.requestKey) update({ notes: [], editing: null, requestKey: uuid() });
@@ -217,9 +217,10 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
     finally { sending.current = false; setBusy(false); }
   }
   const blocked = task.status === 'uncertain' || task.status === 'deleting';
+  const notesLabel = draft.notes.length ? t('Review notes, {n}', { n: draft.notes.length }) : t('Review notes');
   return <>
-    <button type="button" className="icon-button" aria-label={t('Mark region')} title={t('Mark region')} aria-pressed={region} disabled={!doc || busy || writing} onClick={() => annotate(!region)}><Icon name="region" size={15}/></button>
-    <button type="button" className="button ghost compact review-notes-toggle" aria-label={draft.notes.length ? t('Review notes, {n}', { n: draft.notes.length }) : t('Review notes')} aria-pressed={open} disabled={!doc} onClick={() => open ? close() : setOpen(true)}><Icon name="notes" size={15}/>{draft.notes.length ? <span>{draft.notes.length}</span> : <span className="review-notes-label">{t('Notes')}</span>}</button>
+    <button type="button" className="icon-button" aria-label={t('Mark region')} title={t('Mark region')} aria-pressed={region} disabled={!doc || busy || writing} onClick={() => annotate(!region)}><Icon name="region" size={16}/></button>
+    <button type="button" className="icon-button review-notes-toggle" aria-label={notesLabel} title={notesLabel} aria-pressed={open} disabled={!doc} onClick={() => open ? close() : setOpen(true)}><Icon name="notes" size={16}/></button>
     {doc && createPortal(<style>{styles + noteStyles}</style>, doc.head)}
     {layers.map(layer => createPortal(<Fragment>
       {draft.notes.filter(note => note.strip === layer.key).map(note => <Fragment key={note.id}>
@@ -274,7 +275,6 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
             {note.quote && <blockquote>{note.quote}</blockquote>}<button type="button" className="note-comment" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={busy} onClick={() => editNote(note)}><span>{note.comment}</span><Icon name="pencil" size={13}/></button>
             {note.round !== task.review?.round && <small>{t('Marked on an earlier review round.')}</small>}
           </li>)}</ol> : <div className="review-notes-empty"><p>{t('No notes yet')}</p><div className="review-note-actions">
-            <button type="button" onClick={() => annotate(false)}><Icon name="textSelect" size={16}/>{t('Text note')}</button>
             <button type="button" onClick={() => annotate(true)}><Icon name="region" size={16}/>{t('Region note')}</button>
           </div></div>}
           {error && <p className="review-notes-error" role="alert">{error}</p>}
