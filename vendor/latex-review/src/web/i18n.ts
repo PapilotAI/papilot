@@ -28,7 +28,7 @@ export function withLanguage(href: string) {
     : `${href}${href.includes("?") ? "&" : "?"}lang=${current}`;
 }
 
-// t("Round {round}", { round }) fills {placeholders} after translating.
+// t("Change {n}", { n }) fills {placeholders} after translating.
 export function t(text: string, values?: Record<string, string | number>) {
   const template = messages[current][text] ?? text;
   return values

@@ -19,7 +19,8 @@ import type {
 import { PdfStrip } from "./PdfStrip.tsx";
 import { ChangeMap } from "./ChangeMap.tsx";
 import { STATUS } from "./overview.tsx";
-import { t, tn, withLanguage } from "./i18n.ts";
+import { locale, t, tn, withLanguage } from "./i18n.ts";
+import { bindingLabel, readShortcuts, resolveShortcuts, shortcutAction, SHORTCUT_EVENT, SHORTCUT_STORAGE } from "./shortcuts.ts";
 import {
   STATE,
   buildStops,
@@ -91,8 +92,8 @@ function jobText(job: PageState["job"]) {
     ? job.ahead
       ? tn(
           job.ahead,
-          "Queued behind {n} other round…",
-          "Queued behind {n} other rounds…",
+          "Queued behind {n} update…",
+          "Queued behind {n} updates…",
         )
       : t("Queued…")
     : `${t(PHASE[job?.phase ?? ""] || "Starting")}…`;
@@ -121,13 +122,29 @@ export function ReviewApp({
     [composer, setComposer] = useState<Composer | null>(null),
     [draft, setDraft] = useState(""),
     [help, setHelp] = useState(false),
+    // A note can reveal a decided change without opening the history controls.
+    [linkedChange] = useState(() => {
+      const value = Number(new URLSearchParams(location.search).get("change") ?? -1);
+      return Number.isSafeInteger(value) && value >= 0 ? value : -1;
+    }),
     [history, setHistory] = useState(
-      Boolean(pinned) || new URLSearchParams(location.search).has("history"),
+      (Boolean(pinned) && linkedChange < 0) || new URLSearchParams(location.search).has("history"),
     );
   const paper = useRef<HTMLElement>(null),
     epoch = useRef(0),
     scrollUntil = useRef(0),
     snapshot = useRef({ state, detail, busy, composer, current });
+  const [shortcuts, setShortcuts] = useState(readShortcuts);
+  useEffect(() => {
+    const changed = (event: Event) => setShortcuts(resolveShortcuts((event as CustomEvent).detail));
+    const stored = (event: StorageEvent) => { if (event.key === SHORTCUT_STORAGE || event.key === null) setShortcuts(readShortcuts()); };
+    window.addEventListener(SHORTCUT_EVENT, changed);
+    window.addEventListener('storage', stored);
+    return () => { window.removeEventListener(SHORTCUT_EVENT, changed); window.removeEventListener('storage', stored); };
+  }, []);
+  function showHelp() {
+    if (window.dispatchEvent(new Event('latex-review:help', { cancelable: true }))) setHelp(true);
+  }
   snapshot.current = { state, detail, busy, composer, current };
   const units = useMemo(
       () => new Map(detail?.units.map((u) => [u.id, u]) ?? []),
@@ -184,7 +201,7 @@ export function ReviewApp({
           : [];
   const navigation = stops
     .map((stop, index) => ({ stop, index }))
-    .filter(({ stop }) => browsing || pendingUnits(stop, decisions).length)
+    .filter(({ stop, index }) => browsing || index === linkedChange || pendingUnits(stop, decisions).length)
     .map(({ index }) => index);
   const adjacent = (index: number, direction: number) =>
     navigation[navigation.indexOf(index) + direction] ?? -1;
@@ -302,6 +319,7 @@ export function ReviewApp({
             !pendingUnits(nextStops[index], loadedState.decisions).length
           )
             index = nextPending(nextStops, loadedState.decisions, index);
+          if (linkedChange >= 0 && nextStops[linkedChange]) index = linkedChange;
           if (index < 0) index = pinned && nextStops.length ? 0 : -1;
           if (
             previous.detail &&
@@ -314,7 +332,7 @@ export function ReviewApp({
           setCurrent(index);
           setOpenSource(new Set());
           if (previous.detail)
-            setToast(t("Round {round} is ready", { round: target }));
+            setToast(t("Changes are ready"));
         } else setState(next);
       } catch (e) {
         if (!cancelled) {
@@ -490,6 +508,7 @@ export function ReviewApp({
   }
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
       const target = event.target as HTMLElement,
         typing =
           target.matches("input,textarea,select") || target.isContentEditable;
@@ -507,53 +526,32 @@ export function ReviewApp({
         void submitComposer();
         return;
       }
-      if (typing || help) return;
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+      if (typing || help || window.getSelection()?.toString()) return;
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "z") {
         event.preventDefault();
         void undo();
         return;
       }
-      if (
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey ||
-        composer ||
-        window.getSelection()?.toString()
-      )
-        return;
-      const key = event.key.toLowerCase();
-      if (
-        [
-          "a",
-          "r",
-          "c",
-          "j",
-          "k",
-          "arrowright",
-          "arrowleft",
-          "n",
-          "s",
-          "u",
-          "?",
-        ].includes(key)
-      )
-        event.preventDefault();
-      if (key === "a")
+      if (composer) return;
+      const action = shortcutAction(event, shortcuts);
+      if (!action || (changes && action === 'comment')) return;
+      event.preventDefault();
+      if (action === 'accept')
         void decide(kinds(stops[current]?.units ?? [])[0] ?? "accept");
-      else if (key === "r") void decide("reject");
-      else if (key === "c" && !changes) beginComposer();
-      else if (key === "j" || key === "arrowright")
+      else if (action === 'reject') void decide("reject");
+      else if (action === 'comment') beginComposer();
+      else if (action === 'next')
         select(adjacent(current, 1));
-      else if (key === "k" || key === "arrowleft")
+      else if (action === 'previous')
         select(adjacent(current, -1));
-      else if (key === "n") select(nextPending(stops, decisions, current));
-      else if (key === "s") toggleSource(current);
-      else if (key === "u") void undo();
-      else if (key === "?") setHelp(true);
+      else if (action === 'pending') select(nextPending(stops, decisions, current));
+      else if (action === 'source') toggleSource(current);
+      else if (action === 'undo') void undo();
+      else if (action === 'help') showHelp();
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [state, detail, current, busy, composer, draft, help, history]);
+  }, [state, detail, current, busy, composer, draft, help, history, shortcuts]);
   function onScroll() {
     if (
       !paper.current ||
@@ -589,8 +587,8 @@ export function ReviewApp({
               <button
                 className="nav"
                 aria-label={t("Previous change")}
-                aria-keyshortcuts="k ArrowLeft"
-                title={t("Previous change (K or ←)")}
+                aria-keyshortcuts={shortcuts.previous.join(' ')}
+                title={[t('Previous change'), shortcuts.previous.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
                 disabled={adjacent(index, -1) < 0}
                 onClick={() => select(adjacent(index, -1))}
               >
@@ -604,16 +602,16 @@ export function ReviewApp({
           {available.length ? (
             <>
               {available.map((kind) => {
-                const key = kind === "unstage" ? "a" : kind[0],
+                const keys = shortcuts[kind === 'unstage' ? 'accept' : kind],
                   count = targets(units, kind).length;
                 return (
                   <button
                     className={kind}
                     key={kind}
-                    aria-keyshortcuts={key}
+                    aria-keyshortcuts={keys.join(' ')}
                     title={
                       actionLock(kind) ||
-                      `${label(kind)} (${key.toUpperCase()})`
+                      [label(kind), keys.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')
                     }
                     aria-describedby={
                       actionLock(kind) ? "review-lock" : undefined
@@ -632,7 +630,7 @@ export function ReviewApp({
           ) : remaining >= 0 ? (
             <button
               className="skip"
-              aria-keyshortcuts="n"
+              aria-keyshortcuts={shortcuts.pending.join(' ')}
               onClick={() => select(nextPending(stops, decisions, current))}
             >
               {changes ? t("Next unstaged") : t("Next undecided")}
@@ -643,15 +641,15 @@ export function ReviewApp({
                 ? stateLabel(stopState(units, decisions))
                 : latest
                   ? t("Review complete")
-                  : t("Earlier round")}
+                  : t("Earlier changes")}
             </span>
           )}
           {navigation.length > 1 && (
             <button
               className="nav"
               aria-label={t("Next change")}
-              aria-keyshortcuts="j ArrowRight"
-              title={t("Next change (J or →)")}
+              aria-keyshortcuts={shortcuts.next.join(' ')}
+              title={[t('Next change'), shortcuts.next.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
               disabled={adjacent(index, 1) < 0}
               onClick={() => select(adjacent(index, 1))}
             >
@@ -757,9 +755,10 @@ export function ReviewApp({
     const known = block.units.map((id) => units.get(id)!).filter(Boolean),
       status = stopState(block.units, decisions),
       reviewed = !pendingUnits(stops[index], decisions).length,
+      expanded = browsing || index === linkedChange,
       // A reverted change shows the text that is back on disk; staged and
       // unstaged ones keep their before and after.
-      resolved = history
+      resolved = history || index === linkedChange
         ? undefined
         : changes
           ? status === "rejected"
@@ -808,17 +807,17 @@ export function ReviewApp({
     return (
       <article
         key={index}
-        className={`change ${inline ? "inline" : "standalone"}${current === index ? " current" : ""}${reviewed && !browsing ? " reviewed-change" : ""}${reviewed && !browsing && !resolved ? " mixed-reviewed" : ""}`}
+        className={`change ${inline ? "inline" : "standalone"}${current === index ? " current" : ""}${reviewed && !expanded ? " reviewed-change" : ""}${reviewed && !expanded && !resolved ? " mixed-reviewed" : ""}`}
         data-stop={index}
         data-state={status}
         data-resolved={resolved}
         tabIndex={-1}
         onClick={() => {
-          if (index !== current && !composer && (browsing || !reviewed))
+          if (index !== current && !composer && (expanded || !reviewed))
             select(index, false);
         }}
       >
-        {reviewed && !browsing && !resolved && (
+        {reviewed && !expanded && !resolved && (
           <p className="reviewed-placeholder">
             <button
               className="link"
@@ -861,7 +860,8 @@ export function ReviewApp({
           </button>
           <button
             className={`link ${source ? "active" : ""}`}
-            title={t("Show the LaTeX source (S)")}
+            title={[t('Show LaTeX source'), shortcuts.source.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
+            aria-keyshortcuts={shortcuts.source.join(' ')}
             onClick={() => toggleSource(index)}
           >
             {block.units.length > 1
@@ -876,9 +876,7 @@ export function ReviewApp({
               .map((h, i) => (
                 <p key={i}>
                   <strong>
-                    {t("Revised after your comment in round {round}: ", {
-                      round: h.round,
-                    })}
+                    {t("Revised after your comment: ")}
                   </strong>
                   “{h.comment}”
                 </p>
@@ -1000,8 +998,7 @@ export function ReviewApp({
             {changes
               ? t("Since the last commit")
               : detail
-                ? t("Round {round}", { round: detail.round }) +
-                  (detail.round !== state?.latest ? t(" (earlier round)") : "")
+                ? (detail.round === state?.latest ? t("Current changes") : t("Earlier changes"))
                 : ""}
           </span>
         </div>
@@ -1043,8 +1040,8 @@ export function ReviewApp({
                     )
                   : tn(
                       count.pending,
-                      "Accept the {n} undecided change in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
-                      "Accept the {n} undecided changes in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
+                      "Accept {n} undecided change",
+                      "Accept {n} undecided changes",
                     ))
               }
               aria-label={
@@ -1074,8 +1071,8 @@ export function ReviewApp({
                 state?.decisionLock ||
                 tn(
                   count.pending,
-                  "Reject the {n} undecided change in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
-                  "Reject the {n} undecided changes in this round. Decided and commented changes stay as they are. Undo reverses the whole batch.",
+                  "Reject {n} undecided change",
+                  "Reject {n} undecided changes",
                 )
               }
               aria-label={t("Reject all ({n})", { n: count.pending })}
@@ -1111,7 +1108,8 @@ export function ReviewApp({
             <button
               className="ghost undo"
               disabled={!latest || busy || Boolean(state.decisionLock)}
-              title={state.decisionLock || t("Put back what the last revert removed (U)")}
+              title={state.decisionLock || [t('Undo revert'), shortcuts.undo.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
+              aria-keyshortcuts={shortcuts.undo.join(' ')}
               onClick={() => void undo()}
             >
               {t("Undo revert")}
@@ -1122,7 +1120,7 @@ export function ReviewApp({
           {detail && !history && !changes && (
             <button
               className="ghost history"
-              title={t("Earlier decisions and rounds")}
+              title={t("Review history")}
               onClick={() => {
                 setHistory(true);
                 if (current < 0 && stops.length) setCurrent(0);
@@ -1134,7 +1132,7 @@ export function ReviewApp({
           <button
             className="ghost round"
             aria-label={t("Keyboard shortcuts")}
-            onClick={() => setHelp(true)}
+            onClick={showHelp}
           >
             ?
           </button>
@@ -1145,7 +1143,7 @@ export function ReviewApp({
           <label>
             {t("History")}{" "}
             <select
-              aria-label={t("Review round")}
+              aria-label={t("Review history")}
               value={detail.round}
               onChange={(e) => {
                 location.href = withLanguage(
@@ -1160,8 +1158,10 @@ export function ReviewApp({
                 .reverse()
                 .map((round) => (
                   <option key={round} value={round}>
-                    {t("Round {round}", { round })}
-                    {round === state?.latest ? t(" (latest)") : ""}
+                    {round === state?.latest ? t("Current changes") : (() => {
+                      const published = state?.history?.find(entry => entry.number === round)?.created;
+                      return published ? new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "medium" }).format(new Date(published * 1000)) : t("Earlier changes");
+                    })()}
                   </option>
                 ))}
             </select>
@@ -1240,15 +1240,15 @@ export function ReviewApp({
                     "Updating the comparison with your latest edits. You can keep staging and reverting meanwhile.",
                   )
                 : t(
-                    "The agent is publishing a new round. You can keep reviewing; the new round will include your decisions.",
+                    "Updating changes…",
                   )}
             </div>
           )}
           {!changes && detail && state?.latest && detail.round !== state.latest && (
             <div className="banner">
-              {t("You are viewing round {round}.", { round: detail.round })}{" "}
+              {t("Viewing earlier changes.")}{" "}
               <a href={withLanguage(`?task=${encodeURIComponent(task)}`)}>
-                {t("Go to round {round} →", { round: state.latest })}
+                {t("Back to current changes →")}
               </a>
             </div>
           )}
@@ -1356,16 +1356,14 @@ export function ReviewApp({
                 ))}
                 {detail.loose.length > 0 && (
                   <section className="part">
-                    <h2 className="part-title">
-                      {detail.sections.length
-                        ? t("Other changes")
-                        : t("Changes")}
-                    </h2>
+                    {detail.sections.length > 0 && (
+                      <h2 className="part-title">{t("Other changes")}</h2>
+                    )}
                     {detail.loose.map((block) => change(block, index++, false))}
                   </section>
                 )}
                 {!stops.length && !changes && (
-                  <p className="empty">{t("This round has no changes.")}</p>
+                  <p className="empty">{t("No changes to review.")}</p>
                 )}
               </>
             ) : error ? (
@@ -1453,26 +1451,28 @@ export function ReviewApp({
             <dl>
               {(changes
                 ? [
-                    ["A", "Stage or unstage"],
-                    ["R", "Revert"],
-                    ["J / K or → / ←", "Next / previous change"],
-                    ["N", "Next unstaged"],
-                    ["S", "Show LaTeX source"],
-                    ["⌘Z / U", "Undo revert"],
+                    [shortcuts.accept.map(bindingLabel).join(' / '), "Stage or unstage"],
+                    [shortcuts.reject.map(bindingLabel).join(' / '), "Revert"],
+                    [shortcuts.next.map(bindingLabel).join(' / '), "Next change"],
+                    [shortcuts.previous.map(bindingLabel).join(' / '), "Previous change"],
+                    [shortcuts.pending.map(bindingLabel).join(' / '), "Next unstaged"],
+                    [shortcuts.source.map(bindingLabel).join(' / '), "Show LaTeX source"],
+                    [["⌘Z / Ctrl+Z", ...shortcuts.undo.map(bindingLabel)].join(' / '), "Undo revert"],
                     ["⌘C / Ctrl+C", "Copy selected PDF text"],
                   ]
                 : [
-                    ["A", "Accept"],
-                    ["R", "Reject"],
-                    ["C", "Comment"],
-                    ["J / K or → / ←", "Next / previous change"],
-                    ["N", "Next undecided"],
-                    ["S", "Show LaTeX source"],
-                    ["⌘Z / U", "Undo"],
+                    [shortcuts.accept.map(bindingLabel).join(' / '), "Accept"],
+                    [shortcuts.reject.map(bindingLabel).join(' / '), "Reject"],
+                    [shortcuts.comment.map(bindingLabel).join(' / '), "Comment"],
+                    [shortcuts.next.map(bindingLabel).join(' / '), "Next change"],
+                    [shortcuts.previous.map(bindingLabel).join(' / '), "Previous change"],
+                    [shortcuts.pending.map(bindingLabel).join(' / '), "Next undecided"],
+                    [shortcuts.source.map(bindingLabel).join(' / '), "Show LaTeX source"],
+                    [["⌘Z / Ctrl+Z", ...shortcuts.undo.map(bindingLabel)].join(' / '), "Undo"],
                     ["⌘C / Ctrl+C", "Copy selected PDF text"],
                   ]
               ).map(([key, label]) => (
-                <Fragment key={key}>
+                <Fragment key={label}>
                   <dt>
                     <kbd>{t(key)}</kbd>
                   </dt>

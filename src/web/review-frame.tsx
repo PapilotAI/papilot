@@ -6,9 +6,10 @@ import themeStyles from './theme.css?inline';
 import { language, t, useLanguage } from './i18n.ts';
 import { useNoteResults } from './note-results.tsx';
 import { ReviewNoteConnections } from './review-note-connections.tsx';
+import { SHORTCUT_EVENT, useShortcuts } from './shortcuts.ts';
 
 // The viewer reads the interface language from its address.
-export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number) => `/review/${task.projectId}/?task=${task.name}${round ? `&round=${round}&history=1` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
+export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number, change?: number) => `/review/${task.projectId}/?task=${task.name}${round ? `&round=${round}${change === undefined ? '&history=1' : `&change=${change}`}` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
 // The same viewer shows a paper's uncommitted changes against its last commit.
 export const changesUrl = (projectId: string) => `/review/${projectId}/?changes=1${language() === 'en' ? '' : `&lang=${language()}`}`;
 
@@ -42,17 +43,16 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}.sheet{background:var(--pdf-page)}
     :root[data-theme="dark"]{--before:#432c30;--after:#28392d}
     .bar{display:flex;align-items:center;height:var(--papilot-bar-height,44px);min-height:var(--papilot-bar-height,44px);padding:0 max(14px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + 14px);gap:12px;flex-wrap:nowrap;overflow:hidden}
-    .bar .overview-link,.bar .identity h1{display:none}
+    .bar .overview-link,.bar .identity h1,.bar .identity span{display:none}
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
     .bar .identity span{font-size:13px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis}
-    ${changes ? '.bar .identity span{display:none}' : ''}
     .bar .meter{display:flex;order:initial;width:auto;font-size:13px}
     .bar .bar-end{margin-left:0;gap:6px}
     .bar .ghost{font-size:13px;font-weight:500;height:28px;padding:0 10px;border-radius:7px}
     .bar .ghost:hover{text-decoration:none;background:var(--bg-hover)}
     .bar .accept-all,.bar .reject-all{display:inline-flex;align-items:center;gap:6px;border-color:var(--line-strong);background:var(--bg);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0/.06)}
     .bar .accept-all:hover,.bar .reject-all:hover{background:var(--bg-subtle);border-color:var(--line-hover)}
-    .bar .ghost.round{width:28px;height:28px;padding:0;border-radius:50%}
+    .bar .ghost.round{display:none}
     .bar .status{font-size:13px}
     .sheet{border-radius:4px;box-shadow:0 1px 2px rgb(0 0 0/.06),0 8px 24px rgb(0 0 0/.08)}
     .change-head{font-size:13px;background:var(--bg-subtle)}.link{font-size:13px}
@@ -164,9 +164,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     @media(max-width:370px){.change-head .actions .accept::before,.change-head .actions .reject::before,.change-head .actions .comment::before{display:none}}
     @media(max-width:350px){.change-head .actions .nav{display:none}}
     @media(max-width:360px){.bar .ghost{padding:0 7px;font-size:11.5px}}
-    /* History is an icon like the PDF tools beside it, so the batch decisions
-       keep their room. In a narrow pane it takes the place of the shortcuts
-       button (the ? key still opens them). */
+    /* History shares the PDF tools' size. Shortcut settings live in Papilot. */
     .bar .ghost.history{display:inline-flex;align-items:center;justify-content:center;width:var(--papilot-button-size,30px);height:var(--papilot-button-size,30px);min-height:0;padding:0;font-size:0}
     .bar .history::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-history) center/contain no-repeat;mask:var(--icon-history) center/contain no-repeat}
     /* The batch decisions keep one line, with their count as a badge. The bar
@@ -213,8 +211,12 @@ function cropMargins(doc: Document) {
 // Without a task the frame shows the paper's uncommitted changes (changesOf),
 // and the viewer's own waiting message shows while they are compared.
 export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNotes, onDecided }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onSendNotes?: (message: { text: string; requestKey: string; notes?: NoteSummary[] }) => Promise<void>; onDecided?: () => void }) {
+  const shortcuts = useShortcuts();
   const noteLinks = useNoteResults(), linksRef = useRef(noteLinks); linksRef.current = noteLinks;
+  // Current changes open in the usual review; only older results need history.
   const linkedRound = task ? noteLinks?.focus?.change.round : undefined;
+  const linkedChange = linkedRound === task?.review?.round ? noteLinks?.focus?.change.stop : undefined;
+  const focusSequence = task ? noteLinks?.focus?.sequence : undefined;
   const [document, setDocument] = useState<Document | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const toolbar = useRef<HTMLDivElement>(null), leading = useRef<HTMLDivElement>(null);
@@ -227,17 +229,29 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
   // A new language reloads the viewer in that language.
   const shown = useLanguage().language;
   useEffect(() => {
+    const view = document?.defaultView;
+    if (!view) return;
+    view.dispatchEvent(new CustomEvent(SHORTCUT_EVENT, { detail: shortcuts }));
+  }, [document, shortcuts]);
+  useEffect(() => {
+    const view = document?.defaultView;
+    if (!view) return;
+    const open = (event: Event) => { event.preventDefault(); window.dispatchEvent(new Event('papilot:open-shortcuts')); };
+    view.addEventListener('latex-review:help', open);
+    return () => view.removeEventListener('latex-review:help', open);
+  }, [document]);
+  useEffect(() => {
     setPhase('loading');
     const timer = setTimeout(() => setPhase(value => value === 'loading' ? 'slow' : value), 15000);
     return () => { clearTimeout(timer); observer.current?.disconnect(); cropper.current?.disconnect(); };
-  }, [attempt, shown, linkedRound]);
+  }, [attempt, shown, linkedRound, focusSequence]);
   useEffect(() => {
     const element = toolbar.current; if (!element) return;
     const observer = new ResizeObserver(() => setReserve(Math.ceil(element.offsetWidth)));
     observer.observe(element); return () => observer.disconnect();
   }, [Boolean(tools)]);
   useEffect(() => {
-    const element = leading.current; if (!element) return;
+    const element = leading.current; if (!element) { setLeadWidth(0); return; }
     const observer = new ResizeObserver(() => setLeadWidth(Math.ceil(element.offsetWidth)));
     observer.observe(element); return () => observer.disconnect();
   }, [Boolean(lead)]);
@@ -318,7 +332,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     return () => watch.disconnect();
   }, [document, ready]);
   return <div className={'review-viewport' + (ready ? '' : ' review-pending')} aria-busy={!ready}>
-    <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
+    <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}:${focusSequence || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound, linkedChange) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
     {lead && <div ref={leading} className="review-lead">{lead}</div>}
     <div ref={toolbar} className="review-tools">{task && onSendNotes && <ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>}{tools}</div>

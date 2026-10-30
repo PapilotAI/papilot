@@ -38,6 +38,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/skills')) return json({ skills });
   if (url.pathname.endsWith('/items')) return json({ items: taskItems.get(url.pathname.split('/')[3]) || items });
+  if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/git')) return json(git);
   if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1 }, annotations });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
@@ -64,7 +65,7 @@ try {
   const chat = page.locator('.thread');
   await expect(chat.locator('.message.user').first().locator('.skill-chip')).toHaveText('Polish');
   await expect(chat.locator('.katex').first()).toBeVisible();
-  await expect(chat.getByText('Review feedback · Round 1')).toBeVisible();
+  await expect(chat.getByText('Review feedback', { exact: true }).first()).toBeVisible();
   await expect(chat.locator('.feedback-counts').first()).toHaveText('2 accepted1 rejected1 comment');
   await expect(chat.getByText('Keep the citation here.')).toBeVisible();
   await expect(chat.getByText(/Address the comments/)).toHaveCount(0);
@@ -72,7 +73,7 @@ try {
 
   // A finished review that accepted changes needs nothing more: they are in
   // the manuscript, and the decisions reach the agent with the next message.
-  await expect(page.locator('.task-identity .status')).toHaveText('Review complete');
+  await expect(page.locator('.task-row.active .status')).toHaveText('Review complete');
   await expect(page.getByRole('button', { name: 'Send feedback', exact: true })).toHaveCount(0);
   await expect(page.locator('.review-feedback')).toHaveCount(0);
   // Comments go back to the agent; in the chat-only view the bar ends the conversation.

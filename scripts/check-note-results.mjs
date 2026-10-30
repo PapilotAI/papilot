@@ -20,7 +20,7 @@ const note = (comment, start, quote) => ({ where: `Page 1 · main.tex line ${sta
 const items = [
   { id: 'request-1', taskId: task.id, type: 'user', text: '', createdAt: 1, meta: { notes: [note('Shorten the opening.', 10, 'The original technical sentence.'), note('Clarify the contribution.', 20, 'A second original sentence.'), note('Define the symbol in the equation.', 90, '')] } },
   { id: 'response-1', taskId: task.id, type: 'assistant', text: 'Revised the opening and contribution.', createdAt: 2 },
-  { id: 'request-2', taskId: task.id, type: 'user', text: '', createdAt: 3, meta: { notes: [{ ...note('Keep the technical term.', 10, 'A shorter technical sentence.'), anchor: { round: 1, sources: [{ file: 'main.tex', lines: [10, 12] }] } }] } },
+  { id: 'request-2', taskId: task.id, type: 'user', text: '', createdAt: 3, meta: { notes: [{ ...note('Keep the technical term.', 10, 'A shorter technical sentence.'), where: 'Round 1 · Page 1 · main.tex line 10', anchor: { round: 1, sources: [{ file: 'main.tex', lines: [10, 12] }] } }] } },
 ];
 const runs = [{ id: 'request-1', taskId: task.id, reviewRound: 1, status: 'completed' }, { id: 'request-2', taskId: task.id, reviewRound: 2, status: 'completed' }];
 const unit = (id, line, old, revised) => ({ id, file: 'main.tex', old_start: line, old_end: line + 2, old_text: old, new_text: revised });
@@ -56,13 +56,13 @@ try {
   assert.equal(await page.getByText('No linked change', { exact: true }).count(), 0, 'failure must not look like an ignored note');
   failResults = false;
   await page.getByRole('button', { name: 'Retry linking changes', exact: true }).first().click();
-  await sent(0).getByRole('button', { name: /Round 1 · Change 1/ }).waitFor();
+  await sent(0).getByRole('button', { name: /Change 1/ }).waitFor();
   await sent(2).getByText('No linked change', { exact: true }).waitFor();
   assert.match(await sent(1).innerText(), /Rejected/);
   await frame().getByRole('button', { name: 'Show note 1: Keep the technical term.', exact: true }).waitFor();
   assert.equal(await frame().getByRole('button', { name: 'Show note 1: Shorten the opening.', exact: true }).count(), 0, 'an older note must not label a newer round');
 
-  await sent(1).getByRole('button', { name: /Round 1 · Change 2/ }).click();
+  await sent(1).getByRole('button', { name: /Change 2/ }).click();
   await frame().locator('html[data-papilot-round="1"]').waitFor();
   await frame().locator('.papilot-linked-change[data-stop="1"]').waitFor();
   assert.match(await page.locator('.review-frame').getAttribute('src'), /round=1&history=1/);
@@ -72,7 +72,15 @@ try {
   decisions[1].c1 = 'accepted';
   await frame().locator('body').evaluate(element => element.ownerDocument.defaultView.dispatchEvent(new Event('latex-review:decided')));
   await sent(0).getByText('Accepted', { exact: true }).waitFor();
-  await sent(0).getByRole('button', { name: /Round 1 · Change 1/ }).click();
+  const currentNote = page.locator('[data-note-result="request-2:0"]');
+  await currentNote.getByRole('button', { name: /Change 1/ }).click();
+  await frame().locator('html[data-papilot-round="2"]').waitFor();
+  await frame().locator('.papilot-linked-change[data-stop="0"]').waitFor();
+  assert.doesNotMatch(await page.locator('.review-frame').getAttribute('src'), /[?&]history=/);
+  assert.match(await page.locator('.review-frame').getAttribute('src'), /round=2&change=0/);
+  assert.doesNotMatch(await currentNote.innerText(), /Round \d+/);
+  assert.doesNotMatch(await frame().locator('body').innerText(), /Round \d+/);
+  await sent(0).getByRole('button', { name: /Change 1/ }).click();
   await frame().locator('.papilot-linked-change[data-stop="0"]').waitFor();
   fs.mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/note-results-desktop.png', fullPage: true });
@@ -81,14 +89,14 @@ try {
   await sent(0).getByText('Accepted', { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
-  await sent(0).getByRole('button', { name: /Round 1 · Change 1/ }).click();
+  await sent(0).getByRole('button', { name: /Change 1/ }).click();
   await frame().locator('.papilot-linked-change[data-stop="0"]').waitFor();
   assert.equal(await page.locator('.review-frame').isVisible(), true);
   await frame().getByRole('button', { name: 'Show note 1: Shorten the opening.', exact: true }).click();
   await sent(0).waitFor({ state: 'visible' });
   assert.equal(await sent(0).evaluate(element => element === document.activeElement), true);
-  const noteBox = await sent(0).boundingBox(), composerBox = await page.locator('.composer-wrap').boundingBox();
-  assert.ok(noteBox.y >= 54 && noteBox.y + noteBox.height <= composerBox.y, 'the complete selected note stays between the header and composer');
+  const noteBox = await sent(0).boundingBox(), composerBox = await page.locator('.composer-wrap').boundingBox(), messagesBox = await page.locator('.messages').boundingBox();
+  assert.ok(noteBox.y >= messagesBox.y - 1 && noteBox.y + noteBox.height <= Math.min(messagesBox.y + messagesBox.height, composerBox.y) + 1, 'the complete selected note stays between the header and composer');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   await page.screenshot({ path: 'test-results/note-results-mobile.png', fullPage: true });
   assert.deepEqual(errors, []);

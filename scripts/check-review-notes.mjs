@@ -43,7 +43,7 @@ async function selectText(selector) {
 }
 try {
   await page.goto(origin);
-  await page.getByRole('button', { name: 'Review notes', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Mark region', exact: true }).waitFor();
   await frame().locator('.review-note-layer').first().waitFor({ state: 'attached' });
   assert.equal(await page.locator('.markdown .file-reference').textContent(), 'acknowledgments.tex');
   assert.equal(await page.locator('.markdown table td').last().textContent(), 'Ready');
@@ -51,8 +51,7 @@ try {
   await page.locator('.file-reference').click();
   await page.getByRole('button', { name: 'Copied path' }).waitFor();
   // Region mode leaves the page clear; text is selected directly without a mode button.
-  await page.getByRole('button', { name: 'Review notes', exact: true }).click();
-  await frame().getByRole('button', { name: 'Region note', exact: true }).click();
+  await page.getByRole('button', { name: 'Mark region', exact: true }).click();
   await frame().locator('.review-region-capture').first().waitFor();
   assert.equal(await frame().getByRole('complementary', { name: 'Review PDF notes' }).count(), 0);
   await page.keyboard.press('Escape');
@@ -68,10 +67,10 @@ try {
   assert.match(await frame().locator('.pdf-strip img').first().evaluate(el => getComputedStyle(el).filter), /invert/);
   await noteInput.fill('Keep all the names and make this warmer.');
   await frame().getByRole('button', { name: 'Add note', exact: true }).click();
-  await page.getByRole('button', { name: 'Review notes, 1', exact: true }).waitFor();
+  await frame().locator('.review-note-tag').nth(0).waitFor();
   assert.equal(await frame().locator('[data-state="rejected"]').getAttribute('data-state'), 'rejected');
   await page.reload();
-  await page.getByRole('button', { name: 'Review notes, 1', exact: true }).click();
+  await frame().locator('.review-note-tag').first().click();
   await frame().getByText('Keep all the names and make this warmer.', { exact: true }).waitFor();
   await frame().getByRole('button', { name: 'Close review notes' }).click();
   await selectText('[data-state="accepted"] .pdf-glyph');
@@ -84,7 +83,7 @@ try {
   await page.mouse.move(box.x + 250, box.y + 65, { steps: 5 }); await page.mouse.up();
   await frame().getByRole('textbox', { name: 'Note for the agent' }).fill('Check the spacing in this region.');
   await frame().getByRole('button', { name: 'Add note', exact: true }).click();
-  await page.getByRole('button', { name: 'Review notes, 3', exact: true }).waitFor();
+  await frame().locator('.review-note-tag').nth(2).waitFor();
   // Existing comments edit in place, preserving the exact marked text and geometry.
   const savedDraft = () => page.evaluate(() => JSON.parse(localStorage.getItem('papilot:review-notes:review-notes-fixture')));
   const originalNotes = (await savedDraft()).notes;
@@ -113,19 +112,20 @@ try {
   assert.equal((await savedDraft()).notes.length, 1, 'text undo must not restore a deleted note');
   await frame().getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.reload();
-  await page.getByRole('button', { name: 'Review notes, 1', exact: true }).click();
+  await frame().locator('.review-note-tag').first().click();
   assert.equal(await frame().locator('.note-undo').count(), 0, 'no dedicated undo UI');
   // The first shortcut starts in the parent toolbar; the second is inside the iframe.
+  await page.getByRole('button', { name: 'Mark region', exact: true }).focus();
   await frame().locator('body').evaluate(body => {
     const win = body.ownerDocument.defaultView;
     win.reviewUndoKeys = 0;
     win.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key === 'z') win.reviewUndoKeys++; });
   });
   await page.keyboard.press('Meta+z');
-  await page.getByRole('button', { name: 'Review notes, 2', exact: true }).waitFor();
+  await frame().locator('.review-note-tag').nth(1).waitFor();
   await frame().getByRole('button', { name: /^Edit note 1:/ }).focus();
   await page.keyboard.press('Control+z');
-  await page.getByRole('button', { name: 'Review notes, 3', exact: true }).waitFor();
+  await frame().locator('.review-note-tag').nth(2).waitFor();
   assert.deepEqual((await savedDraft()).notes, beforeDelete);
   assert.equal(await frame().locator('.review-note-tag').count(), 3);
   assert.equal(await frame().locator('body').evaluate(body => body.ownerDocument.defaultView.reviewUndoKeys), 0, 'restoring a note must not also undo a review decision');
@@ -135,10 +135,10 @@ try {
   await frame().getByRole('alert').waitFor();
   assert.equal(messages.length, 1);
   await page.reload();
-  await page.getByRole('button', { name: 'Review notes, 3', exact: true }).click();
+  await frame().locator('.review-note-tag').first().click();
   failSend = false;
   await frame().getByRole('button', { name: 'Send 3 notes to the agent' }).click();
-  await page.getByRole('button', { name: 'Review notes', exact: true }).waitFor();
+  await frame().locator('.review-note-tag').first().waitFor({ state: 'hidden' });
   assert.equal(messages.length, 2);
   assert.deepEqual(messages[0], messages[1], 'retry after reload uses the same submission identity');
   assert.equal(messages[1].text, '');
@@ -150,7 +150,7 @@ try {
   assert.deepEqual(messages[1].notes[0].anchor, { round: 1, sources: [{ file: 'main/frontmatter/acknowledgments.tex', lines: [26, 43] }] });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: /^Review/ }).first().click();
-  await page.getByRole('button', { name: 'Review notes', exact: true }).click();
+  await selectText('.context .pdf-glyph');
   await page.getByRole('button', { name: 'Show task list', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -172,7 +172,7 @@ try {
   await page.evaluate(note => localStorage.setItem('papilot:review-notes:review-notes-fixture', JSON.stringify({ notes: [note], requestKey: 'mobile-note', editing: null })), originalNotes[0]);
   await page.setViewportSize({ width: 320, height: 740 });
   await page.reload();
-  await page.getByRole('button', { name: 'Review notes, 1', exact: true }).click();
+  await frame().locator('.review-note-tag').first().click();
   await frame().getByRole('button', { name: /^Edit note 1:/ }).click();
   await noteInput.fill('Keep the names.');
   const inputBounds = await noteInput.boundingBox();

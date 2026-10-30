@@ -292,6 +292,8 @@ export interface PageState {
   };
   state: TaskState | null;
   latest: number | null;
+  /** Publication times for browsing earlier changes without revision numbers. */
+  history?: { number: number; created: number }[];
   round: number | null;
   revision: string | null;
   decisions: Record<string, Decision>;

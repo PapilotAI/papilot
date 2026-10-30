@@ -199,6 +199,10 @@ export class Review {
       closed: Boolean(task.closed),
       state: task.closed ? null : this.summary(name).state,
       latest: latest?.number ?? null,
+      history: this.app.store.all<{ number: number; created: number }>(
+        "SELECT number,created FROM rounds WHERE task=? ORDER BY number DESC",
+        name,
+      ),
       round: number ?? null,
       revision: round?.after ?? null,
       decisions: round ? this.decisions(name, round) : {},

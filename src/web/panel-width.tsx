@@ -23,6 +23,7 @@ export function usePanelWidth(key: string, property: string, panel: string, labe
     return () => { observer.disconnect(); stop(); };
   }, [enabled, panel]);
   const clamp = (next: number) => Math.round(Math.max(300, Math.min(next, size.max)));
+  const currentWidth = () => handle.current?.parentElement?.querySelector<HTMLElement>(panel)?.getBoundingClientRect().width ?? size.current;
   return {
     style: width ? { [property]: `${width}px` } as CSSProperties : undefined,
     resizer: enabled && <div ref={handle} className="panel-resizer manuscript-resizer" role="separator" aria-orientation="vertical" aria-label={label} aria-valuenow={size.current} aria-valuemin={300} aria-valuemax={size.max} tabIndex={0}
@@ -30,7 +31,7 @@ export function usePanelWidth(key: string, property: string, panel: string, labe
       onPointerDown={event => {
         if (event.button !== 0 || drag.current) return;
         event.preventDefault(); event.currentTarget.focus();
-        drag.current = { x: event.clientX, width: size.current };
+        drag.current = { x: event.clientX, width: currentWidth() };
         event.currentTarget.setPointerCapture(event.pointerId); document.body.classList.add('resizing');
       }}
       onPointerMove={event => { if (drag.current) setWidth(clamp(drag.current.width + drag.current.x - event.clientX)); }}
@@ -38,7 +39,8 @@ export function usePanelWidth(key: string, property: string, panel: string, labe
       onPointerCancel={stop} onLostPointerCapture={stop} onDoubleClick={() => setWidth(0)}
       onKeyDown={event => {
         if (event.key === 'Enter') { event.preventDefault(); setWidth(0); return; }
-        const next = event.key === 'ArrowLeft' ? size.current + 24 : event.key === 'ArrowRight' ? size.current - 24 : event.key === 'Home' ? size.max : event.key === 'End' ? 300 : null;
+        const current = currentWidth();
+        const next = event.key === 'ArrowLeft' ? current + 24 : event.key === 'ArrowRight' ? current - 24 : event.key === 'Home' ? size.max : event.key === 'End' ? 300 : null;
         if (next !== null) { event.preventDefault(); setWidth(clamp(next)); }
       }}/>,
   };

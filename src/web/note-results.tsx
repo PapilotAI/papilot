@@ -52,6 +52,6 @@ export function NoteResultLinks({ noteKey }: { noteKey: string }) {
   if (links.error) return noteKey.endsWith(':0') ? <button type="button" className="note-result-retry" onClick={links.reload}><Icon name="refresh" size={12}/>{t('Retry linking changes')}</button> : null;
   if (!result) return links.loading ? <span className="note-result-status"><span className="spinner"/></span> : null;
   return <div className="note-result-links">{result.changes.length ? result.changes.map(change => <button type="button" key={`${change.round}:${change.stop}`} className={'note-result-link ' + change.state} title={t('View changes for this note')} onClick={() => links.showChange(noteKey, change)}>
-    <Icon name="diff" size={13}/><span>{t('Round {round} · Change {n}', { round: change.round, n: change.stop + 1 })}</span><span className="note-result-decision">{decision(change.state)}</span><Icon name="arrowRight" size={12}/>
+    <Icon name="diff" size={13}/><span>{t('Change {n}', { n: change.stop + 1 })}</span><span className="note-result-decision">{decision(change.state)}</span><Icon name="arrowRight" size={12}/>
   </button>) : <span className="note-result-status">{result.state === 'waiting' ? t('Awaiting changes') : t('No linked change')}</span>}</div>;
 }

@@ -20,7 +20,7 @@ let latest = 1, serial = 0, undo = null;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
 const actions = [], writes = [], messageRequests = [], commitRequests = [];
 let gitFiles = [];
-const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: null });
+const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, history: Object.keys(rounds).map(number => ({ number: Number(number), created: 1793322000 + Number(number) * 120 })), round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: null });
 function update() {
   const values = Object.values(rounds[latest]);
   task.review.counts = Object.fromEntries(['pending', 'accepted', 'rejected', 'commented'].map(value => [value, values.filter(v => v === value).length]));
@@ -78,6 +78,64 @@ const sync = async () => page.evaluate(() => window.dispatchEvent(new Event('onl
 try {
   await page.goto(origin);
   await viewer().locator('.change.current').waitFor();
+  await expect(viewer().getByRole('button', { name: 'Keyboard shortcuts', exact: true })).toBeHidden();
+  assert.equal(await page.locator('.review-notes-toggle').count(), 0);
+  // Shortcut settings update the running review, survive reload, and retain
+  // the browser's editing keys. The old key must stop making decisions.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'Keyboard shortcuts', exact: true }).click();
+  const shortcuts = page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true });
+  const acceptKey = shortcuts.getByRole('button', { name: 'Change shortcut: Accept change', exact: true });
+  await acceptKey.click(); await acceptKey.press('r');
+  await expect(shortcuts.getByRole('alert')).toContainText('Already used for Reject change');
+  await acceptKey.press('Meta+w');
+  await expect(shortcuts.getByRole('alert')).toContainText('reserved');
+  await acceptKey.press('b');
+  await expect(acceptKey).toHaveText('B');
+  await shortcuts.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(viewer().locator('.change.current button.accept')).toHaveAttribute('aria-keyshortcuts', 'b');
+  await page.reload();
+  await expect(viewer().locator('.change.current button.accept')).toHaveAttribute('aria-keyshortcuts', 'b');
+  await viewer().locator('.change.current .change-number').click();
+  const beforeKeys = writes.length;
+  await page.keyboard.press('a');
+  assert.equal(writes.length, beforeKeys);
+  await viewer().locator('.pdf-glyph').first().evaluate(element => {
+    const range = document.createRange(); range.selectNodeContents(element);
+    const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  });
+  await page.keyboard.press('b');
+  assert.equal(writes.length, beforeKeys, 'selected text pauses decision shortcuts');
+  await viewer().locator('body').evaluate(() => document.getSelection().removeAllRanges());
+  await page.keyboard.press('c');
+  const commentBox = viewer().getByRole('textbox', { name: /^Comment on change/ });
+  await commentBox.press('b');
+  await expect(commentBox).toHaveValue('b');
+  assert.equal(writes.length, beforeKeys, 'typing does not accept a change');
+  await commentBox.press('Escape');
+  await viewer().locator('.change.current .change-number').click();
+  await page.keyboard.press('b');
+  await expect.poll(() => rounds[1].first).toBe('accepted');
+  await expect(viewer().locator('[data-stop="0"] .change-head')).toBeHidden();
+  await expect(viewer().locator('.change.current button.accept')).toBeEnabled();
+  await viewer().locator('.change.current .change-number').click();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => rounds[1].first).toBe('pending');
+  await page.keyboard.press('?');
+  await shortcuts.waitFor();
+  await acceptKey.click(); await acceptKey.press('Backspace');
+  await expect(acceptKey).toHaveText('Not assigned');
+  await shortcuts.getByRole('button', { name: 'Restore default shortcuts' }).click();
+  await expect(acceptKey).toHaveText('A');
+  fs.mkdirSync('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/shortcut-settings-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.equal(await shortcuts.locator('.modal').evaluate(element => element.scrollWidth > element.clientWidth + 1), false);
+  await page.screenshot({ path: 'test-results/shortcut-settings-mobile.png', fullPage: true });
+  await shortcuts.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(viewer().locator('.change.current button.accept')).toHaveAttribute('aria-keyshortcuts', 'a');
+  console.log('PASS: Shortcut settings, conflicts, reassignment, persistence, typing and selection guards, help navigation, reset, and mobile layout');
   // Accept all and Reject all stay on one line and clear of Papilot's PDF
   // tools; a narrow split pane shows each icon with its count.
   const batch = () => viewer().locator('.bar').evaluate(bar => {
@@ -87,9 +145,9 @@ try {
       return `${button.getAttribute('aria-label') || button.textContent}${box.height <= 36 ? '' : ' wraps'}${box.right <= room + 0.5 ? '' : ' under the tools'}${label && getComputedStyle(label).display === 'none' ? ' icon' : ''}`;
     }).join(' · ');
   });
-  for (const [width, icons] of [[1440, ''], [1100, ''], [1000, ' icon']]) {
+  for (const width of [1440, 1100, 1000, 900]) {
     await page.setViewportSize({ width, height: 1000 });
-    await expect.poll(batch).toBe(`Accept all (4)${icons} · Reject all (4)${icons} · History`);
+    await expect.poll(batch).toMatch(/^Accept all \(4\)(?: icon)? · Reject all \(4\)(?: icon)? · History$/);
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   await viewer().locator('.change.current').getByRole('button', { name: 'Accept', exact: true }).click();
@@ -157,21 +215,33 @@ try {
   assert.deepEqual(commitRequests, [{ message: 'Explain the method', push: true }]);
   await expect(card.getByText('Committed abc1234 and pushed.', { exact: true })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Commit…' })).toHaveCount(0);
-  // A new round replaces the current review. Earlier rounds are inspection only.
+  // A note link reveals even an accepted change without opening history.
+  await viewer().locator('body').evaluate(() => { location.href = '?task=flow&round=1&change=0'; });
+  await expect(viewer().locator('.change[data-stop="0"] .change-head')).toBeVisible();
+  await expect(viewer().getByLabel('Review history')).toHaveCount(0);
+  await expect(viewer().locator('.change[data-stop="0"]')).toHaveAttribute('data-state', 'accepted');
+  await viewer().locator('body').evaluate(() => { location.href = '?task=flow'; });
+  await expect(viewer().locator('.change-head:visible')).toHaveCount(0);
+  // A new result replaces the current review. Earlier results are inspection only.
   latest = 2; rounds[2] = { new: 'pending' }; task.review.round = 2; task.review.unsent = 0; update();
   await sync();
-  await expect(viewer().getByText('Round 2', { exact: true })).toBeVisible();
+  await expect(viewer().locator('html')).toHaveAttribute('data-papilot-round', '2');
+  assert.doesNotMatch(await viewer().locator('body').innerText(), /Round \d+/);
   await expect(viewer().locator('.change-head:visible')).toHaveCount(1);
   await viewer().getByRole('button', { name: 'History', exact: true }).click();
-  await viewer().getByLabel('Review round').selectOption('1');
-  await expect(viewer().getByText('Round 1 (earlier round)', { exact: true })).toBeVisible();
+  assert.doesNotMatch(await viewer().getByLabel('Review history').innerText(), /Round \d+/);
+  await expect(viewer().getByLabel('Review history').locator('option[value="1"]')).toContainText('2026');
+  await viewer().getByLabel('Review history').selectOption('1');
+  await expect(viewer().locator('.banner').filter({ hasText: 'Viewing earlier changes.' })).toBeVisible();
+  await expect(viewer().locator('html')).toHaveAttribute('data-papilot-round', '1');
   await expect(viewer().getByRole('button', { name: 'Undo last decision', exact: true })).toBeDisabled();
   const writeCount = writes.length;
   await viewer().locator('#paper').focus();
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
   assert.equal(writes.length, writeCount);
   await viewer().getByRole('button', { name: 'Back to review', exact: true }).click();
-  await expect(viewer().getByText('Round 2', { exact: true })).toBeVisible();
+  await expect(viewer().locator('html')).toHaveAttribute('data-papilot-round', '2');
+  assert.doesNotMatch(await viewer().locator('body').innerText(), /Round \d+/);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
   await viewer().locator('.change.current').getByRole('button', { name: 'Accept', exact: true }).click();

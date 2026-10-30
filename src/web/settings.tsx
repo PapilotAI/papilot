@@ -5,12 +5,14 @@ import { keepDialogFocus } from './focus.ts';
 import { LANGUAGES, browserLanguage, setLanguage, t, useLanguage, type LanguageChoice } from './i18n.ts';
 import { setNotifications, testNotification, useNotifications } from './notifications.ts';
 import type { Theme } from './theme.tsx';
+import { ShortcutSettings } from './shortcut-settings.tsx';
 
 // Browser preferences and workspace management share one sidebar entry.
-export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, accountName }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; onPeople?: () => void; onSignOut?: () => void; accountName?: string }) {
+export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, accountName, initialPage = 'general' }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; onPeople?: () => void; onSignOut?: () => void; accountName?: string; initialPage?: 'general' | 'shortcuts' }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { choice } = useLanguage();
   const notifications = useNotifications();
+  const [page, setPage] = useState(initialPage);
   const [asking, setAsking] = useState(false), [test, setTest] = useState<'' | 'sent' | 'failed'>('');
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -30,7 +32,9 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
   return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="settings-title" onKeyDown={keepDialogFocus} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="modal settings-dialog">
       <button className="modal-close icon-button" aria-label={t('Close')} onClick={onClose}><Icon name="close"/></button>
-      <h2 id="settings-title">{t('Settings')}</h2>
+      {page === 'shortcuts' && <button type="button" className="settings-back" onClick={() => setPage('general')}><Icon name="chevronLeft" size={14}/>{t('Settings')}</button>}
+      <h2 id="settings-title">{page === 'shortcuts' ? t('Keyboard shortcuts') : t('Settings')}</h2>
+      {page === 'shortcuts' ? <ShortcutSettings/> : <>
       <div className="settings-row">
         <span className="settings-name" id="settings-appearance">{t('Appearance')}</span>
         <div className="segmented" role="radiogroup" aria-labelledby="settings-appearance">
@@ -56,10 +60,12 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
         <button type="button" className="button secondary compact" onClick={() => setTest(testNotification() ? 'sent' : 'failed')}><Icon name="bell" size={14}/>{t('Send a test notification')}</button>
         {test && <span role="status">{test === 'sent' ? t('Sent. If nothing appeared, allow notifications for this browser in your system settings.') : t('This browser could not show the notification.')}</span>}
       </div>}
-      {(onPeople || onSignOut) && <div className="settings-navigation">
+      <div className="settings-navigation">
+        <button type="button" className="settings-navigation-row" onClick={() => setPage('shortcuts')}><Icon name="keyboard" size={17}/><span>{t('Keyboard shortcuts')}</span><Icon name="chevronRight" size={15}/></button>
         {onPeople && <button type="button" className="settings-navigation-row" aria-haspopup="dialog" onClick={onPeople}><Icon name="people" size={17}/><span>{t('People')}</span><Icon name="chevronRight" size={15}/></button>}
         {onSignOut && <button type="button" className="settings-navigation-row" onClick={onSignOut}><Icon name="signOut" size={17}/><span>{t('Sign out')}</span>{accountName && <small>{accountName}</small>}</button>}
-      </div>}
+      </div>
+      </>}
     </section>
   </dialog>;
 }

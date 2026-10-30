@@ -100,11 +100,7 @@ export function Overview() {
                     </div>
                     <div className="task-meta">
                       <span className="task-name">{task.task}</span>
-                      <span>
-                        {task.round
-                          ? t("Round {round}", { round: task.round })
-                          : t("Not published yet")}
-                      </span>
+                      {!task.round && <span>{t("Not published yet")}</span>}
                     </div>
                     {total > 0 && (
                       <div className="task-progress">

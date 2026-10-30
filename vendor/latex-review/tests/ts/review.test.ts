@@ -31,6 +31,21 @@ function decide(
     round: app.review.latestRound(task.name)!.number,
   });
 }
+it("lists publication times in history and keeps past decisions tied to their changes", () => {
+  const first = two();
+  decide("reject", [first.units[0].id]);
+  f.edit(task, METHOD, "Agent B.", "Agent C.");
+  const second = fakeRound(app, task.name);
+  const state = app.review.pageState(task.name, first.number);
+  expect(state.history).toEqual([
+    { number: second.number, created: second.created },
+    { number: first.number, created: first.created },
+  ]);
+  expect(state.round).toBe(first.number);
+  expect(state.latest).toBe(second.number);
+  expect(state.decisions[first.units[0].id]).toBe("rejected");
+  expect(state.undo).toBeNull();
+});
 it("accept merges with user edits and leaves HEAD/index untouched", () => {
   two();
   f.write(METHOD, BODY.replace("Detail sentence 3.", "User edit."));

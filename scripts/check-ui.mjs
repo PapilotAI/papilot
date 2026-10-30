@@ -287,8 +287,9 @@ try {
   await dialog.waitFor({ state: 'hidden' });
   assert.equal(await switcher.evaluate(el => el === document.activeElement), true);
 
-  const paperName = page.getByRole('button', { name: 'Rename paper: Example paper', exact: true });
+  const paperName = page.getByRole('button', { name: 'Paper: Example paper', exact: true });
   await paperName.click();
+  await page.getByRole('menuitem', { name: 'Rename paper…', exact: true }).click();
   let paperBox = page.getByRole('textbox', { name: 'Rename Example paper' });
   assert.equal(await paperBox.evaluate(el => el === document.activeElement && el.selectionStart === 0 && el.selectionEnd === el.value.length), true);
   await paperBox.fill('Something else');
@@ -297,20 +298,22 @@ try {
   assert.equal(paperRenames.length, 0);
   assert.equal(await paperName.evaluate(el => el === document.activeElement), true);
   await paperName.click();
+  await page.getByRole('menuitem', { name: 'Rename paper…', exact: true }).click();
   paperBox = page.getByRole('textbox', { name: 'Rename Example paper' });
   await paperBox.fill('  Small   Steps ');
   await paperBox.press('Enter');
-  const renamedPaper = page.getByRole('button', { name: 'Rename paper: Small Steps', exact: true });
+  const renamedPaper = page.getByRole('button', { name: 'Paper: Small Steps', exact: true });
   await renamedPaper.waitFor();
   assert.deepEqual(paperRenames, [{ id: task.projectId, name: 'Small Steps' }]);
   assert.equal(await renamedPaper.evaluate(el => el === document.activeElement), true);
   await page.getByRole('button', { name: 'Paper: Small Steps', exact: true }).waitFor();
   await renamedPaper.click();
+  await page.getByRole('menuitem', { name: 'Rename paper…', exact: true }).click();
   await page.getByRole('textbox', { name: 'Rename Small Steps' }).fill('Example paper');
   await page.getByRole('textbox', { name: 'Rename Small Steps' }).press('Enter');
   await paperName.waitFor();
   assert.equal(paperRenames.length, 2);
-  console.log('PASS: Papers rename from their name in the header; Escape cancels and Enter saves the trimmed name');
+  console.log('PASS: Papers rename from the paper menu; Escape cancels and Enter saves the trimmed name');
   await page.locator('.manuscript-link').click();
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
   const prompt = page.getByRole('textbox', { name: 'Describe the revision' });
@@ -330,13 +333,14 @@ try {
   assert.equal(await views.getByRole('button', { name: 'Review', exact: true }).getAttribute('aria-pressed'), 'true');
   await views.getByRole('button', { name: 'Chat', exact: true }).click();
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), false);
-  await page.getByText('Round 1 is ready · 3 changes to decide', { exact: true }).waitFor();
+  await page.getByText('3 changes to review', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Open review', exact: true }).click();
   assert.equal(await views.getByRole('button', { name: 'Split', exact: true }).getAttribute('aria-pressed'), 'true');
   assert.equal(await page.getByRole('button', { name: 'Open review', exact: true }).count(), 0);
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), true);
-  assert.equal(await page.locator('.topbar .full-pdf-link').count(), 0);
-  assert.equal(await page.locator('.topbar').getByRole('button', { name: 'Delete task', exact: true }).count(), 0);
+  assert.equal(await page.locator('.topbar').count(), 0);
+  assert.equal((await page.locator('.task-grid').boundingBox()).y, 0, 'The task fills the space freed by the header');
+  assert.equal(await page.locator('.panel-heading').getByRole('button', { name: 'Delete task', exact: true }).count(), 0);
   // The review's own tools are direct buttons beside the review toolbar, with no zoom box or menu.
   const reviewTools = page.locator('.review-tools');
   assert.equal(await reviewTools.getByRole('link', { name: 'Full PDF', exact: true }).getAttribute('href'), '/api/tasks/fixture-task-0001/pdf?round=1');
@@ -351,6 +355,17 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await taskMenu.evaluate(el => el === document.activeElement), true);
   console.log('PASS: Views select explicitly, PDF tools stay with the review, and menus support keyboard navigation');
+  for (const name of ['Review', 'Chat', 'Split']) {
+    await views.getByRole('button', { name, exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('.task-grid .view-selector [aria-pressed="true"]') === document.activeElement);
+    await page.getByRole('button', { name: 'Hide task list', exact: true }).click();
+    const showTasks = page.getByRole('button', { name: 'Show task list', exact: true });
+    await page.waitForFunction(() => document.querySelector('.main .sidebar-toggle') === document.activeElement);
+    await showTasks.click();
+    assert.equal((await page.locator('.task-grid').boundingBox()).y, 0);
+  }
+  await page.waitForFunction(() => document.querySelector('.review-frame').contentDocument.documentElement.style.getPropertyValue('--papilot-lead') === '0px');
+  console.log('PASS: Content toolbars retain view-switch focus and reopen the sidebar in every desktop layout');
 
   const pdfLink = page.locator('.manuscript-link');
   await pdfLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
@@ -953,7 +968,7 @@ try {
     await input.waitFor();
     assert.equal(await input.inputValue(), 'New text typed during submission.');
     const overflow = await page.evaluate(() => {
-      const containers = ['.app-shell', '.topbar', '.view-selector', '.review-tools', '.composer-wrap'];
+      const containers = ['.app-shell', '.workspace-navigation', '.panel-tools', '.view-selector', '.review-tools', '.composer-wrap'];
       return containers.filter(selector => { const el = document.querySelector(selector); return el && el.clientWidth && el.scrollWidth > el.clientWidth + 1; });
     });
     assert.deepEqual(overflow, [], `overflow at ${width}px`);
@@ -1040,7 +1055,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 });
   snapshot.requests = []; task.status = 'reviewing';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await page.locator('.task-identity .status').filter({ hasText: 'Ready for review' }).waitFor();
+  await page.locator(`.task-row[data-task="${task.id}"] .status`).filter({ hasText: 'Ready for review' }).waitFor();
   await input.fill('Keep this draft through connection recovery.');
   await page.getByRole('button', { name: 'Hide task list', exact: true }).first().click();
   stateFailure = true;
@@ -1141,17 +1156,17 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   const pauseButton = page.locator('.composer').getByRole('button', { name: 'Pause task' });
   await pauseButton.waitFor();
-  assert.equal(await page.locator('.topbar').getByRole('button', { name: 'Pause task' }).count(), 0);
+  assert.equal(await page.locator('.panel-heading').getByRole('button', { name: 'Pause task' }).count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Send instructions', exact: true }).isEnabled(), true);
   await views.getByRole('button', { name: 'Review', exact: true }).click();
-  await page.locator('.topbar').getByRole('button', { name: 'Pause task' }).waitFor();
+  await page.locator('.review-tools').getByRole('button', { name: 'Pause task' }).waitFor();
   await views.getByRole('button', { name: 'Split', exact: true }).click();
   await pauseButton.click();
   assert.equal(interruptions.at(-1), task.id);
   task.status = 'running';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await pauseButton.waitFor();
-  console.log('PASS: Pause sits in the composer while Codex works and moves to the header when the chat is hidden');
+  console.log('PASS: Pause sits in the composer while Codex works and moves to the review toolbar when the chat is hidden');
   await openDelete();
   const deleteDialog = page.getByRole('dialog', { name: 'Delete task?' });
   await deleteDialog.waitFor();
@@ -1162,7 +1177,7 @@ try {
   assert.equal(deletions.length, 0);
   task.status = 'reviewing';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await page.locator('.task-identity .status').filter({ hasText: 'Ready for review' }).waitFor();
+  await page.locator(`.task-row[data-task="${task.id}"] .status`).filter({ hasText: 'Ready for review' }).waitFor();
   await openDelete();
   await deleteDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   assert.equal(deletions.length, 0);
