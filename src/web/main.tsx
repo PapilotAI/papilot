@@ -646,6 +646,12 @@ function App() {
     fast: browserStorage.getItem(`papilot:fast:${id}`) === 'true',
   }])) as Record<AgentId, { model: string; effort: string; fast: boolean }>);
   const [creating, setCreating] = useState(false), [createError, setCreateError] = useState('');
+  const [addedTask, setAddedTask] = useState<Pick<Task, 'id' | 'title'> | null>(null);
+  useEffect(() => {
+    if (!addedTask) return;
+    const timer = setTimeout(() => setAddedTask(null), 2600);
+    return () => clearTimeout(timer);
+  }, [addedTask]);
   const [busy, setBusy] = useState(false), [sidebar, setSidebar] = useState(false);
   const actionRequests = useRef(new Set<string>());
   const [pendingActions, setPendingActions] = useState(new Set<string>());
@@ -841,12 +847,25 @@ function App() {
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
     if ((!text && !skill && !notes.length) || creating || noteEditing || !target) return;
+    const input = newTaskInput.current, submittedNotes = new Set(notes.map(note => note.id));
+    const restoreFocus = input?.closest('form')?.contains(document.activeElement);
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
       const title = skill ? (text ? `${skillName(skill)}: ${taskTitle(text)}` : skillName(skill)).slice(0, 120) : text ? taskTitle(text) : notes.length === 1 ? taskTitle(notes[0].comment) : t('Address {n} PDF notes', { n: notes.length });
       const created = await api<Task>('/tasks', { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), ...(notes.length ? { annotations: notes.map(note => note.id) } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, serviceTier: agent.serviceTier, id: formTaskId.current });
-      formTaskId.current = uuid(); setNewDraft(''); setNewSkill(null); setTaskSearch(''); setShowArchived(false); setSelected(created.id); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
+      formTaskId.current = uuid(); setNewDraft(''); setNewSkill(null); setTaskSearch(''); setShowArchived(false);
+      // Add the confirmed task without moving the author away from their draft.
+      // Cancel older snapshots before inserting it, so they cannot erase the row.
+      snapshotRequest.cancel();
+      if (snapshotRef.current) {
+        const next = { ...snapshotRef.current, tasks: [...snapshotRef.current.tasks.filter(task => task.id !== created.id), created] };
+        snapshotRef.current = next; setState(next);
+      }
+      setAddedTask({ id: created.id, title: created.title });
+      setManuscript(current => current.projectId === target && current.data ? { ...current, data: { ...current.data, annotations: (current.data.annotations || []).filter(note => !submittedNotes.has(note.id)) } } : current);
+      setActiveNote(id => submittedNotes.has(id) ? '' : id);
+      if (restoreFocus && input?.isConnected && (document.activeElement === document.body || input.closest('form')?.contains(document.activeElement))) input.focus({ preventScroll: true });
       // Reload pending notes from the server: a retry may have returned an
       // earlier successful task, while newer notes still belong to the draft.
       if (notes.length) void loadManuscript(target);
@@ -869,6 +888,9 @@ function App() {
     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.task-search input')?.focus());
   }
   const sidebarShown = narrow ? sidebar : sidebarVisible;
+  useLayoutEffect(() => {
+    if (addedTask && sidebarShown) sidebarRef.current?.querySelector('.task-list')?.scrollTo({ top: 0 });
+  }, [addedTask, sidebarShown]);
   function taskDeleted(id: string) {
     const removed = snapshotRef.current?.tasks.find(t => t.id === id); if (removed) setProjectId(removed.projectId);
     browserStorage.removeItem('papilot:draft:' + id); composers.current.delete(id); timelineCache.current.delete(id);
@@ -1005,7 +1027,7 @@ function App() {
     : commitNotes[task.id] ? <span className="commit-state">{commitNotes[task.id]}</span> : null);
   const reviewFeedback = (card: boolean) => task && <ReviewFeedback key={'review-feedback:' + task.id} card={card} task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError}
     onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>;
-  const sidebarToggle = (narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/></button>;
+  const sidebarToggle = (narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/>{addedTask && !sidebarShown && <span key={addedTask.id} className="task-added-dot" aria-hidden="true"/>}</button>;
   function selectLayout(next: typeof layout) {
     setLayout(next);
     if (next !== 'split') setMobileTab(next);
@@ -1081,7 +1103,7 @@ function App() {
         <button type="button" className="icon-button archive-toggle" aria-pressed={showArchived} aria-label={showArchived ? t('Show current tasks') : t('Show archived tasks')} title={showArchived ? t('Show current tasks') : t('Show archived tasks')} onClick={() => setShowArchived(value => !value)}><Icon name="archive" size={15}/></button>
       </div>
       <div className="task-search"><Icon name="search" size={14}/><input type="search" aria-label={t('Search tasks')} placeholder={t('Search tasks…')} title={t('Search task titles and instructions')} value={taskSearch} onChange={event => setTaskSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Escape' && taskSearch) { event.preventDefault(); event.stopPropagation(); setTaskSearch(''); } }}/>{taskSearch && <button type="button" className="icon-button" aria-label={t('Clear task search')} onClick={() => { setTaskSearch(''); document.querySelector<HTMLInputElement>('.task-search input')?.focus(); }}><Icon name="close" size={13}/></button>}</div>
-      <nav className="task-list" aria-label={t('Task list')}>{visibleTasks.length ? [...visibleTasks].reverse().map(row => <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '')}>
+      <nav className="task-list" aria-label={t('Task list')}>{visibleTasks.length ? [...visibleTasks].reverse().map(row => <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '') + (row.id === addedTask?.id ? ' task-added' : '')}>
         {renaming === row.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); refocus.current = row.id; e.currentTarget.querySelector('input')?.blur(); }}>
           <input name="title" aria-label={t('Rename {name}', { name: row.title })} defaultValue={row.title} maxLength={120} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void rename(row, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocus.current = row.id; e.currentTarget.value = row.title; e.currentTarget.blur(); } }}/>
         </form>
@@ -1106,6 +1128,7 @@ function App() {
     {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label={t('Close task list')} onClick={() => setSidebar(false)}/>}
     <main className="main" inert={narrow && sidebar}>
       <h1 className="sr-only">{task ? task.title : manuscriptOpen ? t('Manuscript') : 'Papilot'}</h1>
+      <span className="sr-only" role="status" aria-atomic="true">{addedTask ? t('Task added: {title}', { title: addedTask.title }) : ''}</span>
       {(mobile || (!task && !manuscriptOpen)) && (sidebarToggle || task || manuscriptOpen) && <div className="workspace-navigation">
         {sidebarToggle}{taskControls}{manuscriptNavigation}
       </div>}

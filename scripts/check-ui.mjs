@@ -578,7 +578,9 @@ try {
   assert.equal(await page.getByRole('tab', { name: 'Notes', exact: true }).count(), 0);
   assert.equal(await prompt.inputValue(), '');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
-  await page.getByRole('heading', { name: 'Define the operator here' }).waitFor();
+  await page.locator('.task-list').getByRole('button', { name: /^Define the operator here/ }).waitFor();
+  assert.equal(await prompt.isVisible(), true);
+  assert.equal(await page.locator('.task-link.active').count(), 0);
   assert.equal(noteSends.length, 1);
   assert.ok(noteSends[0].id.length >= 16);
   assert.deepEqual(noteSends[0].annotations, ['note-1']);
@@ -773,7 +775,9 @@ try {
   await page.keyboard.press('Escape');
   failCreate = false;
   await page.getByRole('button', { name: 'Start task' }).click();
-  await page.getByRole('heading', { name: task.title }).waitFor();
+  await page.waitForFunction(() => document.querySelector('.new-task-panel textarea')?.value === '');
+  assert.equal(await prompt.isVisible(), true);
+  assert.equal(await page.locator('.task-link.active').count(), 0);
   assert.equal(creates.length, 2);
   assert.equal(creates[1].agent, 'codex');
   assert.equal(creates[1].model, 'deep-model');
@@ -785,6 +789,7 @@ try {
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:new-task')), null);
   console.log('PASS: Enter starts a task, Shift+Enter adds a line, retrying creation retains the same task ID, and agent, model and effort are remembered per agent');
 
+  await page.locator(`[data-task="${task.id}"] .task-link`).click();
   const input = page.getByRole('textbox', { name: 'Instructions for Codex' });
   const previousReview = structuredClone(task.review);
   task.review = { state: 'done', round: 1, counts: { pending: 0, accepted: 1, rejected: 1, commented: 0 }, unsent: 2 };
@@ -933,14 +938,15 @@ try {
   createResult = { ...secondTask, id: 'fixture-task-0003', title: 'A newly created task' };
   await page.locator('.manuscript-link').click();
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
-  await prompt.fill(createResult.title + '\nKeep this new task selected.');
+  await prompt.fill(createResult.title + '\nKeep the manuscript open.');
   await page.getByRole('button', { name: 'Start task' }).click();
-  await page.getByRole('heading', { name: createResult.title }).waitFor();
+  await page.locator(`[data-task="${createResult.id}"] .task-link`).waitFor();
   releaseState();
-  assert.equal(await page.locator('.task-link.active').innerText().then(text => text.includes(createResult.title)), true);
+  assert.equal(await page.locator('.task-link.active').count(), 0);
+  assert.equal(await prompt.isVisible(), true);
   createResult = task;
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
-  console.log('PASS: A stale pre-creation snapshot cannot erase the new task selection');
+  console.log('PASS: A stale pre-creation snapshot cannot erase the new task or navigate away from the manuscript');
 
   await page.frameLocator('.review-frame').locator('#paper').waitFor({ state: 'visible' });
   await page.screenshot({ path: 'test-results/english-desktop.png', fullPage: true });
@@ -1031,11 +1037,16 @@ try {
       await page.getByRole('button', { name: 'PDF', exact: true }).click();
       await pdfPage.waitFor();
       await page.getByRole('button', { name: 'New task', exact: true }).click();
-      await prompt.fill('A task beside the PDF\nKeep the mobile conversation visible.');
+      await prompt.fill('A task beside the PDF\nKeep the manuscript composer visible.');
       await page.getByRole('button', { name: 'Start task' }).click();
-      await input.waitFor();
+      await page.waitForFunction(() => document.querySelector('.new-task-panel textarea')?.value === '');
+      assert.equal(await prompt.isVisible(), true);
       assert.equal(await page.locator('.sidebar').isVisible(), false);
-      assert.equal(await page.getByRole('button', { name: 'Chat (reply needed)', exact: true }).getAttribute('aria-pressed'), 'true');
+      assert.equal(await page.getByRole('button', { name: 'New task', exact: true }).getAttribute('aria-pressed'), 'true');
+      await page.getByRole('button', { name: 'Show task list', exact: true }).click();
+      await page.locator(`[data-task="${task.id}"] .task-link`).click();
+      await page.getByRole('button', { name: 'Chat (reply needed)', exact: true }).click();
+      await input.waitFor();
     } else await page.getByRole('button', { name: 'Hide task list', exact: true }).first().click();
   }
   console.log('PASS: 320px, 390px, and tablet layouts; draft persistence; zoom; drawer; project dialog');

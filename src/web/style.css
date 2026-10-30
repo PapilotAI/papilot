@@ -94,6 +94,9 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .task-row{position:relative;display:flex;align-items:center;gap:2px;min-width:0;margin-bottom:2px;border-radius:var(--r-md);transition:background-color .12s,box-shadow .12s}
 .task-row:hover{background:var(--bg-hover)}
 .task-row.active{background:var(--bg-hover)}
+.task-row.task-added{background:var(--accent-soft);box-shadow:inset 2px 0 var(--accent);animation:task-arrive .22s ease-out,task-added 2.6s ease-out forwards}
+.sidebar-toggle{position:relative}
+.task-added-dot{position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--bg);animation:task-notify .7s ease-out}
 .task-link{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;text-align:left;padding:8px 4px 8px 10px;border-radius:var(--r-md)}
 .task-title{font-size:14px;line-height:1.35;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .task-row.active .task-title{font-weight:500}
@@ -885,6 +888,9 @@ body.resizing iframe{pointer-events:none}
 @keyframes dialog-in{from{opacity:0;transform:translateY(8px) scale(.98)}}
 @keyframes toast-in{from{opacity:0;transform:translate(-50%,-6px)}}
 @keyframes fade-in{from{opacity:0}}
+@keyframes task-arrive{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
+@keyframes task-added{0%,35%{background:var(--accent-soft);box-shadow:inset 2px 0 var(--accent)}100%{background:transparent;box-shadow:inset 2px 0 transparent}}
+@keyframes task-notify{0%{opacity:0;transform:scale(.5)}55%{transform:scale(1.5)}100%{opacity:1;transform:scale(1)}}
 @keyframes sheet-in{from{opacity:0;transform:translateY(16px)}}
 /* Touch screens have no hover, so pressed states confirm each tap. */
 @media(hover:none){

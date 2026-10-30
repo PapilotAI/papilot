@@ -123,6 +123,15 @@ try {
   await page.keyboard.press('Enter');
   await expect.poll(() => creates.length).toBe(1);
   assert.equal(creates[0].skill, 'proofread'); assert.equal(creates[0].instructions, 'Section 2 only.'); assert.equal(creates[0].title, 'Proofread: Section 2 only');
+  const firstCreated = page.locator(`[data-task="${creates[0].id}"]`);
+  await expect(firstCreated).toBeVisible();
+  await expect(firstCreated).toHaveClass(/task-added/);
+  assert.match(await firstCreated.evaluate(el => getComputedStyle(el).animationName), /task-arrive/);
+  await expect(page.getByRole('heading', { name: 'Manuscript', exact: true })).toHaveCount(1);
+  await expect(page.locator('.task-link.active')).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Describe the revision', exact: true })).toHaveValue('');
+  await expect(page.getByRole('textbox', { name: 'Describe the revision', exact: true })).toBeFocused();
+  await page.screenshot({ path: 'test-results/task-added-desktop.png' });
 
   // Notes, a skill and the overall request share one draft and survive a failure.
   annotations = [
@@ -131,6 +140,7 @@ try {
   ];
   await page.locator('.manuscript-link').click();
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(page.getByText('2 notes attached', { exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Notes', exact: true })).toHaveCount(0);
   const draft = page.getByRole('textbox', { name: 'Describe the revision', exact: true });
@@ -166,6 +176,12 @@ try {
   assert.deepEqual(creates[2].annotations, ['draft-note-1', 'draft-note-2']);
   assert.equal(creates[2].skill, 'polish');
   assert.equal(creates[2].instructions, 'Keep all technical terms.');
+  await expect(draft).toHaveValue('');
+  await expect(draft).toBeFocused();
+  await expect(page.locator('.note-list li')).toHaveCount(0);
+  await expect(page.locator('.composer-skill')).toHaveCount(0);
+  await expect(page.locator('.review-frame')).toHaveCount(0);
+  await page.locator(`[data-task="${creates[2].id}"] .task-link`).click();
   await expect(page.locator('.thread .notes-request')).toHaveText('Keep all technical terms.');
   await expect(page.locator('.thread .notes-message .skill-chip')).toHaveText('Polish');
   await expect(page.locator('.thread .sent-notes li')).toHaveCount(2);
@@ -173,6 +189,34 @@ try {
   await expect(page.locator('.note-list li')).toHaveCount(0);
   await expect(draft).toHaveValue('');
   await expect(page.locator('.composer-skill')).toHaveCount(0);
+  // Consecutive mobile submissions keep the composer and drawer in place.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await draft.fill('Check notation.');
+  await page.getByRole('button', { name: 'Start task', exact: true }).click();
+  await expect.poll(() => creates.length).toBe(4);
+  await expect(draft).toHaveValue('');
+  await expect(draft).toBeFocused();
+  await expect(page.locator('.task-added-dot')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'New task', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  assert.equal(await page.locator('.main').evaluate(el => el.inert), false);
+  await expect(page.locator('.sidebar')).not.toHaveClass(/is-open/);
+  await expect(page.locator('.review-frame')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/task-added-mobile.png' });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await draft.fill('Check citations.');
+  await page.getByRole('button', { name: 'Start task', exact: true }).click();
+  await expect.poll(() => creates.length).toBe(5);
+  await expect(draft).toHaveValue('');
+  await expect(draft).toBeFocused();
+  assert.notEqual(creates[3].id, creates[4].id);
+  const lastCreated = page.locator(`[data-task="${creates[4].id}"]`);
+  await expect(lastCreated).toHaveClass(/task-added/);
+  assert.equal(await lastCreated.evaluate(el => getComputedStyle(el).animationName), 'none');
+  await expect(page.locator('.task-link.active')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show task list', exact: true }).click();
+  await expect(lastCreated).toBeInViewport();
+  await lastCreated.locator('.task-link').click();
+  await expect(page.getByRole('heading', { name: 'Check citations', exact: true })).toHaveCount(1);
   assert.deepEqual(errors, []);
   console.log('PASS: Skills, feedback and math; merged notes/skill/request draft on desktop and mobile, failure/retry, and combined chat history');
 } finally { await browser.close(); await server.close(); }

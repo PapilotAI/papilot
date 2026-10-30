@@ -138,6 +138,7 @@ export const zhCN: Record<string, string> = {
   'Opening your workspace': '正在打开工作区', 'Connecting to your papers and tasks…': '正在连接你的论文和任务…', 'What are we revising next?': '接下来要修改什么？',
   'Describe the revision': '描述修改',
   'Start task': '开始任务', 'Start task (Enter)': '开始任务（Enter）',
+  'Task added: {title}': '已添加任务：{title}',
   'Add your first paper': '添加你的第一篇论文',
   'Dismiss error': '关闭错误提示', 'Close': '关闭', 'Add a paper': '添加论文',
   'Repository path': '仓库路径', '/Users/you/papers/my-paper': '/Users/you/papers/my-paper', 'Display name (optional)': '显示名称（可选）', 'My research paper': '我的研究论文', 'Cancel': '取消',
