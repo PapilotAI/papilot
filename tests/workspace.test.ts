@@ -1291,7 +1291,7 @@ test('a task commits only what it accepted since its last commit, never during a
   const { Fixture, METHOD, fakeRound } = await import(new URL('../vendor/latex-review/tests/ts/helpers.ts', import.meta.url).href);
   const disk = new Fixture();
   const app = disk.app();
-  const f = fixture();
+  const f = fixture(undefined, { file: path.join(disk.base, 'state.db') });
   try {
     const target = app.tasks.create('p-task', 'Accept twice', [], ['paper']);
     disk.edit(target, METHOD, 'Method sentence 2.', 'First accepted sentence.');
@@ -1308,6 +1308,7 @@ test('a task commits only what it accepted since its last commit, never during a
     assert.deepEqual(first.git.files.map((file: { path: string }) => file.path), ['notes.txt']);
     assert.match(first.pushError ?? '', /no remote/);
     assert.equal(f.store.task(f.task.id).committed?.hash, first.commit);
+    assert.notEqual(f.store.task(f.task.id).committed?.pushed, true, 'a failed push leaves a local commit');
     // Someone edits the same file by hand: it is not this task's to commit.
     fs.writeFileSync(path.join(disk.root, METHOD), fs.readFileSync(path.join(disk.root, METHOD), 'utf8') + '\nA hand edit.\n');
     await f.workspace.refresh(f.task.id);
@@ -1325,8 +1326,24 @@ test('a task commits only what it accepted since its last commit, never during a
     const committing = f.workspace.exclusiveCommit(f.task.projectId, () => new Promise(resolve => setTimeout(resolve, 20)));
     await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => undefined), /commit is in progress/);
     await committing;
-    const second = await f.workspace.commitTask(f.task.id, 'Accept the second sentence');
+    const remote = path.join(disk.base, 'remote.git');
+    app.repo.run(['init', '--bare', remote]);
+    app.repo.run(['remote', 'add', 'origin', remote]);
+    const second = await f.workspace.commitTask(f.task.id, 'Accept the second sentence', true);
     assert.equal(second.pushError, undefined);
     assert.equal(f.store.task(f.task.id).committed?.hash, second.commit);
+    assert.equal(f.store.task(f.task.id).committed?.pushed, true);
+    assert.equal(app.repo.text(['rev-parse', '@{upstream}']).trim(), app.repo.rev('HEAD'));
+    const reopened = new Store(f.store.file);
+    try { assert.deepEqual(reopened.task(f.task.id).committed, f.store.task(f.task.id).committed); }
+    finally { reopened.close(); }
+    disk.edit(target, METHOD, 'Method sentence 7.', 'A later accepted sentence.');
+    const next = fakeRound(app, target.name);
+    app.review.decide(target.name, { id: 'accept-next', action: 'accept', round: next.number, changes: next.units.map((unit: any) => unit.id) });
+    const third = await f.workspace.commitTask(f.task.id, 'Keep the next revision local');
+    assert.equal(third.pushError, undefined);
+    assert.equal(f.store.task(f.task.id).committed?.hash, third.commit);
+    assert.notEqual(f.store.task(f.task.id).committed?.pushed, true, 'a later local commit resets the previous push result');
+    assert.equal(third.git.ahead, 1);
   } finally { f.close(); await disk.close(); }
 });

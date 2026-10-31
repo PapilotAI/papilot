@@ -29,7 +29,7 @@ export interface Task {
   pauseVersion?: number; pendingRunId?: string | null;
   pendingReview?: PendingReview | null;
   // The task's last commit from its review, and the accepted text it included.
-  committed?: { hash: string; accepted: string; at: number } | null;
+  committed?: { hash: string; accepted: string; at: number; pushed?: boolean } | null;
 }
 // reviewRound is 0 while awaiting a result, null when no changes were produced,
 // or the published round. Older runs omit it.

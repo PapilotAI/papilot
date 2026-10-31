@@ -20,6 +20,7 @@ let latest = 1, serial = 0, undo = null;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
 const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [];
 let gitFiles = [];
+let pushError;
 let timeline = [];
 const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, history: Object.keys(rounds).map(number => ({ number: Number(number), created: 1793322000 + Number(number) * 120 })), round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: null });
 function update() {
@@ -51,9 +52,11 @@ await page.route('**/api/**', async route => {
     return route.fulfill({ json: task.delivery });
   }
   if (url.pathname.endsWith('/commit')) {
-    commitRequests.push(route.request().postDataJSON()); gitFiles = []; task.review.files = [];
+    const body = route.request().postDataJSON();
+    commitRequests.push(body); gitFiles = []; task.review.files = [];
     if (task.deferred) task.delivery = { mode: 'branch', branch: 'papilot/flow', commit: 'abc1234', accepted: 'accepted' };
-    return route.fulfill({ json: { commit: 'abc1234', git: { branch: 'main', upstream: 'origin/main', remote: true, ahead: 0, behind: 0, head: { hash: 'abc1234', subject: 'Explain the method', date: 2 }, files: [] } } });
+    else task.committed = { hash: 'abc1234', accepted: `accepted-${commitRequests.length}`, at: Date.now(), pushed: body.push && !pushError };
+    return route.fulfill({ json: { commit: 'abc1234', pushError, git: { branch: 'main', upstream: 'origin/main', remote: true, ahead: 0, behind: 0, head: { hash: 'abc1234', subject: 'Explain the method', date: 2 }, files: [] } } });
   }
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/messages')) { task.status = 'running'; task.review.unsent = 0; return route.fulfill({ json: { ok: true } }); }
@@ -312,7 +315,26 @@ try {
   await card.getByRole('button', { name: 'Commit and push', exact: true }).click();
   assert.deepEqual(commitRequests, [{ message: 'Explain the method', push: true }]);
   await expect(card.getByText('Committed abc1234 and pushed.', { exact: true })).toBeVisible();
+  const taskStatus = page.locator(`[data-task="${task.id}"] .status`);
+  await expect(taskStatus).toHaveText('Committed and pushed');
   await expect(message()).toHaveCount(0);
+  await page.reload();
+  await expect(taskStatus).toHaveText('Committed and pushed');
+  await expect(card.getByText('Committed abc1234 and pushed.', { exact: true })).toBeVisible();
+  // New accepted text needs another commit. A failed push still records the
+  // successful local commit, including after reloading the page.
+  task.review.files = ['main.tex']; gitFiles = [{ path: 'main.tex', status: 'M', staged: false }];
+  pushError = 'The remote is unavailable.'; await sync();
+  await expect(taskStatus).toHaveText('Review complete');
+  await expect(message()).toHaveValue('Explain the method');
+  await card.getByRole('button', { name: 'Commit and push', exact: true }).click();
+  await expect(taskStatus).toHaveText('Committed');
+  await expect(page.getByText(pushError, { exact: true })).toBeVisible();
+  await expect(card.getByText('Committed abc1234.', { exact: true })).toBeVisible();
+  pushError = undefined;
+  await page.reload();
+  await expect(taskStatus).toHaveText('Committed');
+  await expect(card.getByText('Committed abc1234.', { exact: true })).toBeVisible();
   // New tasks offer both destinations and an automatic message inline.
   task.deferred = true; task.review.files = ['main.tex']; gitFiles = [];
   await sync();
@@ -323,13 +345,15 @@ try {
   await expect(card.getByTitle('Commit to papilot/flow', { exact: true })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Commit and push', exact: true })).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  assert.equal(commitRequests.length, 1, 'generating a message does not commit automatically');
+  assert.equal(commitRequests.length, 2, 'generating a message does not commit automatically');
   await page.screenshot({ path: 'test-results/task-destinations-desktop.png', fullPage: true, animations: 'disabled' });
   await message().fill('My accepted revision');
   await card.getByRole('button', { name: 'Commit to task branch', exact: true }).click();
   assert.deepEqual(commitRequests.at(-1), { message: 'My accepted revision', push: false });
   await expect(card.getByText('Committed abc1234 to papilot/flow', { exact: true })).toBeVisible();
+  await expect(taskStatus).toHaveText('Committed');
   await page.reload();
+  await expect(taskStatus).toHaveText('Committed');
   await expect(card.getByText('Committed abc1234 to papilot/flow', { exact: true })).toBeVisible();
   task.delivery = null; task.review.files = ['main.tex']; await sync();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -342,7 +366,8 @@ try {
   await card.getByRole('button', { name: 'Apply to working directory', exact: true }).click();
   await expect(card.getByText('Applied to working directory', { exact: true })).toBeVisible();
   assert.equal(applyRequests.length, 1);
-  assert.equal(commitRequests.length, 2, 'apply never commits');
+  assert.equal(commitRequests.length, 3, 'apply never commits');
+  await expect(taskStatus).toHaveText('Applied to working directory');
   task.deferred = false; task.delivery = null;
   await page.setViewportSize({ width: 1440, height: 1000 }); await sync();
   console.log('PASS: Automatic inline commit messages for legacy and isolated tasks; editable drafts survive view switches; no dialog; desktop and mobile; persistent result and apply without commit');
@@ -357,6 +382,7 @@ try {
   latest = 2; rounds[2] = { new: 'pending' }; task.review.round = 2; task.review.unsent = 0; update();
   await sync();
   await expect(viewer().locator('html')).toHaveAttribute('data-papilot-round', '2');
+  await expect(taskStatus).toHaveText('Ready for review');
   assert.doesNotMatch(await viewer().locator('body').innerText(), /Round \d+/);
   await expect(viewer().locator('.change-head:visible')).toHaveCount(1);
   await viewer().getByRole('button', { name: 'History', exact: true }).click();

@@ -872,11 +872,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       const paths = (await gitStatus(project.path)).files.filter(file => files.includes(file.path)).map(file => file.path);
       if (!paths.length) throw new Error('This task has no accepted changes left to commit.');
       const hash = await gitCommit(project.path, message, paths);
-      this.store.updateTask(taskId, { committed: { hash, accepted: accepted!, at: Date.now() } });
-      void this.refresh(taskId);
+      const committed = { hash, accepted: accepted!, at: Date.now() };
+      this.store.updateTask(taskId, { committed });
       // The commit stands even when the push fails; the author can push again.
       let pushError: string | undefined;
-      if (push) try { await gitRemote(project.path, 'push'); } catch (error) { pushError = errorText(error); }
+      if (push) try {
+        await gitRemote(project.path, 'push');
+        this.store.updateTask(taskId, { committed: { ...committed, pushed: true } });
+      } catch (error) { pushError = errorText(error); }
+      await this.refresh(taskId);
       return { commit: hash, git: await gitStatus(project.path), ...(pushError ? { pushError } : {}) };
     });
   }

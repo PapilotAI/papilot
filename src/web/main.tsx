@@ -33,6 +33,7 @@ import type { DiagnosticReport } from '../shared.ts';
 import { CommitDialog } from './commit-dialog.tsx';
 import { TaskCommit } from './task-commit.tsx';
 import { TaskCommitDraft } from './task-commit-draft.ts';
+import { taskSaveStatus } from './task-save-status.ts';
 import { GitCounts, GitRepository } from './git-overview.tsx';
 import { PeopleDialog } from './people-dialog.tsx';
 import { Invite, SignIn } from './sign-in.tsx';
@@ -78,7 +79,8 @@ const statusNames = (): Record<string, string> => ({ idle: t('Ready'), queued: t
 const ACTIVE = ['running', 'waiting_input', 'queued'];
 function Status({ task }: { task: Task }) {
   const answered = noManuscriptChanges(task), done = task.status === 'reviewing' && task.review?.state === 'done';
-  return <span className={`status ${task.status}${done || answered ? ' done' : ''}`}><i/>{answered ? t('Completed') : done ? t('Review complete') : task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : statusNames()[task.status] || task.status}</span>;
+  const saved = taskSaveStatus(task);
+  return <span className={`status ${task.status}${done || answered ? ' done' : ''}`}><i/>{saved === 'pushed' ? t('Committed and pushed') : saved === 'committed' ? t('Committed') : saved === 'applied' ? t('Applied to working directory') : answered ? t('Completed') : done ? t('Review complete') : task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : statusNames()[task.status] || task.status}</span>;
 }
 function time(timestamp: number) { return new Date(timestamp).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }); }
 function ago(timestamp: number) {
@@ -743,7 +745,6 @@ function App() {
   const [modal, setModal] = useState<'project' | null>(null);
   // Commit drafts survive switching tasks or moving between review and chat.
   const commitDrafts = useRef(new Map<string, TaskCommitDraft>());
-  const [commitNotes, setCommitNotes] = useState<Record<string, string>>({});
   const formTaskId = useRef<string>(uuid());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
@@ -1192,6 +1193,7 @@ function App() {
   // A finished review can be committed from its card in the viewer, or from
   // the end of the chat when the review is hidden.
   const ready = task ? commitReady(task, projectGit) : [];
+  const saved = task ? taskSaveStatus(task) : null;
   const deliveryReady = ready.length > 0 || task?.delivery?.pending;
   const commitKey = task ? JSON.stringify([task.id, task.deferred, task.review?.round, task.review?.counts, ready, task.delivery?.accepted, task.committed?.accepted, task.deferred ? task.name : projectGit?.branch]) : '';
   if (deliveryReady && !commitDrafts.current.has(commitKey)) commitDrafts.current.set(commitKey, new TaskCommitDraft());
@@ -1208,13 +1210,13 @@ function App() {
       const result = await api<{ commit: string; git: GitStatus; pushError?: string }>(`/tasks/${task.id}/commit`, { message, push }, undefined, 130000);
       updateGit(task.projectId, result.git);
       const note = push && !result.pushError ? t('Committed {hash} and pushed.', { hash: result.commit }) : t('Committed {hash}.', { hash: result.commit });
-      setCommitNotes(current => ({ ...current, [task.id]: note }));
       if (result.pushError) reportError(result.pushError);
       await refresh(true);
       return note;
     }}/>
+    : !saved ? null
     : task.deferred && task.delivery ? <span className="commit-state">{task.delivery.mode === 'workspace' ? t('Applied to working directory') : t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' })}</span>
-    : commitNotes[task.id] ? <span className="commit-state">{commitNotes[task.id]}</span> : null);
+    : task.committed ? <span className="commit-state">{saved === 'pushed' ? t('Committed {hash} and pushed.', { hash: task.committed.hash }) : t('Committed {hash}.', { hash: task.committed.hash })}</span> : null);
   const reviewFeedback = (card: boolean) => task && <ReviewFeedback key={'review-feedback:' + task.id} card={card} task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError}
     onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>;
   const sidebarToggle = (narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/>{addedTask && !sidebarShown && <span key={addedTask.id} className="task-added-dot" aria-hidden="true"/>}</button>;
