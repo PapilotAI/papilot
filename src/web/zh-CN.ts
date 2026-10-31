@@ -34,8 +34,6 @@ export const zhCN: Record<string, string> = {
   'Files must be 25 MB or smaller.': '单个文件不能超过 25 MB。', 'Images must be 5 MB or smaller.': '单张图片不能超过 5 MB。',
   'Attachments must total 100 MB or less.': '附件总大小不能超过 100 MB。',
   'Antigravity opens images through its file tools. For direct image input, choose Codex or Claude.': 'Antigravity 通过文件工具读取图片。需要直接传入图片时，请选择 Codex 或 Claude。',
-  'LaTeX Git repository · Requires a commit and latexmk': 'LaTeX Git 仓库 · 需有提交记录并安装 latexmk',
-  'Repository path': '仓库路径',
   'LaTeX engine': 'LaTeX 编译引擎',
   "Could not read the selected file.": "无法读取所选文件。",
   "Choose up to 5,000 files, totaling less than 64 MB.": "最多选择 5,000 个文件，总大小需小于 64 MB。",
@@ -217,7 +215,7 @@ export const zhCN: Record<string, string> = {
   'Pending review': '待审阅', 'Accepted': '已接受', 'Rejected': '已拒绝', 'Revision requested': '需再修改', 'Partly reviewed': '部分已审阅',
   'Retry linking changes': '重试关联修改', 'View changes for this note': '查看这条批注对应的修改', 'Change {n}': '修改 {n}',
   'Awaiting changes': '等待修改', 'No linked change': '暂无对应修改', 'Show note {n}: {comment}': '查看批注 {n}：{comment}', 'Note {n}': '批注 {n}',
-  'No tasks yet': '暂无任务', 'No matching skills': '没有匹配的技能',
+  'No tasks yet': '暂无任务', 'No matching skills': '没有匹配的技能', 'LaTeX Git repository · Requires a commit and latexmk': 'LaTeX Git 仓库 · 需有提交记录并安装 latexmk',
   '{agent} is unavailable': '{agent} 不可用', 'Connection details': '连接详情',
   'Faster responses; may use more of your limit.': '响应更快，可能消耗更多额度。',
   'Agent': '智能体', ' · unavailable': ' · 不可用', 'Model': '模型', 'Wait for the PDF to compile.': '请等待 PDF 编译完成。',
@@ -273,7 +271,8 @@ export const zhCN: Record<string, string> = {
   'Start task': '开始任务', 'Start task (Enter)': '开始任务（Enter）',
   'Task added: {title}': '已添加任务：{title}',
   'Add your first paper': '添加你的第一篇论文',
-  'Dismiss error': '关闭错误提示', 'Close': '关闭', 'Add a paper': '添加论文', '/Users/you/papers/my-paper': '/Users/you/papers/my-paper', 'Cancel': '取消',
+  'Dismiss error': '关闭错误提示', 'Close': '关闭', 'Add a paper': '添加论文',
+  'Repository path': '仓库路径', '/Users/you/papers/my-paper': '/Users/you/papers/my-paper', 'Cancel': '取消',
   'Copied path': '已复制路径', 'Copy path: {path}': '复制路径：{path}',
 
   // Notifications
