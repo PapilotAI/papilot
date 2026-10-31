@@ -70,6 +70,35 @@ test('paper imports require owner access and CSRF before receiving files or star
   } finally { await f.close(); }
 });
 
+test('paper path and removal require the owner, CSRF and an idle paper', async () => {
+  const f = await fixture();
+  try {
+    const headers = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'local-csrf' };
+    for (const action of ['path', 'remove']) {
+      const request = { method: 'POST' as const, url: `/api/projects/thesis/${action}`, payload: { path: '/new/path' } };
+      assert.equal((await f.remote.inject({ ...request, headers: f.as })).statusCode, 403);
+      assert.equal((await f.local.inject({ ...request, headers: { ...headers, 'x-papilot-token': 'wrong' } })).statusCode, 403);
+    }
+    f.store.updateTask('thesis-task', { status: 'running' });
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/projects/thesis/remove', headers, payload: {} })).statusCode, 409);
+    f.store.updateTask('thesis-task', { status: 'reviewing' });
+    f.manuscripts.busyForProject = () => true;
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/projects/thesis/remove', headers, payload: {} })).statusCode, 409);
+    f.manuscripts.busyForProject = () => false;
+    const release = f.workspace.enterProjectRequest('thesis');
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/projects/thesis/remove', headers, payload: {} })).statusCode, 409);
+    release();
+    const renamed = await f.local.inject({ method: 'POST', url: '/api/projects/thesis/rename', headers, payload: { name: 'Renamed' } });
+    assert.equal(renamed.statusCode, 200);
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/projects/thesis/remove', headers, payload: {} })).statusCode, 200);
+    assert.deepEqual(f.accounts.projects(f.ada.id), []);
+    const snapshot = (await f.local.inject({ url: '/api/state', headers: LOCAL })).json();
+    assert.deepEqual(snapshot.projects.map((p: any) => p.id), ['grant']);
+    assert.deepEqual(snapshot.tasks.map((t: any) => t.id), ['grant-task']);
+    assert.equal((await f.remote.inject({ url: '/api/projects/thesis/git', headers: f.as })).statusCode, 400);
+  } finally { await f.close(); }
+});
+
 test('diagnostics are owner-only, require CSRF and resolve only registered paper IDs', async () => {
   const f = await fixture();
   try {

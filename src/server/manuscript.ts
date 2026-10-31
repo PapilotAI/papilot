@@ -347,6 +347,7 @@ export class Manuscripts extends EventEmitter {
   private oldPdfs = new Map<string, string | null>();
   private placements = new Map<string, (Pick<Annotation, 'key' | 'page' | 'rect' | 'rects' | 'source'>) | null>();
   get busyForUpdate() { return [...this.builds.values()].some(build => build.status === 'building'); }
+  busyForProject(id: string) { return this.builds.get(id)?.status === 'building'; }
   forgetProject(id: string) { this.builds.delete(id); }
 
   async state(projectId: string, root: string, rebuild = false): Promise<{ git: GitStatus; build: ManuscriptBuild }> {

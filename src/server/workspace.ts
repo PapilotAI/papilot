@@ -92,9 +92,11 @@ export class Workspace extends EventEmitter {
   private messages = new Map<string, Promise<{ message: string; agent: AgentId }>>();
   private titles = new Map<string, Promise<Task | null>>();
   private helperStops = new Set<() => void>();
+  private projectChanges = new Set<string>();
+  private projectRequests = new Map<string, number>();
   importsBusy = () => false;
   get busyForUpdate() {
-    return Boolean(this.importsBusy() || this.active.size || this.preparing.size || this.publishing.size || this.reviewWrites.size || this.commentWrites.size || this.committing.size || this.deletions.size || this.helperStops.size || this.titles.size
+    return Boolean(this.importsBusy() || this.projectChanges.size || this.active.size || this.preparing.size || this.publishing.size || this.reviewWrites.size || this.commentWrites.size || this.committing.size || this.deletions.size || this.helperStops.size || this.titles.size
       || this.store.tasks().some(task => ['queued', 'running', 'waiting_input', 'building', 'uncertain', 'deleting'].includes(task.status) || task.pendingReview));
   }
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
@@ -164,6 +166,69 @@ export class Workspace extends EventEmitter {
   renameProject(projectId: string, name: string) {
     const project = { ...this.store.project(projectId), name };
     this.store.saveProject(project); return project;
+  }
+  enterProjectRequest(id: string) {
+    if (this.projectChanges.has(id)) throw Object.assign(new Error('This paper is being updated. Please retry in a moment.'), { statusCode: 409 });
+    this.projectRequests.set(id, (this.projectRequests.get(id) || 0) + 1);
+    let released = false;
+    return () => { if (released) return; released = true; const count = (this.projectRequests.get(id) || 1) - 1; if (count) this.projectRequests.set(id, count); else this.projectRequests.delete(id); };
+  }
+  private reserveProject(id: string) {
+    this.store.project(id);
+    const tasks = this.store.tasks().filter(task => task.projectId === id), ids = new Set(tasks.map(task => task.id));
+    if (this.projectChanges.has(id) || this.projectRequests.has(id) || this.committing.has(id) || this.preparing.size
+      || tasks.some(task => BUSY.has(task.status) || task.status === 'queued' || task.pendingReview || this.active.has(task.id) || this.publishing.has(task.id) || this.reviewWrites.has(task.id) || this.commentWrites.has(task.id) || this.deletions.has(task.id) || this.titles.has(task.id))
+      || this.store.runs().some(run => ids.has(run.taskId) && ['queued', 'running', 'uncertain'].includes(run.status))) {
+      throw Object.assign(new Error('Pause this paper’s active tasks and wait for current work to finish before changing its path or removing it. Resolve any uncertain action first.'), { statusCode: 409 });
+    }
+    this.projectChanges.add(id);
+    return () => this.projectChanges.delete(id);
+  }
+  async changeProjectPath(id: string, input: string, check = () => {}, name?: string) {
+    const release = this.reserveProject(id);
+    try {
+      check();
+      const root = await this.projectRoot(input), previous = this.store.project(id);
+      if (root === previous.path) return name === undefined ? previous : this.renameProject(id, name);
+      if (this.store.projectByPath(root)) throw new Error('This repository is already added as another paper.');
+      const client = await this.connectReview(root);
+      await client.get('/api/tasks');
+      const tasks = this.store.tasks().filter(task => task.projectId === id), worktrees = new Map<string, string>();
+      // A new path must still contain this paper's existing review tasks.
+      // Taking paths from the engine also handles a relocated repository.
+      const common = async (folder: string) => fs.realpathSync(path.resolve(folder, (await execute('git', ['-C', folder, 'rev-parse', '--git-common-dir'])).stdout.trim()));
+      const repository = await common(root);
+      for (const task of tasks) {
+        const info = await client.get(taskRoute(task.name));
+        if (info?.task !== task.name || typeof info.worktree !== 'string' || await common(info.worktree) !== repository) throw new Error('The selected repository does not contain this paper’s task worktrees. Select the repository with its existing tasks, or add it as a separate paper.');
+        worktrees.set(task.id, fs.realpathSync(info.worktree));
+      }
+      const project = { ...this.store.project(id), path: root, ...(name === undefined ? {} : { name }) };
+      this.store.transaction(() => {
+        for (const task of tasks) {
+          const worktree = worktrees.get(task.id)!;
+          if (worktree !== task.worktree) {
+            if (task.threadId) this.loaded.delete(task.threadId);
+            this.store.updateTask(task.id, { worktree, threadId: null, turnId: null });
+          }
+        }
+        this.store.saveProject(project);
+      });
+      return project;
+    } finally { release(); }
+  }
+  removeProject(id: string, check = () => {}) {
+    if (!this.store.projects().some(project => project.id === id)) return { ok: true };
+    const release = this.reserveProject(id);
+    try {
+      check();
+      const tasks = this.store.tasks().filter(task => task.projectId === id), ids = new Set(tasks.map(task => task.id));
+      for (const [key, item] of this.liveItems) if (ids.has(item.taskId)) this.liveItems.delete(key);
+      for (const [key, request] of this.requests) if (ids.has(request.taskId)) this.requests.delete(key);
+      for (const task of tasks) { if (task.threadId) this.loaded.delete(task.threadId); this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id); }
+      this.store.removeProject(id);
+      return { ok: true };
+    } finally { release(); }
   }
   // A task combines the author's words, an optional skill and selected PDF notes.
   annotationSending(id: string) { return this.preparingNotes.has(id); }
@@ -576,8 +641,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     } catch (e) { this.store.updateTask(taskId, { status: 'failed', error: errorText(e) }); }
   }
   async refresh(taskId: string) {
+    let release: (() => void) | undefined;
     try {
       const task = this.store.task(taskId);
+      release = this.enterProjectRequest(task.projectId);
       if (task.status === 'deleting') return;
       const project = this.store.project(task.projectId), client = await this.connectReview(project.path);
       const summary = await client.get(taskRoute(task.name));
@@ -586,6 +653,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       const current = this.store.task(taskId);
       if (current.status !== 'deleting') this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent, comments, files } });
     } catch { /* The task remains visible even if its project is temporarily unavailable. */ }
+    finally { release?.(); }
   }
   // Review decisions, comments and undo updates the agent has not received yet.
   // The engine excludes decisions undone before delivery. A queued or in-flight message

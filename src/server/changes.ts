@@ -79,6 +79,8 @@ const readBytes = (file: string) => { try { return fs.readFileSync(file); } catc
 export class Changes {
   private comparisons = new Map<string, Comparison>();
   get busyForUpdate() { return [...this.comparisons.values()].some(comparison => comparison.job?.status === 'running'); }
+  busyForProject(id: string) { return this.comparisons.get(id)?.job?.status === 'running'; }
+  forgetProject(id: string) { this.comparisons.delete(id); }
   constructor(private dir = path.join(DATA, 'changes')) { fs.rmSync(dir, { recursive: true, force: true }); }
 
   private comparison(projectId: string) {

@@ -1,6 +1,8 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'LaTeX Git repository · Requires a commit and latexmk': 'LaTeX Git 仓库 · 需有提交记录并安装 latexmk',
+  'Repository path': '仓库路径',
   'LaTeX engine': 'LaTeX 编译引擎',
   "Could not read the selected file.": "无法读取所选文件。",
   "Choose up to 5,000 files, totaling less than 64 MB.": "最多选择 5,000 个文件，总大小需小于 64 MB。",
@@ -44,8 +46,11 @@ export const zhCN: Record<string, string> = {
   "Choose different files": "重新选择文件",
   "Continue later": "稍后继续",
 
-  'Paper name': '论文名称',
-
+  'Edit {name}': '编辑 {name}', 'Edit paper': '编辑论文', 'Remove paper': '移除论文',
+  'Remove paper?': '移除论文？', 'Remove from Papilot': '从 Papilot 移除',
+  'Paper name': '论文名称', 'Removing…': '正在移除…',
+  'Remove this paper and its tasks, conversations and notes from Papilot?': '从 Papilot 移除这篇论文及其任务、对话和批注记录？',
+  'Files on disk, Git history and task worktrees will stay in place.': '硬盘上的文件、Git 历史和任务工作树都会保留。',
   'Updating…': '正在更新…', 'Update ready': '更新已就绪', 'Restarting…': '正在重启…', 'Update failed': '更新失败', 'New version': '有新版本',
   'Papilot {version}': 'Papilot {version}', 'Update Papilot': '更新 Papilot', 'Later': '稍后', 'Retry update': '重试更新', 'Update to {version}': '更新到 {version}',
   'Could not start the update. Please retry.': '未能启动更新，请重试。',
@@ -194,7 +199,7 @@ export const zhCN: Record<string, string> = {
   'Open review in new tab': '在新标签页中打开审阅',
 
   // Sidebar and header
-  'Rename {name}': '重命名 {name}', 'Rename paper…': '重命名论文…',
+  'Rename {name}': '重命名 {name}',
   'Papers and tasks': '论文和任务', 'Hide task list': '隐藏任务列表', 'Paper: {name}': '论文：{name}', 'Add paper…': '添加论文…', 'Add paper': '添加论文',
   'Manuscript': '稿件', 'Git status of the manuscript': '稿件的 Git 状态', 'New task': '新任务', 'Tasks': '任务', 'Task list': '任务列表',
   '{n} change to decide': '{n} 处修改待定', '{n} changes to decide': '{n} 处修改待定', 'Task actions for {title}': '{title} 的任务操作',

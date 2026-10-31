@@ -18,6 +18,7 @@ import { DeleteTaskDialog } from './task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { UpdateNotice } from './update-notice.tsx';
+import { PaperDialog } from './paper-dialog.tsx';
 import { CompileButton } from './compile-button.tsx';
 import { ImportDialog } from './import-dialog.tsx';
 import { useTheme } from './theme.tsx';
@@ -650,7 +651,7 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
             <span>{item.title}</span><span className="contents-page">{item.page}</span>
           </button>
         </li>)}</ol> : <p className="muted">{build?.key ? t('This PDF has no bookmarks.') : t('Contents will appear when the PDF is ready.')}</p>}
-      </nav> : <GitPanel key={project.id} projectId={project.id} git={data?.git || null} onStatus={onGit} writer={writer} tasks={tasks} onOpenTask={onOpenTask}/>}
+      </nav> : <GitPanel key={project.id + project.path} projectId={project.id} git={data?.git || null} onStatus={onGit} writer={writer} tasks={tasks} onOpenTask={onOpenTask}/>}
     </aside>
     {committing && <CommitDialog branch={git?.branch ?? null} files={staged} staged remote={Boolean(git?.remote)} agent={AGENT_LABELS[writer.agent]} onClose={() => setCommitting(false)}
       generate={fresh => api<{ message: string }>(`/projects/${project.id}/git/message`, { paths: staged, staged: true, agent: writer.agent, fresh }, undefined, 130000).then(result => result.message)}
@@ -723,13 +724,7 @@ function App() {
     document.querySelector<HTMLElement>(`.task-row[data-task="${refocus.current}"] .task-link`)?.focus();
     refocus.current = '';
   }, [renaming]);
-  const [renamingPaper, setRenamingPaper] = useState(false);
-  const refocusPaper = useRef(false);
-  useEffect(() => {
-    if (renamingPaper || !refocusPaper.current) return;
-    document.querySelector<HTMLElement>('.project-switcher')?.focus();
-    refocusPaper.current = false;
-  }, [renamingPaper]);
+  const [editingPaper, setEditingPaper] = useState<Project | null>(null);
   const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'task');
   const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
@@ -805,6 +800,7 @@ function App() {
         if (previous && notifying() && (document.hidden || !document.hasFocus())) for (const alert of taskAlerts(previous, next)) notify(alert, id => { setSelected(id); setSidebar(false); });
         for (const id of composers.current.keys()) if (!next.tasks.some(t => t.id === id)) { composers.current.delete(id); timelineCache.current.delete(id); browserStorage.removeItem('papilot:draft:' + id); }
         setDeleteTarget(current => current && !next.tasks.some(t => t.id === current.id) ? null : current);
+        setEditingPaper(current => current && !next.projects.some(p => p.id === current.id) ? null : current);
         for (const id of answerDrafts.current.keys()) if (!next.requests.some(r => r.id === id)) answerDrafts.current.delete(id);
         if (selection && !next.tasks.some(t => t.id === selection)) setSelected('');
         // An empty saved task is the manuscript, not a missing preference.
@@ -965,14 +961,6 @@ function App() {
     try { await api('/tasks/' + target.id + '/rename', { title }); } catch (e) { reportError(e); }
     await refresh(true);
   }
-  async function renamePaper(target: Project, value: string) {
-    const name = value.trim().replace(/\s+/g, ' ').slice(0, 120);
-    setRenamingPaper(false);
-    if (!name || name === target.name) return;
-    setState(previous => previous ? { ...previous, projects: previous.projects.map(p => p.id === target.id ? { ...p, name } : p) } : previous);
-    try { await api('/projects/' + target.id + '/rename', { name }); } catch (e) { reportError(e); }
-    await refresh(true);
-  }
   // The divider sets the chat width; CSS keeps both panels usable when the window narrows.
   function resizeChat(event: React.PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
@@ -1011,7 +999,7 @@ function App() {
     const focus = () => void loadManuscript(project.id);
     window.addEventListener('focus', focus);
     return () => { ++manuscriptRequest.current; window.removeEventListener('focus', focus); };
-  }, [manuscriptOpen, project?.id, loadManuscript]);
+  }, [manuscriptOpen, project?.id, project?.path, loadManuscript]);
   // Starting a compile switches to fast polling immediately, including a
   // manual retry made between the regular working-tree refreshes.
   useEffect(() => {
@@ -1030,9 +1018,9 @@ function App() {
     const load = () => void api<GitStatus>(`/projects/${project.id}/git`).then(status => setGit({ projectId: project.id, status })).catch(() => undefined);
     load(); const timer = setInterval(load, 20000);
     return () => clearInterval(timer);
-  }, [project?.id, manuscriptOpen, reviewKey]);
+  }, [project?.id, project?.path, manuscriptOpen, reviewKey]);
   // A skill chosen for one paper may not exist on another.
-  useEffect(() => setNewSkill(null), [project?.id]);
+  useEffect(() => setNewSkill(null), [project?.id, project?.path]);
   // Skills come from Papilot, the data folder and the paper's .papilot/skills,
   // read again on return to the window so a new skill file appears.
   useEffect(() => {
@@ -1041,7 +1029,7 @@ function App() {
     const load = () => void api<{ skills?: Skill[] }>(`/projects/${project.id}/skills`).then(result => { if (live) setSkills({ projectId: project.id, list: Array.isArray(result.skills) ? result.skills : [] }); }, () => undefined);
     load(); window.addEventListener('focus', load);
     return () => { live = false; window.removeEventListener('focus', load); };
-  }, [project?.id]);
+  }, [project?.id, project?.path]);
   const projectGit = git.projectId === project?.id ? git.status : null;
   const projectSkills = skills.projectId === project?.id ? skills.list : [];
   const updateGit = (projectId: string, status: GitStatus) => { setGit({ projectId, status }); setManuscript(current => current.projectId === projectId && current.data ? { ...current, data: { ...current.data, git: status } } : current); };
@@ -1149,11 +1137,6 @@ function App() {
     <a className="icon-button review-open" href={reviewUrl(task)} target="_blank" rel="noreferrer" aria-label={t('Open review in new tab')} title={t('Open review in new tab')}><Icon name="external" size={16}/></a>
   </> : null;
 
-  // Rename the paper in the sidebar, alongside its switcher.
-  const paperName = project && <form className="paper-rename" onSubmit={e => { e.preventDefault(); refocusPaper.current = true; e.currentTarget.querySelector('input')?.blur(); }}>
-      <input name="name" aria-label={t('Rename {name}', { name: project.name })} defaultValue={project.name} maxLength={120} size={Math.min(40, Math.max(12, project.name.length + 2))} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void renamePaper(project, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocusPaper.current = true; e.currentTarget.value = project.name; e.currentTarget.blur(); } }}/>
-    </form>;
-
   const manuscriptOpenPdf = project && manuscriptData.data?.build.key && <a className="icon-button" aria-label={t('Open PDF')} title={t('Open PDF')} href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer"><Icon name="external" size={16}/></a>;
   const manuscriptTools = project && <>
     <CompileButton key={project.id} label={t('Recompile PDF')} status={pendingManuscriptBuilds.has(project.id) ? 'building' : manuscriptData.error ? 'unknown' : manuscriptData.data?.build.status || 'unknown'} disabled={!manuscriptData.data && !manuscriptData.error} onCompile={() => loadManuscript(project.id, true)}/>
@@ -1185,12 +1168,11 @@ function App() {
   </section>;
 
   return <ViewerContext.Provider value={viewer || null}><NoteResultsProvider task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} openReview={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} openChat={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
-    <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label={t('Papers and tasks')}>
+    <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal || editingPaper) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label={t('Papers and tasks')}>
       <div className="sidebar-header"><a href="/" className="brand" onClick={e => { e.preventDefault(); setSelected(''); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a><button className="icon-button" aria-label={t('Hide task list')} title={t('Hide task list')} onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button></div>
       <div className="sidebar-actions">
-        {renamingPaper ? paperName : state?.projects.length && project ? <ActionMenu label={t('Paper: {name}', { name: project.name })} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
-          ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); } })),
-          { label: t('Rename paper…'), icon: 'pencil', divider: true, select: () => setRenamingPaper(true) },
+        {state?.projects.length && project ? <ActionMenu label={t('Paper: {name}', { name: project.name })} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
+          ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), title: p.path, checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); }, edit: { label: t('Edit {name}', { name: p.name }), select: () => setEditingPaper(p) } })),
           ...(owner ? [{ label: t('Add paper…'), icon: 'plus', divider: true, select: () => openProject() }] : []),
         ]}><span className="project-switcher-name">{project.name}</span><Icon name="chevronDown" size={13}/></ActionMenu>
           : owner && <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button>}
@@ -1242,7 +1224,7 @@ function App() {
           {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.review?.round ? <ReviewFrame key={task.id} task={task} lead={!mobile && !chatOnly ? sidebarToggle : null} tools={<>{reviewTools}{!mobile && !conversationVisible && taskControls}</>} completion={commitStep} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); }}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>}
           {!chatOnly && reviewFeedback(false)}
         </section><Activity key={task.id} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} models={runtimes[task.agent || 'codex']?.models || []} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={state?.requests.filter(r => r.taskId === task.id) || []} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{ready.length > 0 && <div className="review-feedback card commit-card"><span><Icon name="commit" size={15}/>{t('Accepted changes are not committed yet')}</span><button className="button secondary compact" onClick={() => setCommitFor(task.id)}>{t('Commit…')}</button></div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : manuscriptOpen && project ? <ManuscriptView tasks={state?.tasks.filter(task => task.projectId === project.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} navigation={!mobile ? sidebarToggle : null} project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? <>{manuscriptTools}{narrow && manuscriptOpenPdf}</> : null} openPdf={!narrow ? manuscriptOpenPdf : null} onGit={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} reportError={reportError}/>
+      : manuscriptOpen && project ? <ManuscriptView key={project.id + project.path} tasks={state?.tasks.filter(task => task.projectId === project.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} navigation={!mobile ? sidebarToggle : null} project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? <>{manuscriptTools}{narrow && manuscriptOpenPdf}</> : null} openPdf={!narrow ? manuscriptOpenPdf : null} onGit={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} reportError={reportError}/>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>{t('Opening your workspace')}</h1><p className="home-copy" role="status">{connectionError || t('Connecting to your papers and tasks…')}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>{t('Retry connection')}</button>}</div></div>
       : !owner ? <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('No papers yet')}</h1><p className="home-copy">{t('No papers have been shared with you yet. Papers appear here as soon as {name} shares them.', { name: viewer?.owner || '' })}</p></div></div>
       : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button></div></div>}
@@ -1261,6 +1243,19 @@ function App() {
         void refresh(true);
       }}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
+    {editingPaper && <PaperDialog key={editingPaper.id} paper={editingPaper} canManage={owner} onClose={() => setEditingPaper(null)} save={async form => {
+      const paper = editingPaper, pathChanged = owner && form.path !== paper.path;
+      await api(`/projects/${paper.id}/${pathChanged ? 'path' : 'rename'}`, pathChanged ? form : { name: form.name });
+      if (pathChanged) { ++manuscriptRequest.current; setManuscript({ projectId: '', data: null, error: '' }); setGit({ projectId: '', status: null }); }
+      await refresh(true);
+      if (pathChanged && project?.id === paper.id && manuscriptOpen) await loadManuscript(paper.id);
+    }} remove={async () => {
+      const paper = editingPaper;
+      await api(`/projects/${paper.id}/remove`, {});
+      if (task?.projectId === paper.id) setSelected('');
+      setState(previous => previous ? { ...previous, projects: previous.projects.filter(p => p.id !== paper.id), tasks: previous.tasks.filter(t => t.projectId !== paper.id) } : previous);
+      await refresh(true);
+    }}/>}
     {modal && <ImportDialog api={api} agent={agentChoice} canRepair={Object.values(runtimes).some(runtime => runtime?.connected && runtime.authenticated)} onClose={() => setModal(null)} onDone={async paper => {
       setProjectId(paper.id); setSelected(''); setModal(null); setSidebar(false); await refresh(true);
     }}/>}

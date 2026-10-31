@@ -33,6 +33,17 @@ export class Store extends EventEmitter {
   task(id: string) { const row = this.db.prepare('SELECT data FROM tasks WHERE id=?').get(id) as { data: string } | undefined; if (!row) throw new Error('Task not found.'); return JSON.parse(row.data) as Task; }
   projectByPath(p: string) { return this.projects().find(project => project.path === p); }
   saveProject(p: Project) { this.db.prepare('INSERT INTO projects VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET path=excluded.path,data=excluded.data').run(p.id, p.path, JSON.stringify(p)); this.emit('change'); }
+  removeProject(id: string) {
+    this.project(id);
+    this.transaction(() => {
+      // Only Papilot records are removed. Never finish review tasks or touch their files.
+      this.db.prepare('INSERT OR IGNORE INTO deleted_tasks SELECT id, ? FROM tasks WHERE project_id=?').run(Date.now(), id);
+      for (const table of ['items', 'runs']) this.db.prepare(`DELETE FROM ${table} WHERE task_id IN (SELECT id FROM tasks WHERE project_id=?)`).run(id);
+      for (const table of ['tasks', 'annotations', 'members']) this.db.prepare(`DELETE FROM ${table} WHERE project_id=?`).run(id);
+      this.db.prepare('DELETE FROM projects WHERE id=?').run(id);
+    });
+    this.emit('change');
+  }
   saveTask(t: Task) { t.updatedAt = Date.now(); this.db.prepare('INSERT INTO tasks VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(t.id, t.projectId, JSON.stringify(t)); this.emit('change'); return t; }
   updateTask(id: string, update: Partial<Task>) { return this.saveTask({ ...this.task(id), ...update }); }
   saveRun(r: Run) { this.db.prepare('INSERT INTO runs VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,data=excluded.data').run(r.id, r.taskId, r.requestKey, r.status, JSON.stringify(r)); this.emit('change'); }

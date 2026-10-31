@@ -365,8 +365,8 @@ try {
 
   const paperName = page.getByRole('button', { name: 'Paper: Example paper', exact: true });
   await paperName.click();
-  await page.getByRole('menuitem', { name: 'Rename paper…', exact: true }).click();
-  let paperBox = page.getByRole('textbox', { name: 'Rename Example paper' });
+  await page.getByRole('menuitem', { name: 'Edit ' + (await page.locator('.project-switcher-name').innerText()), exact: true }).click();
+  let paperBox = page.getByRole('textbox', { name: 'Paper name', exact: true });
   assert.equal(await paperBox.evaluate(el => el === document.activeElement && el.selectionStart === 0 && el.selectionEnd === el.value.length), true);
   await paperBox.fill('Something else');
   await paperBox.press('Escape');
@@ -374,8 +374,8 @@ try {
   assert.equal(paperRenames.length, 0);
   assert.equal(await paperName.evaluate(el => el === document.activeElement), true);
   await paperName.click();
-  await page.getByRole('menuitem', { name: 'Rename paper…', exact: true }).click();
-  paperBox = page.getByRole('textbox', { name: 'Rename Example paper' });
+  await page.getByRole('menuitem', { name: 'Edit ' + (await page.locator('.project-switcher-name').innerText()), exact: true }).click();
+  paperBox = page.getByRole('textbox', { name: 'Paper name', exact: true });
   await paperBox.fill('  Small   Steps ');
   await paperBox.press('Enter');
   const renamedPaper = page.getByRole('button', { name: 'Paper: Small Steps', exact: true });
@@ -384,9 +384,9 @@ try {
   assert.equal(await renamedPaper.evaluate(el => el === document.activeElement), true);
   await page.getByRole('button', { name: 'Paper: Small Steps', exact: true }).waitFor();
   await renamedPaper.click();
-  await page.getByRole('menuitem', { name: 'Rename paper…', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Rename Small Steps' }).fill('Example paper');
-  await page.getByRole('textbox', { name: 'Rename Small Steps' }).press('Enter');
+  await page.getByRole('menuitem', { name: 'Edit ' + (await page.locator('.project-switcher-name').innerText()), exact: true }).click();
+  await page.getByRole('textbox', { name: 'Paper name', exact: true }).fill('Example paper');
+  await page.getByRole('textbox', { name: 'Paper name', exact: true }).press('Enter');
   await paperName.waitFor();
   assert.equal(paperRenames.length, 2);
   console.log('PASS: Papers rename from the paper menu; Escape cancels and Enter saves the trimmed name');

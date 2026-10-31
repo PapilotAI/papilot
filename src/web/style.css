@@ -690,6 +690,18 @@ body.resizing iframe{pointer-events:none}
 .menu-label,.menu-detail{white-space:nowrap;text-overflow:ellipsis}
 .menu-detail{overflow:hidden;font:12px/1.4 var(--mono);color:var(--text-3)}
 .paper-menu [role=menuitemradio] .menu-label{font:400 15.5px/1.35 var(--serif)}
+.paper-menu{min-width:280px}
+.menu-item-row{display:flex;align-items:center;gap:2px}
+.menu-item-row>button{display:flex;align-items:center;gap:10px;flex:1;min-width:0;min-height:42px;padding:5px 10px;border-radius:var(--r);text-align:left}
+.menu-item-row>button:hover,.menu-item-row>button:focus-visible{background:var(--bg-hover);outline:none}
+.menu-item-row .menu-check{flex-shrink:0}
+.menu-item-row .paper-actions{flex:0 0 28px;min-height:28px;justify-content:center;padding:0;width:28px;height:28px;margin-right:3px;color:var(--text-3)}
+.menu-item-row:hover .paper-actions,.menu-item-row:focus-within .paper-actions{color:var(--text)}
+.paper-dialog-name{overflow-wrap:anywhere;font-weight:500;margin-bottom:10px}
+.paper-dialog p{font-size:13px;line-height:1.6;margin-bottom:12px}
+.paper-dialog-actions{flex-wrap:wrap}
+.paper-dialog-actions .paper-remove{margin-right:auto;padding-left:0;color:var(--red)}
+@media(max-width:680px){.menu-item-row>button{min-height:50px;padding:5px 12px}.menu-item-row .paper-actions{flex-basis:40px;min-height:40px;width:40px;height:40px}.paper-dialog-actions{gap:6px}.paper-dialog-actions .button{padding-inline:10px;font-size:13px}.paper-dialog-actions .paper-remove{padding-inline:0;gap:4px}}
 .menu-separator{height:1px;background:var(--line);margin:4px 6px}
 
 /* Dialogs */

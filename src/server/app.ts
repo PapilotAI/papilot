@@ -63,6 +63,17 @@ export async function buildApp(options: AppOptions) {
     const release = options.updates.enter(); updateRequests.set(request, release); reply.raw.once('close', release);
   });
   app.addHook('onResponse', async request => { updateRequests.get(request)?.(); });
+  const projectRequests = new WeakMap<object, () => void>();
+  app.addHook('preHandler', async request => {
+    const access = request.routeOptions.config.access, params = request.params as Record<string, string>;
+    if (!access || typeof access !== 'object') return;
+    const id = 'project' in access ? (access.from === 'body' ? request.body as Record<string, string> : params)?.[access.project]
+      : 'task' in access ? store.tasks().find(task => task.id === params[access.task])?.projectId
+      : store.tasks().find(task => task.id === workspace.requests.get(params[access.request])?.taskId)?.projectId;
+    if (id) projectRequests.set(request, workspace.enterProjectRequest(id));
+  });
+  app.addHook('onSend', async (request, _reply, payload) => { projectRequests.get(request)?.(); return payload; });
+  app.addHook('onError', async request => { projectRequests.get(request)?.(); });
   await app.register(compress);
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
   const any = { config: { access: 'any' as const } }, owner = { config: { access: 'owner' as const } };
@@ -138,6 +149,17 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/imports/:id/repair', owner, request => imports!.build(request.params.id, (request.body || {}) as any, (root, error) => workspace.repairImport(root, error, { agent: agent((request.body as any)?.agent) })));
   app.post<{ Params: { id: string } }>('/api/imports/:id/finish', owner, request => imports!.finish(request.params.id, (root, name) => workspace.addProject(root, name)));
   app.post<{ Params: { id: string } }>('/api/projects/:id/rename', project(), request => workspace.renameProject(request.params.id, string((request.body as any).name, 'Paper name', 120)));
+  const paperIdle = (id: string) => { if (manuscripts.busyForProject(id) || changes.busyForProject(id)) throw Object.assign(new Error('Wait for this paper’s PDF build to finish before changing its path or removing it.'), { statusCode: 409 }); };
+  const forgetPaper = (id: string) => { manuscripts.forgetProject(id); changes.forgetProject(id); };
+  app.post<{ Params: { id: string } }>('/api/projects/:id/path', owner, async request => {
+    const id = request.params.id, body = request.body as any;
+    const result = await workspace.changeProjectPath(id, string(body?.path, 'Repository path', 4000), () => paperIdle(id), body?.name === undefined ? undefined : string(body.name, 'Paper name', 120));
+    forgetPaper(id); return result;
+  });
+  app.post<{ Params: { id: string } }>('/api/projects/:id/remove', owner, request => {
+    const id = request.params.id, result = workspace.removeProject(id, () => paperIdle(id));
+    forgetPaper(id); return result;
+  });
   // A skill's name: what the author typed after "/".
   const skillName = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,47}$/.test(value) ? value : undefined;
   // Text the author may leave empty when a skill or review feedback says enough.
