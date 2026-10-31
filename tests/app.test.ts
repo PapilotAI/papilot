@@ -144,6 +144,7 @@ test('an unshared paper answers exactly like one that does not exist', async () 
     await same('task', { url: '/api/tasks/grant-task/items' }, { url: '/api/tasks/nope/items' });
     await same('task write', { method: 'POST', url: '/api/tasks/grant-task/interrupt', payload: {} }, { method: 'POST', url: '/api/tasks/nope/interrupt', payload: {} });
     await same('task archive', { method: 'POST', url: '/api/tasks/grant-task/archive', payload: { archived: true } }, { method: 'POST', url: '/api/tasks/nope/archive', payload: { archived: true } });
+    await same('task title generation', { method: 'POST', url: '/api/tasks/grant-task/title', payload: {} }, { method: 'POST', url: '/api/tasks/nope/title', payload: {} });
     await same('approval', { method: 'POST', url: '/api/requests/grant-request', payload: { decision: 'accept' } }, { method: 'POST', url: '/api/requests/nope', payload: { decision: 'accept' } });
     await same('new task', { method: 'POST', url: '/api/tasks', payload: { id: 'new-task-id-0002', projectId: 'grant', title: 'T', instructions: 'Edit.' } }, { method: 'POST', url: '/api/tasks', payload: { id: 'new-task-id-0002', projectId: 'nope', title: 'T', instructions: 'Edit.' } });
     assert.equal(f.store.task('grant-task').status, 'reviewing');

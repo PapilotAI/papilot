@@ -39,6 +39,7 @@ let archiveFailure = false;
 const archives = [];
 const deletions = [];
 const renames = [];
+const titleRequests = [];
 const paperRenames = [];
 const gitState = { remote: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Draft the introduction', date: 1 }, files: [{ path: 'main.tex', status: 'M', staged: false, unstaged: true, lines: [2, 4] }, { path: 'notes.md', status: '?', staged: false, unstaged: true }] };
 const originalGit = structuredClone(gitState);
@@ -147,6 +148,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fixturePdf });
   if (url.pathname.endsWith('/manuscript/words')) return json(fixtureWords[Number(url.searchParams.get('page'))]);
   if (url.pathname.startsWith('/api/projects/') && url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); paperRenames.push({ id, ...body }); const paper = snapshot.projects.find(p => p.id === id); paper.name = body.name; return json(paper); }
+  if (url.pathname.endsWith('/title')) { const id = url.pathname.split('/')[3]; titleRequests.push(id); const target = snapshot.tasks.find(t => t.id === id); target.titleGeneration = 'pending'; return json(target); }
   if (url.pathname.endsWith('/rename')) { const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); renames.push({ id, ...body }); snapshot.tasks.find(t => t.id === id).title = body.title; return json(snapshot.tasks.find(t => t.id === id)); }
   if (url.pathname.endsWith('/interrupt')) { const id = url.pathname.split('/')[3]; interruptions.push(id); snapshot.tasks.find(t => t.id === id).status = 'interrupted'; return json({ ok: true }); }
   if (url.pathname.endsWith('/archive')) {
@@ -629,6 +631,30 @@ try {
   assert.equal(await graph.locator('.git-graph-row').count(), 5);
   await graph.getByRole('button', { name: task.title, exact: true }).waitFor();
   assert.ok((await graph.locator('.git-graph-row').first().boundingBox()).height <= 48, 'Graph rows no longer reserve three lines');
+  // Generated captions update the sidebar, worktree and graph without navigation.
+  const originalTitle = task.title;
+  const captionMenu = () => page.getByRole('button', { name: `Task actions for ${task.title}`, exact: true });
+  await captionMenu().click();
+  await page.getByRole('menuitem', { name: 'Generate task title', exact: true }).click();
+  await captionMenu().click();
+  const generatingTitle = page.getByRole('menuitem', { name: 'Generating task title…', exact: true });
+  await generatingTitle.waitFor();
+  assert.equal(await generatingTitle.isDisabled(), true);
+  await page.keyboard.press('Escape');
+  task.titleGeneration = 'failed';
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await captionMenu().click();
+  await page.getByRole('menuitem', { name: 'Retry title generation', exact: true }).click();
+  assert.deepEqual(titleRequests, [task.id, task.id]);
+  task.title = '明确引言中的研究贡献'; task.titleSource = 'generated'; task.titleGeneration = null;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await captionMenu().waitFor();
+  await proposalTree.getByText(task.title, { exact: true }).waitFor();
+  await graph.getByRole('button', { name: task.title, exact: true }).waitFor();
+  task.title = originalTitle;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await proposalTree.getByText(originalTitle, { exact: true }).waitFor();
+  console.log('PASS: Task captions show pending and retry states and update task, worktree and graph labels');
   await proposalTree.locator('.git-worktree-button').click();
   await worktrees.getByText('sections/introduction.tex', { exact: true }).waitFor();
   assert.equal(await graph.locator('.highlighted').getAttribute('data-commit'), 'bbb2222');

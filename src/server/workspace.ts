@@ -12,6 +12,7 @@ import { VERSION } from './paths.ts';
 import { findSkill, type SkillFile } from './skills.ts';
 import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
 import { commitMessageFrom } from '../commit.ts';
+import { taskCaptionFrom, taskCaptionInstructions } from '../task-caption.ts';
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
 import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation, NoteSummary } from '../shared.ts';
@@ -88,6 +89,8 @@ export class Workspace extends EventEmitter {
   // Commit messages by agent, model and prompt, kept or still being written,
   // so one written ahead for a finished review is there when the dialog opens.
   private messages = new Map<string, Promise<{ message: string; agent: AgentId }>>();
+  private titles = new Map<string, Promise<Task | null>>();
+  private helperStops = new Set<() => void>();
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.agents = { codex, claude: others.claude || new ClaudeAgent(), antigravity: others.antigravity || new AntigravityAgent() };
@@ -184,11 +187,14 @@ export class Workspace extends EventEmitter {
       const client = await this.connectReview(project.path);
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
       const info = await client.post('/api/tasks', { name, title: input.title });
-      const task: Task = { id: input.id, projectId: project.id, name, title: input.title, instructions: skill ? skillPrompt(skill, instructions) : instructions,
+      const task: Task = { id: input.id, projectId: project.id, name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
         worktree: info.worktree, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.saveTask(task);
       await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill, notes, author: input.author });
+      // Naming is independent of the editing turn. An unavailable helper must
+      // not fail creation or prevent the queued task from running.
+      try { this.requestTaskTitle(task.id); } catch { /* Keep the prompt-derived title. */ }
       return this.store.task(task.id);
     } finally { this.preparing.delete(input.id); claimed.forEach(id => this.preparingNotes.delete(id)); }
   }
@@ -274,6 +280,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   }
   private async startRun(run: Run) {
     let task = this.store.task(run.taskId);
+    if (task.titleSource === 'prompt' && !task.titleGeneration) {
+      try { this.requestTaskTitle(task.id); } catch { /* Naming remains optional when the agent reconnects. */ }
+    }
     const agent = this.agents[this.agentOf(task)], name = AGENT_NAMES[this.agentOf(task)];
     this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id);
     this.store.saveRun({ ...run, status: 'running' });
@@ -589,11 +598,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   // One turn on a thread the agent does not keep, outside any task: its
   // reply is returned and no chat shows it.
   private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; timeout: number; what: string }) {
+    if (this.closing) throw new Error('The server is shutting down.');
     const agent = this.agents[id], name = AGENT_NAMES[id];
-    const thread = await agent.request('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.sandbox, ephemeral: true, developerInstructions: options.instructions, ...(options.model ? { model: options.model.id } : {}) });
+    const thread = await agent.request('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.sandbox, ephemeral: true, developerInstructions: options.instructions, ...(options.model ? { model: options.model.id } : {}) }, options.timeout);
+    if (this.closing) throw new Error('The server is shutting down.');
     const threadId = thread.thread.id;
     return new Promise<string>((resolve, reject) => {
-      let text = '', turnId = '';
+      let text = '', turnId = '', settled = false;
       const listen = (message: any) => {
         const p = message.params || {};
         if (p.threadId !== threadId) return;
@@ -604,11 +615,51 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         if (turnId) agent.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
         finish(new Error(`${name} did not ${options.what} in time. Try again.`));
       }, options.timeout);
-      const finish = (error: Error | null) => { clearTimeout(timer); agent.off('notification', listen); if (error) reject(error); else resolve(text); };
+      const finish = (error: Error | null) => {
+        if (settled) return; settled = true;
+        clearTimeout(timer); agent.off('notification', listen); agent.off('disconnected', disconnected); this.helperStops.delete(stop);
+        if (error) reject(error); else resolve(text);
+      };
+      const disconnected = () => finish(new Error(`${name} disconnected before it could ${options.what}.`));
+      const stop = () => finish(new Error('The server is shutting down.'));
+      this.helperStops.add(stop); agent.on('disconnected', disconnected);
       agent.on('notification', listen);
       agent.request('turn/start', { threadId, input: [{ type: 'text', text: options.prompt }], cwd: options.cwd, ...(options.effort ? { effort: options.effort } : {}) })
         .then(result => { turnId = result?.turn?.id || ''; }, error => finish(error instanceof Error ? error : new Error(String(error))));
     });
+  }
+  // Existing tasks opt in through their menu. New tasks call this once after
+  // enqueueing; duplicate requests share one ephemeral helper turn.
+  requestTaskTitle(taskId: string) {
+    void this.generateTaskTitle(taskId).catch(() => undefined);
+    return this.store.task(taskId);
+  }
+  generateTaskTitle(taskId: string): Promise<Task | null> {
+    if (this.closing) throw new Error('The server is shutting down.');
+    const task = this.store.task(taskId);
+    if (task.status === 'deleting') throw new Error('This task is being deleted.');
+    const pending = this.titles.get(taskId);
+    if (pending) return pending;
+    const { id, model } = this.helper({ agent: this.agentOf(task), model: task.model || undefined }, 'generate a task title', true);
+    const items = this.store.items(taskId), first = items.find(item => item.type === 'user');
+    const outcome = items.findLast(item => item.type === 'assistant' && item.text);
+    const prompt = JSON.stringify({ request: first?.text.slice(0, 3000) || '', taskContext: task.instructions.slice(0, 12000), existingOutcome: outcome?.text.slice(0, 4000) || '' });
+    const revision = task.titleRevision || 0;
+    this.store.updateTask(taskId, { titleGeneration: 'pending' });
+    const written = this.oneOff(id, { cwd: this.store.project(task.projectId).path, sandbox: 'read-only', instructions: taskCaptionInstructions, prompt, model, effort: model?.efforts[0], timeout: 45000, what: 'generate a task title' }).then(reply => {
+      if (this.closing) return null;
+      const current = this.store.tasks().find(item => item.id === taskId);
+      if (!current || current.status === 'deleting' || (current.titleRevision || 0) !== revision) return current || null;
+      return this.store.updateTask(taskId, { title: taskCaptionFrom(reply), titleSource: 'generated', titleRevision: revision + 1, titleGeneration: null });
+    }).catch(error => {
+      if (!this.closing) {
+        const current = this.store.tasks().find(item => item.id === taskId);
+        if (current && current.status !== 'deleting' && (current.titleRevision || 0) === revision) this.store.updateTask(taskId, { titleGeneration: 'failed' });
+      }
+      throw error;
+    }).finally(() => { this.titles.delete(taskId); });
+    this.titles.set(taskId, written);
+    return written;
   }
   // Writes a commit message for the chosen manuscript files, like Cursor's
   // generate button: one read-only turn on the agent's small model, with the
@@ -697,8 +748,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     try { return await work(); } finally { this.committing.delete(projectId); }
   }
   renameTask(taskId: string, title: string) {
-    if (this.store.task(taskId).status === 'deleting') throw new Error('This task is being deleted.');
-    return this.store.updateTask(taskId, { title });
+    const task = this.store.task(taskId);
+    if (task.status === 'deleting') throw new Error('This task is being deleted.');
+    return this.store.updateTask(taskId, { title, titleSource: 'manual', titleRevision: (task.titleRevision || 0) + 1, titleGeneration: null });
   }
   archiveTask(taskId: string, archived: boolean) {
     if (typeof archived !== 'boolean') throw new Error('Choose whether to archive or restore the task.');
@@ -743,7 +795,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       throw error;
     } finally { this.deletions.delete(taskId); this.schedule(); }
   }
-  close() { this.closing = true; for (const timer of this.usageTimers.values()) clearTimeout(timer); this.flush(); for (const id of AGENTS) this.agents[id].close(); }
+  close() { this.closing = true; for (const stop of this.helperStops) stop(); for (const timer of this.usageTimers.values()) clearTimeout(timer); this.flush(); for (const id of AGENTS) this.agents[id].close(); }
 }
 
 // The review engine records each task's accepted text as a commit beside the

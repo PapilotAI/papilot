@@ -64,6 +64,7 @@ export class Store extends EventEmitter {
   transaction<T>(fn: () => T): T { this.db.exec('BEGIN IMMEDIATE'); try { const result = fn(); this.db.exec('COMMIT'); return result; } catch (e) { this.db.exec('ROLLBACK'); throw e; } }
   recover() {
     this.transaction(() => {
+      for (const t of this.tasks().filter(t => t.titleGeneration === 'pending')) this.updateTask(t.id, { titleGeneration: 'failed' });
       for (const t of this.tasks().filter(t => t.status === 'deleting')) this.updateTask(t.id, { error: 'The server restarted during deletion. Retry deletion to confirm cleanup.' });
       for (const t of this.tasks().filter(t => t.pendingReview)) this.updateTask(t.id, { status: 'uncertain', error: 'The server restarted before a review action was confirmed. Select Check status before continuing.' });
       for (const r of this.runs().filter(r => r.status === 'running')) this.saveRun({ ...r, status: 'interrupted', finishedAt: Date.now() });

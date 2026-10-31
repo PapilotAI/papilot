@@ -7,6 +7,7 @@ export interface ReviewSummary { state: string; round: number | null; counts: Re
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface Task {
   id: string; projectId: string; name: string; title: string; instructions: string;
+  titleSource?: 'prompt' | 'generated' | 'manual'; titleRevision?: number; titleGeneration?: 'pending' | 'failed' | null;
   worktree: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
   archivedAt?: number | null;

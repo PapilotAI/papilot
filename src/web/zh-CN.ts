@@ -1,6 +1,7 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'Generate task title': '生成任务标题', 'Generating task title…': '正在生成任务标题…', 'Retry title generation': '重新生成任务标题',
   // Reasoning effort
   'None': '无', 'Minimal': '最低', 'Low': '低', 'Medium': '中', 'High': '高', 'Extra high': '超高', 'Max': '最高',
   'Reasoning effort': '推理强度', 'Model default': '模型默认',
