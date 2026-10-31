@@ -1290,6 +1290,57 @@ test('Codex threads get the view_pdf tool, which Papilot answers with typeset pa
   } finally { f.close(); }
 });
 
+test('PDF tool replies are discarded after disconnect, reconnect, turn completion or shutdown', async t => {
+  for (const scenario of ['disconnect', 'reconnect', 'completed', 'closed']) await t.test(scenario, async () => {
+    const gate = deferred<any>();
+    const f = fixture(async (_method, route) => route.endsWith('/view') ? gate.promise : summary);
+    try {
+      f.codex.ready = true;
+      await f.workspace.enqueue(f.task.id, 'Inspect the PDF.', 'request', false);
+      await tick(); await tick();
+      const run = (f.workspace as any).active.get(f.task.id);
+      const turnId = f.store.task(f.task.id).turnId;
+      (f.workspace as any).serverRequest({ id: 91, method: 'item/tool/call', params: { threadId: 'thread', turnId, tool: 'view_pdf', arguments: { pages: ['1'] } } });
+      await tick();
+      assert.ok(f.calls.some(call => call.route.endsWith('/view')));
+      let replies = 0;
+      f.codex.respond = () => { replies++; throw new Error('Codex disconnected'); };
+      if (scenario === 'closed') f.workspace.close();
+      else if (scenario === 'completed') (f.workspace as any).active.delete(f.task.id);
+      else {
+        f.codex.ready = false;
+        f.codex.emit('disconnected', new Error('Agent exited'));
+        assert.equal(f.store.task(f.task.id).status, 'interrupted');
+        if (scenario === 'reconnect') {
+          // Even recovery of the same run/turn cannot revive an old RPC id.
+          f.codex.ready = true;
+          (f.workspace as any).active.set(f.task.id, run);
+          f.store.updateTask(f.task.id, { status: 'running', turnId });
+        }
+      }
+      gate.resolve({ pages: [], missing: [], targets: ['full'] });
+      await tick(); await tick();
+      assert.equal(replies, 0);
+    } finally { gate.resolve({ pages: [], missing: [], targets: ['full'] }); f.close(); }
+  });
+});
+
+test('a failed PDF tool response is caught without trying to reply a second time', async t => {
+  const f = fixture(async () => ({ pages: [], missing: [], targets: ['full'] }));
+  t.mock.method(console, 'error', () => {});
+  try {
+    f.codex.ready = true;
+    await f.workspace.enqueue(f.task.id, 'Inspect the PDF.', 'request', false);
+    await tick(); await tick();
+    let attempts = 0;
+    f.codex.respond = () => { attempts++; throw new Error('Broken pipe'); };
+    (f.workspace as any).serverRequest({ id: 92, method: 'item/tool/call', params: { threadId: 'thread', turnId: f.store.task(f.task.id).turnId, tool: 'view_pdf', arguments: { pages: ['1'] } } });
+    await tick(); await tick();
+    assert.equal(attempts, 1);
+    assert.equal(f.store.task(f.task.id).status, 'running');
+  } finally { f.close(); }
+});
+
 test('a Codex without the experimental tool API starts threads without view_pdf', async () => {
   const f = fixture();
   try {

@@ -95,6 +95,8 @@ export class Workspace extends EventEmitter {
   agents: Record<AgentId, AgentRuntime>;
   requests = new Map<string, PendingRequest & { rpcId: string | number; agent: AgentId }>();
   private active = new Map<string, Run>();
+  // Async tools must never answer a request from an earlier connection.
+  private connectionEpochs = new Map<AgentId, number>();
   private loaded = new Set<string>();
   private preparing = new Set<string>();
   private preparingNotes = new Set<string>();
@@ -143,6 +145,7 @@ export class Workspace extends EventEmitter {
   }
   private agentOf(task: Task): AgentId { return task.agent && AGENTS.includes(task.agent) ? task.agent : 'codex'; }
   private disconnected(id: AgentId, e: unknown) {
+    this.connectionEpochs.set(id, (this.connectionEpochs.get(id) || 0) + 1);
     this.runtimes[id].connected = false; this.runtimes[id].error = errorText(e);
     for (const [key, request] of this.requests) if (request.agent === id) this.requests.delete(key);
     for (const [taskId, run] of this.active) {
@@ -558,7 +561,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       return;
     }
     // Papilot answers its own tools; the author is not asked.
-    if (message.method === 'item/tool/call') { void this.toolCall(task, message, runtime); return; }
+    if (message.method === 'item/tool/call') {
+      void this.toolCall(task, message, runtime).catch(error => console.error(`${AGENT_NAMES[agent]} tool:`, errorText(error)));
+      return;
+    }
     const id = randomUUID();
     this.requests.set(id, { id, taskId: task.id, rpcId: message.id, agent, method: message.method, params: message.params, createdAt: Date.now() });
     this.store.updateTask(task.id, { status: 'waiting_input' });
@@ -569,11 +575,22 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   // Codex's code mode as base64 text.
   private async toolCall(task: Task, message: any, runtime: AgentRuntime) {
     const { tool, arguments: args } = message.params || {};
-    const reply = (success: boolean, text: string) => runtime.respond(message.id, { success, contentItems: [{ type: 'inputText', text }] });
+    const agent = this.agentOf(task), run = this.active.get(task.id), epoch = this.connectionEpochs.get(agent);
+    const current = () => !this.closing && runtime.ready && this.agents[agent] === runtime
+      && this.connectionEpochs.get(agent) === epoch && run && this.active.get(task.id)?.id === run.id
+      && this.store.task(task.id).turnId === task.turnId;
+    const reply = (success: boolean, text: string) => {
+      if (!current()) return;
+      // A failed transport cannot receive an error reply either. Do not let
+      // it escape this detached async call or retry it against a new child.
+      try { runtime.respond(message.id, { success, contentItems: [{ type: 'inputText', text }] }); }
+      catch (error) { console.error(`${AGENT_NAMES[agent]} tool reply:`, errorText(error)); }
+    };
     if (tool !== VIEW_PDF) { reply(false, `Papilot has no tool named ${tool}.`); return; }
     const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, 4) : [];
     try {
       const client = await this.connectReview(this.store.project(task.projectId).path);
+      if (!current()) return;
       const shown = await client.post<{ pages: { index: number; label: string | null; shows: string[]; file: string }[]; missing: string[]; targets: string[]; error?: string; details?: string[] }>(
         `${taskRoute(task.name)}/view`, { locations: strings(args?.locations), pages: strings(args?.pages), ...(args?.accepted === true ? { accepted: true } : {}) }, 30 * 60000);
       if (shown.error) { reply(false, [shown.error, ...(shown.details || [])].join('\n')); return; }
