@@ -200,6 +200,23 @@ export const PdfView = forwardRef<PdfHandle, {
     const find = new PDFFindController({ eventBus: bus, linkService: links });
     const viewer = new PDFViewer({ container: box, viewer: inner.current!, eventBus: bus, linkService: links, findController: find, removePageBorders: true, annotationMode: pdfjs.AnnotationMode.ENABLE });
     links.setViewer(viewer);
+    // pdf.js moves focus into the target page's text layer the next time that
+    // page renders. For a page already on screen that happens later, on any
+    // zoom or resize, and takes focus from wherever the author is typing.
+    // Contents entries and links in the PDF scroll the same way, without it.
+    links.goToDestination = async (dest: string | unknown[]) => {
+      const document = loaded.current;
+      if (!document) return;
+      const explicit = typeof dest === 'string' ? await document.getDestination(dest) : await dest;
+      if (!Array.isArray(explicit)) return;
+      const [target] = explicit;
+      let pageNumber: number | null = null;
+      if (target && typeof target === 'object') {
+        const ref = target as { num: number; gen: number };
+        pageNumber = document.cachedPageNumber(ref) ?? await document.getPageIndex(ref).then(index => index + 1, () => null);
+      } else if (Number.isInteger(target)) pageNumber = (target as number) + 1;
+      if (pageNumber && pageNumber >= 1 && pageNumber <= viewer.pagesCount) viewer.scrollPageIntoView({ pageNumber, destArray: explicit });
+    };
     tools.current = { bus, links, find, viewer };
     const attach = ({ pageNumber, source }: { pageNumber: number; source?: { div?: HTMLElement } }) => {
       const div = source?.div ?? viewer.getPageView(pageNumber - 1)?.div;
