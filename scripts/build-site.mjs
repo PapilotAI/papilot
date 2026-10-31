@@ -27,7 +27,7 @@ const copy = (from, names, to = '') => {
 
 const gif = path.join(root, 'docs/assets/demo.gif');
 const video = path.join(root, 'site/assets/demo.mp4'), poster = path.join(root, 'site/assets/demo-poster.jpg');
-const [start, end] = ['2.4', '23.7'];
+const [start, end] = ['3.0', '31.2'];
 const stamp = `papilot-demo ${createHash('sha256').update(fs.readFileSync(gif)).digest('hex')} ${start}-${end}`;
 
 if (args.includes('--video')) {

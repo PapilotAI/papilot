@@ -26,7 +26,7 @@
 
 <br>
 
-<img src="docs/assets/demo.gif" alt="Papilot：描述修改、审阅排版后的差异、阅读 PDF、在页面上批注并提交" width="100%">
+<img src="docs/assets/demo.gif" alt="Papilot：在 PDF 上批注一段文字，交给智能体，接受排版后的改动并提交" width="100%">
 
 </div>
 
@@ -34,36 +34,55 @@
 
 你像导师批改学生的稿子一样，直接在 PDF 上阅读和批注；AI 智能体去改 LaTeX，每一处改动都以排版后修改前后的对比回到你面前。你点头之前，论文一个字都不会变。
 
+> [!TIP]
+> **0.7 新功能**：全新设计的工作台、按颜色分组的批注、任务中附带文件和图片、技能库，以及接受的改动保存到哪里由你选择。详见[更新日志](CHANGELOG.md)。
+
 ## ✨ 功能
 
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-note-appinn.jpeg" alt="在 PDF 选中的段落上写批注">
+<img src="docs/assets/readme-note.zh-CN.jpg" alt="两段文字在黄色批注组里，一个公式上有区域批注">
 <h3>📝 在 PDF 上批注</h3>
-选中一句话或框出一个公式，写下要怎么改。SyncTeX 会把对应的 LaTeX 行准确交给智能体。
+选中一句话或框出一个公式，写下要怎么改。SyncTeX 会把对应的 LaTeX 行准确交给智能体。相关的批注可以用颜色归成一组，整组只写一条要求。
 </td>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-review-appinn.jpeg" alt="改动的修改前后对比，带接受和拒绝按钮">
+<img src="docs/assets/readme-review.zh-CN.jpg" alt="排版页面上改动的修改前后对比，带接受、拒绝和评论按钮">
 <h3>✅ 逐条点头</h3>
-每处改动都以排版后的差异呈现。接受、拒绝或评论，任何决定都能撤销。
+每处改动都以排版后的差异呈现，连同它在别处引起的变化，比如重新编号的公式和目录。接受、拒绝或评论，任何决定都能撤销。
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
+<img src="docs/assets/readme-deliver.zh-CN.jpg" alt="审阅结束后，带智能体写好的提交信息，以及「应用到工作目录」和「提交」按钮">
+<h3>📦 改动去哪由你定</h3>
+审阅结束前，接受的改动只保存在任务里。之后可以应用到工作目录，也可以提交到独立的 <code>papilot/…</code> 分支，提交信息由智能体来写。
+</td>
+<td width="50%" valign="top">
+<img src="docs/assets/readme-git.zh-CN.jpg" alt="Git 面板：已暂存的文件、自动生成的提交信息、任务工作树和提交关系图">
+<h3>🌿 不离开页面用 Git</h3>
+暂存文件，让智能体写提交信息，再 pull、push。每个任务的工作树都显示在提交关系图里；合并合作者的改动时，冲突可以交给智能体解决。
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/assets/readme-contents.zh-CN.jpg" alt="打开目录面板的 PDF 阅读器">
 <h3>📖 像本地 PDF 一样阅读</h3>
 用目录随意跳转，全文搜索，缩放清晰。选中的文字与印出的词完全对齐。
 </td>
 <td width="50%" valign="top">
-<h3>🌿 满意了再提交</h3>
-新任务中，接受改动只会将其保存在任务内。审阅结束后，可以选择「应用到工作目录」，保留为未提交改动；也可以选择「提交到 task 分支」，编辑提交信息后保存到独立的 `papilot/…` 分支，当前分支和工作目录保持不变。同一任务的后续轮次沿用所选去向，已保存的审阅决定仍可在历史中查看。
-
-查看差异，只提交你勾选的文件，提交信息可以让 agent 来写。可以 pull、push，也可以合并合作者的改动，冲突交给 agent 解决。
+<h3>🧰 还有</h3>
+<ul>
+<li>✨ <b>技能（skill）</b>，如润色、校对、检查数学，输入 <code>/</code> 即可选用，也能在设置里写你自己的</li>
+<li>📎 任务和消息都能附带<b>文件和图片</b></li>
+<li>🤖 <b>Codex、Claude 或 Antigravity</b>，各用你自己的登录</li>
+<li>🌳 <b>每个任务都有独立的 Git 工作树</b>，最多两个同时运行</li>
+<li>🌗 <b>浅色与深色</b>，界面支持中文和英文</li>
+<li>📱 <b>运行在你的电脑上</b>，也能用手机打开</li>
+</ul>
 </td>
 </tr>
 </table>
-
-此外：✨ **技能（skill）**，如润色、校对、检查数学，输入 `/` 即可选用，也能添加你自己的 · 🤖 **Codex、Claude 或 Antigravity**，各用你自己的登录 · 🌳 **每个任务都有独立的 Git 工作树**，最多两个同时运行 · 🌗 **浅色与深色** · 📱 **运行在你的电脑上**，也能用手机打开。
 
 ## 🚀 快速开始
 
@@ -75,7 +94,7 @@ npm install -g papilot
 papilot demo
 ```
 
-打开 **http://127.0.0.1:7274**，在侧栏选择 **PDF**。demo 会添加一篇示例论文供你修改：一篇讲 Papilot 本身的 26 页 LaTeX 论文，满是公式。准备好之后，运行 `papilot`，选择 **添加论文**，选择 LaTeX 文件夹或拖入 ZIP。Papilot 会识别主文件、准备 Git 历史并尝试编译，遇到问题可在导入窗口中重试或请求助手修复。
+打开 **http://127.0.0.1:7274**，在侧栏选择 **稿件**。demo 会添加一篇示例论文供你修改：一篇讲 Papilot 本身的 26 页 LaTeX 论文，满是公式。准备好之后，运行 `papilot`，在论文菜单中选择 **添加论文…**，选择 LaTeX 文件夹或拖入 ZIP。Papilot 会识别主文件、准备 Git 历史并尝试编译，遇到问题可在导入窗口中重试或请求助手修复。
 
 ## 🤖 智能体
 
@@ -87,7 +106,7 @@ papilot demo
 
 Papilot 从不读取、保存或转发你的凭据。没有安装或没有登录的智能体会显示为不可用。
 
-启动遇到问题？运行 `papilot doctor` 检查环境并查看修复建议，或用 `papilot doctor --repo /path/to/paper` 一并检查论文。加上 `--json` 可输出机器可读的报告。诊断不会安装软件、启动服务或修改论文。检查范围见[诊断指南](docs/guide.md#diagnostics)。
+启动遇到问题？打开 **设置 → 运行状态与诊断**，或运行 `papilot doctor` 检查环境并查看修复建议，用 `papilot doctor --repo /path/to/paper` 一并检查论文。加上 `--json` 可输出机器可读的报告。诊断不会安装软件、启动服务或修改论文。检查范围见[诊断指南](docs/guide.md#diagnostics)。
 
 <details>
 <summary><b>⚙️ 选项与远程访问</b></summary>
@@ -100,6 +119,8 @@ papilot --data ~/papilot-data  # 把状态放在别处（默认 ~/.papilot）
 papilot service install        # macOS：登录后自动启动，退出后自动重启
 npm uninstall -g papilot       # 卸载；状态仍保留在 ~/.papilot，可自行删除
 ```
+
+有新版本时，**设置** 旁会出现 **有新版本**，点击即可在浏览器中安装。Papilot 会等任务和 PDF 编译结束后重启，并重新连接页面。更新会保留你的数据，也会保留上一版安装以便回滚。详见[更新](docs/guide.md#updates)。
 
 Papilot 只监听 `127.0.0.1`。若要从其他设备访问，用 Tailscale Serve 把它发布到你的 tailnet，并设置 `PAPILOT_PUBLIC_ORIGIN` 和 `PAPILOT_TAILSCALE_LOGIN`；Papilot 会校验每个请求的主机、浏览器来源和 Tailscale 身份。具体步骤见[指南](docs/guide.md#remote-access-with-tailscale)。
 

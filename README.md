@@ -26,7 +26,7 @@
 
 <br>
 
-<img src="docs/assets/demo.gif" alt="Papilot: describe a revision, review the typeset diff, read the PDF, annotate it and commit" width="100%">
+<img src="docs/assets/demo.gif" alt="Papilot: mark up a passage of the PDF, hand it to an agent, accept the typeset change and commit it" width="100%">
 
 </div>
 
@@ -34,36 +34,55 @@
 
 You read and mark up the PDF the way a supervisor marks up a draft. An AI agent makes the edits in LaTeX, and every change comes back to you as a before-and-after of the typeset page. Nothing touches your paper until you accept it.
 
+> [!TIP]
+> **New in 0.7:** a redesigned workspace, color-grouped notes, files and images in tasks, a skill library, and a choice of where accepted changes go. See the [changelog](CHANGELOG.md).
+
 ## ✨ Features
 
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-note-appinn.jpeg" alt="A note on a selected passage of the PDF">
+<img src="docs/assets/readme-note.jpg" alt="Two passages in a yellow note group and a region note on an equation">
 <h3>📝 Mark up the PDF</h3>
-Select a sentence or circle an equation and say what should change. SyncTeX hands the agent the exact LaTeX lines.
+Select a sentence or box an equation and say what should change. SyncTeX hands the agent the exact LaTeX lines. Color related notes into a group and give the whole group one instruction.
 </td>
 <td width="50%" valign="top">
-<img src="docs/assets/feature-review-appinn.jpeg" alt="A change shown before and after, with Accept and Reject">
+<img src="docs/assets/readme-review.jpg" alt="A change shown before and after on the typeset page, with Accept, Reject and Comment">
 <h3>✅ Approve change by change</h3>
-Each edit comes back as a typeset diff. Accept, reject or comment on it, and undo decisions before saving the result.
-
-For new tasks, accepting an edit keeps it inside the task until you finish reviewing. Then choose <strong>Apply to working directory</strong> to keep the accepted changes uncommitted, or <strong>Commit to task branch</strong> to save them on a separate <code>papilot/…</code> branch, leaving your current branch and working directory unchanged. You can edit the commit message before saving. Further rounds use the same destination; delivered decisions remain available in History.
+Each edit comes back as a typeset diff, together with the places it moves elsewhere, such as renumbered equations and the table of contents. Accept, reject or comment, and undo any decision.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
+<img src="docs/assets/readme-deliver.jpg" alt="The finished review with an agent-written commit message, Apply to working directory and Commit">
+<h3>📦 Choose where it goes</h3>
+Accepted changes stay inside the task until you finish reviewing. Then apply them to your working directory, or commit them to a separate <code>papilot/…</code> branch with a message the agent writes.
+</td>
+<td width="50%" valign="top">
+<img src="docs/assets/readme-git.jpg" alt="The Git panel with a staged file, a generated commit message, task worktrees and the commit graph">
+<h3>🌿 Git without leaving the page</h3>
+Stage files and commit them with a message an agent writes, then pull and push. Every task's worktree shows in the commit graph, and an agent can resolve conflicts when you merge a co-author's changes.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/assets/readme-contents.jpg" alt="The PDF viewer with its contents panel open">
 <h3>📖 Read it like a real PDF</h3>
 Jump to any section from the contents, search every page and zoom in sharply. Selecting text picks exactly the printed words.
 </td>
 <td width="50%" valign="top">
-<h3>🌿 Commit when you're happy</h3>
-Diff files and commit the ones you choose, with a commit message an agent writes. Pull and push, or merge a coauthor's changes and let an agent resolve the conflicts.
+<h3>🧰 And more</h3>
+<ul>
+<li>✨ <b>Skills</b> such as Polish, Proofread and Check math, one <code>/</code> away. Write your own in Settings.</li>
+<li>📎 <b>Files and images</b> attached to any task or message</li>
+<li>🤖 <b>Codex, Claude or Antigravity</b>, each with your own login</li>
+<li>🌳 <b>A Git worktree for every task</b>, up to two running at once</li>
+<li>🌗 <b>Light and dark</b>, in English or Chinese</li>
+<li>📱 <b>Runs on your computer</b>, and you can open it from your phone</li>
+</ul>
 </td>
 </tr>
 </table>
-
-Also: ✨ **skills** such as Polish, Proofread and Check math, one `/` away, plus your own · 🤖 **Codex, Claude or Antigravity**, each with your own login · 🌳 **every task in its own Git worktree**, up to two at once · 🌗 **light and dark** · 📱 **runs on your computer**, and you can open it from your phone.
 
 ## 🚀 Quick start
 
@@ -75,7 +94,7 @@ npm install -g papilot
 papilot demo
 ```
 
-Open **http://127.0.0.1:7274** and choose **PDF** in the sidebar. The demo adds an example paper to revise: a 26-page LaTeX paper about Papilot itself, full of equations. When you are ready, run `papilot` and choose **Add paper** to select a LaTeX folder or drop a ZIP. Papilot identifies the main file, prepares Git history and tries compilation, with help for any errors during import.
+Open **http://127.0.0.1:7274** and choose **Manuscript** in the sidebar. The demo adds an example paper to revise: a 26-page LaTeX paper about Papilot itself, full of equations. When you are ready, run `papilot` and choose **Add paper…** from the paper menu to select a LaTeX folder or drop a ZIP. Papilot identifies the main file, prepares Git history and tries compilation, with help for any errors during import.
 
 ## 🤖 Agents
 
@@ -87,7 +106,7 @@ Open **http://127.0.0.1:7274** and choose **PDF** in the sidebar. The demo adds 
 
 Papilot never reads, stores or forwards your credentials. An agent that isn't installed or signed in shows as unavailable.
 
-Having trouble getting started? Run `papilot doctor` for environment checks and fixes, or `papilot doctor --repo /path/to/paper` to check a paper too. Add `--json` for a machine-readable report. Diagnostics do not install software, start the server or change your paper. See the [diagnostics guide](docs/guide.md#diagnostics) for what is checked.
+Having trouble getting started? Open **Settings → Runtime & diagnostics**, or run `papilot doctor` for environment checks and fixes and `papilot doctor --repo /path/to/paper` to check a paper too. Add `--json` for a machine-readable report. Diagnostics do not install software, start the server or change your paper. See the [diagnostics guide](docs/guide.md#diagnostics) for what is checked.
 
 <details>
 <summary><b>⚙️ Options and remote access</b></summary>
