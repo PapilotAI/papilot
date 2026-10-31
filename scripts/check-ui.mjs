@@ -402,12 +402,16 @@ try {
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   console.log('PASS: English UI, stale selection recovery, paper menu, modal focus containment, Escape, focus restoration, and the new-task composer');
   const views = page.locator('.view-selector');
-  await views.getByRole('button', { name: 'Review', exact: true }).click();
+  async function selectWorkspaceView(name) {
+    await views.getByRole('button', { name, exact: true }).click();
+    await page.waitForFunction(name => !document.documentElement.classList.contains('switching-workspace') && document.querySelector('.workspace-view-selector [aria-pressed=true]')?.getAttribute('aria-label') === name, name);
+  }
+  await selectWorkspaceView('Review');
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), true);
   assert.equal(await page.getByRole('region', { name: 'Codex conversation', exact: true }).isVisible(), false);
-  await views.getByRole('button', { name: 'Review', exact: true }).click();
+  await selectWorkspaceView('Review');
   assert.equal(await views.getByRole('button', { name: 'Review', exact: true }).getAttribute('aria-pressed'), 'true');
-  await views.getByRole('button', { name: 'Chat', exact: true }).click();
+  await selectWorkspaceView('Chat');
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), false);
   await page.getByText('3 changes to review', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Open review', exact: true }).click();
@@ -433,7 +437,7 @@ try {
   assert.equal(await taskMenu.evaluate(el => el === document.activeElement), true);
   console.log('PASS: Views select explicitly, PDF tools stay with the review, and menus support keyboard navigation');
   for (const name of ['Review', 'Chat', 'Split']) {
-    await views.getByRole('button', { name, exact: true }).click();
+    await selectWorkspaceView(name);
     await page.waitForFunction(() => document.querySelector('.task-grid .view-selector [aria-pressed="true"]') === document.activeElement);
     await page.getByRole('button', { name: 'Hide task list', exact: true }).click();
     const showTasks = page.getByRole('button', { name: 'Show task list', exact: true });
@@ -1336,7 +1340,7 @@ try {
   assert.equal(await views.getByRole('button', { name: 'Chat', exact: true }).getAttribute('aria-pressed'), 'true');
   await page.getByText(task.error, { exact: true }).waitFor();
   task.error = null; task.review.job = null;
-  await views.getByRole('button', { name: 'Split', exact: true }).click();
+  await selectWorkspaceView('Split');
   console.log('PASS: Long conversations follow new messages, preserve history reading position, and offer a jump back');
 
   task.status = 'running';
@@ -1345,9 +1349,9 @@ try {
   await pauseButton.waitFor();
   assert.equal(await page.locator('.panel-heading').getByRole('button', { name: 'Pause task' }).count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Send instructions', exact: true }).isEnabled(), true);
-  await views.getByRole('button', { name: 'Review', exact: true }).click();
+  await selectWorkspaceView('Review');
   await page.locator('.review-tools').getByRole('button', { name: 'Pause task' }).waitFor();
-  await views.getByRole('button', { name: 'Split', exact: true }).click();
+  await selectWorkspaceView('Split');
   await pauseButton.click();
   assert.equal(interruptions.at(-1), task.id);
   task.status = 'running';
