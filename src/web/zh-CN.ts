@@ -11,7 +11,6 @@ export const zhCN: Record<string, string> = {
   'Send annotations': '发送标注', 'Send annotations to the agent': '发送标注给代理',
   'What should change in each color group?': '各颜色组需要怎样修改？',
   // Reasoning effort
-  'None': '无', 'Minimal': '最低', 'Low': '低', 'Medium': '中', 'High': '高', 'Extra high': '超高', 'Max': '最高',
   'Reasoning effort': '推理强度', 'Model default': '模型默认',
 
   // Requests
@@ -107,7 +106,7 @@ export const zhCN: Record<string, string> = {
   'Manuscript panels': '稿件面板', 'Contents': '目录', 'PDF contents': 'PDF 目录',
   'This PDF has no bookmarks.': '此 PDF 没有书签。', 'Contents will appear when the PDF is ready.': 'PDF 就绪后会显示目录。',
   'You are offline. Your draft is kept in this browser.': '你已离线。草稿保存在此浏览器中。',
-  'Agent settings': '智能体设置', 'Add skill': '添加技能', 'Fast': '快速', 'Fast mode': '快速模式', 'Ultra': '超强',
+  'Agent settings': '智能体设置', 'Add skill': '添加技能', 'Fast': '快速', 'Fast mode': '快速模式',
   'No notes yet': '暂无批注', 'Region note': '区域批注', 'Send {n} note': '发送 {n} 条批注', 'Send {n} notes': '发送 {n} 条批注',
   'or select text to annotate': '或选中文字批注',
   'Edit note': '编辑批注', 'Edit note {n}': '编辑批注 {n}', 'Edit note {n}: {comment}': '编辑批注 {n}：{comment}',
