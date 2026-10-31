@@ -3,7 +3,7 @@ import { browserStorage } from './storage.ts';
 import { t } from './i18n.ts';
 
 // Keep a preferred width even when a smaller window temporarily clamps it.
-export function usePanelWidth(key: string, property: string, panel: string, label: string, enabled: boolean) {
+export function usePanelWidth(key: string, property: string, panel: string, label: string, enabled: boolean, onResize?: () => void) {
   const [width, setWidth] = useState(() => {
     const saved = Number(browserStorage.getItem(key));
     return Number.isFinite(saved) && saved > 0 ? saved : 0;
@@ -24,6 +24,7 @@ export function usePanelWidth(key: string, property: string, panel: string, labe
   }, [enabled, panel]);
   const clamp = (next: number) => Math.round(Math.max(300, Math.min(next, size.max)));
   const currentWidth = () => handle.current?.parentElement?.querySelector<HTMLElement>(panel)?.getBoundingClientRect().width ?? size.current;
+  const resize = (next: number) => { setWidth(next); onResize?.(); };
   return {
     style: width ? { [property]: `${width}px` } as CSSProperties : undefined,
     resizer: enabled && <div ref={handle} className="panel-resizer manuscript-resizer" role="separator" aria-orientation="vertical" aria-label={label} aria-valuenow={size.current} aria-valuemin={300} aria-valuemax={size.max} tabIndex={0}
@@ -34,14 +35,14 @@ export function usePanelWidth(key: string, property: string, panel: string, labe
         drag.current = { x: event.clientX, width: currentWidth() };
         event.currentTarget.setPointerCapture(event.pointerId); document.body.classList.add('resizing');
       }}
-      onPointerMove={event => { if (drag.current) setWidth(clamp(drag.current.width + drag.current.x - event.clientX)); }}
+      onPointerMove={event => { if (drag.current) resize(clamp(drag.current.width + drag.current.x - event.clientX)); }}
       onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); stop(); }}
-      onPointerCancel={stop} onLostPointerCapture={stop} onDoubleClick={() => setWidth(0)}
+      onPointerCancel={stop} onLostPointerCapture={stop} onDoubleClick={() => resize(0)}
       onKeyDown={event => {
-        if (event.key === 'Enter') { event.preventDefault(); setWidth(0); return; }
+        if (event.key === 'Enter') { event.preventDefault(); resize(0); return; }
         const current = currentWidth();
         const next = event.key === 'ArrowLeft' ? current + 24 : event.key === 'ArrowRight' ? current - 24 : event.key === 'Home' ? size.max : event.key === 'End' ? 300 : null;
-        if (next !== null) { event.preventDefault(); setWidth(clamp(next)); }
+        if (next !== null) { event.preventDefault(); resize(clamp(next)); }
       }}/>,
   };
 }

@@ -26,7 +26,7 @@ document.head.append(styles);
 
 export type Rect = [number, number, number, number];
 export interface OutlineItem { title: string; level: number; dest: unknown; page: number; top: number | null }
-export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note: Annotation) => void; focus: () => void }
+export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note: Annotation) => void; focus: () => void; fitWidth: () => void }
 // A touch selection also has its ends: the edge of its first and last word, with that line's top and bottom.
 interface Selection { page: number; rects: Rect[]; quote: string; handles?: { from: [number, number, number]; to: [number, number, number] } }
 
@@ -168,6 +168,7 @@ export const PdfView = forwardRef<PdfHandle, {
 
   useImperativeHandle(ref, () => ({
     focus() { container.current?.focus({ preventScroll: true }); },
+    fitWidth() { const viewer = tools.current?.viewer; if (viewer && viewer.currentScaleValue !== 'page-width') viewer.currentScaleValue = 'page-width'; },
     goTo(item) { latest.current.onSection(latest.current.outline.indexOf(item)); void tools.current?.links.goToDestination(item.dest as string | unknown[]); },
     goToNote(note) {
       const div = tools.current?.viewer.getPageView(note.page)?.div, box = container.current;
@@ -201,6 +202,19 @@ export const PdfView = forwardRef<PdfHandle, {
       setZoom({ value: presetValue || String(scale), scale });
       if (presetValue) browserStorage.setItem('papilot:pdf-zoom', presetValue); else browserStorage.setItem('papilot:pdf-zoom', String(Math.round(scale * 100) / 100));
     });
+    // Resizing a panel does not resize the window. Reapply fit presets to the
+    // viewer's actual bounds, while preserving an explicitly chosen percentage.
+    let resizeFrame = 0;
+    const resize = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        if (!viewer.pagesCount || !box.clientWidth || !box.clientHeight) return;
+        const scale = viewer.currentScaleValue;
+        if (scale === 'page-width' || scale === 'page-fit' || scale === 'page-height' || scale === 'auto') viewer.currentScaleValue = scale;
+        viewer.update();
+      });
+    });
+    resize.observe(box);
     // The current section is the last bookmark above a line 40% down the view
     // (PDF units grow upwards); at the end of the document it is the last one.
     bus.on('updateviewarea', ({ location }: { location?: { pageNumber: number; top: number; scale: number } }) => {
@@ -283,6 +297,7 @@ export const PdfView = forwardRef<PdfHandle, {
     });
     return () => {
       disposed = true; clearTimeout(timer); picking.current?.stop(); picking.current = null;
+      resize.disconnect(); cancelAnimationFrame(resizeFrame);
       document.removeEventListener('selectionchange', selectionChange); document.removeEventListener('pointerup', finishGroup);
       box.removeEventListener('wheel', wheel); box.removeEventListener('touchstart', touchStart); box.removeEventListener('touchmove', touchMove); box.removeEventListener('touchend', touchEnd);
       viewer.cleanup(); void loaded.current?.loadingTask.destroy(); loaded.current = null; tools.current = null; layerMap.current.clear();

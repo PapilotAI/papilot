@@ -389,6 +389,8 @@ try {
 
   const pdfLink = page.locator('.manuscript-link');
   await pdfLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
+  // A previously saved percentage must not prevent the divider from fitting the PDF.
+  await page.evaluate(() => localStorage.setItem('papilot:pdf-zoom', '0.95'));
   await pdfLink.click();
   await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
   assert.equal(await pdfLink.getAttribute('aria-current'), 'page');
@@ -399,13 +401,19 @@ try {
   const manuscriptDivider = page.getByRole('separator', { name: 'Resize manuscript panel' });
   const manuscriptSide = page.locator('.manuscript-side');
   const originalSideWidth = Math.round((await manuscriptSide.boundingBox()).width);
+  assert.equal(await page.getByRole('combobox', { name: 'Zoom', exact: true }).inputValue(), '0.95');
+  const originalPdfWidth = await page.locator('.pdf-container').evaluate(box => box.clientWidth);
   await manuscriptDivider.focus(); await page.keyboard.press('ArrowLeft');
   await page.waitForFunction(width => Math.round(document.querySelector('.manuscript-side').getBoundingClientRect().width) === width, originalSideWidth + 24);
+  await page.waitForFunction(width => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().width - (width - 24)) < 2, originalPdfWidth);
+  await page.getByRole('combobox', { name: 'Zoom', exact: true }).selectOption('1');
   const manuscriptHandle = await manuscriptDivider.boundingBox();
   await page.mouse.move(manuscriptHandle.x + 4, manuscriptHandle.y + 300); await page.mouse.down();
   await page.mouse.move(manuscriptHandle.x - 116, manuscriptHandle.y + 300, { steps: 5 }); await page.mouse.up();
   const widenedSide = Math.round((await manuscriptSide.boundingBox()).width);
   assert.equal(widenedSide, originalSideWidth + 144);
+  await page.waitForFunction(width => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().width - (width - 144)) < 2, originalPdfWidth);
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:pdf-zoom')), 'page-width');
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:manuscript-width')), String(widenedSide));
   await page.reload(); await manuscriptDivider.waitFor();
   assert.equal(Math.round((await manuscriptSide.boundingBox()).width), widenedSide, 'manuscript width survives a reload');
@@ -421,6 +429,7 @@ try {
   await manuscriptDivider.dblclick();
   assert.equal(Math.round((await manuscriptSide.boundingBox()).width), originalSideWidth);
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:manuscript-width')), null);
+  await page.waitForFunction(width => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().width - width) < 2, originalPdfWidth);
   await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().waitFor();
   console.log('PASS: Manuscript panel resizes with pointer and keyboard, persists, clamps on narrow screens and resets');
   // Notes belong to New task; Contents keeps the bookmarks beside the PDF.
@@ -465,6 +474,24 @@ try {
   await zoom.selectOption('page-width');
   await page.waitForFunction(() => document.querySelector('select[aria-label="Zoom"]').value === 'page-width');
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:pdf-zoom')), 'page-width');
+  // Window resizing preserves manual zoom; dragging the divider restores fit width.
+  await zoom.selectOption('1');
+  const fixedWidth = (await pdfPages.first().boundingBox()).width;
+  await page.setViewportSize({ width: 1440, height: 700 });
+  await page.clock.runFor(100);
+  assert.equal((await pdfPages.first().boundingBox()).width, fixedWidth);
+  assert.equal(await zoom.inputValue(), '1');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await manuscriptDivider.dblclick();
+  await zoom.selectOption('page-fit');
+  const fitHeight = (await pdfPages.first().boundingBox()).height;
+  await page.setViewportSize({ width: 1440, height: 700 });
+  await page.waitForFunction(height => document.querySelector('.pdfViewer .page').getBoundingClientRect().height < height - 100, fitHeight);
+  assert.equal(await zoom.inputValue(), 'page-fit');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForFunction(height => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().height - height) < 2, fitHeight);
+  await zoom.selectOption('page-width');
+  console.log('PASS: Dragging restores fit width from saved percentages; viewport resize preserves the chosen zoom mode');
   // Find runs across every page.
   await page.locator('.pdf-container').focus();
   await page.keyboard.press('ControlOrMeta+f');
