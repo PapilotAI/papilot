@@ -5,7 +5,8 @@ import { PassThrough } from 'node:stream';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { AntigravityAgent, ClaudeAgent, groupModels } from '../src/server/agents.ts';
+import { AntigravityAgent, ClaudeAgent, GlmAgent, findExecutable, glmEndpoint, groupModels } from '../src/server/agents.ts';
+import { CursorAgent, type CursorSdk } from '../src/server/cursor.ts';
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 const events = (agent: EventEmitter) => { const seen: { method: string; params: any }[] = []; agent.on('notification', message => seen.push(message)); return seen; };
@@ -199,4 +200,151 @@ test('a refused Claude subscription login explains that Papilot needs an API key
   const turn = await completed(seen);
   assert.equal(turn.status, 'failed');
   assert.match(turn.error.message, /subscription login cannot be used through the Claude Agent SDK; give Papilot an Anthropic API key/);
+});
+
+test('GLM runs Claude Code on Zhipu\'s endpoint with only the GLM key, and offers GLM models', async () => {
+  assert.equal(glmEndpoint({}), null);
+  assert.equal(glmEndpoint({ ZAI_API_KEY: 'z' })!.url, 'https://api.z.ai/api/anthropic');
+  assert.equal(new GlmAgent(async () => { throw new Error('unused'); }, {}).detect(), false);
+  const env = { PATH: '/usr/bin', ZHIPU_API_KEY: 'zhipu-key', ANTHROPIC_API_KEY: 'anthropic-secret', ANTHROPIC_BASE_URL: 'https://gateway.example', CLAUDE_CODE_USE_BEDROCK: '1' };
+  const fake = fakeClaude(async function* (options) {
+    yield { type: 'system', subtype: 'init', session_id: options.sessionId };
+    yield { type: 'assistant', parent_tool_use_id: null, session_id: 's', message: { id: 'm1', content: [{ type: 'text', text: 'Done.' }] } };
+    yield { type: 'result', subtype: 'success', is_error: false, result: 'Done', session_id: 's' };
+  }, { tokenSource: 'ANTHROPIC_AUTH_TOKEN', apiProvider: 'firstParty' });
+  const agent = new GlmAgent(fake.load, env);
+  assert.equal(agent.detect(), true);
+  await agent.start();
+  assert.deepEqual((await agent.request('account/read')).account, { email: undefined, type: 'Zhipu API key' });
+  const models = (await agent.request('model/list')).data;
+  assert.equal(models[0].model, 'glm-5.3'); assert.equal(models[0].isDefault, true);
+  assert.ok(models.every((model: any) => !model.supportedReasoningEfforts.length));
+  const seen = events(agent);
+  const { thread } = await agent.request('thread/start', { cwd: '/work', model: 'glm-5.3-flash' });
+  await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Fix it.' }] });
+  assert.equal((await completed(seen)).status, 'completed');
+  for (const { options } of fake.calls) {
+    assert.equal(options.env.ANTHROPIC_BASE_URL, 'https://open.bigmodel.cn/api/anthropic');
+    assert.equal(options.env.ANTHROPIC_AUTH_TOKEN, 'zhipu-key');
+    assert.equal(options.env.ANTHROPIC_API_KEY, undefined, 'an Anthropic key never goes to Zhipu');
+    assert.equal(options.env.CLAUDE_CODE_USE_BEDROCK, undefined);
+    assert.equal(options.env.PATH, '/usr/bin');
+  }
+  assert.equal(fake.calls.at(-1)!.options.model, 'glm-5.3-flash');
+});
+
+test('executables are found on PATH or by path', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-exec-'));
+  try {
+    const file = path.join(dir, 'tool'), plain = path.join(dir, 'plain');
+    fs.writeFileSync(file, '#!/bin/sh\n'); fs.chmodSync(file, 0o755); fs.writeFileSync(plain, 'text');
+    assert.equal(findExecutable('tool', { PATH: `/nonexistent${path.delimiter}${dir}` }), file);
+    assert.equal(findExecutable(file, { PATH: '' }), file);
+    assert.equal(findExecutable('plain', { PATH: dir }), null, 'a file without execute permission is not an agent');
+    assert.equal(findExecutable('tool', { PATH: '' }), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+function fakeCursor(script: (send: { message: any; options: any }) => any[], result: any = { status: 'finished' }) {
+  const created: any[] = [], resumed: any[] = [], sends: { message: any; options: any }[] = [], cancelled: string[] = [];
+  const handle = (agentId: string) => ({ agentId, close() {}, async send(message: any, options: any) {
+    const call = { message, options }; sends.push(call);
+    const events = script(call);
+    return {
+      async *stream() { for (const event of events) { if (event.delta) options.onDelta?.({ update: event.delta }); else yield event; await tick(); } },
+      async wait() { return result; },
+      async cancel() { cancelled.push(agentId); },
+    };
+  } });
+  const sdk: CursorSdk = {
+    Agent: { async create(options: any) { created.push(options); return handle(`agent-${created.length}`); }, async resume(id: string, options: any) { resumed.push({ id, options }); return handle(id); } },
+    Cursor: { async me() { return { apiKeyName: 'papilot', userEmail: 'me@example.com' }; }, models: { async list() { return [
+      { id: 'composer-2.5', displayName: 'Composer 2.5' },
+      { id: 'auto', displayName: 'Auto' },
+      { id: 'gpt-5.3-codex', displayName: 'Codex 5.3', parameters: [{ id: 'reasoning', values: [{ value: 'low' }, { value: 'high' }] }], variants: [{ params: [{ id: 'reasoning', value: 'high' }], isDefault: true }] },
+    ]; } } },
+  };
+  return { sdk, created, resumed, sends, cancelled };
+}
+
+test('Cursor runs a sandboxed local SDK agent, streams items and resumes its agent after a restart', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-cursor-'));
+  const file = path.join(dir, 'cursor-agents.json'), image = path.join(dir, 'figure.png');
+  fs.writeFileSync(image, Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'));
+  const fake = fakeCursor(() => [
+    { delta: { type: 'text-delta', text: 'Checking ' } }, { delta: { type: 'text-delta', text: 'now.' } },
+    { type: 'tool_call', call_id: 'c1', name: 'shell', status: 'running', args: { command: 'latexmk main.tex' } },
+    { type: 'tool_call', call_id: 'c1', name: 'shell', status: 'completed', args: { command: 'latexmk main.tex' }, result: { status: 'success', value: { stdout: 'Build passed', stderr: '', exitCode: 0 } } },
+    { type: 'tool_call', call_id: 'c2', name: 'edit', status: 'completed', args: { path: '/work/main.tex' }, result: { status: 'success', value: {} } },
+    { delta: { type: 'text-delta', text: 'Done.' } },
+  ]);
+  try {
+    assert.equal(new CursorAgent(async () => fake.sdk, file, () => false).detect(), false);
+    const agent = new CursorAgent(async () => fake.sdk, file, () => true);
+    await agent.start();
+    assert.deepEqual((await agent.request('account/read')).account, { email: 'me@example.com', type: 'Cursor API key' });
+    const models = (await agent.request('model/list')).data;
+    assert.deepEqual(models.map((m: any) => [m.model, m.isDefault]), [['composer-2.5', false], ['auto', true], ['gpt-5.3-codex', false]]);
+    assert.deepEqual(models[2].supportedReasoningEfforts, [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }]);
+    assert.equal(models[2].defaultReasoningEffort, 'high');
+    const seen = events(agent);
+    const { thread } = await agent.request('thread/start', { cwd: '/work', developerInstructions: 'Only edit the worktree.', model: 'gpt-5.3-codex' });
+    await agent.request('turn/start', { threadId: thread.id, effort: 'low', input: [{ type: 'text', text: 'Fix it.' }, { type: 'localImage', path: image }] });
+    assert.equal((await completed(seen)).status, 'completed');
+    assert.deepEqual(fake.created[0].local, { cwd: '/work', settingSources: ['project'], sandboxOptions: { enabled: true } });
+    assert.deepEqual(fake.created[0].model, { id: 'gpt-5.3-codex', params: [{ id: 'reasoning', value: 'low' }] });
+    assert.equal(fake.sends[0].message.text, 'Only edit the worktree.\n\n---\n\nFix it.');
+    assert.equal(fake.sends[0].message.images[0].mimeType, 'image/png');
+    const items = seen.filter(e => e.method === 'item/completed').map(e => e.params.item);
+    assert.deepEqual(items.map(item => item.type), ['agentMessage', 'commandExecution', 'fileChange', 'agentMessage']);
+    assert.equal(items[0].text, 'Checking now.'); assert.equal(items[1].aggregatedOutput, 'Build passed'); assert.deepEqual(items[2].changes, [{ path: '/work/main.tex' }]);
+    const deltas = seen.filter(e => e.method === 'item/agentMessage/delta');
+    assert.equal(deltas[0].params.itemId, items[0].id); assert.equal(deltas.at(-1)!.params.itemId, items[3].id);
+    // A restarted Papilot resumes the same Cursor agent and sends only the new message.
+    agent.close();
+    const restarted = new CursorAgent(async () => fake.sdk, file, () => true);
+    await restarted.start();
+    const again = events(restarted);
+    await restarted.request('thread/resume', { threadId: thread.id, cwd: '/work' });
+    await restarted.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Shorter.' }] });
+    assert.equal((await completed(again)).status, 'completed');
+    assert.equal(fake.resumed[0].id, 'agent-1'); assert.equal(fake.created.length, 1);
+    assert.equal(fake.sends[1].message, 'Shorter.');
+    await assert.rejects(restarted.request('account/rateLimits/read'), /does not report usage/);
+    restarted.close();
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('pausing a Cursor turn cancels its run, and a failed run reports its error', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-cursor-'));
+  try {
+    const cancelled: string[] = [];
+    let release = () => {};
+    const released = new Promise<void>(resolve => { release = resolve; });
+    const waiting: CursorSdk = {
+      Agent: { async create() { return { agentId: 'agent-1', close() {}, async send() { return {
+        async *stream() { yield { type: 'tool_call', call_id: 'c1', name: 'shell', status: 'running', args: { command: 'sleep 100' } }; await released; },
+        async wait() { return { status: 'cancelled' as const }; },
+        async cancel() { cancelled.push('agent-1'); release(); },
+      }; } }; }, async resume() { throw new Error('unused'); } },
+      Cursor: { async me() { return { apiKeyName: 'papilot' }; }, models: { async list() { return []; } } },
+    };
+    const agent = new CursorAgent(async () => waiting, path.join(dir, 'a.json'), () => true);
+    await agent.start();
+    const seen = events(agent);
+    const { thread } = await agent.request('thread/start', { cwd: '/work' });
+    const { turn } = await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Wait.' }] });
+    for (let i = 0; i < 50 && !seen.some(e => e.method === 'item/started'); i++) await tick();
+    await agent.request('turn/interrupt', { turnId: turn.id });
+    assert.equal((await completed(seen)).status, 'interrupted');
+    assert.deepEqual(cancelled, ['agent-1']);
+    const failing = fakeCursor(() => [], { status: 'error', error: { message: 'Usage limit reached' } });
+    const broken = new CursorAgent(async () => failing.sdk, path.join(dir, 'b.json'), () => true);
+    await broken.start();
+    const errors = events(broken);
+    const started = await broken.request('thread/start', { cwd: '/work' });
+    await broken.request('turn/start', { threadId: started.thread.id, input: [{ type: 'text', text: 'Go.' }] });
+    const failed = await completed(errors);
+    assert.equal(failed.status, 'failed'); assert.equal(failed.error.message, 'Usage limit reached');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

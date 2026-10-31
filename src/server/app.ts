@@ -17,7 +17,7 @@ import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
 import { type Accounts, deviceLabel } from './accounts.ts';
 import { type Listener, Limiter, SESSION_COOKIE, author, clientAddress, cookie, equals, guard, viewerInfo, visibleSnapshot } from './access.ts';
-import type { AgentId, NoteSummary } from '../shared.ts';
+import { isAgentId, type AgentId, type NoteSummary } from '../shared.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
 import { taskNoteResults } from './note-results.ts';
 import type { Updates } from './updates.ts';
@@ -163,7 +163,7 @@ export async function buildApp(options: AppOptions) {
   });
   app.post('/api/reconnect', any, async request => { await workspace.connect(); return visibleSnapshot(workspace.snapshot(), request.viewer!, accounts).runtime; });
   // Codex names reasoning efforts with short lowercase words (low, medium, xhigh).
-  const agent = (value: unknown): AgentId => value === 'claude' || value === 'antigravity' || value === 'kimi' ? value : 'codex';
+  const agent = (value: unknown): AgentId => isAgentId(value) ? value : 'codex';
   const effort = (value: unknown) => typeof value === 'string' && /^[a-z]{1,16}$/.test(value) ? value : undefined;
   const string = (value: unknown, name: string, max = 20000) => { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
   // Adding a paper names a folder on this host, so only the owner can.

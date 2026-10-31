@@ -94,6 +94,11 @@ html[lang=zh-CN] .hero h1{line-height:1.18}
 .agent.claude{--dot:#d97757}
 .agent.antigravity{--dot:#4285f4}
 .agent.kimi{--dot:#6366f1}
+.agent.cursor{--dot:#8b8b8b}
+.agent.glm{--dot:#3b5bdb}
+.agent.deepseek{--dot:#4d6bfe}
+.agent.qwen{--dot:#7c3aed}
+.agent.opencode{--dot:#f59e0b}
 .demo{margin-top:56px;border-radius:var(--r-xl);overflow:hidden;border:1px solid rgb(0 0 0/.06);box-shadow:var(--float);background:#f7f8fb}
 
 /* Statement */

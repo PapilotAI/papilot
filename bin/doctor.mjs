@@ -143,12 +143,12 @@ export async function doctor(args) {
   async function claudeCheck() {
     const sdk = installedModule('@anthropic-ai/claude-agent-sdk') || installedModule('@anthropic-ai/claude-agent-sdk', path.join(data, 'agents'));
     const configured = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY'].some(key => Boolean(process.env[key]));
-    check('agent.claude', Boolean(sdk && configured), 'warn', !configured ? 'Claude API credentials are not configured in this environment; SDK-managed credentials were not checked.' : sdk ? 'Claude SDK installed; API credentials configured (not validated).' : 'Claude API credentials configured; the Agent SDK is not installed yet.', !configured ? 'Start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured. A Claude subscription alone cannot be used by this adapter.' : 'Start papilot once to install the Claude Agent SDK.');
+    check('agent.claude', Boolean(sdk && configured), configured ? 'warn' : 'info', !configured ? 'Claude API credentials are not configured in this environment, so Papilot does not offer Claude.' : sdk ? 'Claude SDK installed; API credentials configured (not validated).' : 'Claude API credentials configured; the Agent SDK is not installed yet.', !configured ? 'Start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured. A Claude subscription alone cannot be used by this adapter.' : 'Start papilot once to install the Claude Agent SDK.');
     return Boolean(sdk && configured);
   }
   async function agyCheck() {
     const file = executable(process.env.PAPILOT_AGY_BIN || 'agy');
-    if (!file) { check('agent.antigravity', false, 'warn', 'Antigravity CLI is not installed or PAPILOT_AGY_BIN is invalid.', 'Install Antigravity and sign in to agy, or choose another agent.'); return false; }
+    if (!file) { check('agent.antigravity', false, 'info', 'Antigravity CLI is not installed or PAPILOT_AGY_BIN is invalid, so Papilot does not offer it.', 'Install Antigravity and sign in to agy, or choose another agent.'); return false; }
     const proxy = process.env.PAPILOT_AGY_PROXY;
     const env = proxy ? { ...process.env, HTTPS_PROXY: proxy, HTTP_PROXY: proxy, https_proxy: proxy, http_proxy: proxy, NO_PROXY: '127.0.0.1,localhost' } : process.env;
     const result = await command(file, ['models'], { env });
@@ -156,15 +156,33 @@ export async function doctor(args) {
     check('agent.antigravity', ready, 'warn', `${file}: ${ready ? 'model listing succeeded (no generation tested)' : result.reason || 'no models returned'}.`, 'Sign in to agy and try agy models. If your region requires a proxy, set PAPILOT_AGY_PROXY.');
     return ready;
   }
-  async function kimiCheck() {
-    const file = executable(process.env.PAPILOT_KIMI_BIN || 'kimi');
-    if (!file) { check('agent.kimi', false, 'warn', 'Kimi CLI is not installed or PAPILOT_KIMI_BIN is invalid.', 'Install Kimi Code CLI and run kimi login, or choose another agent.'); return false; }
-    const result = await command(file, ['acp', '--help']);
-    const ready = result.ok && /\bACP\b|Agent Client Protocol/i.test(result.stdout);
-    check('agent.kimi', ready, 'warn', `${file}: ${ready ? 'ACP command available; login and generation were not tested' : result.reason || 'ACP command unavailable'}.`, 'Update Kimi Code CLI and run kimi login. Set PAPILOT_KIMI_BIN if needed.');
+  // ACP agents: the CLI must offer its ACP mode. Login is not checked, so no credential is read.
+  async function acpCheck(id, name, bin, help, install, update) {
+    const file = executable(process.env[bin.env] || bin.name);
+    if (!file) { check(`agent.${id}`, false, 'info', `${name} is not installed or ${bin.env} is invalid, so Papilot does not offer it.`, `${install}, or choose another agent.`); return false; }
+    const result = await command(file, help);
+    const ready = result.ok && /\bACP\b|Agent Client Protocol/i.test(result.stdout + '\n' + result.stderr);
+    check(`agent.${id}`, ready, 'warn', `${file}: ${ready ? 'ACP command available; login and generation were not tested' : result.reason || 'ACP command unavailable'}.`, `${update} Set ${bin.env} if needed.`);
     return ready;
   }
-  const agents = await Promise.all([codexCheck(), claudeCheck(), agyCheck(), kimiCheck()]);
+  const kimiCheck = () => acpCheck('kimi', 'Kimi CLI', { env: 'PAPILOT_KIMI_BIN', name: 'kimi' }, ['acp', '--help'], 'Install Kimi Code CLI and run kimi login', 'Update Kimi Code CLI and run kimi login.');
+  const qwenCheck = () => acpCheck('qwen', 'Qwen Code', { env: 'PAPILOT_QWEN_BIN', name: 'qwen' }, ['--help'], 'Install Qwen Code and sign in by running qwen once', 'Update Qwen Code and sign in by running qwen once.');
+  const deepseekCheck = () => acpCheck('deepseek', 'DeepSeek Harness (dsh)', { env: 'PAPILOT_DSH_BIN', name: 'dsh' }, ['acp', '--help'], 'Install DeepSeek Harness with npm install -g @deepseek-ai/dsh and set up a model in dsh', 'Update DeepSeek Harness and set up a model in dsh.');
+  const opencodeCheck = () => acpCheck('opencode', 'OpenCode', { env: 'PAPILOT_OPENCODE_BIN', name: 'opencode' }, ['acp', '--help'], 'Install OpenCode and connect a provider with opencode auth login', 'Update OpenCode and connect a provider with opencode auth login.');
+  // SDK agents: a key in the environment (or the SDK's own login) selects them; keys are not validated.
+  async function cursorCheck() {
+    const configured = Boolean(process.env.CURSOR_API_KEY) || fs.existsSync(path.join(os.homedir(), '.cursor/sdk/auth.json'));
+    const sdk = installedModule('@cursor/sdk') || installedModule('@cursor/sdk', path.join(data, 'agents'));
+    check('agent.cursor', Boolean(configured && sdk), configured ? 'warn' : 'info', !configured ? 'CURSOR_API_KEY is not set, so Papilot does not offer Cursor.' : sdk ? 'Cursor SDK installed; API key configured (not validated).' : 'Cursor API key configured; the Cursor SDK is installed on first use.', !configured ? 'Start Papilot with CURSOR_API_KEY set to a key from the Cursor dashboard. The Cursor app and CLI login are not used.' : 'Start papilot and choose Cursor once to install the SDK.');
+    return configured;
+  }
+  async function glmCheck() {
+    const configured = Boolean(process.env.ZHIPU_API_KEY || process.env.ZAI_API_KEY);
+    const sdk = installedModule('@anthropic-ai/claude-agent-sdk') || installedModule('@anthropic-ai/claude-agent-sdk', path.join(data, 'agents'));
+    check('agent.glm', Boolean(configured && sdk), configured ? 'warn' : 'info', !configured ? 'ZHIPU_API_KEY or ZAI_API_KEY is not set, so Papilot does not offer GLM.' : sdk ? `GLM key configured for ${process.env.ZHIPU_API_KEY ? 'open.bigmodel.cn' : 'api.z.ai'} (not validated).` : 'GLM key configured; the Claude Agent SDK that runs GLM is installed on first use.', !configured ? 'Start Papilot with ZHIPU_API_KEY (open.bigmodel.cn) or ZAI_API_KEY (api.z.ai) set to your GLM Coding Plan or API key.' : 'Start papilot and choose GLM once to install the Claude Agent SDK.');
+    return configured;
+  }
+  const agents = await Promise.all([codexCheck(), claudeCheck(), cursorCheck(), agyCheck(), kimiCheck(), glmCheck(), deepseekCheck(), qwenCheck(), opencodeCheck()]);
   check('agents', agents.some(Boolean), 'warn', agents.some(Boolean) ? 'At least one agent passed its configuration check; live editing was not tested.' : 'No agent passed its configuration check. PDF reading can still be used with a working TeX installation.', 'Configure one agent before starting editing tasks.');
 
   if (repo) {
@@ -240,14 +258,14 @@ export async function doctor(args) {
     }
   }
   // Keep reports stable even though independent probes finish in any order.
-  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.codex', 'agent.claude', 'agent.antigravity', 'agent.kimi', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
+  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.codex', 'agent.claude', 'agent.cursor', 'agent.antigravity', 'agent.kimi', 'agent.glm', 'agent.deepseek', 'agent.qwen', 'agent.opencode', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
   checks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const report = { name: 'Papilot', version: pkg.version, ok: !checks.some(item => !item.ok && item.severity === 'error'), checks };
   if (json) console.log(JSON.stringify(report, null, 2));
   else {
     console.log(`Papilot ${pkg.version} doctor\n`);
     for (const item of checks) {
-      console.log(`${item.ok ? '✓' : item.severity === 'error' ? '✗' : '!'} ${item.id}: ${item.detail}`);
+      console.log(`${item.ok ? '✓' : item.severity === 'error' ? '✗' : item.severity === 'info' ? '-' : '!'} ${item.id}: ${item.detail}`);
       if (item.fix) console.log(`  Fix: ${item.fix}`);
     }
     const errors = checks.filter(item => !item.ok && item.severity === 'error').length;

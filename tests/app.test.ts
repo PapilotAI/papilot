@@ -16,7 +16,7 @@ import { Diagnostics } from '../src/server/diagnostics.ts';
 import { PassThrough } from 'node:stream';
 import type { Codex } from '../src/server/codex.ts';
 import type { ReviewClient } from '../src/server/review.ts';
-import type { Annotation, Task } from '../src/shared.ts';
+import { AGENT_IDS, type Annotation, type Task } from '../src/shared.ts';
 
 const ORIGIN = 'https://mini.example.ts.net:10000', PUBLIC = 'https://mini.example.ts.net:8443';
 const LOCAL = { host: '127.0.0.1:7274' }, REMOTE = { host: 'mini.example.ts.net:10000' };
@@ -34,7 +34,7 @@ async function fixture() {
   fs.writeFileSync(path.join(dist, 'index.html'), '<html>app</html>');
   fs.writeFileSync(path.join(dist, '.env'), 'SECRET=1');
   const review: ReviewClient = { url: 'http://127.0.0.1:9', token: 'review-token', get: async () => ({}) as any, post: async () => ({}) as any };
-  const workspace = new Workspace(store, new FakeAgent() as unknown as Codex, 2, async () => review, { claude: new FakeAgent() as unknown as Codex, antigravity: new FakeAgent() as unknown as Codex, kimi: new FakeAgent() as unknown as Codex });
+  const workspace = new Workspace(store, new FakeAgent() as unknown as Codex, 2, async () => review, Object.fromEntries(AGENT_IDS.filter(id => id !== 'codex').map(id => [id, new FakeAgent() as unknown as Codex])));
   workspace.runtimes.codex.account = 'owner@example.com';
   const accounts = new Accounts(store, ORIGIN, passkeys);
   store.saveProject({ id: 'thesis', name: 'Thesis', path: '/unused/thesis', createdAt: 1 });

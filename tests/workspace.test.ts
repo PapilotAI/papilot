@@ -1206,7 +1206,7 @@ test('an agent writes a commit message from the chosen changes, in a read-only t
     assert.equal((await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'codex' })).message, 'Tighten the opening again');
     assert.equal(turns(), 3);
     f.codex.ready = false;
-    await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex']), /Sign in to Codex, Claude or Antigravity/);
+    await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex']), /Sign in to an agent, such as Codex/);
   } finally { f.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -1402,4 +1402,34 @@ test('a task commits only what it accepted since its last commit, never during a
     assert.notEqual(f.store.task(f.task.id).committed?.pushed, true, 'a later local commit resets the previous push result');
     assert.equal(third.git.ahead, 1);
   } finally { f.close(); await disk.close(); }
+});
+
+test('agents that are not found on the host are neither started nor offered, and Reconnect looks again', async () => {
+  const store = new Store(':memory:');
+  class Detected extends FakeCodex {
+    found = false; starts = 0;
+    detect() { return this.found; }
+    async start() { this.starts++; this.ready = true; }
+    handler = async (method: string): Promise<any> => method === 'account/read' ? { account: { type: 'Local configuration' }, requiresOpenaiAuth: false } : method === 'model/list' ? { data: [] } : {};
+  }
+  const codex = new FakeCodex(); codex.handler = async (method: string) => method === 'account/read' ? { account: { email: 'me@example.com' }, requiresOpenaiAuth: false } : { data: [] };
+  (codex as any).start = async () => { codex.ready = true; };
+  const qwen = new Detected();
+  const others = Object.fromEntries((['claude', 'cursor', 'antigravity', 'kimi', 'glm', 'deepseek', 'opencode'] as const).map(id => [id, Object.assign(new Detected(), { found: false })]));
+  const workspace = new Workspace(store, codex as unknown as Codex, 2, async () => { throw new Error('unused'); }, { ...others, qwen } as any);
+  try {
+    await workspace.connect();
+    assert.equal(qwen.starts, 0);
+    assert.equal(workspace.runtimes.qwen.installed, false);
+    assert.equal(workspace.runtimes.qwen.error, null);
+    assert.equal(workspace.runtimes.codex.installed, true);
+    qwen.found = true;
+    await workspace.connect();
+    assert.equal(qwen.starts, 1);
+    assert.deepEqual([workspace.runtimes.qwen.installed, workspace.runtimes.qwen.connected, workspace.runtimes.qwen.authenticated], [true, true, true]);
+    // A connected agent stays offered even if it can no longer be found.
+    qwen.found = false;
+    await workspace.connect();
+    assert.equal(workspace.runtimes.qwen.installed, true);
+  } finally { workspace.close(); store.close(); }
 });

@@ -297,7 +297,7 @@ export const zhCN: Record<string, string> = {
   'Contribute': '参与贡献', 'Help improve Papilot with code, docs, and ideas.': '通过代码、文档和建议，一起完善 Papilot。',
   'Application dependencies': '应用依赖', 'Application interface': '应用界面', 'Review engine': '审阅引擎',
   'Data folder': '数据目录', 'LaTeX engines': 'LaTeX 引擎',
-  'Codex configuration': 'Codex 配置', 'Claude configuration': 'Claude 配置', 'Antigravity configuration': 'Antigravity 配置', 'Kimi configuration': 'Kimi 配置',
+  '{agent} configuration': '{agent} 配置', 'Not found': '未找到', 'Not found on this host: {agents}. Install or configure one and select Reconnect to offer it.': '本机未找到：{agents}。安装或配置后点“重新连接”即可使用。',
   'Agent configuration': '智能体配置', 'Paper configuration': '论文配置', 'Paper repository': '论文仓库',
   'Initial commit': '初始提交', 'Main document': '主文档', 'Paper compiler': '论文编译器', 'Task folders': '任务目录',
   'Remote access': '远程访问', 'Collaborator access': '协作者访问', 'Local server': '本地服务',

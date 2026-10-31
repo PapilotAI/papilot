@@ -7,8 +7,9 @@ import { EventEmitter } from 'node:events';
 import { Store } from './store.ts';
 import { Attachments } from './attachments.ts';
 import { Codex, RpcResponseError } from './codex.ts';
-import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, type AgentRuntime } from './agents.ts';
-import { KimiAgent } from './kimi.ts';
+import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, GlmAgent, type AgentRuntime } from './agents.ts';
+import { ACP_PROFILES, AcpAgent } from './acp.ts';
+import { CursorAgent } from './cursor.ts';
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
 import { VERSION } from './paths.ts';
 import { prepareRepository } from './imports.ts';
@@ -19,6 +20,7 @@ import { taskCaptionFrom, taskCaptionInstructions } from '../task-caption.ts';
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
+import { AGENT_IDS } from '../shared.ts';
 import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation, NoteSummary } from '../shared.ts';
 import { taskFinished } from '../shared.ts';
 
@@ -56,7 +58,7 @@ const BUSY = new Set(['running', 'waiting_input', 'building', 'uncertain', 'dele
 const FIXABLE = /^(Some edits are outside the task scope|The revised document could not be compiled)/;
 const BUILD_FIX = 'build-fix-';
 
-const AGENTS: AgentId[] = ['codex', 'claude', 'antigravity', 'kimi'];
+const AGENTS: AgentId[] = AGENT_IDS;
 // The small model an agent offers for short text such as a commit message,
 // by the names agents give them (GPT Luna and mini, Claude Haiku, Gemini Flash).
 const LIGHT = /\b(?:luna|mini|nano|haiku|flash|lite)\b/i;
@@ -69,7 +71,7 @@ const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: fa
 
 export class Workspace extends EventEmitter {
   // Each task runs on one agent; `runtime` is Codex's status, kept for older clients.
-  runtimes: Record<AgentId, RuntimeStatus> = { codex: blankRuntime(), claude: blankRuntime(), antigravity: blankRuntime(), kimi: blankRuntime() };
+  runtimes = Object.fromEntries(AGENTS.map(id => [id, blankRuntime()])) as Record<AgentId, RuntimeStatus>;
   runtime = this.runtimes.codex;
   agents: Record<AgentId, AgentRuntime>;
   requests = new Map<string, PendingRequest & { rpcId: string | number; agent: AgentId }>();
@@ -107,7 +109,9 @@ export class Workspace extends EventEmitter {
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.attachments = new Attachments(store);
-    this.agents = { codex, claude: others.claude || new ClaudeAgent(), antigravity: others.antigravity || new AntigravityAgent(), kimi: others.kimi || new KimiAgent() };
+    this.agents = { codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), antigravity: others.antigravity || new AntigravityAgent(),
+      kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
+      qwen: others.qwen || new AcpAgent(ACP_PROFILES.qwen), opencode: others.opencode || new AcpAgent(ACP_PROFILES.opencode) };
     store.on('change', () => this.emit('change'));
     for (const id of AGENTS) {
       const agent = this.agents[id];
@@ -139,6 +143,10 @@ export class Workspace extends EventEmitter {
   }
   private async connectAgent(id: AgentId) {
     const agent = this.agents[id], runtime = this.runtimes[id], name = AGENT_NAMES[id];
+    // An agent that is not on this host is neither started nor offered;
+    // Reconnect looks again. A running agent stays connected.
+    runtime.installed = agent.ready || !agent.detect || agent.detect();
+    if (!runtime.installed) { Object.assign(runtime, blankRuntime(), { installed: false }); return; }
     try {
       await agent.start();
       const account = await agent.request('account/read', { refreshToken: false });
@@ -699,7 +707,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   private helper(choice: { agent?: AgentId; model?: string }, task: string, light = false) {
     const usable = (id: AgentId) => this.agents[id].ready && this.runtimes[id].authenticated;
     const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(usable);
-    if (!id) throw new Error(`Sign in to Codex, Claude or Antigravity to ${task}.`);
+    if (!id) throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
     const models = this.runtimes[id].models;
     return { id, model: (light ? lightModel(models) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
   }

@@ -19,7 +19,7 @@ page.on('pageerror', error => pageErrors.push(error.message));
 const task = { id: 'fixture-task-0001', projectId: 'fixture-paper', name: 'p-fixture', title: 'Clarify the introduction', instructions: 'Keep the technical meaning.', worktree: '/tmp/fixture', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 3, commented: 1 } } };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: '2x speed, increased usage' } }], usage: { plan: 'pro', windows: [{ usedPercent: 83, minutes: 10080, resetsAt: Date.now() + 3 * 86_400_000 }], credits: { unlimited: false, balance: 12418.76 }, reached: false } } };
 // Claude is available with its own models; Antigravity is not installed.
-snapshot.runtimes = { codex: snapshot.runtime, claude: { connected: true, authenticated: true, account: 'Claude Max', error: null, models: [{ id: 'opus', name: 'Opus 5.5', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: null }, { id: 'haiku', name: 'Haiku 5.5', isDefault: false, efforts: ['low', 'medium', 'high'], defaultEffort: null }] }, antigravity: { connected: false, authenticated: false, account: null, error: 'spawn agy ENOENT', models: [] } };
+snapshot.runtimes = { codex: snapshot.runtime, claude: { connected: true, authenticated: true, account: 'Claude Max', error: null, models: [{ id: 'opus', name: 'Opus 5.5', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: null }, { id: 'haiku', name: 'Haiku 5.5', isDefault: false, efforts: ['low', 'medium', 'high'], defaultEffort: null }] }, antigravity: { connected: false, authenticated: false, account: null, error: 'spawn agy ENOENT', models: [] }, kimi: { installed: true, connected: false, authenticated: false, account: null, error: null, models: [] }, cursor: { installed: false, connected: false, authenticated: false, account: null, error: null, models: [] } };
 const messages = [];
 let diagnosticFailure = true;
 const diagnosticRequests = [];
@@ -944,6 +944,13 @@ try {
   assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:kimi'), localStorage.getItem('papilot:effort:kimi')]), ['kimi', 'kimi/k3', 'max']);
   assert.equal(await fastMode.count(), 0);
   await page.screenshot({ path: 'test-results/kimi-agent-settings.png', fullPage: true });
+  // Only agents the host has are offered: one found later appears with the next state.
+  snapshot.runtimes.qwen = { installed: false, connected: false, authenticated: false, account: null, error: null, models: [] };
+  snapshot.runtimes.opencode = { installed: true, connected: true, authenticated: true, account: 'Local OpenCode configuration', error: null, models: [{ id: 'deepseek/deepseek-v4-pro', name: 'deepseek/DeepSeek V4 Pro', isDefault: true, efforts: ['low', 'high'], defaultEffort: null }] };
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await agentChoices.getByRole('radio', { name: 'OpenCode', exact: true }).waitFor();
+  assert.deepEqual(await agentChoices.getByRole('radio').allInnerTexts(), ['Codex', 'Claude', 'Antigravity', 'Kimi', 'OpenCode']);
+  await page.screenshot({ path: 'test-results/detected-agent-settings.png', fullPage: true });
   const claudeRuntime = structuredClone(snapshot.runtimes.claude);
   Object.assign(snapshot.runtimes.claude, { connected: false, authenticated: false, error: 'Claude needs an Anthropic API key: Start Papilot with ANTHROPIC_API_KEY set to use Claude.' });
   await page.evaluate(() => window.dispatchEvent(new Event('online')));

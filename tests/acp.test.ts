@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { KimiAgent } from '../src/server/kimi.ts';
+import { ACP_PROFILES, AcpAgent, KimiAgent, opencodeConfig } from '../src/server/acp.ts';
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 const configOptions = [
@@ -241,3 +241,140 @@ for (const [answer, optionId] of [['Model', 'model'], ['Skip', 'skip']]) {
     } finally { f.agent.close(); }
   });
 }
+
+// A fake ACP agent for any profile: initialize, session/new with the given
+// session result, and prompts answered by onPrompt.
+function profileFixture(profile: typeof ACP_PROFILES[keyof typeof ACP_PROFILES], session: any, onPrompt: (message: any, rpc: ReturnType<typeof peer>) => void) {
+  const calls: any[] = [], launches: { args: string[]; env: NodeJS.ProcessEnv }[] = [];
+  let serial = 0, rpc!: ReturnType<typeof peer>;
+  const launch = (_binary: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
+    launches.push({ args, env: options.env });
+    rpc = peer(message => {
+      calls.push(message);
+      if (!message.method) return;
+      const { id, method, params } = message;
+      if (method === 'initialize') rpc.reply(id, { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, close: {} } } });
+      else if (method === 'session/new' || method === 'session/resume') rpc.reply(id, { sessionId: params.sessionId || `session-${++serial}`, ...structuredClone(session) });
+      else if (method === 'session/prompt') onPrompt(message, rpc);
+      else if (method === 'session/set_config_option') rpc.reply(id, { configOptions: session.configOptions?.map((option: any) => option.id === params.configId ? { ...option, currentValue: params.value } : option) });
+      else if (id !== undefined) rpc.reply(id, {});
+    });
+    return rpc.child;
+  };
+  const agent = new AcpAgent(profile, 'fake-agent', launch as any);
+  const notifications: any[] = [], requests: any[] = [];
+  agent.on('notification', message => notifications.push(message));
+  agent.on('request', message => requests.push(message));
+  return { agent, calls, launches, notifications, requests, rpc: () => rpc };
+}
+
+test('OpenCode is set to its build mode option and asked to request approval before commands', { timeout: 5000 }, async () => {
+  const session = { configOptions: [
+    { id: 'model', category: 'model', currentValue: 'deepseek/deepseek-v4-pro', options: [{ value: 'deepseek/deepseek-v4-pro', name: 'DeepSeek V4 Pro' }] },
+    { id: 'effort', category: 'thought_level', currentValue: 'default', options: [{ value: 'low', name: 'Low' }, { value: 'high', name: 'High' }, { value: 'default', name: 'Default' }] },
+    { id: 'mode', category: 'mode', currentValue: 'plan', options: [{ value: 'build', name: 'Build' }, { value: 'plan', name: 'Plan' }] },
+  ] };
+  const f = profileFixture(ACP_PROFILES.opencode, session, (m, rpc) => { rpc.update(m.params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'OK' } }); rpc.reply(m.id, { stopReason: 'end_turn' }); });
+  try {
+    await f.agent.start();
+    assert.deepEqual(f.launches[0].args, ['acp']);
+    const permission = JSON.parse(f.launches[0].env.OPENCODE_CONFIG_CONTENT!).permission;
+    assert.equal(permission.bash, 'ask'); assert.equal(permission.external_directory, 'ask'); assert.equal(permission.edit, 'allow');
+    const models = (await f.agent.request('model/list')).data;
+    assert.deepEqual(models[0].supportedReasoningEfforts, [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], 'the "default" level is the model default');
+    assert.equal(models[0].defaultReasoningEffort, null);
+    const id = (await f.agent.request('thread/start', { cwd: '/paper', developerInstructions: 'Only edit this paper.' })).thread.id;
+    assert.equal((await run(f.agent as unknown as KimiAgent, id)).status, 'completed');
+    assert.ok(f.calls.some(call => call.method === 'session/set_config_option' && call.params.configId === 'mode' && call.params.value === 'build'));
+    assert.equal(f.calls.some(call => call.method === 'session/set_mode'), false);
+  } finally { f.agent.close(); }
+  // The user's own OpenCode configuration is kept, with Papilot's approvals on top.
+  const merged = JSON.parse(opencodeConfig(JSON.stringify({ model: 'x/y', permission: { webfetch: 'deny', bash: 'allow' } })));
+  assert.equal(merged.model, 'x/y'); assert.equal(merged.permission.webfetch, 'deny'); assert.equal(merged.permission.bash, 'ask');
+  assert.equal(JSON.parse(opencodeConfig('not json')).permission.shell, 'ask');
+});
+
+test('Qwen prefers its auto-edit mode, and an agent without any accepted mode is refused', { timeout: 5000 }, async () => {
+  const modes = { availableModes: [{ id: 'plan' }, { id: 'default' }, { id: 'auto-edit' }, { id: 'yolo' }] };
+  const f = profileFixture(ACP_PROFILES.qwen, { modes }, (m, rpc) => { rpc.update(m.params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'OK' } }); rpc.reply(m.id, { stopReason: 'end_turn' }); });
+  try {
+    await f.agent.start();
+    assert.deepEqual(f.launches[0].args, ['--acp']);
+    const id = (await f.agent.request('thread/start', { cwd: '/paper' })).thread.id;
+    assert.equal((await run(f.agent as unknown as KimiAgent, id)).status, 'completed');
+    assert.deepEqual(f.calls.filter(call => call.method === 'session/set_mode').map(call => call.params.modeId), ['auto-edit']);
+  } finally { f.agent.close(); }
+  const yolo = profileFixture(ACP_PROFILES.qwen, { modes: { availableModes: [{ id: 'yolo' }] } }, () => {});
+  try { await assert.rejects(yolo.agent.start(), /Qwen does not offer manual approvals/); } finally { yolo.agent.close(); }
+});
+
+test('DeepSeek keeps its sandbox preset and its "other" tools show as commands and edits', { timeout: 5000 }, async () => {
+  const session = { configOptions: [{ id: 'model', category: 'model', currentValue: 'v4', options: [{ value: 'v4', name: 'DeepSeek V4' }] }] };
+  const f = profileFixture(ACP_PROFILES.deepseek, session, (m, rpc) => {
+    const id = m.params.sessionId;
+    rpc.update(id, { sessionUpdate: 'tool_call', toolCallId: 'ls', title: 'bash', kind: 'other', status: 'in_progress', rawInput: { command: 'ls' } });
+    rpc.update(id, { sessionUpdate: 'tool_call_update', toolCallId: 'ls', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'main.tex\n' } }] });
+    rpc.update(id, { sessionUpdate: 'tool_call', toolCallId: 'edit', title: 'edit', kind: 'other', status: 'in_progress', rawInput: { file_path: 'main.tex', old_string: 'wrold', new_string: 'world' } });
+    rpc.update(id, { sessionUpdate: 'tool_call_update', toolCallId: 'edit', status: 'completed' });
+    rpc.update(id, { sessionUpdate: 'tool_call', toolCallId: 'outside', title: 'write', kind: 'other', status: 'in_progress', rawInput: { file_path: '/elsewhere/notes.txt' } });
+    rpc.send({ id: 'permission', method: 'session/request_permission', params: { sessionId: id, toolCall: { toolCallId: 'outside' }, options: [{ optionId: 'allow-once', kind: 'allow_once' }, { optionId: 'reject-once', kind: 'reject_once' }] } });
+  });
+  const previous = process.env.DSH_PERMISSION_MODE;
+  process.env.DSH_PERMISSION_MODE = 'danger-full-access';
+  try {
+    await f.agent.start();
+    assert.deepEqual(f.launches[0].args, ['acp']);
+    assert.equal(f.launches[0].env.DSH_PERMISSION_MODE, 'workspace-write');
+    const id = (await f.agent.request('thread/start', { cwd: '/paper' })).thread.id;
+    const done = completion(f.agent as unknown as KimiAgent);
+    const requested = new Promise<any>(resolve => f.agent.once('request', resolve));
+    await f.agent.request('turn/start', { threadId: id, input: [{ type: 'text', text: 'Fix it.' }] });
+    const request = await requested;
+    assert.equal(request.method, 'item/fileChange/requestApproval');
+    assert.equal(request.params.command, 'Edit /elsewhere/notes.txt');
+    f.agent.respond(request.id, { decision: 'decline' }); await tick();
+    assert.deepEqual(f.calls.find(call => call.id === 'permission' && !call.method).result.outcome, { outcome: 'selected', optionId: 'reject-once' });
+    assert.equal(f.calls.some(call => call.method === 'session/set_mode' || (call.method === 'session/set_config_option' && call.params.configId === 'mode')), false);
+    f.rpc().reply(f.calls.find(call => call.method === 'session/prompt').id, { stopReason: 'end_turn' });
+    assert.equal((await done).status, 'completed');
+    const items = f.notifications.filter(n => n.method === 'item/completed').map(n => n.params.item);
+    assert.deepEqual(items.map(item => [item.type, item.command || item.changes?.[0].path]), [['commandExecution', 'ls'], ['fileChange', '/paper/main.tex']]);
+    assert.equal(items[0].aggregatedOutput, 'main.tex\n');
+  } finally {
+    f.agent.close();
+    if (previous === undefined) delete process.env.DSH_PERMISSION_MODE; else process.env.DSH_PERMISSION_MODE = previous;
+  }
+});
+
+test('ACP agents are detected by their executable', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-acp-detect-'));
+  try {
+    const file = path.join(dir, 'qwen');
+    fs.writeFileSync(file, '#!/bin/sh\n'); fs.chmodSync(file, 0o755);
+    assert.equal(new AcpAgent(ACP_PROFILES.qwen, file).detect(), true);
+    assert.equal(new AcpAgent(ACP_PROFILES.qwen, path.join(dir, 'missing')).detect(), false);
+    const previous = process.env.PATH;
+    process.env.PATH = dir;
+    try { assert.equal(new AcpAgent(ACP_PROFILES.qwen).detect(), true); assert.equal(new AcpAgent(ACP_PROFILES.opencode).detect(), false); }
+    finally { process.env.PATH = previous; }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('empty and whitespace-only text chunks never become empty messages', { timeout: 5000 }, async () => {
+  const f = profileFixture(ACP_PROFILES.qwen, { modes: { availableModes: [{ id: 'auto-edit' }] } }, (m, rpc) => {
+    const id = m.params.sessionId, chunk = (text: string) => rpc.update(id, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
+    chunk(''); chunk('\n');
+    rpc.update(id, { sessionUpdate: 'tool_call', toolCallId: 'edit', kind: 'edit', status: 'completed', locations: [{ path: '/paper/main.tex' }] });
+    chunk(''); chunk(' '); chunk('Done'); chunk('.');
+    rpc.reply(m.id, { stopReason: 'end_turn' });
+  });
+  try {
+    await f.agent.start();
+    const id = (await f.agent.request('thread/start', { cwd: '/paper' })).thread.id;
+    assert.equal((await run(f.agent as unknown as KimiAgent, id)).status, 'completed');
+    const deltas = f.notifications.filter(n => n.method === 'item/agentMessage/delta').map(n => n.params.delta);
+    assert.deepEqual(deltas, [' Done', '.']);
+    const messages = f.notifications.filter(n => n.method === 'item/completed' && n.params.item.type === 'agentMessage').map(n => n.params.item.text);
+    assert.deepEqual(messages, [' Done.']);
+  } finally { f.agent.close(); }
+});

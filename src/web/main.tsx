@@ -9,6 +9,7 @@ import { flushSync } from 'react-dom';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
+import { AGENT_IDS, AGENT_NAMES, isAgentId } from '../shared.ts';
 import type { AgentId, AgentModel, Annotation, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem, Viewer } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, unsentReviewFeedback } from './composer.ts';
@@ -70,8 +71,7 @@ async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal,
 }
 const uploadAttachment = (projectId: string, file: File, signal: AbortSignal) => api<Attachment>(`/projects/${projectId}/attachments`, file, signal, 120000);
 const checkDiagnostics = (projectId: string | undefined, signal: AbortSignal) => api<DiagnosticReport>('/diagnostics', { projectId }, signal, 60000);
-const AGENT_IDS: AgentId[] = ['codex', 'claude', 'antigravity', 'kimi'];
-const AGENT_LABELS: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity', kimi: 'Kimi' };
+const AGENT_LABELS = AGENT_NAMES;
 const agentName = (task: Task) => AGENT_LABELS[task.agent || 'codex'] || 'Codex';
 // A finished publication with no round is a valid answer-only result. Keep
 // earlier comparisons available when a follow-up answer makes no new edits.
@@ -754,7 +754,7 @@ function App() {
   const [skillsRevision, setSkillsRevision] = useState(0);
   // The agent, and each agent's model and reasoning effort, are remembered for
   // every new task, whether it starts from the composer or from PDF notes.
-  const [agentChoice, setAgentChoice] = useState<AgentId>(() => { const saved = browserStorage.getItem('papilot:agent'); return saved === 'claude' || saved === 'antigravity' || saved === 'kimi' ? saved : 'codex'; });
+  const [savedAgent, setAgentChoice] = useState<AgentId>(() => { const saved = browserStorage.getItem('papilot:agent'); return isAgentId(saved) ? saved : 'codex'; });
   const [agentPrefs, setAgentPrefs] = useState(() => Object.fromEntries(AGENT_IDS.map(id => [id, {
     model: browserStorage.getItem(`papilot:model:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:model') : null) ?? '',
     effort: browserStorage.getItem(`papilot:effort:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:effort') : null) ?? '',
@@ -968,6 +968,10 @@ function App() {
   // the preference is kept in case another model offers it again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
   const unavailable = (id: AgentId) => Boolean(runtimes[id]?.error && !(runtimes[id]?.connected && runtimes[id]?.authenticated));
+  // Only agents found on the host are offered. A remembered agent that is not
+  // found falls back to Codex without forgetting the choice.
+  const offered = AGENT_IDS.filter(id => id === 'codex' || Boolean(runtimes[id] && runtimes[id]!.installed !== false));
+  const agentChoice = offered.includes(savedAgent) ? savedAgent : 'codex';
   const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;
   const modelInfo = models.find(m => m.id === chosenModel) || models.find(m => m.isDefault);
@@ -977,7 +981,7 @@ function App() {
     for (const [key, value] of Object.entries(change)) browserStorage.setItem(`papilot:${key}:${agentChoice}`, String(value));
   };
   const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast} models={models}
-    agents={AGENT_IDS.map(id => ({ value: id, label: AGENT_LABELS[id], unavailable: unavailable(id) }))}
+    agents={offered.map(id => ({ value: id, label: AGENT_LABELS[id], unavailable: unavailable(id) }))}
     runtime={runtimes[agentChoice]} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}
     onAgent={value => { setAgentChoice(value); browserStorage.setItem('papilot:agent', value); }} onChange={remember}/>;
   async function createTask() {
