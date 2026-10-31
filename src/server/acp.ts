@@ -93,7 +93,7 @@ export class AcpAgent extends Adapter {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), `papilot-${this.profile.id}-`));
     try {
       // The probe folder is removed below, so the agent itself runs from the home folder.
-      const child = this.launch(this.binary, this.profile.args, { cwd: os.homedir(), env: this.profile.env?.() || process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = this.launch(findExecutable(this.binary) || this.binary, this.profile.args, { cwd: os.homedir(), env: this.profile.env?.() || process.env, stdio: ['pipe', 'pipe', 'pipe'] });
       this.child = child;
       const failed = (error: Error) => { if (this.child === child) this.disconnect(error); };
       createInterface({ input: child.stdout! }).on('line', line => {

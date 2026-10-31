@@ -33,7 +33,13 @@ export interface AgentRuntime extends EventEmitter {
 
 export { AGENT_NAMES };
 
-// The executable a command name resolves to on PATH (or the path itself), or null.
+// Where agent CLIs install themselves. A background service's PATH often
+// lacks these folders, so a CLI not on PATH is looked for here too.
+export function agentDirs(env: NodeJS.ProcessEnv = process.env) {
+  const home = env.HOME || os.homedir();
+  return ['.local/bin', '.claude/local', '.kimi-code/bin', '.opencode/bin', '.bun/bin', '.npm-global/bin'].map(dir => path.join(home, dir)).concat('/opt/homebrew/bin', '/usr/local/bin');
+}
+// The executable a command name resolves to on PATH or in an agent folder (or the path itself), or null.
 export function findExecutable(command: string, env: NodeJS.ProcessEnv = process.env): string | null {
   const windows = process.platform === 'win32';
   const extensions = windows ? ['', ...(env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';')] : [''];
@@ -41,7 +47,7 @@ export function findExecutable(command: string, env: NodeJS.ProcessEnv = process
     try { if (!fs.statSync(file).isFile()) return false; fs.accessSync(file, windows ? fs.constants.F_OK : fs.constants.X_OK); return true; } catch { return false; }
   };
   const candidates = command.includes('/') || (windows && command.includes('\\')) ? [path.resolve(command)]
-    : (env.PATH || '').split(path.delimiter).filter(Boolean).map(dir => path.join(dir, command));
+    : [...new Set([...(env.PATH || '').split(path.delimiter).filter(Boolean), ...agentDirs(env)])].map(dir => path.join(dir, command));
   for (const candidate of candidates) for (const extension of extensions) if (usable(candidate + extension)) return candidate + extension;
   return null;
 }
@@ -184,6 +190,8 @@ export class ClaudeAgent extends Adapter {
       // Only the login state is read; the credential stays with Claude Code.
       const status = await promisify(execFile)(this.cli, ['auth', 'status', '--json'], { timeout: 20000 }).catch((error: { stdout?: string }) => ({ stdout: error.stdout || '{}' }));
       try { this.login = JSON.parse(status.stdout); } catch { this.login = null; }
+      // Claude Code's own model list, with versions and efforts; the aliases stand in if it cannot be read.
+      this.info.models = this.login?.loggedIn ? await this.listModels(this.cli).catch(() => []) : [];
       this.ready = true;
       return;
     }
@@ -202,6 +210,26 @@ export class ClaudeAgent extends Adapter {
   // Claude tasks need an API key, an ANTHROPIC_AUTH_TOKEN (for a gateway or an
   // Anthropic-compatible ANTHROPIC_BASE_URL), or a cloud provider's own
   // credentials: Anthropic does not accept a Claude subscription login through the SDK.
+  // Claude Code answers an initialize request with its models before any
+  // prompt is sent; reading them sends nothing to a model.
+  private async listModels(cli: string): Promise<ModelInfo[]> {
+    const child = this.launch(cli, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-prompts', 'none'], { cwd: os.homedir(), env: this.environment() || process.env });
+    try {
+      return await new Promise<ModelInfo[]>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Claude Code did not list its models.')), 20000);
+        createInterface({ input: child.stdout! }).on('line', line => {
+          let message: any;
+          try { message = JSON.parse(line); } catch { return; }
+          const response = message.type === 'control_response' ? message.response : null;
+          if (response?.request_id === 'papilot-models') { clearTimeout(timer); Array.isArray(response.response?.models) ? resolve(response.response.models) : reject(new Error(response.error || 'No models.')); }
+        });
+        child.once('error', error => { clearTimeout(timer); reject(error); });
+        child.once('close', () => { clearTimeout(timer); reject(new Error('Claude Code exited before listing its models.')); });
+        child.stdin!.on('error', () => {});
+        child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: 'papilot-models', request: { subtype: 'initialize' } }) + '\n');
+      });
+    } finally { child.kill(); }
+  }
   protected account() {
     if (this.cli) {
       const login = this.login;
@@ -215,7 +243,7 @@ export class ClaudeAgent extends Adapter {
     return { account: null, requiresOpenaiAuth: true, reason: CLAUDE_KEY };
   }
   protected models() {
-    if (this.cli) return { data: CLAUDE_CLI_MODELS.map(model => ({ model: model.model, displayName: model.displayName, isDefault: false, supportedReasoningEfforts: model.efforts.map(effort => ({ reasoningEffort: effort })), defaultReasoningEffort: null })) };
+    if (this.cli && !this.info.models.length) return { data: CLAUDE_CLI_MODELS.map(model => ({ model: model.model, displayName: model.displayName, isDefault: false, supportedReasoningEfforts: model.efforts.map(effort => ({ reasoningEffort: effort })), defaultReasoningEffort: null })) };
     const all = this.info.models, preferred = all.find(model => model.value === 'default');
     const data = all.filter(model => model.value !== 'default').map(model => ({
       model: model.value, displayName: model.displayName,
@@ -430,7 +458,7 @@ export class AntigravityAgent extends Adapter {
   }
   async start() {
     if (this.ready) return;
-    const { stdout } = await promisify(execFile)(this.binary, ['models'], { env: this.env(), timeout: 60000 });
+    const { stdout } = await promisify(execFile)(findExecutable(this.binary) || this.binary, ['models'], { env: this.env(), timeout: 60000 });
     let preferred = '';
     try { preferred = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.gemini/antigravity-cli/settings.json'), 'utf8')).model || ''; } catch { /* No saved choice. */ }
     this.catalog = groupModels(stdout, preferred);
@@ -447,7 +475,7 @@ export class AntigravityAgent extends Adapter {
     const model = entry ? entry.ids[effort || entry.defaultEffort || ''] || Object.values(entry.ids)[0] : thread.model;
     // agy has no separate system prompt: the first turn carries Papilot's instructions.
     const prompt = conversation ? text : `${thread.instructions}\n\n---\n\n${text}`;
-    const child = this.launch(this.binary, ['-p', prompt, '--output-format', 'stream-json', '--mode', 'accept-edits', ...(model ? ['--model', model] : []), ...(conversation ? ['--conversation', conversation] : [])], { cwd: thread.cwd, env: this.env() });
+    const child = this.launch(findExecutable(this.binary) || this.binary, ['-p', prompt, '--output-format', 'stream-json', '--mode', 'accept-edits', ...(model ? ['--model', model] : []), ...(conversation ? ['--conversation', conversation] : [])], { cwd: thread.cwd, env: this.env() });
     let stopped = false, result: { status?: string; error?: string; denied_actions?: { display_name?: string; action?: string }[] } | null = null, stderr = '';
     turn.stop = () => { stopped = true; child.kill('SIGINT'); setTimeout(() => child.kill('SIGKILL'), 5000).unref(); };
     const texts = new Map<number, string>();

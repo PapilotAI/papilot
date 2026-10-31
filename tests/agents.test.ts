@@ -241,7 +241,11 @@ test('executables are found on PATH or by path', () => {
     assert.equal(findExecutable('tool', { PATH: `/nonexistent${path.delimiter}${dir}` }), file);
     assert.equal(findExecutable(file, { PATH: '' }), file);
     assert.equal(findExecutable('plain', { PATH: dir }), null, 'a file without execute permission is not an agent');
-    assert.equal(findExecutable('tool', { PATH: '' }), null);
+    assert.equal(findExecutable('tool', { PATH: '', HOME: dir }), null);
+    // Under a service whose PATH lacks ~/.local/bin, Claude Code is still found there.
+    fs.mkdirSync(path.join(dir, '.local/bin'), { recursive: true });
+    fs.copyFileSync(file, path.join(dir, '.local/bin/claude')); fs.chmodSync(path.join(dir, '.local/bin/claude'), 0o755);
+    assert.equal(findExecutable('claude', { PATH: '/usr/bin:/bin', HOME: dir }), path.join(dir, '.local/bin/claude'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -349,7 +353,12 @@ test('pausing a Cursor turn cancels its run, and a failed run reports its error'
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-function fakeClaudeCli(dir: string, login: Record<string, unknown>, turns: any[][]) {
+const CLI_MODELS = [
+  { value: 'default', displayName: 'Default (recommended)', resolvedModel: 'claude-opus-5-5', supportedEffortLevels: ['low', 'high'] },
+  { value: 'opus', displayName: 'Opus 5.5', resolvedModel: 'claude-opus-5-5', supportedEffortLevels: ['low', 'high'] },
+  { value: 'haiku', displayName: 'Haiku 5.5', resolvedModel: 'claude-haiku-5-5', supportedEffortLevels: [] },
+];
+function fakeClaudeCli(dir: string, login: Record<string, unknown>, turns: any[][], models: unknown[] | null = CLI_MODELS) {
   const bin = path.join(dir, 'claude');
   fs.writeFileSync(bin, `#!/bin/sh\necho '${JSON.stringify(login)}'\n`); fs.chmodSync(bin, 0o755);
   const launches: { command: string; args: string[]; cwd: string; stdin: string; child: any }[] = [];
@@ -358,6 +367,15 @@ function fakeClaudeCli(dir: string, login: Record<string, unknown>, turns: any[]
     const record = { command, args, cwd: options.cwd, stdin: '', child };
     child.stdin.on('data', (chunk: Buffer) => { record.stdin += chunk.toString(); });
     child.kill = (signal: string) => { child.killed = signal; setImmediate(() => child.emit('close', null, signal)); return true; };
+    // The model listing answers an initialize request and is not a turn.
+    if (!args.includes('--session-id') && !args.includes('--resume')) {
+      child.stdin.on('data', (chunk: Buffer) => {
+        const request = JSON.parse(chunk.toString().trim());
+        if (models && request.request?.subtype === 'initialize') child.stdout.write(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: { models } } }) + '\n');
+        else setImmediate(() => child.emit('close', 1));
+      });
+      return child;
+    }
     launches.push(record);
     const lines = turns.shift();
     if (lines) setImmediate(() => { for (const line of lines) child.stdout.write(JSON.stringify(line) + '\n'); child.stdout.end(); setImmediate(() => child.emit('close', 0)); });
@@ -386,7 +404,8 @@ test('with Claude Code installed, Claude runs claude -p on the host login, strea
     assert.equal(agent.detect(), true);
     await agent.start();
     assert.deepEqual((await agent.request('account/read')).account, { email: 'me@example.com', type: 'Claude Max' });
-    assert.deepEqual((await agent.request('model/list')).data.map((m: any) => m.model), ['fable', 'opus', 'sonnet', 'haiku']);
+    // Claude Code's own list, with versions, efforts and its default.
+    assert.deepEqual((await agent.request('model/list')).data.map((m: any) => [m.model, m.displayName, m.isDefault, m.supportedReasoningEfforts.length]), [['opus', 'Opus 5.5', true, 2], ['haiku', 'Haiku 5.5', false, 0]]);
     const seen = events(agent);
     const { thread } = await agent.request('thread/start', { cwd: '/work', developerInstructions: 'Only edit the worktree.', model: 'opus' });
     await agent.request('turn/start', { threadId: thread.id, effort: 'high', input: [{ type: 'text', text: 'Fix it.' }, { type: 'localImage', path: image }] });
@@ -423,10 +442,12 @@ test('Claude Code that is not signed in says how to sign in, and pausing stops c
     await outside.start();
     const account = await outside.request('account/read');
     assert.equal(account.account, null); assert.match(account.reason, /claude auth login/);
-    const fake = fakeClaudeCli(dir, { loggedIn: true, authMethod: 'console' }, []);
+    const fake = fakeClaudeCli(dir, { loggedIn: true, authMethod: 'console' }, [], null);
     const agent = new ClaudeAgent(async () => { throw new Error('unused'); }, () => fake.bin, fake.launch as any);
     await agent.start();
     assert.deepEqual((await agent.request('account/read')).account, { email: undefined, type: 'API key' });
+    // Without Claude Code's list, its aliases are offered.
+    assert.deepEqual((await agent.request('model/list')).data.map((m: any) => m.model), ['fable', 'opus', 'sonnet', 'haiku']);
     const seen = events(agent);
     const { thread } = await agent.request('thread/start', { cwd: '/work' });
     const { turn } = await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Wait.' }] });

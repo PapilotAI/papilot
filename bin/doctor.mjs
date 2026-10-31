@@ -34,6 +34,13 @@ function executable(command, env = process.env) {
     try { fs.accessSync(file, fs.constants.X_OK); return fs.statSync(file).isFile(); } catch { return false; }
   });
 }
+// Agent CLIs are also looked for where they install themselves, as the server does.
+function agentExecutable(command) {
+  if (command.includes('/') || command.includes('\\')) return executable(command);
+  const home = process.env.HOME || os.homedir();
+  const dirs = ['.local/bin', '.claude/local', '.kimi-code/bin', '.opencode/bin', '.bun/bin', '.npm-global/bin'].map(dir => path.join(home, dir)).concat('/opt/homebrew/bin', '/usr/local/bin');
+  return executable(command) || executable(command, { PATH: dirs.join(path.delimiter) });
+}
 function command(file, args, options = {}) {
   return new Promise(resolve => {
     // Never return raw stderr: login commands can print credentials or account data.
@@ -142,7 +149,7 @@ export async function doctor(args) {
   }
   async function claudeCheck() {
     // With Claude Code installed, Claude runs claude -p on its own login; only the login state is read.
-    const cli = executable(process.env.PAPILOT_CLAUDE_BIN || 'claude');
+    const cli = agentExecutable(process.env.PAPILOT_CLAUDE_BIN || 'claude');
     if (cli) {
       const result = await command(cli, ['auth', 'status', '--json']);
       let login = null;
@@ -157,7 +164,7 @@ export async function doctor(args) {
     return Boolean(sdk && configured);
   }
   async function agyCheck() {
-    const file = executable(process.env.PAPILOT_AGY_BIN || 'agy');
+    const file = agentExecutable(process.env.PAPILOT_AGY_BIN || 'agy');
     if (!file) { check('agent.antigravity', false, 'info', 'Antigravity CLI is not installed or PAPILOT_AGY_BIN is invalid, so Papilot does not offer it.', 'Install Antigravity and sign in to agy, or choose another agent.'); return false; }
     const proxy = process.env.PAPILOT_AGY_PROXY;
     const env = proxy ? { ...process.env, HTTPS_PROXY: proxy, HTTP_PROXY: proxy, https_proxy: proxy, http_proxy: proxy, NO_PROXY: '127.0.0.1,localhost' } : process.env;
@@ -168,7 +175,7 @@ export async function doctor(args) {
   }
   // ACP agents: the CLI must offer its ACP mode. Login is not checked, so no credential is read.
   async function acpCheck(id, name, bin, help, install, update) {
-    const file = executable(process.env[bin.env] || bin.name);
+    const file = agentExecutable(process.env[bin.env] || bin.name);
     if (!file) { check(`agent.${id}`, false, 'info', `${name} is not installed or ${bin.env} is invalid, so Papilot does not offer it.`, `${install}, or choose another agent.`); return false; }
     const result = await command(file, help);
     const ready = result.ok && /\bACP\b|Agent Client Protocol/i.test(result.stdout + '\n' + result.stderr);
