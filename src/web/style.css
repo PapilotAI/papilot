@@ -69,7 +69,6 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .sidebar-header{display:flex;align-items:center;justify-content:space-between;height:44px;flex-shrink:0;padding:0 4px 0 10px}
 .brand{display:flex;align-items:center;gap:7px;color:var(--text-2);text-decoration:none;font:500 13px/1 var(--sans)}
 .brand-mark{width:18px;height:18px;display:block}
-.sidebar-section{display:flex;align-items:center;gap:6px;padding:0 10px;margin:0 0 4px;font-size:12px;font-weight:500;color:var(--text-3)}
 .count{font-size:11.5px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--text-3)}
 .sidebar-actions{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
 .sidebar-actions>.menu-anchor{display:flex}
@@ -111,11 +110,10 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .task-row:hover .more-button,.task-row:focus-within .more-button,.task-row .more-button[aria-expanded=true]{opacity:1}
 @media(hover:none){.task-row .more-button{opacity:1}}
 .task-list-empty{font-size:13px;color:var(--text-3);padding:8px 10px;line-height:1.6}
-.task-list-heading{min-height:28px;margin-bottom:0;padding-right:6px}
-.archive-toggle{margin-left:auto}
-.task-list-heading .archive-toggle{width:26px;height:26px}
+.task-list-tools{display:flex;align-items:center;gap:4px;flex-shrink:0;margin-bottom:6px;padding-right:4px}
+.archive-toggle{width:30px;height:30px}
 .archive-toggle[aria-pressed=true]{color:var(--accent);background:var(--bg-hover)}
-.task-search{display:flex;align-items:center;gap:7px;flex-shrink:0;min-height:30px;margin:0 0 6px;padding:0 10px;border:1px solid transparent;border-radius:var(--r);color:var(--text-3);background:transparent;transition:background-color .12s,border-color .12s}
+.task-search{display:flex;align-items:center;gap:7px;flex:1;min-width:0;min-height:30px;padding:0 10px;border:1px solid transparent;border-radius:var(--r);color:var(--text-3);background:transparent;transition:background-color .12s,border-color .12s}
 .task-search:hover{background:var(--bg-hover)}
 .task-search:focus-within{background:var(--bg);border-color:var(--accent);box-shadow:var(--ring)}
 .task-search input{min-width:0;flex:1;width:100%;padding:5px 0;border:0;outline:none;background:transparent;box-shadow:none;font-size:12.5px;color:var(--text)}
@@ -866,7 +864,7 @@ body.resizing iframe{pointer-events:none}
   .add-note{height:40px;font-size:14px}
   .sidebar-header{height:48px}
   .sidebar .icon-button{width:44px;height:44px}
-  .task-list-heading{padding-right:0}
+  .task-list-tools{padding-right:0}
   .project-switcher{min-height:44px}
   .nav-link,.add-project{min-height:44px;font-size:15px}
   .sidebar-footer .settings-link{min-height:44px}

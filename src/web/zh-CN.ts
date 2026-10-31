@@ -237,6 +237,7 @@ export const zhCN: Record<string, string> = {
   'Resize manuscript panel': '调整稿件右栏宽度',
   'Archived tasks': '已归档任务', 'Show current tasks': '显示未归档任务', 'Show archived tasks': '显示已归档任务',
   'Search tasks': '搜索任务', 'Search tasks…': '搜索任务…', 'Search task titles and instructions': '搜索任务标题和初始指令', 'Clear task search': '清除任务搜索',
+  'Search archived tasks…': '搜索已归档任务…',
   'Restore task': '恢复任务', 'Archive task': '归档任务', 'No matching tasks': '没有匹配的任务', 'No archived tasks': '暂无归档任务',
   'Keyboard shortcuts': '键盘快捷键',
   'Accept change': '接受改动', 'Accept the current proposal. In Changes, stage or unstage it.': '接受当前建议；在“改动”视图中，暂存或取消暂存。',
