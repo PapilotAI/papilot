@@ -43,6 +43,11 @@ export interface AgentModel { id: string; name: string; isDefault: boolean; effo
 export interface UsageWindow { usedPercent: number; minutes: number | null; resetsAt: number | null }
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
 export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null }
+export interface DiagnosticCheck { id: string; ok: boolean; severity: 'error' | 'warn' | 'info'; detail: string; fix: string | null }
+export interface DiagnosticReport {
+  version: string; checkedAt: number; platform: string; arch: string; node: string;
+  ok: boolean; checks: DiagnosticCheck[];
+}
 export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; viewer?: Viewer }
 // Who is looking: the owner on this host or Tailscale (local), or a person
 // signed in with a passkey at the public URL (account). Older servers send none.

@@ -11,6 +11,7 @@ import { Manuscripts } from '../src/server/manuscript.ts';
 import { buildApp, gitQueue } from '../src/server/app.ts';
 import { accountHsts, accountProblem } from '../src/server/security.ts';
 import { Limiter, clientAddress } from '../src/server/access.ts';
+import { Diagnostics } from '../src/server/diagnostics.ts';
 import { PassThrough } from 'node:stream';
 import type { Codex } from '../src/server/codex.ts';
 import type { ReviewClient } from '../src/server/review.ts';
@@ -40,7 +41,9 @@ async function fixture() {
   store.saveTask(task('thesis-task', 'thesis'));
   store.saveTask(task('grant-task', 'grant'));
   workspace.requests.set('grant-request', { id: 'grant-request', taskId: 'grant-task', method: 'item/commandExecution/requestApproval', params: { command: 'ls' }, createdAt: 1, rpcId: 1, agent: 'codex' });
-  const shared = { store, workspace, accounts, manuscripts: new Manuscripts(), csrf: 'local-csrf', serialGit: gitQueue(), dist, version: '9.9.9', connectReview: async () => review };
+  const diagnosticRequests: { repo?: string; port?: number }[] = [];
+  const diagnostics = new Diagnostics(async (repo, port) => { diagnosticRequests.push({ repo, port }); return { version: '9.9.9', ok: false, checks: [{ id: 'latexmk', ok: false, severity: 'error', detail: 'Not installed.', fix: 'Install TeX Live.' }] }; });
+  const shared = { store, workspace, accounts, diagnostics, manuscripts: new Manuscripts(), csrf: 'local-csrf', serialGit: gitQueue(), dist, version: '9.9.9', connectReview: async () => review };
   const local = await buildApp({ ...shared, listener: { kind: 'local', port: 7274, publicOrigin: PUBLIC, owner: 'owner@example' } });
   const remote = await buildApp({ ...shared, listener: { kind: 'account', origin: ORIGIN, hsts: true } });
   // Ada is invited to the thesis only and signs in at the public URL.
@@ -50,8 +53,27 @@ async function fixture() {
   const session = String(joined.headers['set-cookie']).split(';')[0];
   const state = (await remote.inject({ url: '/api/state', headers: { ...REMOTE, cookie: session } })).json();
   const as = { ...REMOTE, origin: ORIGIN, cookie: session, 'x-papilot-token': state.csrf };
-  return { manuscripts: shared.manuscripts, store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
+  return { diagnosticRequests, manuscripts: shared.manuscripts, store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
 }
+
+test('diagnostics are owner-only, require CSRF and resolve only registered paper IDs', async () => {
+  const f = await fixture();
+  try {
+    const request = { method: 'POST' as const, url: '/api/diagnostics', payload: { projectId: 'thesis' } };
+    assert.equal((await f.remote.inject({ ...request, headers: f.as })).statusCode, 403);
+    assert.equal((await f.local.inject({ ...request, headers: LOCAL })).statusCode, 403);
+    assert.equal(f.diagnosticRequests.length, 0);
+    const headers = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'local-csrf' };
+    for (const projectId of [42, '', '/arbitrary/path']) assert.equal((await f.local.inject({ ...request, headers, payload: { projectId } })).statusCode, 400);
+    assert.equal(f.diagnosticRequests.length, 0);
+    const checked = await f.local.inject({ ...request, headers });
+    assert.equal(checked.statusCode, 200); assert.equal(checked.json().ok, false);
+    assert.equal(checked.json().checks[0].id, 'latexmk');
+    assert.deepEqual(f.diagnosticRequests, [{ repo: '/unused/thesis', port: 7274 }]);
+    assert.equal((await f.local.inject({ ...request, headers, payload: {} })).statusCode, 200);
+    assert.deepEqual(f.diagnosticRequests[1], { repo: undefined, port: 7274 });
+  } finally { await f.close(); }
+});
 
 test('an invited person signs in at the public URL and sees only the papers shared with them', async () => {
   const f = await fixture();

@@ -18,6 +18,7 @@ import { type Accounts, deviceLabel } from './accounts.ts';
 import { type Listener, Limiter, SESSION_COOKIE, author, clientAddress, cookie, equals, guard, viewerInfo, visibleSnapshot } from './access.ts';
 import type { AgentId, NoteSummary } from '../shared.ts';
 import { taskNoteResults } from './note-results.ts';
+import { Diagnostics } from './diagnostics.ts';
 
 // Git writes to one repository run one at a time; each returns the new status.
 // Both listeners share one queue, so the owner and a collaborator take turns.
@@ -34,6 +35,7 @@ export interface AppOptions {
   listener: Listener; store: Store; workspace: Workspace; manuscripts: Manuscripts; accounts: Accounts; changes?: Changes;
   csrf: string; serialGit: ReturnType<typeof gitQueue>; dist: string | null; version: string;
   connectReview?: typeof reviewClient;
+  diagnostics?: Diagnostics;
 }
 
 // One Fastify instance per listener: the local one for this host and Tailscale,
@@ -41,6 +43,7 @@ export interface AppOptions {
 export async function buildApp(options: AppOptions) {
   const { listener, store, workspace, manuscripts, accounts, serialGit } = options, connectReview = options.connectReview || reviewClient;
   const changes = options.changes || new Changes(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-changes-')));
+  const diagnostics = options.diagnostics || new Diagnostics();
   // A public request must arrive in full within a minute; held-open bodies tie up nothing.
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024, ...(listener.kind === 'account' ? { requestTimeout: 60000 } : {}) });
   const { csrfFor } = guard(app, { listener, accounts, store, csrf: options.csrf, request: id => workspace.requests.get(id) });
@@ -50,6 +53,13 @@ export async function buildApp(options: AppOptions) {
   const project = (param = 'id') => ({ config: { access: { project: param } } }), task = { config: { access: { task: 'id' } } };
 
   app.get('/api/health', { config: { access: 'public' } }, () => listener.kind === 'local' ? { ok: true, name: 'Papilot', version: options.version } : { ok: true });
+  // Environment reports include host paths, so they are available only to the owner.
+  app.post('/api/diagnostics', owner, request => {
+    const projectId = (request.body as { projectId?: unknown } | null)?.projectId;
+    if (projectId !== undefined && (typeof projectId !== 'string' || !projectId || projectId.length > 64)) throw new Error('Select a valid paper to check.');
+    const repo = projectId ? store.project(projectId).path : undefined;
+    return diagnostics.check(repo, listener.kind === 'local' ? listener.port : undefined);
+  });
   app.get('/api/state', any, request => {
     const viewer = request.viewer!;
     return { ...visibleSnapshot(workspace.snapshot(), viewer, accounts), csrf: csrfFor(viewer), viewer: viewerInfo(viewer, accounts) };

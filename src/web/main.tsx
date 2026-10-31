@@ -19,6 +19,7 @@ import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog } from './settings.tsx';
+import type { DiagnosticReport } from '../shared.ts';
 import { CommitDialog } from './commit-dialog.tsx';
 import { GitCounts, GitRepository } from './git-overview.tsx';
 import { PeopleDialog } from './people-dialog.tsx';
@@ -53,6 +54,7 @@ async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal,
     throw error;
   }
 }
+const checkDiagnostics = (projectId: string | undefined, signal: AbortSignal) => api<DiagnosticReport>('/diagnostics', { projectId }, signal, 60000);
 const AGENT_IDS: AgentId[] = ['codex', 'claude', 'antigravity'];
 const AGENT_LABELS: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity' };
 const agentName = (task: Task) => AGENT_LABELS[task.agent || 'codex'] || 'Codex';
@@ -1238,7 +1240,7 @@ function App() {
       : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button></div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
-    {settings && <SettingsDialog initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} onPeople={owner ? () => setPeopleOpen(true) : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name}/>}
+    {settings && <SettingsDialog initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} onPeople={owner ? () => setPeopleOpen(true) : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name} diagnostics={owner ? { online, runtimes, project, check: checkDiagnostics } : undefined}/>}
     {peopleOpen && <PeopleDialog api={api} projects={state?.projects || []} ago={agoText} onClose={() => setPeopleOpen(false)}/>}
     {task && commitFor === task.id && <CommitDialog branch={projectGit?.branch ?? null} files={ready} remote={Boolean(projectGit?.remote)} agent={agentName(task)} onClose={() => setCommitFor('')}
       generate={fresh => api<{ message: string }>(`/projects/${task.projectId}/git/message`, { paths: ready, agent: task.agent || 'codex', fresh }, undefined, 130000).then(result => result.message)}

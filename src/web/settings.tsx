@@ -8,11 +8,12 @@ import type { Theme } from './theme.tsx';
 import { ShortcutSettings } from './shortcut-settings.tsx';
 import { AboutSettings, LicenseSettings } from './about-settings.tsx';
 import info from 'virtual:papilot-info';
+import { DiagnosticsSettings, type DiagnosticsSettingsProps } from './diagnostics-settings.tsx';
 
-type SettingsPage = 'general' | 'shortcuts' | 'about' | 'licenses';
+type SettingsPage = 'general' | 'shortcuts' | 'about' | 'licenses' | 'diagnostics';
 
 // Browser preferences and workspace management share one sidebar entry.
-export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, accountName, initialPage = 'general' }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; onPeople?: () => void; onSignOut?: () => void; accountName?: string; initialPage?: 'general' | 'shortcuts' }) {
+export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, accountName, diagnostics, initialPage = 'general' }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; onPeople?: () => void; onSignOut?: () => void; accountName?: string; diagnostics?: DiagnosticsSettingsProps; initialPage?: 'general' | 'shortcuts' }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { choice } = useLanguage();
   const notifications = useNotifications();
@@ -48,8 +49,8 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
     <section className="modal settings-dialog">
       <button className="modal-close icon-button" aria-label={t('Close')} onClick={onClose}><Icon name="close"/></button>
       {page !== 'general' && <button type="button" className="settings-back" onClick={() => setPage(page === 'licenses' ? 'about' : 'general')}><Icon name="chevronLeft" size={14}/>{page === 'licenses' ? t('About Papilot') : t('Settings')}</button>}
-      <h2 id="settings-title" tabIndex={-1}>{page === 'shortcuts' ? t('Keyboard shortcuts') : page === 'about' ? t('About Papilot') : page === 'licenses' ? t('Third-party licenses') : t('Settings')}</h2>
-      {page === 'shortcuts' ? <ShortcutSettings/> : page === 'about' ? <AboutSettings onLicenses={() => setPage('licenses')}/> : page === 'licenses' ? <LicenseSettings/> : <>
+      <h2 id="settings-title" tabIndex={-1}>{page === 'shortcuts' ? t('Keyboard shortcuts') : page === 'about' ? t('About Papilot') : page === 'licenses' ? t('Third-party licenses') : page === 'diagnostics' ? t('Runtime & diagnostics') : t('Settings')}</h2>
+      {page === 'shortcuts' ? <ShortcutSettings/> : page === 'about' ? <AboutSettings onLicenses={() => setPage('licenses')}/> : page === 'licenses' ? <LicenseSettings/> : page === 'diagnostics' && diagnostics ? <DiagnosticsSettings {...diagnostics}/> : <>
       <h3 className="settings-section-title settings-preferences-title">{t('Preferences')}</h3>
       <div className="settings-row">
         <span className="settings-name" id="settings-appearance">{t('Appearance')}</span>
@@ -79,6 +80,7 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
       <div className="settings-navigation">
         <button type="button" className="settings-navigation-row" data-settings-page="shortcuts" onClick={() => setPage('shortcuts')}><Icon name="keyboard" size={17}/><span>{t('Keyboard shortcuts')}</span><Icon name="chevronRight" size={15}/></button>
         {onPeople && <button type="button" className="settings-navigation-row" aria-haspopup="dialog" onClick={onPeople}><Icon name="people" size={17}/><span>{t('People')}</span><Icon name="chevronRight" size={15}/></button>}
+        {diagnostics && <button type="button" className="settings-navigation-row" data-settings-page="diagnostics" onClick={() => setPage('diagnostics')}><Icon name="monitor" size={17}/><span>{t('Runtime & diagnostics')}</span><Icon name="chevronRight" size={15}/></button>}
         <button type="button" className="settings-navigation-row" data-settings-page="about" onClick={() => setPage('about')}><Icon name="info" size={17}/><span>{t('About Papilot')}</span><small>v{info.version}</small><Icon name="chevronRight" size={15}/></button>
         {onSignOut && <button type="button" className="settings-navigation-row" onClick={onSignOut}><Icon name="signOut" size={17}/><span>{t('Sign out')}</span>{accountName && <small>{accountName}</small>}</button>}
       </div>

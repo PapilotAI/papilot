@@ -21,6 +21,13 @@ const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.proje
 // Claude is available with its own models; Antigravity is not installed.
 snapshot.runtimes = { codex: snapshot.runtime, claude: { connected: true, authenticated: true, account: 'Claude Max', error: null, models: [{ id: 'opus', name: 'Opus 5.5', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: null }, { id: 'haiku', name: 'Haiku 5.5', isDefault: false, efforts: ['low', 'medium', 'high'], defaultEffort: null }] }, antigravity: { connected: false, authenticated: false, account: null, error: 'spawn agy ENOENT', models: [] } };
 const messages = [];
+let diagnosticFailure = true;
+const diagnosticRequests = [];
+const diagnosticReport = { version: '0.6.0', checkedAt: 1700000000000, platform: 'darwin', arch: 'arm64', node: '22.22.0', ok: false, checks: [
+  { id: 'node', ok: true, severity: 'error', detail: 'Node.js 22.22.0', fix: null },
+  { id: 'latexmk', ok: false, severity: 'error', detail: '/Users/private/bin/latexmk was not found.', fix: 'Install a full TeX distribution and add it to PATH.' },
+  { id: 'agent.antigravity', ok: false, severity: 'warn', detail: 'Antigravity is not configured.', fix: 'Sign in to agy or choose another agent.' },
+] };
 const creates = [];
 let failCreate = true;
 let createResult = task;
@@ -82,6 +89,10 @@ await page.route('**/api/**', async route => {
     return json(captured);
   }
   if (url.pathname === '/api/reconnect') { reconnects++; return json({ ok: true }); }
+  if (url.pathname === '/api/diagnostics') {
+    diagnosticRequests.push(route.request().postDataJSON());
+    return diagnosticFailure ? route.fulfill({ status: 503, json: { error: 'Probe unavailable.' } }) : json(diagnosticReport);
+  }
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/items') && itemsFailure) return route.fulfill({ status: 503, json: { error: 'Conversation temporarily unavailable.' } });
   if (url.pathname.endsWith('/items') && history) return json({ items: history });
@@ -216,6 +227,51 @@ try {
     await page.waitForFunction(value => document.documentElement.dataset.theme === value, value);
     await page.frameLocator('.review-frame').locator(`html[data-theme="${value}"]`).waitFor();
   };
+  await settingsButton.click();
+  await settingsDialog.getByRole('button', { name: 'Runtime & diagnostics', exact: true }).click();
+  const diagnostics = page.getByRole('dialog', { name: 'Runtime & diagnostics', exact: true });
+  await diagnostics.getByRole('alert').waitFor();
+  assert.equal(await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).isDisabled(), true);
+  diagnosticFailure = false;
+  await diagnostics.getByRole('button', { name: 'Check again', exact: true }).click();
+  await diagnostics.getByText('Errors: 1 · Warnings: 1', { exact: true }).waitFor();
+  assert.deepEqual(diagnosticRequests, [{ projectId: task.projectId }, { projectId: task.projectId }]);
+  await diagnostics.locator('.diagnostic-fix').filter({ hasText: 'Install a full TeX distribution and add it to PATH.' }).waitFor();
+  await page.evaluate(() => { window.diagnosticCopies = []; window.originalCopy = navigator.clipboard.writeText; navigator.clipboard.writeText = async value => { window.diagnosticCopies.push(value); }; });
+  await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).click();
+  await diagnostics.getByRole('button', { name: 'Copied', exact: true }).waitFor();
+  const copiedDiagnostic = await page.evaluate(() => window.diagnosticCopies[0]);
+  assert.doesNotMatch(copiedDiagnostic, /private|\/Users\//);
+  assert.equal(JSON.parse(copiedDiagnostic).checks[1].ok, false);
+  await page.clock.runFor(2100);
+  await page.evaluate(() => { navigator.clipboard.writeText = async () => { throw new Error('Clipboard blocked'); }; });
+  await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).click();
+  const manualSummary = diagnostics.getByRole('textbox', { name: 'Diagnostic summary' });
+  await manualSummary.waitFor();
+  assert.equal(await manualSummary.inputValue(), copiedDiagnostic);
+  assert.equal(await manualSummary.evaluate(el => document.activeElement === el && el.selectionEnd === el.value.length), true);
+  await page.evaluate(() => { navigator.clipboard.writeText = window.originalCopy; });
+  await diagnostics.getByRole('button', { name: 'Settings', exact: true }).click();
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.settingsPage), 'diagnostics');
+  await settingsDialog.getByRole('combobox', { name: 'Language', exact: true }).selectOption('zh-CN');
+  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('radio', { name: '深色', exact: true }).check();
+  await page.getByRole('button', { name: '运行状态与诊断', exact: true }).click();
+  await page.getByText('1 项错误 · 1 项提醒', { exact: true }).waitFor();
+  await page.screenshot({ path: 'test-results/settings-diagnostics-dark.png' });
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.equal(await page.locator('.settings-dialog').evaluate(el => el.scrollWidth > el.clientWidth), false);
+  await page.screenshot({ path: 'test-results/settings-diagnostics-mobile.png' });
+  await page.locator('dialog[open]').getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: /关于 Papilot/ }).click();
+  assert.equal(await page.getByRole('link', { name: /更新日志/ }).getAttribute('href'), 'https://github.com/cu1ch3n/papilot/blob/main/CHANGELOG.md');
+  assert.equal(await page.getByRole('link', { name: /参与贡献/ }).getAttribute('href'), 'https://github.com/cu1ch3n/papilot/blob/main/CONTRIBUTING.md');
+  await page.screenshot({ path: 'test-results/settings-about-links-mobile.png' });
+  await page.locator('dialog[open]').getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('radio', { name: '跟随系统', exact: true }).check();
+  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('combobox', { name: '语言', exact: true }).selectOption('system');
+  await closeSettings();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  console.log('PASS: Diagnostics retry, paper scope, redacted sharing and clipboard fallback, translated mobile layout, changelog and contribution links');
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('Preserve this draft while changing appearance.');
   await page.emulateMedia({ colorScheme: 'dark' });
   await themeIs('dark');

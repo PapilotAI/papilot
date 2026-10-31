@@ -1,5 +1,6 @@
 .settings-dialog:has(.about-settings){width:520px}
 .settings-dialog:has(.license-settings){width:640px}
+.settings-dialog:has(.diagnostics-settings){width:600px}
 .settings-section-title{margin:22px 0 8px;font-size:12px;font-weight:500;color:var(--text-3)}
 .settings-preferences-title{margin:18px 0 0}
 .settings-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);margin-top:14px;padding-top:16px;font-size:12px;color:var(--text-3)}
@@ -38,3 +39,30 @@
 .settings-license-body h4{margin:16px 0 6px;font-size:12px;font-weight:500;overflow-wrap:anywhere}
 .settings-license-empty,.settings-license-error{padding:24px 8px;color:var(--text-3);font-size:13px;text-align:center}
 @media(max-width:480px){.settings-product{gap:10px}.settings-product-name{font-size:26px}.settings-license-item summary{flex-wrap:wrap}.settings-license-item summary>.settings-license-component{flex-basis:calc(100% - 30px)}.settings-license-item summary>.settings-license-badge{order:2;max-width:100%}.settings-back{min-height:32px}}
+
+.diagnostic-connections{padding:4px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-subtle)}
+.diagnostic-connection{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 0;font-size:13px}
+.diagnostic-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
+.diagnostic-state i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.diagnostics-settings .ok{color:var(--green)}
+.diagnostics-settings .warn{color:var(--amber-text)}
+.diagnostics-settings .error{color:var(--red)}
+.diagnostic-context,.diagnostic-metadata,.diagnostic-sharing{font-size:12px;line-height:1.6;color:var(--text-3);overflow-wrap:anywhere}
+.diagnostic-context{margin:0 0 12px}
+.diagnostic-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.diagnostic-result{display:flex;align-items:center;gap:8px;font-size:13px;margin:18px 0 8px}
+.diagnostic-progress,.diagnostic-failure{font-size:13px;line-height:1.6;padding:16px 0;color:var(--text-2)}
+.diagnostic-failure{color:var(--red)}
+.diagnostic-check{border-top:1px solid var(--line)}
+.diagnostic-check summary{display:flex;align-items:center;gap:8px;padding:12px 2px;list-style:none;cursor:pointer;font-size:13px;border-radius:4px}
+.diagnostic-check summary::-webkit-details-marker{display:none}
+.diagnostic-check summary>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.diagnostic-check summary>svg{color:var(--text-3)}
+.diagnostic-check[open] summary>svg:last-child{transform:rotate(180deg)}
+.diagnostic-detail{margin:0 0 14px 25px;color:var(--text-2);font-size:12px;line-height:1.65;overflow-wrap:anywhere}
+.diagnostic-detail p{margin-bottom:8px;white-space:pre-wrap}
+.diagnostic-fix{padding:10px 12px;border-radius:var(--r);background:var(--bg-subtle)}
+.diagnostic-fix strong{display:block;margin-bottom:3px;font-weight:500;color:var(--text)}
+.diagnostic-sharing{margin:18px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+.diagnostic-copy{display:block;font-size:12px;color:var(--text-2);margin-top:12px}
+.settings-dialog .diagnostic-copy textarea{height:180px;padding:10px;font:12px/1.6 var(--mono);resize:vertical}
