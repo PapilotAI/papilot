@@ -1,6 +1,11 @@
 import type { NoteGroup } from './note-groups.ts';
 export type TaskStatus = 'idle' | 'queued' | 'running' | 'waiting_input' | 'building' | 'reviewing' | 'interrupted' | 'failed' | 'uncertain' | 'deleting';
 export interface Project { id: string; name: string; path: string; createdAt: number }
+export interface UpdateStatus {
+  currentVersion: string; latestVersion: string | null;
+  phase: 'idle' | 'checking' | 'available' | 'installing' | 'waiting' | 'restarting' | 'updated' | 'failed';
+  checkedAt: number | null; error: string | null; canUpdate: boolean;
+}
 // unsent counts review updates the agent has not received; comments are the
 // ones that ask for a revision. files are the manuscript files this task's
 // accepted changes touched since its last commit, relative to the repository root.

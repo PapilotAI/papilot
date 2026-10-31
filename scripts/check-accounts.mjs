@@ -104,6 +104,7 @@ try {
   // Ada starts a task; her message carries her name for the owner.
   await ada.getByLabel('Describe the revision').fill('Tighten the abstract.');
   await ada.keyboard.press('Enter');
+  await ada.getByRole('button', { name: /Tighten the abstract/ }).first().click();
   await expect(ada.getByRole('article', { name: /^You, / })).toContainText('Tighten the abstract.');
   await owner.reload();
   await owner.getByRole('button', { name: /^Paper: / }).click();

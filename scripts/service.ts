@@ -22,6 +22,7 @@ if (process.argv[2] === 'stop') {
     } catch { /* An older or incomplete plist may not contain environment settings. */ }
   }
   const env = serviceEnvironment(ROOT, os.homedir(), process.execPath, process.env, previous);
+  env.PAPILOT_SERVICE_MANAGER = 'launchd';
   const args = ['/usr/bin/caffeinate', '-i', process.execPath, '--import', 'tsx', path.join(ROOT, 'src/server/main.ts')];
   const plist = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>
 <key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${args.map(a => `<string>${xml(a)}</string>`).join('')}</array>

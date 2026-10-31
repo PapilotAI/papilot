@@ -82,6 +82,7 @@ await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
   if (url.pathname.endsWith('/note-results')) return route.fulfill({ json: { notes: [] } });
   const json = data => route.fulfill({ json: data });
+  if (url.pathname === '/api/updates') return json({ currentVersion: snapshot.version, latestVersion: snapshot.version, phase: 'idle', checkedAt: 1, error: null, canUpdate: true });
   if (url.pathname === '/api/state') {
     if (stateFailure) return route.fulfill({ status: 503, json: { error: 'Host unavailable.' } });
     const captured = structuredClone(snapshot);

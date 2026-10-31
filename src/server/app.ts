@@ -18,6 +18,7 @@ import { type Accounts, deviceLabel } from './accounts.ts';
 import { type Listener, Limiter, SESSION_COOKIE, author, clientAddress, cookie, equals, guard, viewerInfo, visibleSnapshot } from './access.ts';
 import type { AgentId, NoteSummary } from '../shared.ts';
 import { taskNoteResults } from './note-results.ts';
+import type { Updates } from './updates.ts';
 import { Diagnostics } from './diagnostics.ts';
 
 // Git writes to one repository run one at a time; each returns the new status.
@@ -35,6 +36,7 @@ export interface AppOptions {
   listener: Listener; store: Store; workspace: Workspace; manuscripts: Manuscripts; accounts: Accounts; changes?: Changes;
   csrf: string; serialGit: ReturnType<typeof gitQueue>; dist: string | null; version: string;
   connectReview?: typeof reviewClient;
+  updates?: Updates; updateInstance?: string;
   diagnostics?: Diagnostics;
 }
 
@@ -47,12 +49,19 @@ export async function buildApp(options: AppOptions) {
   // A public request must arrive in full within a minute; held-open bodies tie up nothing.
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024, ...(listener.kind === 'account' ? { requestTimeout: 60000 } : {}) });
   const { csrfFor } = guard(app, { listener, accounts, store, csrf: options.csrf, request: id => workspace.requests.get(id) });
+  const updateRequests = new WeakMap<object, () => void>();
+  app.addHook('onRequest', async (request, reply) => {
+    if (!options.updates || !/^\/(api|review)\//.test(request.url) || /^\/api\/(?:updates(?:\/|$)|health(?:\?|$)|events(?:\?|$)|state(?:\?|$))/.test(request.url)) return;
+    if (options.updates.restarting) return reply.code(503).header('Retry-After', '3').send({ error: 'Papilot is restarting after an update. Please wait a moment.' });
+    const release = options.updates.enter(); updateRequests.set(request, release); reply.raw.once('close', release);
+  });
+  app.addHook('onResponse', async request => { updateRequests.get(request)?.(); });
   await app.register(compress);
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
   const any = { config: { access: 'any' as const } }, owner = { config: { access: 'owner' as const } };
   const project = (param = 'id') => ({ config: { access: { project: param } } }), task = { config: { access: { task: 'id' } } };
 
-  app.get('/api/health', { config: { access: 'public' } }, () => listener.kind === 'local' ? { ok: true, name: 'Papilot', version: options.version } : { ok: true });
+  app.get('/api/health', { config: { access: 'public' } }, () => listener.kind === 'local' ? { ok: true, name: 'Papilot', version: options.version, ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) } : { ok: true });
   // Environment reports include host paths, so they are available only to the owner.
   app.post('/api/diagnostics', owner, request => {
     const projectId = (request.body as { projectId?: unknown } | null)?.projectId;
@@ -60,6 +69,11 @@ export async function buildApp(options: AppOptions) {
     const repo = projectId ? store.project(projectId).path : undefined;
     return diagnostics.check(repo, listener.kind === 'local' ? listener.port : undefined);
   });
+  if (options.updates) {
+    app.get('/api/updates', owner, () => options.updates!.snapshot());
+    app.post('/api/updates/check', owner, () => options.updates!.check());
+    app.post('/api/updates/install', owner, request => options.updates!.install((request.body as any)?.version));
+  }
   app.get('/api/state', any, request => {
     const viewer = request.viewer!;
     return { ...visibleSnapshot(workspace.snapshot(), viewer, accounts), csrf: csrfFor(viewer), viewer: viewerInfo(viewer, accounts) };

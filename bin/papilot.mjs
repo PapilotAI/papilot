@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { activeInstallation } from './installation.mjs';
 
 const usage = `Usage: papilot [doctor | demo | codex <args> | service install | service stop] [--port <number>] [--data <folder>]
 
@@ -18,7 +19,9 @@ const usage = `Usage: papilot [doctor | demo | codex <args> | service install | 
   --data <folder>          Keep state in another folder (PAPILOT_DATA, default ~/.papilot)
   --version                Print the version`;
 
-const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+let pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const packageRoot = fileURLToPath(new URL('..', import.meta.url));
+const installedPackage = () => JSON.parse(readFileSync(path.join(activeInstallation(packageRoot, process.env.PAPILOT_DATA || path.join(os.homedir(), '.papilot')), 'package.json'), 'utf8'));
 const args = process.argv.slice(2);
 async function main() {
   const doctor = args[0] === 'doctor';
@@ -37,7 +40,7 @@ async function main() {
     }
     else if (arg === '--data' && args[i + 1]) process.env.PAPILOT_DATA = path.resolve(args[++i]);
     else if (arg === '--version' || arg === '-v') {
-      console.log(pkg.version);
+      console.log(installedPackage().version);
       process.exit(0);
     } else {
       if (arg !== '--help' && arg !== '-h') console.error(`Unknown argument: ${arg}\n`);
@@ -78,6 +81,7 @@ async function main() {
   const emitWarning = process.emitWarning;
   process.emitWarning = (warning, ...rest) => String(warning).includes('SQLite') ? undefined : emitWarning.call(process, warning, ...rest);
   process.env.PAPILOT_DATA ||= path.join(os.homedir(), '.papilot');
+  pkg = installedPackage();
 
   // Papilot drives Codex through its app server. A codex on PATH at least as new
   // as the tested version is used as it is; otherwise that version is installed

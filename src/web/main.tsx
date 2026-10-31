@@ -17,6 +17,7 @@ import { keepDialogFocus } from './focus.ts';
 import { DeleteTaskDialog } from './task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
+import { UpdateNotice } from './update-notice.tsx';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog } from './settings.tsx';
 import type { DiagnosticReport } from '../shared.ts';
@@ -1212,6 +1213,7 @@ function App() {
       </div>) : <div className="task-list-empty" role="status">{searchTerms.length ? t('No matching tasks') : showArchived ? t('No archived tasks') : t('No tasks yet')}</div>}</nav>
       <div className="sidebar-footer">
         <button className="nav-link settings-link" aria-haspopup="dialog" onClick={() => setSettings('general')}><Icon name="settings" size={16}/><span className="nav-label">{t('Settings')}</span></button>
+        {state && owner && <UpdateNotice api={api} version={state.version}/>}
         {state && (!online || running > 0) && <div className={'host-status' + (online ? '' : ' reconnecting')} role="status" title={online ? t('Connected') : t('Reconnecting')}>
           <span className={'connection-dot' + (online ? ' connected' : '')} aria-hidden="true"/>
           <span className="host-state">{!online ? t('Reconnecting') : tn(running, '{n} active task', '{n} active tasks')}</span>

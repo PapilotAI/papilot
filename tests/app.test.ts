@@ -11,6 +11,7 @@ import { Manuscripts } from '../src/server/manuscript.ts';
 import { buildApp, gitQueue } from '../src/server/app.ts';
 import { accountHsts, accountProblem } from '../src/server/security.ts';
 import { Limiter, clientAddress } from '../src/server/access.ts';
+import { Updates } from '../src/server/updates.ts';
 import { Diagnostics } from '../src/server/diagnostics.ts';
 import { PassThrough } from 'node:stream';
 import type { Codex } from '../src/server/codex.ts';
@@ -41,9 +42,10 @@ async function fixture() {
   store.saveTask(task('thesis-task', 'thesis'));
   store.saveTask(task('grant-task', 'grant'));
   workspace.requests.set('grant-request', { id: 'grant-request', taskId: 'grant-task', method: 'item/commandExecution/requestApproval', params: { command: 'ls' }, createdAt: 1, rpcId: 1, agent: 'codex' });
+  const updates = new Updates({ root: process.cwd(), data: dist, version: '9.9.9', port: 7274, supported: true, busy: () => true, shutdown() {}, latest: async () => '10.0.0', install: async () => '/fixture-update' });
   const diagnosticRequests: { repo?: string; port?: number }[] = [];
   const diagnostics = new Diagnostics(async (repo, port) => { diagnosticRequests.push({ repo, port }); return { version: '9.9.9', ok: false, checks: [{ id: 'latexmk', ok: false, severity: 'error', detail: 'Not installed.', fix: 'Install TeX Live.' }] }; });
-  const shared = { store, workspace, accounts, diagnostics, manuscripts: new Manuscripts(), csrf: 'local-csrf', serialGit: gitQueue(), dist, version: '9.9.9', connectReview: async () => review };
+  const shared = { store, workspace, accounts, updates, diagnostics, manuscripts: new Manuscripts(), csrf: 'local-csrf', serialGit: gitQueue(), dist, version: '9.9.9', connectReview: async () => review };
   const local = await buildApp({ ...shared, listener: { kind: 'local', port: 7274, publicOrigin: PUBLIC, owner: 'owner@example' } });
   const remote = await buildApp({ ...shared, listener: { kind: 'account', origin: ORIGIN, hsts: true } });
   // Ada is invited to the thesis only and signs in at the public URL.
@@ -53,7 +55,7 @@ async function fixture() {
   const session = String(joined.headers['set-cookie']).split(';')[0];
   const state = (await remote.inject({ url: '/api/state', headers: { ...REMOTE, cookie: session } })).json();
   const as = { ...REMOTE, origin: ORIGIN, cookie: session, 'x-papilot-token': state.csrf };
-  return { diagnosticRequests, manuscripts: shared.manuscripts, store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
+  return { updates, diagnosticRequests, manuscripts: shared.manuscripts, store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { updates.close(); await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
 }
 
 test('diagnostics are owner-only, require CSRF and resolve only registered paper IDs', async () => {
@@ -72,6 +74,30 @@ test('diagnostics are owner-only, require CSRF and resolve only registered paper
     assert.deepEqual(f.diagnosticRequests, [{ repo: '/unused/thesis', port: 7274 }]);
     assert.equal((await f.local.inject({ ...request, headers, payload: {} })).statusCode, 200);
     assert.deepEqual(f.diagnosticRequests[1], { repo: undefined, port: 7274 });
+  } finally { await f.close(); }
+});
+
+test('updates are owner-only and installs require a valid CSRF token and the advertised version', async () => {
+  const f = await fixture();
+  try {
+    for (const url of ['/api/updates', '/api/updates/check', '/api/updates/install']) {
+      const method = url === '/api/updates' ? 'GET' : 'POST';
+      assert.equal((await f.remote.inject({ method, url, headers: f.as, ...(method === 'POST' ? { payload: { version: '10.0.0' } } : {}) })).statusCode, 403);
+    }
+    const headers = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'local-csrf' };
+    const checked = await f.local.inject({ method: 'POST', url: '/api/updates/check', headers, payload: {} });
+    assert.equal(checked.json().phase, 'available');
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/updates/install', headers: { ...headers, 'x-papilot-token': 'wrong' }, payload: { version: '10.0.0' } })).statusCode, 403);
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/updates/install', headers, payload: { version: '10.0.1' } })).statusCode, 400);
+    const installed = await f.local.inject({ method: 'POST', url: '/api/updates/install', headers, payload: { version: '10.0.0' } });
+    assert.equal(installed.statusCode, 200); assert.equal(installed.json().phase, 'installing');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.updates.snapshot().phase, 'waiting');
+    Object.defineProperty(f.updates, 'restarting', { get: () => true });
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/rename', headers, payload: { title: 'Blocked during restart' } })).statusCode, 503);
+    assert.equal((await f.local.inject({ url: '/api/updates', headers: LOCAL })).statusCode, 200);
+    assert.equal((await f.local.inject({ url: '/api/state', headers: LOCAL })).statusCode, 200);
+    assert.equal(f.store.task('thesis-task').title, 'thesis-task');
   } finally { await f.close(); }
 });
 

@@ -343,6 +343,7 @@ interface Build { tree: string; status: ManuscriptBuild['status']; key?: string;
 
 export class Manuscripts extends EventEmitter {
   private builds = new Map<string, Build>();
+  get busyForUpdate() { return [...this.builds.values()].some(build => build.status === 'building'); }
 
   async state(projectId: string, root: string, rebuild = false): Promise<{ git: GitStatus; build: ManuscriptBuild }> {
     const [status, tree] = await Promise.all([gitStatus(root), workingTree(root)]);

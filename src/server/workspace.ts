@@ -91,6 +91,10 @@ export class Workspace extends EventEmitter {
   private messages = new Map<string, Promise<{ message: string; agent: AgentId }>>();
   private titles = new Map<string, Promise<Task | null>>();
   private helperStops = new Set<() => void>();
+  get busyForUpdate() {
+    return Boolean(this.active.size || this.preparing.size || this.publishing.size || this.reviewWrites.size || this.commentWrites.size || this.committing.size || this.deletions.size || this.helperStops.size || this.titles.size
+      || this.store.tasks().some(task => ['queued', 'running', 'waiting_input', 'building', 'uncertain', 'deleting'].includes(task.status) || task.pendingReview));
+  }
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.agents = { codex, claude: others.claude || new ClaudeAgent(), antigravity: others.antigravity || new AntigravityAgent() };

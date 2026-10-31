@@ -1,6 +1,15 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'Updating…': '正在更新…', 'Update ready': '更新已就绪', 'Restarting…': '正在重启…', 'Update failed': '更新失败', 'New version': '有新版本',
+  'Papilot {version}': 'Papilot {version}', 'Update Papilot': '更新 Papilot', 'Later': '稍后', 'Retry update': '重试更新', 'Update to {version}': '更新到 {version}',
+  'Could not start the update. Please retry.': '未能启动更新，请重试。',
+  'Downloading and checking the new version…': '正在下载并检查新版本…',
+  'The update is ready. Waiting for tasks and PDF builds to finish before restarting.': '更新已就绪，将在任务和 PDF 编译完成后重启。',
+  'Restarting Papilot. This page will reconnect automatically; your drafts are kept.': '正在重启 Papilot，页面将自动重连，草稿会保留。',
+  'The update did not finish. Your current version is still available. You can retry here.': '更新未完成，当前版本仍然可用。你可以在这里重试。',
+  'Install the new version and restart automatically when tasks are idle. Your papers, tasks and settings stay in place.': '安装新版本，并在任务空闲时自动重启。论文、任务和设置都会保留。',
+  'Papilot cannot find npm on this computer. Updates are unavailable until npm is installed.': 'Papilot 未能在这台电脑上找到 npm，安装 npm 后即可更新。',
   'Generate task title': '生成任务标题', 'Generating task title…': '正在生成任务标题…', 'Retry title generation': '重新生成任务标题',
   'PDF annotations': 'PDF 标注', '{n} annotation group': '{n} 个批注组', '{n} annotation groups': '{n} 个批注组',
   'Yellow': '黄色', 'Green': '绿色', 'Purple': '紫色', 'Orange': '橙色', 'Red': '红色',
@@ -100,7 +109,7 @@ export const zhCN: Record<string, string> = {
   '{n} note attached': '已附加 {n} 条批注', '{n} notes attached': '已附加 {n} 条批注',
   'Add overall instructions (optional)': '补充整体修改要求（选填）', 'Address {n} PDF notes': '处理 {n} 条 PDF 批注',
   'Page {n}': '第 {n} 页', 'PDF notes': 'PDF 批注', 'Show note {n} on the page': '在页面上显示批注 {n}', 'Delete note {n}': '删除批注 {n}', 'Delete note': '删除批注',
-  '{file}, the LaTeX that produced the marked region': '{file}，生成所标记区域的 LaTeX 源码', 'Marked on an earlier version of the PDF.': '标记于较早版本的 PDF。',
+  'Marked on an earlier version of the PDF.': '标记于较早版本的 PDF。',
   'Send {n} note to the agent': '把 {n} 条批注发送给智能体', 'Send {n} notes to the agent': '把 {n} 条批注发送给智能体',
   'PDF preview': 'PDF 预览', 'The manuscript did not compile.': '稿件编译失败。', 'Compiling the latest changes…': '正在编译最新改动…', 'Opening the PDF…': '正在打开 PDF…',
   'Compiling the PDF…': '正在编译 PDF…',

@@ -211,6 +211,16 @@ Open **People** in the sidebar to manage access:
 
 Sessions last 30 days from last use and at most 90 days. Invited people cannot add papers or manage people; those stay with you. Their messages and PDF notes show their name. Review comments and Git commits do not record who made them yet. Passkeys belong to the address's host name, so renaming the host or the tailnet means everyone needs a new invite.
 
+## Updates
+
+The owner sees a **New version** badge beside **Settings** when npm has a newer stable Papilot release. Papilot checks at startup and every six hours. Click the badge, then **Update to …**; the panel shows installation, waiting, restart and failure states. Collaborators cannot update the host.
+
+The installer downloads the exact advertised version into `PAPILOT_DATA/updates/releases`, installs its dependencies and tests startup with a separate empty data directory. It does not overwrite the original npm installation, source checkout, manuscripts or worktrees. npm must be available to the server. The update waits for active tasks, pending replies, uncertain tasks, PDF builds and outstanding requests before restarting; finish or pause those tasks to proceed. The page reconnects and reloads automatically with its saved drafts.
+
+The `papilot` command, `npm start` and the installed macOS service use the selected release on subsequent starts. Starting from a source checkout after a browser update also uses that selected release with the same data directory; use a separate `PAPILOT_DATA` for development. Newer versions installed through npm take precedence over older managed releases. Automatic restarts support the standalone server and the built-in macOS service.
+
+If installation or its initial startup check fails, the existing server keeps running. If activation fails, Papilot restores the previous runtime and its pre-update SQLite database, including any WAL, and restarts it. The badge offers **Retry update**. Installation and restart diagnostics are in `PAPILOT_DATA/updates/install.log` and `restart.log`; the standalone restarted server writes to `updates/server.log`.
+
 ## Configuration
 
 | Variable | Default | Purpose |

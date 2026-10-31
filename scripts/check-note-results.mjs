@@ -32,6 +32,7 @@ let failResults = true;
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
   if (url.pathname.startsWith('/review/')) return route.fallback();
+  if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items } });
   if (url.pathname.endsWith('/note-results')) return route.fulfill(failResults ? { status: 503, json: { error: 'Temporary failure' } } : { json: { notes: await taskNoteResults(task, items, runs, client) } });
