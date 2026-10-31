@@ -25,7 +25,9 @@ export function ModelLabel({ model, effort, fast }: { model: string; effort?: st
 export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect }: { name: string; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void }) {
   if (!runtime || (runtime.connected && runtime.authenticated)) return null;
   const error = runtime.error || '', first = error.split(/:\s|\.\s/)[0];
-  const message = error ? (first.length <= 120 ? first : t('{agent} is unavailable', { agent: name })) : t('Connecting to {agent}…', { agent: name });
+  // An agent that was not found is not connecting: say so until it is installed and Reconnect finds it.
+  const message = runtime.installed === false ? t('{agent} was not found on this computer. Install or set it up, then select Reconnect.', { agent: name })
+    : error ? (first.length <= 120 ? first : t('{agent} is unavailable', { agent: name })) : t('Connecting to {agent}…', { agent: name });
   return <div className="agent-connection">
     <div className="agent-connection-message" role="status"><Icon name="alert" size={15}/><span>{message}</span></div>
     {error && error !== message && <details><summary>{t('Connection details')}</summary><p>{error}</p></details>}
@@ -67,6 +69,7 @@ interface Choice { key: string; agent: AgentOption; model: string; name: string;
 
 // An agent's state when it cannot be used yet, shown beside its name.
 function agentState(runtime?: RuntimeStatus) {
+  if (runtime?.installed === false) return t('Not found');
   if (!runtime || (!runtime.connected && !runtime.error)) return t('Connecting…');
   if (!runtime.connected) return t('Unavailable');
   return runtime.authenticated ? '' : t('Sign-in required');
