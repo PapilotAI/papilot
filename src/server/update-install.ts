@@ -78,12 +78,14 @@ export async function prepareDev(root: string, version: string, log: number, run
   await run(['run', 'build'], engine, log);
   await run(['run', 'build'], root, log);
   for (const cwd of [root, engine]) {
-    // npm 10 checks even omitted dev dependencies under --engine-strict.
-    // This built snapshot only needs runtime dependencies from now on.
-    const manifest = path.join(cwd, 'package.json'), runtime = readJson(manifest);
-    delete runtime.devDependencies;
+    // npm 10 checks even omitted dev dependencies under --engine-strict, so they
+    // are hidden while pruning. The manifest is then restored: the launcher and
+    // the agents read the tested Codex and Claude SDK versions from it.
+    const manifest = path.join(cwd, 'package.json'), original = fs.readFileSync(manifest, 'utf8');
+    const { devDependencies: _, ...runtime } = JSON.parse(original);
     fs.writeFileSync(manifest, JSON.stringify(runtime, null, 2) + '\n');
-    await run(['prune', '--omit=dev', '--engine-strict', ...flags], cwd, log);
+    try { await run(['prune', '--omit=dev', '--engine-strict', ...flags], cwd, log); }
+    finally { fs.writeFileSync(manifest, original); }
   }
 }
 async function installDev(data: string, version: string) {

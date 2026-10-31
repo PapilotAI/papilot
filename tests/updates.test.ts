@@ -124,6 +124,11 @@ test('dev builds tolerate test-only engine restrictions but reject incompatible 
         assert.equal(fs.readFileSync(path.join(root, 'vendor/latex-review/build-ok'), 'utf8'), 'yes');
         assert.equal(fs.existsSync(path.join(root, 'node_modules/fixture-incompatible')), false);
         assert.equal(fs.existsSync(path.join(root, 'vendor/latex-review/node_modules/fixture-incompatible')), false);
+        // The launcher reads tested agent versions from the retained devDependencies.
+        const app = readJson(path.join(root, 'package.json')), review = readJson(path.join(root, 'vendor/latex-review/package.json'));
+        assert.equal(app.version, `0.7.0-dev.${revision}`);
+        assert.deepEqual(app.devDependencies, { 'fixture-incompatible': 'file:./fixture-incompatible-1.0.0.tgz' });
+        assert.deepEqual(review.devDependencies, { 'fixture-incompatible': 'file:../../fixture-incompatible-1.0.0.tgz' });
       }
     }
   } catch (error) { t.diagnostic(fs.readFileSync(path.join(data, 'install.log'), 'utf8')); throw error; }
