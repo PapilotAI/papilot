@@ -6,7 +6,7 @@ import path from 'node:path';
 import { findSkill, listedSkill, loadSkills, parseSkill } from '../src/server/skills.ts';
 
 test('Papilot ships paper skills with names, descriptions and hints, in order', () => {
-  const skills = loadSkills();
+  const skills = loadSkills(undefined, { builtin: path.resolve('skills'), user: path.join(os.tmpdir(), 'papilot-no-user-skills-' + process.pid) });
   assert.deepEqual(skills.map(skill => skill.id), ['polish', 'proofread', 'shorten', 'check-math', 'consistency', 'latex-warnings', 'reviewer-response']);
   for (const skill of skills) {
     assert.equal(skill.source, 'builtin');

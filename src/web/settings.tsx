@@ -9,12 +9,14 @@ import { ShortcutSettings } from './shortcut-settings.tsx';
 import { AboutSettings, LicenseSettings } from './about-settings.tsx';
 import info from 'virtual:papilot-info';
 import { DiagnosticsSettings, type DiagnosticsSettingsProps } from './diagnostics-settings.tsx';
+import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions } from './skill-library.tsx';
 
-type SettingsPage = 'general' | 'shortcuts' | 'about' | 'licenses' | 'diagnostics';
+type SettingsPage = 'general' | 'shortcuts' | 'about' | 'licenses' | 'diagnostics' | 'skills';
 
 // Browser preferences and workspace management share one sidebar entry.
-export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, accountName, diagnostics, initialPage = 'general' }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; onPeople?: () => void; onSignOut?: () => void; accountName?: string; diagnostics?: DiagnosticsSettingsProps; initialPage?: 'general' | 'shortcuts' }) {
+export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, accountName, diagnostics, skills, initialPage = 'general' }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; onPeople?: () => void; onSignOut?: () => void; accountName?: string; diagnostics?: DiagnosticsSettingsProps; skills?: SkillLibraryOptions; initialPage?: 'general' | 'shortcuts' }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const skillControls = useRef<SkillLibraryControls>(null);
   const { choice } = useLanguage();
   const notifications = useNotifications();
   const [page, setPage] = useState<SettingsPage>(initialPage);
@@ -45,8 +47,10 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
     try { await setNotifications(value); } finally { setAsking(false); }
   }
   const browserName = LANGUAGES.find(item => item.id === browserLanguage())!.name;
-  return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="settings-title" onKeyDown={keepDialogFocus} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="modal settings-dialog">
+  const close = () => { if (page === 'skills') skillControls.current?.cancel(); else onClose(); };
+  return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="settings-title" onKeyDown={keepDialogFocus} onCancel={event => { event.preventDefault(); close(); }} onClick={event => { if (event.target === event.currentTarget) close(); }}>
+    <section className={'modal settings-dialog' + (page === 'skills' ? ' settings-skills' : '')}>
+      {page === 'skills' && skills ? <SkillLibraryPanel {...skills} controls={skillControls} onBack={() => setPage('general')} onClose={onClose}/> : <>
       <button className="modal-close icon-button" aria-label={t('Close')} onClick={onClose}><Icon name="close"/></button>
       {page !== 'general' && <button type="button" className="settings-back" onClick={() => setPage(page === 'licenses' ? 'about' : 'general')}><Icon name="chevronLeft" size={14}/>{page === 'licenses' ? t('About Papilot') : t('Settings')}</button>}
       <h2 id="settings-title" tabIndex={-1}>{page === 'shortcuts' ? t('Keyboard shortcuts') : page === 'about' ? t('About Papilot') : page === 'licenses' ? t('Third-party licenses') : page === 'diagnostics' ? t('Runtime & diagnostics') : t('Settings')}</h2>
@@ -78,6 +82,7 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
         {test && <span role="status">{test === 'sent' ? t('Sent. If nothing appeared, allow notifications for this browser in your system settings.') : t('This browser could not show the notification.')}</span>}
       </div>}
       <div className="settings-navigation">
+        {skills && <button type="button" className="settings-navigation-row" data-settings-page="skills" onClick={() => setPage('skills')}><Icon name="spark" size={17}/><span>{t('Skills')}</span><Icon name="chevronRight" size={15}/></button>}
         <button type="button" className="settings-navigation-row" data-settings-page="shortcuts" onClick={() => setPage('shortcuts')}><Icon name="keyboard" size={17}/><span>{t('Keyboard shortcuts')}</span><Icon name="chevronRight" size={15}/></button>
         {onPeople && <button type="button" className="settings-navigation-row" aria-haspopup="dialog" onClick={onPeople}><Icon name="people" size={17}/><span>{t('People')}</span><Icon name="chevronRight" size={15}/></button>}
         {diagnostics && <button type="button" className="settings-navigation-row" data-settings-page="diagnostics" onClick={() => setPage('diagnostics')}><Icon name="monitor" size={17}/><span>{t('Runtime & diagnostics')}</span><Icon name="chevronRight" size={15}/></button>}
@@ -85,6 +90,7 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
         {onSignOut && <button type="button" className="settings-navigation-row" onClick={onSignOut}><Icon name="signOut" size={17}/><span>{t('Sign out')}</span>{accountName && <small>{accountName}</small>}</button>}
       </div>
       <footer className="settings-footer"><span>Papilot · {info.license}</span><a href={info.repository} target="_blank" rel="noopener noreferrer"><Icon name="github" size={15}/>GitHub<Icon name="external" size={12}/><span className="sr-only">{t('Opens in a new tab')}</span></a></footer>
+      </>}
       </>}
     </section>
   </dialog>;

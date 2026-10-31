@@ -279,6 +279,7 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
   const viewer = useContext(ViewerContext);
   const files = useAttachmentDraft(`papilot:files:${viewer?.id || 'owner'}:task:${task.id}`);
   const [skill, setSkill] = useState<Skill | null>(null);
+  useEffect(() => setSkill(current => current ? skills.find(item => item.id === current.id) || null : null), [skills]);
   const scroller = useRef<HTMLDivElement>(null);
   const shouldFollow = useRef(true);
   const [following, setFollowing] = useState(true);
@@ -742,6 +743,7 @@ function App() {
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
   const [newSkill, setNewSkill] = useState<Skill | null>(null);
   const [skills, setSkills] = useState<{ projectId: string; list: Skill[] }>({ projectId: '', list: [] });
+  const [skillsRevision, setSkillsRevision] = useState(0);
   // The agent, and each agent's model and reasoning effort, are remembered for
   // every new task, whether it starts from the composer or from PDF notes.
   const [agentChoice, setAgentChoice] = useState<AgentId>(() => { const saved = browserStorage.getItem('papilot:agent'); return saved === 'claude' || saved === 'antigravity' ? saved : 'codex'; });
@@ -1087,15 +1089,20 @@ function App() {
   }, [project?.id, project?.path, manuscriptOpen, reviewKey]);
   // A skill chosen for one paper may not exist on another.
   useEffect(() => setNewSkill(null), [project?.id, project?.path]);
-  // Skills come from Papilot, the data folder and the paper's .papilot/skills,
+  // Skills come from Papilot, ~/.papilot/skills and the paper's .papilot/skills,
   // read again on return to the window so a new skill file appears.
   useEffect(() => {
     if (!project) return;
     let live = true;
-    const load = () => void api<{ skills?: Skill[] }>(`/projects/${project.id}/skills`).then(result => { if (live) setSkills({ projectId: project.id, list: Array.isArray(result.skills) ? result.skills : [] }); }, () => undefined);
+    const load = () => void api<{ skills?: Skill[] }>(`/projects/${project.id}/skills`).then(result => {
+      if (!live) return;
+      const list = Array.isArray(result.skills) ? result.skills : [];
+      setSkills({ projectId: project.id, list });
+      setNewSkill(current => current ? list.find(skill => skill.id === current.id) || null : null);
+    }, () => undefined);
     load(); window.addEventListener('focus', load);
     return () => { live = false; window.removeEventListener('focus', load); };
-  }, [project?.id, project?.path]);
+  }, [project?.id, project?.path, skillsRevision]);
   const projectGit = git.projectId === project?.id ? git.status : null;
   const projectSkills = skills.projectId === project?.id ? skills.list : [];
   const updateGit = (projectId: string, status: GitStatus) => { setGit({ projectId, status }); setManuscript(current => current.projectId === projectId && current.data ? { ...current, data: { ...current.data, git: status } } : current); };
@@ -1327,7 +1334,7 @@ function App() {
       : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button></div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
-    {settings && <SettingsDialog initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} onPeople={owner ? () => setPeopleOpen(true) : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name} diagnostics={owner ? { online, runtimes, project, check: checkDiagnostics } : undefined}/>}
+    {settings && <SettingsDialog initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} onPeople={owner ? () => setPeopleOpen(true) : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name} diagnostics={owner ? { online, runtimes, project, check: checkDiagnostics } : undefined} skills={owner ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {peopleOpen && <PeopleDialog api={api} projects={state?.projects || []} ago={agoText} onClose={() => setPeopleOpen(false)}/>}
     {task && commitFor === task.id && <CommitDialog branch={projectGit?.branch ?? null} files={ready} remote={Boolean(projectGit?.remote)} agent={agentName(task)} onClose={() => setCommitFor('')}
       generate={fresh => api<{ message: string }>(`/projects/${task.projectId}/git/message`, { paths: ready, agent: task.agent || 'codex', fresh }, undefined, 130000).then(result => result.message)}

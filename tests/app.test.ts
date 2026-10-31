@@ -58,6 +58,23 @@ async function fixture() {
   return { updates, diagnosticRequests, manuscripts: shared.manuscripts, store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { updates.close(); await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
 }
 
+test('skill management is owner-only and writes require CSRF', async () => {
+  const f = await fixture();
+  try {
+    for (const url of ['/api/skills', '/api/skills/builtin/polish']) assert.equal((await f.remote.inject({ url, headers: f.as })).statusCode, 403);
+    for (const url of ['/api/skills/user/example', '/api/skills/user/example/remove']) {
+      assert.equal((await f.remote.inject({ method: 'POST', url, headers: f.as, payload: { content: 'Instructions.' } })).statusCode, 403);
+      assert.equal((await f.local.inject({ method: 'POST', url, headers: { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'wrong' }, payload: { content: 'Instructions.' } })).statusCode, 403);
+    }
+    const listed = await f.local.inject({ url: '/api/skills', headers: LOCAL });
+    assert.equal(listed.statusCode, 200);
+    assert.ok(listed.json().skills.some((skill: any) => skill.source === 'builtin'));
+    const detail = await f.local.inject({ url: '/api/skills/builtin/polish', headers: LOCAL });
+    assert.equal(detail.statusCode, 200); assert.ok(detail.json().content);
+    assert.equal((await f.local.inject({ url: '/api/skills?projectId=missing', headers: LOCAL })).statusCode, 400);
+  } finally { await f.close(); }
+});
+
 test('paper imports require owner access and CSRF before receiving files or starting repairs', async () => {
   const f = await fixture();
   try {

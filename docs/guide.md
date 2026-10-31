@@ -131,7 +131,9 @@ Draft uploads are private to their uploader. Sending them shares them with peopl
 
 ## Skills
 
-A skill is a named set of instructions for a common revision, so you do not have to write the prompt each time. Type `/` at the start of the prompt for a new task or a follow-up, keep typing to narrow the list, and press Enter or Tab (or click) to choose one; Escape closes the list and Backspace in an empty prompt removes the chosen skill. The new-task page also lists the skills as suggestions. What you type next says where or how to apply it, such as "Section 3 only"; send without text to apply it to the whole paper. The agent receives the skill's instructions with your words, and the chat shows the skill's name.
+A skill is a named set of instructions for a common revision, so you do not have to write the prompt each time. Type `/` at the start of the prompt for a new task or a follow-up, keep typing to narrow the list, and press Enter or Tab (or click) to choose one; Escape closes the list and Backspace in an empty prompt removes the chosen skill. You can also pick a skill from the composer's **+** menu. What you type next says where or how to apply it, such as "Section 3 only"; send without text to apply it to the whole paper. The agent receives the skill's instructions with your words, and the chat shows the skill's name.
+
+The owner can open **Settings → Skills** to search, preview, create, edit and delete skills. New skills default to **Global** (`~/.papilot/skills/<id>/SKILL.md`); choose **This paper** to save in `<paper>/.papilot/skills/<id>/SKILL.md` instead. Global skills belong to the user and stay in the home folder even when `--data` or `PAPILOT_DATA` points the workspace database elsewhere. Saving updates the composer immediately. Built-in skills are read-only: use **Copy and edit** to customize one. The Markdown editor preserves front matter and supporting files. If a file changed elsewhere, reload it before saving. Deleting removes only the skill's Markdown file and leaves supporting files intact; a same-ID skill from a lower-priority scope becomes available again.
 
 Papilot includes these skills:
 
@@ -145,7 +147,7 @@ Papilot includes these skills:
 | **Fix LaTeX warnings** | Builds the paper and fixes undefined references, overfull boxes and other warnings without silencing them globally. |
 | **Address reviewers** | Revises for the reviewer comments you paste and ends with a point-by-point reply. |
 
-Add your own as Markdown files: in `skills/` in the data folder (`~/.papilot/skills`) for every paper, or in the paper's `.papilot/skills/` folder, committed with the paper, for that paper only. A paper's skill replaces one of yours with the same name, and yours replaces a built-in one. Each skill is `<name>.md` (lowercase letters, digits and hyphens), or a `<name>/SKILL.md` folder in the Agent Skills layout, whose other files the agent can read. Optional front matter gives the name shown, a one-line description, the hint shown in the empty prompt, and the order among the suggestions:
+Add your own as Markdown files: in `~/.papilot/skills/` for every paper, or in the paper's `.papilot/skills/` folder, committed with the paper, for that paper only. A paper's skill replaces one of yours with the same name, and yours replaces a built-in one. Each skill is `<name>.md` (lowercase letters, digits and hyphens), or a `<name>/SKILL.md` folder in the Agent Skills layout, whose other files the agent can read. Optional front matter gives its name, a one-line description, the hint shown in the empty prompt, and its order in the picker:
 
 ```markdown
 ---

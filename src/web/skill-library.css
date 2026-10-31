@@ -1,0 +1,72 @@
+.modal.settings-skills{width:900px;height:min(680px,86dvh);padding:0;overflow:hidden}
+.skill-library{height:100%;display:flex;flex-direction:column;min-height:0}
+.skill-library-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line);flex-shrink:0}
+.skill-library-header>div{display:flex;align-items:center;gap:9px}
+.skill-library .skill-library-header h2{font:500 14px/1.3 var(--sans);margin:0}
+.skill-library-settings-back{display:flex;align-items:center;gap:3px;font-size:13px;color:var(--text-3);border-radius:5px;padding:4px 0}
+.skill-library-settings-back:hover{color:var(--text)}
+.skill-library-breadcrumb{font-size:13px;color:var(--line-strong)}
+.skill-library-layout{display:grid;grid-template-columns:260px minmax(0,1fr);flex:1;min-height:0}
+.skill-library-sidebar{display:flex;flex-direction:column;min-height:0;background:var(--bg-subtle);border-right:1px solid var(--line)}
+.skill-library-tools{display:flex;align-items:center;gap:2px;padding:10px 10px 6px}
+.skill-library-tools>.icon-button{width:28px;height:28px;flex-shrink:0}
+.skill-library-search{display:flex;align-items:center;gap:6px;flex:1;min-width:0;height:30px;padding:0 7px;color:var(--text-3);border:1px solid transparent;border-radius:6px}
+.skill-library-search:focus-within{background:var(--bg);border-color:var(--line)}
+.skill-library-search>svg{flex-shrink:0}
+.skill-library .skill-library-search input{height:28px;min-width:0;margin:0;border:0;border-radius:0;background:transparent;box-shadow:none;padding:0;font:12px var(--sans)}
+.skill-library .skill-library-search input:focus{box-shadow:none;outline:none}
+.skill-library-filter{display:flex;align-items:center;gap:3px;padding:0 10px 8px}
+.skill-library-filter button{font-size:11px;line-height:1.5;padding:3px 7px;color:var(--text-3);border-radius:5px;white-space:nowrap}
+.skill-library-filter button:hover{background:var(--bg-hover);color:var(--text)}
+.skill-library-filter button[aria-pressed=true]{background:var(--bg-hover);color:var(--text);font-weight:500}
+.skill-library-list{overflow:auto;flex:1;min-height:0;padding:0 6px 8px}
+.skill-library-item{display:flex;align-items:flex-start;gap:8px;width:100%;padding:8px 10px;text-align:left;border-radius:var(--r);color:var(--text-2)}
+.skill-library-item>svg{margin-top:2px;flex-shrink:0}
+.skill-library-item>span{min-width:0;flex:1}
+.skill-library-item-title{display:flex;align-items:center;gap:6px}
+.skill-library-item strong{display:block;flex:1;min-width:0;font-size:13px;font-weight:500;color:var(--text);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.skill-library-source{flex-shrink:0;font-size:10px;color:var(--text-3)}
+.skill-library-item small{display:block;font-size:11.5px;line-height:1.45;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--text-3)}
+.skill-library-item:hover,.skill-library-item.active{background:var(--bg-hover)}
+.skill-library-item.active{box-shadow:inset 2px 0 var(--accent)}
+.skill-library-detail{display:flex;flex-direction:column;min-width:0;min-height:0;padding:18px 20px;overflow:auto}
+.skill-library-editor-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:16px;flex-shrink:0}
+.skill-library-editor-heading h3{font-size:17px;line-height:1.35;margin:0 0 3px;overflow-wrap:anywhere}
+.skill-library-editor-heading>div{min-width:0}
+.skill-library-editor-heading span{font-size:11.5px;color:var(--text-3)}
+.skill-library-editor-heading .button{white-space:nowrap}
+.skill-library-new-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,150px);gap:8px 12px;margin:0 0 14px}
+.skill-library-new-fields label{font-size:12px;color:var(--text-2)}
+.skill-library .skill-library-new-fields input,.skill-library .skill-library-new-fields select{height:32px;font-size:13px;margin-top:4px;box-shadow:none}
+.skill-library-new-fields p{grid-column:1/-1;font-size:11px;color:var(--text-3);margin:0}
+.skill-library-edit-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:12px;color:var(--text-2);flex-shrink:0}
+.skill-library-edit-tools .segmented button{font-size:11px;padding:4px 7px;display:flex;align-items:center;gap:4px}
+.skill-library-edit-tools .segmented button[aria-pressed=true]{background:var(--bg);color:var(--text);box-shadow:var(--shadow-xs);border-radius:5px}
+.skill-library-detail textarea.skill-library-content{flex:1;min-height:160px;height:auto;resize:none;padding:12px;margin:0;font:12px/1.7 var(--mono);tab-size:2;box-shadow:none}
+.skill-library-preview{flex:1;min-height:160px;overflow:auto;padding:2px 4px;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.skill-library-notice{font-size:11.5px;line-height:1.5;color:var(--text-3);margin:0 0 8px;flex-shrink:0}
+.skill-library-editor-actions{display:flex;align-items:center;gap:10px;margin-top:12px;flex-shrink:0}
+.skill-library-editor-actions>span{flex:1;font-size:11px;color:var(--text-3);text-align:right}
+.skill-library-empty{font-size:13px;color:var(--text-3);padding:20px 12px;text-align:center}
+.skill-library-detail .inline-error{font-size:12px;flex-shrink:0}
+.skill-library-detail .inline-error button{margin:6px 0 0;display:block}
+.skill-library-confirm{position:absolute;inset:auto 0 0;background:var(--bg);padding:16px 20px;box-shadow:0 -6px 30px rgb(0 0 0/.1);border-top:1px solid var(--line);z-index:1}
+.skill-library-confirm p{margin:0 0 12px;font-size:13px;line-height:1.5}
+.skill-library-confirm>div{display:flex;gap:8px;justify-content:flex-end}
+.skill-library-back{display:none}
+@media(max-width:680px){
+  .modal.settings-skills{height:92dvh;width:100%}
+  .skill-library-layout{display:flex;flex-direction:column}
+  .skill-library-sidebar{flex:1;border-right:0}
+  .skill-library-detail{display:none;flex:1;padding:12px 14px}
+  .skill-library.has-editor .skill-library-sidebar{display:none}
+  .skill-library.has-editor .skill-library-detail{display:flex}
+  .skill-library-back{display:flex;align-items:center;gap:3px;align-self:flex-start;font-size:12px;color:var(--text-3);margin:0 0 12px}
+  .skill-library-detail textarea.skill-library-content{font-size:16px;line-height:1.55}
+  .skill-library-tools>.icon-button{width:32px;height:32px}
+  .skill-library .skill-library-search input{font-size:16px}
+  .skill-library-filter button{padding:5px 9px}
+  .skill-library-item{padding:9px 10px}
+  .skill-library .button{min-height:36px}
+  .skill-library-confirm{padding:14px}
+}

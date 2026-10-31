@@ -7,12 +7,12 @@ const skillIcons: Record<string, string> = {
   polish: 'spark', proofread: 'spellcheck', shorten: 'compress', 'check-math': 'sigma',
   consistency: 'checklist', 'latex-warnings': 'tool', 'reviewer-response': 'notes',
 };
-const skillIcon = (id: string) => skillIcons[id] || 'spark';
+export const skillIcon = (id: string) => skillIcons[id] || 'spark';
 
 // Built-in metadata is English on disk; display it in the interface language.
 // Older chat entries store only the skill's id and name.
 export const skillName = (skill: { name: string; source?: Skill['source'] }) => !skill.source || skill.source === 'builtin' ? t(skill.name) : skill.name;
-const skillDescription = (skill: Skill) => skill.source === 'builtin' ? t(skill.description) : skill.description;
+export const skillDescription = (skill: Skill) => skill.source === 'builtin' ? t(skill.description) : skill.description;
 
 // "/" at the start of an empty composer lists skills, and typing narrows them:
 // names that start with the query first, then any that mention it.
