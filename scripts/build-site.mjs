@@ -19,7 +19,7 @@ const args = process.argv.slice(2);
 // The build empties this folder first, so it takes no folder argument that
 // could name the source or the repository by mistake.
 const out = path.join(root, '_site');
-const site = 'https://cu1ch3n.github.io/papilot/';
+const site = 'https://papilot.ai/';
 const copy = (from, names, to = '') => {
   fs.mkdirSync(path.join(out, to), { recursive: true });
   for (const name of names) fs.copyFileSync(path.join(root, from, name), path.join(out, to, name));
