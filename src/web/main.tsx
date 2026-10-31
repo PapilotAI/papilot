@@ -19,6 +19,7 @@ import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { UpdateNotice } from './update-notice.tsx';
 import { CompileButton } from './compile-button.tsx';
+import { ImportDialog } from './import-dialog.tsx';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog } from './settings.tsx';
 import type { DiagnosticReport } from '../shared.ts';
@@ -683,8 +684,6 @@ function App() {
   const [modal, setModal] = useState<'project' | null>(null);
   // The task whose commit dialog is open, and what each commit from a review card did.
   const [commitFor, setCommitFor] = useState(''), [commitNotes, setCommitNotes] = useState<Record<string, string>>({});
-  const modalRef = useRef<HTMLDialogElement>(null);
-  const modalOpener = useRef<HTMLElement | null>(null);
   const formTaskId = useRef(uuid());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
@@ -705,7 +704,7 @@ function App() {
     const timer = setTimeout(() => setAddedTask(null), 2600);
     return () => clearTimeout(timer);
   }, [addedTask]);
-  const [busy, setBusy] = useState(false), [sidebar, setSidebar] = useState(false);
+  const [sidebar, setSidebar] = useState(false);
   const actionRequests = useRef(new Set<string>());
   const [pendingActions, setPendingActions] = useState(new Set<string>());
   const [sidebarVisible, setSidebarVisible] = useState(() => browserStorage.getItem('papilot:sidebar') !== 'hidden');
@@ -746,7 +745,6 @@ function App() {
   const [pendingManuscriptBuilds, setPendingManuscriptBuilds] = useState(new Set<string>());
   const [git, setGit] = useState<{ projectId: string; status: GitStatus | null }>({ projectId: '', status: null });
   const [chatWidth, setChatWidth] = useState(() => Number(browserStorage.getItem('papilot:chat-width')) || 0);
-  const [form, setForm] = useState({ path: '', name: '' });
   // Appearance, language and notifications live in Settings; a new language re-renders everything.
   const theme = useTheme(), { language } = useLanguage();
   const [settings, setSettings] = useState<false | 'general' | 'shortcuts'>(false), [peopleOpen, setPeopleOpen] = useState(false);
@@ -757,13 +755,6 @@ function App() {
   }, []);
   const selectedRef = useRef(selected); selectedRef.current = selected;
   const loaded = useRef(false);
-  useEffect(() => {
-    const dialog = modalRef.current;
-    if (!modal || !dialog) return;
-    if (!dialog.open) dialog.showModal();
-    dialog.querySelector('input')?.focus();
-    return () => { dialog.close(); if (modalOpener.current?.isConnected) modalOpener.current.focus(); };
-  }, [modal]);
   useEffect(() => {
     if (!narrow || !sidebar) return;
     const opener = document.activeElement as HTMLElement | null;
@@ -887,12 +878,7 @@ function App() {
     return searchTerms.every(term => text.includes(term));
   });
   const running = state?.tasks.filter(t => ['running', 'waiting_input', 'building'].includes(t.status)).length || 0;
-  function openProject() { modalOpener.current = document.activeElement as HTMLElement | null; setError(''); setForm({ path: '', name: '' }); setModal('project'); }
-  async function saveProject(e: React.FormEvent) {
-    e.preventDefault(); setBusy(true); setError('');
-    try { const p = await api('/projects', { path: form.path, name: form.name }); setProjectId(p.id); setSelected(''); setModal(null); setSidebar(false); await refresh(true); }
-    catch (e) { reportError(e); } finally { setBusy(false); }
-  }
+  function openProject() { setModal('project'); }
   // A remembered choice the host no longer offers falls back to its default;
   // the preference is kept in case another model offers it again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
@@ -1275,12 +1261,10 @@ function App() {
         void refresh(true);
       }}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
-    {modal && <dialog ref={modalRef} onKeyDown={keepDialogFocus} className="modal-backdrop" aria-labelledby="modal-title" onCancel={e => { e.preventDefault(); if (!busy) setModal(null); }} onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section className="modal"><button className="modal-close icon-button" aria-label={t('Close')} disabled={busy} onClick={() => setModal(null)}><Icon name="close"/></button><h2 id="modal-title">{t('Add a paper')}</h2><p className="modal-description">{t('LaTeX Git repository · Requires a commit and latexmk')}</p><form onSubmit={e => void saveProject(e)}>
-      <label>{t('Repository path')}<input required maxLength={4000} value={form.path} onChange={e => setForm({ ...form, path: e.target.value })} placeholder={t('/Users/you/papers/my-paper')} autoComplete="off" spellCheck={false}/></label>
-      <label>{t('Display name (optional)')}<input maxLength={120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={t('My research paper')}/></label>
-      {error && <p className="inline-error" role="alert">{error}</p>}
-      <div className="button-row"><button type="button" className="button secondary" disabled={busy} onClick={() => setModal(null)}>{t('Cancel')}</button><button disabled={busy} className="button primary" type="submit">{busy ? t('Adding…') : t('Add paper')}</button></div>
-    </form></section></dialog>}
+    {modal && <ImportDialog api={api} agent={agentChoice} canRepair={Object.values(runtimes).some(runtime => runtime?.connected && runtime.authenticated)} onClose={() => setModal(null)} onDone={async paper => {
+      setProjectId(paper.id); setSelected(''); setModal(null); setSidebar(false); await refresh(true);
+    }}/>}
+
   </div></NoteResultsProvider></ViewerContext.Provider>;
 }
 

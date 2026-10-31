@@ -58,6 +58,18 @@ async function fixture() {
   return { updates, diagnosticRequests, manuscripts: shared.manuscripts, store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { updates.close(); await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
 }
 
+test('paper imports require owner access and CSRF before receiving files or starting repairs', async () => {
+  const f = await fixture();
+  try {
+    for (const route of ['/api/imports', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/build', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/repair', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/finish']) {
+      const request = { method: 'POST' as const, url: route, payload: {} };
+      assert.equal((await f.remote.inject({ ...request, headers: f.as })).statusCode, 403);
+      assert.equal((await f.local.inject({ ...request, headers: { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'wrong' } })).statusCode, 403);
+    }
+    assert.equal((await f.remote.inject({ url: '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', headers: f.as })).statusCode, 403);
+  } finally { await f.close(); }
+});
+
 test('diagnostics are owner-only, require CSRF and resolve only registered paper IDs', async () => {
   const f = await fixture();
   try {

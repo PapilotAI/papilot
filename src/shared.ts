@@ -79,3 +79,8 @@ export interface GitOverview { worktrees: GitWorktree[]; commits: GitGraphCommit
 export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean }
 export interface Annotation { group?: NoteGroup; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
 export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }
+export interface PaperImport {
+  id: string; path: string; name: string; copied: boolean; candidates: string[]; main: string; engine: string;
+  phase: 'choose' | 'building' | 'failed' | 'ready' | 'repairing';
+  error?: string; summary?: string; versioned?: boolean;
+}

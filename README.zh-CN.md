@@ -73,7 +73,7 @@ npm install -g papilot
 papilot demo
 ```
 
-打开 **http://127.0.0.1:7274**，在侧栏选择 **PDF**。demo 会添加一篇示例论文供你修改：一篇讲 Papilot 本身的 26 页 LaTeX 论文，满是公式。准备好之后，运行 `papilot`，选择 **Add paper**，即可添加任何放在 Git 仓库里的 LaTeX 项目。
+打开 **http://127.0.0.1:7274**，在侧栏选择 **PDF**。demo 会添加一篇示例论文供你修改：一篇讲 Papilot 本身的 26 页 LaTeX 论文，满是公式。准备好之后，运行 `papilot`，选择 **添加论文**，选择 LaTeX 文件夹或拖入 ZIP。Papilot 会识别主文件、准备 Git 历史并尝试编译，遇到问题可在导入窗口中重试或请求助手修复。
 
 ## 🤖 智能体
 

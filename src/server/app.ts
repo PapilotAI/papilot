@@ -20,6 +20,10 @@ import type { AgentId, NoteSummary } from '../shared.ts';
 import { taskNoteResults } from './note-results.ts';
 import type { Updates } from './updates.ts';
 import { Diagnostics } from './diagnostics.ts';
+import { PaperImports } from './imports.ts';
+import { DATA } from './paths.ts';
+
+const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
 
 // Git writes to one repository run one at a time; each returns the new status.
 // Both listeners share one queue, so the owner and a collaborator take turns.
@@ -46,6 +50,9 @@ export async function buildApp(options: AppOptions) {
   const { listener, store, workspace, manuscripts, accounts, serialGit } = options, connectReview = options.connectReview || reviewClient;
   const changes = options.changes || new Changes(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-changes-')));
   const diagnostics = options.diagnostics || new Diagnostics();
+  let imports = importsByWorkspace.get(workspace);
+  if (!imports) { imports = new PaperImports(manuscripts, DATA, root => Boolean(store.projectByPath(root))); importsByWorkspace.set(workspace, imports); }
+  workspace.importsBusy = () => imports!.busy;
   // A public request must arrive in full within a minute; held-open bodies tie up nothing.
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024, ...(listener.kind === 'account' ? { requestTimeout: 60000 } : {}) });
   const { csrfFor } = guard(app, { listener, accounts, store, csrf: options.csrf, request: id => workspace.requests.get(id) });
@@ -125,6 +132,11 @@ export async function buildApp(options: AppOptions) {
   const string = (value: unknown, name: string, max = 20000) => { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
   // Adding a paper names a folder on this host, so only the owner can.
   app.post('/api/projects', owner, async request => { const b = request.body as any; return workspace.addProject(string(b.path, 'Repository path', 4000), b.name ? string(b.name, 'Paper name', 120) : undefined); });
+  app.post('/api/imports', { ...owner, bodyLimit: 90 * 1024 * 1024 }, request => imports!.create((request.body || {}) as any));
+  app.get<{ Params: { id: string } }>('/api/imports/:id', owner, request => imports!.get(request.params.id));
+  app.post<{ Params: { id: string } }>('/api/imports/:id/build', owner, request => imports!.build(request.params.id, (request.body || {}) as any));
+  app.post<{ Params: { id: string } }>('/api/imports/:id/repair', owner, request => imports!.build(request.params.id, (request.body || {}) as any, (root, error) => workspace.repairImport(root, error, { agent: agent((request.body as any)?.agent) })));
+  app.post<{ Params: { id: string } }>('/api/imports/:id/finish', owner, request => imports!.finish(request.params.id, (root, name) => workspace.addProject(root, name)));
   app.post<{ Params: { id: string } }>('/api/projects/:id/rename', project(), request => workspace.renameProject(request.params.id, string((request.body as any).name, 'Paper name', 120)));
   // A skill's name: what the author typed after "/".
   const skillName = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,47}$/.test(value) ? value : undefined;

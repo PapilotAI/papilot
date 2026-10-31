@@ -354,7 +354,7 @@ try {
   await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Add a paper' });
   await dialog.waitFor();
-  assert.equal(await page.getByRole('textbox', { name: 'Repository path' }).evaluate(el => el === document.activeElement), true);
+  assert.equal(await page.getByRole('button', { name: 'Choose folder', exact: true }).evaluate(el => el === document.activeElement), true);
   for (let i = 0; i < 9; i++) {
     await page.keyboard.press(i < 5 ? 'Tab' : 'Shift+Tab');
     assert.equal(await dialog.evaluate(el => el.contains(document.activeElement)), true);
@@ -1167,7 +1167,7 @@ try {
     await drawer.getByRole('button', { name: 'Paper: Example paper', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
     await page.getByRole('dialog', { name: 'Add a paper' }).waitFor();
-    assert.equal(await page.getByRole('textbox', { name: 'Repository path' }).evaluate(el => el === document.activeElement), true);
+    assert.equal(await page.getByRole('button', { name: 'Choose folder', exact: true }).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('Escape');
     if (width === 390) {
       await page.locator('.manuscript-link').click();
