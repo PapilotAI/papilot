@@ -33,6 +33,19 @@ export interface Task {
   // The task's last commit from its review, and the accepted text it included.
   committed?: { hash: string; accepted: string; at: number; pushed?: boolean } | null;
 }
+// A task the author is through with, which Papilot archives once they leave
+// it: every change of its last result is decided, no comment or rejection
+// waits to go back to the agent, and what was accepted has left the task
+// (applied or committed; older tasks accept straight into the working
+// directory). An answer without manuscript changes is finished too.
+export function taskFinished(task: Task) {
+  const review = task.review;
+  if (task.status !== 'reviewing' || !review || task.pendingReview || task.delivery?.pending || review.counts?.pending || review.state === 'build_failed') return false;
+  const unsent = review.unsent ?? ['accepted', 'rejected', 'commented'].reduce((count, kind) => count + (review.counts?.[kind] || 0), 0);
+  if ((review.comments ?? unsent) > 0 || (unsent > 0 && !review.counts?.accepted)) return false;
+  if (review.round === null) return true;
+  return review.state === 'done' && (!task.deferred || review.files?.length === 0);
+}
 // reviewRound is 0 while awaiting a result, null when no changes were produced,
 // or the published round. Older runs omit it.
 export interface Run { id: string; taskId: string; requestKey: string; prompt: string; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null; reviewRound?: number | null }

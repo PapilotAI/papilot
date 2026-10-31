@@ -23,6 +23,7 @@ export class Store extends EventEmitter {
       CREATE TABLE IF NOT EXISTS invites(token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, id TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, expires INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS members(project_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY(project_id, user_id));
+      CREATE TABLE IF NOT EXISTS migrations(key TEXT PRIMARY KEY, done INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS task_items ON items(task_id,created);
       CREATE INDEX IF NOT EXISTS task_runs ON runs(task_id,status);`);
   }
@@ -72,6 +73,14 @@ export class Store extends EventEmitter {
       this.db.prepare('DELETE FROM tasks WHERE id=?').run(id);
     });
     this.emit('change');
+  }
+  // Runs a one-off change the first time this database sees its key.
+  migrate(key: string, fn: () => void) {
+    this.transaction(() => {
+      if (this.db.prepare('SELECT 1 FROM migrations WHERE key=?').get(key)) return;
+      fn();
+      this.db.prepare('INSERT INTO migrations VALUES(?,?)').run(key, Date.now());
+    });
   }
   transaction<T>(fn: () => T): T { this.db.exec('BEGIN IMMEDIATE'); try { const result = fn(); this.db.exec('COMMIT'); return result; } catch (e) { this.db.exec('ROLLBACK'); throw e; } }
   recover() {

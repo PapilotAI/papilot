@@ -166,7 +166,9 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/archive')) {
     if (archiveFailure) return route.fulfill({ status: 503, json: { error: 'Could not archive. Try again.' } });
     const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); archives.push({ id, ...body });
-    const target = snapshot.tasks.find(t => t.id === id); target.archivedAt = body.archived ? Date.now() : null; return json(target);
+    const target = snapshot.tasks.find(t => t.id === id);
+    if (body.archived && body.finished && target.review?.state !== 'done') return json(target);
+    target.archivedAt = body.archived ? Date.now() : null; return json(target);
   }
   if (url.pathname.endsWith('/delete')) {
     const id = url.pathname.split('/')[3];
@@ -1089,6 +1091,39 @@ try {
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click(); await input.waitFor();
   assert.deepEqual(archives.map(item => item.archived), [true, false, true, false]);
   console.log('PASS: Tasks search by title and instructions, archive without losing history, and restore from the archive');
+
+  // A finished task is archived when the author moves on from it, with an undo.
+  archives.length = 0;
+  const finishedTask = { ...task, id: 'fixture-task-0003', name: 'p-finished', title: 'Tidy the bibliography', status: 'reviewing', review: { state: 'done', round: 1, counts: { accepted: 2 }, unsent: 2, comments: 0, files: [] } };
+  snapshot.tasks.push(finishedTask);
+  await page.clock.runFor(3000);
+  const finishedLink = page.getByRole('button', { name: /^Tidy the bibliography/ }), firstLink = page.getByRole('button', { name: /^Clarify the introduction/ });
+  await finishedLink.click(); await input.waitFor();
+  await input.fill('Ask about the DOI style.');
+  await firstLink.click(); await input.waitFor();
+  assert.equal(archives.length, 0, 'an unsent follow-up keeps the task listed');
+  await finishedLink.click(); await input.waitFor();
+  await input.fill('');
+  await firstLink.click(); await input.waitFor();
+  const archiveNotice = page.getByRole('status').filter({ hasText: 'Archived' });
+  await archiveNotice.filter({ hasText: 'Tidy the bibliography' }).waitFor();
+  await finishedLink.waitFor({ state: 'hidden' });
+  assert.deepEqual(archives, [{ id: finishedTask.id, archived: true, finished: true }]);
+  await page.screenshot({ path: 'test-results/auto-archive-notice.png' });
+  await archiveNotice.getByRole('button', { name: 'Undo', exact: true }).click();
+  await finishedLink.waitFor();
+  await archiveNotice.waitFor({ state: 'hidden' });
+  assert.match(await page.locator('.task-link.active').innerText(), /Clarify the introduction/, 'undo keeps the current task open');
+  await finishedLink.click(); await input.waitFor();
+  await firstLink.click(); await input.waitFor();
+  assert.deepEqual(archives.map(item => item.archived), [true, false], 'a restored task stays listed');
+  await page.getByRole('button', { name: /^Check the notation/ }).click(); await input.waitFor();
+  await firstLink.click(); await input.waitFor();
+  assert.equal(archives.length, 2, 'an unfinished task stays listed');
+  snapshot.tasks.splice(snapshot.tasks.indexOf(finishedTask), 1);
+  await page.clock.runFor(3000);
+  await finishedLink.waitFor({ state: 'hidden' });
+  console.log('PASS: A finished task archives when the author leaves it, and Undo restores it for good');
 
 
   await input.fill('Only send this once.');

@@ -13,7 +13,7 @@ import type { AgentId, AgentModel, Annotation, Author, FeedbackSummary, GitDiff,
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, unsentReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
-import type { AttachmentDraft, UploadAttachment } from './attachment-draft.ts';
+import { attachmentDrafts, type AttachmentDraft, type UploadAttachment } from './attachment-draft.ts';
 import type { Attachment } from '../shared.ts';
 import { noteLocation } from './note-location.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
@@ -30,6 +30,7 @@ import { CompileButton } from './compile-button.tsx';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog } from './settings.tsx';
 import type { DiagnosticReport } from '../shared.ts';
+import { taskFinished } from '../shared.ts';
 import { CommitDialog } from './commit-dialog.tsx';
 import { TaskCommit } from './task-commit.tsx';
 import { TaskCommitDraft } from './task-commit-draft.ts';
@@ -920,9 +921,34 @@ function App() {
     browserStorage.setItem('papilot:project', id);
   }, [project?.id, Boolean(state)]);
   useEffect(() => { setTaskSearch(''); setShowArchived(false); }, [project?.id]);
-  useEffect(() => { if (task) setShowArchived(Boolean(task.archivedAt)); }, [task?.id]);
+  useEffect(() => { if (task) setShowArchived(Boolean(task.archivedAt)); }, [task?.id, Boolean(task?.archivedAt)]);
   // Older servers send no viewer: whoever is looking is the owner.
   const viewer = state?.viewer, owner = !viewer || viewer.role === 'owner';
+  // The owner's finished task is archived as they move on from it, and a
+  // notice offers to undo that. A task restored in this window, or left with
+  // an unsent follow-up, stays listed.
+  const leftTask = useRef(selected), keptTasks = useRef(new Set<string>());
+  const [autoArchived, setAutoArchived] = useState<Pick<Task, 'id' | 'title'> | null>(null);
+  useEffect(() => {
+    const left = leftTask.current; leftTask.current = selected;
+    const previous = snapshotRef.current?.tasks.find(t => t.id === left);
+    if (!owner || !previous || left === selected || previous.archivedAt || keptTasks.current.has(left) || !taskFinished(previous)) return;
+    if (composers.current.get(left)?.text.trim() || attachmentDrafts.get(`papilot:files:${viewer?.id || 'owner'}:task:${left}`)?.getSnapshot().files.length) return;
+    void api<Task>('/tasks/' + left + '/archive', { archived: true, finished: true }).then(result => {
+      if (!result.archivedAt) return;
+      setAutoArchived({ id: result.id, title: result.title });
+      return refresh(true);
+    }).catch(() => { /* The task stays listed; the author can still archive it. */ });
+  }, [selected, owner, refresh]);
+  useEffect(() => {
+    if (!autoArchived) return;
+    const timer = setTimeout(() => setAutoArchived(null), 8000);
+    return () => clearTimeout(timer);
+  }, [autoArchived]);
+  function keepTask(id: string) {
+    keptTasks.current.add(id); setAutoArchived(null);
+    void action('/tasks/' + id + '/archive', { archived: false });
+  }
   const newFiles = useAttachmentDraft(`papilot:files:${viewer?.id || 'owner'}:new:${project?.id || projectId}`);
   // A session that already ended signs out too.
   async function signOut() {
@@ -1007,7 +1033,8 @@ function App() {
     const archived = !target.archivedAt;
     if (!await action('/tasks/' + target.id + '/archive', { archived })) return;
     if (archived && selectedRef.current === target.id) { setProjectId(target.projectId); setSelected(''); }
-    if (!archived) setShowArchived(false);
+    if (!archived) { keptTasks.current.add(target.id); setShowArchived(false); }
+    if (autoArchived?.id === target.id) setAutoArchived(null);
     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.task-search input')?.focus());
   }
   const sidebarShown = narrow ? sidebar : sidebarVisible;
@@ -1370,6 +1397,7 @@ function App() {
       : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button></div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
+    {autoArchived && !error && !modal && <div role="status" className="toast archive-notice"><Icon name="archive" size={15}/><span><span>{t('Archived')}</span><span className="archive-notice-title" title={autoArchived.title}>{autoArchived.title}</span></span><button className="button secondary compact" onClick={() => keepTask(autoArchived.id)}>{t('Undo')}</button></div>}
     {settings && <SettingsDialog updates={owner ? api : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} onPeople={owner ? () => setPeopleOpen(true) : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name} diagnostics={owner ? { online, runtimes, project, check: checkDiagnostics } : undefined} skills={owner ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {peopleOpen && <PeopleDialog api={api} projects={state?.projects || []} ago={agoText} onClose={() => setPeopleOpen(false)}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}

@@ -183,6 +183,11 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .toast>svg{margin-top:2px}
 .toast>span{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--text)}
 .toast>.icon-button{width:24px;height:24px;margin-top:-1px}
+.toast.archive-notice{align-items:center;padding:6px 6px 6px 14px;border-color:var(--line);color:var(--text-2)}
+.toast.archive-notice>svg{flex-shrink:0;margin-top:0}
+.toast.archive-notice>span{display:flex;gap:8px;white-space:nowrap}
+.archive-notice-title{min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.toast.archive-notice>.button{flex-shrink:0}
 
 /* Task workspace */
 .task-grid{position:relative;display:grid;flex:1;min-height:0;--chat-width:clamp(340px,30vw,440px);grid-template-columns:minmax(0,1fr) clamp(300px,var(--chat-width),calc(100% - 360px))}

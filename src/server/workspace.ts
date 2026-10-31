@@ -20,6 +20,7 @@ import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../n
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
 import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation, NoteSummary } from '../shared.ts';
+import { taskFinished } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -335,6 +336,8 @@ export class Workspace extends EventEmitter {
       this.store.saveRun(run);
       for (const note of options.notes || []) this.store.saveAnnotation({ ...note, taskId });
       if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null });
+      // Writing to an archived task brings it back to the task list.
+      if (current.archivedAt && !options.build) this.store.updateTask(taskId, { archivedAt: null });
       this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
       return run;
     });
@@ -900,13 +903,19 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     return this.store.updateTask(taskId, { title, titleSource: 'manual', titleRevision: (task.titleRevision || 0) + 1, titleGeneration: null });
   }
-  archiveTask(taskId: string, archived: boolean) {
+  // finished archives only a task that is still finished (see taskFinished):
+  // the author's browser asks for it when they leave one, and new work sent
+  // meanwhile from elsewhere keeps the task in the list.
+  archiveTask(taskId: string, archived: boolean, finished = false) {
     if (typeof archived !== 'boolean') throw new Error('Choose whether to archive or restore the task.');
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
-    if (Boolean(task.archivedAt) === archived) return task;
+    if (Boolean(task.archivedAt) === archived || (archived && finished && !taskFinished(task))) return task;
     // Archiving only organizes the list; the conversation, review and any run remain intact.
     return this.store.updateTask(taskId, { archivedAt: archived ? Date.now() : null });
+  }
+  archiveFinished() {
+    for (const task of this.store.tasks()) if (!task.archivedAt && taskFinished(task)) this.store.updateTask(task.id, { archivedAt: Date.now() });
   }
   async deleteTask(taskId: string): Promise<{ ok: true }> {
     if (this.preparing.has(taskId)) throw new Error('Wait for task creation to finish before deleting it.');

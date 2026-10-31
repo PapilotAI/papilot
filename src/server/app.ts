@@ -248,7 +248,7 @@ export async function buildApp(options: AppOptions) {
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/rename', task, request => workspace.renameTask(request.params.id, string((request.body as any).title, 'Task title', 120)));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/title', task, request => workspace.requestTaskTitle(request.params.id));
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/archive', task, request => workspace.archiveTask(request.params.id, (request.body as any)?.archived));
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/archive', task, request => workspace.archiveTask(request.params.id, (request.body as any)?.archived, (request.body as any)?.finished === true));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/interrupt', task, request => workspace.interrupt(request.params.id).then(() => ({ ok: true })));
   // Deleting a task that is already gone succeeds, so a lost response can be retried; a hidden one answers the same.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/delete', { config: { access: { task: 'id' }, hidden: 'ok' } }, request => {

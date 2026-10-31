@@ -8,6 +8,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 - **Kimi Code support.** Choose Kimi for paper-editing tasks using your local Kimi Code CLI login. The ACP adapter supports model and thinking-level selection, streamed replies, image inputs, tool approvals, cancellation and session recovery. Diagnostics include Kimi CLI availability; set `PAPILOT_KIMI_BIN` for a custom executable path.
 
+### Changed
+
+- **Finished tasks archive themselves.** When you leave a task whose changes are all decided and applied or committed, or one that only answered a question, it moves to the archive and a notice offers **Undo**. Tasks with undecided changes, comments to send, isolated accepted changes or an unsent follow-up stay listed. Sending a message to an archived task brings it back. The first start after updating archives tasks finished earlier; restore any of them from the archive.
+
 ## [0.7.0] - 2026-10-31 — Fully Modernized UI and Interactions
 
 Papilot 0.7.0 brings a fully refreshed workspace for reading, annotating, revising and reviewing papers. Compact controls, clearer navigation and smoother transitions keep the manuscript at the center, with new ways to organize feedback and save accepted changes.
