@@ -6,6 +6,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
+- **Codex can see the PDF.** New Codex tasks get a `view_pdf` tool: Codex asks for the pages where source lines or printed page numbers appear, in its worktree or in the accepted text, and Papilot compiles them and draws the pages as images that Codex opens with its image viewer. Codex uses it when the look of the page matters, such as line breaks and spacing, and the conversation shows each look. Only the chapters needed are compiled, and the review after the turn reuses the build.
+
+- **Compilation problems beside Recompile.** A quiet log icon counts the last build's undefined references and citations, duplicate labels, missing files and errors; overfull lines and package remarks are listed but never counted. Open it to see each problem with its file, line and page, jump to the exact spot on the PDF (SyncTeX places it, down to the `??`), read the raw log, or prefill a Fix LaTeX warnings task. A failed rebuild keeps the last PDF and says so in one line.
+
 - **One model menu for every agent.** The agent buttons and model list become one searchable menu, like OpenCode's: every available agent's models, grouped by agent with recent choices first, so one choice sets both the agent and the model. Type to search, or use the arrow keys and Enter; reasoning effort and fast mode follow the chosen model. An agent that cannot be used yet says why in its group.
 
 - **Claude on your Claude plan.** With Claude Code installed and signed in, Claude tasks run `claude -p` on that login, so a Claude plan works without an API key. Edits in the worktree are accepted, commands run in Claude Code's sandbox, anything that would need approval is declined and noted, and each task resumes its session. Without Claude Code, Claude still runs through the Agent SDK with an API key.

@@ -25,6 +25,8 @@ export interface Task {
   id: string; projectId: string; name: string; title: string; instructions: string;
   titleSource?: 'prompt' | 'generated' | 'manual'; titleRevision?: number; titleGeneration?: 'pending' | 'failed' | null;
   worktree: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
+  // The agent's thread was started with Papilot's view_pdf tool.
+  viewPdf?: boolean;
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
   archivedAt?: number | null;
   error: string | null; review: ReviewSummary | null;
@@ -105,7 +107,28 @@ export interface GitWorktree {
 }
 export interface GitGraphCommit { hash: string; parents: string[]; subject: string; author: string; date: number; refs: string[] }
 export interface GitOverview { worktrees: GitWorktree[]; commits: GitGraphCommit[]; truncated: boolean }
-export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean }
+export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean; problems?: BuildProblemCounts }
+// What the last finished build reported. Errors stop the build; warnings are
+// mistakes in the PDF (?? and missing citations); minor problems are
+// typesetting (overfull lines) and package remarks, listed but never counted.
+export type BuildProblemKind = 'error' | 'missing-file' | 'reference' | 'citation' | 'label' | 'glyph' | 'overfull' | 'other';
+export interface BuildProblem {
+  kind: BuildProblemKind; severity: 'error' | 'warning' | 'minor'; message: string;
+  key?: string; file?: string; line?: number; end?: number; amount?: number; count?: number;
+  page?: number; rect?: [number, number, number, number];
+}
+export interface BuildProblemCounts { errors: number; warnings: number; minor: number }
+// A label defined twice is listed at each definition but counts as one problem.
+export function countProblems(problems: Pick<BuildProblem, 'severity' | 'kind' | 'key'>[]): BuildProblemCounts {
+  const counts = { errors: 0, warnings: 0, minor: 0 }, labels = new Set<string>();
+  for (const problem of problems) {
+    if (problem.kind === 'label' && problem.key) { if (labels.has(problem.key)) continue; labels.add(problem.key); }
+    counts[problem.severity === 'error' ? 'errors' : problem.severity === 'warning' ? 'warnings' : 'minor']++;
+  }
+  return counts;
+}
+// `key` names the PDF whose pages the locations refer to.
+export interface ManuscriptProblems { status: ManuscriptBuild['status']; key?: string; problems: BuildProblem[]; log: boolean }
 export interface Annotation { group?: NoteGroup; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
 export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }
 export interface PaperImport {
