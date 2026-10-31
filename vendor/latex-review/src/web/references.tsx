@@ -155,7 +155,8 @@ export function risks(
   for (const entry of references?.entries ?? []) {
     const reasons = concerns(entry, checks[entry.id], pending > 0, entry.id in confirmed);
     if (reasons.length)
-      result.set(entry.unit, [...(result.get(entry.unit) ?? []), { label: entry.key, reasons }]);
+      for (const unit of entry.units ?? [entry.unit])
+        result.set(unit, [...(result.get(unit) ?? []), { label: entry.key, reasons }]);
   }
   for (const cite of references?.missing ?? [])
     if (cite.unit)

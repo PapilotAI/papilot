@@ -20,6 +20,11 @@ import type {
 // outside entries and @comment are ignored, @string macros resolve, and a
 // value is {braced}, "quoted", a number or a macro name, joined with #.
 
+interface BibSource {
+  file: string;
+  lines: Span;
+}
+type Macros = Map<string, { resolved: string; dependencies: BibSource[] }>;
 export interface BibField {
   name: string;
   /** The value as written, without its outer braces or quotes. */
@@ -27,7 +32,7 @@ export interface BibField {
   /** The value with macros expanded and parts joined. */
   resolved: string;
   /** Source lines of @string definitions used here, including nested macros. */
-  dependencies?: Span[];
+  dependencies?: BibSource[];
 }
 export interface BibEntry {
   key: string;
@@ -58,11 +63,12 @@ export const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
 
 class Unreadable extends Error {}
 
-export function parseBib(text: string): BibEntry[] {
+const defaultMacros = (): Macros => new Map(Object.entries(MONTHS).map(([name, resolved]) =>
+  [name, { resolved, dependencies: [] }],
+));
+
+export function parseBib(text: string, file = "", macros = defaultMacros()): BibEntry[] {
   const lineAt = lines(text),
-    macros = new Map(Object.entries(MONTHS).map(([name, resolved]) =>
-      [name, { resolved, dependencies: [] as Span[] }],
-    )),
     entries: BibEntry[] = [];
   let at = 0;
   const space = () => {
@@ -104,7 +110,7 @@ export function parseBib(text: string): BibEntry[] {
   const value = (): Omit<BibField, "name"> => {
     const start = at,
       parts: { text: string; resolved: string }[] = [],
-      dependencies: Span[] = [];
+      dependencies: BibSource[] = [];
     for (;;) {
       space();
       const c = text[at];
@@ -131,7 +137,7 @@ export function parseBib(text: string): BibEntry[] {
     return {
       value: collapse(parts.length === 1 ? parts[0].text : text.slice(start, at)),
       resolved: collapse(parts.map((p) => p.resolved).join("")),
-      ...(dependencies.length ? { dependencies: uniqueSpans(dependencies) } : {}),
+      ...(dependencies.length ? { dependencies: uniqueSources(dependencies) } : {}),
     };
   };
   // `name = value` pairs up to the closing delimiter.
@@ -188,7 +194,7 @@ export function parseBib(text: string): BibEntry[] {
       try {
         for (const field of fields(close)) macros.set(field.name, {
           resolved: field.resolved,
-          dependencies: uniqueSpans([[lineAt(sign), lineAt(at - 1)], ...(field.dependencies ?? [])]),
+          dependencies: uniqueSources([{ file, lines: [lineAt(sign), lineAt(at - 1)] }, ...(field.dependencies ?? [])]),
         });
       } catch {
         /* A broken macro leaves its uses unresolved. */
@@ -233,8 +239,8 @@ export interface EntryChange {
   lines: Span;
   oldLines?: Span;
   /** Entry and macro definition lines that can change its effective values. */
-  sources: Span[];
-  oldSources?: Span[];
+  sources: BibSource[];
+  oldSources?: BibSource[];
   error?: string;
 }
 const fieldMap = (entry: BibEntry) =>
@@ -265,9 +271,10 @@ const plainTitle = (entry: BibEntry) =>
 // pair by key; an added and a removed entry with the same title are one
 // entry under a new key.
 export function entryChanges(oldText: string, newText: string): EntryChange[] {
-  const before = parseBib(oldText),
-    after = parseBib(newText),
-    unpaired = new Map<string, BibEntry[]>();
+  return compareEntries(parseBib(oldText), parseBib(newText), "");
+}
+function compareEntries(before: BibEntry[], after: BibEntry[], file: string): EntryChange[] {
+  const unpaired = new Map<string, BibEntry[]>();
   for (const entry of before)
     unpaired.set(entry.key, [...(unpaired.get(entry.key) ?? []), entry]);
   const pairs: [BibEntry | null, BibEntry | null][] = [];
@@ -309,8 +316,8 @@ export function entryChanges(oldText: string, newText: string): EntryChange[] {
       fields,
       lines: entry.lines,
       ...(old && next ? { oldLines: old.lines } : {}),
-      sources: entrySources(entry),
-      ...(old && next ? { oldSources: entrySources(old) } : {}),
+      sources: entrySources(entry, file),
+      ...(old && next ? { oldSources: entrySources(old, file) } : {}),
       ...(next?.error ? { error: next.error } : {}),
     });
   }
@@ -323,12 +330,12 @@ export function entryChanges(oldText: string, newText: string): EntryChange[] {
 
 // Line ranges [start, end) of each entry, counted from 0, for grouping a
 // .bib diff's hunks by entry.
-const uniqueSpans = (spans: Span[]): Span[] =>
-  [...new Map(spans.map((span) => [span.join(":"), span])).values()];
-const entrySources = (entry: BibEntry) =>
-  uniqueSpans([entry.lines, ...entry.fields.flatMap((f) => f.dependencies ?? [])]);
+const uniqueSources = (sources: BibSource[]): BibSource[] =>
+  [...new Map(sources.map((source) => [JSON.stringify([source.file, source.lines]), source])).values()];
+const entrySources = (entry: BibEntry, file: string) =>
+  uniqueSources([{ file, lines: entry.lines }, ...entry.fields.flatMap((f) => f.dependencies ?? [])]);
 export function entrySpans(text: string) {
-  return parseBib(text).flatMap((e) => entrySources(e).map((span) => ({
+  return parseBib(text).flatMap((e) => entrySources(e, "").map(({ lines: span }) => ({
     key: e.key,
     span: [span[0] - 1, span[1]] as Span,
   })));
@@ -339,6 +346,55 @@ export function uncomment(text: string) {
   return text.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, (match, before, slashes) =>
     before + slashes + " ".repeat(match.length - before.length - slashes.length),
   );
+}
+// Ignore comments and literal examples in one pass: a percent sign inside
+// \verb is data, not the start of a comment. Preserve offsets and newlines.
+function texSource(text: string) {
+  const parts: string[] = [],
+    tokens = /\\([A-Za-z]+)\*?|\\[^A-Za-z]|%[^\n]*/g,
+    literal = /^(?:verbatim\*?|Verbatim\*?|BVerbatim|LVerbatim|SaveVerbatim|lstlisting|minted|comment)$/;
+  let from = 0;
+  for (let token; (token = tokens.exec(text)); ) {
+    let end = tokens.lastIndex;
+    const command = token[1];
+    if (token[0].startsWith("%")) {
+      // The whole comment is already consumed.
+    } else if (command === "begin") {
+      const env = /^\s*\{([^}]+)\}/.exec(text.slice(end));
+      if (!env || !literal.test(env[1])) continue;
+      const close = new RegExp(String.raw`\\end\s*\{${env[1].replace("*", "\\*")}\}`, "g");
+      close.lastIndex = end + env[0].length;
+      const found = close.exec(text);
+      end = found ? close.lastIndex : text.length;
+    } else if (command === "verb" || command === "Verb" || command === "lstinline" || command === "mintinline") {
+      if (command !== "verb") end += /^\s*(?:\[[^\]]*\])?/.exec(text.slice(end))![0].length;
+      if (command === "mintinline") {
+        const language = /^\s*\{[^}]*\}\s*/.exec(text.slice(end));
+        if (!language) continue;
+        end += language[0].length;
+      }
+      const delimiter = text[end];
+      if (!delimiter || /\s/.test(delimiter)) continue;
+      if (delimiter === "{" && (command === "lstinline" || command === "mintinline")) {
+        let depth = 1;
+        while (++end < text.length && depth) {
+          if (text[end] === "{") depth++;
+          else if (text[end] === "}") depth--;
+        }
+        end = Math.min(end, text.length);
+      } else {
+        const close = text.indexOf(delimiter, end + 1), newline = text.indexOf("\n", end + 1);
+        end = close >= 0 && (newline < 0 || close < newline)
+          ? close + 1 : newline >= 0 ? newline : text.length;
+      }
+    } else if (token[0] !== "\\\\") {
+      continue;
+    }
+    parts.push(text.slice(from, token.index), text.slice(token.index, end).replace(/[^\n\r]/g, " "));
+    from = end;
+    tokens.lastIndex = end;
+  }
+  return parts.join("") + text.slice(from);
 }
 // The line of each offset, counted from 1.
 function lines(text: string) {
@@ -360,7 +416,7 @@ function lines(text: string) {
 const CITE = /\\([A-Za-z]*[cC]ite[A-Za-z]*|nocite)\*?(?![A-Za-z])/g;
 const NOT_CITES = new Set(["citestyle", "citesetup", "citeindextrue", "citeindexfalse", "citename"]);
 export function citations(text: string, file: string) {
-  const source = uncomment(text),
+  const source = texSource(text),
     lineAt = lines(source),
     found: { key: string; file: string; line: number }[] = [];
   for (const match of source.matchAll(CITE)) {
@@ -373,7 +429,7 @@ export function citations(text: string, file: string) {
         body = /^\{([^{}]*)\}/.exec(rest.slice(options.length));
       if (!body) break;
       const line = lineAt(at + options.length);
-      for (const key of body[1].split(",").map((k) => k.trim()).filter(Boolean))
+      for (const key of body[1].split(",").map((k) => k.trim()).filter((k) => k && !/[\\#\s]/.test(k)))
         found.push({ key, file, line });
       at += options.length + body[0].length;
       taken++;
@@ -400,26 +456,22 @@ export function documentFiles(read: (file: string) => string | null, main: strin
     const text = read(file);
     if (text == null) return;
     files.push(file);
-    const source = uncomment(text),
+    const source = texSource(text),
       here = path.posix.dirname(file);
     for (const m of source.matchAll(
-      /\\(?:input|include|subfile|InputIfFileExists)\s*\{([^}]+)\}|\\(sub)?(?:import|inputfrom|includefrom)\*?\s*\{([^}]*)\}\s*\{([^}]+)\}/g,
+      /\\(?:input|include|subfile|InputIfFileExists)\s*\{([^}]+)\}|\\(sub)?(?:import|inputfrom|includefrom)\*?\s*\{([^}]*)\}\s*\{([^}]+)\}|\\bibliography\s*\{([^}]+)\}|\\add(?:bibresource|globalbib|sectionbib)\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}/g,
     )) {
+      if (m[5] || m[6]) {
+        for (const name of m[5] ? m[5].split(",") : [m[6]]) {
+          const bib = resolve(name, base, ".bib");
+          if (bib && !bibs.includes(bib)) bibs.push(bib);
+        }
+        continue;
+      }
       const target = m[1]
         ? resolve(m[1])
         : resolve(m[4], path.posix.join(m[2] ? here : base, m[3]));
       if (target) walk(target);
-    }
-    for (const m of source.matchAll(/\\bibliography\s*\{([^}]+)\}/g))
-      for (const name of m[1].split(",")) {
-        const bib = resolve(name, base, ".bib");
-        if (bib && !bibs.includes(bib)) bibs.push(bib);
-      }
-    for (const m of source.matchAll(
-      /\\add(?:bibresource|globalbib|sectionbib)\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}/g,
-    )) {
-      const bib = resolve(m[1], base, ".bib");
-      if (bib && !bibs.includes(bib)) bibs.push(bib);
     }
   };
   walk(main);
@@ -435,11 +487,18 @@ export interface Document {
 function citationsOf(doc: Document) {
   const { files, bibs } = documentFiles((f) => doc.read(f), doc.main),
     cites = files.flatMap((file) => citations(doc.read(file) ?? "", file)),
+    entries = bibliographyEntries(doc.read.bind(doc), bibs),
     keys = new Map<string, number>();
-  for (const bib of bibs)
-    for (const entry of parseBib(doc.read(bib) ?? ""))
+  for (const values of entries.values())
+    for (const entry of values)
       keys.set(entry.key, (keys.get(entry.key) ?? 0) + 1);
-  return { cites, bibs, keys, all: cites.some((c) => c.key === "*") };
+  return { cites, bibs, entries, keys, all: cites.some((c) => c.key === "*") };
+}
+// BibTeX reads databases in declaration order, retaining @string definitions
+// for subsequent files. Keep the defining file with every dependency.
+function bibliographyEntries(read: (file: string) => string | null, bibs: string[]) {
+  const macros = defaultMacros();
+  return new Map(bibs.map((file) => [file, parseBib(read(file) ?? "", file, macros)]));
 }
 const sectionOf = (doc: Document, file: string, line: number) => {
   const node = deepestNode(doc.outline, file, line, line);
@@ -448,11 +507,13 @@ const sectionOf = (doc: Document, file: string, line: number) => {
 const meets = (a: Span, b: Span) => a[0] <= b[1] && b[0] <= a[1];
 // A grouped macro edit can span unrelated entries. Match its actual edits,
 // not the envelope between the first and last hunk.
-function changesSources(unit: Unit, sources: Span[], side: "old" | "new") {
+function changesSources(unit: Unit, sources: BibSource[], side: "old" | "new") {
+  const own = sources.filter((source) => source.file === unit.file);
+  if (unit.whole_file) return own.length > 0;
   const ranges: Span[] = unit.ops.length
     ? unit.ops.map((op) => side === "old" ? [op[1], op[2]] : [op[3], op[4]])
     : [side === "old" ? [unit.old_start - 1, unit.old_end] : [unit.new_start - 1, unit.new_end]];
-  return sources.some(([start, end]) => ranges.some(([a, b]) =>
+  return own.some(({ lines: [start, end] }) => ranges.some(([a, b]) =>
     a === b ? start - 1 < a && a < end : a < end && start - 1 < b,
   ));
 }
@@ -469,21 +530,18 @@ export function referenceChanges(
   const before = citationsOf(old),
     after = citationsOf(next),
     entries: ReferenceEntry[] = [];
-  for (const file of [...new Set(bibUnits.map((u) => u.file))]) {
-    const own = bibUnits.filter((u) => u.file === file),
-      counts = new Map<string, number>();
-    for (const change of entryChanges(old.read(file) ?? "", next.read(file) ?? "")) {
-      const unit = own.find((u) =>
-        u.status === "added"
-          ? change.status !== "removed"
-          : u.status === "deleted"
-            ? change.status === "removed"
-            : change.status === "removed"
-              ? changesSources(u, change.sources, "old")
-              : changesSources(u, change.sources, "new") ||
-                (change.oldSources !== undefined && changesSources(u, change.oldSources, "old")),
+  for (const file of new Set([...bibUnits.map((u) => u.file), ...before.bibs, ...after.bibs])) {
+    const counts = new Map<string, number>(),
+      a = before.entries.get(file) ?? parseBib(old.read(file) ?? "", file),
+      b = after.entries.get(file) ?? parseBib(next.read(file) ?? "", file);
+    for (const change of compareEntries(a, b, file)) {
+      const affected = bibUnits.filter((u) =>
+        change.status === "removed"
+          ? changesSources(u, change.sources, "old")
+          : changesSources(u, change.sources, "new") ||
+            (change.oldSources !== undefined && changesSources(u, change.oldSources, "old")),
       );
-      if (!unit) continue;
+      if (!affected.length) continue;
       const n = (counts.get(change.key) ?? 0) + 1;
       counts.set(change.key, n);
       const cited = (key: string) =>
@@ -507,7 +565,8 @@ export function referenceChanges(
         problems.push("not-in-bibliography");
       entries.push({
         id: `${file}#${change.key}${n > 1 ? `#${n}` : ""}`,
-        unit: unit.id,
+        unit: affected[0].id,
+        ...(affected.length > 1 ? { units: affected.map((u) => u.id) } : {}),
         file,
         key: change.key,
         ...(change.oldKey ? { old_key: change.oldKey } : {}),
@@ -559,6 +618,7 @@ export function referenceChanges(
 export function bibliographyReport(doc: Document): Bibliography {
   const read = (file: string) => doc.read(file),
     { files, bibs } = documentFiles(read, doc.main),
+    parsed = bibliographyEntries(read, bibs),
     cites = files.flatMap((file) => citations(read(file) ?? "", file)),
     place = (c: { file: string; line: number }): ReferenceCitation => ({
       file: c.file,
@@ -574,7 +634,7 @@ export function bibliographyReport(doc: Document): Bibliography {
       absent.push(file);
       continue;
     }
-    for (const entry of parseBib(text)) {
+    for (const entry of parsed.get(file)!) {
       const n = (counts.get(`${file}#${entry.key}`) ?? 0) + 1;
       counts.set(`${file}#${entry.key}`, n);
       entries.push({

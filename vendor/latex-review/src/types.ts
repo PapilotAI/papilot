@@ -268,6 +268,8 @@ export type ReferenceProblem =
 export interface ReferenceEntry {
   id: string;
   unit: string;
+  /** All edits affecting this entry when macros span multiple files. */
+  units?: string[];
   file: string;
   key: string;
   old_key?: string;

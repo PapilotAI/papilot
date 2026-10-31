@@ -813,7 +813,7 @@ export function ReviewApp({
     const known = block.units.map((id) => units.get(id)!).filter(Boolean),
       // A .bib edit is shown entry by entry, every field, rather than as
       // the bibliography's typeset lines alone.
-      bib = detail!.references?.entries.filter((e) => block.units.includes(e.unit)) ?? [],
+      bib = detail!.references?.entries.filter((e) => (e.units ?? [e.unit]).some((id) => block.units.includes(id))) ?? [],
       uncited = detail!.references?.missing.filter((m) => m.unit && block.units.includes(m.unit)) ?? [],
       status = stopState(block.units, decisions),
       reviewed = !pendingUnits(stops[index], decisions).length,

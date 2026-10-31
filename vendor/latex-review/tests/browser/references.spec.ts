@@ -118,3 +118,19 @@ test("changed macro expansions are visible and unverified entries still require 
   await expect(page.locator(".references-confirm")).toContainText("made-up — Not verified");
   expect(posted).toEqual([]);
 });
+
+test("cross-file macro dependencies appear on both edits and Accept all skips both", async ({ page }) => {
+  const round = structuredClone(detail), entry = round.references!.entries[1];
+  entry.units = ["c001", "c002"];
+  round.units[1].file = "strings.bib";
+  const posted = await serve(page, round);
+  await page.goto("/?task=refs");
+  await expect(page.locator('article.change').nth(1).locator('.reference-entry[data-check="unverified"] .reference-key')).toHaveText("@article{made-up}");
+  const batch = page.locator(".accept-all");
+  await expect(batch.locator(".batch-count")).toHaveText("1");
+  await batch.click();
+  await expect.poll(() => posted).toEqual([["c003"]]);
+  await page.getByRole("button", { name: "Next change", exact: true }).click();
+  await page.locator('article.change').nth(1).locator('.actions button.accept').click();
+  await expect(page.locator(".references-confirm")).toContainText("made-up — Not verified");
+});

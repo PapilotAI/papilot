@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { Fixture } from "./helpers.ts";
 import {
   bibliographyReport,
@@ -13,6 +14,7 @@ import {
 import { applyUnits, diffUnits } from "../../src/core/changes.ts";
 import { buildOutline } from "../../src/core/outline.ts";
 import { checkInputs } from "../../src/core/verify.ts";
+import { risks } from "../../src/web/references.tsx";
 import type { Unit } from "../../src/types.ts";
 
 const BIB = String.raw`% A comment line, ignored like any text outside entries.
@@ -34,6 +36,12 @@ const BIB = String.raw`% A comment line, ignored like any text outside entries.
   year      = {1989}
 }
 `;
+const hasTeX = (() => {
+  try {
+    for (const command of ["pdflatex", "bibtex"]) execFileSync(command, ["--version"], { stdio: "ignore" });
+    return true;
+  } catch { return false; }
+})();
 
 describe("BibTeX entries", () => {
   it("reads entries with their lines, values as written and macros expanded", () => {
@@ -92,6 +100,30 @@ describe("BibTeX entries", () => {
 });
 
 describe("Citations", () => {
+  it("ignores parameterized keys and literal examples while preserving real citations and lines", () => {
+    const text = String.raw`\newcommand{\mycite}[1]{\cite{#1}}
+\verb|\cite{not-a-real-cite}| \mycite{real}
+\verb*+100% \cite{fake}+ \cite{after-percent}
+\begin{verbatim}
+\cite{verbatim} \input{fake} \bibliography{fake}
+\end{verbatim}
+\begin{lstlisting}[language=TeX]
+\cite{listing}
+\end{lstlisting}
+\begin{minted}{tex}
+\cite{minted}
+\end{minted}
+\Verb|\cite{fancy}| \lstinline[language=TeX]|\cite{inline}|
+\mintinline{tex}{\cite{mint-inline}} \cite{last}
+\cite{\dynamic,known} \\cite{escaped} % \cite{comment}
+\bibliography{refs}`;
+    expect(citations(text, "x.tex").map((c) => `${c.key}:${c.line}`)).toEqual([
+      "real:2", "after-percent:3", "last:14", "known:15",
+    ]);
+    expect(documentFiles((file) => file === "x.tex" ? text : "", "x.tex")).toEqual({
+      files: ["x.tex"], bibs: ["refs.bib"],
+    });
+  });
   it("finds the keys of LaTeX, natbib and biblatex citations, without comments", () => {
     const text = String.raw`As \cite{a} and \citep[p.~3]{b, c} show.
 % \cite{commented}
@@ -138,6 +170,18 @@ const unit = (over: Partial<Unit>): Unit => ({
 });
 
 describe("Bibliography changes of a round", () => {
+  it("does not flag valid citation wrappers or literal code as missing entries", () => {
+    const before = String.raw`\bibliography{refs}`,
+      next = String.raw`\newcommand{\mycite}[1]{\cite{#1}}
+\verb|\cite{not-a-real-cite}| \mycite{real}
+\bibliography{refs}`,
+      bib = "@misc{real, title={Real work}}",
+      old = doc({ "paper/main.tex": before, "paper/refs.bib": bib }),
+      revised = doc({ "paper/main.tex": next, "paper/refs.bib": bib });
+    expect(referenceChanges([unit({ file: "paper/main.tex", new_end: 3 })], old, revised)).toBeUndefined();
+    expect(bibliographyReport(revised).missing).toEqual([]);
+    expect(bibliographyReport(revised).entries[0].cited).toMatchObject([{ file: "paper/main.tex", line: 2 }]);
+  });
   it("checks explicit missing citations even when nocite includes every entry", () => {
     const before = MAIN.replace("\\bibliography", "\\nocite{*}\n\\bibliography"),
       next = before.replace("Text \\cite{knuth1981}", "Text \\cite{knuth1981,ghost}"),
@@ -194,6 +238,73 @@ describe("Bibliography hunks", () => {
     f = new Fixture();
   });
   afterEach(async () => f.close());
+  it("checks unchanged entries using macros from earlier files and guards every affected edit", () => {
+    const main = String.raw`\cite{one,two}\bibliography{strings,nested,refs}`,
+      strings = '@string{work = "Real title"}\n',
+      nested = '@string{extended = work # " subtitle"}\n',
+      bib = `@article{one, title=extended, author={John Smith}, year=2020}
+@article{two, title=work, author={Jane Doe}, year=2021}
+`,
+      files = { "paper/main.tex": main, "paper/strings.bib": strings, "paper/nested.bib": nested, "paper/refs.bib": bib };
+    for (const [file, text] of Object.entries(files)) f.write(file, text);
+    f.repo.run(["add", "."]);
+    f.repo.run(["commit", "-qm", "shared macros"]);
+    const before = f.repo.rev("HEAD"),
+      revised = { ...files, "paper/strings.bib": strings.replace("Real title", "Invented title") };
+    f.write("paper/strings.bib", revised["paper/strings.bib"]);
+    const units = diffUnits(f.repo, before, f.repo.snapshot(["paper"])),
+      result = referenceChanges(units, doc(files), doc(revised))!;
+    expect(result.entries.map((e) => [e.file, e.key, e.unit])).toEqual([
+      ["paper/refs.bib", "one", units[0].id], ["paper/refs.bib", "two", units[0].id],
+    ]);
+    expect(result.entries[0].fields.find((f) => f.name === "title")).toEqual({
+      name: "title", old: "extended", new: "extended", oldResolved: "Real title subtitle", resolved: "Invented title subtitle",
+    });
+    expect(checkInputs(result).map((e) => e.fields.title)).toEqual(["Invented title subtitle", "Invented title"]);
+    expect([...risks(result, {}, 0).keys()]).toEqual([units[0].id]);
+    expect(bibliographyReport(doc(revised)).entries[0].fields.find((f) => f.name === "title")?.resolved).toBe("Invented title subtitle");
+    // Editing both the macro and a dependent entry must guard both files.
+    revised["paper/refs.bib"] = bib.replace("year=2020", "year=2022");
+    f.write("paper/refs.bib", revised["paper/refs.bib"]);
+    const bothUnits = diffUnits(f.repo, before, f.repo.snapshot(["paper"])),
+      both = referenceChanges(bothUnits, doc(files), doc(revised))!;
+    expect(both.entries.find((e) => e.key === "one")?.units?.sort()).toEqual(bothUnits.map((u) => u.id).sort());
+    expect([...risks(both, {}, 0).keys()].sort()).toEqual(bothUnits.map((u) => u.id).sort());
+    // Removing a defining file must still find dependents through old sources.
+    f.write("paper/refs.bib", bib);
+    f.repo.run(["rm", "-f", "paper/strings.bib"]);
+    const removed = referenceChanges(diffUnits(f.repo, before, f.repo.snapshot(["paper"])), doc(files), doc({ ...files, "paper/strings.bib": "" }))!;
+    expect(removed.entries.map((e) => e.key)).toEqual(["one", "two"]);
+  });
+  it.skipIf(!hasTeX)("agrees with a real BibTeX build for shared macros and literal citations", () => {
+    const main = String.raw`\documentclass{article}
+\newcommand{\mycite}[1]{\cite{#1}}
+\begin{document}
+\verb|\cite{not-a-real-cite}| \mycite{real}
+\bibliographystyle{plain}
+\bibliography{strings,refs}
+\end{document}
+`,
+      files = { "paper/main.tex": main, "paper/strings.bib": '@string{work="Real title"}',
+        "paper/refs.bib": '@misc{real, title=work, author={John Smith}, year=2020}' },
+      build = () => {
+        const run = (command: string, args: string[]) => execFileSync(command, args, { cwd: `${f.root}/paper`, stdio: "ignore" });
+        run("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "main.tex"]);
+        run("bibtex", ["main"]);
+        for (let n = 0; n < 2; n++) run("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "main.tex"]);
+        expect(f.read("paper/main.log")).not.toMatch(/Citation .*undefined/);
+        return f.read("paper/main.bbl");
+      };
+    for (const [file, text] of Object.entries(files)) f.write(file, text);
+    expect(build()).toContain("Real title");
+    const revised = { ...files, "paper/strings.bib": '@string{work="Invented title"}' };
+    f.write("paper/strings.bib", revised["paper/strings.bib"]);
+    expect(build()).toContain("Invented title");
+    const result = referenceChanges([unit({ file: "paper/strings.bib" })], doc(files), doc(revised))!;
+    expect(result.missing).toEqual([]);
+    expect(checkInputs(result)[0].fields.title).toBe("Invented title");
+    expect(bibliographyReport(doc(revised)).missing).toEqual([]);
+  });
   it("checks macro changes and keeps each affected entry's edits together", () => {
     const main = MAIN.replace("knuth1981", "one").replace("ellis1989", "two"),
       bib = `@string{work = "Original title"}
@@ -277,6 +388,16 @@ ${"\n".repeat(8)}
 });
 
 describe("The whole bibliography", () => {
+  it("resolves macros in declaration order, including resources declared around inputs", () => {
+    const files = {
+      "paper/main.tex": String.raw`\addbibresource{strings.bib}\input{section}\addbibresource{late.bib}`,
+      "paper/section.tex": String.raw`\addbibresource{refs.bib}`,
+      "paper/strings.bib": '@string{work="Earlier title"}',
+      "paper/refs.bib": '@misc{early,title=work}',
+      "paper/late.bib": '@string{work="Later title"}\n@misc{late,title=work}',
+    };
+    expect(bibliographyReport(doc(files)).entries.map((e) => e.fields[0].resolved)).toEqual(["Earlier title", "Later title"]);
+  });
   it("lists every entry with its citations, and what is wrong without looking anything up", () => {
     const bib = BIB + String.raw`
 @misc{knuth1981,
