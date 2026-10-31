@@ -47,7 +47,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
     .bar .identity span{font-size:13px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis}
     .bar .meter{display:flex;order:initial;width:auto;font-size:13px}
-    .bar .bar-end{margin-left:0;gap:6px}
+    .bar .bar-end{margin-left:0;gap:6px;flex-wrap:wrap;justify-content:flex-end;min-width:0}
     .bar .ghost{font-size:13px;font-weight:500;height:28px;padding:0 10px;border-radius:7px}
     .bar .ghost:hover{text-decoration:none;background:var(--bg-hover)}
     .bar .accept-all,.bar .reject-all{display:inline-flex;align-items:center;gap:6px;border-color:var(--line-strong);background:var(--bg);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0/.06)}
@@ -99,26 +99,29 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .change-head .actions .unstage:disabled{opacity:.4}
     .unit-actions .unstage{color:var(--text-2)}
     .bar .ghost.undo{flex-shrink:0;white-space:nowrap}
-    @media(max-width:370px){.change-head .actions .unstage::before{display:none}}
-    /* Wider than a phone, a change has one compact header row: its number and
-       place on the left, between the previous and next arrows; its status,
-       the decisions and the change's own tools on the right. The bar's items
-       join the header row directly. Undo appears once there is something to
-       undo, Copy reference is a copy icon, and the position and "Review
-       complete" are left to the toolbar's decided count. */
-    @media(min-width:681px){
-      .change-head{flex-wrap:wrap;align-items:center;gap:4px 6px;padding:5px 8px 5px 12px;min-height:40px}
-      .change-head .dock,.change-head .actions{display:contents}
-      .change-head .actions>.nav:first-child{order:1}.change-head .change-number{order:2}.change-head .actions>.nav:not(:first-child){order:3}
-      .change-head .change-where{order:4;flex:1 1 120px;min-width:0;margin-left:4px}
-      .change-head .change-kind,.change-head .badge{order:5}
-      .change-head .actions>*{order:6}
-      .change-head .link{order:7}
-      .change-head .position,.change-head .complete{display:none}
-      .change-head .actions .undo:disabled{display:none}
-      .change-head .actions .nav{width:24px;height:26px;font-size:18px}
-      .change-head .copy-reference{width:28px;padding:0;justify-content:center;font-size:0}
-      .change-head .copy-reference::before{content:"";width:15px;height:15px;background:currentColor;-webkit-mask:var(--icon-copy) center/contain no-repeat;mask:var(--icon-copy) center/contain no-repeat}
+    /* A narrow desktop pane keeps the actions with its change. Wrapping
+       the header preserves its tools without switching to a phone dock. */
+    .change-head{flex-wrap:wrap;align-items:center;gap:4px 6px;padding:5px 8px 5px 12px;min-height:40px}
+    .change-head .dock,.change-head .actions{display:contents}
+    .change-head .actions>.nav:first-child{order:1}.change-head .change-number{order:2}.change-head .actions>.nav:not(:first-child){order:3}
+    .change-head .change-where{order:4;flex:1 1 100px;min-width:0;margin-left:4px}
+    .change-head .change-kind,.change-head .badge{order:5}
+    .change-head .actions>*{order:6}
+    .change-head .link{order:7}
+    :root:not([data-papilot-phone]) .change-head .position,:root:not([data-papilot-phone]) .change-head .complete{display:none}
+    .change-head .actions .undo:disabled{display:none}
+    .change-head .actions .nav{width:28px;height:28px;font-size:18px}
+    .change-head .copy-reference{width:28px;padding:0;justify-content:center;font-size:0}
+    .change-head .copy-reference::before{content:"";width:15px;height:15px;background:currentColor;-webkit-mask:var(--icon-copy) center/contain no-repeat;mask:var(--icon-copy) center/contain no-repeat}
+    @media(max-width:680px){
+      :root:not([data-papilot-phone]){
+        .change-head .dock{display:flex;order:8;flex:1 0 100%;margin:0}
+        .change-head .actions{display:flex;width:100%;flex-wrap:wrap;gap:3px;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+        .change-head .position{display:inline;order:2;min-width:30px}
+        .change-head .actions>.nav:not(:first-child){margin-right:auto}
+        .change-head .actions button{padding:0 6px;font-size:12.5px}
+        .change-head .actions .nav{padding:0;font-size:18px}
+      }
     }
     #paper{--paper-top:14px;padding-top:14px}
     .review-body>#paper{padding-right:34px}
@@ -137,49 +140,49 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     @supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:var(--scroll-hover) transparent}}
     .part-title{font-size:15px;margin:6px 0 10px}
     .side .pdf-strip,.context .pdf-strip{max-width:none}
-    @media(max-width:680px){
-      .bar{height:var(--papilot-bar-height,48px);min-height:var(--papilot-bar-height,48px);padding-left:calc(var(--papilot-lead,0px) + 12px);gap:8px}.bar .ghost{min-height:36px;font-size:12px}
-      .bar .ghost.round{display:none}.bar .identity span,.bar .meter{font-size:12px}
-      .change-map{display:none}.review-body>#paper{padding-left:8px;padding-right:8px;padding-bottom:84px}
+    /* Only the host window, never an iframe's width, selects the phone
+       layout. Navigation and position stay alongside the decisions. */
+    :root[data-papilot-phone]{
+      .bar{gap:8px}.bar .ghost:not(.history){min-height:36px;font-size:12px}
+      .review-body>#paper{padding-left:8px;padding-right:24px;padding-bottom:132px}
+      .change-map{right:4px;width:12px}
       .side.before::after,.side.after::after{content:none}
-      .change-head{align-items:center;padding:4px 6px 4px 10px;gap:6px}.change-head .change-where{min-width:0}
+      .change-head{padding:4px 6px 4px 10px;gap:6px}
       .change-head .link{min-height:36px;padding:0 6px}
-      .change-head .dock{position:fixed;z-index:6;left:8px;right:8px;bottom:8px;margin:0}
-      .change-head .actions{width:100%;flex-wrap:nowrap;justify-content:space-between;gap:4px;padding:5px;border-radius:16px;border-color:var(--line-strong);box-shadow:0 2px 4px rgb(0 0 0/.05),0 10px 28px rgb(0 0 0/.16)}
-      .change-head .actions button{flex:1 1 auto;min-width:0;height:44px;gap:5px;padding:0 4px;border-radius:11px;font-size:14.5px}
-      .change-head .actions .nav{flex:0 0 auto;width:28px;min-width:28px;padding:0}.change-head .position{min-width:30px;font-size:11.5px}
-      .change-head .actions .undo{flex:0 0 auto;margin-left:0;padding:0 6px;font-size:14px}
-/* A comment is written in a card under the toolbar, clear of the
-         keyboard, in place of the change's decisions. */
-      .composer{left:0!important;right:0!important;width:auto!important;max-width:none;top:48px;bottom:auto;transform:none;max-height:calc(100% - 48px - var(--keyboard,0px));overflow:auto;border-width:0 0 1px;border-radius:0 0 16px 16px}
+      .change-head .dock{display:flex;position:fixed;z-index:6;left:8px;right:8px;bottom:8px;margin:0}
+      .change-head .actions{display:flex;width:100%;flex-wrap:wrap;justify-content:center;gap:4px;padding:5px;border-radius:12px;border-color:var(--line-strong);box-shadow:0 2px 4px rgb(0 0 0/.05),0 6px 20px rgb(0 0 0/.12)}
+      .change-head .actions>*{order:initial!important}
+      .change-head .actions button{flex:1 1 auto;min-width:0;height:44px;gap:5px;padding:0 6px;border-radius:8px;font-size:13px}
+      .change-head .actions .nav{flex:0 0 32px;width:32px;min-width:32px;height:44px;padding:0}
+      .change-head .position{min-width:30px;font-size:11.5px}
+      .change-head .actions .undo{flex:0 0 auto;margin-left:0;padding:0 6px;font-size:13px}
+      @media(max-width:360px){
+        .change-head .actions:has(.nav){display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+        .change-head .actions .nav{width:100%;min-width:0;grid-row:1}
+        .change-head .actions>.nav:first-child{grid-column:1}
+        .change-head .actions>.nav:not(:first-child){grid-column:3}
+        .change-head .position{grid-row:1;grid-column:2;justify-self:center}
+        .change-head .actions button:not(.nav){grid-row:2}
+      }
+      .composer{left:0!important;right:0!important;width:auto!important;max-width:none;top:var(--papilot-review-bar-height,48px);bottom:auto;transform:none;max-height:calc(100% - var(--papilot-review-bar-height,48px) - var(--keyboard,0px));overflow:auto;border-width:0 0 1px;border-radius:0 0 16px 16px}
       #root:has(>.composer) .change-head .dock{display:none}
       .composer textarea{font-size:16px;min-height:76px;max-height:min(140px,30vh);resize:none}.composer button{min-height:44px}
       .composer-row{justify-content:flex-end;gap:8px}.composer-row .muted{display:none}
       .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-crop-scale,1));margin-left:calc(-100% * var(--pdf-crop-scale,1) * var(--pdf-crop-shift,0))}
-      /* Clip only the cropped margins: a selection handle may reach above its line. */
       .side,.context{overflow-x:clip}
     }
-    @media(max-width:480px){.bar .identity,.bar .meter{display:none}.bar .bar-end{gap:4px}}
-    @media(max-width:400px){.change-head .position{display:none}}
-    @media(max-width:370px){.change-head .actions .accept::before,.change-head .actions .reject::before,.change-head .actions .comment::before{display:none}}
-    @media(max-width:350px){.change-head .actions .nav{display:none}}
-    @media(max-width:360px){.bar .ghost{padding:0 7px;font-size:11.5px}}
     /* History shares the PDF tools' size. Shortcut settings live in Papilot. */
     .bar .ghost.history{display:inline-flex;align-items:center;justify-content:center;width:var(--papilot-button-size,30px);height:var(--papilot-button-size,30px);min-height:0;padding:0;font-size:0}
     .bar .history::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-history) center/contain no-repeat;mask:var(--icon-history) center/contain no-repeat}
-    /* The batch decisions keep one line, with their count as a badge. The bar
-       is a container measured without the room Papilot's PDF tools take, so it
-       gives way in steps whatever their width or the language: first the meter
-       and the shortcuts button (the ? key still opens them), then the labels,
-       leaving each icon with its count, and last the counts. The buttons keep
-       their full names for screen readers and tooltips. */
-    .bar{container:review-bar/inline-size}
+    /* Reserve the outer tools' row when there is too little room. Keep
+       progress, batch counts and history; shorten only the batch labels. */
+    .bar{container:review-bar/inline-size;height:auto;gap:8px}
     .bar .accept-all,.bar .reject-all{flex-shrink:0;white-space:nowrap}
     .bar .batch-count{margin-left:0;background:var(--bg-muted);color:var(--text-2)}
-    @container review-bar (max-width:440px){.bar .meter,.bar .ghost.round{display:none}}
-    @container review-bar (max-width:370px){.bar .identity{visibility:hidden}}
-    @container review-bar (max-width:300px){.bar .batch-label{display:none}.bar .accept-all,.bar .reject-all{padding:0 8px}}
-    @container review-bar (max-width:170px){.bar .batch-count{display:none}}
+    :root[data-papilot-toolbar-stacked] .bar{padding:calc(var(--papilot-bar-height,44px) + 4px) 8px 4px;min-height:calc(var(--papilot-bar-height,44px) + 44px)}
+    :root[data-papilot-toolbar-stacked] .bar .identity{display:none}
+    :root[data-papilot-toolbar-stacked] .bar .bar-end{margin-left:auto}
+    @container review-bar (max-width:340px){.bar .batch-label{display:none}.bar .accept-all,.bar .reject-all{padding:0 8px}.bar .bar-end{gap:4px}}
     :root{--icon-history:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12a9 9 0 1 0 2.6-6.4L3 8'/><path d='M3 3v5h5M12 7v5l3 2'/></svg>")}
   `;
   doc.documentElement.dataset.theme = window.document.documentElement.dataset.theme;
@@ -219,7 +222,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
   const focusSequence = task ? noteLinks?.focus?.sequence : undefined;
   const [document, setDocument] = useState<Document | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
-  const toolbar = useRef<HTMLDivElement>(null), leading = useRef<HTMLDivElement>(null);
+  const toolbar = useRef<HTMLDivElement>(null), leading = useRef<HTMLDivElement>(null), hostBar = useRef<HTMLDivElement>(null);
   const [reserve, setReserve] = useState(0), [leadWidth, setLeadWidth] = useState(0);
   const decided = useRef(onDecided); decided.current = onDecided;
   const observer = useRef<MutationObserver | null>(null);
@@ -256,16 +259,24 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     observer.observe(element); return () => observer.disconnect();
   }, [Boolean(lead)]);
   useEffect(() => {
-    try {
-      const root = frame.current?.contentDocument?.documentElement;
-      root?.style.setProperty('--papilot-tools', `${reserve}px`);
-      root?.style.setProperty('--papilot-lead', `${leadWidth}px`);
-      if (toolbar.current) {
-        root?.style.setProperty('--papilot-bar-height', `${toolbar.current.offsetHeight}px`);
-        const button = toolbar.current.querySelector<HTMLElement>('.icon-button');
-        if (button) root?.style.setProperty('--papilot-button-size', `${button.offsetWidth}px`);
-      }
-    } catch { /* A browser error document may be inaccessible. */ }
+    if (!document || !frame.current || !hostBar.current) return;
+    const root = document.documentElement, bar = document.querySelector<HTMLElement>('.bar');
+    const phone = window.matchMedia('(max-width: 520px)');
+    const sync = () => {
+      root.toggleAttribute('data-papilot-phone', phone.matches);
+      root.style.setProperty('--papilot-tools', `${reserve}px`);
+      root.style.setProperty('--papilot-lead', `${leadWidth}px`);
+      root.style.setProperty('--papilot-bar-height', `${hostBar.current!.offsetHeight}px`);
+      root.toggleAttribute('data-papilot-toolbar-stacked', frame.current!.clientWidth - reserve - leadWidth < 220);
+      const button = toolbar.current?.querySelector<HTMLElement>('.icon-button');
+      if (button) root.style.setProperty('--papilot-button-size', `${button.offsetWidth}px`);
+      if (bar) root.style.setProperty('--papilot-review-bar-height', `${bar.offsetHeight}px`);
+    };
+    const observer = new ResizeObserver(sync);
+    observer.observe(frame.current); observer.observe(hostBar.current);
+    if (bar) observer.observe(bar);
+    phone.addEventListener('change', sync); sync();
+    return () => { observer.disconnect(); phone.removeEventListener('change', sync); };
   }, [reserve, leadWidth, document]);
   function loaded() {
     observer.current?.disconnect();
@@ -334,8 +345,10 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
   return <div className={'review-viewport' + (ready ? '' : ' review-pending')} aria-busy={!ready}>
     <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}:${focusSequence || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound, linkedChange) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
-    {lead && <div ref={leading} className="review-lead">{lead}</div>}
-    <div ref={toolbar} className="review-tools">{task && onSendNotes && <ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>}{tools}</div>
+    <div ref={hostBar} className="review-host-bar">
+      {lead && <div ref={leading} className="review-lead">{lead}</div>}
+      <div ref={toolbar} className="review-tools">{task && onSendNotes && <ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>}{tools}</div>
+    </div>
     {slot && completion ? createPortal(completion, slot) : null}
     {!ready && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}
   </div>;

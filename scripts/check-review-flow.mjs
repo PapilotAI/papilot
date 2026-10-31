@@ -149,6 +149,24 @@ try {
   for (const width of [1440, 1100, 1000, 900]) {
     await page.setViewportSize({ width, height: 1000 });
     await expect.poll(batch).toMatch(/^Accept all \(4\)(?: icon)? · Reject all \(4\)(?: icon)? · History$/);
+    await expect(viewer().getByRole('progressbar')).toBeInViewport();
+    await expect.poll(() => viewer().locator('.change.current .dock').evaluate(el => getComputedStyle(el).position)).not.toBe('fixed');
+  }
+  // A narrow desktop pane keeps its actions in the card. On a phone the
+  // toolbar can take a second row, preserving progress, navigation and tools.
+  for (const width of [640, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
+    await expect(viewer().getByRole('progressbar')).toBeInViewport();
+    await expect(viewer().getByRole('button', { name: 'Previous change', exact: true })).toBeInViewport();
+    await expect(viewer().getByRole('button', { name: 'Next change', exact: true })).toBeInViewport();
+    await expect(viewer().getByRole('button', { name: 'History', exact: true })).toBeInViewport();
+    await expect(page.locator('.review-tools .review-open')).toBeInViewport();
+    await expect(page.locator('.review-tools .review-rebuild')).toBeInViewport();
+    const position = await viewer().locator('.change.current .dock').evaluate(el => getComputedStyle(el).position);
+    if (width > 520) assert.notEqual(position, 'fixed');
+    else assert.equal(position, 'fixed');
+    assert.equal(await viewer().locator('#paper').evaluate(el => el.scrollWidth > el.clientWidth + 1), false);
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   await viewer().locator('.change.current').getByRole('button', { name: 'Accept', exact: true }).click();

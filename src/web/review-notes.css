@@ -35,11 +35,11 @@
 .select-handle[data-end=from]::after{top:-11px}.select-handle[data-end=to]::after{bottom:-11px}
 .review-select-menu{position:fixed;z-index:19;transform:translateX(-50%);font-family:var(--sans);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 .review-select-menu button{height:40px;padding:0 18px;border:0;border-radius:20px;background:#2563eb;color:#fff;font:500 15px/1 var(--sans);white-space:nowrap;box-shadow:0 4px 16px rgb(0 0 0/.25);cursor:pointer}
-/* On phones the notes are a card under the review's 48px toolbar, like a
+/* On phones the notes are a card under the review's toolbar, like a
    compose screen: the keyboard rises from below and never covers it, so
    Safari has no need to scroll the page. The change's decisions wait meanwhile. */
-@media(max-width:680px){
-  .review-notes-panel{left:0;right:0;top:48px;bottom:auto;width:auto;max-height:calc(100% - 48px - var(--keyboard,0px));padding:12px 14px 14px;border-width:0 0 1px;border-radius:0 0 16px 16px}
+:root[data-papilot-phone]{
+  .review-notes-panel{left:0;right:0;top:var(--papilot-review-bar-height,48px);bottom:auto;width:auto;max-height:calc(100% - var(--papilot-review-bar-height,48px) - var(--keyboard,0px));padding:12px 14px 14px;border-width:0 0 1px;border-radius:0 0 16px 16px}
   body:has(.review-notes-panel) .change-head .dock{display:none}
   .review-notes-panel header{margin-bottom:6px}
   .review-notes-panel form small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

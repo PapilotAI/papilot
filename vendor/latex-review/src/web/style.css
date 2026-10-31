@@ -151,6 +151,36 @@ kbd {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+.review-progress {
+  flex: none;
+  line-height: 1;
+}
+.review-progress svg {
+  display: block;
+}
+.review-progress circle {
+  fill: none;
+  stroke-width: 2;
+}
+.review-progress-track {
+  stroke: var(--line);
+}
+.review-progress-fill {
+  stroke: var(--accept);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s ease;
+}
+.review-progress-value {
+  fill: var(--ink);
+  font: 500 10px var(--sans);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-progress-fill {
+    transition: none;
+  }
+}
 .track {
   width: 120px;
   height: 2px;

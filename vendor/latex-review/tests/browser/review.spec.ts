@@ -156,7 +156,7 @@ test("Accept all acts once for the full round and one undo restores every change
   await page
     .getByRole("button", { name: "Accept all (7)", exact: true })
     .click();
-  await expect(page.getByText("7 of 7 decided", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "7 of 7 decided", exact: true })).toBeVisible();
   await expect(page.locator('.change[data-state="pending"]')).toHaveCount(0);
   await expect(
     page.locator('.change-map-mark[data-state="pending"]'),
@@ -165,7 +165,7 @@ test("Accept all acts once for the full round and one undo restores every change
   await page.keyboard.press(
     process.platform === "darwin" ? "Meta+z" : "Control+z",
   );
-  await expect(page.getByText("0 of 7 decided", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "0 of 7 decided", exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Accept all (7)", exact: true }),
   ).toBeEnabled();
@@ -197,18 +197,18 @@ test("Reject all decides only undecided changes and one undo restores the batch"
     }),
   ).toBeVisible();
   await rejectAll.click();
-  await expect(page.getByText("7 of 7 decided", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "7 of 7 decided", exact: true })).toBeVisible();
   await expect(page.locator('.change[data-state="accepted"]')).toHaveCount(1);
   await expect(page.locator('.change[data-state="pending"]')).toHaveCount(0);
   await expect(rejectAll).toHaveCount(0);
   await page.keyboard.press(undo);
   await expect(
-    page.getByText(`${7 - undecided} of 7 decided`, { exact: true }),
+    page.getByRole("progressbar", { name: `${7 - undecided} of 7 decided`, exact: true }),
   ).toBeVisible();
   await expect(page.locator('.change[data-state="accepted"]')).toHaveCount(1);
   await expect(page.locator('.change[data-state="rejected"]')).toHaveCount(0);
   await page.keyboard.press(undo);
-  await expect(page.getByText("0 of 7 decided", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "0 of 7 decided", exact: true })).toBeVisible();
 });
 
 test("the last undecided change is decided from its own bar, without batch buttons", async ({
@@ -224,7 +224,7 @@ test("the last undecided change is decided from its own bar, without batch butto
       .getByRole("button", { name: "Accept", exact: true })
       .click();
     await expect(
-      page.getByText(`${decided} of 7 decided`, { exact: true }),
+      page.getByRole("progressbar", { name: `${decided} of 7 decided`, exact: true }),
     ).toBeVisible();
   }
   await expect(
@@ -233,7 +233,7 @@ test("the last undecided change is decided from its own bar, without batch butto
   await page.keyboard.press(
     process.platform === "darwin" ? "Meta+z" : "Control+z",
   );
-  await expect(page.getByText("5 of 7 decided", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "5 of 7 decided", exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Accept all (2)", exact: true }),
   ).toBeVisible();
@@ -243,7 +243,7 @@ test("the last undecided change is decided from its own bar, without batch butto
       process.platform === "darwin" ? "Meta+z" : "Control+z",
     );
     await expect(
-      page.getByText(`${decided} of 7 decided`, { exact: true }),
+      page.getByRole("progressbar", { name: `${decided} of 7 decided`, exact: true }),
     ).toBeVisible();
   }
 });

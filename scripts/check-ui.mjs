@@ -1079,9 +1079,9 @@ try {
     assert.ok(send.x >= 0 && send.x + send.width <= width);
     if (width < 681) {
       await page.getByRole('button', { name: /Review/ }).first().click();
-      // A phone keeps Full PDF; Regenerate PDF comparison and the new-tab link make room for the review's own bar.
+      // Phone toolbars wrap so PDF tools and the new-tab link stay available.
       await page.locator('.review-tools').getByRole('link', { name: 'Full PDF', exact: true }).waitFor();
-      assert.equal(await page.locator('.review-tools').getByRole('link', { name: 'Open review in new tab', exact: true }).isVisible(), false);
+      assert.equal(await page.locator('.review-tools').getByRole('link', { name: 'Open review in new tab', exact: true }).isVisible(), true);
       await page.screenshot({ path: `test-results/english-mobile-${width}.png`, fullPage: true });
     }
     const drawerToggle = page.getByRole('button', { name: 'Show task list', exact: true });

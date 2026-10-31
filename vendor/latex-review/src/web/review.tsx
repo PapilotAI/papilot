@@ -98,6 +98,41 @@ function jobText(job: PageState["job"]) {
       : t("Queued…")
     : `${t(PHASE[job?.phase ?? ""] || "Starting")}…`;
 }
+
+function ReviewProgress({ value, total, label }: { value: number; total: number; label: string }) {
+  if (total === 0) return null;
+  const fraction = `${value}/${total}`;
+  return (
+    <div
+      className="meter review-progress"
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={value}
+      title={label}
+    >
+      <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+        <circle className="review-progress-track" cx="18" cy="18" r="16" />
+        <circle
+          className="review-progress-fill"
+          cx="18" cy="18" r="16"
+          pathLength="100"
+          strokeDasharray="100"
+          strokeDashoffset={100 - value / total * 100}
+          transform="rotate(-90 18 18)"
+          opacity={value > 0 ? 1 : 0}
+        />
+        <text
+          className="review-progress-value"
+          x="18" y="18"
+          textLength={fraction.length > 5 ? 26 : undefined}
+          lengthAdjust="spacingAndGlyphs"
+        >{fraction}</text>
+      </svg>
+    </div>
+  );
+}
 export function ReviewApp({
   task,
   pinned,
@@ -1002,21 +1037,19 @@ export function ReviewApp({
                 : ""}
           </span>
         </div>
-        {count.total > 0 && (
-          <div className="meter">
-            <span>
-              {changes
-                ? t("{staged} of {total} staged", {
-                    staged: count.accepted,
-                    total: count.accepted + count.pending,
-                  })
-                : t("{decided} of {total} decided", {
-                    decided: count.decided,
-                    total: count.total,
-                  })}
-            </span>
-          </div>
-        )}
+        <ReviewProgress
+          value={changes ? count.accepted : count.decided}
+          total={changes ? count.accepted + count.pending : count.total}
+          label={changes
+            ? t("{staged} of {total} staged", {
+                staged: count.accepted,
+                total: count.accepted + count.pending,
+              })
+            : t("{decided} of {total} decided", {
+                decided: count.decided,
+                total: count.total,
+              })}
+        />
         <div className="bar-end">
           {/* Batch decisions cover only undecided changes; accepted,
               rejected and commented changes keep their state. A single
