@@ -5,14 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Papilot · A Cursor-like workspace for your papers</title>
 <script>
-// Chinese for ?lang=zh-CN, a saved choice of Chinese, or a Simplified Chinese
-// browser; decided before the page paints so it never flashes in English.
+// The page's languages, in menu order. ?lang= or a saved choice wins; otherwise
+// the first language the browser prefers that the page has, else English.
+// Traditional Chinese is not Simplified Chinese, so it falls through.
+const LANGS = { en: 'English', 'zh-CN': '简体中文' };
+function supportedLang(tag) {
+  tag = String(tag || '').toLowerCase();
+  if (/^zh-(tw|hk|mo|hant)/.test(tag)) return null;
+  return Object.keys(LANGS).find(code => tag === code.toLowerCase() || tag.split('-')[0] === code.split('-')[0].toLowerCase()) || null;
+}
 {
   let saved = null;
   try { saved = localStorage.getItem('papilot-lang'); } catch {}
-  const asked = new URLSearchParams(location.search).get('lang') || saved;
-  const zh = asked ? /^zh/i.test(asked) : /^zh(?!-(TW|HK|MO|Hant))/i.test(navigator.language);
-  document.documentElement.lang = zh ? 'zh-CN' : 'en';
+  const asked = supportedLang(new URLSearchParams(location.search).get('lang')) || supportedLang(saved);
+  document.documentElement.lang = asked || (navigator.languages?.length ? navigator.languages : [navigator.language]).map(supportedLang).find(Boolean) || 'en';
 }
 </script>
 <meta name="description" content="Annotate and review PDFs directly without ever touching LaTeX. An AI agent edits the LaTeX, and every change comes back as a typeset before-and-after that you accept or reject." data-zh-content="直接在 PDF 上批注和审阅，完全不用碰 LaTeX。AI 智能体去改 LaTeX，每处改动都以排版后的修改前后对比回到你面前，由你接受或拒绝。">
@@ -48,9 +54,11 @@
       <a href="https://github.com/cu1ch3n/papilot/blob/main/docs/guide.md"><span lang="en">Guide</span><span lang="zh-CN">指南</span></a>
     </nav>
     <div class="topbar-actions">
-      <div class="lang-switch" role="group" aria-label="Language" data-zh-aria-label="语言" hidden>
-        <button type="button" data-set-lang="en" aria-pressed="true">EN</button>
-        <button type="button" data-set-lang="zh-CN" aria-pressed="false">中文</button>
+      <div class="lang-menu" hidden>
+        <button class="icon-button" type="button" id="lang-button" aria-haspopup="menu" aria-expanded="false" aria-controls="lang-list" aria-label="Language" data-zh-aria-label="语言" title="Language" data-zh-title="语言">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+        </button>
+        <div class="lang-list" id="lang-list" role="menu" aria-labelledby="lang-button" hidden></div>
       </div>
       <a class="button secondary compact" href="https://github.com/cu1ch3n/papilot">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
@@ -64,7 +72,6 @@
 
 <section class="hero">
   <div class="wrap hero-copy">
-    <img class="hero-mark" src="assets/logo.svg" alt="" width="76" height="76">
     <h1><span lang="en">A Cursor-like workspace<br> for your papers</span><span lang="zh-CN">像 Cursor 一样<br>改论文</span></h1>
     <p class="lede"><span lang="en">Annotate and review PDFs directly, without ever touching LaTeX.</span><span lang="zh-CN">直接在 PDF 上批注和审阅，完全不用碰 LaTeX。</span></p>
     <div class="hero-actions">
@@ -79,7 +86,6 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
       </a>
     </div>
-    <p class="works-with"><span lang="en">Works with</span><span lang="zh-CN">支持</span> <span class="agent codex">Codex</span><span class="agent claude">Claude</span><span class="agent cursor">Cursor</span><span class="agent kimi">Kimi Code</span><span class="agent glm">GLM</span><span class="agent deepseek">DeepSeek</span><span class="agent qwen">Qwen Code</span><span class="agent opencode">OpenCode</span><span class="agent antigravity">Antigravity</span></p>
   </div>
   <div class="wrap">
     <!-- demo:hero -->
@@ -88,7 +94,7 @@
 
 <section class="statement">
   <div class="wrap">
-    <p><span lang="en">You read and mark up the PDF the way a supervisor marks up a draft. An AI agent makes the edits in LaTeX, and every change comes back to you as a before-and-after of the typeset page. <strong>Nothing touches your paper until you accept it.</strong></span><span lang="zh-CN">你像导师批改学生的稿子一样，直接在 PDF 上阅读和批注；AI 智能体去改 LaTeX，每一处改动都以排版后修改前后的对比回到你面前。<strong>你点头之前，论文一个字都不会变。</strong></span></p>
+    <p><span lang="en">Nothing touches your paper until you accept it.</span><span lang="zh-CN">你点头之前，论文一个字都不会变。</span></p>
   </div>
 </section>
 
@@ -102,7 +108,7 @@
 
     <article class="feature">
       <div class="feature-text">
-        <p class="step"><span class="step-num">1</span><span lang="en">Annotate</span><span lang="zh-CN">批注</span></p>
+        <p class="step"><span class="num">01</span><span lang="en">Annotate</span><span lang="zh-CN">批注</span></p>
         <h3><span lang="en">Mark up the PDF</span><span lang="zh-CN">在 PDF 上批注</span></h3>
         <p><span lang="en">Select a sentence or circle an equation and say what should change. SyncTeX hands the agent the exact LaTeX lines.</span><span lang="zh-CN">选中一句话或框出一个公式，写下要怎么改。SyncTeX 会把对应的 LaTeX 行准确交给智能体。</span></p>
         <ul class="checks">
@@ -116,7 +122,7 @@
 
     <article class="feature flip">
       <div class="feature-text">
-        <p class="step"><span class="step-num">2</span><span lang="en">Review</span><span lang="zh-CN">审阅</span></p>
+        <p class="step"><span class="num">02</span><span lang="en">Review</span><span lang="zh-CN">审阅</span></p>
         <h3><span lang="en">Approve change by change</span><span lang="zh-CN">逐条点头</span></h3>
         <p><span lang="en">Each edit comes back as a typeset diff. Accept, reject or comment on it, and undo any decision.</span><span lang="zh-CN">每处改动都以排版后的差异呈现。接受、拒绝或评论，任何决定都能撤销。</span></p>
         <ul class="checks">
@@ -130,7 +136,7 @@
 
     <article class="feature">
       <div class="feature-text">
-        <p class="step"><span class="step-num">3</span><span lang="en">Read</span><span lang="zh-CN">阅读</span></p>
+        <p class="step"><span class="num">03</span><span lang="en">Read</span><span lang="zh-CN">阅读</span></p>
         <h3><span lang="en">Read it like a real PDF</span><span lang="zh-CN">像本地 PDF 一样阅读</span></h3>
         <p><span lang="en">Jump around with the contents panel, search every page and zoom in sharply. Selecting text picks exactly the printed words.</span><span lang="zh-CN">用目录随意跳转，全文搜索，缩放清晰。选中的文字与印出的词完全对齐。</span></p>
         <ul class="checks">
@@ -144,7 +150,7 @@
 
     <article class="feature flip">
       <div class="feature-text">
-        <p class="step"><span class="step-num">4</span><span lang="en">Commit</span><span lang="zh-CN">提交</span></p>
+        <p class="step"><span class="num">04</span><span lang="en">Commit</span><span lang="zh-CN">提交</span></p>
         <h3><span lang="en">Commit when you're happy</span><span lang="zh-CN">满意了再提交</span></h3>
         <p><span lang="en">Diff files, commit the ones you choose, then pull and push without leaving the page.</span><span lang="zh-CN">查看差异，只提交你勾选的文件，pull 和 push 都不用离开页面。</span></p>
         <ul class="checks">
@@ -158,7 +164,7 @@
   </div>
 </section>
 
-<section class="section muted-band">
+<section class="section">
   <div class="wrap">
     <header class="section-head">
       <p class="eyebrow"><span lang="en">Safe by design</span><span lang="zh-CN">安全设计</span></p>
@@ -199,62 +205,64 @@
     <div class="agents">
       <div class="agent-card">
         <h3><span class="agent codex">Codex</span></h3>
-        <p class="sign-in"><span lang="en">Sign in once with <code>papilot codex login</code></span><span lang="zh-CN">用 <code>papilot codex login</code> 登录一次</span></p>
         <p><span lang="en">Runs through the Codex app server, in its workspace sandbox. Papilot uses your <code>codex</code> if you have one, or installs it on first start.</span><span lang="zh-CN">通过 Codex app server 在其工作区沙箱中运行。已装有 <code>codex</code> 就直接用，没有则在首次启动时自动安装。</span></p>
+        <p class="sign-in"><span lang="en">Sign in once with <code>papilot codex login</code></span><span lang="zh-CN">用 <code>papilot codex login</code> 登录一次</span></p>
       </div>
       <div class="agent-card">
         <h3><span class="agent claude">Claude</span></h3>
-        <p class="sign-in"><span lang="en">Start <code>papilot</code> with <code>ANTHROPIC_API_KEY</code> set</span><span lang="zh-CN">设置好 <code>ANTHROPIC_API_KEY</code> 再启动 <code>papilot</code></span></p>
         <p><span lang="en">Runs through the Claude Agent SDK, downloaded the first time. The SDK does not accept a Pro or Max subscription login.</span><span lang="zh-CN">通过 Claude Agent SDK 运行，首次使用时下载。该 SDK 不接受 Pro 或 Max 订阅登录。</span></p>
+        <p class="sign-in"><span lang="en">Start <code>papilot</code> with <code>ANTHROPIC_API_KEY</code> set</span><span lang="zh-CN">设置好 <code>ANTHROPIC_API_KEY</code> 再启动 <code>papilot</code></span></p>
       </div>
       <div class="agent-card">
         <h3><span class="agent cursor">Cursor</span></h3>
-        <p class="sign-in"><span lang="en">Start <code>papilot</code> with <code>CURSOR_API_KEY</code> set</span><span lang="zh-CN">设置好 <code>CURSOR_API_KEY</code> 再启动 <code>papilot</code></span></p>
         <p><span lang="en">Runs a local agent through the Cursor SDK, downloaded the first time, in Cursor's sandbox. The SDK does not use the Cursor app or CLI login.</span><span lang="zh-CN">通过 Cursor SDK 在本机运行，首次使用时下载，并在 Cursor 的沙箱中工作。该 SDK 不使用 Cursor 应用或 CLI 的登录。</span></p>
+        <p class="sign-in"><span lang="en">Start <code>papilot</code> with <code>CURSOR_API_KEY</code> set</span><span lang="zh-CN">设置好 <code>CURSOR_API_KEY</code> 再启动 <code>papilot</code></span></p>
       </div>
       <div class="agent-card">
         <h3><span class="agent kimi">Kimi Code</span></h3>
-        <p class="sign-in"><span lang="en">Install <a href="https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started">Kimi Code CLI</a> and run <code>kimi login</code></span><span lang="zh-CN">安装 <a href="https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started">Kimi Code CLI</a>，运行 <code>kimi login</code></span></p>
         <p><span lang="en">Choose Kimi in Papilot to select a model, stream replies, attach images and approve tools. Conversations resume after a restart. Set <code>PAPILOT_KIMI_BIN</code> if the CLI is not on your server's PATH.</span><span lang="zh-CN">在 Papilot 中选择 Kimi，即可选择模型、接收流式回复、附带图片和审批工具操作。重启后可继续会话；服务找不到 CLI 时，设置 <code>PAPILOT_KIMI_BIN</code>。</span></p>
+        <p class="sign-in"><span lang="en">Install <a href="https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started">Kimi Code CLI</a> and run <code>kimi login</code></span><span lang="zh-CN">安装 <a href="https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started">Kimi Code CLI</a>，运行 <code>kimi login</code></span></p>
       </div>
       <div class="agent-card">
         <h3><span class="agent glm">GLM</span></h3>
-        <p class="sign-in"><span lang="en">Start <code>papilot</code> with <code>ZHIPU_API_KEY</code> (or <code>ZAI_API_KEY</code>) set</span><span lang="zh-CN">设置好 <code>ZHIPU_API_KEY</code>（或 <code>ZAI_API_KEY</code>）再启动 <code>papilot</code></span></p>
         <p><span lang="en">Runs Claude Code on Zhipu's Anthropic-compatible endpoint, as Zhipu documents for GLM Coding Plan, with the GLM models in the menu.</span><span lang="zh-CN">按智谱为 GLM Coding Plan 给出的方式，让 Claude Code 连接智谱的 Anthropic 兼容接口，菜单中列出 GLM 模型。</span></p>
+        <p class="sign-in"><span lang="en">Start <code>papilot</code> with <code>ZHIPU_API_KEY</code> (or <code>ZAI_API_KEY</code>) set</span><span lang="zh-CN">设置好 <code>ZHIPU_API_KEY</code>（或 <code>ZAI_API_KEY</code>）再启动 <code>papilot</code></span></p>
       </div>
       <div class="agent-card">
         <h3><span class="agent deepseek">DeepSeek</span></h3>
-        <p class="sign-in"><span lang="en">Install <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> and set up a model in <code>dsh</code></span><span lang="zh-CN">安装 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>，并在 <code>dsh</code> 中配置好模型</span></p>
         <p><span lang="en">Runs <code>dsh acp</code> in its workspace sandbox. Anything outside the paper's worktree comes to you for approval.</span><span lang="zh-CN">通过 <code>dsh acp</code> 在其工作区沙箱中运行；论文工作树以外的操作会交给你审批。</span></p>
+        <p class="sign-in"><span lang="en">Install <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> and set up a model in <code>dsh</code></span><span lang="zh-CN">安装 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>，并在 <code>dsh</code> 中配置好模型</span></p>
       </div>
       <div class="agent-card">
         <h3><span class="agent qwen">Qwen Code</span></h3>
-        <p class="sign-in"><span lang="en">Install <a href="https://github.com/QwenLM/qwen-code">Qwen Code</a> and sign in by running <code>qwen</code></span><span lang="zh-CN">安装 <a href="https://github.com/QwenLM/qwen-code">Qwen Code</a>，运行 <code>qwen</code> 登录</span></p>
         <p><span lang="en">Runs <code>qwen --acp</code> in Auto Edit mode: edits go ahead, and commands come to you for approval.</span><span lang="zh-CN">以自动编辑模式运行 <code>qwen --acp</code>：改文件直接进行，运行命令需要你审批。</span></p>
+        <p class="sign-in"><span lang="en">Install <a href="https://github.com/QwenLM/qwen-code">Qwen Code</a> and sign in by running <code>qwen</code></span><span lang="zh-CN">安装 <a href="https://github.com/QwenLM/qwen-code">Qwen Code</a>，运行 <code>qwen</code> 登录</span></p>
       </div>
       <div class="agent-card">
         <h3><span class="agent opencode">OpenCode</span></h3>
-        <p class="sign-in"><span lang="en">Install <a href="https://opencode.ai">OpenCode</a> and connect a provider with <code>opencode auth login</code></span><span lang="zh-CN">安装 <a href="https://opencode.ai">OpenCode</a>，用 <code>opencode auth login</code> 连接模型服务商</span></p>
         <p><span lang="en">Runs <code>opencode acp</code> with your providers and models. Commands and anything outside the worktree come to you for approval.</span><span lang="zh-CN">用你配置的服务商和模型运行 <code>opencode acp</code>；运行命令和工作树以外的操作需要你审批。</span></p>
+        <p class="sign-in"><span lang="en">Install <a href="https://opencode.ai">OpenCode</a> and connect a provider with <code>opencode auth login</code></span><span lang="zh-CN">安装 <a href="https://opencode.ai">OpenCode</a>，用 <code>opencode auth login</code> 连接模型服务商</span></p>
       </div>
       <div class="agent-card">
         <h3><span class="agent antigravity">Antigravity</span></h3>
-        <p class="sign-in"><span lang="en">Install Antigravity and sign in to <code>agy</code></span><span lang="zh-CN">安装 Antigravity 并登录 <code>agy</code></span></p>
         <p><span lang="en">Runs <code>agy -p</code>, one process per turn, editing files only. If your region needs it, set <code>PAPILOT_AGY_PROXY</code>.</span><span lang="zh-CN">运行 <code>agy -p</code>，每轮一个进程，只编辑文件。所在地区需要代理时，设置 <code>PAPILOT_AGY_PROXY</code>。</span></p>
+        <p class="sign-in"><span lang="en">Install Antigravity and sign in to <code>agy</code></span><span lang="zh-CN">安装 Antigravity 并登录 <code>agy</code></span></p>
       </div>
     </div>
   </div>
 </section>
 
-<section class="section muted-band" id="start">
+<section class="section" id="start">
   <div class="wrap start">
     <div class="start-text">
-      <p class="eyebrow"><span lang="en">Quick start</span><span lang="zh-CN">快速开始</span></p>
-      <h2><span lang="en">Up and running in two commands</span><span lang="zh-CN">两条命令就能跑起来</span></h2>
+      <header class="section-head">
+        <p class="eyebrow"><span lang="en">Quick start</span><span lang="zh-CN">快速开始</span></p>
+        <h2><span lang="en">Up and running in two commands</span><span lang="zh-CN">两条命令就能跑起来</span></h2>
+      </header>
       <ol class="steps">
-        <li><span lang="en"><strong>Install</strong> with npm. You need Node.js 22.22+, Git and a full TeX distribution (<a href="https://www.tug.org/mactex/">MacTeX</a> or <a href="https://www.tug.org/texlive/">TeX Live</a>).</span><span lang="zh-CN"><strong>用 npm 安装。</strong>需要 Node.js 22.22+、Git 和完整的 TeX 发行版（<a href="https://www.tug.org/mactex/">MacTeX</a> 或 <a href="https://www.tug.org/texlive/">TeX Live</a>）。</span></li>
-        <li><span lang="en"><strong>Run the demo</strong> and open <code>127.0.0.1:7274</code>. It adds a 26-page LaTeX paper about Papilot itself, full of equations, to revise.</span><span lang="zh-CN"><strong>运行 demo</strong>，打开 <code>127.0.0.1:7274</code>。它会添加一篇讲 Papilot 本身的 26 页 LaTeX 论文供你修改，满是公式。</span></li>
-        <li><span lang="en"><strong>Add your paper.</strong> Run <code>papilot</code> and choose <b>Add paper</b> for any LaTeX project in a Git repository.</span><span lang="zh-CN"><strong>添加你的论文。</strong>运行 <code>papilot</code>，选择 <b>Add paper</b>，即可添加任何放在 Git 仓库里的 LaTeX 项目。</span></li>
+        <li><span class="num">01</span><div><span lang="en"><strong>Install</strong> with npm. You need Node.js 22.22+, Git and a full TeX distribution (<a href="https://www.tug.org/mactex/">MacTeX</a> or <a href="https://www.tug.org/texlive/">TeX Live</a>).</span><span lang="zh-CN"><strong>用 npm 安装。</strong>需要 Node.js 22.22+、Git 和完整的 TeX 发行版（<a href="https://www.tug.org/mactex/">MacTeX</a> 或 <a href="https://www.tug.org/texlive/">TeX Live</a>）。</span></div></li>
+        <li><span class="num">02</span><div><span lang="en"><strong>Run the demo</strong> and open <code>127.0.0.1:7274</code>. It adds a 26-page LaTeX paper about Papilot itself, full of equations, to revise.</span><span lang="zh-CN"><strong>运行 demo</strong>，打开 <code>127.0.0.1:7274</code>。它会添加一篇讲 Papilot 本身的 26 页 LaTeX 论文供你修改，满是公式。</span></div></li>
+        <li><span class="num">03</span><div><span lang="en"><strong>Add your paper.</strong> Run <code>papilot</code> and choose <b>Add paper</b> for any LaTeX project in a Git repository.</span><span lang="zh-CN"><strong>添加你的论文。</strong>运行 <code>papilot</code>，选择 <b>Add paper</b>，即可添加任何放在 Git 仓库里的 LaTeX 项目。</span></div></li>
       </ol>
     </div>
     <div class="terminal">
@@ -274,15 +282,13 @@
   </div>
 </section>
 
-<section class="section">
+<section class="cta">
   <div class="wrap">
-    <div class="cta">
-      <h2><span lang="en">Revise your next paper on the PDF</span><span lang="zh-CN">下一篇论文，直接在 PDF 上改</span></h2>
-      <p><span lang="en">Free and open source under the MIT license.</span><span lang="zh-CN">基于 MIT 许可证免费开源。</span></p>
-      <div class="cta-actions">
-        <a class="button primary" href="https://github.com/cu1ch3n/papilot"><span lang="en">Star on GitHub</span><span lang="zh-CN">在 GitHub 上 Star</span></a>
-        <a class="button secondary" href="https://github.com/cu1ch3n/papilot/blob/main/docs/guide.md"><span lang="en">Read the guide</span><span lang="zh-CN">阅读指南（英文）</span></a>
-      </div>
+    <h2><span lang="en">Revise your next paper on the PDF</span><span lang="zh-CN">下一篇论文，直接在 PDF 上改</span></h2>
+    <p><span lang="en">Free and open source under the MIT license.</span><span lang="zh-CN">基于 MIT 许可证免费开源。</span></p>
+    <div class="cta-actions">
+      <a class="button primary" href="https://github.com/cu1ch3n/papilot"><span lang="en">Star on GitHub</span><span lang="zh-CN">在 GitHub 上 Star</span></a>
+      <a class="button secondary" href="https://github.com/cu1ch3n/papilot/blob/main/docs/guide.md"><span lang="en">Read the guide</span><span lang="zh-CN">阅读指南（英文）</span></a>
     </div>
   </div>
 </section>
@@ -298,7 +304,7 @@
       <a href="https://github.com/cu1ch3n/papilot#readme" data-zh-href="https://github.com/cu1ch3n/papilot/blob/main/README.zh-CN.md">README</a>
       <a href="https://github.com/cu1ch3n/papilot/blob/main/docs/guide.md"><span lang="en">Guide</span><span lang="zh-CN">指南</span></a>
     </nav>
-    <p>MIT © 2026 Cui Chen</p>
+    <p>MIT © 2026 PapilotAI</p>
   </div>
 </footer>
 
@@ -311,31 +317,58 @@ for (const button of document.querySelectorAll('[data-copy]')) {
   });
 }
 
-// Both languages sit side by side in lang="en" and lang="zh-CN" spans, and the
-// stylesheet shows the one matching <html lang>. Attributes can't hold two
-// languages, so their Chinese waits in data-zh-* until it is chosen.
+// Each language sits in its own lang="…" spans, and the stylesheet shows the
+// one matching <html lang>. Attributes can't hold two languages, so their
+// Chinese waits in data-zh-* until it is chosen.
 const titles = { en: document.title, 'zh-CN': 'Papilot · 像 Cursor 一样改论文' };
+const menu = document.querySelector('.lang-menu'), menuButton = document.getElementById('lang-button'), list = document.getElementById('lang-list');
 function setLanguage(lang) {
   document.documentElement.lang = lang;
-  document.title = titles[lang];
-  for (const name of ['alt', 'aria-label', 'href', 'content']) {
+  document.title = titles[lang] || titles.en;
+  for (const name of ['alt', 'aria-label', 'title', 'href', 'content']) {
     for (const element of document.querySelectorAll(`[data-zh-${name}]`)) {
       if (!element.hasAttribute(`data-en-${name}`)) element.setAttribute(`data-en-${name}`, element.getAttribute(name));
       element.setAttribute(name, element.getAttribute(`data-${lang === 'zh-CN' ? 'zh' : 'en'}-${name}`));
     }
   }
-  for (const button of document.querySelectorAll('[data-set-lang]')) button.setAttribute('aria-pressed', String(button.dataset.setLang === lang));
+  for (const item of list.children) item.setAttribute('aria-checked', String(item.dataset.setLang === lang));
 }
-setLanguage(document.documentElement.lang);
-for (const button of document.querySelectorAll('[data-set-lang]')) {
-  button.addEventListener('click', () => {
-    setLanguage(button.dataset.setLang);
-    try { localStorage.setItem('papilot-lang', button.dataset.setLang); } catch {}
+for (const [code, name] of Object.entries(LANGS)) {
+  const item = document.createElement('button');
+  item.type = 'button'; item.setAttribute('role', 'menuitemradio'); item.lang = code; item.dataset.setLang = code; item.tabIndex = -1;
+  item.innerHTML = `<span>${name}</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
+  item.addEventListener('click', () => {
+    setLanguage(code);
+    try { localStorage.setItem('papilot-lang', code); } catch {}
     const url = new URL(location.href);
     if (url.searchParams.has('lang')) { url.searchParams.delete('lang'); history.replaceState(null, '', url); }
+    closeMenu(true);
   });
+  list.append(item);
 }
-document.querySelector('.lang-switch').hidden = false;
+function openMenu() {
+  list.hidden = false; menuButton.setAttribute('aria-expanded', 'true');
+  (list.querySelector('[aria-checked=true]') || list.firstElementChild).focus();
+}
+function closeMenu(focus) {
+  if (list.hidden) return;
+  list.hidden = true; menuButton.setAttribute('aria-expanded', 'false');
+  if (focus) menuButton.focus();
+}
+menuButton.addEventListener('click', () => list.hidden ? openMenu() : closeMenu());
+list.addEventListener('keydown', event => {
+  const items = [...list.children], at = items.indexOf(document.activeElement);
+  if (event.key === 'Escape') { event.preventDefault(); closeMenu(true); }
+  else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
+  else if (event.key === 'Tab') closeMenu();
+});
+document.addEventListener('pointerdown', event => { if (!menu.contains(event.target)) closeMenu(); });
+setLanguage(document.documentElement.lang);
+menu.hidden = false;
+
+const topbar = document.querySelector('.topbar');
+const edge = () => topbar.classList.toggle('scrolled', scrollY > 8);
+addEventListener('scroll', edge, { passive: true }); edge();
 </script>
 </body>
 </html>

@@ -94,7 +94,9 @@ try {
   for (const width of [1440, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     for (const lang of ['EN', '中文']) {
-      await page.getByRole('button', { name: lang, exact: true }).click();
+      await page.locator('#lang-button').click();
+      await page.getByRole('menuitemradio', { name: lang === 'EN' ? 'English' : '简体中文', exact: true }).click();
+      assert.equal(await page.evaluate(() => document.documentElement.lang), lang === 'EN' ? 'en' : 'zh-CN');
       await show(hero);
       const geometry = await hero.evaluate(el => {
         const panel = el.querySelector('[data-scene]:not([hidden])');
@@ -132,9 +134,26 @@ try {
   assert.equal(await staticPage.locator('.ui-demo button, .ui-demo input').count(), 0);
   await staticPage.locator('#demo-hero').screenshot({ animations: 'disabled', path: 'test-results/site/no-js-mobile.png' });
   await noJs.close();
+  // The browser's first supported language is shown; a saved choice wins.
+  for (const [locale, expected] of [['zh-CN', 'zh-CN'], ['zh-SG', 'zh-CN'], ['zh-TW', 'en'], ['fr-FR', 'en'], ['en-GB', 'en']]) {
+    const context = await browser.newContext({ locale });
+    const visitor = await context.newPage();
+    await visitor.goto(origin);
+    assert.equal(await visitor.evaluate(() => document.documentElement.lang), expected, locale);
+    if (locale === 'zh-CN') {
+      await visitor.locator('#lang-button').click();
+      await visitor.getByRole('menuitemradio', { name: 'English', exact: true }).click();
+      await visitor.reload();
+      assert.equal(await visitor.evaluate(() => document.documentElement.lang), 'en', 'a saved choice wins');
+      await visitor.locator('#lang-button').click();
+      await visitor.keyboard.press('Escape');
+      assert.equal(await visitor.locator('#lang-list').isHidden(), true);
+    }
+    await context.close();
+  }
   assert.deepEqual(errors, []);
   assert.equal(requests.some(url => /\.(mp4|gif|jpe?g)|feature-.*\.png/.test(url)), false);
-  console.log('Site checks passed: automatic complete workflow and feature loops; no controls or inner scrollbars; native desktop proportions at 320/390/768/1440px; EN/中文; reduced motion; no-JS; assets.');
+  console.log('Site checks passed: automatic complete workflow and feature loops; no controls or inner scrollbars; native desktop proportions at 320/390/768/1440px; EN/中文; reduced motion; no-JS; assets; language from the browser and the menu.');
 } finally {
   await browser.close();
   await server.close();
