@@ -37,7 +37,7 @@ export function GroupPicker({ value, onChange, disabled }: { value: NoteGroup | 
     }} onKeyDown={event => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); show(); }
     }}>
-      <span className="group-highlight" aria-hidden="true"><Icon name="highlight" size={16}/></span>
+      <span className="group-highlight" aria-hidden="true"><Icon name="pen" size={18}/></span>
     </button>
     <div ref={menu} id={id} popover="auto" role="menu" aria-label={t('Annotation group color')} className="group-palette" onToggle={event => setOpen((event.nativeEvent as ToggleEvent).newState === 'open')} onKeyDown={event => {
       if (event.key === 'Tab') { menu.current?.hidePopover(); trigger.current?.focus(); return; }

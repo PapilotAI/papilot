@@ -1,6 +1,6 @@
 .group-picker{display:inline-flex;align-items:center;gap:2px;flex:none}
-.group-highlight{position:relative;display:flex;justify-content:center;width:18px;height:20px}
-.group-highlight::after{content:"";position:absolute;bottom:0;left:2px;right:2px;height:3px;border-radius:2px;background:var(--text-3);opacity:.4}
+.group-highlight{position:relative;display:flex;justify-content:center;width:20px;height:22px}
+.group-highlight::after{content:"";position:absolute;bottom:0;left:3px;right:3px;height:2px;border-radius:2px;background:var(--text-3);opacity:.4}
 .group-select[data-group] .group-highlight::after{background:var(--note-color);opacity:1}
 .group-palette{position:fixed;inset:auto;margin:0;padding:8px;max-width:calc(100vw - 16px);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg);color:var(--text);box-shadow:var(--float);font:13px/1.5 var(--sans)}
 .group-palette-label{padding:3px 6px 7px;color:var(--text-3);font-size:12px}
