@@ -15,17 +15,36 @@
 .group-individual:hover{background:var(--bg-hover);color:var(--text)}
 .group-dot{display:inline-block;flex:none;width:9px;height:9px;border-radius:50%;background:var(--note-color);box-shadow:0 0 0 1px color-mix(in srgb,var(--note-color) 30%,transparent)}
 .annotation-group{border:1px solid var(--line);border-left:2px solid var(--note-color);border-radius:10px;margin:3px 0;background:var(--bg)}
-.annotation-group.active{border-color:var(--note-color)}
-.annotation-group summary{display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;list-style:none;font:12px/1.5 var(--sans);color:var(--text-2)}
-.annotation-group summary::-webkit-details-marker{display:none}
-.annotation-group summary strong{font-weight:500;color:var(--text);margin-right:auto}
-.annotation-group[open]>summary>svg{transform:rotate(180deg)}
+.annotation-group.active:not([data-selected]){border-color:var(--note-color)}
+.annotation-group[data-selected]{transition:background-color .15s,border-color .15s}
+.annotation-group[data-selected=true]{border-color:color-mix(in srgb,var(--note-color) 70%,var(--line));background:color-mix(in srgb,var(--note-color) 11%,var(--bg))}
+.annotation-group[data-selected=mixed]{border-color:color-mix(in srgb,var(--note-color) 55%,var(--line));border-style:dashed;background:color-mix(in srgb,var(--note-color) 4%,var(--bg))}
+.annotation-group[data-selected=false]{border-color:var(--line);background:var(--bg)}
+.group-header{display:flex;align-items:stretch;gap:2px;padding-right:4px;font:12px/1.5 var(--sans);color:var(--text-2)}
+.group-header strong{font-weight:500;color:var(--text);margin-right:auto}
+.group-disclosure{display:flex;align-items:center;justify-content:center;align-self:center;width:32px;height:32px;flex:none;border-radius:6px}
+.group-disclosure:hover{background:var(--bg-hover)}
+.group-disclosure[aria-expanded=true]>svg{transform:rotate(180deg)}
+.group-selection-toggle,.group-heading{display:flex;align-items:center;gap:8px;flex:1;min-width:0;min-height:36px;padding:6px 10px;text-align:left;color:inherit;font:inherit}
+.group-selection-toggle[aria-pressed=true]>strong{font-weight:600}
+.group-selection-toggle[aria-pressed=false]>strong{color:var(--text-3)}
+.group-selection-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:2px}
 .group-locations{padding:0 10px 5px;max-height:240px;overflow:auto}
+.group-instruction-input{display:block;margin:0 0 8px;font:12px/1.5 var(--sans);color:var(--text-2)}
+.group-instruction-input>span{display:block;margin-bottom:4px}
+.group-instruction-input textarea{display:block;box-sizing:border-box;width:100%;min-height:58px;max-height:160px;padding:7px 9px;resize:vertical;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:13px/1.5 var(--sans)}
+.group-instruction-input textarea:focus{outline:2px solid var(--accent-line);border-color:var(--accent)}
+.group-instruction-input textarea::placeholder{color:var(--text-3)}
+.group-instruction-sent{margin:2px 0 8px;font:13px/1.5 var(--sans);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text)}
+@media(pointer:coarse){.group-instruction-input textarea{font-size:16px}.group-disclosure{width:44px;height:44px}.group-selection-toggle{min-height:44px}}
 .group-location{display:flex;gap:6px;align-items:center;border-top:1px solid var(--line);padding:4px 0 1px;font:12px/1.5 var(--sans)}
-.group-location.active{--note-soft:color-mix(in srgb,var(--note-color) 14%,transparent);background:var(--note-soft);box-shadow:0 0 0 4px var(--note-soft);border-radius:3px}
-.group-location>button:first-child{flex:1;min-width:0;text-align:left;color:var(--text-2);background:none;border:0;cursor:pointer}
-.group-location>button:first-child>span{font-size:11px;color:var(--text-3)}
+.notes-panel .group-location{border:1px solid var(--line);border-radius:6px;margin:4px 0;padding:6px 8px}
+.notes-panel>.annotation-group{flex:none}
+.notes-panel .group-locations{max-height:none;overflow:visible}
+.group-location-target{flex:1;min-width:0;text-align:left;color:var(--text-2);background:none;border:0;cursor:pointer}
+.group-location-target>span{font-size:11px;color:var(--text-3)}
 .group-location blockquote{margin:1px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.notes-panel .group-location blockquote{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;white-space:normal;overflow-wrap:anywhere}
 .group-locations .sent-notes{padding:0;margin:0}
 .group-locations .sent-notes>li{list-style:none}
 .note-mark[data-group]{background:color-mix(in srgb,var(--note-color) 26%,transparent)}

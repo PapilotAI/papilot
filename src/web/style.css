@@ -533,11 +533,23 @@ body.resizing iframe{pointer-events:none}
 .contents-panel button[aria-current]{background:var(--accent-soft);color:var(--accent)}
 .contents-page{flex-shrink:0;color:var(--text-3);font-variant-numeric:tabular-nums}
 .git-panel{flex:1;min-height:0;overflow:auto;padding:4px 0 24px}
-.notes-panel{flex:1;min-height:0;display:flex;flex-direction:column}
+.notes-panel{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
 .draft-notes-head{flex:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px;padding-bottom:6px;font-size:12px;color:var(--text-3)}
+.note-selection-head{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%}
+.note-select-all{padding:4px 0;color:var(--text-2);font:inherit}
+.note-select-all:hover:not(:disabled){color:var(--accent)}
+.note-selection-hint{margin:0 0 6px;font-size:12px;color:var(--text-3)}
+.notes-panel .note-card{position:relative;isolation:isolate;cursor:pointer;transition:background-color .15s,border-color .15s}
+.notes-panel .note-card[data-selected=true]{background:color-mix(in srgb,var(--note-color,var(--accent)) 11%,var(--bg));border-color:color-mix(in srgb,var(--note-color,var(--accent)) 55%,var(--line))}
+.notes-panel .note-card.active{box-shadow:inset 3px 0 0 var(--note-color,var(--accent))}
+.note-card>.note-card-select{position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;background:none;z-index:-1}
+.note-card>.note-card-select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note-card:has(>.note-card-select:disabled){cursor:default}
+.note-card .note-comment-text{padding:2px 0}
 .note-entry-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px}
 .note-entry-hint{font-size:12px;white-space:nowrap}
 .note-list{flex:1;min-height:0;overflow:auto;list-style:none;margin:2px 0 0;padding:0}
+.notes-panel>.note-list{flex:none;overflow:visible}
 .note-list li{padding:6px 10px;margin-bottom:6px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg);transition:border-color .15s}
 .note-list li:hover{border-color:var(--line-strong)}
 .note-list li.active{border-color:var(--accent-line)}

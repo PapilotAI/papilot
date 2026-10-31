@@ -138,9 +138,10 @@ try {
   await page.getByRole('status').filter({ hasText: 'Some note positions need confirmation.' }).waitFor();
   await expect(page.locator('.note-tag')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Show note 2 on the page', exact: true })).toBeDisabled();
-  await page.locator('.annotation-group summary').click();
+  const groupDisclosure = page.locator('.annotation-group .group-disclosure');
+  if (await groupDisclosure.getAttribute('aria-expanded') === 'false') await groupDisclosure.click();
   await page.getByText('Earlier grouped text', { exact: true }).waitFor();
-  await expect(page.getByRole('button', { name: 'Show note 3 on the page', exact: true })).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.getByRole('button', { name: 'Show note 3 on the page', exact: true })).toBeDisabled();
   await expect(page.getByText('Position needs confirmation', { exact: true })).toHaveCount(2);
   await page.locator('.notes-panel').screenshot({ path: 'test-results/annotation-positions.png' });
 

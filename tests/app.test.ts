@@ -328,6 +328,25 @@ test('one task carries PDF notes, a skill and the overall request; retries leave
   } finally { await f.close(); }
 });
 
+test('annotation subsets go to separate agents while unselected notes keep their content and anchors', async () => {
+  const f = await fixture();
+  try {
+    const notes: Annotation[] = ['first', 'second', 'later'].map((id, index) => ({ id, projectId: 'thesis', key: 'pdf', page: index, rect: [0.1, 0.2, 0.4, 0.3], quote: `Original text ${id}`, comment: `Revise ${id}.`, source: null, group: 'yellow', createdAt: index + 1 }));
+    notes.forEach(note => f.store.saveAnnotation(note));
+    for (const [index, agent] of ['codex', 'claude'].entries()) {
+      const id = `subset-note-task-${index}`, payload = { id, projectId: 'thesis', title: 'Revise one annotation', instructions: '', agent, annotations: [notes[index].id] };
+      const response = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.equal(response.json().agent, agent);
+      assert.deepEqual(f.store.items(id)[0].meta?.notes?.map(note => note.id), [notes[index].id]);
+      assert.deepEqual(f.store.annotations('thesis').filter(note => !note.taskId), notes.slice(index + 1));
+    }
+    assert.equal(f.store.annotation('thesis', 'first').taskId, 'subset-note-task-0');
+    assert.equal(f.store.annotation('thesis', 'second').taskId, 'subset-note-task-1');
+    assert.deepEqual(f.store.annotation('thesis', 'later'), notes[2]);
+  } finally { await f.close(); }
+});
+
 test('review notes retain their anchors and link only to their own task result', async () => {
   const f = await fixture();
   try {
@@ -569,6 +588,37 @@ test('color groups persist without per-location comments and take their meaning 
     assert.equal(next.statusCode, 200, next.body);
     const nextPrompt = f.store.runByKey('initial-yellow-groups-task-02')!.prompt;
     assert.match(nextPrompt, /Shorten the yellow selections/); assert.doesNotMatch(nextPrompt, /Explain the yellow selections/);
+  } finally { await f.close(); }
+});
+
+test('group-specific instructions are scoped to selected notes and preserved in the agent prompt and chat', async () => {
+  const f = await fixture();
+  try {
+    const make = (id: string, group?: Annotation['group']): Annotation => ({ id, projectId: 'thesis', key: 'pdf', page: 0, rect: [0.1, 0.1, 0.4, 0.2], source: null, quote: `Text ${id}`, comment: group ? '' : 'Fix this typo.', ...(group ? { group } : {}), createdAt: 1 });
+    const notes = [make('yellow-1', 'blue'), make('yellow-later', 'yellow'), make('green-1', 'green'), make('with-comment')];
+    notes.forEach(note => f.store.saveAnnotation(note));
+    const payload = { id: 'group-directions-001', projectId: 'thesis', title: 'Work on these passages', instructions: '', annotations: ['yellow-1', 'green-1', 'with-comment'] };
+    for (const groupInstructions of [null, [], { yellow: 42 }, { yellow: 'x'.repeat(4001) }, { unknown: 'Explain' }, { yellow: 'Explain only one group' }, { yellow: 'Explain', green: 'Shorten', purple: 'Unselected group' }]) {
+      const response = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { ...payload, groupInstructions } });
+      assert.equal(response.statusCode, 400, response.body);
+      assert.equal(f.store.annotations('thesis').filter(note => !note.taskId).length, 4);
+    }
+    const groupInstructions = { yellow: 'Explain the reasoning.\nKeep the notation.', green: 'Shorten this paragraph.' };
+    const response = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { ...payload, groupInstructions } });
+    assert.equal(response.statusCode, 200, response.body);
+    const prompt = f.store.runByKey('initial-' + payload.id)!.prompt;
+    assert.match(prompt, /Yellow:\n   Explain the reasoning\.\n   Keep the notation\./);
+    assert.match(prompt, /Green:\n   Shorten this paragraph\./);
+    assert.match(prompt, /Note: Fix this typo\./);
+    assert.equal(prompt.match(/Explain the reasoning/g)?.length, 1);
+    const item = f.store.items(payload.id)[0];
+    assert.equal(item.text, '');
+    assert.deepEqual(item.meta?.groupInstructions, groupInstructions);
+    assert.deepEqual(item.meta?.notes?.map(note => [note.id, note.comment]), [['yellow-1', ''], ['green-1', ''], ['with-comment', 'Fix this typo.']]);
+    assert.deepEqual(f.store.annotation('thesis', 'yellow-later'), notes[1]);
+    assert.equal(f.store.annotation('thesis', 'yellow-1').comment, '');
+    const retry = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { ...payload, groupInstructions } });
+    assert.equal(retry.statusCode, 200); assert.equal(f.store.items(payload.id).length, 1);
   } finally { await f.close(); }
 });
 

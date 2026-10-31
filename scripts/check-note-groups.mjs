@@ -85,7 +85,7 @@ try {
   await selectText(1); await expect.poll(() => notes.length).toBe(2);
   await expect(page.getByRole('textbox', { name: 'Note for the agent' })).toHaveCount(0);
   await expect(page.locator('.annotation-group')).toHaveCount(1);
-  await expect(page.locator('.annotation-group summary')).toContainText('2 locations');
+  await expect(page.locator('.annotation-group .group-header')).toContainText('2 locations');
   assert.deepEqual(notes.map(note => [note.group, note.comment]), [['yellow', ''], ['yellow', '']]);
   await page.locator('.pdf-container').focus();
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');

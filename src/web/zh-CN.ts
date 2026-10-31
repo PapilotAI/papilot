@@ -68,7 +68,7 @@ export const zhCN: Record<string, string> = {
   'Install the new version and restart automatically when tasks are idle. Your papers, tasks and settings stay in place.': '安装新版本，并在任务空闲时自动重启。论文、任务和设置都会保留。',
   'Papilot cannot find npm on this computer. Updates are unavailable until npm is installed.': 'Papilot 未能在这台电脑上找到 npm，安装 npm 后即可更新。',
   'Generate task title': '生成任务标题', 'Generating task title…': '正在生成任务标题…', 'Retry title generation': '重新生成任务标题',
-  'PDF annotations': 'PDF 标注', '{n} annotation group': '{n} 个批注组', '{n} annotation groups': '{n} 个批注组',
+  'PDF annotations': 'PDF 标注',
   'Yellow': '黄色', 'Green': '绿色', 'Purple': '紫色', 'Orange': '橙色', 'Red': '红色',
   'Annotation groups': '批注组', 'Annotation group color': '批注组颜色', 'Individual notes': '单条批注',
   'Color': '颜色', 'Add to group': '加入批注组',
@@ -76,7 +76,11 @@ export const zhCN: Record<string, string> = {
   '{n} location': '{n} 处', '{n} locations': '{n} 处', 'Add to {group}': '加入{group}组',
   'Instructions for color groups': '各颜色组的修改要求',
   'Send annotations': '发送标注', 'Send annotations to the agent': '发送标注给代理',
+  'What should change in this group?': '这组内容希望怎么处理？',
   'What should change in each color group?': '各颜色组需要怎样修改？',
+  'Instructions for {group} notes': '{group}批注的处理要求',
+  'For example: explain the reasoning, shorten the wording…': '例如：解释推导过程、压缩文字…',
+  'Add instructions to the selected color groups above.': '请在上方为选中的颜色组填写处理要求。',
   // Reasoning effort
   'Reasoning effort': '推理强度', 'Model default': '模型默认',
 
@@ -163,7 +167,12 @@ export const zhCN: Record<string, string> = {
   'Stage {path}': '暂存 {path}', 'Staged': '已暂存', 'Partly staged': '部分暂存', 'Not staged': '未暂存', 'Changes in {path}': '{path} 的改动', 'Loading the diff…': '正在加载差异…', 'No uncommitted changes': '没有未提交的改动',
 
   // PDF and notes
-  '{n} note attached': '已附加 {n} 条批注', '{n} notes attached': '已附加 {n} 条批注',
+  'Select all notes for this task': '全选本轮批注', 'Notes to send: {selected} / {total}': '本轮发送 {selected} / {total} 条批注',
+  '{selected} / {total} locations selected': '已选 {selected} / {total} 处',
+  'Collapse {group} notes': '收起{group}批注', 'Expand {group} notes': '展开{group}批注',
+  'Select all {group} notes for this task': '本轮选中全部{group}批注', 'Include note {n} in this task': '本轮发送批注 {n}',
+  'Clear selection': '取消全选', 'Select all': '全选',
+  'Click cards to choose which highlighted notes to send.': '点击卡片切换选择，高亮的批注会随本轮发送。',
   'Add overall instructions (optional)': '补充整体修改要求（选填）', 'Address {n} PDF notes': '处理 {n} 条 PDF 批注',
   'Page {n}': '第 {n} 页', 'PDF notes': 'PDF 批注', 'Show note {n} on the page': '在页面上显示批注 {n}', 'Delete note {n}': '删除批注 {n}', 'Delete note': '删除批注',
   'Position needs confirmation': '位置待确认',

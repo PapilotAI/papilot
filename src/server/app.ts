@@ -17,6 +17,7 @@ import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { type Accounts, deviceLabel } from './accounts.ts';
 import { type Listener, Limiter, SESSION_COOKIE, author, clientAddress, cookie, equals, guard, viewerInfo, visibleSnapshot } from './access.ts';
 import type { AgentId, NoteSummary } from '../shared.ts';
+import { parseGroupInstructions } from '../note-groups.ts';
 import { taskNoteResults } from './note-results.ts';
 import type { Updates } from './updates.ts';
 import { Diagnostics } from './diagnostics.ts';
@@ -189,8 +190,8 @@ export async function buildApp(options: AppOptions) {
   app.post('/api/tasks', { config: { access: { project: 'projectId', from: 'body' } } }, async request => {
     const b = request.body as any, skill = skillName(b.skill), attachments = attachmentIds(b.attachments);
     if (b.annotations !== undefined && (!Array.isArray(b.annotations) || b.annotations.length > 500 || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64))) throw new Error('Select valid PDF notes for this task.');
-    const annotations: string[] | undefined = b.annotations;
-    return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
+    const annotations: string[] | undefined = b.annotations, groupInstructions = parseGroupInstructions(b.groupInstructions);
+    return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
   });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/items', task, request => { store.task(request.params.id); return { items: store.items(request.params.id) }; });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {

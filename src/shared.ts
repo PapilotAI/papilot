@@ -1,4 +1,4 @@
-import type { NoteGroup } from './note-groups.ts';
+import type { GroupInstructions, NoteGroup } from './note-groups.ts';
 export type TaskStatus = 'idle' | 'queued' | 'running' | 'waiting_input' | 'building' | 'reviewing' | 'interrupted' | 'failed' | 'uncertain' | 'deleting';
 export interface Project { id: string; name: string; path: string; createdAt: number }
 export const MAX_ATTACHMENTS = 10;
@@ -39,7 +39,7 @@ export interface NoteAnchor { sources: { file: string; lines: [number, number] }
 export interface NoteSummary { group?: NoteGroup; where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor }
 export interface NoteChange { round: number; stop: number; units: string[]; state: 'pending' | 'accepted' | 'rejected' | 'commented' | 'mixed'; match: 'source' | 'quote' }
 export interface NoteResult { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
-export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string }; notes?: NoteSummary[]; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
+export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string }; notes?: NoteSummary[]; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
 // Who wrote a message or note; none means the owner.
 export interface Author { id: string; name: string }
 // A failed review build as the engine reports it; log is the compiler log's path.

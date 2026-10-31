@@ -57,9 +57,17 @@ export function GroupPicker({ value, onChange, disabled }: { value: NoteGroup | 
     </div>
   </div>;
 }
-export function GroupCard({ group, count, active, children }: { group: NoteGroup; count: number; active?: boolean; children: ReactNode }) {
-  return <details className={'annotation-group' + (active ? ' active' : '')} style={groupStyle(group)} open={active || undefined}>
-    <summary aria-label={`${groupName(group)} · ${tn(count, '{n} location', '{n} locations')}`}><span className="group-dot" aria-hidden="true"/><strong>{tn(count, '{n} location', '{n} locations')}</strong><Icon name="chevronDown" size={12}/></summary>
-    <div className="group-locations">{children}</div>
-  </details>;
+export function GroupCard({ group, count, active, selection, children }: { group: NoteGroup; count: number; active?: boolean; selection?: { count: number; disabled: boolean; toggle: () => void }; children: ReactNode }) {
+  const [open, setOpen] = useState(true);
+  const selectionId = useId(), locationsId = useId();
+  const pressed = selection ? selection.count === count ? true : selection.count ? 'mixed' : false : undefined;
+  const label = selection ? t('{selected} / {total} locations selected', { selected: selection.count, total: count }) : tn(count, '{n} location', '{n} locations');
+  useEffect(() => { if (active) setOpen(true); }, [active]);
+  return <div className={'annotation-group' + (active ? ' active' : '')} role="group" aria-label={`${groupName(group)} · ${label}`} data-selected={pressed} style={groupStyle(group)}>
+    <div className="group-header">
+      {selection ? <button type="button" className="group-selection-toggle" aria-label={t('Select all {group} notes for this task', { group: groupName(group) })} aria-describedby={selectionId} aria-pressed={pressed} disabled={selection.disabled} onClick={selection.toggle}><span className="group-dot" aria-hidden="true"/><strong id={selectionId}>{label}</strong></button> : <div className="group-heading"><span className="group-dot" aria-hidden="true"/><strong>{label}</strong></div>}
+      <button type="button" className="group-disclosure" aria-label={open ? t('Collapse {group} notes', { group: groupName(group) }) : t('Expand {group} notes', { group: groupName(group) })} aria-expanded={open} aria-controls={locationsId} onClick={() => setOpen(value => !value)}><Icon name="chevronDown" size={12}/></button>
+    </div>
+    <div id={locationsId} className="group-locations" hidden={!open}>{children}</div>
+  </div>;
 }

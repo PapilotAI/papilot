@@ -16,6 +16,7 @@ import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } fr
 import { commitMessageFrom } from '../commit.ts';
 import { taskCaptionFrom, taskCaptionInstructions } from '../task-caption.ts';
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
+import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
 import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation, NoteSummary } from '../shared.ts';
 
@@ -235,7 +236,7 @@ export class Workspace extends EventEmitter {
   }
   // A task combines the author's words, an optional skill and selected PDF notes.
   annotationSending(id: string) { return this.preparingNotes.has(id); }
-  async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
+  async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     // A retried request returns its task; an ID from another paper is refused.
@@ -262,10 +263,13 @@ export class Workspace extends EventEmitter {
         if (this.preparingNotes.has(id)) throw new Error('A selected PDF note is already being sent. Wait for that task to finish creating.');
         return note;
       });
-      if (notes.some(note => note.group) && !input.instructions.trim() && !skill && !notes.some(note => note.comment.trim())) throw new Error('Describe what to do with the color groups.');
+      const groupInstructions = parseGroupInstructions(input.groupInstructions);
+      const selectedGroups = new Set(notes.flatMap(note => note.group ? [canonicalGroup(note.group)] : []));
+      if (Object.keys(groupInstructions).some(group => !selectedGroups.has(group as keyof GroupInstructions))) throw new Error('Group instructions must refer to selected PDF notes.');
+      if (groupsWithoutInstructions(notes, groupInstructions).length && !input.instructions.trim() && !skill) throw new Error('Describe what to do with each selected color group.');
       claimed = notes.map(note => note.id); claimed.forEach(id => this.preparingNotes.add(id));
       if (!skill && !notes.length && !files.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
-      const instructions = notes.length ? notesInstructions(notes, input.instructions) : input.instructions;
+      const instructions = notes.length ? notesInstructions(notes, input.instructions, groupInstructions) : input.instructions;
       const client = await this.connectReview(project.path);
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
       const info = await client.post('/api/tasks', { name, title: input.title });
@@ -273,7 +277,7 @@ export class Workspace extends EventEmitter {
         worktree: info.worktree, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.saveTask(task);
-      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill, notes, attachments: files.map(file => file.id), author: input.author });
+      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill, notes, groupInstructions, attachments: files.map(file => file.id), author: input.author });
       // Naming is independent of the editing turn. An unavailable helper must
       // not fail creation or prevent the queued task from running.
       try { this.requestTaskTitle(task.id); } catch { /* Keep the prompt-derived title. */ }
@@ -283,7 +287,7 @@ export class Workspace extends EventEmitter {
   // The author's message, a skill run with or without one, the review
   // feedback alone, or a build the agent broke. The chat keeps what happened;
   // the agent gets the prompt.
-  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { attachments?: string[]; skill?: SkillFile; notes?: Annotation[]; reviewNotes?: NoteSummary[]; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
+  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { attachments?: string[]; skill?: SkillFile; notes?: Annotation[]; groupInstructions?: GroupInstructions; reviewNotes?: NoteSummary[]; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const existing = this.store.runByKey(requestKey);
@@ -292,7 +296,7 @@ export class Workspace extends EventEmitter {
     const files = this.attachments.resolve(task.projectId, options.attachments || [], options.author?.id || 'owner', taskId);
     const pauseVersion = task.pauseVersion || 0;
     if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
-    const instructions = options.notes?.length ? notesInstructions(options.notes, text) : options.reviewNotes?.length ? reviewNotesInstructions(options.reviewNotes, text) : text.trim();
+    const instructions = options.notes?.length ? notesInstructions(options.notes, text, options.groupInstructions) : options.reviewNotes?.length ? reviewNotesInstructions(options.reviewNotes, text) : text.trim();
     let prompt = options.build ? buildFixPrompt(options.build) : options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, instructions) : instructions, cursor = task.feedbackCursor;
     let summary: FeedbackSummary | undefined;
     if (includeFeedback) {
@@ -306,6 +310,7 @@ export class Workspace extends EventEmitter {
     if (files.length) prompt = (prompt || 'The user attached reference material without an instruction. Briefly identify the material and ask what they would like to do with it. Do not change the manuscript yet.') + this.attachments.prompt(files);
     const run: Run = { id: randomUUID(), taskId, requestKey, prompt, ...(files.length ? { attachments: files } : {}), feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null, reviewRound: 0 };
     const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(options.notes?.length ? { notes: summarizeNotes(options.notes) } : options.reviewNotes?.length ? { notes: options.reviewNotes } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}), ...(options.author ? { author: options.author } : {}) };
+    if (options.groupInstructions && Object.keys(options.groupInstructions).length) meta.groupInstructions = options.groupInstructions;
     const saved = this.store.transaction(() => {
       // Feedback loading yields to other requests. Recheck identity, queue, and
       // task status together before committing; none of the earlier reads own a lock.

@@ -1,5 +1,7 @@
-import { noteGroups, type NoteGroup } from '../note-groups.ts';
-import { GroupCard } from './note-groups.tsx';
+import { canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
+import { GroupCard, groupName } from './note-groups.tsx';
+import { useNoteSelection } from './note-selection.tsx';
+import { useGroupInstructions } from './group-instructions.ts';
 import { NoteBody, NoteQuote } from './note-content.tsx';
 import { StrictMode, Suspense, createContext, lazy, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -202,6 +204,7 @@ function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[
     {item.meta?.notes && item.text && <p className="notes-request">{item.text}</p>}
     <div className="sent-notes-head"><Icon name="notes" size={14}/>{notes.some(note => note.group) ? t('PDF annotations') : tn(notes.length, 'Note on the PDF', '{n} notes on the PDF')}</div>
     {noteGroups(notes).map(({ group, entries }) => <GroupCard key={group} group={group} count={entries.length} active={entries.some(({ index }) => results?.selected === `${item.id}:${index}`)}>
+      {item.meta?.groupInstructions?.[group] && <p className="group-instruction-sent">{item.meta.groupInstructions[group]}</p>}
       <ol className="sent-notes">{entries.map(({ note, index }) => renderNote(note, index))}</ol>
     </GroupCard>)}
     <ol className="sent-notes">{notes.map((note, index) => !note.group && renderNote(note, index))}</ol>
@@ -514,6 +517,8 @@ function NotePlacementWarning() {
 }
 
 interface NoteActions {
+  selection: ReturnType<typeof useNoteSelection>;
+  instructions: ReturnType<typeof useGroupInstructions>;
   group: NoteGroup | null;
   setGroup: (group: NoteGroup | null) => void;
   add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup) => Promise<void>;
@@ -533,7 +538,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
   const onEditing = actions.onEditing;
   useEffect(() => { onEditing(Boolean(editing) || busy); return () => onEditing(false); }, [editing, busy, onEditing]);
   useEffect(() => { if (active) list.current?.querySelector(`[data-note="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active]);
-  const focusNote = (id: string) => list.current?.querySelector<HTMLButtonElement>(`[data-note="${id}"] .note-comment`)?.focus();
+  const focusNote = (id: string) => list.current?.querySelector<HTMLButtonElement>(`[data-note="${id}"] .note-edit-trigger`)?.focus();
   async function change(work: () => Promise<void>) {
     if (locked) return;
     setBusy(true); setError('');
@@ -545,24 +550,38 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
     if (!editing?.comment.trim()) return;
     void change(async () => { await actions.edit(note, editing.comment.trim()); finish(note.id); });
   }
+  const selectedCount = actions.selection.selected.length;
+  const selectionLocked = locked || Boolean(editing);
+  const toggle = (note: Annotation) => { if (!selectionLocked) actions.selection.set([note.id], !actions.selection.has(note.id)); };
+  const cardClick = (event: React.MouseEvent<HTMLElement>, note: Annotation) => {
+    if ((event.target as Element).closest('button,a,input,textarea,select,form') || event.detail > 1 || document.getSelection()?.isCollapsed === false) return;
+    toggle(note);
+  };
+  const selectCard = (note: Annotation, index: number) => <button type="button" className="note-card-select" aria-label={t('Include note {n} in this task', { n: index + 1 })} aria-pressed={actions.selection.has(note.id)} disabled={selectionLocked} onClick={() => toggle(note)}/>;
   return <section ref={list} className="notes-panel" aria-label={t('PDF notes')}>
     <div className="draft-notes-head">
-      {notes.some(note => note.group) && <span>{tn(noteGroups(notes).length, '{n} annotation group', '{n} annotation groups')}</span>}
-      {notes.some(note => !note.group) && <span>{tn(notes.filter(note => !note.group).length, '{n} note attached', '{n} notes attached')}</span>}
+      {notes.length > 0 && <div className="note-selection-head"><span>{t('Notes to send: {selected} / {total}', { selected: selectedCount, total: notes.length })}</span><button type="button" className="note-select-all" aria-label={t('Select all notes for this task')} aria-pressed={selectedCount === notes.length ? true : selectedCount ? 'mixed' : false} disabled={selectionLocked} onClick={() => actions.selection.set(notes.map(note => note.id), selectedCount !== notes.length)}>{selectedCount === notes.length ? t('Clear selection') : t('Select all')}</button></div>}
       <div className="note-entry-actions">
         <button type="button" className="button ghost compact" disabled={!currentKey || locked || Boolean(editing)} onClick={() => onAnnotate(true)}><Icon name="region" size={14}/>{t('Region note')}</button>
         <span className="note-entry-hint">{t('or select text to annotate')}</span>
       </div>
     </div>
+    {notes.length > 0 && <p className="note-selection-hint">{t('Click cards to choose which highlighted notes to send.')}</p>}
     {currentKey && notes.some(note => note.key !== currentKey) && <p className="note-placement-summary" role="status">{t('Some note positions need confirmation. Their original text and comments are kept.')}</p>}
-    {noteGroups(notes).map(({ group, entries }) => <GroupCard key={group} group={group} count={entries.length} active={actions.group === group || entries.some(({ note }) => note.id === active)}>
-      {entries.map(({ note, index }) => <div className={'group-location' + (note.id === active ? ' active' : '')} key={note.id} data-note={note.id}>
-        <button type="button" aria-label={t('Show note {n} on the page', { n: index + 1 })} aria-disabled={note.key !== currentKey} onClick={() => onShow(note)}><span>{noteWhere(note)}</span><blockquote>{note.quote || t('Marked region')}</blockquote>{note.key !== currentKey && <NotePlacementWarning/>}</button>
+    {noteGroups(notes).map(({ group, entries }) => {
+      const count = entries.filter(({ note }) => actions.selection.has(note.id)).length;
+      return <GroupCard key={group} group={group} count={entries.length} active={actions.group === group || entries.some(({ note }) => note.id === active)} selection={{ count, disabled: selectionLocked, toggle: () => actions.selection.set(entries.map(({ note }) => note.id), count !== entries.length) }}>
+      <label className="group-instruction-input"><span>{t('What should change in this group?')}</span><textarea rows={2} maxLength={4000} aria-label={t('Instructions for {group} notes', { group: groupName(group) })} placeholder={t('For example: explain the reasoning, shorten the wording…')} value={actions.instructions.get(group)} disabled={locked} onChange={event => actions.instructions.set(group, event.target.value)}/></label>
+      {entries.map(({ note, index }) => <div className={'group-location note-card' + (note.id === active ? ' active' : '')} key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} onClick={event => cardClick(event, note)}>
+        {selectCard(note, index)}
+        <button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button>
+        <div className="group-location-target"><span>{noteWhere(note)}</span><blockquote>{note.quote || t('Marked region')}</blockquote>{note.key !== currentKey && <NotePlacementWarning/>}</div>
         <button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} disabled={locked} onClick={() => void change(() => actions.remove(note))}><Icon name="close" size={13}/></button>
       </div>)}
-    </GroupCard>)}
-    {notes.some(note => !note.group) && <ol className="note-list">{notes.map((note, index) => !note.group && <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
-      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); })}><Icon name="close" size={14}/></button></div>
+    </GroupCard>; })}
+    {notes.some(note => !note.group) && <ol className="note-list">{notes.map((note, index) => !note.group && <li key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} className={'note-card ' + (active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')} onClick={event => cardClick(event, note)}>
+      {selectCard(note, index)}
+      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button note-edit-trigger" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={selectionLocked} onClick={() => { setError(''); setEditing({ id: note.id, comment: note.comment }); }}><Icon name="pencil" size={13}/></button><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); })}><Icon name="close" size={14}/></button></div>
       <NoteQuote text={note.quote}/>
       <NoteBody>
       {editing?.id === note.id ? <form className="note-edit" onSubmit={e => { e.preventDefault(); save(note); }}>
@@ -572,7 +591,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
             else if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); save(note); }
           }}/>
         <div className="button-row"><button type="button" className="button ghost compact" disabled={locked} onClick={() => { setError(''); finish(note.id); }}>{t('Cancel')}</button><button className="button primary compact" disabled={locked || !editing.comment.trim()}>{busy ? t('Saving…') : t('Save')}</button></div>
-      </form> : <button type="button" className="note-comment" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={locked || Boolean(editing)} onClick={() => { setError(''); setEditing({ id: note.id, comment: note.comment }); }}><span>{note.comment}</span><Icon name="pencil" size={13}/></button>}
+      </form> : <p className="note-comment-text">{note.comment}</p>}
       </NoteBody>
       {note.key !== currentKey && <NotePlacementWarning/>}
     </li>)}</ol>}
@@ -926,16 +945,17 @@ function App() {
     onAgent={value => { setAgentChoice(value); browserStorage.setItem('papilot:agent', value); }} onChange={remember}/>;
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
-    const attached = notes, files = newFiles.draft.getSnapshot().files;
-    if ((!text && !skill && !files.length && !attached.length) || newFiles.draft.getSnapshot().blocked || creating || marking || noteEditing || !target) return;
+    const attached = noteSelection.selected, files = newFiles.draft.getSnapshot().files;
+    const groupInstructions = groupDrafts.forNotes(attached);
+    if ((!text && !skill && !files.length && !attached.some(note => note.comment.trim()) && !Object.keys(groupInstructions).length) || (!text && !skill && groupsWithoutInstructions(attached, groupInstructions).length > 0) || newFiles.draft.getSnapshot().blocked || creating || marking || noteEditing || !target) return;
     const input = newTaskInput.current, submittedNotes = new Set(attached.map(note => note.id));
     const restoreFocus = input?.closest('form')?.contains(document.activeElement);
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
-      const title = skill ? (text ? `${skillName(skill)}: ${taskTitle(text)}` : skillName(skill)).slice(0, 120) : text ? taskTitle(text) : attached.length === 1 ? taskTitle(attached[0].comment) : attached.length ? t('Address {n} PDF notes', { n: attached.length }) : files[0].name.slice(0, 120);
-      const body = { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), ...(attached.length ? { annotations: [...submittedNotes] } : {}), ...(files.length ? { attachments: files.map(file => file.id) } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, serviceTier: agent.serviceTier };
-      const signature = JSON.stringify([target, text, skill?.id || '', [...submittedNotes], files.map(file => file.id)]);
+      const title = skill ? (text ? `${skillName(skill)}: ${taskTitle(text)}` : skillName(skill)).slice(0, 120) : text ? taskTitle(text) : attached.length === 1 ? taskTitle(attached[0].comment || (attached[0].group && groupInstructions[canonicalGroup(attached[0].group)]) || '') : attached.length ? t('Address {n} PDF notes', { n: attached.length }) : files[0].name.slice(0, 120);
+      const body = { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), ...(attached.length ? { annotations: [...submittedNotes] } : {}), ...(Object.keys(groupInstructions).length ? { groupInstructions } : {}), ...(files.length ? { attachments: files.map(file => file.id) } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, serviceTier: agent.serviceTier };
+      const signature = JSON.stringify([target, text, skill?.id || '', [...submittedNotes], groupInstructions, files.map(file => file.id)]);
       let previous: { signature?: string; id?: string } = {};
       try { previous = JSON.parse(browserStorage.getItem('papilot:new-task-request') || '{}'); } catch { /* Invalid saved request. */ }
       formTaskId.current = previous?.signature === signature && previous.id ? previous.id : uuid();
@@ -951,7 +971,10 @@ function App() {
         snapshotRef.current = next; setState(next);
       }
       setAddedTask({ id: created.id, title: created.title });
+      ++manuscriptRequest.current;
       setManuscript(current => current.projectId === target && current.data ? { ...current, data: { ...current.data, annotations: (current.data.annotations || []).filter(note => !submittedNotes.has(note.id)) } } : current);
+      noteSelection.reset(target);
+      groupDrafts.sent(target, attached, notes);
       setActiveNote(id => submittedNotes.has(id) ? '' : id);
       setNoteGroup(null); annotationUndo.current = annotationUndo.current.filter(entry => !submittedNotes.has(entry.note.id));
       if (restoreFocus && input?.isConnected && (document.activeElement === document.body || input.closest('form')?.contains(document.activeElement))) input.focus({ preventScroll: true });
@@ -1076,12 +1099,18 @@ function App() {
   const updateGit = (projectId: string, status: GitStatus) => { setGit({ projectId, status }); setManuscript(current => current.projectId === projectId && current.data ? { ...current, data: { ...current.data, git: status } } : current); };
   const manuscriptData = manuscript.projectId === project?.id ? manuscript : { data: null, error: '' };
   const notes = manuscriptData.data?.annotations || [];
+  const noteSelection = useNoteSelection(project?.id || '', notes);
+  const groupDrafts = useGroupInstructions(project?.id || '');
+  const groupDirections = groupDrafts.forNotes(noteSelection.selected);
+  const missingGroupDirections = !newDraft.trim() && !newSkill && groupsWithoutInstructions(noteSelection.selected, groupDirections).length > 0;
   const withNotes = (update: (list: Annotation[]) => Annotation[]) => {
     // A poll started before this write must not put an old comment or a deleted note back.
     ++manuscriptRequest.current;
     setManuscript(current => current.projectId === project?.id && current.data ? { ...current, data: { ...current.data, annotations: update(current.data.annotations || []) } } : current);
   };
   const noteActions: NoteActions = {
+    selection: noteSelection,
+    instructions: groupDrafts,
     group: noteGroup, setGroup: setNoteGroup,
     async add(page, rect, rects, quote, comment, group) {
       if (!project || !manuscriptData.data?.build.key) throw new Error(t('Wait for the PDF to compile.'));
@@ -1123,7 +1152,7 @@ function App() {
           withNotes(list => list.filter(item => item.id !== note.id));
         } else {
           await noteActions.restore(note);
-          requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-note="${note.id}"] .note-comment`)?.focus());
+          requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-note="${note.id}"] .note-edit-trigger`)?.focus());
         }
         annotationUndo.current = annotationUndo.current.filter(item => item !== entry);
       } catch (error) { reportError(error); }
@@ -1196,13 +1225,13 @@ function App() {
     <div className="new-task-start">
     {!notes.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
     {attachments}
-    <Composer attachments={newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={notes.some(note => note.group) ? t('What should change in each color group?') : notes.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
+    <Composer attachments={newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
       skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
       footer={attach => <div className="composer-options">
         <SkillPicker onAttach={attach} skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
         {agentOptions(creating)}
       </div>}
-      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || newFiles.blocked || marking > 0 || noteEditing || (!newDraft.trim() && !newSkill && !newFiles.files.length && !notes.some(note => note.comment.trim()))} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || newFiles.blocked || marking > 0 || noteEditing || missingGroupDirections || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(note => note.comment.trim()) && !Object.keys(groupDirections).length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
     </div>

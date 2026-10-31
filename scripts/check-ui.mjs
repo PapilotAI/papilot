@@ -623,7 +623,7 @@ try {
   await noteBox.press('Enter');
   await page.getByRole('button', { name: 'Note 1: Only these words.', exact: true }).waitFor();
   assert.equal(annotations[0].quote, 'sentence about');
-  // Clicking the comment edits it; failed saves keep the text, and Cancel changes nothing.
+  // The pencil edits a comment; failed saves keep the text, and Cancel changes nothing.
   const anchor = structuredClone(annotations[0]);
   await notesPanel.getByRole('button', { name: 'Edit note 1: Only these words.' }).click();
   const editingNote = notesPanel.getByRole('textbox', { name: 'Edit note 1', exact: true });
@@ -697,7 +697,7 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Mark region', exact: true }).getAttribute('aria-pressed'), 'false');
   assert.equal(annotations[0].rects, undefined);
   assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
-  await notesPanel.getByText('1 note attached', { exact: true }).waitFor();
+  await notesPanel.getByText('Notes to send: 1 / 1', { exact: true }).waitFor();
   assert.equal(await page.getByRole('tab', { name: 'Notes', exact: true }).count(), 0);
   assert.equal(await prompt.inputValue(), '');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();

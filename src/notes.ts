@@ -1,4 +1,4 @@
-import { GROUP_INSTRUCTIONS, GROUP_NAMES, NOTE_GROUPS } from './note-groups.ts';
+import { canonicalGroup, GROUP_INSTRUCTIONS, GROUP_NAMES, NOTE_GROUPS, type GroupInstructions } from './note-groups.ts';
 import type { Annotation, NoteAnchor, NoteSummary } from './shared.ts';
 export type { NoteSummary } from './shared.ts';
 
@@ -30,14 +30,16 @@ export function reviewNotesInstructions(notes: NoteSummary[], request = '') {
   return `${PREAMBLE}${notes.some(note => note.group) ? ` ${GROUP_INSTRUCTIONS}` : ''}${request.trim() ? ` Overall request: ${request.trim()}\n\n` : ''} These notes refer to the displayed review round and its Before, After or Unchanged text. Region coordinates are percentages of the displayed PDF strip (left, top, right, bottom); any quoted text for a region is nearby context. Read the current source before editing. Preserve accepted changes and do not reintroduce rejected edits unless a note explicitly asks for it.\n\n${items.join('\n\n')}`;
 }
 
-export function notesInstructions(notes: Annotation[], request = '') {
+export function notesInstructions(notes: Annotation[], request = '', groupInstructions: GroupInstructions = {}) {
   const items = notes.map((note, index) => {
     const where = noteWhere(note);
     const source = note.source?.excerpt ? ['   LaTeX source of the marked region:', '   ```latex', ...note.source.excerpt.split('\n').map(line => '   ' + line), '   ```'] : [];
     return [`${index + 1}. ${where}${note.group ? ` · Color group: ${GROUP_NAMES[note.group]}` : ''}`, ...source, note.quote ? `${QUOTE}${note.quote}"` : REGION, `${NOTE.slice(1)}${note.comment.trim().replace(/\n/g, '\n   ')}`].join('\n');
   });
   const scope = request.trim() ? `follow both the overall request and the notes.\n\nOverall request:\n${request.trim()}` : 'change only what the notes ask for.';
-  return `${PREAMBLE}${notes.some(note => note.group) ? ` ${GROUP_INSTRUCTIONS}` : ''} SyncTeX mapped each marked region to the LaTeX file and lines that produced it; the PDF text is what the author saw. Read the current source before editing, and ${scope}\n\n${items.join('\n\n')}`;
+  const groups = NOTE_GROUPS.filter(group => groupInstructions[group]?.trim() && notes.some(note => note.group && canonicalGroup(note.group) === group));
+  const directions = groups.length ? `\n\nInstructions for color groups (apply only to the attached locations in that group):\n${groups.map(group => `${GROUP_NAMES[group]}:\n   ${groupInstructions[group]!.trim().replace(/\n/g, '\n   ')}`).join('\n')}` : '';
+  return `${PREAMBLE}${notes.some(note => note.group) ? ` ${GROUP_INSTRUCTIONS}` : ''} SyncTeX mapped each marked region to the LaTeX file and lines that produced it; the PDF text is what the author saw. Read the current source before editing, and ${scope}${directions}\n\n${items.join('\n\n')}`;
 }
 
 // The notes in a message written by notesInstructions, or null for any other message.
