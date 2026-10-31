@@ -91,7 +91,8 @@ remote (\cref{sec:git}).
 \subsection{Agents}
 
 Each task runs on one agent: Codex through its app server, Claude through the
-Claude Agent SDK, or Antigravity through its command line. Every agent uses its
+Claude Agent SDK, Antigravity through its command line, or Kimi Code through
+ACP. For Kimi, install the CLI and run \texttt{kimi login}. Every agent uses its
 own login on the host, and an agent that is not installed or signed in is listed
 as unavailable. When an agent reports usage, the new-task page shows each usage
 window with how much is used and when it resets (\cref{sec:usage}).
@@ -124,6 +125,7 @@ Variable & Purpose \\
 \texttt{PAPILOT\_DATA} & state and generated example, \texttt{\textasciitilde/.papilot} by default \\
 \texttt{PAPILOT\_CODEX\_BIN} & Codex executable \\
 \texttt{ANTHROPIC\_API\_KEY} & API key for Claude tasks \\
+\texttt{PAPILOT\_KIMI\_BIN} & Kimi Code executable \\
 \texttt{PAPILOT\_AGY\_BIN} & Antigravity command line \\
 \texttt{PAPILOT\_AGY\_PROXY} & HTTP proxy used only for Antigravity \\
 \texttt{PAPILOT\_REVIEW\_ENGINE} & review engine directory \\

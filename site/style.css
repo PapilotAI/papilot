@@ -93,6 +93,7 @@ html[lang=zh-CN] .hero h1{line-height:1.18}
 .agent.codex{--dot:#10a37f}
 .agent.claude{--dot:#d97757}
 .agent.antigravity{--dot:#4285f4}
+.agent.kimi{--dot:#6366f1}
 .demo{margin-top:56px;border-radius:var(--r-xl);overflow:hidden;border:1px solid rgb(0 0 0/.06);box-shadow:var(--float);background:#f7f8fb}
 
 /* Statement */
@@ -129,7 +130,7 @@ html[lang=zh-CN] .hero h1{line-height:1.18}
 .card p{margin-top:8px;font-size:14.5px;line-height:1.6;color:var(--text-2)}
 
 /* Agents */
-.agents{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.agents{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .agent-card{padding:26px 24px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg);box-shadow:var(--shadow-sm)}
 .agent-card h3{font-size:19px;font-weight:600}
 .agent-card h3 .agent{color:var(--text);font-weight:600}

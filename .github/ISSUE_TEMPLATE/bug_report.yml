@@ -36,6 +36,7 @@ body:
         - Codex
         - Claude
         - Antigravity
+        - Kimi Code
   - type: input
     id: environment
     attributes:

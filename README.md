@@ -70,7 +70,7 @@ Jump to any section from the contents, search every page and zoom in sharply. Se
 <ul>
 <li>✨ <b>Skills</b> such as Polish, Proofread and Check math, one <code>/</code> away. Write your own in Settings.</li>
 <li>📎 <b>Files and images</b> attached to any task or message</li>
-<li>🤖 <b>Codex, Claude, Antigravity or Kimi</b>, each with your own login</li>
+<li>🤖 <b>Codex, Claude, Antigravity or Kimi Code</b>, each with your own login</li>
 <li>🌳 <b>A Git worktree for every task</b>, up to two running at once</li>
 <li>🌗 <b>Light and dark</b>, in English or Chinese</li>
 <li>📱 <b>Runs on your computer</b>, and you can open it from your phone</li>
@@ -97,8 +97,10 @@ Open **http://127.0.0.1:7274** and choose **Manuscript** in the sidebar. The dem
 | --- | --- | --- |
 | **Codex** | `papilot codex login` | Through the Codex app server, in its workspace sandbox. Papilot uses your `codex` if you have one, or installs it on first start. |
 | **Claude** | Start `papilot` with `ANTHROPIC_API_KEY` set | Through the Claude Agent SDK, downloaded the first time. The SDK does not accept a Pro or Max subscription login. |
-| **Kimi** | Install [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started) and run `kimi login` | Runs `kimi acp` with your local configuration; streams replies, resumes sessions and forwards tool approvals. |
+| **Kimi Code** | Install [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started) and run `kimi login` | Runs `kimi acp` with your local configuration; streams replies, resumes sessions and forwards tool approvals. |
 | **Antigravity** | Install Antigravity and sign in to `agy` | `agy -p`, one process per turn, editing files only. If your region needs it, set `PAPILOT_AGY_PROXY`. |
+
+For Kimi Code, choose **Kimi** in the agent menu after logging in, then select **Reconnect** if Papilot was already running. If the CLI is not on the server’s `PATH`, set `PAPILOT_KIMI_BIN` to its executable path. See the [agent guide](docs/guide.md#agents) for supported features and the tested CLI version.
 
 Papilot never reads, stores or forwards your credentials. An agent that isn't installed or signed in shows as unavailable.
 

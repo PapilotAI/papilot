@@ -1,7 +1,7 @@
 \section{Agents and scheduling}
 \label{sec:agents}
 
-\subsection{One protocol for three agents}
+\subsection{One protocol for every agent}
 
 Every agent is driven through the same small protocol: a thread is started or
 resumed, a turn is started with the author's text, the agent streams items
@@ -40,8 +40,9 @@ task in a recoverable state with a \emph{Check status} action (not shown).}
 \end{figure}
 
 Codex speaks this protocol natively. Claude runs through the Claude Agent SDK,
-and Antigravity runs the \texttt{agy} command line once per turn; both are
-translated by small adapters into the same requests and notifications. Each
+Antigravity runs the \texttt{agy} command line once per turn, and Kimi Code
+runs \texttt{kimi acp}; adapters translate their interfaces into the same
+requests and notifications. Kimi sessions resume after a restart. Each
 agent uses its own login on the host, and Papilot never reads, stores or
 forwards a credential. An agent that cannot ask for permission, such as a
 headless command line, is told in advance which tools it may not use.
@@ -102,5 +103,7 @@ answers after a mean delay $\Theta$, the expected wall-clock time of the turn is
   \E[T] = T_w \bigl(1 + \zeta \Theta\bigr),
   \label{eq:approvals}
 \end{equation}
-which is why Papilot lets agents edit and run sandboxed commands in the task's
-worktree without asking, and asks only for what leaves it.
+which motivates reducing unnecessary approval requests. Codex and Claude can
+run sandboxed commands under their permission policies; Kimi uses manual
+approvals for tools on the host, without a Papilot sandbox. Antigravity edits
+files but cannot run shell commands in Papilot.
