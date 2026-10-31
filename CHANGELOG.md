@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- **Kimi Code support.** Choose Kimi for paper-editing tasks using your local Kimi Code CLI login. The ACP adapter supports model and thinking-level selection, streamed replies, image inputs, tool approvals, cancellation and session recovery. Diagnostics include Kimi CLI availability; set `PAPILOT_KIMI_BIN` for a custom executable path.
+
 ## [0.7.0] - 2026-10-31 — Fully Modernized UI and Interactions
 
 Papilot 0.7.0 brings a fully refreshed workspace for reading, annotating, revising and reviewing papers. Compact controls, clearer navigation and smoother transitions keep the manuscript at the center, with new ways to organize feedback and save accepted changes.
