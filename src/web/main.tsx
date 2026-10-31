@@ -23,7 +23,7 @@ import { keepDialogFocus } from './focus.ts';
 import { DeleteTaskDialog } from './task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
-import { UpdateNotice } from './update-notice.tsx';
+import { UpdateNotice, versionLabel } from './update-notice.tsx';
 import { PaperDialog } from './paper-dialog.tsx';
 import { ImportDialog } from './import-dialog.tsx';
 import { CompileButton } from './compile-button.tsx';
@@ -1344,7 +1344,7 @@ function App() {
           </div>}
           {state && owner && <UpdateNotice api={api} version={state.version}/>}
         </div>
-        <a href="/" className="brand" aria-label="Papilot" onClick={e => { e.preventDefault(); setSelected(''); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span>{state && <span className="brand-version" title={t('Papilot {version}', { version: state.version })}>v{state.version}</span>}</a>
+        <a href="/" className="brand" aria-label="Papilot" onClick={e => { e.preventDefault(); setSelected(''); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span>{state && <span className="brand-version" title={t('Papilot {version}', { version: state.version })}>v{versionLabel(state.version)}</span>}</a>
         <button type="button" className="icon-button settings-link" aria-label={t('Settings')} title={t('Settings')} aria-haspopup="dialog" onClick={() => setSettings('general')}><Icon name="settings" size={18}/></button>
       </div>
     </aside>
