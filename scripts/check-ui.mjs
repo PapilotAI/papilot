@@ -291,7 +291,7 @@ try {
   await settingsButton.click();
   assert.equal(await settingsDialog.getByRole('radio', { name: 'Dark', exact: true }).isChecked(), true);
   await closeSettings();
-  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Settings', 'Closing Settings returns focus to its button');
+  assert.equal(await settingsButton.evaluate(el => document.activeElement === el), true, 'Closing Settings returns focus to its button');
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   await themeIs('dark');
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('');
@@ -424,7 +424,7 @@ try {
   // The review's own tools are direct buttons beside the review toolbar, with no zoom box or menu.
   const reviewTools = page.locator('.review-tools');
   assert.equal(await reviewTools.getByRole('link', { name: 'Full PDF', exact: true }).getAttribute('href'), '/api/tasks/fixture-task-0001/pdf?round=1');
-  assert.equal(await reviewTools.getByRole('link', { name: 'Open review in new tab', exact: true }).getAttribute('href'), '/review/fixture-paper/?task=p-fixture');
+  assert.equal(await page.locator('.panel-tools').getByRole('link', { name: 'Open review in new tab', exact: true }).getAttribute('href'), '/review/fixture-paper/?task=p-fixture');
   assert.equal(await reviewTools.getByRole('button', { name: 'Regenerate PDF comparison', exact: true }).isDisabled(), false);
   assert.equal(await reviewTools.getByRole('button', { name: 'Annotation group color', exact: true }).count(), 1);
   assert.equal(await reviewTools.getByRole('button', { name: 'Review options' }).count(), 0);
@@ -1158,9 +1158,9 @@ try {
     assert.ok(send.x >= 0 && send.x + send.width <= width);
     if (width < 681) {
       await page.getByRole('button', { name: /Review/ }).first().click();
-      // Phone toolbars wrap so PDF tools and the new-tab link stay available.
+      // Phone layouts keep PDF tools in the viewer and the new-tab link in navigation.
       await page.locator('.review-tools').getByRole('link', { name: 'Full PDF', exact: true }).waitFor();
-      assert.equal(await page.locator('.review-tools').getByRole('link', { name: 'Open review in new tab', exact: true }).isVisible(), true);
+      assert.equal(await page.locator('.workspace-navigation').getByRole('link', { name: 'Open review in new tab', exact: true }).isVisible(), true);
       await page.screenshot({ path: `test-results/english-mobile-${width}.png`, fullPage: true });
     }
     const drawerToggle = page.getByRole('button', { name: 'Show task list', exact: true });

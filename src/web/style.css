@@ -249,6 +249,8 @@ body.resizing iframe{pointer-events:none}
 .panel-heading{height:44px;flex-shrink:0;padding:0 8px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
 .panel-tools{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
 .panel-tools .task-state-actions{order:1;margin-left:auto}
+.panel-tools .workspace-view-selector{margin-right:auto}
+.panel-tools .review-open{order:2}
 .panel-tools .view-selector>button,.review-lead .view-selector>button,.review-placeholder-toolbar .view-selector>button{padding:0 8px}
 .panel-tools .view-selector>button>span,.review-lead .view-selector>button>span,.review-placeholder-toolbar .view-selector>button>span{display:none}
 .view-selector.single-view>button>span{display:inline}
