@@ -786,30 +786,30 @@ try {
   const fastMode = agentSettings.getByRole('switch', { name: 'Fast mode' });
   assert.equal(await agentChoices.getByRole('radio', { name: 'Codex', exact: true }).getAttribute('aria-checked'), 'true');
   assert.deepEqual(await agentChoices.getByRole('radio').allInnerTexts(), ['Codex', 'Claude', 'Antigravity']);
-  assert.match(await settingsTrigger.innerText(), /medium/);
+  assert.match(await settingsTrigger.innerText(), /Medium/);
   assert.equal(await fastMode.count(), 0);
   await modelChip.selectOption('deep-model');
-  assert.match(await settingsTrigger.innerText(), /high/);
+  assert.match(await settingsTrigger.innerText(), /High/);
   await effortChoice.press('End');
-  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'xhigh');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Xhigh');
   await fastMode.check();
   await page.keyboard.press('Escape');
   await agentSettings.waitFor({ state: 'hidden' });
   assert.equal(await settingsTrigger.evaluate(el => el === document.activeElement), true);
-  assert.match(await settingsTrigger.getAttribute('title'), /xhigh.*Fast/);
+  assert.match(await settingsTrigger.getAttribute('title'), /Xhigh.*Fast/);
   await settingsTrigger.click();
   await modelChip.selectOption('fast-model');
-  assert.match(await settingsTrigger.innerText(), /medium/);
+  assert.match(await settingsTrigger.innerText(), /Medium/);
   assert.equal(await fastMode.count(), 0);
   await modelChip.selectOption('deep-model');
-  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'xhigh');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Xhigh');
   assert.equal(await fastMode.isChecked(), true);
   assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:model:codex'), localStorage.getItem('papilot:effort:codex'), localStorage.getItem('papilot:fast:codex')]), ['deep-model', 'xhigh', 'true']);
   await chooseAgent('Claude');
   assert.deepEqual(await modelChip.locator('option').allInnerTexts(), ['Default model', 'Opus 5.5', 'Haiku 5.5']);
   assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Model default');
   await effortChoice.press('Home');
-  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'low');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Low');
   await agentSettings.getByRole('button', { name: 'Model default', exact: true }).click();
   assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Model default');
   assert.equal(await fastMode.count(), 0);
@@ -838,7 +838,7 @@ try {
   assert.equal(await settingsTrigger.locator('.agent-status-mark').count(), 0);
   snapshot.runtimes.claude = claudeRuntime;
   assert.equal(await modelChip.inputValue(), 'deep-model');
-  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'xhigh');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Xhigh');
   assert.equal(await fastMode.isChecked(), true);
   assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:claude')]), ['codex', 'haiku']);
   await page.screenshot({ path: 'test-results/agent-settings.png', fullPage: true });
@@ -1210,7 +1210,7 @@ try {
   assert.equal(await page.locator('.thread > .tool-item .tool-label').innerText(), 'latexmk -pdf main.tex');
   // A task on the host's default model names that model.
   assert.equal(await page.locator('.composer-model .agent-model-name').innerText(), 'Fast model');
-  assert.equal(await page.locator('.composer-model .agent-model-label small').innerText(), 'medium');
+  assert.equal(await page.locator('.composer-model .agent-model-label small').innerText(), 'Medium');
   console.log('PASS: Notes sent from the PDF read as notes, and consecutive commands fold into one line with task paths');
 
   history = Array.from({ length: 120 }, (_, i) => ({ id: `history-${i}`, taskId: task.id, type: 'assistant', text: `Message ${i}: A detailed review of the argument.`, createdAt: i + 1 }));

@@ -3,10 +3,12 @@ import type { AgentId, AgentModel, RuntimeStatus } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
 
+// Keep provider names, capitalizing only their first letter for display.
+const effortName = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
+
 // The picker and an existing conversation use the same compact model label.
-// Effort names stay exactly as supplied by each model's catalog.
 export function ModelLabel({ model, effort, fast }: { model: string; effort?: string | null; fast?: boolean }) {
-  return <span className="agent-model-label"><span className="agent-model-name">{model}</span>{effort && <small>{effort}</small>}{fast && <Icon name="bolt" size={13}/>}</span>;
+  return <span className="agent-model-label"><span className="agent-model-name">{model}</span>{effort && <small>{effortName(effort)}</small>}{fast && <Icon name="bolt" size={13}/>}</span>;
 }
 
 export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect }: { name: string; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void }) {
@@ -25,7 +27,7 @@ export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect
 function EffortSlider({ efforts, value, fallback, onChange }: { efforts: string[]; value: string; fallback: string | null; onChange: (value: string) => void }) {
   const current = efforts.find(item => item === value) || efforts.find(item => item === fallback);
   const index = current ? efforts.indexOf(current) : Math.floor((efforts.length - 1) / 2), share = efforts.length > 1 ? index / (efforts.length - 1) : 1;
-  const label = current || t('Model default');
+  const label = current ? effortName(current) : t('Model default');
   const centre = (step: number) => `calc(15px + ${efforts.length > 1 ? step / (efforts.length - 1) : 1} * (100% - 30px))`;
   return <div className="agent-effort">
     <div className="effort-head"><span>{t('Reasoning effort')}</span><strong>{label}</strong></div>
@@ -35,7 +37,7 @@ function EffortSlider({ efforts, value, fallback, onChange }: { efforts: string[
       <input type="range" min={0} max={efforts.length - 1} step={1} value={index} aria-label={t('Reasoning effort')} aria-valuetext={label} disabled={efforts.length < 2}
         onChange={event => onChange(efforts[Number(event.target.value)])}/>
     </div>
-    <div className="effort-scale"><span>{efforts[0]}</span><button type="button" onClick={() => onChange('')} disabled={!value}>{t('Model default')}</button><span>{efforts[efforts.length - 1]}</span></div>
+    <div className="effort-scale"><span>{effortName(efforts[0])}</span><button type="button" onClick={() => onChange('')} disabled={!value}>{t('Model default')}</button><span>{effortName(efforts[efforts.length - 1])}</span></div>
   </div>;
 }
 
@@ -54,7 +56,7 @@ export function AgentPicker({ agents, agent, models, model, effort, fast, runtim
   const fastMode = agent === 'codex' ? selected?.fastMode : undefined;
   const disconnected = runtime && (!runtime.connected || !runtime.authenticated);
   const agentName = agents.find(item => item.value === agent)?.label || agent;
-  const summary = [modelName, currentEffort, fastMode && fast ? t('Fast') : ''].filter(Boolean).join(' · ');
+  const summary = [modelName, currentEffort ? effortName(currentEffort) : '', fastMode && fast ? t('Fast') : ''].filter(Boolean).join(' · ');
   function position() {
     const box = panel.current!, rect = trigger.current!.getBoundingClientRect();
     box.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - box.offsetWidth - 8))}px`;
