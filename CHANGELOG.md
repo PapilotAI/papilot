@@ -8,6 +8,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 - **Codex can see the PDF.** New Codex tasks get a `view_pdf` tool: Codex asks for the pages where source lines or printed page numbers appear, in its worktree or in the accepted text, and Papilot compiles them and draws the pages as images that Codex opens with its image viewer. Codex uses it when the look of the page matters, such as line breaks and spacing, and the conversation shows each look. Only the chapters needed are compiled, and the review after the turn reuses the build.
 
+- **One model menu for every agent.** The agent buttons and model list become one searchable menu, like OpenCode's: every available agent's models, grouped by agent with recent choices first, so one choice sets both the agent and the model. Type to search, or use the arrow keys and Enter; reasoning effort and fast mode follow the chosen model. An agent that cannot be used yet says why in its group.
+
+- **Claude on your Claude plan.** With Claude Code installed and signed in, Claude tasks run `claude -p` on that login, so a Claude plan works without an API key. Edits in the worktree are accepted, commands run in Claude Code's sandbox, anything that would need approval is declined and noted, and each task resumes its session. Without Claude Code, Claude still runs through the Agent SDK with an API key.
+
 - **More agents, found automatically.** Cursor (through the Cursor SDK, with `CURSOR_API_KEY`), GLM (Claude Code on Zhipu's Anthropic-compatible endpoint, with `ZHIPU_API_KEY` or `ZAI_API_KEY`), DeepSeek (`dsh acp` from DeepSeek Harness), Qwen Code (`qwen --acp`) and OpenCode (`opencode acp`) join the agent menu. Papilot offers only the agents it finds on the host, looks again on **Reconnect**, and names the rest in Settings → Runtime & diagnostics. DeepSeek keeps its workspace sandbox, Qwen runs in Auto Edit mode, and OpenCode asks before commands and anything outside the worktree. `papilot doctor` checks each of them and lists agents that are not set up for information only.
 
 - **Kimi Code support.** Choose Kimi for paper-editing tasks using your local Kimi Code CLI login. The ACP adapter supports model and thinking-level selection, streamed replies, image inputs, tool approvals, cancellation and session recovery. Diagnostics include Kimi CLI availability; set `PAPILOT_KIMI_BIN` for a custom executable path.
@@ -15,6 +19,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Changed
 
 - **Finished tasks archive themselves.** When you leave a task whose changes are all decided and applied or committed, or one that only answered a question, it moves to the archive and a notice offers **Undo**. Tasks with undecided changes, comments to send, isolated accepted changes or an unsent follow-up stay listed. Sending a message to an archived task brings it back. The first start after updating archives tasks finished earlier; restore any of them from the archive.
+
+### Fixed
+
+- Jumping to a section from the contents no longer moves keyboard focus into the PDF later, the next time that page redraws, for example after collapsing the side panel.
 
 ## [0.7.0] - 2026-10-31 — Fully Modernized UI and Interactions
 

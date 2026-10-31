@@ -118,7 +118,7 @@ test('Claude receives structured image bytes with text instead of losing non-tex
     for await (const message of prompt) messages.push(message);
     yield { type: 'result', subtype: 'success', is_error: false, session_id: 'thread' };
   })();
-  const agent = new ClaudeAgent(async () => query as any);
+  const agent = new ClaudeAgent(async () => query as any, () => null);
   try {
     await agent.request('thread/start', { cwd: dir });
     const { thread } = await agent.request('thread/start', { cwd: dir });

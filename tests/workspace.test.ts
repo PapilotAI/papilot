@@ -1181,7 +1181,10 @@ test('an agent writes a commit message from the chosen changes, in a read-only t
     };
     assert.deepEqual(await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'claude' }), { message: 'Tighten the opening sentence', agent: 'codex' });
     const start = f.codex.calls.find(call => call.method === 'thread/start')!.params, turn = f.codex.calls.find(call => call.method === 'turn/start')!.params;
-    assert.deepEqual([start.cwd, start.sandbox, start.approvalPolicy, start.ephemeral, start.model, turn.effort], [root, 'read-only', 'never', true, 'gpt-6-luna', 'low']);
+    assert.deepEqual([start.sandbox, start.approvalPolicy, start.ephemeral, start.model, turn.effort], ['read-only', 'never', true, 'gpt-6-luna', 'low']);
+    // The helper runs in an empty folder of its own, never the manuscript, and the folder is removed.
+    assert.notEqual(start.cwd, root); assert.equal(turn.cwd, start.cwd);
+    assert.match(path.basename(start.cwd), /^papilot-helper-/); assert.equal(fs.existsSync(start.cwd), false);
     const prompt: string = turn.input[0].text;
     for (const part of ['- Draft the introduction', '- Tighten the opening', 'M main.tex', '+Tighter opening.']) assert.ok(prompt.includes(part), part);
     assert.ok(!prompt.includes('notes.md'), 'files that were not chosen stay out');

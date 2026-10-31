@@ -96,7 +96,7 @@ papilot demo
 | 智能体 | 登录（一次即可） | Papilot 如何运行它 |
 | --- | --- | --- |
 | **Codex** | `papilot codex login` | 通过 Codex app server 在其工作区沙箱中运行；已装有 `codex` 就直接用，没有则在首次启动时自动安装。 |
-| **Claude** | 设置好 `ANTHROPIC_API_KEY` 再启动 `papilot` | 通过 Claude Agent SDK 运行，首次使用时下载；该 SDK 不接受 Pro 或 Max 订阅登录。 |
+| **Claude** | 安装 [Claude Code](https://code.claude.com) 并运行 `claude auth login`，或设置好 `ANTHROPIC_API_KEY` 再启动 `papilot` | 装了 Claude Code 时，用你自己的登录（Claude 订阅或密钥）运行 `claude -p`，在 Claude Code 的沙箱中工作；没装时通过 Claude Agent SDK 运行，需要 API 密钥。 |
 | **Cursor** | 设置好 `CURSOR_API_KEY` 再启动 `papilot` | 通过 Cursor SDK 在 Cursor 的沙箱中运行，首次使用时下载；该 SDK 不使用 Cursor 应用或 CLI 的登录。 |
 | **Kimi Code** | 安装 [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started)，运行 `kimi login` | 通过 `kimi acp` 使用本机配置，支持流式回复、会话恢复和工具审批。 |
 | **GLM** | 设置好 `ZHIPU_API_KEY`（或 `ZAI_API_KEY`）再启动 `papilot` | 按智谱为 GLM Coding Plan 给出的方式，让 Claude Code 连接智谱的 Anthropic 兼容接口。 |

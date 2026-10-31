@@ -119,20 +119,20 @@ test('Claude turns use the local Claude Code login, resume their session, and re
     yield { type: 'assistant', parent_tool_use_id: null, session_id: 's', message: { id: 'm2', content: [{ type: 'text', text: `Done: ${decision.behavior}, ${answer.updatedInput.answers['Which section?']}.` }] } };
     yield { type: 'result', subtype: 'success', is_error: false, result: 'Done', session_id: 's' };
   });
-  const agent = new ClaudeAgent(fake.load);
+  const agent = new ClaudeAgent(fake.load, () => null);
   await agent.start();
   assert.deepEqual(await agent.request('account/read'), { account: { email: 'me@example.com', type: 'API key' }, requiresOpenaiAuth: false });
   // With only a Claude subscription login, Claude is unavailable and says why.
-  const subscription = new ClaudeAgent(fakeClaude(async function* () {}, { email: 'me@example.com', subscriptionType: 'Claude Max', apiProvider: 'firstParty' }).load);
+  const subscription = new ClaudeAgent(fakeClaude(async function* () {}, { email: 'me@example.com', subscriptionType: 'Claude Max', apiProvider: 'firstParty' }).load, () => null);
   await subscription.start();
   const refused = await subscription.request('account/read');
   assert.equal(refused.account, null);
   assert.match(refused.reason, /needs an Anthropic API key.*ANTHROPIC_API_KEY/);
-  const bedrock = new ClaudeAgent(fakeClaude(async function* () {}, { apiProvider: 'bedrock' }).load);
+  const bedrock = new ClaudeAgent(fakeClaude(async function* () {}, { apiProvider: 'bedrock' }).load, () => null);
   await bedrock.start();
   assert.deepEqual((await bedrock.request('account/read')).account, { email: undefined, type: 'bedrock' });
   // A token for a gateway or an Anthropic-compatible ANTHROPIC_BASE_URL counts as a key.
-  const compatible = new ClaudeAgent(fakeClaude(async function* () {}, { tokenSource: 'ANTHROPIC_AUTH_TOKEN', apiProvider: 'firstParty' }).load);
+  const compatible = new ClaudeAgent(fakeClaude(async function* () {}, { tokenSource: 'ANTHROPIC_AUTH_TOKEN', apiProvider: 'firstParty' }).load, () => null);
   await compatible.start();
   assert.deepEqual((await compatible.request('account/read')).account, { email: undefined, type: 'API key' });
   assert.deepEqual((await agent.request('model/list')).data.map((m: any) => [m.model, m.isDefault, m.supportedReasoningEfforts.length]), [['opus', true, 2], ['haiku', false, 1]]);
@@ -178,7 +178,7 @@ test('pausing a Claude turn aborts it and declines its pending approval', async 
     if (signal.aborted) throw new Error(`aborted after ${result.behavior}`);
     yield { type: 'result', subtype: 'success', is_error: false, result: '', session_id: 's' };
   });
-  const agent = new ClaudeAgent(fake.load);
+  const agent = new ClaudeAgent(fake.load, () => null);
   const seen = events(agent);
   const { thread } = await agent.request('thread/start', { cwd: '/work' });
   const { turn } = await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Build.' }], cwd: '/work' });
@@ -193,7 +193,7 @@ test('a refused Claude subscription login explains that Papilot needs an API key
     yield { type: 'system', subtype: 'init', session_id: 's' };
     yield { type: 'result', subtype: 'success', is_error: true, result: 'Failed to authenticate. API Error: 403 Request not allowed', session_id: 's' };
   });
-  const agent = new ClaudeAgent(fake.load);
+  const agent = new ClaudeAgent(fake.load, () => null);
   const seen = events(agent);
   const { thread } = await agent.request('thread/start', { cwd: '/work' });
   await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Edit.' }], cwd: '/work' });
@@ -241,7 +241,11 @@ test('executables are found on PATH or by path', () => {
     assert.equal(findExecutable('tool', { PATH: `/nonexistent${path.delimiter}${dir}` }), file);
     assert.equal(findExecutable(file, { PATH: '' }), file);
     assert.equal(findExecutable('plain', { PATH: dir }), null, 'a file without execute permission is not an agent');
-    assert.equal(findExecutable('tool', { PATH: '' }), null);
+    assert.equal(findExecutable('tool', { PATH: '', HOME: dir }), null);
+    // Under a service whose PATH lacks ~/.local/bin, Claude Code is still found there.
+    fs.mkdirSync(path.join(dir, '.local/bin'), { recursive: true });
+    fs.copyFileSync(file, path.join(dir, '.local/bin/claude')); fs.chmodSync(path.join(dir, '.local/bin/claude'), 0o755);
+    assert.equal(findExecutable('claude', { PATH: '/usr/bin:/bin', HOME: dir }), path.join(dir, '.local/bin/claude'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -346,5 +350,111 @@ test('pausing a Cursor turn cancels its run, and a failed run reports its error'
     await broken.request('turn/start', { threadId: started.thread.id, input: [{ type: 'text', text: 'Go.' }] });
     const failed = await completed(errors);
     assert.equal(failed.status, 'failed'); assert.equal(failed.error.message, 'Usage limit reached');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+const CLI_MODELS = [
+  { value: 'default', displayName: 'Default (recommended)', resolvedModel: 'claude-opus-5-5', supportedEffortLevels: ['low', 'high'] },
+  { value: 'opus', displayName: 'Opus 5.5', resolvedModel: 'claude-opus-5-5', supportedEffortLevels: ['low', 'high'] },
+  { value: 'haiku', displayName: 'Haiku 5.5', resolvedModel: 'claude-haiku-5-5', supportedEffortLevels: [] },
+];
+function fakeClaudeCli(dir: string, login: Record<string, unknown>, turns: any[][], models: unknown[] | null = CLI_MODELS) {
+  const bin = path.join(dir, 'claude');
+  fs.writeFileSync(bin, `#!/bin/sh\necho '${JSON.stringify(login)}'\n`); fs.chmodSync(bin, 0o755);
+  const launches: { command: string; args: string[]; cwd: string; stdin: string; child: any }[] = [];
+  const launch = (command: string, args: string[], options: { cwd: string }) => {
+    const child: any = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough();
+    const record = { command, args, cwd: options.cwd, stdin: '', child };
+    child.stdin.on('data', (chunk: Buffer) => { record.stdin += chunk.toString(); });
+    child.kill = (signal: string) => { child.killed = signal; setImmediate(() => child.emit('close', null, signal)); return true; };
+    // The model listing answers an initialize request and is not a turn.
+    if (!args.includes('--session-id') && !args.includes('--resume')) {
+      child.stdin.on('data', (chunk: Buffer) => {
+        const request = JSON.parse(chunk.toString().trim());
+        if (models && request.request?.subtype === 'initialize') child.stdout.write(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: { models } } }) + '\n');
+        else setImmediate(() => child.emit('close', 1));
+      });
+      return child;
+    }
+    launches.push(record);
+    const lines = turns.shift();
+    if (lines) setImmediate(() => { for (const line of lines) child.stdout.write(JSON.stringify(line) + '\n'); child.stdout.end(); setImmediate(() => child.emit('close', 0)); });
+    return child;
+  };
+  return { bin, launches, launch };
+}
+
+test('with Claude Code installed, Claude runs claude -p on the host login, streams items and resumes its session', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-claude-cli-'));
+  const image = path.join(dir, 'figure.png');
+  fs.writeFileSync(image, Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'));
+  try {
+    const first = [
+      { type: 'system', subtype: 'init', session_id: 'x' },
+      { type: 'stream_event', parent_tool_use_id: null, event: { type: 'message_start', message: { id: 'm1' } } },
+      { type: 'stream_event', parent_tool_use_id: null, event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Fixing.' } } },
+      { type: 'assistant', parent_tool_use_id: null, message: { id: 'm1', content: [{ type: 'text', text: 'Fixing.' }, { type: 'tool_use', id: 't1', name: 'Edit', input: { file_path: '/work/main.tex' } }] } },
+      { type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok', is_error: false }] } },
+      { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', rateLimitType: 'seven_day', utilization: 0.5, resetsAt: 1_800_000_000 } },
+      { type: 'result', subtype: 'success', is_error: false, result: 'Done', permission_denials: [{ tool_name: 'Write', tool_input: { file_path: '/elsewhere' } }] },
+    ];
+    const second = [{ type: 'result', subtype: 'success', is_error: false, result: 'Done' }];
+    const fake = fakeClaudeCli(dir, { loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max', email: 'me@example.com' }, [first, second]);
+    const agent = new ClaudeAgent(async () => { throw new Error('The SDK is not used with the CLI.'); }, () => fake.bin, fake.launch as any);
+    assert.equal(agent.detect(), true);
+    await agent.start();
+    assert.deepEqual((await agent.request('account/read')).account, { email: 'me@example.com', type: 'Claude Max' });
+    // Claude Code's own list, with versions, efforts and its default.
+    assert.deepEqual((await agent.request('model/list')).data.map((m: any) => [m.model, m.displayName, m.isDefault, m.supportedReasoningEfforts.length]), [['opus', 'Opus 5.5', true, 2], ['haiku', 'Haiku 5.5', false, 0]]);
+    const seen = events(agent);
+    const { thread } = await agent.request('thread/start', { cwd: '/work', developerInstructions: 'Only edit the worktree.', model: 'opus' });
+    await agent.request('turn/start', { threadId: thread.id, effort: 'high', input: [{ type: 'text', text: 'Fix it.' }, { type: 'localImage', path: image }] });
+    assert.equal((await completed(seen)).status, 'completed');
+    const run = fake.launches[0];
+    assert.equal(run.cwd, '/work');
+    const flag = (name: string) => run.args[run.args.indexOf(name) + 1];
+    assert.equal(run.args[0], '-p');
+    assert.equal(flag('--permission-mode'), 'acceptEdits'); assert.equal(flag('--permission-prompts'), 'none');
+    assert.equal(flag('--session-id'), thread.id); assert.equal(flag('--model'), 'opus'); assert.equal(flag('--effort'), 'high');
+    assert.equal(flag('--append-system-prompt'), 'Only edit the worktree.'); assert.equal(flag('--disallowedTools'), 'AskUserQuestion');
+    assert.deepEqual(JSON.parse(flag('--settings')).sandbox, { enabled: true, autoAllowBashIfSandboxed: true });
+    const sent = JSON.parse(run.stdin.trim());
+    assert.equal(sent.message.content[0].text, 'Fix it.'); assert.equal(sent.message.content[1].source.media_type, 'image/png');
+    const items = seen.filter(e => e.method === 'item/completed').map(e => e.params.item);
+    assert.deepEqual(items.map(item => item.type), ['agentMessage', 'fileChange', 'agentMessage']);
+    assert.match(items[2].text, /could not use Write.*cannot ask for approval/);
+    assert.equal(seen.find(e => e.method === 'item/agentMessage/delta')!.params.delta, 'Fixing.');
+    assert.equal((await agent.request('account/rateLimits/read')).rateLimits.planType, 'max');
+    // The next turn resumes the same session.
+    const again = events(agent);
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Shorter.' }] });
+    assert.equal((await completed(again)).status, 'completed');
+    assert.equal(fake.launches[1].args[fake.launches[1].args.indexOf('--resume') + 1], thread.id);
+    assert.equal(fake.launches[1].args.includes('--session-id'), false);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Claude Code that is not signed in says how to sign in, and pausing stops claude -p', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-claude-cli-'));
+  try {
+    const signedOut = fakeClaudeCli(dir, { loggedIn: false }, []);
+    const outside = new ClaudeAgent(async () => { throw new Error('unused'); }, () => signedOut.bin, signedOut.launch as any);
+    await outside.start();
+    const account = await outside.request('account/read');
+    assert.equal(account.account, null); assert.match(account.reason, /claude auth login/);
+    const fake = fakeClaudeCli(dir, { loggedIn: true, authMethod: 'console' }, [], null);
+    const agent = new ClaudeAgent(async () => { throw new Error('unused'); }, () => fake.bin, fake.launch as any);
+    await agent.start();
+    assert.deepEqual((await agent.request('account/read')).account, { email: undefined, type: 'API key' });
+    // Without Claude Code's list, its aliases are offered.
+    assert.deepEqual((await agent.request('model/list')).data.map((m: any) => m.model), ['fable', 'opus', 'sonnet', 'haiku']);
+    const seen = events(agent);
+    const { thread } = await agent.request('thread/start', { cwd: '/work' });
+    const { turn } = await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Wait.' }] });
+    for (let i = 0; i < 20 && !fake.launches.length; i++) await tick();
+    assert.equal(fake.launches[0].args.includes('--append-system-prompt'), false, 'no empty system prompt');
+    await agent.request('turn/interrupt', { turnId: turn.id });
+    assert.equal((await completed(seen)).status, 'interrupted');
+    assert.equal(fake.launches[0].child.killed, 'SIGINT');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

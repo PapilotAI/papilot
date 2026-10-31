@@ -1,5 +1,6 @@
 // Builds the static landing page with native, progressively enhanced UI demos.
 // Only Node is needed: the sample manuscript is HTML + MathML, not a PDF/video.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { renderDemo } from '../site/demo-templates.mjs';
@@ -17,7 +18,13 @@ const copy = (from, names, to = '') => {
 fs.rmSync(out, { recursive: true, force: true });
 copy('site', ['style.css', 'demos.css', 'demos.js']);
 const source = fs.readFileSync(path.join(root, 'site/index.html'), 'utf8');
-fs.writeFileSync(path.join(out, 'index.html'), source.replace(/<!-- demo:(\w+) -->/g, (_, kind) => renderDemo(kind)));
+// GitHub Pages lets browsers keep every file for ten minutes, so a fresh page
+// could meet a stylesheet or script cached from the previous release. Their
+// URLs carry a hash of their content instead.
+const version = name => crypto.createHash('sha256').update(fs.readFileSync(path.join(out, name))).digest('hex').slice(0, 10);
+fs.writeFileSync(path.join(out, 'index.html'), source
+  .replace(/<!-- demo:(\w+) -->/g, (_, kind) => renderDemo(kind))
+  .replace(/(\s(?:href|src)=")(style\.css|demos\.css|demos\.js)"/g, (_, attr, name) => `${attr}${name}?v=${version(name)}"`));
 copy('public', ['favicon.png', 'apple-touch-icon.png']);
 copy('docs/assets', ['logo.svg', 'social-preview.png'], 'assets');
 copy('src/web/fonts', fs.readdirSync(path.join(root, 'src/web/fonts')).filter(name => /\.(otf|txt)$/.test(name)), 'fonts');

@@ -96,7 +96,7 @@ Open **http://127.0.0.1:7274** and choose **Manuscript** in the sidebar. The dem
 | Agent | Sign in once | How Papilot runs it |
 | --- | --- | --- |
 | **Codex** | `papilot codex login` | Through the Codex app server, in its workspace sandbox. Papilot uses your `codex` if you have one, or installs it on first start. |
-| **Claude** | Start `papilot` with `ANTHROPIC_API_KEY` set | Through the Claude Agent SDK, downloaded the first time. The SDK does not accept a Pro or Max subscription login. |
+| **Claude** | Install [Claude Code](https://code.claude.com) and run `claude auth login`, or start `papilot` with `ANTHROPIC_API_KEY` set | With Claude Code installed, runs `claude -p` on your own login (your Claude plan or a key), in Claude Code's sandbox. Without it, through the Claude Agent SDK, which needs an API key. |
 | **Cursor** | Start `papilot` with `CURSOR_API_KEY` set | Through the Cursor SDK, downloaded the first time, in Cursor's sandbox. The SDK does not use the Cursor app or CLI login. |
 | **Kimi Code** | Install [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started) and run `kimi login` | Runs `kimi acp` with your local configuration; streams replies, resumes sessions and forwards tool approvals. |
 | **GLM** | Start `papilot` with `ZHIPU_API_KEY` (or `ZAI_API_KEY`) set | Claude Code on Zhipu's Anthropic-compatible endpoint, as Zhipu documents for GLM Coding Plan. |

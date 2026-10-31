@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { Store } from './store.ts';
@@ -782,6 +783,14 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   // reply is returned and no chat shows it.
   private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; timeout: number; what: string }) {
     if (this.closing) throw new Error('The server is shutting down.');
+    // A read-only helper (a title, a commit message) has everything in its
+    // prompt. It runs in an empty folder, so an agent that does not enforce a
+    // read-only sandbox (Claude, Cursor, the ACP agents) cannot change the paper.
+    const scratch = options.sandbox === 'read-only' ? fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-helper-')) : null;
+    try { return await this.helperTurn(id, { ...options, cwd: scratch || options.cwd }); }
+    finally { if (scratch) fs.rmSync(scratch, { recursive: true, force: true }); }
+  }
+  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; timeout: number; what: string }) {
     const agent = this.agents[id], name = AGENT_NAMES[id];
     const thread = await agent.request('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.sandbox, ephemeral: true, developerInstructions: options.instructions, ...(options.model ? { model: options.model.id } : {}) }, options.timeout);
     if (this.closing) throw new Error('The server is shutting down.');

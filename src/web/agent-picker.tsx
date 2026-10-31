@@ -2,6 +2,17 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { AgentId, AgentModel, RuntimeStatus } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
+import { browserStorage } from './storage.ts';
+
+// Without an effort of its own choosing, a task reasons at high effort where
+// its model offers it: a catalog's default can be as low as "low", too little
+// for revising a paper. An explicit "Model default" ('') is kept.
+const DEFAULT_EFFORT = 'high';
+export function taskEffort(choice: string | null, model?: AgentModel) {
+  if (choice === '') return '';
+  if (choice && (!model || model.efforts.includes(choice))) return choice;
+  return model?.efforts.includes(DEFAULT_EFFORT) ? DEFAULT_EFFORT : '';
+}
 
 // Keep provider names, capitalizing only their first letter for display.
 const effortName = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
@@ -14,7 +25,9 @@ export function ModelLabel({ model, effort, fast }: { model: string; effort?: st
 export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect }: { name: string; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void }) {
   if (!runtime || (runtime.connected && runtime.authenticated)) return null;
   const error = runtime.error || '', first = error.split(/:\s|\.\s/)[0];
-  const message = error ? (first.length <= 120 ? first : t('{agent} is unavailable', { agent: name })) : t('Connecting to {agent}…', { agent: name });
+  // An agent that was not found is not connecting: say so until it is installed and Reconnect finds it.
+  const message = runtime.installed === false ? t('{agent} was not found on this computer. Install or set it up, then select Reconnect.', { agent: name })
+    : error ? (first.length <= 120 ? first : t('{agent} is unavailable', { agent: name })) : t('Connecting to {agent}…', { agent: name });
   return <div className="agent-connection">
     <div className="agent-connection-message" role="status"><Icon name="alert" size={15}/><span>{message}</span></div>
     {error && error !== message && <details><summary>{t('Connection details')}</summary><p>{error}</p></details>}
@@ -41,22 +54,64 @@ function EffortSlider({ efforts, value, fallback, onChange }: { efforts: string[
   </div>;
 }
 
-// One compact trigger for the agent's settings. Native popovers keep the menu
-// above the PDF and scrolling panels, with outside-click and Escape dismissal.
-export function AgentPicker({ agents, agent, models, model, effort, fast, runtime, reconnecting, onReconnect, onAgent, onChange, disabled }: {
-  agents: { value: AgentId; label: string; unavailable?: boolean }[]; agent: AgentId; models: AgentModel[]; model: string; effort: string; fast: boolean;
-  runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void;
-  onAgent: (agent: AgentId) => void; onChange: (change: Partial<{ model: string; effort: string; fast: boolean }>) => void; disabled?: boolean;
+// Recent agent and model choices, newest first, shown above the full list.
+const RECENT = 'papilot:recent-models';
+function readRecent(): { agent: AgentId; model: string }[] {
+  try { const value = JSON.parse(browserStorage.getItem(RECENT) || '[]'); return Array.isArray(value) ? value.filter(item => item && typeof item.agent === 'string' && typeof item.model === 'string').slice(0, 3) : []; } catch { return []; }
+}
+function remember(agent: AgentId, model: string) {
+  const next = [{ agent, model }, ...readRecent().filter(item => item.agent !== agent || item.model !== model)].slice(0, 3);
+  browserStorage.setItem(RECENT, JSON.stringify(next));
+}
+
+export interface AgentOption { value: AgentId; label: string; runtime?: RuntimeStatus }
+interface Choice { key: string; agent: AgentOption; model: string; name: string; isDefault: boolean; recent: boolean }
+
+// An agent's state when it cannot be used yet, shown beside its name.
+function agentState(runtime?: RuntimeStatus) {
+  if (runtime?.installed === false) return t('Not found');
+  if (!runtime || (!runtime.connected && !runtime.error)) return t('Connecting…');
+  if (!runtime.connected) return t('Unavailable');
+  return runtime.authenticated ? '' : t('Sign-in required');
+}
+
+// One compact trigger opens a searchable list of every agent's models,
+// grouped by agent with recent choices first, so one choice sets both. The
+// selected model's reasoning effort and fast mode sit below the list. Native
+// popovers keep the menu above the PDF and scrolling panels, with
+// outside-click and Escape dismissal.
+export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, onReconnect, onSelect, onChange, disabled }: {
+  agents: AgentOption[]; agent: AgentId; model: string; effort: string; fast: boolean;
+  reconnecting: boolean; onReconnect: () => void;
+  onSelect: (agent: AgentId, model: string) => void; onChange: (change: Partial<{ effort: string; fast: boolean }>) => void; disabled?: boolean;
 }) {
-  const id = useId(), trigger = useRef<HTMLButtonElement>(null), panel = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const id = useId(), trigger = useRef<HTMLButtonElement>(null), panel = useRef<HTMLDivElement>(null), search = useRef<HTMLInputElement>(null), list = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [active, setActive] = useState(''), [recent, setRecent] = useState(readRecent);
+  const current = agents.find(item => item.value === agent) || agents[0];
+  const runtime = current?.runtime, models = runtime?.models || [];
   const selected = models.find(item => item.id === model) || models.find(item => item.isDefault);
-  const modelName = selected?.name || model || agents.find(item => item.value === agent)?.label || t('Default model');
+  const agentName = current?.label || agent;
+  const modelName = selected?.name || model || agentName;
   const currentEffort = effort || selected?.defaultEffort;
   const fastMode = agent === 'codex' ? selected?.fastMode : undefined;
   const disconnected = runtime && (!runtime.connected || !runtime.authenticated);
-  const agentName = agents.find(item => item.value === agent)?.label || agent;
-  const summary = [modelName, currentEffort ? effortName(currentEffort) : '', fastMode && fast ? t('Fast') : ''].filter(Boolean).join(' · ');
+  const summary = [agentName, modelName, currentEffort ? effortName(currentEffort) : '', fastMode && fast ? t('Fast') : ''].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
+  // Every model of every agent; an agent without a model list offers its default.
+  const choices = (option: AgentOption): Choice[] => {
+    const list = option.runtime?.models || [];
+    return list.length ? list.map(item => ({ key: `${option.value}\n${item.id}`, agent: option, model: item.id, name: item.name, isDefault: item.isDefault, recent: false }))
+      : [{ key: `${option.value}\n`, agent: option, model: '', name: t('Default model'), isDefault: false, recent: false }];
+  };
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (choice: Choice) => terms.every(term => `${choice.agent.label} ${choice.name} ${choice.model}`.toLocaleLowerCase().includes(term));
+  const groups = agents.map(option => ({ option, items: choices(option).filter(matches) })).filter(group => group.items.length);
+  const recentItems = terms.length ? [] : recent.flatMap(item => {
+    const option = agents.find(candidate => candidate.value === item.agent);
+    const found = option && choices(option).find(choice => choice.model === item.model);
+    return found ? [{ ...found, key: `recent\n${found.key}`, recent: true }] : [];
+  });
+  const visible = [...recentItems, ...groups.flatMap(group => group.items)];
+  const isSelected = (choice: Choice) => choice.agent.value === agent && (choice.model === model || (!model && (choice.isDefault || choice.model === '')));
   function position() {
     const box = panel.current!, rect = trigger.current!.getBoundingClientRect();
     box.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - box.offsetWidth - 8))}px`;
@@ -74,27 +129,66 @@ export function AgentPicker({ agents, agent, models, model, effort, fast, runtim
     return () => { observer.disconnect(); window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
   }, [open]);
   useEffect(() => { if (disabled) panel.current?.hidePopover(); }, [disabled]);
-  function show() { panel.current?.showPopover(); position(); setOpen(true); panel.current?.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')?.focus(); }
+  // Keep the active option in view while moving through the list with the keyboard.
+  useEffect(() => { if (open && active) list.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(active)}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active, open]);
+  function show() {
+    setQuery(''); setRecent(readRecent());
+    panel.current?.showPopover(); position(); setOpen(true);
+    const chosen = visible.find(isSelected);
+    setActive(chosen?.key || visible[0]?.key || '');
+    requestAnimationFrame(() => list.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }));
+    // Typing filters right away; on a touch screen the keyboard would cover the list, so search waits for a tap.
+    if (!window.matchMedia('(pointer: coarse)').matches) search.current?.focus();
+  }
+  function choose(choice: Choice) {
+    onSelect(choice.agent.value, choice.model);
+    remember(choice.agent.value, choice.model);
+    setActive(choice.key);
+  }
+  function move(step: number) {
+    if (!visible.length) return;
+    const index = visible.findIndex(choice => choice.key === active);
+    setActive(visible[(index + step + visible.length) % visible.length].key);
+  }
+  const renderChoice = (choice: Choice) => {
+    const chosen = isSelected(choice), state = agentState(choice.agent.runtime);
+    return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={`${choice.name} · ${choice.agent.label}`}
+      className={'model-option' + (choice.key === active ? ' active' : '')} onPointerMove={() => setActive(choice.key)} onClick={() => choose(choice)}>
+      <span className="model-option-name">{choice.name}</span>
+      {choice.isDefault && !choice.recent && <small className="model-option-tag">{t('Default')}</small>}
+      {(choice.recent || state) && <small className={'model-option-agent' + (state ? ' warn' : '')}>{choice.recent ? choice.agent.label : state}</small>}
+      {chosen && <Icon name="check" size={14}/>}
+    </div>;
+  };
+  const activeChoice = visible.find(choice => choice.key === active);
   return <span className="agent-picker">
     <button ref={trigger} type="button" className="agent-picker-trigger" aria-label={t('Agent settings')} title={summary + (disconnected ? ` · ${t('{agent} is unavailable', { agent: agentName })}` : '')} aria-haspopup="dialog" aria-expanded={open} aria-controls={id} disabled={disabled}
       onClick={() => panel.current?.matches(':popover-open') ? panel.current.hidePopover() : show()}
       onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); show(); } }}>
-      <ModelLabel model={modelName} effort={currentEffort} fast={Boolean(fastMode && fast)}/><Icon name="chevronDown" size={13}/>{disconnected && <span className="agent-status-mark"><Icon name="alert" size={13}/></span>}
+      {modelName !== agentName && <span className="agent-picker-agent">{agentName}</span>}<ModelLabel model={modelName} effort={currentEffort} fast={Boolean(fastMode && fast)}/><Icon name="chevronDown" size={13}/>{disconnected && <span className="agent-status-mark"><Icon name="alert" size={13}/></span>}
     </button>
     <div ref={panel} id={id} popover="auto" role="dialog" aria-label={t('Agent settings')} className="agent-picker-panel" onToggle={event => {
       const shown = (event.nativeEvent as ToggleEvent).newState === 'open'; setOpen(shown);
       if (!shown && (!document.activeElement || document.activeElement === document.body || panel.current?.contains(document.activeElement))) trigger.current?.focus();
     }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); panel.current?.hidePopover(); trigger.current?.focus(); } }}>
-      <div className="agent-choices-label">{t('Agent')}</div>
-      <div className="agent-choices" role="radiogroup" aria-label={t('Agent')} onKeyDown={event => {
-        const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
-        if (!step && event.key !== 'Home' && event.key !== 'End') return;
-        event.preventDefault();
-        const index = event.key === 'Home' ? 0 : event.key === 'End' ? agents.length - 1 : (agents.findIndex(item => item.value === agent) + step + agents.length) % agents.length;
-        onAgent(agents[index].value); event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')[index]?.focus();
-      }}>{agents.map(item => <button key={item.value} type="button" role="radio" aria-checked={item.value === agent} tabIndex={item.value === agent ? 0 : -1} title={item.label + (item.unavailable ? t(' · unavailable') : '')} onClick={() => onAgent(item.value)}>{item.label}{item.unavailable && <i aria-hidden="true"/>}</button>)}</div>
+      <label className="model-search"><Icon name="search" size={14}/>
+        <input ref={search} type="search" value={query} placeholder={t('Search models')} aria-label={t('Search models')} role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-autocomplete="list"
+          aria-activedescendant={activeChoice ? `${id}-${activeChoice.key.replace(/\W/g, '_')}` : undefined}
+          onChange={event => { setQuery(event.target.value); const terms = event.target.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean); const first = agents.flatMap(choices).find(choice => terms.every(term => `${choice.agent.label} ${choice.name} ${choice.model}`.toLocaleLowerCase().includes(term))); setActive(first?.key || ''); }}
+          onKeyDown={event => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); move(event.key === 'ArrowDown' ? 1 : -1); }
+            else if (event.key === 'Enter' && activeChoice) { event.preventDefault(); choose(activeChoice); }
+          }}/>
+      </label>
+      <div ref={list} id={`${id}-list`} role="listbox" aria-label={t('Models')} className="model-list">
+        {recentItems.length > 0 && <div role="group" aria-label={t('Recent')} className="model-group"><div className="model-group-head" aria-hidden="true">{t('Recent')}</div>{recentItems.map(renderChoice)}</div>}
+        {groups.map(group => <div key={group.option.value} role="group" aria-label={group.option.label} className="model-group">
+          <div className="model-group-head" aria-hidden="true">{group.option.label}</div>
+          {group.items.map(renderChoice)}
+        </div>)}
+        {!visible.length && <p className="model-empty">{t('No models match “{query}”', { query: query.trim() })}</p>}
+      </div>
       <AgentConnectionNotice key={agent} name={agentName} runtime={runtime} reconnecting={reconnecting} onReconnect={onReconnect}/>
-      <label className="agent-setting"><span>{t('Model')}</span><select aria-label={t('Model')} value={model} onChange={event => onChange({ model: event.target.value })}><option value="">{t('Default model')}</option>{models.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       {selected?.efforts.length ? <EffortSlider efforts={selected.efforts} value={effort} fallback={selected.defaultEffort} onChange={value => onChange({ effort: value })}/> : null}
       {fastMode && <label className="agent-fast"><span><strong><Icon name="bolt" size={14}/>{t('Fast mode')}</strong><small>{fastMode.description || t('Faster responses; may use more of your limit.')}</small></span><input type="checkbox" role="switch" aria-label={t('Fast mode')} checked={fast} onChange={event => onChange({ fast: event.target.checked })}/></label>}
     </div>
