@@ -228,7 +228,7 @@ export const zhCN: Record<string, string> = {
   'No tasks yet': '暂无任务', 'No matching skills': '没有匹配的技能', 'LaTeX Git repository · Requires a commit and latexmk': 'LaTeX Git 仓库 · 需有提交记录并安装 latexmk',
   '{agent} is unavailable': '{agent} 不可用', 'Connection details': '连接详情',
   'Faster responses; may use more of your limit.': '响应更快，可能消耗更多额度。',
-  'Agent': '智能体', ' · unavailable': ' · 不可用', 'Model': '模型', 'Wait for the PDF to compile.': '请等待 PDF 编译完成。',
+  '{agent} was not found on this computer. Install or set it up, then select Reconnect.': '本机未找到 {agent}。安装或配置后点“重新连接”。', 'Search models': '搜索模型', 'Models': '模型', 'Recent': '最近使用', 'Default': '默认', 'No models match “{query}”': '没有匹配“{query}”的模型', 'Wait for the PDF to compile.': '请等待 PDF 编译完成。',
   'Fit width': '适合宽度', 'Fit page': '适合页面', 'Note for the agent': '给智能体的批注', 'What should change here?': '这里应该怎么改？', 'Add note': '添加批注', 'Adding…': '正在添加…',
   'PDF controls': 'PDF 控件', 'Previous page': '上一页', 'Page number': '页码', 'Next page': '下一页',
   'Zoom out': '缩小', 'Zoom out (⌘−)': '缩小（⌘−）', 'Zoom': '缩放', 'Zoom in': '放大', 'Zoom in (⌘+)': '放大（⌘+）',

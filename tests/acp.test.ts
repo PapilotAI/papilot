@@ -353,10 +353,16 @@ test('ACP agents are detected by their executable', () => {
     fs.writeFileSync(file, '#!/bin/sh\n'); fs.chmodSync(file, 0o755);
     assert.equal(new AcpAgent(ACP_PROFILES.qwen, file).detect(), true);
     assert.equal(new AcpAgent(ACP_PROFILES.qwen, path.join(dir, 'missing')).detect(), false);
-    const previous = process.env.PATH;
-    process.env.PATH = dir;
-    try { assert.equal(new AcpAgent(ACP_PROFILES.qwen).detect(), true); assert.equal(new AcpAgent(ACP_PROFILES.opencode).detect(), false); }
-    finally { process.env.PATH = previous; }
+    const previous = { PATH: process.env.PATH, HOME: process.env.HOME };
+    Object.assign(process.env, { PATH: dir, HOME: dir });
+    try {
+      assert.equal(new AcpAgent(ACP_PROFILES.qwen).detect(), true); assert.equal(new AcpAgent(ACP_PROFILES.opencode).detect(), false);
+      // A service's PATH may lack the folder a CLI installs itself in.
+      fs.mkdirSync(path.join(dir, '.opencode/bin'), { recursive: true });
+      fs.copyFileSync(file, path.join(dir, '.opencode/bin/opencode')); fs.chmodSync(path.join(dir, '.opencode/bin/opencode'), 0o755);
+      process.env.PATH = '/usr/bin';
+      assert.equal(new AcpAgent(ACP_PROFILES.opencode).detect(), true);
+    } finally { Object.assign(process.env, previous); }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
