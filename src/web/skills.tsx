@@ -41,8 +41,8 @@ export function SkillChip({ skill, onRemove }: { skill: { id: string; name: stri
 }
 
 // Skills stay behind the composer's plus button; "/" remains the keyboard shortcut.
-export function SkillPicker({ skills, selected, onPick, disabled }: { skills: Skill[]; selected: Skill | null; onPick: (skill: Skill | null) => void; disabled?: boolean }) {
-  if (!skills.length) return null;
-  return <ActionMenu label={t('Add skill')} className="icon-button composer-plus" menuClassName="skills-picker-menu" align="start" disabled={disabled}
-    actions={skills.map(skill => ({ id: skill.id, label: skillName(skill), title: skillDescription(skill), icon: skillIcon(skill.id), checked: selected?.id === skill.id, select: () => onPick(selected?.id === skill.id ? null : skill) }))}><Icon name="plus" size={19}/></ActionMenu>;
+export function SkillPicker({ skills, selected, onPick, disabled, onAttach }: { skills: Skill[]; selected: Skill | null; onPick: (skill: Skill | null) => void; disabled?: boolean; onAttach?: () => void }) {
+  if (!skills.length && !onAttach) return null;
+  return <ActionMenu label={onAttach ? t('Add files or skills') : t('Add skill')} className="icon-button composer-plus" menuClassName="skills-picker-menu" align="start" disabled={disabled}
+    actions={[...(onAttach ? [{ label: t('Add files…'), icon: 'attachment', select: onAttach }] : []), ...skills.map((skill, index) => ({ id: skill.id, label: skillName(skill), title: skillDescription(skill), icon: skillIcon(skill.id), divider: Boolean(onAttach && index === 0), checked: selected?.id === skill.id, select: () => onPick(selected?.id === skill.id ? null : skill) }))]}><Icon name="plus" size={19}/></ActionMenu>;
 }

@@ -119,6 +119,16 @@ Messages and queued runs are saved in `papilot.sqlite` in the data folder. Closi
 
 Turn on **Settings → Notifications** for a browser notification when a task asks a question or for approval, its review is ready, or it stops with an error while Papilot is in another tab or app; clicking one opens the task. Browsers allow notifications only on HTTPS or localhost, so remotely use the Tailscale HTTPS address.
 
+## Task attachments
+
+Use **＋ → Add files…** in a new task or an existing conversation, drag files onto the composer, or paste an image from the clipboard. Uploaded files appear above the message, with image thumbnails and a remove action. A failed upload offers **Retry**; sending waits until every selected file has uploaded or been removed. Uploaded attachments stay with their paper or task when you navigate away or reload. Sending review feedback separately leaves your draft attachments in place.
+
+Attach up to **10 files**, with **25 MB per file**, **5 MB per PNG, JPEG, GIF or WebP image**, and **100 MB total per message**. You can send attachments without text; the agent is then asked to identify the material and ask what you want to do, without editing the manuscript. Sent attachments remain available from the conversation.
+
+Files are stored beside Papilot's database, outside the manuscript and task worktrees. Codex and Claude receive supported raster images as native image inputs; other files are provided by their local paths for the agent to read with its tools. Antigravity receives image paths for its file/image tools rather than native image blocks. Reading a particular file format depends on the agent's tools; uploading does not automatically convert documents or import them into the paper. If you ask to use an attached figure or data file in the manuscript, the agent can copy it into its task worktree for review.
+
+Draft uploads are private to their uploader. Sending them shares them with people who can access that paper; unsharing the paper also removes access to its attachments. Deleting a task removes its stored attachments after task cleanup is confirmed. Unsent uploads expire after 30 days and are cleaned up during later uploads; each person can keep up to 500 MB of unsent uploads per paper.
+
 ## Skills
 
 A skill is a named set of instructions for a common revision, so you do not have to write the prompt each time. Type `/` at the start of the prompt for a new task or a follow-up, keep typing to narrow the list, and press Enter or Tab (or click) to choose one; Escape closes the list and Backspace in an empty prompt removes the chosen skill. The new-task page also lists the skills as suggestions. What you type next says where or how to apply it, such as "Section 3 only"; send without text to apply it to the whole paper. The agent receives the skill's instructions with your words, and the chat shows the skill's name.

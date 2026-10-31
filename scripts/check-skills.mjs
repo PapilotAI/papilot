@@ -91,7 +91,7 @@ try {
 
   // "/" lists skills in the follow-up composer; the chosen one runs without text.
   const followUp = page.getByRole('textbox', { name: 'Instructions for Codex' });
-  await expect(page.getByRole('button', { name: 'Add skill', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add files or skills', exact: true })).toBeVisible();
   await followUp.fill('/');
   await expect(page.getByRole('option')).toHaveCount(3);
   await followUp.press('ArrowDown');
@@ -116,7 +116,7 @@ try {
   // The new-task panel beside the PDF starts from a suggested skill.
   await page.locator('.manuscript-link').click();
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
-  await page.getByRole('button', { name: 'Add skill', exact: true }).click();
+  await page.getByRole('button', { name: 'Add files or skills', exact: true }).click();
   await page.getByRole('menuitemradio', { name: 'Proofread', exact: true }).click();
   await expect(page.locator('.composer-skill .skill-chip')).toContainText('Proofread');
   await page.keyboard.type('Section 2 only.');

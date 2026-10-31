@@ -20,6 +20,8 @@ import type { AgentId, NoteSummary } from '../shared.ts';
 import { taskNoteResults } from './note-results.ts';
 import type { Updates } from './updates.ts';
 import { Diagnostics } from './diagnostics.ts';
+import { attachmentIds } from './attachments.ts';
+import { MAX_ATTACHMENT_BYTES } from '../shared.ts';
 import { PaperImports } from './imports.ts';
 import { DATA } from './paths.ts';
 
@@ -78,6 +80,25 @@ export async function buildApp(options: AppOptions) {
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
   const any = { config: { access: 'any' as const } }, owner = { config: { access: 'owner' as const } };
   const project = (param = 'id') => ({ config: { access: { project: param } } }), task = { config: { access: { task: 'id' } } };
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
+  app.post<{ Params: { id: string } }>('/api/projects/:id/attachments', { ...project(), bodyLimit: MAX_ATTACHMENT_BYTES }, async request => {
+    if (!Buffer.isBuffer(request.body)) throw new Error('Upload a file as binary data.');
+    const header = request.headers['x-papilot-filename'];
+    if (typeof header !== 'string') throw new Error('Choose a file with a valid name.');
+    let name: string;
+    try { name = decodeURIComponent(header); } catch { throw new Error('Choose a file with a valid name.'); }
+    return workspace.attachments.upload(request.params.id, author(request.viewer)?.id || 'owner', name, request.body);
+  });
+  app.get<{ Params: { id: string; attachment: string } }>('/api/projects/:id/attachments/:attachment', project(), (request, reply) => {
+    const file = workspace.attachments.get(request.params.id, request.params.attachment, author(request.viewer)?.id || 'owner');
+    const disposition = file.mime.startsWith('image/') ? 'inline' : 'attachment';
+    return reply.type(file.mime).header('Content-Disposition', `${disposition}; filename="attachment"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g, '%27')}`)
+      .header('Content-Security-Policy', "default-src 'none'; sandbox").send(fs.createReadStream(workspace.attachments.path(file)));
+  });
+  app.post<{ Params: { id: string; attachment: string } }>('/api/projects/:id/attachments/:attachment/discard', project(), request => {
+    workspace.attachments.discard(request.params.id, request.params.attachment, author(request.viewer)?.id || 'owner');
+    return { ok: true };
+  });
   async function manuscript(id: string, rebuild = false) {
     const root = store.project(id).path, state = await manuscripts.state(id, root, rebuild);
     const notes = store.annotations(id).filter(note => !note.taskId);
@@ -166,10 +187,10 @@ export async function buildApp(options: AppOptions) {
   const optional = (value: unknown, name: string, max = 20000) => value === undefined || value === '' ? '' : string(value, name, max);
   app.get<{ Params: { id: string } }>('/api/projects/:id/skills', project(), request => ({ skills: loadSkills(store.project(request.params.id).path).map(listedSkill) }));
   app.post('/api/tasks', { config: { access: { project: 'projectId', from: 'body' } } }, async request => {
-    const b = request.body as any, skill = skillName(b.skill);
+    const b = request.body as any, skill = skillName(b.skill), attachments = attachmentIds(b.attachments);
     if (b.annotations !== undefined && (!Array.isArray(b.annotations) || b.annotations.length > 500 || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64))) throw new Error('Select valid PDF notes for this task.');
     const annotations: string[] | undefined = b.annotations;
-    return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: skill || annotations?.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
+    return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
   });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/items', task, request => { store.task(request.params.id); return { items: store.items(request.params.id) }; });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {
@@ -187,6 +208,8 @@ export async function buildApp(options: AppOptions) {
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/messages', task, async request => {
     const b = request.body as any, task = store.task(request.params.id), feedback = b.feedback === true, name = skillName(b.skill);
+    const attachments = attachmentIds(b.attachments);
+    if (feedback && attachments.length) throw new Error('Send attachments with a message, separately from review feedback.');
     const skill = name ? findSkill(store.project(task.projectId).path, name) : undefined;
     let reviewNotes: NoteSummary[] | undefined;
     if (b.notes !== undefined) {
@@ -203,8 +226,8 @@ export async function buildApp(options: AppOptions) {
         return { ...(note.id ? { id: string(note.id, 'Note ID', 100) } : {}), where: string(note.where, 'Note location', 4000), quote: optional(note.quote, 'PDF text', 2000), comment: note.group ? optional(note.comment, 'Note', 4000) : string(note.comment, 'Note', 4000), ...(note.group ? { group: note.group } : {}), ...(anchor ? { anchor: { sources, ...(anchor.round ? { round: anchor.round } : {}) } } : {}) };
       });
     }
-    const text = feedback || skill || reviewNotes ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
-    return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, reviewNotes, author: author(request.viewer) });
+    const text = feedback || skill || reviewNotes || attachments.length ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
+    return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, reviewNotes, attachments, author: author(request.viewer) });
   });
   // Commits what the author accepted from this task, with the message they confirmed.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit', task, request => {

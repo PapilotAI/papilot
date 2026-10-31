@@ -9,6 +9,9 @@ import { ignorePattern } from '../commit.ts';
 import type { AgentId, AgentModel, Annotation, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem, Viewer } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, unsentReviewFeedback } from './composer.ts';
+import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
+import type { AttachmentDraft, UploadAttachment } from './attachment-draft.ts';
+import type { Attachment } from '../shared.ts';
 import { noteLocation } from './note-location.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -48,7 +51,7 @@ let token = '';
 const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), b => b.toString(16).padStart(2, '0')).join('');
 async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal, wait = body === undefined ? 15000 : 30000): Promise<T> {
   const timeout = AbortSignal.timeout(wait);
-  try { const response = await fetch('/api' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Papilot-Token': token }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+  try { const response = await fetch('/api' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': body instanceof File ? 'application/octet-stream' : 'application/json', 'X-Papilot-Token': token, ...(body instanceof File ? { 'X-Papilot-Filename': encodeURIComponent(body.name) } : {}) }, ...(body === undefined ? {} : { body: body instanceof File ? body : JSON.stringify(body) }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     // At the public URL, a lapsed or revoked session shows the sign-in page.
     if (response.status === 401 && (!route.startsWith('/auth/') || route === '/auth/logout')) { setSignedOut(true); throw new Error(t('Sign in to continue.')); }
     const value = await response.json(); if (!response.ok) throw new Error(value.error || t('Request failed. Please try again.')); return value;
@@ -58,6 +61,7 @@ async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal,
     throw error;
   }
 }
+const uploadAttachment = (projectId: string, file: File, signal: AbortSignal) => api<Attachment>(`/projects/${projectId}/attachments`, file, signal, 120000);
 const checkDiagnostics = (projectId: string | undefined, signal: AbortSignal) => api<DiagnosticReport>('/diagnostics', { projectId }, signal, 60000);
 const AGENT_IDS: AgentId[] = ['codex', 'claude', 'antigravity'];
 const AGENT_LABELS: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity' };
@@ -94,8 +98,12 @@ function useMedia(query: string) {
 // Enter (see sendsMessage), and keeps its actions inside the same surface.
 // With skills, "/" opens the skill menu; the chosen skill sits above the text
 // as a chip, the text becomes optional, and Backspace in an empty box removes it.
-function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, autoFocus, inputRef, footer, action, large, skills, skill, onSkill }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSubmit: () => void; readOnly?: boolean; autoFocus?: boolean; inputRef?: React.RefObject<HTMLTextAreaElement | null>; footer: React.ReactNode; action: React.ReactNode; large?: boolean; skills?: Skill[]; skill?: Skill | null; onSkill?: (skill: Skill | null) => void }) {
+function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, autoFocus, inputRef, footer, action, large, skills, skill, onSkill, attachments, upload, filesDisabled, imageHint }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSubmit: () => void; readOnly?: boolean; autoFocus?: boolean; inputRef?: React.RefObject<HTMLTextAreaElement | null>; footer: React.ReactNode | ((attach: () => void) => React.ReactNode); action: React.ReactNode; attachments?: AttachmentDraft; upload?: UploadAttachment; filesDisabled?: boolean; imageHint?: boolean; large?: boolean; skills?: Skill[]; skill?: Skill | null; onSkill?: (skill: Skill | null) => void }) {
   const fallback = useRef<HTMLTextAreaElement>(null), input = inputRef || fallback;
+  const fileInput = useRef<HTMLInputElement>(null), dragDepth = useRef(0);
+  const [dragging, setDragging] = useState(false);
+  const canAttach = Boolean(attachments && upload && !readOnly && !filesDisabled);
+  function addFiles(files: File[]) { if (canAttach && files.length) { void attachments!.add(files, upload!); input.current?.focus(); } }
   const menuId = useId(), [dismissed, setDismissed] = useState<string | null>(null), [active, setActive] = useState(0);
   const query = skills?.length && onSkill && !readOnly ? skillQuery(value) : null;
   const open = query !== null && dismissed !== value, matches = open ? matchSkills(skills!, query) : [];
@@ -114,12 +122,21 @@ function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, aut
     if (e.key === 'Backspace' && skill && onSkill && !value && !readOnly) { e.preventDefault(); onSkill(null); return; }
     if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); onSubmit(); }
   }
-  return <form className={'composer' + (large ? ' large' : '')} onSubmit={e => { e.preventDefault(); onSubmit(); }} onPointerDown={e => { if (e.target === e.currentTarget) { e.preventDefault(); input.current?.focus(); } }}>
+  return <form className={'composer' + (large ? ' large' : '') + (dragging ? ' dragging' : '')}
+    onDragEnter={event => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); if (canAttach && ++dragDepth.current === 1) setDragging(true); }}
+    onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = canAttach ? 'copy' : 'none'; } }}
+    onDragLeave={event => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }}
+    onDrop={event => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current = 0; setDragging(false); addFiles(Array.from(event.dataTransfer.files)); }}
+    onPaste={event => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); addFiles(files); const text = event.clipboardData.getData('text/plain'); if (canAttach && text && input.current) { const area = input.current; onChange(value.slice(0, area.selectionStart) + text + value.slice(area.selectionEnd)); } } }}
+    onSubmit={e => { e.preventDefault(); onSubmit(); }} onPointerDown={e => { if (e.target === e.currentTarget) { e.preventDefault(); input.current?.focus(); } }}>
+    {attachments && upload && <><input ref={fileInput} type="file" multiple hidden aria-label={t('Choose attachments')} disabled={!canAttach} onChange={event => { addFiles(Array.from(event.target.files || [])); event.target.value = ''; }}/><DraftAttachments draft={attachments} upload={upload} discard={file => { void api(`/projects/${file.projectId}/attachments/${file.id}/discard`, {}).catch(() => {}); }} disabled={readOnly || filesDisabled}/></>}
+    {dragging && <div className="attachment-drop-hint">{t('Drop files to attach')}</div>}
+    {imageHint && <p className="attachment-agent-hint">{t('Antigravity opens images through its file tools. For direct image input, choose Codex or Claude.')}</p>}
     {open && <SkillMenu id={menuId} skills={matches} active={active} onActive={setActive} onPick={pick}/>}
     {skill && <div className="composer-skill"><SkillChip skill={skill} onRemove={onSkill && !readOnly ? () => { onSkill(null); input.current?.focus(); } : undefined}/></div>}
     <textarea ref={input} rows={1} aria-label={label} maxLength={20000} placeholder={skill ? (skill.source !== 'builtin' && skill.hint) || t('Details (optional)') : placeholder} value={value} readOnly={readOnly} onChange={e => onChange(e.target.value)} onKeyDown={keyDown}
       {...(onSkill && skills?.length ? { 'aria-autocomplete': 'list' as const, 'aria-controls': open ? menuId : undefined, 'aria-activedescendant': open && matches.length ? `${menuId}-${Math.min(active, matches.length - 1)}` : undefined } : {})}/>
-    <div className="composer-footer">{footer}{action}</div>
+    <div className="composer-footer">{typeof footer === 'function' ? footer(() => fileInput.current?.click()) : footer}{action}</div>
   </form>;
 }
 
@@ -188,6 +205,7 @@ function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[
       <ol className="sent-notes">{entries.map(({ note, index }) => renderNote(note, index))}</ol>
     </GroupCard>)}
     <ol className="sent-notes">{notes.map((note, index) => !note.group && renderNote(note, index))}</ol>
+    <MessageAttachments files={item.meta?.attachments}/>
   </div></article>;
 }
 
@@ -216,6 +234,7 @@ function UserMessage({ item, agent }: { item: TimelineItem; agent: string }) {
   </div></article>;
   return <article className="message user" aria-label={senderLabel(sender, item.createdAt)}><SenderName sender={sender}/><div className="message-body" title={time(item.createdAt)}>
     {skill && <SkillChip skill={skill}/>}{skill && item.text ? '\n' : ''}{item.text}
+    <MessageAttachments files={item.meta?.attachments}/>
     {feedback && <details className="feedback-attachment"><summary><Icon name="paper" size={13}/>{t('With review feedback')}</summary><FeedbackDetails feedback={feedback}/></details>}
   </div></article>;
 }
@@ -253,6 +272,8 @@ function timelineEntries(items: TimelineItem[]) {
 function Activity({ task, models, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing, openReview, feedback, connection, tools, lead }: { tools?: React.ReactNode; lead?: React.ReactNode; task: Task; models: AgentModel[]; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const { text: draft, sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
+  const viewer = useContext(ViewerContext);
+  const files = useAttachmentDraft(`papilot:files:${viewer?.id || 'owner'}:task:${task.id}`);
   const [skill, setSkill] = useState<Skill | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const shouldFollow = useRef(true);
@@ -267,10 +288,11 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
     observer.observe(scroller.current); return () => observer.disconnect();
   }, []);
   async function submit(source: 'draft' | 'feedback') {
-    if (composer.sending || ['uncertain', 'deleting'].includes(task.status)) return;
+    if (composer.sending || ['uncertain', 'deleting'].includes(task.status) || (source === 'draft' && files.draft.getSnapshot().blocked)) return;
     const chosen = source === 'draft' ? skill : null;
-    const pending = composer.submit(source, message => api('/tasks/' + task.id + '/messages', message), chosen?.id);
-    try { if (await pending) { shouldFollow.current = true; if (chosen) setSkill(current => current === chosen ? null : current); refresh(); } }
+    const attached = source === 'draft' ? files.draft.getSnapshot().files : [];
+    const pending = composer.submit(source, message => api('/tasks/' + task.id + '/messages', message), chosen?.id, attached.map(file => file.id));
+    try { if (await pending) { files.draft.clear(attached); shouldFollow.current = true; if (chosen) setSkill(current => current === chosen ? null : current); refresh(); } }
     catch (e) { reportError(e); }
   }
   const active = ACTIVE.includes(task.status), blocked = ['uncertain', 'deleting'].includes(task.status);
@@ -294,11 +316,11 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
     <div className="composer-wrap">
       {connection}
-      <Composer inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? t('Queue instructions for the next turn…') : t('Ask a question or request changes…')} skills={skills} skill={skill} onSkill={setSkill}
-        footer={<div className="composer-options"><SkillPicker skills={skills} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/><span className="composer-model" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}><ModelLabel model={modelName} effort={task.effort || model?.defaultEffort} fast={Boolean(task.serviceTier && task.serviceTier !== 'default')}/></span></div>}
+      <Composer attachments={files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? t('Queue instructions for the next turn…') : t('Ask a question or request changes…')} skills={skills} skill={skill} onSkill={setSkill}
+        footer={attach => <div className="composer-options"><SkillPicker onAttach={attach} skills={skills} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/><span className="composer-model" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}><ModelLabel model={modelName} effort={task.effort || model?.defaultEffort} fast={Boolean(task.serviceTier && task.serviceTier !== 'default')}/></span></div>}
         action={<div className="composer-actions">
           {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
-          {(!active || draft.trim() || skill || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={(!draft.trim() && !skill) || sending || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
+          {(!active || draft.trim() || skill || files.entries.length || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={(!draft.trim() && !skill && !files.files.length) || files.blocked || sending || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
         </div>}/>
       {hint && <p className="composer-hint" role="status">{hint}</p>}
     </div>
@@ -685,7 +707,7 @@ function App() {
   const [modal, setModal] = useState<'project' | null>(null);
   // The task whose commit dialog is open, and what each commit from a review card did.
   const [commitFor, setCommitFor] = useState(''), [commitNotes, setCommitNotes] = useState<Record<string, string>>({});
-  const formTaskId = useRef(uuid());
+  const formTaskId = useRef<string>(uuid());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
   const [newSkill, setNewSkill] = useState<Skill | null>(null);
@@ -861,6 +883,7 @@ function App() {
   useEffect(() => { if (task) setShowArchived(Boolean(task.archivedAt)); }, [task?.id]);
   // Older servers send no viewer: whoever is looking is the owner.
   const viewer = state?.viewer, owner = !viewer || viewer.role === 'owner';
+  const newFiles = useAttachmentDraft(`papilot:files:${viewer?.id || 'owner'}:new:${project?.id || projectId}`);
   // A session that already ended signs out too.
   async function signOut() {
     try { await api('/auth/logout', {}); } catch (e) { if (!isSignedOut()) { reportError(e); return; } }
@@ -893,15 +916,23 @@ function App() {
     onAgent={value => { setAgentChoice(value); browserStorage.setItem('papilot:agent', value); }} onChange={remember}/>;
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
-    if ((!text && !skill && !notes.length) || creating || marking || noteEditing || !target) return;
-    const input = newTaskInput.current, submittedNotes = new Set(notes.map(note => note.id));
+    const attached = notes, files = newFiles.draft.getSnapshot().files;
+    if ((!text && !skill && !files.length && !attached.length) || newFiles.draft.getSnapshot().blocked || creating || marking || noteEditing || !target) return;
+    const input = newTaskInput.current, submittedNotes = new Set(attached.map(note => note.id));
     const restoreFocus = input?.closest('form')?.contains(document.activeElement);
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
-      const title = skill ? (text ? `${skillName(skill)}: ${taskTitle(text)}` : skillName(skill)).slice(0, 120) : text ? taskTitle(text) : notes.length === 1 ? taskTitle(notes[0].comment) : t('Address {n} PDF notes', { n: notes.length });
-      const created = await api<Task>('/tasks', { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), ...(notes.length ? { annotations: notes.map(note => note.id) } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, serviceTier: agent.serviceTier, id: formTaskId.current });
-      formTaskId.current = uuid(); setNewDraft(''); setNewSkill(null); setTaskSearch(''); setShowArchived(false);
+      const title = skill ? (text ? `${skillName(skill)}: ${taskTitle(text)}` : skillName(skill)).slice(0, 120) : text ? taskTitle(text) : attached.length === 1 ? taskTitle(attached[0].comment) : attached.length ? t('Address {n} PDF notes', { n: attached.length }) : files[0].name.slice(0, 120);
+      const body = { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), ...(attached.length ? { annotations: [...submittedNotes] } : {}), ...(files.length ? { attachments: files.map(file => file.id) } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, serviceTier: agent.serviceTier };
+      const signature = JSON.stringify([target, text, skill?.id || '', [...submittedNotes], files.map(file => file.id)]);
+      let previous: { signature?: string; id?: string } = {};
+      try { previous = JSON.parse(browserStorage.getItem('papilot:new-task-request') || '{}'); } catch { /* Invalid saved request. */ }
+      formTaskId.current = previous?.signature === signature && previous.id ? previous.id : uuid();
+      browserStorage.setItem('papilot:new-task-request', JSON.stringify({ signature, id: formTaskId.current }));
+      const created = await api<Task>('/tasks', { ...body, id: formTaskId.current });
+      browserStorage.removeItem('papilot:new-task-request');
+      newFiles.draft.clear(files); formTaskId.current = uuid(); setNewDraft(''); setNewSkill(null); setTaskSearch(''); setShowArchived(false);
       // Add the confirmed task without moving the author away from their draft.
       // Cancel older snapshots before inserting it, so they cannot erase the row.
       snapshotRequest.cancel();
@@ -1155,13 +1186,13 @@ function App() {
     <div className="new-task-start">
     {!notes.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
     {attachments}
-    <Composer autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={notes.some(note => note.group) ? t('What should change in each color group?') : notes.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
+    <Composer attachments={newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={notes.some(note => note.group) ? t('What should change in each color group?') : notes.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
       skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
-      footer={<div className="composer-options">
-        <SkillPicker skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
+      footer={attach => <div className="composer-options">
+        <SkillPicker onAttach={attach} skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
         {agentOptions(creating)}
       </div>}
-      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || marking > 0 || noteEditing || (!newDraft.trim() && !newSkill && !notes.some(note => note.comment.trim()))} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || newFiles.blocked || marking > 0 || noteEditing || (!newDraft.trim() && !newSkill && !newFiles.files.length && !notes.some(note => note.comment.trim()))} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
     </div>

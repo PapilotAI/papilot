@@ -3,7 +3,7 @@ export { reviewInstructions } from '../conversation.ts';
 
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 // Feedback sends the unsent review updates on their own; a skill runs with or without text.
-export type Message = { text: string; requestKey: string; feedback?: true; skill?: string };
+export type Message = { text: string; requestKey: string; feedback?: true; skill?: string; attachments?: string[] };
 
 // The server counts undelivered feedback events, excluding those already queued.
 // Older summaries only report decision totals; a confirmed zero takes precedence.
@@ -37,14 +37,24 @@ export class ComposerDraft {
     this.changed();
   }
 
-  async submit(source: 'draft' | 'feedback', send: (message: Message) => Promise<unknown>, skill?: string): Promise<boolean> {
+  async submit(source: 'draft' | 'feedback', send: (message: Message) => Promise<unknown>, skill?: string, attachments: string[] = []): Promise<boolean> {
     const text = source === 'draft' ? this.text : '';
-    if (this.sending || (source === 'draft' && !text.trim() && !skill)) return false;
+    if (this.sending || (source === 'draft' && !text.trim() && !skill && !attachments.length)) return false;
+    const requestStorage = this.key + ':request';
+    if (source === 'draft') {
+      const signature = JSON.stringify([text.trim(), skill || '', attachments]);
+      let previous: { signature?: string; id?: string } = {};
+      try { previous = JSON.parse(this.storage.getItem(requestStorage) || '{}'); } catch { /* Invalid saved request. */ }
+      this.requestKeys.draft = previous?.signature === signature && previous.id ? previous.id : this.newId();
+      this.storage.setItem(requestStorage, JSON.stringify({ signature, id: this.requestKeys.draft }));
+    }
     this.sending = true; this.sendingSource = source;
     this.changed();
     const revision = this.revision;
+    const requestKey = this.requestKeys[source], savedRequest = this.storage.getItem(requestStorage);
     try {
-      await send({ text: text.trim(), requestKey: this.requestKeys[source], ...(source === 'feedback' ? { feedback: true as const } : {}), ...(skill ? { skill } : {}) });
+      await send({ text: text.trim(), requestKey, ...(source === 'feedback' ? { feedback: true as const } : {}), ...(skill ? { skill } : {}), ...(source === 'draft' && attachments.length ? { attachments } : {}) });
+      if (source === 'draft' && this.storage.getItem(requestStorage) === savedRequest) this.storage.removeItem(requestStorage);
       if (source === 'draft' && this.revision === revision) {
         // A task can be reopened while its previous request is still pending.
         // Preserve a newer draft saved by that mounted composer or another tab.

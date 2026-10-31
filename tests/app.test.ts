@@ -571,3 +571,22 @@ test('color groups persist without per-location comments and take their meaning 
     assert.match(nextPrompt, /Shorten the yellow selections/); assert.doesNotMatch(nextPrompt, /Explain the yellow selections/);
   } finally { await f.close(); }
 });
+
+test('attachment uploads and downloads follow paper membership and keep unsent files private', async () => {
+  const f = await fixture();
+  try {
+    const upload = { method: 'POST' as const, url: '/api/projects/thesis/attachments', payload: Buffer.from('x,y\n1,2'), headers: { ...f.as, 'content-type': 'application/octet-stream', 'x-papilot-filename': 'results.csv' } };
+    assert.equal((await f.remote.inject({ ...upload, headers: { ...upload.headers, cookie: '' } })).statusCode, 401);
+    assert.equal((await f.remote.inject({ ...upload, url: '/api/projects/grant/attachments' })).statusCode, 400);
+    const uploaded = await f.remote.inject(upload);
+    assert.equal(uploaded.statusCode, 200, uploaded.body);
+    const file = uploaded.json(), url = `/api/projects/thesis/attachments/${file.id}`;
+    assert.equal((await f.remote.inject({ url, headers: f.as })).statusCode, 200);
+    assert.equal((await f.local.inject({ url, headers: LOCAL })).statusCode, 400, 'owner cannot see another person’s unsent upload');
+    const sent = await f.remote.inject({ method: 'POST', url: '/api/tasks/thesis-task/messages', headers: f.as, payload: { text: 'Use this data.', requestKey: 'member-attachment', attachments: [file.id] } });
+    assert.equal(sent.statusCode, 200, sent.body);
+    assert.equal((await f.local.inject({ url, headers: LOCAL })).statusCode, 200);
+    f.accounts.share(f.ada.id, []);
+    assert.equal((await f.remote.inject({ url, headers: f.as })).statusCode, 400);
+  } finally { await f.close(); }
+});

@@ -1,6 +1,13 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'Attachments': '附件', 'Choose attachments': '选择附件', 'Add files or skills': '添加文件或技能', 'Add files…': '添加文件…',
+  'Drop files to attach': '松开以添加附件', 'Uploading…': '正在上传…', 'Upload failed. Please retry.': '上传失败，请重试。',
+  'Retry uploading {name}': '重新上传 {name}', 'Remove attachment {name}': '移除附件 {name}', 'Open attachment {name}': '打开附件 {name}',
+  'Attach up to 10 files per message.': '每条消息最多添加 10 个附件。', 'The file “{name}” is empty.': '文件“{name}”为空。',
+  'Files must be 25 MB or smaller.': '单个文件不能超过 25 MB。', 'Images must be 5 MB or smaller.': '单张图片不能超过 5 MB。',
+  'Attachments must total 100 MB or less.': '附件总大小不能超过 100 MB。',
+  'Antigravity opens images through its file tools. For direct image input, choose Codex or Claude.': 'Antigravity 通过文件工具读取图片。需要直接传入图片时，请选择 Codex 或 Claude。',
   'LaTeX Git repository · Requires a commit and latexmk': 'LaTeX Git 仓库 · 需有提交记录并安装 latexmk',
   'Repository path': '仓库路径',
   'LaTeX engine': 'LaTeX 编译引擎',

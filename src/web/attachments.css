@@ -1,0 +1,18 @@
+.composer-attachments,.message-attachments{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0;padding:0;min-width:0;white-space:normal}
+.composer-attachments{padding:12px 12px 0;max-height:min(220px,28svh);overflow:auto;overscroll-behavior:contain}
+.message-attachments{margin-top:8px}
+.message-attachments>li{max-width:100%;min-width:0}
+.attachment{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;width:240px;padding:7px 8px;border:1px solid var(--line);border-radius:var(--r);font:13px/1.4 var(--sans);color:var(--text);text-decoration:none;background:var(--bg)}
+.attachment-icon{width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text-3)}
+.attachment-icon img{display:block;width:32px;height:32px;object-fit:cover;border-radius:3px}
+.attachment-info{display:flex;flex:1;min-width:0;flex-direction:column;gap:2px}
+.attachment-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachment-info small{font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachment .icon-button{width:24px;height:28px}
+.attachment-failed .attachment-info small,.attachment-error{color:var(--red)}
+.attachment-error{margin:8px 12px 0;font-size:12px;line-height:1.5}
+a.attachment:hover{border-color:var(--line-strong);background:var(--bg-hover)}
+.composer.dragging{outline:2px solid var(--accent);outline-offset:2px}
+.attachment-drop-hint{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;border-radius:inherit;background:var(--bg);color:var(--accent);font-size:14px;pointer-events:none}
+.attachment-agent-hint{margin:6px 12px 0;color:var(--text-3);font-size:12px;line-height:1.5}
+@media(max-width:680px){.attachment .icon-button{width:36px;height:44px}.attachment{width:260px}}

@@ -11,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 import type { AccountInfo, ModelInfo, Options, PermissionResult, Query, SDKMessage, SDKRateLimitInfo, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentId } from '../shared.ts';
 import { DATA, ROOT } from './paths.ts';
+import { imageType } from './attachments.ts';
 
 // Papilot drives every agent through the request and notification surface of
 // the Codex app-server: thread/start, thread/resume, turn/start,
@@ -39,7 +40,7 @@ abstract class Adapter extends EventEmitter implements AgentRuntime {
   protected threads = new Map<string, Thread>();
   protected turns = new Map<string, Turn>();
   abstract start(): Promise<void>;
-  protected abstract run(turn: Turn, thread: Thread, text: string, effort: string | null): void;
+  protected abstract run(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]): void;
   protected account(): unknown { return { account: null, requiresOpenaiAuth: false }; }
   protected models(): unknown { return { data: [] }; }
   protected limits(): unknown { throw new Error('This agent does not report usage.'); }
@@ -57,10 +58,11 @@ abstract class Adapter extends EventEmitter implements AgentRuntime {
       const thread = this.threads.get(String(params.threadId));
       if (!thread) throw new Error('Start or resume the thread before starting a turn.');
       const text = (params.input || []).map((part: { text?: string }) => part.text || '').join('\n');
+      const images = (params.input || []).filter((part: { type?: string; path?: string }) => part.type === 'localImage' && typeof part.path === 'string').map((part: { path: string }) => part.path);
       const turn: Turn = { id: randomUUID(), threadId: String(params.threadId), clientId: params.clientUserMessageId, status: 'inProgress', stop: () => {} };
       this.turns.set(turn.id, turn);
       // Papilot records the turn ID before the first event arrives.
-      setImmediate(() => this.run(turn, { ...thread, cwd: params.cwd || thread.cwd }, text, params.effort || null));
+      setImmediate(() => this.run(turn, { ...thread, cwd: params.cwd || thread.cwd }, text, params.effort || null, images));
       return { turn: { id: turn.id } };
     }
     if (method === 'turn/interrupt') { this.turns.get(String(params.turnId))?.stop(); return {}; }
@@ -179,8 +181,8 @@ export class ClaudeAgent extends Adapter {
     const wait = this.approvals.get(String(id));
     if (wait) { this.approvals.delete(String(id)); wait.resolve({ behavior: 'deny', message }); }
   }
-  protected run(turn: Turn, thread: Thread, text: string, effort: string | null) { void this.execute(turn, thread, text, effort); }
-  private async execute(turn: Turn, thread: Thread, text: string, effort: string | null) {
+  protected run(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]) { void this.execute(turn, thread, text, effort, images); }
+  private async execute(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]) {
     const abort = new AbortController();
     turn.stop = () => abort.abort();
     const tools = new Map<string, Item>(), texts = new Map<string, string>();
@@ -206,7 +208,16 @@ export class ClaudeAgent extends Adapter {
             : { id, method: shown.type === 'fileChange' ? 'item/fileChange/requestApproval' : 'item/commandExecution/requestApproval', params: { threadId: turn.threadId, turnId: turn.id, reason: title || decisionReason || `Claude wants to use ${name}.`, command: shown.type === 'commandExecution' ? shown.command : shown.type === 'fileChange' ? `Edit ${(shown.changes as { path: string }[])[0].path}` : shown.text } });
         }),
       };
-      for await (const message of query({ prompt: text, options }) as AsyncIterable<SDKMessage>) {
+      const prompt = images.length ? (async function* (): AsyncGenerator<SDKUserMessage> {
+        const content: Array<Exclude<SDKUserMessage['message']['content'], string>[number]> = [{ type: 'text', text }];
+        for (const file of images) {
+          const bytes = await fs.promises.readFile(file), mime = imageType(bytes);
+          if (!mime) throw new Error('This image format is not supported.');
+          content.push({ type: 'image', source: { type: 'base64', media_type: mime, data: bytes.toString('base64') } });
+        }
+        yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: turn.threadId };
+      })() : text;
+      for await (const message of query({ prompt, options }) as AsyncIterable<SDKMessage>) {
         if (!thread.started && 'session_id' in message && message.session_id) { thread.started = true; this.threads.set(turn.threadId, { ...thread, started: true }); }
         this.translate(turn, thread, message, tools, texts, value => { error = value; });
       }
@@ -281,7 +292,9 @@ export class AntigravityAgent extends Adapter {
   protected models() {
     return { data: this.catalog.map(model => ({ model: model.model, displayName: model.displayName, isDefault: model.isDefault, supportedReasoningEfforts: model.efforts.map(effort => ({ reasoningEffort: effort })), defaultReasoningEffort: model.defaultEffort })) };
   }
-  protected run(turn: Turn, thread: Thread, text: string, effort: string | null) {
+  protected run(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]) {
+    // agy's CLI accepts text prompts; its file tools open the supplied images.
+    if (images.length) text += '\n\nOpen the attached images with your file/image tools: ' + images.map(file => JSON.stringify(file)).join(', ') + '. If your tools cannot view an image, tell the user rather than guessing what it contains.';
     const conversation = this.conversations[turn.threadId], entry = this.catalog.find(model => model.model === thread.model);
     const model = entry ? entry.ids[effort || entry.defaultEffort || ''] || Object.values(entry.ids)[0] : thread.model;
     // agy has no separate system prompt: the first turn carries Papilot's instructions.

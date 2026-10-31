@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { Store } from './store.ts';
+import { Attachments } from './attachments.ts';
 import { Codex, RpcResponseError } from './codex.ts';
 import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, type AgentRuntime } from './agents.ts';
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
@@ -99,8 +100,10 @@ export class Workspace extends EventEmitter {
     return Boolean(this.importsBusy() || this.projectChanges.size || this.active.size || this.preparing.size || this.publishing.size || this.reviewWrites.size || this.commentWrites.size || this.committing.size || this.deletions.size || this.helperStops.size || this.titles.size
       || this.store.tasks().some(task => ['queued', 'running', 'waiting_input', 'building', 'uncertain', 'deleting'].includes(task.status) || task.pendingReview));
   }
+  readonly attachments: Attachments;
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
+    this.attachments = new Attachments(store);
     this.agents = { codex, claude: others.claude || new ClaudeAgent(), antigravity: others.antigravity || new AntigravityAgent() };
     store.on('change', () => this.emit('change'));
     for (const id of AGENTS) {
@@ -232,7 +235,7 @@ export class Workspace extends EventEmitter {
   }
   // A task combines the author's words, an optional skill and selected PDF notes.
   annotationSending(id: string) { return this.preparingNotes.has(id); }
-  async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
+  async createTask(input: { projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     // A retried request returns its task; an ID from another paper is refused.
@@ -247,8 +250,11 @@ export class Workspace extends EventEmitter {
     if (this.preparing.has(input.id)) throw new Error('This task is being created. Refresh in a moment.');
     this.preparing.add(input.id);
     let notes: Annotation[] = [], claimed: string[] = [];
+    let releaseAttachments = () => {};
     try {
       const project = this.store.project(input.projectId), skill = input.skill ? findSkill(project.path, input.skill) : undefined;
+      const files = this.attachments.resolve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
+      releaseAttachments = this.attachments.reserve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
       const available = new Map(this.store.annotations(project.id).filter(note => !note.taskId).map(note => [note.id, note]));
       notes = [...new Set(input.annotations || [])].map(id => {
         const note = available.get(id);
@@ -258,7 +264,7 @@ export class Workspace extends EventEmitter {
       });
       if (notes.some(note => note.group) && !input.instructions.trim() && !skill && !notes.some(note => note.comment.trim())) throw new Error('Describe what to do with the color groups.');
       claimed = notes.map(note => note.id); claimed.forEach(id => this.preparingNotes.add(id));
-      if (!skill && !notes.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
+      if (!skill && !notes.length && !files.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
       const instructions = notes.length ? notesInstructions(notes, input.instructions) : input.instructions;
       const client = await this.connectReview(project.path);
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
@@ -267,22 +273,23 @@ export class Workspace extends EventEmitter {
         worktree: info.worktree, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.saveTask(task);
-      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill, notes, author: input.author });
+      await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill, notes, attachments: files.map(file => file.id), author: input.author });
       // Naming is independent of the editing turn. An unavailable helper must
       // not fail creation or prevent the queued task from running.
       try { this.requestTaskTitle(task.id); } catch { /* Keep the prompt-derived title. */ }
       return this.store.task(task.id);
-    } finally { this.preparing.delete(input.id); claimed.forEach(id => this.preparingNotes.delete(id)); }
+    } finally { releaseAttachments(); this.preparing.delete(input.id); claimed.forEach(id => this.preparingNotes.delete(id)); }
   }
   // The author's message, a skill run with or without one, the review
   // feedback alone, or a build the agent broke. The chat keeps what happened;
   // the agent gets the prompt.
-  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { skill?: SkillFile; notes?: Annotation[]; reviewNotes?: NoteSummary[]; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
+  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { attachments?: string[]; skill?: SkillFile; notes?: Annotation[]; reviewNotes?: NoteSummary[]; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const existing = this.store.runByKey(requestKey);
     if (existing) { if (existing.taskId !== taskId) throw new Error('This request ID is already in use by another task.'); return existing; }
     if (task.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
+    const files = this.attachments.resolve(task.projectId, options.attachments || [], options.author?.id || 'owner', taskId);
     const pauseVersion = task.pauseVersion || 0;
     if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
     const instructions = options.notes?.length ? notesInstructions(options.notes, text) : options.reviewNotes?.length ? reviewNotesInstructions(options.reviewNotes, text) : text.trim();
@@ -296,7 +303,8 @@ export class Workspace extends EventEmitter {
       if (feedback.feedback?.length || feedback.build_error) prompt += '\n\nPapilot review feedback (bound to the specified review round and source changes):\n' + JSON.stringify(feedback, null, 2);
       if (task.error) prompt += '\n\nLatest task/review error:\n' + task.error + '\nThe latest accepted manuscript is at ' + this.store.project(task.projectId).path + '. You may read it to understand accepted changes, but must only edit your isolated task worktree. Prepare a revised proposal for another review; never write to or accept changes in the manuscript checkout.';
     }
-    const run: Run = { id: randomUUID(), taskId, requestKey, prompt, feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null, reviewRound: 0 };
+    if (files.length) prompt = (prompt || 'The user attached reference material without an instruction. Briefly identify the material and ask what they would like to do with it. Do not change the manuscript yet.') + this.attachments.prompt(files);
+    const run: Run = { id: randomUUID(), taskId, requestKey, prompt, ...(files.length ? { attachments: files } : {}), feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null, reviewRound: 0 };
     const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name } } : {}), ...(options.notes?.length ? { notes: summarizeNotes(options.notes) } : options.reviewNotes?.length ? { notes: options.reviewNotes } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}), ...(options.author ? { author: options.author } : {}) };
     const saved = this.store.transaction(() => {
       // Feedback loading yields to other requests. Recheck identity, queue, and
@@ -311,6 +319,10 @@ export class Workspace extends EventEmitter {
       if (current.status === 'deleting') throw new Error('This task is being deleted. Your instructions were not queued.');
       if ((current.pauseVersion || 0) !== pauseVersion) throw new Error('The task was paused before these instructions were queued. Your draft has been kept.');
       if (current.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
+      if (files.length) {
+        this.attachments.claim(task.projectId, files.map(file => file.id), options.author?.id || 'owner', taskId);
+        meta.attachments = files;
+      }
       this.store.saveRun(run);
       for (const note of options.notes || []) this.store.saveAnnotation({ ...note, taskId });
       if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null });
@@ -373,8 +385,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       this.loaded.add(result.thread.id);
     }
     this.store.updateTask(task.id, { pendingRunId: run.id });
+    const input = [{ type: 'text', text: run.prompt }, ...(run.attachments || []).filter(file => file.mime.startsWith('image/')).map(file => ({ type: 'localImage', path: this.attachments.path(file) }))];
     let result: any;
-    try { result = await agent.request('turn/start', { threadId: task.threadId, input: [{ type: 'text', text: run.prompt }], cwd: task.worktree, clientUserMessageId: run.id, ...(task.effort ? { effort: task.effort } : {}), ...(this.agentOf(task) === 'codex' && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
+    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, clientUserMessageId: run.id, ...(task.effort ? { effort: task.effort } : {}), ...(this.agentOf(task) === 'codex' && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
     catch (error) {
       if (this.active.get(task.id)?.id !== run.id) return;
       if (error instanceof RpcResponseError) throw error;
@@ -867,12 +880,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         const result = await client.post(`${taskRoute(task.name)}/finish`, { force: true });
         if (result?.task !== task.name || result.finished !== true) throw new Error('The review engine did not confirm task deletion.');
       }
-      // All file cleanup belongs to the review engine. Drop only Papilot data
-      // after an identified closed state or explicit finish acknowledgement.
+      // The review engine owns worktree cleanup. Drop Papilot's attachments
+      // and records only after it has acknowledged finishing the task.
       for (const [id, item] of this.liveItems) if (item.taskId === taskId) this.liveItems.delete(id);
       for (const [id, request] of this.requests) if (request.taskId === taskId) this.requests.delete(id);
       this.earlyCompletions.delete(taskId); this.earlyRequests.delete(taskId);
       if (task.threadId) this.loaded.delete(task.threadId);
+      this.attachments.removeTask(taskId);
       this.store.deleteTask(taskId);
       return { ok: true };
     } catch (error) {
@@ -880,7 +894,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       throw error;
     } finally { this.deletions.delete(taskId); this.schedule(); }
   }
-  close() { this.closing = true; for (const stop of this.helperStops) stop(); for (const timer of this.usageTimers.values()) clearTimeout(timer); this.flush(); for (const id of AGENTS) this.agents[id].close(); }
+  close() { this.closing = true; for (const stop of this.helperStops) stop(); for (const timer of this.usageTimers.values()) clearTimeout(timer); this.flush(); for (const id of AGENTS) this.agents[id].close(); this.attachments.close(); }
 }
 
 // The review engine records each task's accepted text as a commit beside the

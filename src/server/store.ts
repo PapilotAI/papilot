@@ -6,7 +6,7 @@ import type { Annotation, Project, Task, Run, TimelineItem } from '../shared.ts'
 
 export class Store extends EventEmitter {
   db: DatabaseSync;
-  constructor(file: string) {
+  constructor(public readonly file: string) {
     super();
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(file);
@@ -17,6 +17,7 @@ export class Store extends EventEmitter {
       CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, task_id TEXT NOT NULL, created INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS deleted_tasks(id TEXT PRIMARY KEY, deleted INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS annotations(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS invites(token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires INTEGER NOT NULL, data TEXT NOT NULL);
