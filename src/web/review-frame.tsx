@@ -274,18 +274,22 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     if (!document || !frame.current || !hostBar.current) return;
     const root = document.documentElement, bar = document.querySelector<HTMLElement>('.bar');
     const phone = window.matchMedia('(max-width: 520px)');
+    // React clears refs on unmount before this effect's cleanup runs, and a
+    // resize can be delivered in between; keep the elements this effect measures.
+    const box = frame.current, host = hostBar.current;
     const sync = () => {
+      if (!box.isConnected || !host.isConnected) return;
       root.toggleAttribute('data-papilot-phone', phone.matches);
       root.style.setProperty('--papilot-tools', `${reserve}px`);
       root.style.setProperty('--papilot-lead', `${leadWidth}px`);
-      root.style.setProperty('--papilot-bar-height', `${hostBar.current!.offsetHeight}px`);
-      root.toggleAttribute('data-papilot-toolbar-stacked', frame.current!.clientWidth - reserve - leadWidth < 220);
+      root.style.setProperty('--papilot-bar-height', `${host.offsetHeight}px`);
+      root.toggleAttribute('data-papilot-toolbar-stacked', box.clientWidth - reserve - leadWidth < 220);
       const button = toolbar.current?.querySelector<HTMLElement>('.icon-button');
       if (button) root.style.setProperty('--papilot-button-size', `${button.offsetWidth}px`);
       if (bar) root.style.setProperty('--papilot-review-bar-height', `${bar.offsetHeight}px`);
     };
     const observer = new ResizeObserver(sync);
-    observer.observe(frame.current); observer.observe(hostBar.current);
+    observer.observe(box); observer.observe(host);
     if (bar) observer.observe(bar);
     phone.addEventListener('change', sync); sync();
     return () => { observer.disconnect(); phone.removeEventListener('change', sync); };
