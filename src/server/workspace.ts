@@ -181,6 +181,7 @@ export class Workspace extends EventEmitter {
         if (this.preparingNotes.has(id)) throw new Error('A selected PDF note is already being sent. Wait for that task to finish creating.');
         return note;
       });
+      if (notes.some(note => note.group) && !input.instructions.trim() && !skill && !notes.some(note => note.comment.trim())) throw new Error('Describe what to do with the color groups.');
       claimed = notes.map(note => note.id); claimed.forEach(id => this.preparingNotes.add(id));
       if (!skill && !notes.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
       const instructions = notes.length ? notesInstructions(notes, input.instructions) : input.instructions;
@@ -209,7 +210,7 @@ export class Workspace extends EventEmitter {
     if (task.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
     const pauseVersion = task.pauseVersion || 0;
     if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
-    const instructions = options.notes?.length ? notesInstructions(options.notes, text) : options.reviewNotes?.length ? reviewNotesInstructions(options.reviewNotes) : text.trim();
+    const instructions = options.notes?.length ? notesInstructions(options.notes, text) : options.reviewNotes?.length ? reviewNotesInstructions(options.reviewNotes, text) : text.trim();
     let prompt = options.build ? buildFixPrompt(options.build) : options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, instructions) : instructions, cursor = task.feedbackCursor;
     let summary: FeedbackSummary | undefined;
     if (includeFeedback) {
@@ -238,7 +239,7 @@ export class Workspace extends EventEmitter {
       this.store.saveRun(run);
       for (const note of options.notes || []) this.store.saveAnnotation({ ...note, taskId });
       if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null });
-      this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build || options.reviewNotes?.length ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
+      this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
       return run;
     });
     this.schedule();

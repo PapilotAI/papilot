@@ -50,7 +50,7 @@ async function fixture() {
   const session = String(joined.headers['set-cookie']).split(';')[0];
   const state = (await remote.inject({ url: '/api/state', headers: { ...REMOTE, cookie: session } })).json();
   const as = { ...REMOTE, origin: ORIGIN, cookie: session, 'x-papilot-token': state.csrf };
-  return { store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
+  return { manuscripts: shared.manuscripts, store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
 }
 
 test('an invited person signs in at the public URL and sees only the papers shared with them', async () => {
@@ -419,4 +419,38 @@ test('the public sign-in URL must be its own HTTPS origin', () => {
   assert.equal(accountHsts(ORIGIN, 'http://mini.example.ts.net:8081'), false);
   assert.equal(accountHsts(ORIGIN, 'http://100.64.0.1:8081'), true);
   assert.equal(accountHsts('http://localhost:7275', ''), false);
+});
+
+
+test('color groups persist without per-location comments and take their meaning from each request', async () => {
+  const f = await fixture();
+  f.manuscripts.locate = async () => ({ quote: 'Selected text', source: { file: 'main.tex', lines: [10, 12], excerpt: undefined } });
+  try {
+    const mark = { key: 'pdf', page: 0, rect: [0.1, 0.1, 0.4, 0.2], group: 'yellow' };
+    const create = () => f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations', headers: f.as, payload: mark });
+    const a = await create(), b = await create();
+    assert.equal(a.statusCode, 200, a.body); assert.equal(b.statusCode, 200, b.body);
+    assert.equal(a.json().group, 'yellow'); assert.equal(a.json().comment, '');
+    const invalid = await f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations', headers: f.as, payload: { ...mark, group: 'delete' } });
+    assert.equal(invalid.statusCode, 400);
+    await f.remote.inject({ method: 'POST', url: `/api/projects/thesis/annotations/${a.json().id}/delete`, headers: f.as, payload: {} });
+    const restored = await f.remote.inject({ method: 'POST', url: `/api/projects/thesis/annotations/${a.json().id}/restore`, headers: f.as, payload: {} });
+    assert.equal(restored.json().annotations[0].group, 'yellow');
+    const payload = { id: 'yellow-groups-task-01', projectId: 'thesis', title: 'Explain marked text', instructions: '', annotations: [a.json().id, b.json().id] };
+    const empty = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
+    assert.equal(empty.statusCode, 400);
+    const send = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { ...payload, instructions: 'Explain the yellow selections.' } });
+    assert.equal(send.statusCode, 200, send.body);
+    const run = f.store.runByKey('initial-' + payload.id)!;
+    assert.match(run.prompt, /no built-in meaning/);
+    assert.equal(run.prompt.match(/Color group: Yellow/g)?.length, 2);
+    const item = f.store.items(payload.id)[0];
+    assert.equal(item.text, 'Explain the yellow selections.');
+    assert.deepEqual(item.meta?.notes?.map(note => note.group), ['yellow', 'yellow']);
+    const c = await create();
+    const next = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { ...payload, id: 'yellow-groups-task-02', instructions: 'Shorten the yellow selections.', annotations: [c.json().id] } });
+    assert.equal(next.statusCode, 200, next.body);
+    const nextPrompt = f.store.runByKey('initial-yellow-groups-task-02')!.prompt;
+    assert.match(nextPrompt, /Shorten the yellow selections/); assert.doesNotMatch(nextPrompt, /Explain the yellow selections/);
+  } finally { await f.close(); }
 });

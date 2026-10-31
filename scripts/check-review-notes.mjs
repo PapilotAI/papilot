@@ -185,6 +185,35 @@ try {
   await page.keyboard.press('Meta+z');
   await frame().getByRole('button', { name: 'Edit note 1: Keep the names.', exact: true }).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
+  // Colors group multiple review locations without opening individual editors.
+  await page.evaluate(() => localStorage.removeItem('papilot:review-notes:review-notes-fixture'));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload();
+  await frame().locator('.review-note-layer').first().waitFor({ state: 'attached' });
+  await page.getByRole('button', { name: 'Annotation group color', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Green', exact: true }).click();
+  for (const selector of ['.context .pdf-glyph', '.before .pdf-glyph']) {
+    await frame().locator(selector).first().evaluate(el => {
+      const range = document.createRange(); range.selectNodeContents(el);
+      const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }));
+    });
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('papilot:review-notes:review-notes-fixture')).notes.length > 0);
+  }
+  await frame().locator('.review-note-tag[data-group="green"]').nth(1).waitFor();
+  assert.equal(await noteInput.count(), 0);
+  await page.getByRole('button', { name: 'Annotation group color', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Individual notes', exact: true }).click();
+  await frame().locator('.annotation-group').waitFor();
+  assert.equal(await frame().locator('.annotation-group').count(), 1);
+  const groupInstructions = frame().getByRole('textbox', { name: 'Instructions for color groups' });
+  await groupInstructions.fill('Green: explain these passages.');
+  const beforeGroups = messages.length;
+  await frame().getByRole('button', { name: 'Send annotations to the agent' }).click();
+  await page.waitForFunction(() => !document.querySelector('.review-frame').contentDocument.querySelector('.review-notes-panel'));
+  assert.equal(messages.length, beforeGroups + 1);
+  assert.equal(messages.at(-1).text, 'Green: explain these passages.');
+  assert.deepEqual(messages.at(-1).notes.map(note => [note.group, note.comment]), [['green', ''], ['green', '']]);
   assert.deepEqual(errors, []);
   console.log('PASS: Review notes; edit and cancel; Command/Ctrl+Z restores deleted notes; native text undo; iframe shortcut isolation; persistence; retry identity; 320px mobile editing');
 } finally { await browser.close(); await server.close(); }

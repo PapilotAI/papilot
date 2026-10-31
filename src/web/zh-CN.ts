@@ -2,6 +2,14 @@
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
   'Generate task title': '生成任务标题', 'Generating task title…': '正在生成任务标题…', 'Retry title generation': '重新生成任务标题',
+  'PDF annotations': 'PDF 标注', '{n} annotation group': '{n} 个批注组', '{n} annotation groups': '{n} 个批注组',
+  'Yellow': '黄色', 'Green': '绿色', 'Purple': '紫色', 'Orange': '橙色', 'Red': '红色',
+  'Annotation groups': '批注组', 'Annotation group color': '批注组颜色', 'Individual notes': '单条批注',
+  'Color': '颜色', 'Add to group': '加入批注组',
+  '{n} location': '{n} 处', '{n} locations': '{n} 处', 'Add to {group}': '加入{group}组',
+  'Instructions for color groups': '各颜色组的修改要求',
+  'Send annotations': '发送标注', 'Send annotations to the agent': '发送标注给代理',
+  'What should change in each color group?': '各颜色组需要怎样修改？',
   // Reasoning effort
   'None': '无', 'Minimal': '最低', 'Low': '低', 'Medium': '中', 'High': '高', 'Extra high': '超高', 'Max': '最高',
   'Reasoning effort': '推理强度', 'Model default': '模型默认',

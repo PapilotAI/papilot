@@ -1,3 +1,5 @@
+import type { NoteGroup } from '../note-groups.ts';
+import { GroupPicker, GroupAction, groupName, groupStyle } from './note-groups.tsx';
 import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import * as pdfjs from 'pdfjs-dist';
@@ -139,8 +141,9 @@ export function NoteEditor({ rect, onSave, onCancel }: { rect: Rect; onSave: (co
 // layer above each page; pdf.js clears unknown children when it redraws a
 // page, so each layer is re-attached after rendering.
 export const PdfView = forwardRef<PdfHandle, {
+  group?: NoteGroup | null; onGroupChange?: (group: NoteGroup | null) => void; markingDisabled?: boolean;
   url: string; words?: string; notes: { note: Annotation; number: number }[]; active: string; region: boolean; setRegion: (on: boolean) => void;
-  onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>;
+  onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup) => Promise<void>;
   onSelect: (note: Annotation) => void; outline: OutlineItem[]; section: number;
   onOutline: (items: OutlineItem[]) => void; onSection: (index: number) => void;
   lead?: ReactNode;
@@ -232,6 +235,7 @@ export const PdfView = forwardRef<PdfHandle, {
     box.addEventListener('touchmove', touchMove, { passive: false });
     box.addEventListener('touchend', touchEnd);
     // A text selection on one page offers "Add note" beside it.
+    let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const select = () => {
       if (picking.current?.active()) return;
@@ -245,10 +249,16 @@ export const PdfView = forwardRef<PdfHandle, {
         .map(r => [unit((r.left - frame.left) / frame.width), unit((r.top - frame.top) / frame.height), unit((r.right - frame.left) / frame.width), unit((r.bottom - frame.top) / frame.height)] as Rect));
       // The selection's own text keeps pdf.js's line breaks as spaces.
       const quote = (before + current.toString() + after).replace(/\s+/g, ' ').trim();
-      setSelection(rects.length && quote ? { page: Number(pageDiv.dataset.pageNumber) - 1, rects, quote } : null);
+      const value = rects.length && quote ? { page: Number(pageDiv.dataset.pageNumber) - 1, rects, quote } : null;
+      setSelection(value); return value;
     };
     const selectionChange = () => { clearTimeout(timer); timer = setTimeout(select, 120); };
     document.addEventListener('selectionchange', selectionChange);
+    const finishGroup = (event: PointerEvent) => {
+      if (!latest.current.group || latest.current.markingDisabled || editingRef.current || latest.current.region || event.pointerType === 'touch' || !box.contains(event.target as Node) || (event.target as Element).closest('button,input,select')) return;
+      setTimeout(() => { if (disposed) return; const value = select(); if (value && latest.current.group) addToGroup(value); }, 0);
+    };
+    document.addEventListener('pointerup', finishGroup);
     // Touch screens select words with Papilot's own handles and menu (style.css
     // turns native selection off there). Each text run is one word.
     picking.current = touchSelection<HTMLElement>(box, {
@@ -272,8 +282,8 @@ export const PdfView = forwardRef<PdfHandle, {
       onClear: () => setSelection(null),
     });
     return () => {
-      clearTimeout(timer); picking.current?.stop(); picking.current = null;
-      document.removeEventListener('selectionchange', selectionChange);
+      disposed = true; clearTimeout(timer); picking.current?.stop(); picking.current = null;
+      document.removeEventListener('selectionchange', selectionChange); document.removeEventListener('pointerup', finishGroup);
       box.removeEventListener('wheel', wheel); box.removeEventListener('touchstart', touchStart); box.removeEventListener('touchmove', touchMove); box.removeEventListener('touchend', touchEnd);
       viewer.cleanup(); void loaded.current?.loadingTask.destroy(); loaded.current = null; tools.current = null; layerMap.current.clear();
     };
@@ -315,6 +325,11 @@ export const PdfView = forwardRef<PdfHandle, {
     return () => document.removeEventListener('keydown', key);
   }, []);
 
+  useEffect(() => {
+    const finish = (event: KeyboardEvent) => { if (event.key === 'Escape' && latest.current.group) latest.current.onGroupChange?.(null); };
+    document.addEventListener('keydown', finish); return () => document.removeEventListener('keydown', finish);
+  }, []);
+
   function search(again: boolean, previous = false, text = query) {
     tools.current?.bus.dispatch('find', { source: null, type: again ? 'again' : '', query: text, caseSensitive: false, entireWord: false, highlightAll: true, findPrevious: previous, matchDiacritics: false });
   }
@@ -323,8 +338,16 @@ export const PdfView = forwardRef<PdfHandle, {
     const viewer = tools.current?.viewer, number = Number.parseInt(pageInput, 10);
     if (viewer && number >= 1 && number <= pages) viewer.currentPageNumber = number; else setPageInput(String(page));
   }
+  function addToGroup(value: Selection, rect = bounds(value.rects)) {
+    const group = latest.current.group;
+    if (!group || latest.current.markingDisabled) return;
+    const create = latest.current.onCreate;
+    document.getSelection()?.removeAllRanges(); picking.current?.reset(); setSelection(null);
+    void create(value.page, rect, value.rects, value.quote, '', group).catch(error => setError(error instanceof Error ? error.message : String(error)));
+  }
   function startNote() {
     if (!selection) return;
+    if (props.group) { addToGroup(selection); return; }
     setEditing({ page: selection.page, rect: bounds(selection.rects), rects: selection.rects, quote: selection.quote });
     document.getSelection()?.removeAllRanges(); picking.current?.reset(); setSelection(null);
   }
@@ -354,6 +377,7 @@ export const PdfView = forwardRef<PdfHandle, {
       </div>
       <button type="button" className={'icon-button' + (findOpen ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={findOpen} title={t('Find (⌘F)')} onClick={() => { if (findOpen) closeFind(); else setFindOpen(true); }}><Icon name="search" size={16}/></button>
       <button type="button" className={'icon-button region-toggle' + (props.region ? ' active' : '')} aria-label={t('Mark region')} aria-pressed={props.region} title={t('Mark a figure or region')} onClick={() => props.setRegion(!props.region)}><Icon name="region" size={16}/></button>
+      {props.onGroupChange && <GroupPicker value={props.group || null} onChange={props.onGroupChange} disabled={props.markingDisabled || Boolean(editing)}/>}
       {props.tools}
     </div>
     {findOpen && <div className="pdf-find">
@@ -374,8 +398,8 @@ export const PdfView = forwardRef<PdfHandle, {
       {(() => {
         const notes = props.notes.filter(({ note }) => note.page === number - 1), spots = tagSpots(notes.map(({ note }) => (note.rects?.length ? note.rects : [note.rect])[0]));
         return notes.map(({ note, number: label }, index) => <Fragment key={note.id}>
-          {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} style={percent(rect)}/>)}
-          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} style={spots[index]} aria-label={t('Note {n}: {comment}', { n: label, comment: note.comment })} title={note.comment} onClick={() => props.onSelect(note)}>{label}</button>
+          {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} data-group={note.group} style={{ ...percent(rect), ...groupStyle(note.group) }}/>) }
+          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-group={note.group} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={t('Note {n}: {comment}', { n: label, comment: note.group ? groupName(note.group) : note.comment })} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}</button>
         </Fragment>);
       })()}
       {props.region && <div className="region-capture"
@@ -388,14 +412,17 @@ export const PdfView = forwardRef<PdfHandle, {
         onPointerMove={e => { const start = origin.current; if (!start) return; const x = unit((e.clientX - start.box.left) / start.box.width), y = unit((e.clientY - start.box.top) / start.box.height); setDraft({ page: start.page, rect: [Math.min(start.x, x), Math.min(start.y, y), Math.max(start.x, x), Math.max(start.y, y)] }); }}
         onPointerUp={() => {
           const current = draftRef.current; origin.current = null; setDraft(null);
-          if (current && (current.rect[2] - current.rect[0] > 0.015 || current.rect[3] - current.rect[1] > 0.01)) setEditing({ page: current.page, rect: current.rect, rects: [], quote: '' });
+          if (current && (current.rect[2] - current.rect[0] > 0.015 || current.rect[3] - current.rect[1] > 0.01)) {
+            if (latest.current.group) addToGroup({ page: current.page, rects: [], quote: '' }, current.rect);
+            else setEditing({ page: current.page, rect: current.rect, rects: [], quote: '' });
+          }
         }}/>}
       {draft?.page === number - 1 && <div className="note-box draft" style={percent(draft.rect)}/>}
       {selection?.handles && selection.page === number - 1 && !editing && <>
         {selection.rects.map((rect, index) => <div key={index} className="note-mark draft" style={percent(rect)}/>)}
         {(['from', 'to'] as const).map(end => { const [x, top, bottom] = selection.handles![end]; return <span key={end} className="select-handle" data-end={end} style={{ left: `${x * 100}%`, top: `${top * 100}%`, height: `${(bottom - top) * 100}%` }}/>; })}
       </>}
-      {selection?.page === number - 1 && !editing && <button type="button" className={'add-note' + (selection.handles ? ' touch' : '')} style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={startNote}><Icon name="pencil" size={14}/>{t('Add note')}</button>}
+      {selection?.page === number - 1 && !editing && <button type="button" className={'add-note' + (selection.handles ? ' touch' : '')} aria-label={props.group ? t('Add to {group}', { group: groupName(props.group) }) : t('Add note')} style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={startNote}><Icon name="pencil" size={14}/><GroupAction group={props.group}/></button>}
       {editing?.page === number - 1 && <>
         {(editing.rects.length ? editing.rects : [editing.rect]).map((rect, index) => <div key={index} className={(editing.rects.length ? 'note-mark' : 'note-box') + ' draft'} style={percent(rect)}/>)}
         <NoteEditor rect={editing.rect} onCancel={() => { setEditing(null); }} onSave={save}/>

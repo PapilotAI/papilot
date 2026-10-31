@@ -1,3 +1,4 @@
+import { GROUP_INSTRUCTIONS, GROUP_NAMES, NOTE_GROUPS } from './note-groups.ts';
 import type { Annotation, NoteAnchor, NoteSummary } from './shared.ts';
 export type { NoteSummary } from './shared.ts';
 
@@ -7,7 +8,7 @@ const PREAMBLE = 'Revise the manuscript according to these notes the author mark
 const QUOTE = '   PDF text: "', REGION = '   Marked region: a figure, equation or other non-text area', NOTE = '\n   Note: ';
 
 const noteWhere = (note: Annotation) => [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : '', note.author ? `from ${note.author.name}` : ''].filter(Boolean).join(' · ');
-export const summarizeNotes = (notes: Annotation[]): NoteSummary[] => notes.map(note => ({ id: note.id, where: noteWhere(note), quote: note.quote, comment: note.comment, anchor: { sources: note.source ? [{ file: note.source.file, lines: note.source.lines }] : [] } }));
+export const summarizeNotes = (notes: Annotation[]): NoteSummary[] => notes.map(note => ({ ...(note.group ? { group: note.group } : {}), id: note.id, where: noteWhere(note), quote: note.quote, comment: note.comment, anchor: { sources: note.source ? [{ file: note.source.file, lines: note.source.lines }] : [] } }));
 
 // Also recover anchors from older messages, whose locations were only text.
 export function noteAnchor(note: NoteSummary): NoteAnchor {
@@ -24,19 +25,19 @@ export function noteAnchor(note: NoteSummary): NoteAnchor {
   return { sources, ...(round ? { round: Number(round[1]) } : {}) };
 }
 
-export function reviewNotesInstructions(notes: NoteSummary[]) {
-  const items = notes.map((note, index) => `${index + 1}. ${note.where}\n${note.quote ? `${QUOTE}${note.quote}"` : REGION}${NOTE}${note.comment.trim().replace(/\n/g, '\n   ')}`);
-  return `${PREAMBLE} These notes refer to the displayed review round and its Before, After or Unchanged text. Region coordinates are percentages of the displayed PDF strip (left, top, right, bottom); any quoted text for a region is nearby context. Read the current source before editing. Preserve accepted changes and do not reintroduce rejected edits unless a note explicitly asks for it.\n\n${items.join('\n\n')}`;
+export function reviewNotesInstructions(notes: NoteSummary[], request = '') {
+  const items = notes.map((note, index) => `${index + 1}. ${note.where}${note.group ? ` · Color group: ${GROUP_NAMES[note.group]}` : ''}\n${note.quote ? `${QUOTE}${note.quote}"` : REGION}${NOTE}${note.comment.trim().replace(/\n/g, '\n   ')}`);
+  return `${PREAMBLE}${notes.some(note => note.group) ? ` ${GROUP_INSTRUCTIONS}` : ''}${request.trim() ? ` Overall request: ${request.trim()}\n\n` : ''} These notes refer to the displayed review round and its Before, After or Unchanged text. Region coordinates are percentages of the displayed PDF strip (left, top, right, bottom); any quoted text for a region is nearby context. Read the current source before editing. Preserve accepted changes and do not reintroduce rejected edits unless a note explicitly asks for it.\n\n${items.join('\n\n')}`;
 }
 
 export function notesInstructions(notes: Annotation[], request = '') {
   const items = notes.map((note, index) => {
     const where = noteWhere(note);
     const source = note.source?.excerpt ? ['   LaTeX source of the marked region:', '   ```latex', ...note.source.excerpt.split('\n').map(line => '   ' + line), '   ```'] : [];
-    return [`${index + 1}. ${where}`, ...source, note.quote ? `${QUOTE}${note.quote}"` : REGION, `${NOTE.slice(1)}${note.comment.trim().replace(/\n/g, '\n   ')}`].join('\n');
+    return [`${index + 1}. ${where}${note.group ? ` · Color group: ${GROUP_NAMES[note.group]}` : ''}`, ...source, note.quote ? `${QUOTE}${note.quote}"` : REGION, `${NOTE.slice(1)}${note.comment.trim().replace(/\n/g, '\n   ')}`].join('\n');
   });
   const scope = request.trim() ? `follow both the overall request and the notes.\n\nOverall request:\n${request.trim()}` : 'change only what the notes ask for.';
-  return `${PREAMBLE} SyncTeX mapped each marked region to the LaTeX file and lines that produced it; the PDF text is what the author saw. Read the current source before editing, and ${scope}\n\n${items.join('\n\n')}`;
+  return `${PREAMBLE}${notes.some(note => note.group) ? ` ${GROUP_INSTRUCTIONS}` : ''} SyncTeX mapped each marked region to the LaTeX file and lines that produced it; the PDF text is what the author saw. Read the current source before editing, and ${scope}\n\n${items.join('\n\n')}`;
 }
 
 // The notes in a message written by notesInstructions, or null for any other message.
@@ -57,7 +58,10 @@ export function readNotesInstructions(text: string): NoteSummary[] | null {
     if (note < 0) return null;
     const marked = rest.slice(0, note);
     if (marked !== REGION && !(marked.startsWith(QUOTE) && marked.endsWith('"'))) return null;
-    notes.push({ where: heading[1], quote: marked === REGION ? '' : marked.slice(QUOTE.length, -1), comment: rest.slice(note + NOTE.length).replace(/\n {3}/g, '\n') });
+    const legacy = heading[1].endsWith(' · Color group: Blue');
+    const group = legacy ? 'blue' : NOTE_GROUPS.find(group => heading[1].endsWith(` · Color group: ${GROUP_NAMES[group]}`));
+    const where = group ? heading[1].slice(0, -` · Color group: ${legacy ? 'Blue' : GROUP_NAMES[group]}`.length) : heading[1];
+    notes.push({ ...(group ? { group } : {}), where, quote: marked === REGION ? '' : marked.slice(QUOTE.length, -1), comment: rest.slice(note + NOTE.length).replace(/\n {3}/g, '\n') });
   }
   return notes.length ? notes : null;
 }

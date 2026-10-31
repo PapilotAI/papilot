@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readNotesInstructions, reviewNotesInstructions } from '../src/notes.ts';
+import { GROUP_COLORS, noteGroups } from '../src/note-groups.ts';
 import { mergeLines, nearestGlyph, wordAround } from '../src/web/note-geometry.ts';
 
 test('glyph rectangles merge overlapping spans without highlighting across lines', () => {
@@ -30,4 +31,29 @@ test('a long press picks the nearest word on the touched line', () => {
   assert.deepEqual(wordAround(glyphs, 0), [0, 1]);
   // A word ends with its line, even without a space.
   assert.deepEqual(wordAround(glyphs, 5), [5, 6]);
+});
+
+test('color groups survive message recovery with empty individual comments and a shared instruction', () => {
+  const notes = [
+    { group: 'yellow' as const, where: 'Round 2 · PDF page 1 · Before · main.tex:10', quote: 'First passage', comment: '' },
+    { group: 'yellow' as const, where: 'Round 2 · PDF page 2 · Unchanged text', quote: 'Second passage', comment: '' },
+  ];
+  const prompt = reviewNotesInstructions(notes, 'Explain the yellow passages.');
+  assert.deepEqual(readNotesInstructions(prompt), notes);
+  assert.match(prompt, /Overall request: Explain the yellow passages\./);
+  assert.match(prompt, /Never infer an editing action from a color/);
+});
+
+test('legacy blue annotations remain grouped with yellow without losing their text or position', () => {
+  const recovered = readNotesInstructions('Revise the manuscript according to these notes the author marked on the compiled PDF.\n\n1. Round 2 · PDF page 1 · Color group: Blue\n   PDF text: "Saved passage"\n   Note: Keep the citation.')!;
+  assert.deepEqual(recovered, [{ group: 'blue', where: 'Round 2 · PDF page 1', quote: 'Saved passage', comment: 'Keep the citation.' }]);
+  const newer = { group: 'yellow' as const, where: 'Page 2', quote: 'New passage', comment: '' };
+  const [group] = noteGroups([...recovered, newer]);
+  assert.equal(group.group, 'yellow');
+  assert.deepEqual(group.entries, [{ note: recovered[0], index: 0 }, { note: newer, index: 1 }]);
+  assert.equal(GROUP_COLORS[recovered[0].group!], GROUP_COLORS.yellow);
+  const prompt = reviewNotesInstructions(recovered, 'Explain the yellow passages.');
+  assert.match(prompt, /Color group: Yellow/);
+  assert.doesNotMatch(prompt, /Color group: Blue/);
+  assert.deepEqual(readNotesInstructions(prompt), [{ ...recovered[0], group: 'yellow' }]);
 });

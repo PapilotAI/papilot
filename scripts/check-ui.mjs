@@ -365,7 +365,8 @@ try {
   assert.equal(await reviewTools.getByRole('link', { name: 'Full PDF', exact: true }).getAttribute('href'), '/api/tasks/fixture-task-0001/pdf?round=1');
   assert.equal(await reviewTools.getByRole('link', { name: 'Open review in new tab', exact: true }).getAttribute('href'), '/review/fixture-paper/?task=p-fixture');
   assert.equal(await reviewTools.getByRole('button', { name: 'Regenerate PDF comparison', exact: true }).isDisabled(), false);
-  assert.equal(await reviewTools.getByRole('combobox').count() + await reviewTools.getByRole('button', { name: 'Review options' }).count(), 0);
+  assert.equal(await reviewTools.getByRole('button', { name: 'Annotation group color', exact: true }).count(), 1);
+  assert.equal(await reviewTools.getByRole('button', { name: 'Review options' }).count(), 0);
   // Menus open from the keyboard on the first item and return focus on Escape.
   const taskMenu = page.getByRole('button', { name: `Task actions for ${task.title}`, exact: true });
   await taskMenu.focus(); await page.keyboard.press('ArrowDown');
@@ -558,10 +559,11 @@ try {
   assert.equal(annotations.length, 0, 'redo is not interpreted as undo');
   failNoteRestore = true;
   await page.keyboard.press('Meta+z');
-  await notesPanel.getByRole('alert').waitFor(); assert.equal(annotations.length, 0);
+  await page.getByRole('alert').filter({ hasText: 'Could not restore. Try again.' }).waitFor(); assert.equal(annotations.length, 0);
   failNoteRestore = false;
   await page.keyboard.press('Control+z');
   await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor();
+  assert.equal(await page.getByRole('alert').filter({ hasText: 'Could not restore. Try again.' }).count(), 0);
   assert.deepEqual(annotations[0], { ...anchor, comment: 'Only these words, please.' });
   await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
   await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor({ state: 'hidden' });

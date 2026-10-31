@@ -1,3 +1,5 @@
+import { noteGroups, type NoteGroup } from '../note-groups.ts';
+import { GroupCard } from './note-groups.tsx';
 import { StrictMode, Suspense, createContext, lazy, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
@@ -165,16 +167,20 @@ const SenderName = ({ sender }: { sender: { mine: boolean; name: string } }) => 
 function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[] }) {
   const sender = useSender(item.meta?.author);
   const results = useNoteResults();
+  const renderNote = (note: NoteSummary, index: number) => <li key={index} data-note-result={`${item.id}:${index}`} tabIndex={-1} className={results?.selected === `${item.id}:${index}` ? 'linked-note-selected' : ''}>
+      <span className="sent-note-where"><span className="sent-note-number" aria-hidden="true">{index + 1}</span><span className="sent-note-location">{noteLocation(note.where)}</span></span>
+      {note.quote ? <blockquote>{note.quote}</blockquote> : <span className="sent-note-region">{t('Marked region')}</span>}
+      {note.comment && <p>{note.comment}</p>}
+      <NoteResultLinks noteKey={`${item.id}:${index}`}/>
+    </li>;
   return <article className="message user notes-message" aria-label={senderLabel(sender, item.createdAt)}><SenderName sender={sender}/><div className="message-body" title={time(item.createdAt)}>
     {item.meta?.skill && <SkillChip skill={item.meta.skill}/>}
     {item.meta?.notes && item.text && <p className="notes-request">{item.text}</p>}
-    <div className="sent-notes-head"><Icon name="notes" size={14}/>{tn(notes.length, 'Note on the PDF', '{n} notes on the PDF')}</div>
-    <ol className="sent-notes">{notes.map((note, index) => <li key={index} data-note-result={`${item.id}:${index}`} tabIndex={-1} className={results?.selected === `${item.id}:${index}` ? 'linked-note-selected' : ''}>
-      <span className="sent-note-where"><span className="sent-note-number" aria-hidden="true">{index + 1}</span><span className="sent-note-location">{noteLocation(note.where)}</span></span>
-      {note.quote ? <blockquote>{note.quote}</blockquote> : <span className="sent-note-region">{t('Marked region')}</span>}
-      <p>{note.comment}</p>
-      <NoteResultLinks noteKey={`${item.id}:${index}`}/>
-    </li>)}</ol>
+    <div className="sent-notes-head"><Icon name="notes" size={14}/>{notes.some(note => note.group) ? t('PDF annotations') : tn(notes.length, 'Note on the PDF', '{n} notes on the PDF')}</div>
+    {noteGroups(notes).map(({ group, entries }) => <GroupCard key={group} group={group} count={entries.length} active={entries.some(({ index }) => results?.selected === `${item.id}:${index}`)}>
+      <ol className="sent-notes">{entries.map(({ note, index }) => renderNote(note, index))}</ol>
+    </GroupCard>)}
+    <ol className="sent-notes">{notes.map((note, index) => !note.group && renderNote(note, index))}</ol>
   </div></article>;
 }
 
@@ -475,7 +481,9 @@ function GitPanel({ projectId, git, onStatus, writer, tasks, onOpenTask }: { tas
 function noteWhere(note: Annotation) { return t('Page {n}', { n: note.page + 1 }) + (note.source ? ` · ${note.source.file}:${note.source.lines[0]}${note.source.lines[1] !== note.source.lines[0] ? `–${note.source.lines[1]}` : ''}` : ''); }
 
 interface NoteActions {
-  add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string) => Promise<void>;
+  group: NoteGroup | null;
+  setGroup: (group: NoteGroup | null) => void;
+  add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup) => Promise<void>;
   edit: (note: Annotation, comment: string) => Promise<void>;
   remove: (note: Annotation) => Promise<void>;
   restore: (note: Annotation) => Promise<void>;
@@ -486,22 +494,9 @@ interface NoteActions {
 function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void; onAnnotate: (region: boolean) => void }) {
   const list = useRef<HTMLOListElement>(null);
   const [editing, setEditing] = useState<{ id: string; comment: string } | null>(null);
-  const [deleted, setDeleted] = useState<Annotation[]>([]);
+
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const locked = busy || actions.sending;
-  const restoring = useRef(false);
-  useNoteUndo(() => {
-    const note = deleted.at(-1);
-    if (!note) return false;
-    if (!locked && !editing && !restoring.current) {
-      restoring.current = true;
-      void change(async () => {
-        await actions.restore(note); setDeleted(previous => previous.slice(0, -1));
-        requestAnimationFrame(() => focusNote(note.id));
-      }).finally(() => { restoring.current = false; });
-    }
-    return true;
-  });
   const onEditing = actions.onEditing;
   useEffect(() => { onEditing(Boolean(editing) || busy); return () => onEditing(false); }, [editing, busy, onEditing]);
   useEffect(() => { if (active) list.current?.querySelector(`[data-note="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active]);
@@ -519,14 +514,21 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
   }
   return <section className="notes-panel" aria-label={t('PDF notes')}>
     <div className="draft-notes-head">
-      {notes.length > 0 && <span>{tn(notes.length, '{n} note attached', '{n} notes attached')}</span>}
+      {notes.some(note => note.group) && <span>{tn(noteGroups(notes).length, '{n} annotation group', '{n} annotation groups')}</span>}
+      {notes.some(note => !note.group) && <span>{tn(notes.filter(note => !note.group).length, '{n} note attached', '{n} notes attached')}</span>}
       <div className="note-entry-actions">
         <button type="button" className="button ghost compact" disabled={!currentKey || locked || Boolean(editing)} onClick={() => onAnnotate(true)}><Icon name="region" size={14}/>{t('Region note')}</button>
         <span className="note-entry-hint">{t('or select text to annotate')}</span>
       </div>
     </div>
-    {notes.length > 0 && <ol ref={list} className="note-list">{notes.map((note, index) => <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
-      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); setDeleted(previous => [...previous, note]); })}><Icon name="close" size={14}/></button></div>
+    {noteGroups(notes).map(({ group, entries }) => <GroupCard key={group} group={group} count={entries.length} active={actions.group === group || entries.some(({ note }) => note.id === active)}>
+      {entries.map(({ note, index }) => <div className="group-location" key={note.id} data-note={note.id}>
+        <button type="button" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}><span>{noteWhere(note)}</span><blockquote>{note.quote || t('Marked region')}</blockquote></button>
+        <button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} disabled={locked} onClick={() => void change(() => actions.remove(note))}><Icon name="close" size={13}/></button>
+      </div>)}
+    </GroupCard>)}
+    {notes.some(note => !note.group) && <ol ref={list} className="note-list">{notes.map((note, index) => !note.group && <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
+      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); })}><Icon name="close" size={14}/></button></div>
       {note.source?.excerpt ? <pre className="note-source" title={t('{file}, the LaTeX that produced the marked region', { file: note.source.file })}>{note.source.excerpt}</pre> : note.quote && <blockquote>{note.quote}</blockquote>}
       {editing?.id === note.id ? <form className="note-edit" onSubmit={e => { e.preventDefault(); save(note); }}>
         <textarea autoFocus aria-label={t('Edit note {n}', { n: index + 1 })} value={editing.comment} rows={3} maxLength={4000} disabled={locked}
@@ -571,8 +573,8 @@ function PendingComparison({ task, busy, onBuild }: { task: Task; busy: boolean;
 type PdfMode = 'pdf' | 'changes';
 function ModeSwitch({ mode, onMode }: { mode: PdfMode; onMode: (mode: PdfMode) => void }) {
   return <div className="pdf-modes" role="group" aria-label={t('Show')}>
-    <button type="button" aria-pressed={mode === 'pdf'} onClick={() => onMode('pdf')}>PDF</button>
-    <button type="button" aria-pressed={mode === 'changes'} title={t('What changed since the last commit, to stage, revert and commit change by change')} onClick={() => onMode('changes')}>{t('Changes')}</button>
+    <button type="button" aria-label="PDF" title="PDF" aria-pressed={mode === 'pdf'} onClick={() => onMode('pdf')}><Icon name="paper" size={15}/><span>PDF</span></button>
+    <button type="button" aria-label={t('Changes')} aria-pressed={mode === 'changes'} title={t('What changed since the last commit, to stage, revert and commit change by change')} onClick={() => onMode('changes')}><Icon name="diff" size={15}/><span>{t('Changes')}</span></button>
   </div>;
 }
 
@@ -616,7 +618,7 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
       {error && <div className="manuscript-note error" role="alert">{error}</div>}
       {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>{t('The manuscript did not compile.')}</strong><pre>{build.error}</pre></div>}
       {build?.status === 'building' && build.key && <div className="manuscript-note">{t('Compiling the latest changes…')}</div>}
-      {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion}
+      {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion} group={actions.group} onGroupChange={actions.setGroup} markingDisabled={actions.sending}
           onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('task'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={tools}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
     </section>}
@@ -717,6 +719,11 @@ function App() {
   const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'task');
   const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
+  const [noteGroup, setNoteGroup] = useState<NoteGroup | null>(null);
+  const [marking, setMarking] = useState(0);
+  const annotationUndo = useRef<{ kind: 'add' | 'remove'; note: Annotation }[]>([]);
+  const undoingAnnotation = useRef(false);
+  useEffect(() => { setNoteGroup(null); annotationUndo.current = []; }, [projectId]);
   const [noteEditing, setNoteEditing] = useState(false);
   const [manuscript, setManuscript] = useState<{ projectId: string; data: Manuscript | null; error: string }>({ projectId: '', data: null, error: '' });
   const manuscriptRequest = useRef(0);
@@ -888,7 +895,7 @@ function App() {
     onAgent={value => { setAgentChoice(value); browserStorage.setItem('papilot:agent', value); }} onChange={remember}/>;
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
-    if ((!text && !skill && !notes.length) || creating || noteEditing || !target) return;
+    if ((!text && !skill && !notes.length) || creating || marking || noteEditing || !target) return;
     const input = newTaskInput.current, submittedNotes = new Set(notes.map(note => note.id));
     const restoreFocus = input?.closest('form')?.contains(document.activeElement);
     setCreating(true); setCreateError('');
@@ -907,6 +914,7 @@ function App() {
       setAddedTask({ id: created.id, title: created.title });
       setManuscript(current => current.projectId === target && current.data ? { ...current, data: { ...current.data, annotations: (current.data.annotations || []).filter(note => !submittedNotes.has(note.id)) } } : current);
       setActiveNote(id => submittedNotes.has(id) ? '' : id);
+      setNoteGroup(null); annotationUndo.current = annotationUndo.current.filter(entry => !submittedNotes.has(entry.note.id));
       if (restoreFocus && input?.isConnected && (document.activeElement === document.body || input.closest('form')?.contains(document.activeElement))) input.focus({ preventScroll: true });
       // Reload pending notes from the server: a retry may have returned an
       // earlier successful task, while newer notes still belong to the draft.
@@ -1032,11 +1040,16 @@ function App() {
     setManuscript(current => current.projectId === project?.id && current.data ? { ...current, data: { ...current.data, annotations: update(current.data.annotations || []) } } : current);
   };
   const noteActions: NoteActions = {
-    async add(page, rect, rects, quote, comment) {
+    group: noteGroup, setGroup: setNoteGroup,
+    async add(page, rect, rects, quote, comment, group) {
       if (!project || !manuscriptData.data?.build.key) throw new Error(t('Wait for the PDF to compile.'));
-      const note = await api<Annotation>(`/projects/${project.id}/annotations`, { key: manuscriptData.data.build.key, page, rect, ...(rects.length ? { rects, quote } : {}), comment });
-      withNotes(list => [...list, note]); setActiveNote(note.id); setRegion(false);
-      if (!mobile) setManuscriptView('task');
+      setMarking(value => value + 1);
+      try {
+        const note = await api<Annotation>(`/projects/${project.id}/annotations`, { key: manuscriptData.data.build.key, page, rect, ...(rects.length ? { rects, quote } : {}), comment, ...(group ? { group } : {}) });
+        withNotes(list => [...list, note]); setActiveNote(note.id);
+        if (group) annotationUndo.current.push({ kind: 'add', note });
+        else { setRegion(false); if (!mobile) setManuscriptView('task'); }
+      } finally { setMarking(value => value - 1); }
     },
     async edit(note, comment) {
       const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, { comment });
@@ -1045,6 +1058,7 @@ function App() {
     async remove(note) {
       await api(`/projects/${note.projectId}/annotations/${note.id}/delete`, {});
       withNotes(list => list.filter(item => item.id !== note.id));
+      annotationUndo.current.push({ kind: 'remove', note });
     },
     async restore(note) {
       const restored = await api<{ annotations: Annotation[] }>(`/projects/${note.projectId}/annotations/${note.id}/restore`, {});
@@ -1053,6 +1067,29 @@ function App() {
     onEditing: setNoteEditing,
     sending: creating,
   };
+  useNoteUndo(() => {
+    const entry = annotationUndo.current.at(-1);
+    if (!manuscriptOpen || !entry) return false;
+    if (creating || marking || noteEditing || undoingAnnotation.current) return true;
+    undoingAnnotation.current = true;
+    setError('');
+    const { note } = entry;
+    void (async () => {
+      try {
+        if (entry.kind === 'add') {
+          await api(`/projects/${note.projectId}/annotations/${note.id}/delete`, {});
+          withNotes(list => list.filter(item => item.id !== note.id));
+        } else {
+          await noteActions.restore(note);
+          requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-note="${note.id}"] .note-comment`)?.focus());
+        }
+        annotationUndo.current = annotationUndo.current.filter(item => item !== entry);
+      } catch (error) { reportError(error); }
+      finally { undoingAnnotation.current = false; }
+    })();
+    return true;
+  });
+
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
   useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, project?.name]);
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
@@ -1121,13 +1158,13 @@ function App() {
     <div className="new-task-start">
     {!notes.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
     {attachments}
-    <Composer autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={notes.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
+    <Composer autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={notes.some(note => note.group) ? t('What should change in each color group?') : notes.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
       skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
       footer={<div className="composer-options">
         <SkillPicker skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
         {agentOptions(creating)}
       </div>}
-      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || noteEditing || (!newDraft.trim() && !newSkill && !notes.length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={t('Start task (Enter)')} disabled={creating || marking > 0 || noteEditing || (!newDraft.trim() && !newSkill && !notes.some(note => note.comment.trim()))} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
     </div>

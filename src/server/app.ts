@@ -1,3 +1,4 @@
+import { isNoteGroup } from '../note-groups.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
 import fs from 'node:fs';
@@ -119,13 +120,14 @@ export async function buildApp(options: AppOptions) {
       if (!Array.isArray(b.notes) || !b.notes.length || b.notes.length > 500 || feedback || skill) throw new Error('Select valid review notes.');
       reviewNotes = b.notes.map((note: any) => {
         if (!note || typeof note !== 'object') throw new Error('Select valid review notes.');
+        if (note.group !== undefined && !isNoteGroup(note.group)) throw new Error('Invalid annotation group.');
         const anchor = note.anchor;
         if (anchor && (!Array.isArray(anchor.sources) || anchor.sources.length > 40 || (anchor.round !== undefined && (!Number.isSafeInteger(anchor.round) || anchor.round < 1 || anchor.round > (task.review?.round || 0))))) throw new Error('Invalid note location.');
         const sources = anchor?.sources.map((source: any) => {
           if (!source || !Array.isArray(source.lines) || source.lines.length !== 2 || !source.lines.every((line: unknown) => Number.isSafeInteger(line) && Number(line) >= 1) || source.lines[1] < source.lines[0]) throw new Error('Invalid note location.');
           return { file: string(source.file, 'Source file', 4096), lines: source.lines as [number, number] };
         });
-        return { ...(note.id ? { id: string(note.id, 'Note ID', 100) } : {}), where: string(note.where, 'Note location', 4000), quote: optional(note.quote, 'PDF text', 2000), comment: string(note.comment, 'Note', 4000), ...(anchor ? { anchor: { sources, ...(anchor.round ? { round: anchor.round } : {}) } } : {}) };
+        return { ...(note.id ? { id: string(note.id, 'Note ID', 100) } : {}), where: string(note.where, 'Note location', 4000), quote: optional(note.quote, 'PDF text', 2000), comment: note.group ? optional(note.comment, 'Note', 4000) : string(note.comment, 'Note', 4000), ...(note.group ? { group: note.group } : {}), ...(anchor ? { anchor: { sources, ...(anchor.round ? { round: anchor.round } : {}) } } : {}) };
       });
     }
     const text = feedback || skill || reviewNotes ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
@@ -208,11 +210,12 @@ export async function buildApp(options: AppOptions) {
     const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] > value[0] && value[3] > value[1];
     if (!isRect(b.rect)) throw new Error('Select text or mark a region on the page first.');
     const rects = Array.isArray(b.rects) ? b.rects.slice(0, 80).filter(isRect) : [];
-    const comment = string(b.comment, 'Note', 4000), key = string(b.key, 'Preview key', 64), page = Number(b.page);
+    if (b.group !== undefined && !isNoteGroup(b.group)) throw new Error('Invalid annotation group.');
+    const comment = b.group ? optional(b.comment, 'Note', 4000) : string(b.comment, 'Note', 4000), key = string(b.key, 'Preview key', 64), page = Number(b.page);
     const selected = typeof b.quote === 'string' ? b.quote.slice(0, 2000) : '';
     const { quote, source } = await manuscripts.locate(project.id, key, page, b.rect, rects, selected);
     const by = author(request.viewer);
-    return store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(rects.length ? { rects } : {}), comment, quote, source, createdAt: Date.now(), ...(by ? { author: by } : {}) });
+    return store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(b.group ? { group: b.group } : {}), ...(rects.length ? { rects } : {}), comment, quote, source, createdAt: Date.now(), ...(by ? { author: by } : {}) });
   });
   app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note', project(), request => {
     const note = store.annotation(request.params.id, request.params.note);
