@@ -175,10 +175,13 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .review-tools .commit-staged{height:28px;padding:0 9px;font-size:13px;border-radius:7px;gap:6px}
 /* The PDF page leads its toolbar with PDF or Changes: in the PDF view before
    the section title, in the changes review over the start of its bar. */
-.pdf-modes{display:flex;align-items:center;gap:2px;padding:3px;flex-shrink:0}
-.pdf-modes>button{height:26px;padding:0 10px;border-radius:7px;font-size:13px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background-color .15s,color .15s,box-shadow .15s}
-.pdf-modes>button:hover{background:var(--bg-hover);color:var(--text)}
-.pdf-modes>button[aria-pressed=true]{background:var(--bg-muted);color:var(--text)}
+.pdf-modes{display:inline-grid;grid-template-columns:repeat(2,1fr);gap:2px;padding:2px;border:1px solid var(--line-strong);border-radius:9px;background:var(--bg-active);flex-shrink:0}
+.pdf-modes>button{display:flex;align-items:center;justify-content:center;gap:5px;height:26px;padding:0 9px;border-radius:6px;font-size:13px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background-color .15s,color .15s,box-shadow .15s}
+.pdf-modes>button:hover{color:var(--text);background:var(--bg-hover)}
+.pdf-modes>button[aria-pressed=true]{background:var(--bg);color:var(--text);box-shadow:var(--shadow-xs),0 0 0 1px var(--line)}
+.pdf-modes>button[aria-pressed=true]>svg{color:var(--accent)}
+.pdf-modes>button:focus-visible{position:relative;outline-offset:1px}
+@container (max-width:620px){.pdf-modes>button{width:32px;padding:0}.pdf-modes>button>span{display:none}}
 .review-lead{position:absolute;z-index:3;top:0;left:0;height:44px;display:flex;align-items:center;padding-left:8px}
 .manuscript-lead{display:flex;align-items:center;justify-content:space-between;height:46px;padding:0 8px;border-bottom:1px solid var(--line);background:var(--bg);flex-shrink:0}
 /* A narrow review keeps room for its decision controls. */
@@ -858,7 +861,8 @@ body.resizing iframe{pointer-events:none}
   .pdf-zoom{display:none}
   /* The PDF / Changes switch takes the section title's place. */
   .pdf-modes~.pdf-section{flex:1;padding:0;visibility:hidden}
-  .pdf-modes>button{padding:0 8px;font-size:12.5px}
+  .pdf-modes>button{width:36px;height:32px;padding:0}
+  .pdf-modes>button>span{display:none}
   .pdf-toolbar .icon-button{width:40px;height:40px}
   .pdf-pager input{width:38px;height:34px;font-size:16px}
   .pdf-find input{font-size:16px}
