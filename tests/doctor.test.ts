@@ -207,3 +207,19 @@ test('a stalled agent probe times out while the rest of the report remains usabl
     assert.ok(Date.now() - start < 14000);
   } finally { f.cleanup(); }
 });
+
+test('doctor checks Kimi ACP availability without login, prompts or reading credentials', async () => {
+  const f = fixture();
+  try {
+    f.baseTools();
+    const kimi = f.tool('kimi', `if (JSON.stringify(process.argv.slice(2)) !== '["acp","--help"]') process.exit(99); console.log('Run an Agent Client Protocol (ACP) server');`);
+    const result = await f.run(['--json'], { PAPILOT_KIMI_BIN: kimi });
+    assert.equal(item(result.report, 'agent.kimi').ok, true);
+    assert.match(item(result.report, 'agent.kimi').detail, /login and generation were not tested/);
+    assert.equal(item(result.report, 'agents').ok, true);
+    assert.equal(fs.existsSync(f.data), false);
+    const missing = await f.run(['--json'], { PAPILOT_KIMI_BIN: path.join(f.dir, 'absent') });
+    assert.equal(item(missing.report, 'agent.kimi').ok, false);
+    assert.match(item(missing.report, 'agent.kimi').fix!, /kimi login/);
+  } finally { f.cleanup(); }
+});

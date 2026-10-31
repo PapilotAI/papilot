@@ -2,11 +2,11 @@
 
 The complete manual: installing and running Papilot, every part of the workspace, remote access, configuration and development. For a short introduction, see the [README](../README.md).
 
-Papilot is a personal workspace for revising LaTeX papers with an AI agent (Codex, Claude or Antigravity) and reviewing the resulting PDF changes. Run it on your host computer and continue from a desktop, tablet, or phone.
+Papilot is a personal workspace for revising LaTeX papers with an AI agent (Codex, Claude, Antigravity or Kimi) and reviewing the resulting PDF changes. Run it on your host computer and continue from a desktop, tablet, or phone.
 
 The interface is in English or Simplified Chinese: **Settings → Language** follows the browser by default and can be set to either. The messages Papilot sends the agent and the documentation are in English, and Codex defaults to English updates and questions. Your manuscript, project names, comments, and conversation history retain their original language.
 
-Built with TypeScript, React/Vite, Fastify, SQLite, the official Codex app-server over stdio, the Claude Agent SDK, and the Antigravity CLI.
+Built with TypeScript, React/Vite, Fastify, SQLite, the official Codex app-server over stdio, the Claude Agent SDK, the Antigravity CLI, and Kimi Code CLI over ACP.
 
 ## Install and run
 
@@ -60,6 +60,8 @@ Each task runs on one agent, chosen with **Agent** below the prompt; Papilot rem
   ```
 - **Antigravity** runs `agy -p` with streamed output, one process per turn, and resumes the same agy conversation on later turns. Headless agy cannot ask for permission, so Papilot runs it in accept-edits mode: it reads and edits files in the worktree, while shell commands and edits elsewhere are declined by agy and noted in the conversation. Its models are listed with their effort variants grouped, and your saved agy model is the default. If agy reports that your location is not supported, set `PAPILOT_AGY_PROXY` to an HTTP proxy; it applies only to agy.
 
+- **Kimi** runs `kimi acp` using the [official ACP interface](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp). Install Kimi Code CLI, run `kimi login`, then select **Reconnect** and choose **Kimi**. Papilot reads the model catalog and available thinking levels from the CLI, streams replies and tool activity, forwards tool approvals, sends images as native inputs, and resumes the same session after a restart. It selects manual approval mode; Kimi executes approved tools on the host, without a Papilot sandbox. Credentials stay with Kimi. Set `PAPILOT_KIMI_BIN` to the executable path if the service cannot find `kimi`. Validated with Kimi Code CLI 2.4.1: model discovery, thinking level selection, tool approvals, file writes, streamed replies, and session recovery after restarting the connection. Older CLIs must support ACP and manual approval mode.
+
 ## Diagnostics
 
 ```sh
@@ -70,7 +72,7 @@ papilot doctor --json --data ~/papilot-data --port 4400
 
 Doctor checks Node, runtime packages, built frontend and review-engine files, the data directory, Git, `latexmk`, SyncTeX and available TeX engines, and the remote-access and collaborator sign-in settings. With `--repo`, it also checks that the selected folder is the Git root, has an initial commit, has a valid main document and review configuration, and can create task worktrees. It uses the review engine's own configuration loader, without compiling or creating a worktree. Registered papers are not automatically inspected; select the paper explicitly with `--repo`.
 
-Agent checks use the same Codex locations as the installed launcher, check its version and login status, look for the Claude SDK and API configuration in the current environment, and ask `agy models` for its model list. No model prompt is sent. Claude credentials are not validated against the API, and SDK-managed credentials are not inspected. A successful report does not guarantee a model request or a paper build will succeed. Missing agents are warnings: PDF reading can still work. Configure at least one agent for editing.
+Agent checks use the same Codex locations as the installed launcher, check its version and login status, look for the Claude SDK and API configuration in the current environment, ask `agy models` for its model list, and check that `kimi acp` is available (without checking Kimi login). No model prompt is sent. Claude credentials are not validated against the API, and SDK-managed credentials are not inspected. A successful report does not guarantee a model request or a paper build will succeed. Missing agents are warnings: PDF reading can still work. Configure at least one agent for editing.
 
 Doctor also checks the local health endpoint and Tailscale origin/owner settings. On macOS, it compares an installed service's saved tool paths and data directory with the terminal environment. It does not start, stop or reinstall a service. A stopped server or an uninstalled optional service is normal.
 
@@ -125,7 +127,7 @@ Use **＋ → Add files…** in a new task or an existing conversation, drag fil
 
 Attach up to **10 files**, with **25 MB per file**, **5 MB per PNG, JPEG, GIF or WebP image**, and **100 MB total per message**. You can send attachments without text; the agent is then asked to identify the material and ask what you want to do, without editing the manuscript. Sent attachments remain available from the conversation.
 
-Files are stored beside Papilot's database, outside the manuscript and task worktrees. Codex and Claude receive supported raster images as native image inputs; other files are provided by their local paths for the agent to read with its tools. Antigravity receives image paths for its file/image tools rather than native image blocks. Reading a particular file format depends on the agent's tools; uploading does not automatically convert documents or import them into the paper. If you ask to use an attached figure or data file in the manuscript, the agent can copy it into its task worktree for review.
+Files are stored beside Papilot's database, outside the manuscript and task worktrees. Codex, Claude and Kimi receive supported raster images as native image inputs; other files are provided by their local paths for the agent to read with its tools. Antigravity receives image paths for its file/image tools rather than native image blocks. Reading a particular file format depends on the agent's tools; uploading does not automatically convert documents or import them into the paper. If you ask to use an attached figure or data file in the manuscript, the agent can copy it into its task worktree for review.
 
 Draft uploads are private to their uploader. Sending them shares them with people who can access that paper; unsharing the paper also removes access to its attachments. Deleting a task removes its stored attachments after task cleanup is confirmed. Unsent uploads expire after 30 days and are cleaned up during later uploads; each person can keep up to 500 MB of unsent uploads per paper.
 
@@ -249,6 +251,7 @@ If installation or its initial startup check fails, the existing server keeps ru
 | `PAPILOT_SERVICE_PATH` | Unset | Absolute tool directories to prioritize in the macOS service; retained across service reinstalls. |
 | `ANTHROPIC_API_KEY` | Unset | Anthropic API key for Claude tasks (the Agent SDK does not accept a Claude subscription login). |
 | `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` | Unset | Run Claude tasks on a gateway or another service's Anthropic-compatible endpoint, with that service's key. `ANTHROPIC_DEFAULT_OPUS_MODEL` and its Sonnet, Fable and Haiku counterparts map the model menu onto its models. |
+| `PAPILOT_KIMI_BIN` | `kimi` on `PATH` | Kimi Code CLI used for Kimi tasks; use an absolute path for background services if needed. |
 | `PAPILOT_AGY_BIN` | `agy` on `PATH` | Antigravity CLI used for Antigravity tasks. |
 | `PAPILOT_AGY_PROXY` | Unset | HTTP proxy for agy only, for regions where Antigravity needs one. |
 | `PAPILOT_REVIEW_ENGINE` | `vendor/latex-review` | Review engine directory. |

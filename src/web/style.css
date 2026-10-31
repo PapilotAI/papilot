@@ -436,7 +436,7 @@ body.resizing iframe{pointer-events:none}
 .agent-picker-trigger:disabled{opacity:.6;cursor:default}
 .agent-picker-panel{position:fixed;inset:auto;margin:0;width:min(328px,calc(100vw - 16px));max-height:calc(100dvh - 16px);overflow:auto;padding:14px;border:1px solid var(--line-strong);border-radius:16px;background:var(--bg);color:var(--text);box-shadow:var(--float);animation:menu-in .14s var(--ease)}
 .agent-choices-label{margin-bottom:8px;font-size:12px;font-weight:500;color:var(--text-3)}
-.agent-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--bg-subtle)}
+.agent-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--bg-subtle)}
 .agent-choices button{display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:34px;padding:0 4px;border-radius:7px;font-size:12px;color:var(--text-2);transition:background .15s,color .15s,box-shadow .15s}
 .agent-choices button:hover{color:var(--text);background:var(--bg-hover)}
 .agent-choices button[aria-checked=true]{background:var(--bg);color:var(--text);box-shadow:var(--shadow-sm);font-weight:600}

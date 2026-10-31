@@ -8,6 +8,7 @@ import { Store } from './store.ts';
 import { Attachments } from './attachments.ts';
 import { Codex, RpcResponseError } from './codex.ts';
 import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, type AgentRuntime } from './agents.ts';
+import { KimiAgent } from './kimi.ts';
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
 import { VERSION } from './paths.ts';
 import { prepareRepository } from './imports.ts';
@@ -54,7 +55,7 @@ const BUSY = new Set(['running', 'waiting_input', 'building', 'uncertain', 'dele
 const FIXABLE = /^(Some edits are outside the task scope|The revised document could not be compiled)/;
 const BUILD_FIX = 'build-fix-';
 
-const AGENTS: AgentId[] = ['codex', 'claude', 'antigravity'];
+const AGENTS: AgentId[] = ['codex', 'claude', 'antigravity', 'kimi'];
 // The small model an agent offers for short text such as a commit message,
 // by the names agents give them (GPT Luna and mini, Claude Haiku, Gemini Flash).
 const LIGHT = /\b(?:luna|mini|nano|haiku|flash|lite)\b/i;
@@ -67,7 +68,7 @@ const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: fa
 
 export class Workspace extends EventEmitter {
   // Each task runs on one agent; `runtime` is Codex's status, kept for older clients.
-  runtimes: Record<AgentId, RuntimeStatus> = { codex: blankRuntime(), claude: blankRuntime(), antigravity: blankRuntime() };
+  runtimes: Record<AgentId, RuntimeStatus> = { codex: blankRuntime(), claude: blankRuntime(), antigravity: blankRuntime(), kimi: blankRuntime() };
   runtime = this.runtimes.codex;
   agents: Record<AgentId, AgentRuntime>;
   requests = new Map<string, PendingRequest & { rpcId: string | number; agent: AgentId }>();
@@ -105,7 +106,7 @@ export class Workspace extends EventEmitter {
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.attachments = new Attachments(store);
-    this.agents = { codex, claude: others.claude || new ClaudeAgent(), antigravity: others.antigravity || new AntigravityAgent() };
+    this.agents = { codex, claude: others.claude || new ClaudeAgent(), antigravity: others.antigravity || new AntigravityAgent(), kimi: others.kimi || new KimiAgent() };
     store.on('change', () => this.emit('change'));
     for (const id of AGENTS) {
       const agent = this.agents[id];

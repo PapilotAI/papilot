@@ -16,7 +16,7 @@ import { imageType } from './attachments.ts';
 // Papilot drives every agent through the request and notification surface of
 // the Codex app-server: thread/start, thread/resume, turn/start,
 // turn/interrupt and thread/read, item and turn notifications, and approval
-// requests answered with respond(). Claude and Antigravity get small adapters
+// requests answered with respond(). Claude, Antigravity and Kimi get adapters
 // that translate their own interfaces into that surface, so the task
 // lifecycle (queueing, approvals, pausing, review rounds) stays in one place.
 export interface AgentRuntime extends EventEmitter {
@@ -28,14 +28,14 @@ export interface AgentRuntime extends EventEmitter {
   close(): void;
 }
 
-export const AGENT_NAMES: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity' };
+export const AGENT_NAMES: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity', kimi: 'Kimi' };
 
-interface Thread { cwd: string; instructions: string; model: string | null; started: boolean }
-interface Turn { id: string; threadId: string; clientId?: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; stop: () => void }
-interface Item { id: string; type: string; [key: string]: unknown }
+export interface Thread { cwd: string; instructions: string; model: string | null; started: boolean }
+export interface Turn { id: string; threadId: string; clientId?: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; stop: () => void }
+export interface Item { id: string; type: string; [key: string]: unknown }
 
 // Shared bookkeeping: threads, turns and the notifications Papilot expects.
-abstract class Adapter extends EventEmitter implements AgentRuntime {
+export abstract class Adapter extends EventEmitter implements AgentRuntime {
   ready = false;
   protected threads = new Map<string, Thread>();
   protected turns = new Map<string, Turn>();
@@ -60,9 +60,10 @@ abstract class Adapter extends EventEmitter implements AgentRuntime {
       const text = (params.input || []).map((part: { text?: string }) => part.text || '').join('\n');
       const images = (params.input || []).filter((part: { type?: string; path?: string }) => part.type === 'localImage' && typeof part.path === 'string').map((part: { path: string }) => part.path);
       const turn: Turn = { id: randomUUID(), threadId: String(params.threadId), clientId: params.clientUserMessageId, status: 'inProgress', stop: () => {} };
+      turn.stop = () => this.finish(turn, 'interrupted');
       this.turns.set(turn.id, turn);
       // Papilot records the turn ID before the first event arrives.
-      setImmediate(() => this.run(turn, { ...thread, cwd: params.cwd || thread.cwd }, text, params.effort || null, images));
+      setImmediate(() => { if (turn.status === 'inProgress') this.run(turn, { ...thread, cwd: params.cwd || thread.cwd }, text, params.effort || null, images); });
       return { turn: { id: turn.id } };
     }
     if (method === 'turn/interrupt') { this.turns.get(String(params.turnId))?.stop(); return {}; }

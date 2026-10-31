@@ -70,7 +70,7 @@
 <ul>
 <li>✨ <b>技能（skill）</b>，如润色、校对、检查数学，输入 <code>/</code> 即可选用，也能在设置里写你自己的</li>
 <li>📎 任务和消息都能附带<b>文件和图片</b></li>
-<li>🤖 <b>Codex、Claude 或 Antigravity</b>，各用你自己的登录</li>
+<li>🤖 <b>Codex、Claude、Antigravity 或 Kimi</b>，各用你自己的登录</li>
 <li>🌳 <b>每个任务都有独立的 Git 工作树</b>，最多两个同时运行</li>
 <li>🌗 <b>浅色与深色</b>，界面支持中文和英文</li>
 <li>📱 <b>运行在你的电脑上</b>，也能用手机打开</li>
@@ -97,6 +97,7 @@ papilot demo
 | --- | --- | --- |
 | **Codex** | `papilot codex login` | 通过 Codex app server 在其工作区沙箱中运行；已装有 `codex` 就直接用，没有则在首次启动时自动安装。 |
 | **Claude** | 设置好 `ANTHROPIC_API_KEY` 再启动 `papilot` | 通过 Claude Agent SDK 运行，首次使用时下载；该 SDK 不接受 Pro 或 Max 订阅登录。 |
+| **Kimi** | 安装 [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started)，运行 `kimi login` | 通过 `kimi acp` 使用本机配置，支持流式回复、会话恢复和工具审批。 |
 | **Antigravity** | 安装 Antigravity 并登录 `agy` | 运行 `agy -p`，每轮一个进程，只编辑文件；所在地区需要代理时设置 `PAPILOT_AGY_PROXY`。 |
 
 Papilot 从不读取、保存或转发你的凭据。没有安装或没有登录的智能体会显示为不可用。

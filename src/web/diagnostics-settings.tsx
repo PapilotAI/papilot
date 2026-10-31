@@ -16,7 +16,7 @@ function checkNames(): Record<string, string> {
     node: 'Node.js', dependencies: t('Application dependencies'), frontend: t('Application interface'),
     'review-engine': t('Review engine'), data: t('Data folder'), git: 'Git', latexmk: 'latexmk', synctex: 'SyncTeX',
     'tex-engines': t('LaTeX engines'), 'agent.codex': t('Codex configuration'), 'agent.claude': t('Claude configuration'),
-    'agent.antigravity': t('Antigravity configuration'), agents: t('Agent configuration'),
+    'agent.antigravity': t('Antigravity configuration'), 'agent.kimi': t('Kimi configuration'), agents: t('Agent configuration'),
     project: t('Paper configuration'), 'project.git': t('Paper repository'), 'project.head': t('Initial commit'),
     'project.main': t('Main document'), 'project.engine': t('Paper compiler'), 'project.worktrees': t('Task folders'),
     remote: t('Remote access'), accounts: t('Collaborator access'), server: t('Local server'),
@@ -51,9 +51,9 @@ export function DiagnosticsSettings({ online, runtimes, project, check }: Diagno
     <h3 className="settings-section-title">{t('Live connections')}</h3>
     <div className="diagnostic-connections">
       <div className="diagnostic-connection"><span>{t('Papilot server')}</span><span className={`diagnostic-state ${online ? 'ok' : 'error'}`}><i/>{online ? t('Connected') : t('Disconnected')}</span></div>
-      {(['codex', 'claude', 'antigravity'] as const).map(id => {
+      {(['codex', 'claude', 'antigravity', 'kimi'] as const).map(id => {
         const runtime = runtimes[id], ready = online && runtime?.connected && runtime.authenticated;
-        return <div key={id} className="diagnostic-connection"><span>{id === 'codex' ? 'Codex' : id === 'claude' ? 'Claude' : 'Antigravity'}</span><span className={`diagnostic-state ${ready ? 'ok' : 'warn'}`}><i/>{!online || !runtime ? t('Unknown') : ready ? t('Ready') : runtime.connected ? t('Sign-in required') : t('Unavailable')}</span></div>;
+        return <div key={id} className="diagnostic-connection"><span>{id === 'codex' ? 'Codex' : id === 'claude' ? 'Claude' : id === 'kimi' ? 'Kimi' : 'Antigravity'}</span><span className={`diagnostic-state ${ready ? 'ok' : 'warn'}`}><i/>{!online || !runtime ? t('Unknown') : ready ? t('Ready') : runtime.connected ? t('Sign-in required') : t('Unavailable')}</span></div>;
       })}
     </div>
     <h3 className="settings-section-title">{t('Environment checks')}</h3>
