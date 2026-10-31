@@ -33,6 +33,8 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preload" href="fonts/TeXGyrePagellaX-Regular.otf" as="font" type="font/otf" crossorigin>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="demos.css">
+<script src="demos.js" defer></script>
 </head>
 <body>
 
@@ -80,11 +82,7 @@
     <p class="works-with"><span lang="en">Works with</span><span lang="zh-CN">支持</span> <span class="agent codex">Codex</span><span class="agent claude">Claude</span><span class="agent antigravity">Antigravity</span></p>
   </div>
   <div class="wrap">
-    <figure class="demo">
-      <video autoplay muted loop playsinline preload="auto" poster="assets/demo-poster.jpg" width="1200" height="750" aria-label="Papilot: mark up a passage of the PDF, hand it to an agent, accept the typeset change and commit it" data-zh-aria-label="Papilot：在 PDF 上批注一段文字，交给智能体，接受排版后的改动并提交">
-        <source src="assets/demo.mp4" type="video/mp4">
-      </video>
-    </figure>
+    <!-- demo:hero -->
   </div>
 </section>
 
@@ -113,7 +111,7 @@
           <li><span lang="en">Pick the agent, its model and how hard it thinks</span><span lang="zh-CN">自选智能体、模型和推理强度</span></li>
         </ul>
       </div>
-      <img class="shot" src="assets/feature-note.png" alt="Two passages in a yellow note group and a region note on an equation" data-zh-alt="两段文字在黄色批注组里，一个公式上有区域批注" width="1200" height="750" loading="lazy">
+      <!-- demo:annotate -->
     </article>
 
     <article class="feature flip">
@@ -127,7 +125,7 @@
           <li><span lang="en">Accept all and Reject all touch only the changes you haven't decided</span><span lang="zh-CN">全部接受、全部拒绝只作用于还没决定的改动</span></li>
         </ul>
       </div>
-      <img class="shot" src="assets/feature-review.png" alt="A change shown before and after, with Accept and Reject" data-zh-alt="改动的修改前后对比，带接受和拒绝按钮" width="1200" height="750" loading="lazy">
+      <!-- demo:review -->
     </article>
 
     <article class="feature">
@@ -141,7 +139,7 @@
           <li><span lang="en">Shows the paper as it is on disk, accepted changes included</span><span lang="zh-CN">显示磁盘上论文的当前状态，包括已接受的改动</span></li>
         </ul>
       </div>
-      <img class="shot" src="assets/feature-contents.png" alt="The PDF viewer with its contents panel open" data-zh-alt="打开目录面板的 PDF 阅读器" width="1200" height="750" loading="lazy">
+      <!-- demo:read -->
     </article>
 
     <article class="feature flip">
@@ -155,7 +153,7 @@
           <li><span lang="en">Pull only fast-forwards, so nothing is merged behind your back</span><span lang="zh-CN">pull 只做快进，不会背着你合并</span></li>
         </ul>
       </div>
-      <img class="shot" src="assets/feature-git.png" alt="The Git panel with a staged file, a generated commit message, task worktrees and the commit graph" data-zh-alt="Git 面板：已暂存的文件、自动生成的提交信息、任务工作树和提交关系图" width="1200" height="750" loading="lazy">
+      <!-- demo:commit -->
     </article>
   </div>
 </section>
@@ -282,9 +280,6 @@ for (const button of document.querySelectorAll('[data-copy]')) {
     setTimeout(() => button.classList.remove('copied'), 1600);
   });
 }
-// With reduced motion the demo waits for the reader to press play.
-const demo = document.querySelector('.demo video');
-if (matchMedia('(prefers-reduced-motion: reduce)').matches) { demo.pause(); demo.removeAttribute('autoplay'); demo.controls = true; }
 
 // Both languages sit side by side in lang="en" and lang="zh-CN" spans, and the
 // stylesheet shows the one matching <html lang>. Attributes can't hold two

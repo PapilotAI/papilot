@@ -34,7 +34,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      # Stops a stale demo video or a broken page link before it reaches main.
+      # Checks the generated UI demos and local asset links before main.
       - run: npm run site
       - name: Pack
         run: npm pack --ignore-scripts --dry-run
