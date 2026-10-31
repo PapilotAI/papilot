@@ -700,9 +700,9 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
       <div className="manuscript-side-header">
         {!hidden && togglePanel}
         <div className="side-tabs" role="tablist" aria-label={t('Manuscript panels')}>
-          <button role="tab" aria-selected={side === 'task'} onClick={() => setView('task')}><Icon name="compose" size={14}/>{t('New task')}{notes.length > 0 && <span className="count" aria-hidden="true">{notes.length}</span>}</button>
-          <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}><Icon name="list" size={14}/>{t('Contents')}</button>
-          <button role="tab" aria-selected={side === 'git'} onClick={() => setView('git')}><Icon name="branch" size={14}/>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
+          <button role="tab" aria-selected={side === 'task'} title={t('New task')} onClick={() => setView('task')}><Icon name="compose" size={14}/><span className="tab-label">{t('New task')}</span>{notes.length > 0 && <span className="count" aria-hidden="true">{notes.length}</span>}</button>
+          <button role="tab" aria-selected={side === 'contents'} title={t('Contents')} onClick={() => setView('contents')}><Icon name="list" size={14}/><span className="tab-label">{t('Contents')}</span></button>
+          <button role="tab" aria-selected={side === 'git'} title="Git" onClick={() => setView('git')}><Icon name="branch" size={14}/><span className="tab-label">Git</span>{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
         </div>
         {!hidden && sideBySide && openPdf}
       </div>
