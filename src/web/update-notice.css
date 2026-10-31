@@ -9,3 +9,8 @@
 .update-versions strong{color:var(--text);font-weight:500}
 .update-dialog p{margin-bottom:14px;font-size:13px;line-height:1.6}
 .update-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:18px}
+.update-settings{font-size:13px;line-height:1.6}
+.update-settings code{font-size:12px;overflow-wrap:anywhere}
+.update-settings select{max-width:65%;padding:6px 9px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font:inherit}
+.update-settings .update-actions,.update-versions{flex-wrap:wrap}
+.update-settings .update-actions .button{white-space:normal}

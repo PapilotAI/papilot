@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const stableVersion = value => typeof value === 'string' && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value) && value.length < 40;
+export const devRevision = value => typeof value === 'string' && value.length < 100 && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-dev\.([a-f0-9]{40})$/.exec(value)?.[4] || null;
+export const releaseVersion = value => stableVersion(value) || Boolean(devRevision(value));
 export function newerVersion(next, current) {
   if (!stableVersion(next)) return false;
   const match = /^(\d+)\.(\d+)\.(\d+)(.*)$/.exec(current);
@@ -22,7 +24,11 @@ export function writeJson(file, value) {
 export function activeInstallation(root, data) {
   const active = readJson(path.join(data, 'updates/active.json'));
   const version = readJson(path.join(root, 'package.json'))?.version;
-  if (!active || !stableVersion(active.version) || !newerVersion(active.version, version)) return root;
+  if (!active || !releaseVersion(active.version)) return root;
+  // Explicit channel selections also cover dev builds and returning to stable.
+  // Older activation records retain their upgrade-only behavior.
+  if (!['stable', 'dev'].includes(active.channel) && !newerVersion(active.version, version)) return root;
+  if (active.channel && (active.channel === 'dev') !== Boolean(devRevision(active.version))) return root;
   if (typeof active.root !== 'string') return root;
   try {
     const releases = fs.realpathSync(path.join(data, 'updates/releases')) + path.sep;

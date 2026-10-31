@@ -5,10 +5,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { readJson, stableVersion, writeJson } from '../../bin/installation.mjs';
+import { devRevision, readJson, releaseVersion, writeJson } from '../../bin/installation.mjs';
 import { health, loaderFor, sleep } from './update-install.ts';
 
-export async function restartRelease(job: { id: string; root: string; version: string; previousRoot: string; previousVersion: string; data: string; port: number; parent: number; service: boolean }, ready = () => process.send?.('ready'), attempts = 100) {
+export async function restartRelease(job: { id: string; root: string; version: string; channel?: 'stable' | 'dev'; previousRoot: string; previousVersion: string; data: string; port: number; parent: number; service: boolean }, ready = () => process.send?.('ready'), attempts = 100) {
   const folder = path.join(job.data, 'updates'), activeFile = path.join(folder, 'active.json'), statusFile = path.join(folder, 'status.json'), lock = path.join(folder, 'install.lock');
   const previous = readJson(activeFile), status = readJson(statusFile) || {};
   const database = path.join(job.data, 'papilot.sqlite'), backup = path.join(folder, 'before-update.sqlite');
@@ -32,10 +32,10 @@ export async function restartRelease(job: { id: string; root: string; version: s
     }
   };
   try {
-    if (!stableVersion(job.version) || !fs.realpathSync(job.root).startsWith(fs.realpathSync(path.join(folder, 'releases')) + path.sep) || readJson(path.join(job.root, 'package.json'))?.version !== job.version) throw new Error('Invalid update activation.');
+    if (!releaseVersion(job.version) || (job.channel && (job.channel === 'dev') !== Boolean(devRevision(job.version))) || !fs.realpathSync(job.root).startsWith(fs.realpathSync(path.join(folder, 'releases')) + path.sep) || readJson(path.join(job.root, 'package.json'))?.version !== job.version) throw new Error('Invalid update activation.');
     writeJson(lock, { pid: process.pid });
     writeJson(statusFile, { ...status, phase: 'restarting', pid: process.pid });
-    writeJson(activeFile, { root: job.root, version: job.version, id: job.id, phase: 'pending', pid: process.pid, previous });
+    writeJson(activeFile, { root: job.root, version: job.version, channel: job.channel, id: job.id, phase: 'pending', pid: process.pid, previous });
     ready();
     for (let i = 0; i < 150 && alive(job.parent); i++) await sleep(100);
     if (alive(job.parent)) throw new Error('Papilot did not finish shutting down.');
@@ -47,11 +47,11 @@ export async function restartRelease(job: { id: string; root: string; version: s
       if (fs.existsSync(database + '-wal')) fs.copyFileSync(database + '-wal', backup + '-wal');
       else fs.rmSync(backup + '-wal', { force: true });
     }
-    writeJson(activeFile, { root: job.root, version: job.version, id: job.id, phase: 'starting', pid: process.pid, previous });
+    writeJson(activeFile, { root: job.root, version: job.version, channel: job.channel, id: job.id, phase: 'starting', pid: process.pid, previous });
     launch(job.root);
     for (let i = 0; i < attempts; i++) {
       if (await health(job.port, job.version, job.id)) {
-        writeJson(activeFile, { root: job.root, version: job.version, id: job.id, phase: 'active' });
+        writeJson(activeFile, { root: job.root, version: job.version, channel: job.channel, id: job.id, phase: 'active' });
         writeJson(statusFile, { ...status, phase: 'updated', currentVersion: job.version, error: null, pid: process.pid });
         return;
       }

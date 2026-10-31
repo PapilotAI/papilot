@@ -166,12 +166,14 @@ test('recompilation persists confirmed note positions without losing edits, dele
 test('updates are owner-only and installs require a valid CSRF token and the advertised version', async () => {
   const f = await fixture();
   try {
-    for (const url of ['/api/updates', '/api/updates/check', '/api/updates/install']) {
+    for (const url of ['/api/updates', '/api/updates/check', '/api/updates/install', '/api/updates/channel']) {
       const method = url === '/api/updates' ? 'GET' : 'POST';
       assert.equal((await f.remote.inject({ method, url, headers: f.as, ...(method === 'POST' ? { payload: { version: '10.0.0' } } : {}) })).statusCode, 403);
     }
     const headers = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'local-csrf' };
     const checked = await f.local.inject({ method: 'POST', url: '/api/updates/check', headers, payload: {} });
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/updates/channel', headers: { ...headers, 'x-papilot-token': 'wrong' }, payload: { channel: 'dev' } })).statusCode, 403);
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/updates/channel', headers, payload: { channel: 'unknown' } })).statusCode, 400);
     assert.equal(checked.json().phase, 'available');
     assert.equal((await f.local.inject({ method: 'POST', url: '/api/updates/install', headers: { ...headers, 'x-papilot-token': 'wrong' }, payload: { version: '10.0.0' } })).statusCode, 403);
     assert.equal((await f.local.inject({ method: 'POST', url: '/api/updates/install', headers, payload: { version: '10.0.1' } })).statusCode, 400);

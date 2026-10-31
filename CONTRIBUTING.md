@@ -25,6 +25,15 @@ npm start              # http://127.0.0.1:7274
 
 `npm run dev` restarts the server when its code changes. After changing the interface, run `npm run build` and reload the page; the server serves the new build without a restart.
 
+To run this checkout alongside your usual instance with separate state:
+
+```sh
+npm run build
+PAPILOT_PORT=7276 PAPILOT_DATA="$HOME/.papilot-dev" PAPILOT_PUBLIC_ORIGIN= PAPILOT_ACCOUNT_ORIGIN= npm run dev
+```
+
+Open `http://127.0.0.1:7276`. For the latest committed development version without running a checkout, use **Settings → Updates → Dev (GitHub main)** in an installed Papilot.
+
 ## Where things are
 
 | Path | What it holds |

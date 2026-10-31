@@ -1,6 +1,16 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'Updates': '版本更新', 'Current version': '当前版本', 'Latest version': '最新版本', 'Update channel': '更新通道',
+  'Stable': '稳定版', 'Dev (GitHub main)': 'Dev（GitHub main）',
+  'Try the latest changes from GitHub main. Dev versions may be less reliable; you can switch back to Stable here.': '体验 GitHub main 的最新改动。Dev 版本可能不够稳定，你可以在这里切回稳定版。',
+  'Use published releases from npm.': '使用 npm 上发布的稳定版本。',
+  'Reading update status…': '正在读取更新状态…', 'Check for updates': '检查更新', 'Checking for updates…': '正在检查更新…',
+  'Downloading and building the selected GitHub commit…': '正在下载并构建选定的 GitHub 提交…',
+  'You are using the latest version on this channel.': '你已在使用此通道的最新版本。',
+  'Check for updates to see the latest version.': '检查更新以查看最新版本。',
+  'Could not check for updates. Try again when connected.': '无法检查更新，请连接网络后重试。',
+  'The dev build needs at least 2 GB of free disk space. Free some space and retry.': '构建 Dev 版本至少需要 2 GB 可用磁盘空间，请释放空间后重试。',
   'Save accepted changes': '保存已接受的改动',
   'Commit to task branch': '提交到 task 分支',
   'Built-in': '内置', 'Global': '全局', 'Search skills': '搜索技能', 'Refresh skills': '刷新技能',

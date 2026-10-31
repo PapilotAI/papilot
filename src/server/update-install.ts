@@ -1,9 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
-import { readJson, stableVersion } from '../../bin/installation.mjs';
+import { devRevision, readJson, stableVersion } from '../../bin/installation.mjs';
+
+export const DEV_REPOSITORY = 'https://github.com/PapilotAI/papilot.git';
+const git = async (args: string[], cwd: string) => (await promisify(execFile)('git', args, { cwd, timeout: 120000, maxBuffer: 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })).stdout.trim();
 
 export function npmCli(env = process.env, executable = process.execPath) {
   const candidates = [env.npm_execpath, path.join(path.dirname(executable), '../lib/node_modules/npm/bin/npm-cli.js'), path.join(path.dirname(executable), 'node_modules/npm/bin/npm-cli.js'),
@@ -52,7 +56,44 @@ export async function probeInstallation(root: string, version: string, stage: st
     }
   }
 }
+// Resolve main during discovery, then fetch that exact commit. Building in a
+// managed directory keeps the running installation and any source checkout intact.
+export async function prepareDev(root: string, version: string, log: number, run = runInstall, checkout = git) {
+  const revision = devRevision(version);
+  if (!revision) throw new Error('Invalid development version.');
+  await checkout(['init', '--quiet'], root);
+  await checkout(['-c', 'core.hooksPath=/dev/null', 'fetch', '--depth=1', DEV_REPOSITORY, revision], root);
+  await checkout(['-c', 'core.hooksPath=/dev/null', 'checkout', '--detach', 'FETCH_HEAD'], root);
+  if (await checkout(['rev-parse', 'HEAD'], root) !== revision) throw new Error('The development checkout does not match the requested commit.');
+  const pkg = readJson(path.join(root, 'package.json'));
+  if (pkg?.name !== 'papilot' || !stableVersion(pkg.version) || `${pkg.version}-dev.${revision}` !== version) throw new Error('The development checkout does not match the requested version.');
+  const flags = ['--ignore-scripts', '--no-audit', '--no-fund', '--engine-strict'];
+  await run(['ci', '--include=dev', ...flags], root, log);
+  const engine = path.join(root, 'vendor/latex-review');
+  await run(['ci', '--include=dev', ...flags], engine, log);
+  // Only this installed snapshot gets a dev version; the repository stays unchanged.
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ ...pkg, version }, null, 2) + '\n');
+  await run(['run', 'build'], engine, log);
+  await run(['run', 'build'], root, log);
+  await run(['prune', '--omit=dev', ...flags], root, log);
+  await run(['prune', '--omit=dev', ...flags], engine, log);
+}
+async function installDev(data: string, version: string) {
+  const releases = path.join(data, 'updates/releases'); fs.mkdirSync(releases, { recursive: true, mode: 0o700 });
+  const space = fs.statfsSync(releases);
+  if (space.bavail * space.bsize < 2 * 1024 ** 3) throw new Error('The dev build needs at least 2 GB of free disk space. Free some space and retry.');
+  const stage = fs.mkdtempSync(path.join(releases, 'dev-')), root = path.join(stage, 'papilot');
+  fs.mkdirSync(root);
+  const log = fs.openSync(path.join(data, 'updates/install.log'), 'a', 0o600);
+  try {
+    await prepareDev(root, version, log);
+    await probeInstallation(root, version, stage, log);
+    return root;
+  } catch (error) { fs.rmSync(stage, { recursive: true, force: true }); throw error; }
+  finally { fs.closeSync(log); }
+}
 export async function installRelease(data: string, version: string) {
+  if (devRevision(version)) return installDev(data, version);
   if (!stableVersion(version)) throw new Error('Invalid release version.');
   const releases = path.join(data, 'updates/releases'); fs.mkdirSync(releases, { recursive: true, mode: 0o700 });
   const stage = fs.mkdtempSync(path.join(releases, version + '-')), root = path.join(stage, 'node_modules/papilot');

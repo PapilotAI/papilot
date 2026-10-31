@@ -5,13 +5,14 @@ import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
-import { activeInstallation, newerVersion, readJson, stableVersion, writeJson } from '../bin/installation.mjs';
-import { Updates } from '../src/server/updates.ts';
-import { health, loaderFor, probeInstallation, sleep } from '../src/server/update-install.ts';
+import { activeInstallation, devRevision, newerVersion, readJson, releaseVersion, stableVersion, writeJson } from '../bin/installation.mjs';
+import { latestRelease, Updates } from '../src/server/updates.ts';
+import { DEV_REPOSITORY, health, loaderFor, prepareDev, probeInstallation, sleep } from '../src/server/update-install.ts';
 import { restartRelease } from '../src/server/update-worker.ts';
 
 const temporary = () => fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-update-test-'));
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+const revision = 'a'.repeat(40), devVersion = `0.7.0-dev.${revision}`;
 function fixture(overrides: Record<string, any> = {}) {
   const data = temporary();
   const updates = new Updates({ root: process.cwd(), data, version: '0.6.0', port: 1, supported: true, latest: async () => '0.7.0', busy: () => false, shutdown() {}, ...overrides });
@@ -23,6 +24,74 @@ test('release comparisons reject unsafe targets and never downgrade', () => {
   assert.ok(newerVersion('1.0.0', '1.0.0-beta.2'));
   assert.equal(newerVersion('0.6.0', '0.6.0'), false);
   assert.equal(newerVersion('0.6.0', '0.7.0'), false);
+});
+test('dev discovery reads main once and pins the package version to its exact commit', async () => {
+  const requests: string[] = [];
+  const fetcher: typeof fetch = async url => {
+    requests.push(String(url));
+    return new Response(JSON.stringify(requests.length === 1 ? { object: { sha: revision } } : { name: 'papilot', version: '0.7.0' }));
+  };
+  assert.equal(await latestRelease('dev', fetcher), devVersion);
+  assert.deepEqual(requests, ['https://api.github.com/repos/PapilotAI/papilot/git/ref/heads/main', `https://raw.githubusercontent.com/PapilotAI/papilot/${revision}/package.json`]);
+  assert.equal(devRevision(devVersion), revision);
+  assert.ok(releaseVersion(devVersion));
+  for (const value of ['0.7.0-dev.main', '0.7.0-dev.abc1234', `${devVersion}/../../bad`, '0.7.0-dev.' + 'A'.repeat(40)]) assert.equal(releaseVersion(value), false);
+  await assert.rejects(latestRelease('dev', async () => new Response(JSON.stringify({ object: { sha: '../other' } }))), /revision/);
+});
+test('channel changes persist, discard stale checks, and require an advertised target from that channel', async () => {
+  const pending: { channel: string; resolve: (version: string) => void }[] = [];
+  const f = fixture({ latest: (channel: string) => new Promise<string>(resolve => pending.push({ channel, resolve })), install: async () => { throw new Error('fixture stop'); } });
+  try {
+    const old = f.updates.check();
+    const next = f.updates.setChannel('dev');
+    pending[1].resolve(devVersion); await next;
+    pending[0].resolve('0.9.0'); await old;
+    assert.equal(f.updates.snapshot().channel, 'dev');
+    assert.equal(f.updates.snapshot().latestVersion, devVersion);
+    assert.equal(f.updates.snapshot().phase, 'available');
+    assert.throws(() => f.updates.install('0.9.0'), /Check for/);
+    assert.throws(() => f.updates.setChannel('other'), /valid update channel/);
+    const restored = new Updates({ root: process.cwd(), data: f.data, version: '0.7.0', port: 1, supported: true, busy: () => false, shutdown() {} });
+    assert.equal(restored.snapshot().channel, 'dev'); restored.close();
+    f.updates.install(devVersion);
+    assert.throws(() => f.updates.setChannel('stable'), /current update/);
+    await tick();
+  } finally { f.close(); }
+});
+test('returning from dev offers stable even with a lower base version; the same dev commit is current', async () => {
+  const f = fixture({ version: devVersion, latest: async (channel: string) => channel === 'dev' ? devVersion : '0.6.0', install: async () => { throw new Error('fixture stop'); } });
+  try {
+    await f.updates.check(); assert.equal(f.updates.snapshot().phase, 'idle');
+    await f.updates.setChannel('stable'); assert.equal(f.updates.snapshot().phase, 'available');
+    f.updates.install('0.6.0'); await tick(); assert.equal(f.updates.snapshot().phase, 'failed');
+  } finally { f.close(); }
+});
+test('dev preparation builds the advertised commit, independently of a newer main, without editing its source checkout', async () => {
+  const data = temporary(), source = path.join(data, 'source'), root = path.join(data, 'candidate');
+  const calls: { args: string[]; cwd: string }[] = [];
+  const git = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  try {
+    fs.mkdirSync(source); fs.mkdirSync(root);
+    git(source, ['init', '-q']); git(source, ['config', 'user.name', 'Test']); git(source, ['config', 'user.email', 'test@localhost']);
+    writeJson(path.join(source, 'package.json'), { name: 'papilot', version: '0.7.0' });
+    writeJson(path.join(source, 'vendor/latex-review/package.json'), { name: 'review' });
+    git(source, ['add', '.']); git(source, ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Selected']);
+    const sha = git(source, ['rev-parse', 'HEAD']);
+    fs.writeFileSync(path.join(source, 'newer.txt'), 'Not selected'); git(source, ['add', '.']);
+    git(source, ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Newer main']);
+    const version = `0.7.0-dev.${sha}`;
+    await prepareDev(root, version, 1, async (args, cwd) => { calls.push({ args, cwd }); }, async (args, cwd) => {
+      if (args.includes('fetch')) { assert.equal(args.at(-1), sha); assert.ok(args.includes(DEV_REPOSITORY)); }
+      return git(cwd, args.map(arg => arg === DEV_REPOSITORY ? source : arg));
+    });
+    assert.equal(git(root, ['rev-parse', 'HEAD']), sha);
+    assert.equal(fs.existsSync(path.join(root, 'newer.txt')), false);
+    assert.equal(readJson(path.join(root, 'package.json')).version, version);
+    assert.equal(readJson(path.join(source, 'package.json')).version, '0.7.0');
+    assert.deepEqual(calls.map(call => call.args[0]), ['ci', 'ci', 'run', 'run', 'prune', 'prune']);
+    assert.deepEqual(calls.filter(call => call.args[0] === 'run').map(call => call.cwd), [path.join(root, 'vendor/latex-review'), root]);
+    await assert.rejects(prepareDev(root, '0.7.0-dev.bad', 1), /Invalid development version/);
+  } finally { fs.rmSync(data, { recursive: true, force: true }); }
 });
 test('checks are shared, transient failures preserve an available version, and forged install targets are refused', async () => {
   let release!: (value: string) => void;
@@ -89,6 +158,14 @@ test('launchers select only a newer complete release inside the managed director
     assert.equal(activeInstallation(release, data), release);
     writeJson(path.join(root, 'package.json'), { name: 'papilot', version: '0.8.0' });
     assert.equal(activeInstallation(root, data), root);
+    writeJson(path.join(release, 'package.json'), { name: 'papilot', version: devVersion });
+    writeJson(path.join(data, 'updates/active.json'), { root: release, version: devVersion, channel: 'dev' });
+    assert.equal(activeInstallation(root, data), release, 'an explicit dev selection survives the original launcher');
+    writeJson(path.join(release, 'package.json'), { name: 'papilot', version: '0.7.0' });
+    writeJson(path.join(data, 'updates/active.json'), { root: release, version: '0.7.0', channel: 'stable' });
+    assert.equal(activeInstallation(root, data), release, 'returning to stable is an explicit selection');
+    writeJson(path.join(data, 'updates/active.json'), { root: release, version: '0.7.0', channel: 'dev' });
+    assert.equal(activeInstallation(root, data), root, 'the channel must match the installed version');
     writeJson(path.join(data, 'updates/active.json'), { root: '/tmp/untrusted', version: '9.0.0' });
     assert.equal(activeInstallation(root, data), root);
   } finally { fs.rmSync(data, { recursive: true, force: true }); }
@@ -116,21 +193,21 @@ function fakeRelease(root: string, version: string, broken = false) {
   `);
   fs.writeFileSync(path.join(root, 'src/server/start.ts'), '');
 }
-for (const broken of [false, true]) test(`detached activation ${broken ? 'restores the previous runtime and database when health checks fail' : 'starts the new runtime and retains the data directory'}`, async () => {
+for (const version of ['0.7.0', devVersion]) for (const broken of [false, true]) test(`detached activation ${version}: ${broken ? 'restores the previous runtime and database when health checks fail' : 'starts the new runtime and retains the data directory'}`, async () => {
   const data = temporary(), root = path.join(data, 'updates/releases/next'), previousRoot = path.join(data, 'old'), port = await freePort();
   try {
-    fakeRelease(root, '0.7.0', broken); fakeRelease(previousRoot, '0.6.0');
+    fakeRelease(root, version, broken); fakeRelease(previousRoot, '0.6.0');
     fs.writeFileSync(path.join(data, 'papilot.sqlite'), 'original database');
     fs.writeFileSync(path.join(data, 'papilot.sqlite-wal'), 'committed WAL pages');
-    writeJson(path.join(data, 'updates/status.json'), { currentVersion: '0.6.0', latestVersion: '0.7.0', phase: 'restarting' });
-    await restartRelease({ id: 'test-instance', root, version: '0.7.0', previousRoot, previousVersion: '0.6.0', data, port, parent: 2147483647, service: false }, () => {}, broken ? 3 : 30);
-    for (let i = 0; i < 30 && !(await health(port, broken ? '0.6.0' : '0.7.0')); i++) await sleep(100);
-    assert.ok(await health(port, broken ? '0.6.0' : '0.7.0'));
+    writeJson(path.join(data, 'updates/status.json'), { currentVersion: '0.6.0', latestVersion: version, phase: 'restarting' });
+    await restartRelease({ id: 'test-instance', root, version, channel: devRevision(version) ? 'dev' : 'stable', previousRoot, previousVersion: '0.6.0', data, port, parent: 2147483647, service: false }, () => {}, broken ? 3 : 30);
+    for (let i = 0; i < 30 && !(await health(port, broken ? '0.6.0' : version)); i++) await sleep(100);
+    assert.ok(await health(port, broken ? '0.6.0' : version));
     assert.equal(readJson(path.join(data, 'updates/status.json')).phase, broken ? 'failed' : 'updated');
     assert.equal(fs.readFileSync(path.join(data, 'papilot.sqlite'), 'utf8'), 'original database');
     assert.equal(fs.readFileSync(path.join(data, 'papilot.sqlite-wal'), 'utf8'), 'committed WAL pages');
     assert.equal(fs.existsSync(path.join(data, 'updates/install.lock')), false);
-    assert.equal(readJson(path.join(data, 'updates/active.json'))?.version, broken ? undefined : '0.7.0');
+    assert.equal(readJson(path.join(data, 'updates/active.json'))?.version, broken ? undefined : version);
   } finally {
     const pid = Number(fs.existsSync(path.join(data, 'child.pid')) && fs.readFileSync(path.join(data, 'child.pid'), 'utf8'));
     if (pid) try { process.kill(pid, 'SIGTERM'); } catch { /* already exited */ }
@@ -143,7 +220,7 @@ test('downloaded releases must pass a real isolated server startup before activa
   finally { fs.closeSync(log); fs.rmSync(stage, { recursive: true, force: true }); }
 });
 
-test('a browser install restarts the real server and the original launcher keeps the selected version and data', async () => {
+for (const version of ['0.7.0', devVersion]) test(`a browser install of ${version} restarts the real server and the original launcher keeps the selected version and data`, async () => {
   const folder = temporary(), original = path.join(folder, 'original'), data = path.join(original, '.papilot');
   const candidate = path.join(data, 'updates/releases/next/node_modules/papilot'), port = await freePort();
   const log = fs.openSync(path.join(folder, 'server.log'), 'w');
@@ -168,14 +245,15 @@ test('a browser install restarts the real server and the original launcher keeps
     }
   };
   try {
-    copy(original, '0.6.0'); copy(candidate, '0.7.0');
+    copy(original, '0.6.0'); copy(candidate, version);
+    if (devRevision(version)) writeJson(path.join(data, 'updates/channel.json'), { channel: 'dev' });
     const { Store } = await import('../src/server/store.ts');
     const store = new Store(path.join(data, 'papilot.sqlite'));
     store.saveProject({ id: 'kept-paper', name: 'Preserved paper', path: '/unused', createdAt: 1 }); store.close();
     fs.writeFileSync(path.join(original, 'boot.ts'), `
       import { Updates } from './src/server/updates.ts';
       const check = Updates.prototype.check;
-      Updates.prototype.check = function () { this.options.latest = async () => '0.7.0'; this.options.install = async () => ${JSON.stringify(candidate)}; return check.call(this); };
+      Updates.prototype.check = function () { this.options.latest = async () => ${JSON.stringify(version)}; this.options.install = async () => ${JSON.stringify(candidate)}; return check.call(this); };
       await import('./src/server/main.ts');
     `);
     const env: NodeJS.ProcessEnv = { ...process.env, PAPILOT_PORT: String(port), PAPILOT_PUBLIC_ORIGIN: '', PAPILOT_ACCOUNT_ORIGIN: '', PAPILOT_SERVICE_MANAGER: '', XPC_SERVICE_NAME: '', PAPILOT_UPDATE_PROBE: '1' };
@@ -187,17 +265,17 @@ test('a browser install restarts the real server and the original launcher keeps
     const base = `http://127.0.0.1:${port}`, before = await (await fetch(base + '/api/state')).json();
     const post = (route: string, body: unknown) => fetch(base + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, 'X-Papilot-Token': before.csrf }, body: JSON.stringify(body) });
     assert.equal((await (await post('/api/updates/check', {})).json()).phase, 'available');
-    assert.equal((await (await post('/api/updates/install', { version: '0.7.0' })).json()).phase, 'installing');
-    for (let i = 0; i < 100 && !(await health(port, '0.7.0')); i++) await sleep(100);
+    assert.equal((await (await post('/api/updates/install', { version })).json()).phase, 'installing');
+    for (let i = 0; i < 100 && !(await health(port, version)); i++) await sleep(100);
     const diagnostics = () => [path.join(folder, 'server.log'), path.join(data, 'updates/restart.log'), path.join(data, 'updates/server.log'), path.join(data, 'updates/status.json')].filter(file => fs.existsSync(file)).map(file => fs.readFileSync(file, 'utf8')).join('\n');
-    assert.ok(await health(port, '0.7.0'), diagnostics());
+    assert.ok(await health(port, version), diagnostics());
     for (let i = 0; i < 30 && readJson(path.join(data, 'updates/status.json'))?.phase !== 'updated'; i++) await sleep(100);
     assert.equal(readJson(path.join(data, 'updates/status.json')).phase, 'updated');
     assert.deepEqual((await (await fetch(base + '/api/state')).json()).projects.map((project: any) => project.id), ['kept-paper']);
-    assert.equal(execFileSync(process.execPath, [path.join(original, 'bin/papilot.mjs'), '--data', data, '--version'], { encoding: 'utf8' }).trim(), '0.7.0');
+    assert.equal(execFileSync(process.execPath, [path.join(original, 'bin/papilot.mjs'), '--data', data, '--version'], { encoding: 'utf8' }).trim(), version);
     await stop(); started = launch('src/server/main.ts');
-    for (let i = 0; i < 60 && !(await health(port, '0.7.0')); i++) await sleep(100);
-    assert.ok(await health(port, '0.7.0'));
+    for (let i = 0; i < 60 && !(await health(port, version)); i++) await sleep(100);
+    assert.ok(await health(port, version));
     assert.deepEqual((await (await fetch(base + '/api/state')).json()).projects.map((project: any) => project.id), ['kept-paper']);
   } finally { await stop(); fs.closeSync(log); fs.rmSync(folder, { recursive: true, force: true }); }
 });

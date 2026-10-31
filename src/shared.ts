@@ -6,7 +6,9 @@ export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_ATTACHMENT_TOTAL = 100 * 1024 * 1024;
 export interface Attachment { id: string; projectId: string; name: string; size: number; mime: string }
+export type UpdateChannel = 'stable' | 'dev';
 export interface UpdateStatus {
+  channel?: UpdateChannel;
   currentVersion: string; latestVersion: string | null;
   phase: 'idle' | 'checking' | 'available' | 'installing' | 'waiting' | 'restarting' | 'updated' | 'failed';
   checkedAt: number | null; error: string | null; canUpdate: boolean;

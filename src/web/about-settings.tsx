@@ -4,6 +4,7 @@ import type { LicenseNotice } from '../license-info.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
 import logo from './logo.svg';
+import { versionLabel } from './update-notice.tsx';
 import './settings.css';
 
 export function SettingsLink({ href, icon, title, detail }: { href: string; icon: string; title: string; detail?: string }) {
@@ -16,7 +17,7 @@ export function AboutSettings({ onLicenses }: { onLicenses: () => void }) {
   return <div className="about-settings">
     <div className="settings-product">
       <img src={logo} width="52" height="52" alt=""/>
-      <div><div className="settings-product-name">Papilot <span className="settings-version">v{info.version}</span></div><p>{t('A workspace for your papers.')}</p></div>
+      <div><div className="settings-product-name">Papilot <span className="settings-version" title={info.version}>v{versionLabel(info.version)}</span></div><p>{t('A workspace for your papers.')}</p></div>
     </div>
     <p className="settings-about-intro">{t('Read, annotate, and revise your papers with AI, all in one place.')}</p>
     <div className="settings-resources">

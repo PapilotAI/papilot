@@ -9,12 +9,13 @@ import { ShortcutSettings } from './shortcut-settings.tsx';
 import { AboutSettings, LicenseSettings } from './about-settings.tsx';
 import info from 'virtual:papilot-info';
 import { DiagnosticsSettings, type DiagnosticsSettingsProps } from './diagnostics-settings.tsx';
+import { UpdateSettings, versionLabel, type UpdateApi } from './update-notice.tsx';
 import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions } from './skill-library.tsx';
 
-type SettingsPage = 'general' | 'shortcuts' | 'about' | 'licenses' | 'diagnostics' | 'skills';
+type SettingsPage = 'general' | 'shortcuts' | 'about' | 'licenses' | 'diagnostics' | 'skills' | 'updates';
 
 // Browser preferences and workspace management share one sidebar entry.
-export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, accountName, diagnostics, skills, initialPage = 'general' }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; onPeople?: () => void; onSignOut?: () => void; accountName?: string; diagnostics?: DiagnosticsSettingsProps; skills?: SkillLibraryOptions; initialPage?: 'general' | 'shortcuts' }) {
+export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, accountName, diagnostics, skills, updates, initialPage = 'general' }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; onPeople?: () => void; onSignOut?: () => void; accountName?: string; diagnostics?: DiagnosticsSettingsProps; skills?: SkillLibraryOptions; updates?: UpdateApi; initialPage?: 'general' | 'shortcuts' }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const skillControls = useRef<SkillLibraryControls>(null);
   const { choice } = useLanguage();
@@ -53,8 +54,8 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
       {page === 'skills' && skills ? <SkillLibraryPanel {...skills} controls={skillControls} onBack={() => setPage('general')} onClose={onClose}/> : <>
       <button className="modal-close icon-button" aria-label={t('Close')} onClick={onClose}><Icon name="close"/></button>
       {page !== 'general' && <button type="button" className="settings-back" onClick={() => setPage(page === 'licenses' ? 'about' : 'general')}><Icon name="chevronLeft" size={14}/>{page === 'licenses' ? t('About Papilot') : t('Settings')}</button>}
-      <h2 id="settings-title" tabIndex={-1}>{page === 'shortcuts' ? t('Keyboard shortcuts') : page === 'about' ? t('About Papilot') : page === 'licenses' ? t('Third-party licenses') : page === 'diagnostics' ? t('Runtime & diagnostics') : t('Settings')}</h2>
-      {page === 'shortcuts' ? <ShortcutSettings/> : page === 'about' ? <AboutSettings onLicenses={() => setPage('licenses')}/> : page === 'licenses' ? <LicenseSettings/> : page === 'diagnostics' && diagnostics ? <DiagnosticsSettings {...diagnostics}/> : <>
+      <h2 id="settings-title" tabIndex={-1}>{page === 'shortcuts' ? t('Keyboard shortcuts') : page === 'about' ? t('About Papilot') : page === 'licenses' ? t('Third-party licenses') : page === 'diagnostics' ? t('Runtime & diagnostics') : page === 'updates' ? t('Updates') : t('Settings')}</h2>
+      {page === 'shortcuts' ? <ShortcutSettings/> : page === 'about' ? <AboutSettings onLicenses={() => setPage('licenses')}/> : page === 'licenses' ? <LicenseSettings/> : page === 'diagnostics' && diagnostics ? <DiagnosticsSettings {...diagnostics}/> : page === 'updates' && updates ? <UpdateSettings api={updates}/> : <>
       <h3 className="settings-section-title settings-preferences-title">{t('Preferences')}</h3>
       <div className="settings-row">
         <span className="settings-name" id="settings-appearance">{t('Appearance')}</span>
@@ -86,7 +87,8 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
         <button type="button" className="settings-navigation-row" data-settings-page="shortcuts" onClick={() => setPage('shortcuts')}><Icon name="keyboard" size={17}/><span>{t('Keyboard shortcuts')}</span><Icon name="chevronRight" size={15}/></button>
         {onPeople && <button type="button" className="settings-navigation-row" aria-haspopup="dialog" onClick={onPeople}><Icon name="people" size={17}/><span>{t('People')}</span><Icon name="chevronRight" size={15}/></button>}
         {diagnostics && <button type="button" className="settings-navigation-row" data-settings-page="diagnostics" onClick={() => setPage('diagnostics')}><Icon name="monitor" size={17}/><span>{t('Runtime & diagnostics')}</span><Icon name="chevronRight" size={15}/></button>}
-        <button type="button" className="settings-navigation-row" data-settings-page="about" onClick={() => setPage('about')}><Icon name="info" size={17}/><span>{t('About Papilot')}</span><small>v{info.version}</small><Icon name="chevronRight" size={15}/></button>
+        {updates && <button type="button" className="settings-navigation-row" data-settings-page="updates" onClick={() => setPage('updates')}><Icon name="arrowUp" size={17}/><span>{t('Updates')}</span><Icon name="chevronRight" size={15}/></button>}
+        <button type="button" className="settings-navigation-row" data-settings-page="about" onClick={() => setPage('about')}><Icon name="info" size={17}/><span>{t('About Papilot')}</span><small>v{versionLabel(info.version)}</small><Icon name="chevronRight" size={15}/></button>
         {onSignOut && <button type="button" className="settings-navigation-row" onClick={onSignOut}><Icon name="signOut" size={17}/><span>{t('Sign out')}</span>{accountName && <small>{accountName}</small>}</button>}
       </div>
       <footer className="settings-footer"><span>Papilot · {info.license}</span><a href={info.repository} target="_blank" rel="noopener noreferrer"><Icon name="github" size={15}/>GitHub<Icon name="external" size={12}/><span className="sr-only">{t('Opens in a new tab')}</span></a></footer>

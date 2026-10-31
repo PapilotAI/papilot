@@ -129,6 +129,7 @@ export async function buildApp(options: AppOptions) {
   if (options.updates) {
     app.get('/api/updates', owner, () => options.updates!.snapshot());
     app.post('/api/updates/check', owner, () => options.updates!.check());
+    app.post('/api/updates/channel', owner, request => options.updates!.setChannel((request.body as any)?.channel));
     app.post('/api/updates/install', owner, request => options.updates!.install((request.body as any)?.version));
   }
   app.get('/api/state', any, request => {

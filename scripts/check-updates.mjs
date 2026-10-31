@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium } from '../vendor/latex-review/node_modules/playwright/index.mjs';
+import { chromium, expect } from '../vendor/latex-review/node_modules/@playwright/test/index.mjs';
 
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
@@ -13,6 +13,7 @@ const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHA
 const state = { version: '0.6.0', csrf: 'fixture', projects: [], tasks: [], requests: [], runtime: { connected: true, authenticated: false, account: null, error: null, models: [] }, viewer: { id: 'owner', name: 'Owner', role: 'owner', listener: 'local', owner: 'Owner' } };
 let update = { currentVersion: '0.6.0', latestVersion: '0.6.0', phase: 'idle', checkedAt: Date.now(), error: null, canUpdate: true }, offline = false;
 const installs = [], errors = [];
+const devVersion = '0.7.0-dev.' + 'a'.repeat(40), channels = [];
 fs.mkdirSync('test-results', { recursive: true });
 try {
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1440, height: 900 } });
@@ -21,6 +22,13 @@ try {
     if (pathname === '/api/state') return route.fulfill({ json: state });
     if (pathname === '/api/updates') return offline ? route.abort() : route.fulfill({ json: update });
     if (pathname === '/api/updates/install') { installs.push(route.request().postDataJSON()); update.phase = 'installing'; return route.fulfill({ json: update }); }
+    if (pathname === '/api/updates/channel') {
+      const { channel } = route.request().postDataJSON(); channels.push(channel);
+      update = { ...update, channel, latestVersion: channel === 'dev' ? devVersion : '0.7.0', error: null };
+      update.phase = update.latestVersion === update.currentVersion ? 'idle' : 'available';
+      return route.fulfill({ json: update });
+    }
+    if (pathname === '/api/updates/check') return route.fulfill({ json: update });
     if (pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
     return route.fulfill({ json: {} });
   });
@@ -60,6 +68,39 @@ try {
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:update-test-draft')), 'keep this draft');
   await page.getByRole('button', { name: '设置', exact: true }).waitFor();
   assert.equal(await page.locator('.update-badge').count(), 0);
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '版本更新', exact: true }).click();
+  const settingsDialog = page.getByRole('dialog', { name: '版本更新', exact: true });
+  const channel = settingsDialog.getByLabel('更新通道', { exact: true });
+  await expect(channel).toHaveValue('stable');
+  await settingsDialog.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect(settingsDialog.getByText('你已在使用此通道的最新版本。', { exact: true })).toBeVisible();
+  await channel.selectOption('dev');
+  await expect(settingsDialog.getByText('0.7.0-dev.aaaaaaa', { exact: true })).toBeVisible();
+  assert.equal(installs.length, 2, 'changing channels only checks; it never installs automatically');
+  await settingsDialog.getByRole('button', { name: '更新到 0.7.0-dev.aaaaaaa', exact: true }).click();
+  assert.deepEqual(installs.at(-1), { version: devVersion });
+  await expect(channel).toBeDisabled();
+  await expect(settingsDialog.getByText('正在下载并构建选定的 GitHub 提交…', { exact: true })).toBeVisible();
+  update.phase = 'failed'; update.error = 'The dev build needs at least 2 GB of free disk space. Free some space and retry.';
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(settingsDialog.getByRole('alert')).toContainText('至少需要 2 GB');
+  await expect(channel).toBeEnabled();
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.screenshot({ path: 'test-results/dev-updates-mobile.png', animations: 'disabled' });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
+  update.error = null; update.phase = 'updated'; update.currentVersion = state.version = devVersion;
+  await Promise.all([page.waitForNavigation(), page.evaluate(() => window.dispatchEvent(new Event('online')))]);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '版本更新', exact: true }).click();
+  await expect(channel).toHaveValue('dev');
+  await channel.selectOption('stable');
+  await settingsDialog.getByRole('button', { name: '更新到 0.7.0', exact: true }).click();
+  assert.deepEqual(installs.at(-1), { version: '0.7.0' }, 'returning to stable is available from a dev build');
+  assert.deepEqual(channels, ['dev', 'stable']);
+  await settingsDialog.getByRole('button', { name: '关闭', exact: true }).click();
+  update = { ...update, currentVersion: '0.7.0', latestVersion: '0.7.0', phase: 'idle' }; state.version = '0.7.0';
   update = { ...update, latestVersion: '0.8.0', phase: 'available' };
   await page.evaluate(() => window.dispatchEvent(new Event('online'))); await badge.waitFor();
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -73,6 +114,9 @@ try {
   await page.reload();
   await page.getByRole('heading', { name: '还没有论文', exact: true }).waitFor();
   assert.equal(await page.locator('.update-badge').count(), 0, 'Collaborators have no update action');
+  await page.getByRole('button', { name: '显示任务列表', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: '版本更新', exact: true }).count(), 0, 'Collaborators cannot change channels');
   assert.deepEqual(errors, []);
   console.log('PASS: Update discovery, compact badge, confirmation, progress, retry, automatic reconnect/reload, dark/mobile layout and owner-only UI');
 } finally { await browser.close(); await server.close(); }
