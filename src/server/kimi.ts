@@ -217,9 +217,12 @@ export class KimiAgent extends Adapter {
     const question = options.filter((option: any) => option.kind === 'allow_once').length > 1;
     this.approvals.set(id, { rpcId: message.id, turn: live.turn, options, question });
     if (question) {
-      // An ACP permission answer can only select an option, never carry free text.
+      // Kimi's question tool is titled AskUserQuestion: the question itself is the
+      // tool's text, and a one-time rejection is its Skip choice. An ACP permission
+      // answer can only select an option, never carry free text.
+      const asked = (tool.content || []).map((part: any) => part.type === 'content' && part.content?.type === 'text' ? part.content.text : '').filter(Boolean).join('\n');
       this.emit('request', { id, method: 'item/tool/requestUserInput', params: { threadId: live.turn.threadId, turnId: live.turn.id,
-        questions: [{ id: 'choice', question: tool.title || 'Kimi needs your input.', isOther: false, options: options.filter((option: any) => option.kind === 'allow_once').map((option: any) => ({ label: option.name || option.optionId })) }] } });
+        questions: [{ id: 'choice', question: asked || tool.title || 'Kimi needs your input.', isOther: false, options: options.filter((option: any) => option.kind === 'allow_once' || option.kind === 'reject_once').map((option: any) => ({ label: option.name || option.optionId })) }] } });
       return;
     }
     this.emit('request', { id, method: edit ? 'item/fileChange/requestApproval' : 'item/commandExecution/requestApproval',
@@ -231,7 +234,7 @@ export class KimiAgent extends Adapter {
     const kind = result?.decision === 'accept' ? 'allow_once' : result?.decision === 'decline' ? 'reject_once' : null;
     const answer = result?.answers?.choice?.answers?.[0];
     const option = wait.question
-      ? wait.options.find(option => option.kind === 'allow_once' && (option.name || option.optionId) === answer)
+      ? wait.options.find(option => (option.kind === 'allow_once' || option.kind === 'reject_once') && (option.name || option.optionId) === answer)
       : wait.options.find(option => option.kind === kind);
     this.approvals.delete(String(id));
     this.send({ id: wait.rpcId, result: { outcome: option ? { outcome: 'selected', optionId: option.optionId } : { outcome: 'cancelled' } } });

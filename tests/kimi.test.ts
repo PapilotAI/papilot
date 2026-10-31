@@ -216,20 +216,28 @@ test('concurrent Kimi sessions keep text and permissions attached to their own t
   } finally { f.agent.close(); }
 });
 
-test('Kimi permission choices ask the user instead of silently selecting the first answer', { timeout: 5000 }, async () => {
-  const f = fixture((m, rpc) => rpc.send({ id: 'question', method: 'session/request_permission', params: { sessionId: m.params.sessionId, toolCall: { title: 'Which section?' }, options: [{ optionId: 'intro', name: 'Introduction', kind: 'allow_once' }, { optionId: 'model', name: 'Model', kind: 'allow_once' }] } }));
-  try {
-    await f.agent.start(); const id = await thread(f.agent);
-    const requested = new Promise<void>(resolve => f.agent.once('request', m => {
-      assert.equal(m.method, 'item/tool/requestUserInput');
-      assert.deepEqual(m.params.questions[0].options, [{ label: 'Introduction' }, { label: 'Model' }]);
-      assert.equal(m.params.questions[0].isOther, false, 'ACP cannot carry a typed answer');
-      f.agent.respond(m.id, { answers: { choice: { answers: ['Model'] } } }); resolve();
-    }));
-    const done = completion(f.agent);
-    await f.agent.request('turn/start', { threadId: id }); await requested; await tick();
-    assert.deepEqual(f.calls.find(call => call.id === 'question' && !call.method).result.outcome, { outcome: 'selected', optionId: 'model' });
-    f.peers[0].reply(f.calls.find(call => call.method === 'session/prompt').id, { stopReason: 'cancelled' });
-    await done;
-  } finally { f.agent.close(); }
-});
+// As Kimi Code CLI 2.2 sends it: the tool is titled AskUserQuestion, the
+// question is its text, and Skip is a one-time rejection.
+const ask = (sessionId: string, id: string) => ({ id, method: 'session/request_permission', params: { sessionId,
+  toolCall: { toolCallId: id, title: 'AskUserQuestion', content: [{ type: 'content', content: { type: 'text', text: 'Which section?' } }] },
+  options: [{ optionId: 'intro', name: 'Introduction', kind: 'allow_once' }, { optionId: 'model', name: 'Model', kind: 'allow_once' }, { optionId: 'skip', name: 'Skip', kind: 'reject_once' }] } });
+for (const [answer, optionId] of [['Model', 'model'], ['Skip', 'skip']]) {
+  test(`Kimi asks its question with its options and passes on ${answer}`, { timeout: 5000 }, async () => {
+    const f = fixture((m, rpc) => rpc.send(ask(m.params.sessionId, 'question')));
+    try {
+      await f.agent.start(); const id = await thread(f.agent);
+      const requested = new Promise<void>(resolve => f.agent.once('request', m => {
+        assert.equal(m.method, 'item/tool/requestUserInput');
+        assert.equal(m.params.questions[0].question, 'Which section?');
+        assert.deepEqual(m.params.questions[0].options, [{ label: 'Introduction' }, { label: 'Model' }, { label: 'Skip' }]);
+        assert.equal(m.params.questions[0].isOther, false, 'ACP cannot carry a typed answer');
+        f.agent.respond(m.id, { answers: { choice: { answers: [answer] } } }); resolve();
+      }));
+      const done = completion(f.agent);
+      await f.agent.request('turn/start', { threadId: id }); await requested; await tick();
+      assert.deepEqual(f.calls.find(call => call.id === 'question' && !call.method).result.outcome, { outcome: 'selected', optionId });
+      f.peers[0].reply(f.calls.find(call => call.method === 'session/prompt').id, { stopReason: 'cancelled' });
+      await done;
+    } finally { f.agent.close(); }
+  });
+}
