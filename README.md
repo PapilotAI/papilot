@@ -1,13 +1,14 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-  <img src="docs/assets/logo.svg" width="104" height="104" alt="Papilot logo">
-</picture>
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo.svg" width="48" height="48" align="absmiddle" alt="Papilot logo">
+  </picture>
+  Papilot
+</h1>
 
-<h1>Papilot</h1>
-
-<p><b>A Cursor-like workspace for your papers:<br>annotate and review PDFs directly without ever touching LaTeX.</b></p>
+<p><b>A Cursor-like workspace for your papers: annotate and review PDFs directly without ever touching LaTeX.</b></p>
 
 <p>English · <a href="README.zh-CN.md">简体中文</a></p>
 
@@ -20,17 +21,11 @@
 [![LaTeX](https://img.shields.io/badge/LaTeX-008080?logo=latex&logoColor=white)](https://www.latex-project.org)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-22c55e)](https://github.com/cu1ch3n/papilot/pulls)
 
-[![Codex](https://img.shields.io/badge/Codex-supported-10A37F?logo=openai&logoColor=white)](#-agents)
-[![Claude](https://img.shields.io/badge/Claude-supported-D97757?logo=claude&logoColor=white)](#-agents)
-[![Antigravity](https://img.shields.io/badge/Antigravity-supported-4285F4?logo=google&logoColor=white)](#-agents)
-
-<br>
+**Contents:** [Features](#-features) · [Quick start](#-quick-start) · [Agents](#-agents) · [Documentation](#-documentation) · [Community](#-community) · [Friends](#-friends) · [License](#-license)
 
 <img src="docs/assets/demo.gif" alt="Papilot: mark up a passage of the PDF, hand it to an agent, accept the typeset change and commit it" width="100%">
 
 </div>
-
-<br>
 
 You read and mark up the PDF the way a supervisor marks up a draft. An AI agent makes the edits in LaTeX, and every change comes back to you as a before-and-after of the typeset page. Nothing touches your paper until you accept it.
 

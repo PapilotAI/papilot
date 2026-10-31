@@ -1,13 +1,14 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-  <img src="docs/assets/logo.svg" width="104" height="104" alt="Papilot 标志">
-</picture>
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo.svg" width="48" height="48" align="absmiddle" alt="Papilot 标志">
+  </picture>
+  Papilot
+</h1>
 
-<h1>Papilot</h1>
-
-<p><b>像 Cursor 一样改论文：<br>直接在 PDF 上批注和审阅，完全不用碰 LaTeX。</b></p>
+<p><b>像 Cursor 一样改论文：直接在 PDF 上批注和审阅，完全不用碰 LaTeX。</b></p>
 
 <p><a href="README.md">English</a> · 简体中文</p>
 
@@ -20,17 +21,11 @@
 [![LaTeX](https://img.shields.io/badge/LaTeX-008080?logo=latex&logoColor=white)](https://www.latex-project.org)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-22c55e)](https://github.com/cu1ch3n/papilot/pulls)
 
-[![Codex](https://img.shields.io/badge/Codex-supported-10A37F?logo=openai&logoColor=white)](#-智能体)
-[![Claude](https://img.shields.io/badge/Claude-supported-D97757?logo=claude&logoColor=white)](#-智能体)
-[![Antigravity](https://img.shields.io/badge/Antigravity-supported-4285F4?logo=google&logoColor=white)](#-智能体)
-
-<br>
+**目录：** [功能](#-功能) · [快速开始](#-快速开始) · [智能体](#-智能体) · [文档](#-文档) · [社区](#-社区) · [友情链接](#-友情链接) · [许可证](#-许可证)
 
 <img src="docs/assets/demo.gif" alt="Papilot：在 PDF 上批注一段文字，交给智能体，接受排版后的改动并提交" width="100%">
 
 </div>
-
-<br>
 
 你像导师批改学生的稿子一样，直接在 PDF 上阅读和批注；AI 智能体去改 LaTeX，每一处改动都以排版后修改前后的对比回到你面前。你点头之前，论文一个字都不会变。
 
