@@ -32,8 +32,7 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   const badge = page.locator('.update-badge'); await badge.waitFor();
   const settings = await page.getByRole('button', { name: '设置', exact: true }).boundingBox(), tag = await badge.boundingBox();
-  assert.ok(Math.abs((settings.y + settings.height / 2) - (tag.y + tag.height / 2)) < 2, 'Badge shares the Settings row');
-  assert.ok(tag.x > settings.x + settings.width);
+  assert.ok(tag.y + tag.height <= settings.y, 'Update notices sit above the brand and Settings row');
   await page.locator('.sidebar-footer').screenshot({ path: 'test-results/update-badge.png' });
   await badge.click();
   const dialog = page.getByRole('dialog', { name: '更新 Papilot', exact: true }); await dialog.waitFor();

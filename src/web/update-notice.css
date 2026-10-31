@@ -1,9 +1,7 @@
-.update-badge{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:24px;padding:2px 7px;margin-left:auto;flex-shrink:0;border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:500;white-space:nowrap}
+.update-badge{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:24px;padding:2px 7px;flex-shrink:0;border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:500;white-space:nowrap}
 .update-badge:hover{border-color:var(--accent)}
 .update-badge.failed{background:var(--amber-soft);border-color:var(--amber-line);color:var(--amber-text)}
 .update-badge .spinner{width:11px;height:11px;border-top-color:currentColor}
-.sidebar-footer:has(.update-badge) .host-state{display:none}
-.sidebar-footer:has(.update-badge) .host-status{margin-left:0;flex-shrink:0}
 .update-dialog{width:min(390px,calc(100vw - 32px));padding:18px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg);color:var(--text);box-shadow:var(--float)}
 .update-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px}
 .update-heading h2{margin:0;font-size:17px;font-weight:600}
