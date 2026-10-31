@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import type { Snapshot, Task } from '../shared.ts';
+import { AGENT_NAMES, type Snapshot, type Task } from '../shared.ts';
 import { browserStorage } from './storage.ts';
 import { t, tn } from './i18n.ts';
 
@@ -39,7 +39,6 @@ export async function setNotifications(on: boolean) {
 }
 
 export interface TaskAlert { taskId: string; title: string; body: string }
-const agentNames: Record<string, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity' };
 // What changed since the last snapshot that the author should hear about.
 // Each task gives at most one alert per change of state.
 export function taskAlerts(previous: Snapshot, next: Snapshot): TaskAlert[] {
@@ -47,7 +46,7 @@ export function taskAlerts(previous: Snapshot, next: Snapshot): TaskAlert[] {
   for (const task of next.tasks) {
     const before = previous.tasks.find(t => t.id === task.id);
     if (!before) continue;
-    const agent = agentNames[task.agent || 'codex'] || 'Codex';
+    const agent = AGENT_NAMES[task.agent || 'codex'] || 'Codex';
     const asked = next.requests.filter(r => r.taskId === task.id && !previous.requests.some(p => p.id === r.id));
     if (asked.length) {
       const question = asked.some(r => r.method.endsWith('requestUserInput'));

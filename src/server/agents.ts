@@ -9,18 +9,21 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AccountInfo, ModelInfo, Options, PermissionResult, Query, SDKMessage, SDKRateLimitInfo, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentId } from '../shared.ts';
+import { AGENT_NAMES } from '../shared.ts';
 import { DATA, ROOT } from './paths.ts';
 import { imageType } from './attachments.ts';
 
 // Papilot drives every agent through the request and notification surface of
 // the Codex app-server: thread/start, thread/resume, turn/start,
 // turn/interrupt and thread/read, item and turn notifications, and approval
-// requests answered with respond(). Claude, Antigravity and Kimi get adapters
-// that translate their own interfaces into that surface, so the task
-// lifecycle (queueing, approvals, pausing, review rounds) stays in one place.
+// requests answered with respond(). Every other agent gets an adapter that
+// translates its own interface into that surface, so the task lifecycle
+// (queueing, approvals, pausing, review rounds) stays in one place.
 export interface AgentRuntime extends EventEmitter {
   ready: boolean;
+  // Whether the agent is present on this host (its CLI, SDK credentials or
+  // key), checked without starting it. Agents that are not found are hidden.
+  detect?(): boolean;
   start(): Promise<void>;
   request(method: string, params: any, timeout?: number): Promise<any>;
   respond(id: string | number, result: unknown): void;
@@ -28,7 +31,26 @@ export interface AgentRuntime extends EventEmitter {
   close(): void;
 }
 
-export const AGENT_NAMES: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity', kimi: 'Kimi' };
+export { AGENT_NAMES };
+
+// Where agent CLIs install themselves. A background service's PATH often
+// lacks these folders, so a CLI not on PATH is looked for here too.
+export function agentDirs(env: NodeJS.ProcessEnv = process.env) {
+  const home = env.HOME || os.homedir();
+  return ['.local/bin', '.claude/local', '.kimi-code/bin', '.opencode/bin', '.bun/bin', '.npm-global/bin'].map(dir => path.join(home, dir)).concat('/opt/homebrew/bin', '/usr/local/bin');
+}
+// The executable a command name resolves to on PATH or in an agent folder (or the path itself), or null.
+export function findExecutable(command: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const windows = process.platform === 'win32';
+  const extensions = windows ? ['', ...(env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';')] : [''];
+  const usable = (file: string) => {
+    try { if (!fs.statSync(file).isFile()) return false; fs.accessSync(file, windows ? fs.constants.F_OK : fs.constants.X_OK); return true; } catch { return false; }
+  };
+  const candidates = command.includes('/') || (windows && command.includes('\\')) ? [path.resolve(command)]
+    : [...new Set([...(env.PATH || '').split(path.delimiter).filter(Boolean), ...agentDirs(env)])].map(dir => path.join(dir, command));
+  for (const candidate of candidates) for (const extension of extensions) if (usable(candidate + extension)) return candidate + extension;
+  return null;
+}
 
 export interface Thread { cwd: string; instructions: string; model: string | null; started: boolean }
 export interface Turn { id: string; threadId: string; clientId?: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; stop: () => void }
@@ -57,7 +79,7 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
     if (method === 'turn/start') {
       const thread = this.threads.get(String(params.threadId));
       if (!thread) throw new Error('Start or resume the thread before starting a turn.');
-      const text = (params.input || []).map((part: { text?: string }) => part.text || '').join('\n');
+      const text = (params.input || []).filter((part: { text?: unknown }) => typeof part.text === 'string').map((part: { text: string }) => part.text).join('\n');
       const images = (params.input || []).filter((part: { type?: string; path?: string }) => part.type === 'localImage' && typeof part.path === 'string').map((part: { path: string }) => part.path);
       const turn: Turn = { id: randomUUID(), threadId: String(params.threadId), clientId: params.clientUserMessageId, status: 'inProgress', stop: () => {} };
       turn.stop = () => this.finish(turn, 'interrupted');
@@ -87,7 +109,7 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
 }
 
 // Tool calls shown in the conversation: commands, file edits, and the rest by name.
-function toolItem(id: string, name: string, input: Record<string, any>): Item {
+export function toolItem(id: string, name: string, input: Record<string, any>): Item {
   const file = input.file_path || input.notebook_path || input.Path || input.TargetFile || input.AbsolutePath;
   if (name === 'Bash' || name === 'run_command') return { id, type: 'commandExecution', command: String(input.command || input.CommandLine || ''), status: 'inProgress' };
   if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'write_to_file', 'write_file', 'edit_file', 'create_file', 'replace_file_content', 'multi_replace_file_content', 'sed_file', 'notebook_edit'].includes(name) && file) return { id, type: 'fileChange', changes: [{ path: String(file) }], status: 'inProgress' };
@@ -96,24 +118,32 @@ function toolItem(id: string, name: string, input: Record<string, any>): Item {
 }
 
 const CLAUDE_KEY = 'Claude needs an Anthropic API key: Anthropic does not allow a Claude subscription login through the Claude Agent SDK. Start Papilot with ANTHROPIC_API_KEY set to use Claude.';
+export function claudeConfigured(env: NodeJS.ProcessEnv = process.env) {
+  return Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CODE_USE_VERTEX || env.CLAUDE_CODE_USE_FOUNDRY);
+}
+// Agent SDKs carry large native parts, so an installed Papilot fetches one
+// into the data folder the first time its agent can be used. ready() runs
+// before the download and throws when the agent is not configured.
+export async function loadPackage(name: string, version: string, label: string, ready: () => void = () => {}): Promise<any> {
+  try { return await import(name); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw error; }
+  const prefix = path.join(DATA, 'agents'), resolve = () => createRequire(path.join(prefix, 'package.json')).resolve(name);
+  let entry: string;
+  try { entry = resolve(); } catch {
+    ready();
+    console.log(`Installing ${label} (first use only)...`);
+    await promisify(execFile)('npm', ['install', '--prefix', prefix, `${name}@${version}`, '--no-audit', '--no-fund', '--loglevel=error'], { maxBuffer: 16 * 1024 * 1024 });
+    entry = resolve();
+  }
+  return import(pathToFileURL(entry).href);
+}
+
 let claude: Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> | null = null;
-// The Claude Agent SDK carries Claude Code, a large download, so an installed
-// Papilot fetches it into the data folder the first time Claude can be used.
-export function loadClaude() {
+// The Claude Agent SDK carries Claude Code. GLM runs on it too.
+export function loadClaude(credentialed = claudeConfigured()) {
   claude ??= (async () => {
-    try { return (await import('@anthropic-ai/claude-agent-sdk')).query; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw error; }
-    const prefix = path.join(DATA, 'agents'), resolve = () => createRequire(path.join(prefix, 'package.json')).resolve('@anthropic-ai/claude-agent-sdk');
-    let entry: string;
-    try { entry = resolve(); } catch {
-      const env = process.env;
-      if (!(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CODE_USE_VERTEX || env.CLAUDE_CODE_USE_FOUNDRY)) throw new Error(CLAUDE_KEY);
-      const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).devDependencies['@anthropic-ai/claude-agent-sdk'];
-      console.log('Installing the Claude Agent SDK for Claude tasks (first use only)...');
-      await promisify(execFile)('npm', ['install', '--prefix', prefix, `@anthropic-ai/claude-agent-sdk@${version}`, '--no-audit', '--no-fund', '--loglevel=error'], { maxBuffer: 16 * 1024 * 1024 });
-      entry = resolve();
-    }
-    return (await import(pathToFileURL(entry).href)).query;
+    const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).devDependencies['@anthropic-ai/claude-agent-sdk'];
+    return (await loadPackage('@anthropic-ai/claude-agent-sdk', version, 'the Claude Agent SDK for Claude and GLM tasks', () => { if (!credentialed) throw new Error(CLAUDE_KEY); })).query;
   })().catch(error => { claude = null; throw error; });
   return claude;
 }
@@ -123,19 +153,54 @@ export function loadClaude() {
 // if ANTHROPIC_API_KEY is set). Papilot never reads or stores the credential.
 // Edits in the task worktree are accepted, commands run in Claude Code's
 // sandbox, and anything that needs approval comes to Papilot as a request.
+// With Claude Code installed, Claude runs as `claude -p` with the login on
+// this host (a Claude plan or an API key), one process per turn, resuming the
+// same session. Edits in the worktree are accepted and commands run in Claude
+// Code's sandbox; -p cannot ask for approval, so anything that would need it
+// is declined and noted in the conversation. Without the CLI, an API key runs
+// Claude through the Agent SDK, which can ask for approvals.
+const CLAUDE_LOGIN = 'Claude Code is not signed in on this host. Run claude auth login, then select Reconnect.';
+export const CLAUDE_CLI_MODELS = [
+  { model: 'fable', displayName: 'Fable', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { model: 'opus', displayName: 'Opus', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { model: 'sonnet', displayName: 'Sonnet', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { model: 'haiku', displayName: 'Haiku', efforts: [] },
+];
+interface ClaudeLogin { loggedIn?: boolean; authMethod?: string; apiProvider?: string; email?: string; subscriptionType?: string }
+type Launch = (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => ChildProcess;
+
 export class ClaudeAgent extends Adapter {
-  private info: { account: AccountInfo | null; models: ModelInfo[] } = { account: null, models: [] };
+  protected name = 'Claude';
+  protected info: { account: AccountInfo | null; models: ModelInfo[] } = { account: null, models: [] };
   private rateLimits = new Map<string, SDKRateLimitInfo>();
   private defaults = new Map<string, string>();
   private approvals = new Map<string, { resolve: (result: PermissionResult) => void; input: Record<string, unknown>; kind: 'tool' | 'question'; questions: string[] }>();
-  constructor(private load: () => Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> = loadClaude) { super(); }
+  private cli: string | null = null;
+  private login: ClaudeLogin | null = null;
+  constructor(private load: () => Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> = () => loadClaude(),
+    private findCli: () => string | null = () => findExecutable(process.env.PAPILOT_CLAUDE_BIN || 'claude'),
+    private launch: Launch = (command, args, options) => spawn(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'] })) { super(); }
+  detect() { return Boolean(this.findCli()) || claudeConfigured(); }
+  // The environment Claude Code runs with; undefined keeps Papilot's own.
+  protected environment(): Record<string, string> | undefined { return undefined; }
   async start() {
     if (this.ready) return;
+    this.cli = this.findCli();
+    if (this.cli) {
+      // Only the login state is read; the credential stays with Claude Code.
+      const status = await promisify(execFile)(this.cli, ['auth', 'status', '--json'], { timeout: 20000 }).catch((error: { stdout?: string }) => ({ stdout: error.stdout || '{}' }));
+      try { this.login = JSON.parse(status.stdout); } catch { this.login = null; }
+      // Claude Code's own model list, with versions and efforts; the aliases stand in if it cannot be read.
+      this.info.models = this.login?.loggedIn ? await this.listModels(this.cli).catch(() => []) : [];
+      this.ready = true;
+      return;
+    }
     const query = await this.load();
     // Reading the account and models starts Claude Code without sending a prompt.
     let finish = () => {};
     const idle = (async function* (): AsyncGenerator<SDKUserMessage> { await new Promise<void>(resolve => { finish = resolve; }); })();
-    const probe = query({ prompt: idle, options: { cwd: os.homedir(), settingSources: [] } });
+    const env = this.environment();
+    const probe = query({ prompt: idle, options: { cwd: os.homedir(), settingSources: [], ...(env ? { env } : {}) } });
     try {
       const [account, models] = await Promise.all([probe.accountInfo(), probe.supportedModels()]);
       this.info = { account, models };
@@ -145,13 +210,40 @@ export class ClaudeAgent extends Adapter {
   // Claude tasks need an API key, an ANTHROPIC_AUTH_TOKEN (for a gateway or an
   // Anthropic-compatible ANTHROPIC_BASE_URL), or a cloud provider's own
   // credentials: Anthropic does not accept a Claude subscription login through the SDK.
+  // Claude Code answers an initialize request with its models before any
+  // prompt is sent; reading them sends nothing to a model.
+  private async listModels(cli: string): Promise<ModelInfo[]> {
+    const child = this.launch(cli, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-prompts', 'none'], { cwd: os.homedir(), env: this.environment() || process.env });
+    try {
+      return await new Promise<ModelInfo[]>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Claude Code did not list its models.')), 20000);
+        createInterface({ input: child.stdout! }).on('line', line => {
+          let message: any;
+          try { message = JSON.parse(line); } catch { return; }
+          const response = message.type === 'control_response' ? message.response : null;
+          if (response?.request_id === 'papilot-models') { clearTimeout(timer); Array.isArray(response.response?.models) ? resolve(response.response.models) : reject(new Error(response.error || 'No models.')); }
+        });
+        child.once('error', error => { clearTimeout(timer); reject(error); });
+        child.once('close', () => { clearTimeout(timer); reject(new Error('Claude Code exited before listing its models.')); });
+        child.stdin!.on('error', () => {});
+        child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: 'papilot-models', request: { subtype: 'initialize' } }) + '\n');
+      });
+    } finally { child.kill(); }
+  }
   protected account() {
+    if (this.cli) {
+      const login = this.login;
+      if (!login?.loggedIn) return { account: null, requiresOpenaiAuth: true, reason: CLAUDE_LOGIN };
+      const plan = login.subscriptionType ? `Claude ${login.subscriptionType.charAt(0).toUpperCase()}${login.subscriptionType.slice(1)}` : null;
+      return { account: { email: login.email, type: plan || (login.apiProvider && login.apiProvider !== 'firstParty' ? login.apiProvider : 'API key') }, requiresOpenaiAuth: false };
+    }
     const account = this.info.account, keyed = Boolean(account?.apiKeySource && !['none', 'oauth'].includes(account.apiKeySource)) || account?.tokenSource === 'ANTHROPIC_AUTH_TOKEN';
     const external = Boolean(account?.apiProvider && account.apiProvider !== 'firstParty');
     if (keyed || external) return { account: { email: account?.email, type: external ? account!.apiProvider : 'API key' }, requiresOpenaiAuth: false };
     return { account: null, requiresOpenaiAuth: true, reason: CLAUDE_KEY };
   }
   protected models() {
+    if (this.cli && !this.info.models.length) return { data: CLAUDE_CLI_MODELS.map(model => ({ model: model.model, displayName: model.displayName, isDefault: false, supportedReasoningEfforts: model.efforts.map(effort => ({ reasoningEffort: effort })), defaultReasoningEffort: null })) };
     const all = this.info.models, preferred = all.find(model => model.value === 'default');
     const data = all.filter(model => model.value !== 'default').map(model => ({
       model: model.value, displayName: model.displayName,
@@ -167,7 +259,7 @@ export class ClaudeAgent extends Adapter {
       .map(info => ({ usedPercent: info.utilization! <= 1 ? info.utilization! * 100 : info.utilization!, windowDurationMins: info.rateLimitType === 'five_hour' ? 300 : 10080, resetsAt: info.resetsAt ? (info.resetsAt > 1e12 ? Math.round(info.resetsAt / 1000) : info.resetsAt) : null }));
     if (!windows.length) throw new Error('Claude has not reported usage yet.');
     const rejected = [...this.rateLimits.values()].some(info => info.status === 'rejected');
-    return { ordinaryUsageAllowed: !rejected, rateLimits: { planType: this.info.account?.subscriptionType?.replace(/^Claude\s+/i, '').toLowerCase() || null, primary: windows[0], secondary: windows[1] || null, credits: null, rateLimitReachedType: rejected ? 'rate_limit_reached' : null } };
+    return { ordinaryUsageAllowed: !rejected, rateLimits: { planType: (this.login?.subscriptionType || this.info.account?.subscriptionType)?.replace(/^Claude\s+/i, '').toLowerCase() || null, primary: windows[0], secondary: windows[1] || null, credits: null, rateLimitReachedType: rejected ? 'rate_limit_reached' : null } };
   }
   respond(id: string | number, result: any) {
     const wait = this.approvals.get(String(id));
@@ -182,7 +274,49 @@ export class ClaudeAgent extends Adapter {
     const wait = this.approvals.get(String(id));
     if (wait) { this.approvals.delete(String(id)); wait.resolve({ behavior: 'deny', message }); }
   }
-  protected run(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]) { void this.execute(turn, thread, text, effort, images); }
+  protected run(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]) { void (this.cli ? this.print(turn, thread, text, effort, images) : this.execute(turn, thread, text, effort, images)); }
+  // One `claude -p` process per turn, with only documented options. The
+  // thread ID is the Claude session ID, so a later turn resumes it.
+  private async print(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]) {
+    let stopped = false, error = '', stderr = '', denied: string[] = [];
+    const tools = new Map<string, Item>(), texts = new Map<string, string>();
+    try {
+      const content: Record<string, unknown>[] = [{ type: 'text', text }];
+      for (const file of images) {
+        const bytes = await fs.promises.readFile(file), mime = imageType(bytes);
+        if (!mime) throw new Error('This image format is not supported.');
+        content.push({ type: 'image', source: { type: 'base64', media_type: mime, data: bytes.toString('base64') } });
+      }
+      const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
+        '--permission-mode', 'acceptEdits', '--permission-prompts', 'none', '--setting-sources', 'project',
+        '--settings', JSON.stringify({ sandbox: { enabled: true, autoAllowBashIfSandboxed: true } }),
+        // A question cannot be answered in -p; Claude asks in its reply instead.
+        '--disallowedTools', 'AskUserQuestion', ...(thread.instructions ? ['--append-system-prompt', thread.instructions] : []),
+        ...(thread.model ? ['--model', thread.model] : []), ...(effort ? ['--effort', effort] : []),
+        ...(thread.started ? ['--resume', turn.threadId] : ['--session-id', turn.threadId])];
+      const env = this.environment() || process.env;
+      const child = this.launch(this.cli!, args, { cwd: thread.cwd, env });
+      turn.stop = () => { stopped = true; child.kill('SIGINT'); setTimeout(() => child.kill('SIGKILL'), 5000).unref(); };
+      child.stdin!.on('error', () => {});
+      child.stdin!.end(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n');
+      child.stderr!.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-4000); });
+      createInterface({ input: child.stdout! }).on('line', line => {
+        let message: any;
+        try { message = JSON.parse(line); } catch { return; }
+        if (!thread.started && message.type === 'system' && message.subtype === 'init') { thread.started = true; this.threads.set(turn.threadId, { ...thread, started: true }); }
+        if (message.type === 'result' && Array.isArray(message.permission_denials)) denied = message.permission_denials.map((denial: { tool_name?: string }) => denial.tool_name).filter(Boolean);
+        this.translate(turn, thread, message as SDKMessage, tools, texts, value => { error = value; });
+      });
+      const code = await new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+      if (denied.length) this.item(turn, { id: `${turn.id}:denied`, type: 'agentMessage', text: `Claude could not use ${[...new Set(denied)].join(', ')}: with claude -p, Papilot cannot ask for approval, so anything outside the worktree and Claude Code's sandbox is declined.` });
+      if (stopped) this.finish(turn, 'interrupted');
+      else if (error) this.finish(turn, 'failed', error);
+      else if (code !== 0) this.finish(turn, 'failed', stderr.trim().split('\n').slice(-3).join(' ') || `claude exited with code ${code}.`);
+      else this.finish(turn, 'completed');
+    } catch (e) {
+      this.finish(turn, stopped ? 'interrupted' : 'failed', stopped ? undefined : e instanceof Error ? e.message : String(e));
+    }
+  }
   private async execute(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]) {
     const abort = new AbortController();
     turn.stop = () => abort.abort();
@@ -191,7 +325,7 @@ export class ClaudeAgent extends Adapter {
     try {
       const query = await this.load();
       const options: Options = {
-        cwd: thread.cwd, abortController: abort, includePartialMessages: true,
+        cwd: thread.cwd, abortController: abort, includePartialMessages: true, ...(this.environment() ? { env: this.environment() } : {}),
         ...(thread.model ? { model: thread.model } : {}), ...(effort ? { effort: effort as Options['effort'] } : {}),
         // The thread ID is the Claude session ID, so a later turn resumes it.
         ...(thread.started ? { resume: turn.threadId } : { sessionId: turn.threadId }),
@@ -206,7 +340,7 @@ export class ClaudeAgent extends Adapter {
           const shown = toolItem(id, name, input);
           this.emit('request', question
             ? { id, method: 'item/tool/requestUserInput', params: { threadId: turn.threadId, turnId: turn.id, questions: questions.map((q, index) => ({ id: String(index), header: q.header, question: q.question, options: q.options })) } }
-            : { id, method: shown.type === 'fileChange' ? 'item/fileChange/requestApproval' : 'item/commandExecution/requestApproval', params: { threadId: turn.threadId, turnId: turn.id, reason: title || decisionReason || `Claude wants to use ${name}.`, command: shown.type === 'commandExecution' ? shown.command : shown.type === 'fileChange' ? `Edit ${(shown.changes as { path: string }[])[0].path}` : shown.text } });
+            : { id, method: shown.type === 'fileChange' ? 'item/fileChange/requestApproval' : 'item/commandExecution/requestApproval', params: { threadId: turn.threadId, turnId: turn.id, reason: title || decisionReason || `${this.name} wants to use ${name}.`, command: shown.type === 'commandExecution' ? shown.command : shown.type === 'fileChange' ? `Edit ${(shown.changes as { path: string }[])[0].path}` : shown.text } });
         }),
       };
       const prompt = images.length ? (async function* (): AsyncGenerator<SDKUserMessage> {
@@ -222,11 +356,12 @@ export class ClaudeAgent extends Adapter {
         if (!thread.started && 'session_id' in message && message.session_id) { thread.started = true; this.threads.set(turn.threadId, { ...thread, started: true }); }
         this.translate(turn, thread, message, tools, texts, value => { error = value; });
       }
-      this.finish(turn, abort.signal.aborted ? 'interrupted' : error ? 'failed' : 'completed', error ? explain(error) : undefined);
+      this.finish(turn, abort.signal.aborted ? 'interrupted' : error ? 'failed' : 'completed', error ? this.explain(error) : undefined);
     } catch (e) {
-      this.finish(turn, abort.signal.aborted ? 'interrupted' : 'failed', abort.signal.aborted ? undefined : explain(e instanceof Error ? e.message : String(e)));
+      this.finish(turn, abort.signal.aborted ? 'interrupted' : 'failed', abort.signal.aborted ? undefined : this.explain(e instanceof Error ? e.message : String(e)));
     }
   }
+  protected explain(error: string) { return explain(error); }
   private translate(turn: Turn, thread: Thread, message: SDKMessage, tools: Map<string, Item>, texts: Map<string, string>, fail: (error: string) => void) {
     if (message.type === 'system' && message.subtype === 'init') {
       if (message.effort && thread.model) this.defaults.set(thread.model, message.effort);
@@ -250,8 +385,8 @@ export class ClaudeAgent extends Adapter {
     } else if (message.type === 'rate_limit_event') {
       if (message.rate_limit_info.rateLimitType) this.rateLimits.set(message.rate_limit_info.rateLimitType, message.rate_limit_info);
       this.notify('account/rateLimits/updated', {});
-    } else if (message.type === 'result' && message.subtype !== 'success') fail(message.errors?.join(' ') || 'Claude stopped with an error.');
-    else if (message.type === 'result' && message.is_error) fail(message.result || 'Claude stopped with an error.');
+    } else if (message.type === 'result' && message.subtype !== 'success') fail(message.errors?.join(' ') || `${this.name} stopped with an error.`);
+    else if (message.type === 'result' && message.is_error) fail(message.result || `${this.name} stopped with an error.`);
   }
 }
 
@@ -261,6 +396,45 @@ function explain(error: string) {
   return /403[^\n]*Request not allowed/i.test(error)
     ? `Anthropic refused the request (${error.trim()}). A Claude subscription login cannot be used through the Claude Agent SDK; give Papilot an Anthropic API key (ANTHROPIC_API_KEY) to run Claude.`
     : error;
+}
+
+// GLM runs on Claude Code through Zhipu's Anthropic-compatible endpoint, the
+// way Zhipu documents GLM Coding Plan for Claude Code. ZHIPU_API_KEY selects
+// open.bigmodel.cn and ZAI_API_KEY the international api.z.ai. Claude Code
+// gets the key as its auth token, and only for that endpoint: Anthropic keys
+// and cloud-provider switches in Papilot's environment are not passed on.
+export const GLM_MODELS = [
+  { model: 'glm-5.3', displayName: 'GLM-5.3' }, { model: 'glm-5.3-flash', displayName: 'GLM-5.3 Flash' },
+  { model: 'glm-5-turbo', displayName: 'GLM-5 Turbo' }, { model: 'glm-4.7', displayName: 'GLM-4.7' },
+];
+export function glmEndpoint(env: NodeJS.ProcessEnv = process.env) {
+  if (env.ZHIPU_API_KEY) return { url: 'https://open.bigmodel.cn/api/anthropic', token: env.ZHIPU_API_KEY, account: 'Zhipu API key' };
+  if (env.ZAI_API_KEY) return { url: 'https://api.z.ai/api/anthropic', token: env.ZAI_API_KEY, account: 'Z.ai API key' };
+  return null;
+}
+const GLM_KEY = 'GLM needs a GLM Coding Plan or API key: start Papilot with ZHIPU_API_KEY (open.bigmodel.cn) or ZAI_API_KEY (api.z.ai) set.';
+export class GlmAgent extends ClaudeAgent {
+  protected name = 'GLM';
+  constructor(load: () => Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> = () => loadClaude(true), private env: NodeJS.ProcessEnv = process.env) { super(load, () => null); }
+  detect() { return Boolean(glmEndpoint(this.env)); }
+  protected environment() {
+    const endpoint = glmEndpoint(this.env);
+    if (!endpoint) throw new Error(GLM_KEY);
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(this.env)) if (value !== undefined && !/^(ANTHROPIC_|CLAUDE_CODE_USE_|AWS_BEARER_TOKEN_BEDROCK$)/.test(key)) env[key] = value;
+    return { ...env, ANTHROPIC_BASE_URL: endpoint.url, ANTHROPIC_AUTH_TOKEN: endpoint.token,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3', ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-4.7',
+      API_TIMEOUT_MS: '3000000', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' };
+  }
+  protected account() {
+    const endpoint = glmEndpoint(this.env);
+    return endpoint && this.ready ? { account: { email: undefined, type: endpoint.account }, requiresOpenaiAuth: false } : { account: null, requiresOpenaiAuth: true, reason: GLM_KEY };
+  }
+  protected models() {
+    return { data: GLM_MODELS.map((model, index) => ({ ...model, isDefault: index === 0, supportedReasoningEfforts: [], defaultReasoningEffort: null })) };
+  }
+  protected limits(): never { throw new Error('GLM does not report usage to Papilot.'); }
+  protected explain(error: string) { return error; }
 }
 
 // Antigravity runs as `agy -p` with streamed JSON, one process per turn,
@@ -276,6 +450,7 @@ export class AntigravityAgent extends Adapter {
     super();
     try { this.conversations = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { /* None yet. */ }
   }
+  detect() { return Boolean(findExecutable(this.binary)); }
   // Some regions need a proxy for Antigravity; PAPILOT_AGY_PROXY applies only to agy.
   private env() {
     const proxy = process.env.PAPILOT_AGY_PROXY;
@@ -283,7 +458,7 @@ export class AntigravityAgent extends Adapter {
   }
   async start() {
     if (this.ready) return;
-    const { stdout } = await promisify(execFile)(this.binary, ['models'], { env: this.env(), timeout: 60000 });
+    const { stdout } = await promisify(execFile)(findExecutable(this.binary) || this.binary, ['models'], { env: this.env(), timeout: 60000 });
     let preferred = '';
     try { preferred = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.gemini/antigravity-cli/settings.json'), 'utf8')).model || ''; } catch { /* No saved choice. */ }
     this.catalog = groupModels(stdout, preferred);
@@ -300,7 +475,7 @@ export class AntigravityAgent extends Adapter {
     const model = entry ? entry.ids[effort || entry.defaultEffort || ''] || Object.values(entry.ids)[0] : thread.model;
     // agy has no separate system prompt: the first turn carries Papilot's instructions.
     const prompt = conversation ? text : `${thread.instructions}\n\n---\n\n${text}`;
-    const child = this.launch(this.binary, ['-p', prompt, '--output-format', 'stream-json', '--mode', 'accept-edits', ...(model ? ['--model', model] : []), ...(conversation ? ['--conversation', conversation] : [])], { cwd: thread.cwd, env: this.env() });
+    const child = this.launch(findExecutable(this.binary) || this.binary, ['-p', prompt, '--output-format', 'stream-json', '--mode', 'accept-edits', ...(model ? ['--model', model] : []), ...(conversation ? ['--conversation', conversation] : [])], { cwd: thread.cwd, env: this.env() });
     let stopped = false, result: { status?: string; error?: string; denied_actions?: { display_name?: string; action?: string }[] } | null = null, stderr = '';
     turn.stop = () => { stopped = true; child.kill('SIGINT'); setTimeout(() => child.kill('SIGKILL'), 5000).unref(); };
     const texts = new Map<number, string>();

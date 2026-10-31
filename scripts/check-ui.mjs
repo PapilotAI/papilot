@@ -19,7 +19,7 @@ page.on('pageerror', error => pageErrors.push(error.message));
 const task = { id: 'fixture-task-0001', projectId: 'fixture-paper', name: 'p-fixture', title: 'Clarify the introduction', instructions: 'Keep the technical meaning.', worktree: '/tmp/fixture', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 3, commented: 1 } } };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: '2x speed, increased usage' } }], usage: { plan: 'pro', windows: [{ usedPercent: 83, minutes: 10080, resetsAt: Date.now() + 3 * 86_400_000 }], credits: { unlimited: false, balance: 12418.76 }, reached: false } } };
 // Claude is available with its own models; Antigravity is not installed.
-snapshot.runtimes = { codex: snapshot.runtime, claude: { connected: true, authenticated: true, account: 'Claude Max', error: null, models: [{ id: 'opus', name: 'Opus 5.5', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: null }, { id: 'haiku', name: 'Haiku 5.5', isDefault: false, efforts: ['low', 'medium', 'high'], defaultEffort: null }] }, antigravity: { connected: false, authenticated: false, account: null, error: 'spawn agy ENOENT', models: [] } };
+snapshot.runtimes = { codex: snapshot.runtime, claude: { connected: true, authenticated: true, account: 'Claude Max', error: null, models: [{ id: 'opus', name: 'Opus 5.5', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: null }, { id: 'haiku', name: 'Haiku 5.5', isDefault: false, efforts: ['low', 'medium', 'high'], defaultEffort: null }] }, antigravity: { connected: false, authenticated: false, account: null, error: 'spawn agy ENOENT', models: [] }, kimi: { installed: true, connected: false, authenticated: false, account: null, error: null, models: [] }, cursor: { installed: false, connected: false, authenticated: false, account: null, error: null, models: [] } };
 const messages = [];
 let diagnosticFailure = true;
 const diagnosticRequests = [];
@@ -166,7 +166,9 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/archive')) {
     if (archiveFailure) return route.fulfill({ status: 503, json: { error: 'Could not archive. Try again.' } });
     const id = url.pathname.split('/')[3], body = route.request().postDataJSON(); archives.push({ id, ...body });
-    const target = snapshot.tasks.find(t => t.id === id); target.archivedAt = body.archived ? Date.now() : null; return json(target);
+    const target = snapshot.tasks.find(t => t.id === id);
+    if (body.archived && body.finished && target.review?.state !== 'done') return json(target);
+    target.archivedAt = body.archived ? Date.now() : null; return json(target);
   }
   if (url.pathname.endsWith('/delete')) {
     const id = url.pathname.split('/')[3];
@@ -881,46 +883,63 @@ try {
   assert.equal(await usage.getByRole('meter', { name: 'Weekly limit used' }).getAttribute('aria-valuenow'), '83');
   assert.match(await usage.innerText(), /Pro[\s\S]*Weekly limit[\s\S]*83% used[\s\S]*resets [\s\S]*12,418 credits/);
   await usage.locator('summary').click();
-  // All settings share one compact trigger, and fast mode follows model support.
+  // One picker lists every agent's models with a search; one choice sets the
+  // agent and its model, and effort and fast mode follow the chosen model.
   const settingsTrigger = page.getByRole('button', { name: 'Agent settings', exact: true });
   const agentSettings = page.getByRole('dialog', { name: 'Agent settings', exact: true });
   await settingsTrigger.click();
-  const agentChoices = agentSettings.getByRole('radiogroup', { name: 'Agent', exact: true });
-  const chooseAgent = name => agentChoices.getByRole('radio', { name, exact: true }).click();
-  const modelChip = agentSettings.getByRole('combobox', { name: 'Model', exact: true });
+  const search = agentSettings.getByRole('combobox', { name: 'Search models', exact: true });
+  const models = agentSettings.getByRole('listbox', { name: 'Models', exact: true });
+  // A recent choice is listed again under its agent; the agent's own entry is the last.
+  const option = name => models.getByRole('option', { name, exact: true }).last();
+  const choose = name => option(name).click();
+  const groupNames = () => models.getByRole('group').evaluateAll(groups => groups.map(group => group.getAttribute('aria-label')));
   const effortChoice = agentSettings.getByRole('slider', { name: 'Reasoning effort', exact: true });
   const fastMode = agentSettings.getByRole('switch', { name: 'Fast mode' });
-  assert.equal(await agentChoices.getByRole('radio', { name: 'Codex', exact: true }).getAttribute('aria-checked'), 'true');
-  assert.deepEqual(await agentChoices.getByRole('radio').allInnerTexts(), ['Codex', 'Claude', 'Antigravity', 'Kimi']);
-  assert.match(await settingsTrigger.innerText(), /Medium/);
+  assert.equal(await search.evaluate(el => el === document.activeElement), true, 'typing searches right away');
+  assert.deepEqual(await groupNames(), ['Codex', 'Claude', 'Antigravity', 'Kimi']);
+  assert.equal(await option('Fast model · Codex').getAttribute('aria-selected'), 'true');
+  assert.deepEqual(await option('Default model · Antigravity').locator('small').allInnerTexts(), ['Unavailable']);
+  // Without a choice, a task reasons at high effort, not the catalog default (Medium here).
+  assert.match(await settingsTrigger.innerText(), /High/);
   assert.equal(await fastMode.count(), 0);
-  await modelChip.selectOption('deep-model');
+  await choose('Deep model · Codex');
   assert.match(await settingsTrigger.innerText(), /High/);
   await effortChoice.press('End');
   assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Xhigh');
   await fastMode.check();
-  await page.keyboard.press('Escape');
+  await search.press('Escape');
   await agentSettings.waitFor({ state: 'hidden' });
   assert.equal(await settingsTrigger.evaluate(el => el === document.activeElement), true);
-  assert.match(await settingsTrigger.getAttribute('title'), /Xhigh.*Fast/);
+  assert.match(await settingsTrigger.getAttribute('title'), /Codex.*Deep model.*Xhigh.*Fast/);
+  // Recent choices come first; a search covers every agent and Enter takes the first match.
   await settingsTrigger.click();
-  await modelChip.selectOption('fast-model');
-  assert.match(await settingsTrigger.innerText(), /Medium/);
-  assert.equal(await fastMode.count(), 0);
-  await modelChip.selectOption('deep-model');
-  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Xhigh');
-  assert.equal(await fastMode.isChecked(), true);
-  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:model:codex'), localStorage.getItem('papilot:effort:codex'), localStorage.getItem('papilot:fast:codex')]), ['deep-model', 'xhigh', 'true']);
-  await chooseAgent('Claude');
-  assert.deepEqual(await modelChip.locator('option').allInnerTexts(), ['Default model', 'Opus 5.5', 'Haiku 5.5']);
-  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Model default');
+  assert.deepEqual(await groupNames(), ['Recent', 'Codex', 'Claude', 'Antigravity', 'Kimi']);
+  assert.deepEqual(await models.getByRole('group', { name: 'Recent', exact: true }).getByRole('option').evaluateAll(options => options.map(option => option.getAttribute('aria-label'))), ['Deep model · Codex']);
+  await search.fill('haiku');
+  assert.deepEqual(await models.getByRole('option').evaluateAll(options => options.map(option => option.getAttribute('aria-label'))), ['Haiku 5.5 · Claude']);
+  await search.press('Enter');
+  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:claude')]), ['claude', 'haiku']);
+  assert.match(await settingsTrigger.innerText(), /Claude\s*Haiku 5\.5/);
+  await search.fill('no such model');
+  await agentSettings.getByText('No models match “no such model”', { exact: true }).waitFor();
+  await search.fill('claude');
+  await search.press('ArrowDown');
+  const active = await search.getAttribute('aria-activedescendant');
+  assert.equal(await agentSettings.locator(`[id="${active}"]`).getAttribute('aria-label'), 'Haiku 5.5 · Claude');
+  await search.press('ArrowUp');
+  await search.press('Enter');
+  assert.equal(await option('Opus 5.5 · Claude').getAttribute('aria-selected'), 'true');
+  await search.fill('');
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'High');
   await effortChoice.press('Home');
   assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Low');
   await agentSettings.getByRole('button', { name: 'Model default', exact: true }).click();
   assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Model default');
   assert.equal(await fastMode.count(), 0);
-  await modelChip.selectOption('haiku');
-  await agentChoices.getByRole('radio', { name: 'Claude', exact: true }).press('ArrowRight');
+  await choose('Haiku 5.5 · Claude');
+  // An agent that cannot be used says why, with Reconnect, inside the same menu.
+  await choose('Default model · Antigravity');
   await agentSettings.getByRole('status').getByText('spawn agy ENOENT', { exact: true }).waitFor();
   assert.equal(await page.locator('.runtime-banner').count(), 0);
   assert.equal(await page.locator('.new-task-panel > .inline-error[role=status]').count(), 0);
@@ -928,32 +947,40 @@ try {
   assert.equal(reconnects, 1);
   assert.equal(await agentSettings.isVisible(), true);
   await page.keyboard.press('Escape');
+  await agentSettings.waitFor({ state: 'hidden' });
   assert.equal(await settingsTrigger.locator('.agent-status-mark').count(), 1);
   await settingsTrigger.click();
   await agentSettings.getByRole('status').getByText('spawn agy ENOENT', { exact: true }).waitFor();
-  // Long diagnostics expand within the same menu; choosing another agent clears them.
+  // An agent that connects later offers its models with the next state.
   snapshot.runtimes.kimi = { connected: true, authenticated: true, account: 'Local Kimi configuration', error: null, models: [{ id: 'kimi/k3', name: 'K3', isDefault: true, efforts: ['low', 'high', 'max'], defaultEffort: 'high' }] };
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await chooseAgent('Kimi');
-  await modelChip.getByRole('option', { name: 'K3', exact: true }).waitFor({ state: 'attached' });
+  await option('K3 · Kimi').waitFor();
+  await choose('K3 · Kimi');
   assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'High');
-  await modelChip.selectOption('kimi/k3');
   await effortChoice.press('End');
   assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:kimi'), localStorage.getItem('papilot:effort:kimi')]), ['kimi', 'kimi/k3', 'max']);
   assert.equal(await fastMode.count(), 0);
   await page.screenshot({ path: 'test-results/kimi-agent-settings.png', fullPage: true });
+  // Only agents the host has are offered: one found later appears with the next state.
+  snapshot.runtimes.qwen = { installed: false, connected: false, authenticated: false, account: null, error: null, models: [] };
+  snapshot.runtimes.opencode = { installed: true, connected: true, authenticated: true, account: 'Local OpenCode configuration', error: null, models: [{ id: 'deepseek/deepseek-v4-pro', name: 'deepseek/DeepSeek V4 Pro', isDefault: true, efforts: ['low', 'high'], defaultEffort: null }] };
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await option('deepseek/DeepSeek V4 Pro · OpenCode').waitFor();
+  assert.deepEqual((await groupNames()).filter(name => name !== 'Recent'), ['Codex', 'Claude', 'Antigravity', 'Kimi', 'OpenCode']);
+  await page.screenshot({ path: 'test-results/detected-agent-settings.png', fullPage: true });
   const claudeRuntime = structuredClone(snapshot.runtimes.claude);
   Object.assign(snapshot.runtimes.claude, { connected: false, authenticated: false, error: 'Claude needs an Anthropic API key: Start Papilot with ANTHROPIC_API_KEY set to use Claude.' });
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await chooseAgent('Claude');
+  await option('Haiku 5.5 · Claude').getByText('Unavailable', { exact: true }).waitFor();
+  await choose('Haiku 5.5 · Claude');
   await agentSettings.getByRole('status').getByText('Claude needs an Anthropic API key', { exact: true }).waitFor();
   await agentSettings.getByText('Connection details', { exact: true }).click();
   await agentSettings.getByText(snapshot.runtimes.claude.error, { exact: true }).waitFor();
-  await chooseAgent('Codex');
+  await choose('Deep model · Codex');
   assert.equal(await agentSettings.locator('.agent-connection').count(), 0);
   assert.equal(await settingsTrigger.locator('.agent-status-mark').count(), 0);
   snapshot.runtimes.claude = claudeRuntime;
-  assert.equal(await modelChip.inputValue(), 'deep-model');
+  assert.equal(await option('Deep model · Codex').getAttribute('aria-selected'), 'true');
   assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'Xhigh');
   assert.equal(await fastMode.isChecked(), true);
   assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:claude')]), ['codex', 'haiku']);
@@ -1089,6 +1116,39 @@ try {
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click(); await input.waitFor();
   assert.deepEqual(archives.map(item => item.archived), [true, false, true, false]);
   console.log('PASS: Tasks search by title and instructions, archive without losing history, and restore from the archive');
+
+  // A finished task is archived when the author moves on from it, with an undo.
+  archives.length = 0;
+  const finishedTask = { ...task, id: 'fixture-task-0003', name: 'p-finished', title: 'Tidy the bibliography', status: 'reviewing', review: { state: 'done', round: 1, counts: { accepted: 2 }, unsent: 2, comments: 0, files: [] } };
+  snapshot.tasks.push(finishedTask);
+  await page.clock.runFor(3000);
+  const finishedLink = page.getByRole('button', { name: /^Tidy the bibliography/ }), firstLink = page.getByRole('button', { name: /^Clarify the introduction/ });
+  await finishedLink.click(); await input.waitFor();
+  await input.fill('Ask about the DOI style.');
+  await firstLink.click(); await input.waitFor();
+  assert.equal(archives.length, 0, 'an unsent follow-up keeps the task listed');
+  await finishedLink.click(); await input.waitFor();
+  await input.fill('');
+  await firstLink.click(); await input.waitFor();
+  const archiveNotice = page.getByRole('status').filter({ hasText: 'Archived' });
+  await archiveNotice.filter({ hasText: 'Tidy the bibliography' }).waitFor();
+  await finishedLink.waitFor({ state: 'hidden' });
+  assert.deepEqual(archives, [{ id: finishedTask.id, archived: true, finished: true }]);
+  await page.screenshot({ path: 'test-results/auto-archive-notice.png' });
+  await archiveNotice.getByRole('button', { name: 'Undo', exact: true }).click();
+  await finishedLink.waitFor();
+  await archiveNotice.waitFor({ state: 'hidden' });
+  assert.match(await page.locator('.task-link.active').innerText(), /Clarify the introduction/, 'undo keeps the current task open');
+  await finishedLink.click(); await input.waitFor();
+  await firstLink.click(); await input.waitFor();
+  assert.deepEqual(archives.map(item => item.archived), [true, false], 'a restored task stays listed');
+  await page.getByRole('button', { name: /^Check the notation/ }).click(); await input.waitFor();
+  await firstLink.click(); await input.waitFor();
+  assert.equal(archives.length, 2, 'an unfinished task stays listed');
+  snapshot.tasks.splice(snapshot.tasks.indexOf(finishedTask), 1);
+  await page.clock.runFor(3000);
+  await finishedLink.waitFor({ state: 'hidden' });
+  console.log('PASS: A finished task archives when the author leaves it, and Undo restores it for good');
 
 
   await input.fill('Only send this once.');

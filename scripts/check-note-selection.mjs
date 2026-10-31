@@ -145,7 +145,7 @@ try {
   await expect(all()).toHaveAttribute('aria-pressed', 'true');
   await setSelection(all(), false); await setSelection(check('n2'), true); await setSelection(check('n4'), true);
   await page.getByRole('button', { name: 'Agent settings', exact: true }).click();
-  await page.getByRole('radio', { name: 'Claude', exact: true }).click();
+  await page.getByRole('option', { name: / · Claude$/ }).first().click();
   await page.keyboard.press('Escape');
   await expect(prompt()).toHaveValue('');
   await page.setViewportSize({ width: 390, height: 844 });

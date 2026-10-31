@@ -1,4 +1,4 @@
-.ui-demo{--u:.1cqw;container-type:inline-size;position:relative;width:100%;aspect-ratio:1000/740;min-width:0;overflow:clip;border:1px solid #e0e0e0;border-radius:14px;background:white;box-shadow:var(--float)}
+.ui-demo{--u:.1cqw;container-type:inline-size;position:relative;width:100%;aspect-ratio:1000/740;min-width:0;overflow:clip;border:1px solid #e3e3e3;border-radius:16px;background:white;box-shadow:var(--float)}
 /* Native desktop dimensions below are scaled uniformly by --u (1/1000 of
    the frame width). No responsive reflow, scroll containers or input controls. */
 .demo-visual{position:absolute;inset:0;pointer-events:none;user-select:none;-webkit-user-select:none;font:calc(var(--u) * 13)/1.5 var(--sans);color:#525252;background:#fff}

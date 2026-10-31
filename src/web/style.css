@@ -183,6 +183,11 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .toast>svg{margin-top:2px}
 .toast>span{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--text)}
 .toast>.icon-button{width:24px;height:24px;margin-top:-1px}
+.toast.archive-notice{align-items:center;padding:6px 6px 6px 14px;border-color:var(--line);color:var(--text-2)}
+.toast.archive-notice>svg{flex-shrink:0;margin-top:0}
+.toast.archive-notice>span{display:flex;gap:8px;white-space:nowrap}
+.archive-notice-title{min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.toast.archive-notice>.button{flex-shrink:0}
 
 /* Task workspace */
 .task-grid{position:relative;display:grid;flex:1;min-height:0;--chat-width:clamp(340px,30vw,440px);grid-template-columns:minmax(0,1fr) clamp(300px,var(--chat-width),calc(100% - 360px))}
@@ -433,19 +438,30 @@ body.resizing iframe{pointer-events:none}
 .agent-model-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agent-model-label>small{flex-shrink:0;font-size:11px;color:var(--text-3)}
 .agent-picker-trigger>svg{flex-shrink:0}
+.agent-picker-agent{flex-shrink:0;font-size:12px;color:var(--text-3)}
 .agent-picker-trigger:disabled{opacity:.6;cursor:default}
-.agent-picker-panel{position:fixed;inset:auto;margin:0;width:min(328px,calc(100vw - 16px));max-height:calc(100dvh - 16px);overflow:auto;padding:14px;border:1px solid var(--line-strong);border-radius:16px;background:var(--bg);color:var(--text);box-shadow:var(--float);animation:menu-in .14s var(--ease)}
-.agent-choices-label{margin-bottom:8px;font-size:12px;font-weight:500;color:var(--text-3)}
-.agent-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--bg-subtle)}
-.agent-choices button{display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:34px;padding:0 4px;border-radius:7px;font-size:12px;color:var(--text-2);transition:background .15s,color .15s,box-shadow .15s}
-.agent-choices button:hover{color:var(--text);background:var(--bg-hover)}
-.agent-choices button[aria-checked=true]{background:var(--bg);color:var(--text);box-shadow:var(--shadow-sm);font-weight:600}
-.agent-choices button>i{flex:none;width:4px;height:4px;border-radius:50%;background:var(--amber-text)}
+.agent-picker-panel{position:fixed;inset:auto;margin:0;width:min(340px,calc(100vw - 16px));max-height:calc(100dvh - 16px);overflow:auto;padding:8px;border:1px solid var(--line-strong);border-radius:16px;background:var(--bg);color:var(--text);box-shadow:var(--float);animation:menu-in .14s var(--ease)}
+.model-search{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-subtle);color:var(--text-3)}
+.model-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgb(37 99 235/.14)}
+.model-search input{flex:1;min-width:0;height:100%;border:0;outline:0;background:none;color:var(--text);font-size:13px}
+.model-search input::-webkit-search-cancel-button{display:none}
+.model-list{max-height:min(320px,45dvh);overflow-y:auto;margin:6px -2px 0;padding:0 2px;overscroll-behavior:contain}
+.model-group+.model-group{margin-top:4px;padding-top:4px;border-top:1px solid var(--line)}
+.model-group-head{padding:7px 8px 3px;font-size:11.5px;font-weight:600;color:var(--text-3)}
+.model-option{display:flex;align-items:center;gap:8px;min-height:32px;padding:0 8px 0 18px;border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;user-select:none}
+.model-option.active{background:var(--bg-hover)}
+.model-option[aria-selected=true]{font-weight:600}
+.model-option>svg{flex:none;margin-left:auto;color:var(--accent)}
+.model-option-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.model-option small{flex:none;font-size:11.5px;font-weight:400;color:var(--text-3)}
+.model-option-tag{padding:0 6px;border-radius:999px;background:var(--bg-subtle);line-height:18px}
+.model-option-agent{margin-left:auto}
+.model-option-agent+svg{margin-left:0}
+.model-option-agent.warn{color:var(--amber-text)}
+.model-empty{padding:14px 8px;font-size:13px;color:var(--text-3)}
+.agent-picker-panel>.agent-connection{margin:8px 2px 2px}
+.agent-picker-panel>.agent-effort,.agent-picker-panel>.agent-fast{margin-left:6px;margin-right:6px}
 .agent-status-mark{display:flex;flex:none;color:var(--amber-text)}
-.agent-setting{display:grid;grid-template-columns:60px minmax(0,1fr);align-items:center;gap:10px;margin-top:14px;min-height:36px;font-size:13px;color:var(--text-2)}
-.agent-setting select{width:100%;min-width:0;height:36px;padding:0 24px 0 10px;border:1px solid var(--line);border-radius:var(--r);background-color:var(--bg-subtle);color:var(--text);font-size:13px;text-overflow:ellipsis;cursor:pointer}
-.agent-setting select:hover{background-color:var(--bg-hover)}
-.agent-setting select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .agent-connection{margin-top:10px;padding:10px 12px;border:1px solid var(--amber-line);border-radius:10px;background:var(--amber-soft);font-size:12px;line-height:1.5;color:var(--text-2)}
 .agent-connection-message{display:flex;align-items:flex-start;gap:7px;color:var(--amber-text)}
 .agent-connection-message>svg{flex:none;margin-top:2px}
@@ -533,7 +549,13 @@ body.resizing iframe{pointer-events:none}
 .manuscript-side-header{display:flex;align-items:center;min-width:0;padding:0 8px 0 4px;border-bottom:1px solid var(--line);flex-shrink:0}
 .manuscript-side-header>.icon-button{width:30px;height:30px}
 .manuscript-panel-toggle[aria-expanded=true]:not(:hover){background:transparent;color:var(--text-2)}
-.side-tabs{display:flex;flex:1;min-width:0;gap:2px;padding:8px;overflow-x:auto}
+.manuscript-side-header{container-type:inline-size}
+.side-tabs{display:flex;flex:1;min-width:0;gap:2px;padding:8px;overflow-x:auto;scrollbar-width:none}
+.side-tabs::-webkit-scrollbar{display:none}
+/* A narrow panel keeps the open tab's name and shows the others as icons,
+   named by their tooltip and, for screen readers, by their hidden label. */
+@container (max-width:380px){html:not([lang^=zh]) .side-tabs>button:not([aria-selected=true]) .tab-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}
+@container (max-width:310px){.side-tabs>button:not([aria-selected=true]) .tab-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}
 .side-tabs>button{display:flex;align-items:center;gap:6px;height:30px;padding:0 8px;flex-shrink:0;border-radius:var(--r);font-size:13px;font-weight:500;color:var(--text-2);transition:background-color .15s,color .15s}
 .side-tabs>button:hover{background:var(--bg-hover);color:var(--text)}
 .side-tabs>button[aria-selected=true]{background:var(--bg-muted);color:var(--text)}
@@ -888,9 +910,9 @@ body.resizing iframe{pointer-events:none}
   .composer .send-button{width:36px;height:36px}
   .chip-select{height:36px;min-width:0;flex-shrink:1}
   .composer-options{flex-wrap:nowrap;min-width:0}
-  .agent-setting select{font-size:16px}
   .agent-picker-trigger{height:36px}
-  .agent-choices button{min-height:40px}
+  .model-search input{font-size:16px}
+  .model-option{min-height:40px}
   .effort-scale button{min-height:32px}
   .composer-plus{width:36px;height:36px}
   .home{padding:18px 14px}

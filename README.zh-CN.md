@@ -70,7 +70,7 @@
 <ul>
 <li>✨ <b>技能（skill）</b>，如润色、校对、检查数学，输入 <code>/</code> 即可选用，也能在设置里写你自己的</li>
 <li>📎 任务和消息都能附带<b>文件和图片</b></li>
-<li>🤖 <b>Codex、Claude、Antigravity 或 Kimi Code</b>，各用你自己的登录</li>
+<li>🤖 <b>Codex、Claude、Cursor、Kimi Code、GLM、DeepSeek、Qwen Code、OpenCode 或 Antigravity</b>：电脑上装了哪个就用哪个，各用你自己的登录</li>
 <li>🌳 <b>每个任务都有独立的 Git 工作树</b>，最多两个同时运行</li>
 <li>🌗 <b>浅色与深色</b>，界面支持中文和英文</li>
 <li>📱 <b>运行在你的电脑上</b>，也能用手机打开</li>
@@ -96,13 +96,18 @@ papilot demo
 | 智能体 | 登录（一次即可） | Papilot 如何运行它 |
 | --- | --- | --- |
 | **Codex** | `papilot codex login` | 通过 Codex app server 在其工作区沙箱中运行；已装有 `codex` 就直接用，没有则在首次启动时自动安装。 |
-| **Claude** | 设置好 `ANTHROPIC_API_KEY` 再启动 `papilot` | 通过 Claude Agent SDK 运行，首次使用时下载；该 SDK 不接受 Pro 或 Max 订阅登录。 |
+| **Claude** | 安装 [Claude Code](https://code.claude.com) 并运行 `claude auth login`，或设置好 `ANTHROPIC_API_KEY` 再启动 `papilot` | 装了 Claude Code 时，用你自己的登录（Claude 订阅或密钥）运行 `claude -p`，在 Claude Code 的沙箱中工作；没装时通过 Claude Agent SDK 运行，需要 API 密钥。 |
+| **Cursor** | 设置好 `CURSOR_API_KEY` 再启动 `papilot` | 通过 Cursor SDK 在 Cursor 的沙箱中运行，首次使用时下载；该 SDK 不使用 Cursor 应用或 CLI 的登录。 |
 | **Kimi Code** | 安装 [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started)，运行 `kimi login` | 通过 `kimi acp` 使用本机配置，支持流式回复、会话恢复和工具审批。 |
+| **GLM** | 设置好 `ZHIPU_API_KEY`（或 `ZAI_API_KEY`）再启动 `papilot` | 按智谱为 GLM Coding Plan 给出的方式，让 Claude Code 连接智谱的 Anthropic 兼容接口。 |
+| **DeepSeek** | 安装 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`npm install -g @deepseek-ai/dsh`）并在其中配置好模型 | 通过 `dsh acp` 在其工作区沙箱中运行；工作树以外的操作需要审批。 |
+| **Qwen Code** | 安装 [Qwen Code](https://github.com/QwenLM/qwen-code)，运行 `qwen` 登录 | 以自动编辑模式运行 `qwen --acp`：改文件直接进行，运行命令需要审批。 |
+| **OpenCode** | 安装 [OpenCode](https://opencode.ai)，用 `opencode auth login` 连接模型服务商 | 用你配置的服务商运行 `opencode acp`；运行命令和工作树以外的操作需要审批。 |
 | **Antigravity** | 安装 Antigravity 并登录 `agy` | 运行 `agy -p`，每轮一个进程，只编辑文件；所在地区需要代理时设置 `PAPILOT_AGY_PROXY`。 |
 
-使用 Kimi Code 时，登录后在智能体菜单选择 **Kimi**；如果 Papilot 已在运行，再点击 **重新连接**。如果服务找不到 CLI，将 `PAPILOT_KIMI_BIN` 设为其可执行文件路径。支持的功能和已验证的 CLI 版本见[智能体指南](docs/guide.md#agents)。
+Papilot 会自动找出电脑上已有的智能体，只列出这些；Codex 始终可用。Papilot 运行期间安装或登录了新的智能体，点击 **重新连接** 即可。如果服务找不到 CLI，可以用 `PAPILOT_KIMI_BIN`、`PAPILOT_DSH_BIN`、`PAPILOT_QWEN_BIN` 或 `PAPILOT_OPENCODE_BIN` 指定其路径。各智能体支持的功能和已验证的版本见[智能体指南](docs/guide.md#agents)。
 
-Papilot 从不读取、保存或转发你的凭据。没有安装或没有登录的智能体会显示为不可用。
+Papilot 从不保存你的凭据。CLI 智能体使用各自的登录；为 Claude、Cursor 或 GLM 设置的密钥只会交给对应的服务。已找到但没有登录的智能体会显示为不可用。
 
 启动遇到问题？打开 **设置 → 运行状态与诊断**，或运行 `papilot doctor` 检查环境并查看修复建议，用 `papilot doctor --repo /path/to/paper` 一并检查论文。加上 `--json` 可输出机器可读的报告。诊断不会安装软件、启动服务或修改论文。检查范围见[诊断指南](docs/guide.md#diagnostics)。
 

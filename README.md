@@ -70,7 +70,7 @@ Jump to any section from the contents, search every page and zoom in sharply. Se
 <ul>
 <li>✨ <b>Skills</b> such as Polish, Proofread and Check math, one <code>/</code> away. Write your own in Settings.</li>
 <li>📎 <b>Files and images</b> attached to any task or message</li>
-<li>🤖 <b>Codex, Claude, Antigravity or Kimi Code</b>, each with your own login</li>
+<li>🤖 <b>Codex, Claude, Cursor, Kimi Code, GLM, DeepSeek, Qwen Code, OpenCode or Antigravity</b>: whichever is on your computer, with your own login</li>
 <li>🌳 <b>A Git worktree for every task</b>, up to two running at once</li>
 <li>🌗 <b>Light and dark</b>, in English or Chinese</li>
 <li>📱 <b>Runs on your computer</b>, and you can open it from your phone</li>
@@ -96,13 +96,18 @@ Open **http://127.0.0.1:7274** and choose **Manuscript** in the sidebar. The dem
 | Agent | Sign in once | How Papilot runs it |
 | --- | --- | --- |
 | **Codex** | `papilot codex login` | Through the Codex app server, in its workspace sandbox. Papilot uses your `codex` if you have one, or installs it on first start. |
-| **Claude** | Start `papilot` with `ANTHROPIC_API_KEY` set | Through the Claude Agent SDK, downloaded the first time. The SDK does not accept a Pro or Max subscription login. |
+| **Claude** | Install [Claude Code](https://code.claude.com) and run `claude auth login`, or start `papilot` with `ANTHROPIC_API_KEY` set | With Claude Code installed, runs `claude -p` on your own login (your Claude plan or a key), in Claude Code's sandbox. Without it, through the Claude Agent SDK, which needs an API key. |
+| **Cursor** | Start `papilot` with `CURSOR_API_KEY` set | Through the Cursor SDK, downloaded the first time, in Cursor's sandbox. The SDK does not use the Cursor app or CLI login. |
 | **Kimi Code** | Install [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started) and run `kimi login` | Runs `kimi acp` with your local configuration; streams replies, resumes sessions and forwards tool approvals. |
+| **GLM** | Start `papilot` with `ZHIPU_API_KEY` (or `ZAI_API_KEY`) set | Claude Code on Zhipu's Anthropic-compatible endpoint, as Zhipu documents for GLM Coding Plan. |
+| **DeepSeek** | Install [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`npm install -g @deepseek-ai/dsh`) and set up a model in it | Runs `dsh acp` in its workspace sandbox; anything outside the worktree asks for approval. |
+| **Qwen Code** | Install [Qwen Code](https://github.com/QwenLM/qwen-code) and sign in by running `qwen` | Runs `qwen --acp` in Auto Edit mode: edits go ahead, commands ask for approval. |
+| **OpenCode** | Install [OpenCode](https://opencode.ai) and connect a provider with `opencode auth login` | Runs `opencode acp` with your providers; commands and anything outside the worktree ask for approval. |
 | **Antigravity** | Install Antigravity and sign in to `agy` | `agy -p`, one process per turn, editing files only. If your region needs it, set `PAPILOT_AGY_PROXY`. |
 
-For Kimi Code, choose **Kimi** in the agent menu after logging in, then select **Reconnect** if Papilot was already running. If the CLI is not on the server’s `PATH`, set `PAPILOT_KIMI_BIN` to its executable path. See the [agent guide](docs/guide.md#agents) for supported features and the tested CLI version.
+Papilot finds the agents on your computer by itself and offers only those; Codex is always there. After installing or signing in to one while Papilot is running, select **Reconnect**. If a CLI is not on the server’s `PATH`, point `PAPILOT_KIMI_BIN`, `PAPILOT_DSH_BIN`, `PAPILOT_QWEN_BIN` or `PAPILOT_OPENCODE_BIN` at it. See the [agent guide](docs/guide.md#agents) for what each one supports and the tested versions.
 
-Papilot never reads, stores or forwards your credentials. An agent that isn't installed or signed in shows as unavailable.
+Papilot never stores your credentials. CLI agents use their own login, and a key you set for Claude, Cursor or GLM goes only to that service. An agent that is found but not signed in shows as unavailable.
 
 Having trouble getting started? Open **Settings → Runtime & diagnostics**, or run `papilot doctor` for environment checks and fixes and `papilot doctor --repo /path/to/paper` to check a paper too. Add `--json` for a machine-readable report. Diagnostics do not install software, start the server or change your paper. See the [diagnostics guide](docs/guide.md#diagnostics) for what is checked.
 

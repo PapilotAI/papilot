@@ -9,11 +9,12 @@ import { flushSync } from 'react-dom';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
+import { AGENT_IDS, AGENT_NAMES, isAgentId } from '../shared.ts';
 import type { AgentId, AgentModel, Annotation, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem, Viewer } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, unsentReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
-import type { AttachmentDraft, UploadAttachment } from './attachment-draft.ts';
+import { attachmentDrafts, type AttachmentDraft, type UploadAttachment } from './attachment-draft.ts';
 import type { Attachment } from '../shared.ts';
 import { noteLocation } from './note-location.ts';
 import { ReadRequest, canStreamUpdates } from './refresh.ts';
@@ -31,6 +32,7 @@ import { ProblemsButton, fixRequest, type ProblemsHandle } from './build-problem
 import { useTheme } from './theme.tsx';
 import { SettingsDialog } from './settings.tsx';
 import type { DiagnosticReport } from '../shared.ts';
+import { taskFinished } from '../shared.ts';
 import { CommitDialog } from './commit-dialog.tsx';
 import { TaskCommit } from './task-commit.tsx';
 import { TaskCommitDraft } from './task-commit-draft.ts';
@@ -43,7 +45,7 @@ import { locale, t, tn, useLanguage } from './i18n.ts';
 import { notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
 import { Markdown } from './markdown.tsx';
 import logo from './logo.svg';
-import { AgentConnectionNotice, AgentPicker, ModelLabel } from './agent-picker.tsx';
+import { AgentConnectionNotice, AgentPicker, ModelLabel, taskEffort } from './agent-picker.tsx';
 import { UsageSummary } from './usage.tsx';
 import { useNoteUndo } from './use-note-undo.ts';
 import { NoteResultsProvider, NoteResultLinks, useNoteResults } from './note-results.tsx';
@@ -70,8 +72,7 @@ async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal,
 }
 const uploadAttachment = (projectId: string, file: File, signal: AbortSignal) => api<Attachment>(`/projects/${projectId}/attachments`, file, signal, 120000);
 const checkDiagnostics = (projectId: string | undefined, signal: AbortSignal) => api<DiagnosticReport>('/diagnostics', { projectId }, signal, 60000);
-const AGENT_IDS: AgentId[] = ['codex', 'claude', 'antigravity', 'kimi'];
-const AGENT_LABELS: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity', kimi: 'Kimi' };
+const AGENT_LABELS = AGENT_NAMES;
 const agentName = (task: Task) => AGENT_LABELS[task.agent || 'codex'] || 'Codex';
 // A finished publication with no round is a valid answer-only result. Keep
 // earlier comparisons available when a follow-up answer makes no new edits.
@@ -710,9 +711,9 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
       <div className="manuscript-side-header">
         {!hidden && togglePanel}
         <div className="side-tabs" role="tablist" aria-label={t('Manuscript panels')}>
-          <button role="tab" aria-selected={side === 'task'} onClick={() => setView('task')}><Icon name="compose" size={14}/>{t('New task')}{notes.length > 0 && <span className="count" aria-hidden="true">{notes.length}</span>}</button>
-          <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}><Icon name="list" size={14}/>{t('Contents')}</button>
-          <button role="tab" aria-selected={side === 'git'} onClick={() => setView('git')}><Icon name="branch" size={14}/>Git{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
+          <button role="tab" aria-selected={side === 'task'} title={t('New task')} onClick={() => setView('task')}><Icon name="compose" size={14}/><span className="tab-label">{t('New task')}</span>{notes.length > 0 && <span className="count" aria-hidden="true">{notes.length}</span>}</button>
+          <button role="tab" aria-selected={side === 'contents'} title={t('Contents')} onClick={() => setView('contents')}><Icon name="list" size={14}/><span className="tab-label">{t('Contents')}</span></button>
+          <button role="tab" aria-selected={side === 'git'} title="Git" onClick={() => setView('git')}><Icon name="branch" size={14}/><span className="tab-label">Git</span>{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
         </div>
         {!hidden && sideBySide && openPdf}
       </div>
@@ -764,12 +765,13 @@ function App() {
   const [skillsRevision, setSkillsRevision] = useState(0);
   // The agent, and each agent's model and reasoning effort, are remembered for
   // every new task, whether it starts from the composer or from PDF notes.
-  const [agentChoice, setAgentChoice] = useState<AgentId>(() => { const saved = browserStorage.getItem('papilot:agent'); return saved === 'claude' || saved === 'antigravity' || saved === 'kimi' ? saved : 'codex'; });
+  const [savedAgent, setAgentChoice] = useState<AgentId>(() => { const saved = browserStorage.getItem('papilot:agent'); return isAgentId(saved) ? saved : 'codex'; });
   const [agentPrefs, setAgentPrefs] = useState(() => Object.fromEntries(AGENT_IDS.map(id => [id, {
     model: browserStorage.getItem(`papilot:model:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:model') : null) ?? '',
-    effort: browserStorage.getItem(`papilot:effort:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:effort') : null) ?? '',
+    // null until an effort is chosen; '' is an explicit choice of the model's default.
+    effort: browserStorage.getItem(`papilot:effort:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:effort') : null),
     fast: browserStorage.getItem(`papilot:fast:${id}`) === 'true',
-  }])) as Record<AgentId, { model: string; effort: string; fast: boolean }>);
+  }])) as Record<AgentId, { model: string; effort: string | null; fast: boolean }>);
   const [creating, setCreating] = useState(false), [createError, setCreateError] = useState('');
   const [addedTask, setAddedTask] = useState<Pick<Task, 'id' | 'title'> | null>(null);
   useEffect(() => {
@@ -931,9 +933,34 @@ function App() {
     browserStorage.setItem('papilot:project', id);
   }, [project?.id, Boolean(state)]);
   useEffect(() => { setTaskSearch(''); setShowArchived(false); }, [project?.id]);
-  useEffect(() => { if (task) setShowArchived(Boolean(task.archivedAt)); }, [task?.id]);
+  useEffect(() => { if (task) setShowArchived(Boolean(task.archivedAt)); }, [task?.id, Boolean(task?.archivedAt)]);
   // Older servers send no viewer: whoever is looking is the owner.
   const viewer = state?.viewer, owner = !viewer || viewer.role === 'owner';
+  // The owner's finished task is archived as they move on from it, and a
+  // notice offers to undo that. A task restored in this window, or left with
+  // an unsent follow-up, stays listed.
+  const leftTask = useRef(selected), keptTasks = useRef(new Set<string>());
+  const [autoArchived, setAutoArchived] = useState<Pick<Task, 'id' | 'title'> | null>(null);
+  useEffect(() => {
+    const left = leftTask.current; leftTask.current = selected;
+    const previous = snapshotRef.current?.tasks.find(t => t.id === left);
+    if (!owner || !previous || left === selected || previous.archivedAt || keptTasks.current.has(left) || !taskFinished(previous)) return;
+    if (composers.current.get(left)?.text.trim() || attachmentDrafts.get(`papilot:files:${viewer?.id || 'owner'}:task:${left}`)?.getSnapshot().files.length) return;
+    void api<Task>('/tasks/' + left + '/archive', { archived: true, finished: true }).then(result => {
+      if (!result.archivedAt) return;
+      setAutoArchived({ id: result.id, title: result.title });
+      return refresh(true);
+    }).catch(() => { /* The task stays listed; the author can still archive it. */ });
+  }, [selected, owner, refresh]);
+  useEffect(() => {
+    if (!autoArchived) return;
+    const timer = setTimeout(() => setAutoArchived(null), 8000);
+    return () => clearTimeout(timer);
+  }, [autoArchived]);
+  function keepTask(id: string) {
+    keptTasks.current.add(id); setAutoArchived(null);
+    void action('/tasks/' + id + '/archive', { archived: false });
+  }
   const newFiles = useAttachmentDraft(`papilot:files:${viewer?.id || 'owner'}:new:${project?.id || projectId}`);
   // A session that already ended signs out too.
   async function signOut() {
@@ -952,19 +979,26 @@ function App() {
   // A remembered choice the host no longer offers falls back to its default;
   // the preference is kept in case another model offers it again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
-  const unavailable = (id: AgentId) => Boolean(runtimes[id]?.error && !(runtimes[id]?.connected && runtimes[id]?.authenticated));
+  // Only agents found on the host are offered. A remembered agent that is not
+  // found falls back to Codex without forgetting the choice.
+  const offered = AGENT_IDS.filter(id => id === 'codex' || Boolean(runtimes[id] && runtimes[id]!.installed !== false));
+  const agentChoice = offered.includes(savedAgent) ? savedAgent : 'codex';
   const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;
   const modelInfo = models.find(m => m.id === chosenModel) || models.find(m => m.isDefault);
-  const agent = { agent: agentChoice, model: chosenModel, effort: modelInfo && !modelInfo.efforts.includes(pref.effort) ? '' : pref.effort, serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
+  const agent = { agent: agentChoice, model: chosenModel, effort: taskEffort(pref.effort, modelInfo), serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
   const remember = (change: Partial<{ model: string; effort: string; fast: boolean }>) => {
     setAgentPrefs(current => ({ ...current, [agentChoice]: { ...current[agentChoice], ...change } }));
     for (const [key, value] of Object.entries(change)) browserStorage.setItem(`papilot:${key}:${agentChoice}`, String(value));
   };
-  const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast} models={models}
-    agents={AGENT_IDS.map(id => ({ value: id, label: AGENT_LABELS[id], unavailable: unavailable(id) }))}
-    runtime={runtimes[agentChoice]} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}
-    onAgent={value => { setAgentChoice(value); browserStorage.setItem('papilot:agent', value); }} onChange={remember}/>;
+  // One choice in the picker sets both the agent and its model.
+  const chooseModel = (id: AgentId, model: string) => {
+    setAgentChoice(id); browserStorage.setItem('papilot:agent', id);
+    setAgentPrefs(current => ({ ...current, [id]: { ...current[id], model } })); browserStorage.setItem(`papilot:model:${id}`, model);
+  };
+  const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
+    agents={offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] }))}
+    reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onSelect={chooseModel} onChange={remember}/>;
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
     const attached = noteSelection.selected, files = newFiles.draft.getSnapshot().files;
@@ -1018,7 +1052,8 @@ function App() {
     const archived = !target.archivedAt;
     if (!await action('/tasks/' + target.id + '/archive', { archived })) return;
     if (archived && selectedRef.current === target.id) { setProjectId(target.projectId); setSelected(''); }
-    if (!archived) setShowArchived(false);
+    if (!archived) { keptTasks.current.add(target.id); setShowArchived(false); }
+    if (autoArchived?.id === target.id) setAutoArchived(null);
     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.task-search input')?.focus());
   }
   const sidebarShown = narrow ? sidebar : sidebarVisible;
@@ -1388,6 +1423,7 @@ function App() {
       : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><button className="button primary" onClick={() => openProject()}><Icon name="plus" size={16}/>{t('Add paper')}</button></div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
+    {autoArchived && !error && !modal && <div role="status" className="toast archive-notice"><Icon name="archive" size={15}/><span><span>{t('Archived')}</span><span className="archive-notice-title" title={autoArchived.title}>{autoArchived.title}</span></span><button className="button secondary compact" onClick={() => keepTask(autoArchived.id)}>{t('Undo')}</button></div>}
     {settings && <SettingsDialog updates={owner ? api : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} onPeople={owner ? () => setPeopleOpen(true) : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name} diagnostics={owner ? { online, runtimes, project, check: checkDiagnostics } : undefined} skills={owner ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {peopleOpen && <PeopleDialog api={api} projects={state?.projects || []} ago={agoText} onClose={() => setPeopleOpen(false)}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}

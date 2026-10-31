@@ -2,13 +2,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { Store } from './store.ts';
 import { Attachments } from './attachments.ts';
 import { Codex, RpcResponseError } from './codex.ts';
-import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, type AgentRuntime } from './agents.ts';
-import { KimiAgent } from './kimi.ts';
+import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, GlmAgent, type AgentRuntime } from './agents.ts';
+import { ACP_PROFILES, AcpAgent } from './acp.ts';
+import { CursorAgent } from './cursor.ts';
 import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
 import { VERSION } from './paths.ts';
 import { prepareRepository } from './imports.ts';
@@ -19,7 +21,9 @@ import { taskCaptionFrom, taskCaptionInstructions } from '../task-caption.ts';
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
+import { AGENT_IDS } from '../shared.ts';
 import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation, NoteSummary } from '../shared.ts';
+import { taskFinished } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,7 +59,7 @@ const BUSY = new Set(['running', 'waiting_input', 'building', 'uncertain', 'dele
 const FIXABLE = /^(Some edits are outside the task scope|The revised document could not be compiled)/;
 const BUILD_FIX = 'build-fix-';
 
-const AGENTS: AgentId[] = ['codex', 'claude', 'antigravity', 'kimi'];
+const AGENTS: AgentId[] = AGENT_IDS;
 // The small model an agent offers for short text such as a commit message,
 // by the names agents give them (GPT Luna and mini, Claude Haiku, Gemini Flash).
 const LIGHT = /\b(?:luna|mini|nano|haiku|flash|lite)\b/i;
@@ -68,7 +72,7 @@ const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: fa
 
 export class Workspace extends EventEmitter {
   // Each task runs on one agent; `runtime` is Codex's status, kept for older clients.
-  runtimes: Record<AgentId, RuntimeStatus> = { codex: blankRuntime(), claude: blankRuntime(), antigravity: blankRuntime(), kimi: blankRuntime() };
+  runtimes = Object.fromEntries(AGENTS.map(id => [id, blankRuntime()])) as Record<AgentId, RuntimeStatus>;
   runtime = this.runtimes.codex;
   agents: Record<AgentId, AgentRuntime>;
   requests = new Map<string, PendingRequest & { rpcId: string | number; agent: AgentId }>();
@@ -106,7 +110,9 @@ export class Workspace extends EventEmitter {
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.attachments = new Attachments(store);
-    this.agents = { codex, claude: others.claude || new ClaudeAgent(), antigravity: others.antigravity || new AntigravityAgent(), kimi: others.kimi || new KimiAgent() };
+    this.agents = { codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), antigravity: others.antigravity || new AntigravityAgent(),
+      kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
+      qwen: others.qwen || new AcpAgent(ACP_PROFILES.qwen), opencode: others.opencode || new AcpAgent(ACP_PROFILES.opencode) };
     store.on('change', () => this.emit('change'));
     for (const id of AGENTS) {
       const agent = this.agents[id];
@@ -138,6 +144,10 @@ export class Workspace extends EventEmitter {
   }
   private async connectAgent(id: AgentId) {
     const agent = this.agents[id], runtime = this.runtimes[id], name = AGENT_NAMES[id];
+    // An agent that is not on this host is neither started nor offered;
+    // Reconnect looks again. A running agent stays connected.
+    runtime.installed = agent.ready || !agent.detect || agent.detect();
+    if (!runtime.installed) { Object.assign(runtime, blankRuntime(), { installed: false }); return; }
     try {
       await agent.start();
       const account = await agent.request('account/read', { refreshToken: false });
@@ -335,6 +345,8 @@ export class Workspace extends EventEmitter {
       this.store.saveRun(run);
       for (const note of options.notes || []) this.store.saveAnnotation({ ...note, taskId });
       if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null });
+      // Writing to an archived task brings it back to the task list.
+      if (current.archivedAt && !options.build) this.store.updateTask(taskId, { archivedAt: null });
       this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
       return run;
     });
@@ -696,7 +708,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   private helper(choice: { agent?: AgentId; model?: string }, task: string, light = false) {
     const usable = (id: AgentId) => this.agents[id].ready && this.runtimes[id].authenticated;
     const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(usable);
-    if (!id) throw new Error(`Sign in to Codex, Claude or Antigravity to ${task}.`);
+    if (!id) throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
     const models = this.runtimes[id].models;
     return { id, model: (light ? lightModel(models) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
   }
@@ -710,6 +722,14 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   // reply is returned and no chat shows it.
   private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; timeout: number; what: string }) {
     if (this.closing) throw new Error('The server is shutting down.');
+    // A read-only helper (a title, a commit message) has everything in its
+    // prompt. It runs in an empty folder, so an agent that does not enforce a
+    // read-only sandbox (Claude, Cursor, the ACP agents) cannot change the paper.
+    const scratch = options.sandbox === 'read-only' ? fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-helper-')) : null;
+    try { return await this.helperTurn(id, { ...options, cwd: scratch || options.cwd }); }
+    finally { if (scratch) fs.rmSync(scratch, { recursive: true, force: true }); }
+  }
+  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; timeout: number; what: string }) {
     const agent = this.agents[id], name = AGENT_NAMES[id];
     const thread = await agent.request('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.sandbox, ephemeral: true, developerInstructions: options.instructions, ...(options.model ? { model: options.model.id } : {}) }, options.timeout);
     if (this.closing) throw new Error('The server is shutting down.');
@@ -900,13 +920,19 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     return this.store.updateTask(taskId, { title, titleSource: 'manual', titleRevision: (task.titleRevision || 0) + 1, titleGeneration: null });
   }
-  archiveTask(taskId: string, archived: boolean) {
+  // finished archives only a task that is still finished (see taskFinished):
+  // the author's browser asks for it when they leave one, and new work sent
+  // meanwhile from elsewhere keeps the task in the list.
+  archiveTask(taskId: string, archived: boolean, finished = false) {
     if (typeof archived !== 'boolean') throw new Error('Choose whether to archive or restore the task.');
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
-    if (Boolean(task.archivedAt) === archived) return task;
+    if (Boolean(task.archivedAt) === archived || (archived && finished && !taskFinished(task))) return task;
     // Archiving only organizes the list; the conversation, review and any run remain intact.
     return this.store.updateTask(taskId, { archivedAt: archived ? Date.now() : null });
+  }
+  archiveFinished() {
+    for (const task of this.store.tasks()) if (!task.archivedAt && taskFinished(task)) this.store.updateTask(task.id, { archivedAt: Date.now() });
   }
   async deleteTask(taskId: string): Promise<{ ok: true }> {
     if (this.preparing.has(taskId)) throw new Error('Wait for task creation to finish before deleting it.');

@@ -33,6 +33,19 @@ export interface Task {
   // The task's last commit from its review, and the accepted text it included.
   committed?: { hash: string; accepted: string; at: number; pushed?: boolean } | null;
 }
+// A task the author is through with, which Papilot archives once they leave
+// it: every change of its last result is decided, no comment or rejection
+// waits to go back to the agent, and what was accepted has left the task
+// (applied or committed; older tasks accept straight into the working
+// directory). An answer without manuscript changes is finished too.
+export function taskFinished(task: Task) {
+  const review = task.review;
+  if (task.status !== 'reviewing' || !review || task.pendingReview || task.delivery?.pending || review.counts?.pending || review.state === 'build_failed') return false;
+  const unsent = review.unsent ?? ['accepted', 'rejected', 'commented'].reduce((count, kind) => count + (review.counts?.[kind] || 0), 0);
+  if ((review.comments ?? unsent) > 0 || (unsent > 0 && !review.counts?.accepted)) return false;
+  if (review.round === null) return true;
+  return review.state === 'done' && (!task.deferred || review.files?.length === 0);
+}
 // reviewRound is 0 while awaiting a result, null when no changes were produced,
 // or the published round. Older runs omit it.
 export interface Run { id: string; taskId: string; requestKey: string; prompt: string; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null; reviewRound?: number | null }
@@ -52,12 +65,18 @@ export interface BuildFailure { error: string; details: string[]; log?: string }
 export interface FeedbackSummary { round: number | null; accepted: number; rejected: number; undone: number; comments: { where: string; text: string }[]; buildError?: boolean }
 export interface Skill { id: string; name: string; description: string; hint: string; source: 'builtin' | 'user' | 'paper' }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
-export type AgentId = 'codex' | 'claude' | 'antigravity' | 'kimi';
+export type AgentId = 'codex' | 'claude' | 'antigravity' | 'kimi' | 'cursor' | 'opencode' | 'qwen' | 'glm' | 'deepseek';
+// Every agent Papilot can drive, in menu order. Only the ones found on the host are offered.
+export const AGENT_IDS: AgentId[] = ['codex', 'claude', 'cursor', 'antigravity', 'kimi', 'glm', 'deepseek', 'qwen', 'opencode'];
+export const AGENT_NAMES: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', cursor: 'Cursor', antigravity: 'Antigravity', kimi: 'Kimi', glm: 'GLM', deepseek: 'DeepSeek', qwen: 'Qwen', opencode: 'OpenCode' };
+export const isAgentId = (value: unknown): value is AgentId => AGENT_IDS.includes(value as AgentId);
 export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort: string | null; fastMode?: { serviceTier: string; description: string } }
 // The account's included usage: rolling windows (minutes long, reset time in ms) and credits.
 export interface UsageWindow { usedPercent: number; minutes: number | null; resetsAt: number | null }
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
-export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null }
+// installed is false when the agent was not found on the host (no CLI, SDK
+// credentials or key); such agents are not offered. Older servers omit it.
+export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
 export interface DiagnosticCheck { id: string; ok: boolean; severity: 'error' | 'warn' | 'info'; detail: string; fix: string | null }
 export interface DiagnosticReport {
   version: string; checkedAt: number; platform: string; arch: string; node: string;

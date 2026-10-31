@@ -171,7 +171,22 @@ export const PdfView = forwardRef<PdfHandle, {
   useImperativeHandle(ref, () => ({
     focus() { container.current?.focus({ preventScroll: true }); },
     fitWidth() { const viewer = tools.current?.viewer; if (viewer && viewer.currentScaleValue !== 'page-width') viewer.currentScaleValue = 'page-width'; },
-    goTo(item) { latest.current.onSection(latest.current.outline.indexOf(item)); void tools.current?.links.goToDestination(item.dest as string | unknown[]); },
+    // Scroll to the section without pdf.js's link service, which focuses the
+    // page's text layer the next time that page renders, possibly long after,
+    // taking focus from wherever the author is by then.
+    goTo(item) {
+      latest.current.onSection(latest.current.outline.indexOf(item));
+      void (async () => {
+        const viewer = tools.current?.viewer, doc = viewer?.pdfDocument;
+        if (!viewer || !doc) return;
+        const dest = typeof item.dest === 'string' ? await doc.getDestination(item.dest) : item.dest as unknown[] | null;
+        const ref = Array.isArray(dest) ? dest[0] : null;
+        const index = ref && typeof ref === 'object' ? await doc.getPageIndex(ref as Parameters<typeof doc.getPageIndex>[0]) : Number.isInteger(ref) ? ref as number : -1;
+        if (index < 0) return;
+        viewer.scrollPageIntoView({ pageNumber: index + 1, destArray: dest as unknown[] });
+        container.current?.focus({ preventScroll: true });
+      })().catch(() => { /* A broken outline entry stays where it is. */ });
+    },
     goToNote(note) {
       const div = tools.current?.viewer.getPageView(note.page)?.div, box = container.current;
       if (!div || !box) return;

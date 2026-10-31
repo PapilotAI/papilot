@@ -47,6 +47,8 @@
 .diagnostics-settings .ok{color:var(--green)}
 .diagnostics-settings .warn{color:var(--amber-text)}
 .diagnostics-settings .error{color:var(--red)}
+.diagnostics-settings .info{color:var(--text-3)}
+.diagnostic-missing{margin-top:8px}
 .diagnostic-context,.diagnostic-metadata,.diagnostic-sharing{font-size:12px;line-height:1.6;color:var(--text-3);overflow-wrap:anywhere}
 .diagnostic-context{margin:0 0 12px}
 .diagnostic-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}

@@ -305,6 +305,42 @@ test('archiving survives a restart, retains task history and review, and restore
   } finally { f.close(); fs.rmSync(dir, { recursive: true }); }
 });
 
+test('leaving archives only a task that is still finished, and writing to it restores it', async () => {
+  const f = fixture();
+  try {
+    const finished = { state: 'done', round: 1, counts: { accepted: 1 }, unsent: 1, comments: 0, files: [] };
+    f.store.updateTask(f.task.id, { review: { ...finished, state: 'revise', counts: { commented: 1 }, comments: 1 } });
+    assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, undefined, 'a comment still waits for the agent');
+    f.store.updateTask(f.task.id, { review: finished });
+    assert.ok(f.workspace.archiveTask(f.task.id, true, true).archivedAt);
+    await f.workspace.enqueue(f.task.id, 'One more pass on the abstract.', 'follow-up');
+    assert.equal(f.store.task(f.task.id).archivedAt, null, 'a follow-up brings the task back');
+    assert.equal(f.store.task(f.task.id).status, 'queued');
+    assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, null, 'new work keeps it listed');
+    assert.ok(f.workspace.archiveTask(f.task.id, true).archivedAt, 'the author can still archive it by hand');
+  } finally { f.close(); }
+});
+
+test('finished tasks from before auto-archiving are archived once', () => {
+  const f = fixture();
+  try {
+    const finished = { state: 'done', round: 1, counts: { accepted: 1 }, unsent: 1, comments: 0, files: [] };
+    f.store.updateTask(f.task.id, { review: finished });
+    f.store.saveTask({ ...f.task, id: 'open-task', name: 'p-open', review: { ...finished, state: 'reviewing', counts: { pending: 2 } } });
+    f.store.saveTask({ ...f.task, id: 'kept-task', name: 'p-kept', review: finished, archivedAt: 5 });
+    let runs = 0;
+    const sweep = () => { runs++; f.workspace.archiveFinished(); };
+    f.store.migrate('archive-finished-tasks', sweep);
+    assert.ok(f.store.task(f.task.id).archivedAt);
+    assert.equal(f.store.task('open-task').archivedAt, undefined);
+    assert.equal(f.store.task('kept-task').archivedAt, 5, 'an earlier archive keeps its time');
+    f.workspace.archiveTask(f.task.id, false);
+    f.store.migrate('archive-finished-tasks', sweep);
+    assert.equal(runs, 1);
+    assert.equal(f.store.task(f.task.id).archivedAt, null, 'a restored task is not archived again');
+  } finally { f.close(); }
+});
+
 test('renaming a paper changes only its display name', () => {
   const f = fixture();
   try {
@@ -1145,7 +1181,10 @@ test('an agent writes a commit message from the chosen changes, in a read-only t
     };
     assert.deepEqual(await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'claude' }), { message: 'Tighten the opening sentence', agent: 'codex' });
     const start = f.codex.calls.find(call => call.method === 'thread/start')!.params, turn = f.codex.calls.find(call => call.method === 'turn/start')!.params;
-    assert.deepEqual([start.cwd, start.sandbox, start.approvalPolicy, start.ephemeral, start.model, turn.effort], [root, 'read-only', 'never', true, 'gpt-6-luna', 'low']);
+    assert.deepEqual([start.sandbox, start.approvalPolicy, start.ephemeral, start.model, turn.effort], ['read-only', 'never', true, 'gpt-6-luna', 'low']);
+    // The helper runs in an empty folder of its own, never the manuscript, and the folder is removed.
+    assert.notEqual(start.cwd, root); assert.equal(turn.cwd, start.cwd);
+    assert.match(path.basename(start.cwd), /^papilot-helper-/); assert.equal(fs.existsSync(start.cwd), false);
     const prompt: string = turn.input[0].text;
     for (const part of ['- Draft the introduction', '- Tighten the opening', 'M main.tex', '+Tighter opening.']) assert.ok(prompt.includes(part), part);
     assert.ok(!prompt.includes('notes.md'), 'files that were not chosen stay out');
@@ -1170,7 +1209,7 @@ test('an agent writes a commit message from the chosen changes, in a read-only t
     assert.equal((await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'codex' })).message, 'Tighten the opening again');
     assert.equal(turns(), 3);
     f.codex.ready = false;
-    await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex']), /Sign in to Codex, Claude or Antigravity/);
+    await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex']), /Sign in to an agent, such as Codex/);
   } finally { f.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -1366,4 +1405,34 @@ test('a task commits only what it accepted since its last commit, never during a
     assert.notEqual(f.store.task(f.task.id).committed?.pushed, true, 'a later local commit resets the previous push result');
     assert.equal(third.git.ahead, 1);
   } finally { f.close(); await disk.close(); }
+});
+
+test('agents that are not found on the host are neither started nor offered, and Reconnect looks again', async () => {
+  const store = new Store(':memory:');
+  class Detected extends FakeCodex {
+    found = false; starts = 0;
+    detect() { return this.found; }
+    async start() { this.starts++; this.ready = true; }
+    handler = async (method: string): Promise<any> => method === 'account/read' ? { account: { type: 'Local configuration' }, requiresOpenaiAuth: false } : method === 'model/list' ? { data: [] } : {};
+  }
+  const codex = new FakeCodex(); codex.handler = async (method: string) => method === 'account/read' ? { account: { email: 'me@example.com' }, requiresOpenaiAuth: false } : { data: [] };
+  (codex as any).start = async () => { codex.ready = true; };
+  const qwen = new Detected();
+  const others = Object.fromEntries((['claude', 'cursor', 'antigravity', 'kimi', 'glm', 'deepseek', 'opencode'] as const).map(id => [id, Object.assign(new Detected(), { found: false })]));
+  const workspace = new Workspace(store, codex as unknown as Codex, 2, async () => { throw new Error('unused'); }, { ...others, qwen } as any);
+  try {
+    await workspace.connect();
+    assert.equal(qwen.starts, 0);
+    assert.equal(workspace.runtimes.qwen.installed, false);
+    assert.equal(workspace.runtimes.qwen.error, null);
+    assert.equal(workspace.runtimes.codex.installed, true);
+    qwen.found = true;
+    await workspace.connect();
+    assert.equal(qwen.starts, 1);
+    assert.deepEqual([workspace.runtimes.qwen.installed, workspace.runtimes.qwen.connected, workspace.runtimes.qwen.authenticated], [true, true, true]);
+    // A connected agent stays offered even if it can no longer be found.
+    qwen.found = false;
+    await workspace.connect();
+    assert.equal(workspace.runtimes.qwen.installed, true);
+  } finally { workspace.close(); store.close(); }
 });
