@@ -622,11 +622,11 @@ export function entryInputs(entries: { id: string; type: string; fields: { name:
     .map((e) => ({ id: e.id, type: e.type, fields: Object.fromEntries(e.fields.map((f) => [f.name, f.resolved ?? f.value])) }));
 }
 // Bump when the comparison changes, so that saved results are redone.
-const VERSION = 1;
+const VERSION = 2;
 const LOOKED_UP = ["title", "author", "editor", "year", "date", "doi", "eprint", "archiveprefix", "eprinttype", "arxiv", "url", "journal", "note", "howpublished", "booktitle", "publisher"];
 export const keyOf = (input: CheckInput) =>
   createHash("sha256")
-    .update(JSON.stringify([VERSION, LOOKED_UP.map((n) => input.fields[n] ?? "")]))
+    .update(JSON.stringify([VERSION, input.type.toLowerCase(), LOOKED_UP.map((n) => input.fields[n] ?? "")]))
     .digest("hex")
     .slice(0, 32);
 // How long a result stands before the entry is looked up again, in seconds.

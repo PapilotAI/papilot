@@ -26,6 +26,8 @@ export interface BibField {
   value: string;
   /** The value with macros expanded and parts joined. */
   resolved: string;
+  /** Source lines of @string definitions used here, including nested macros. */
+  dependencies?: Span[];
 }
 export interface BibEntry {
   key: string;
@@ -58,7 +60,9 @@ class Unreadable extends Error {}
 
 export function parseBib(text: string): BibEntry[] {
   const lineAt = lines(text),
-    macros = new Map<string, string>(Object.entries(MONTHS)),
+    macros = new Map(Object.entries(MONTHS).map(([name, resolved]) =>
+      [name, { resolved, dependencies: [] as Span[] }],
+    )),
     entries: BibEntry[] = [];
   let at = 0;
   const space = () => {
@@ -97,9 +101,10 @@ export function parseBib(text: string): BibEntry[] {
     at += match[0].length;
     return match[0];
   };
-  const value = (): { value: string; resolved: string } => {
+  const value = (): Omit<BibField, "name"> => {
     const start = at,
-      parts: { text: string; resolved: string }[] = [];
+      parts: { text: string; resolved: string }[] = [],
+      dependencies: Span[] = [];
     for (;;) {
       space();
       const c = text[at];
@@ -112,11 +117,11 @@ export function parseBib(text: string): BibEntry[] {
       } else {
         const word = name();
         if (!word) throw new Unreadable("A field has no value.");
+        const macro = /^\d+$/.test(word) ? undefined : macros.get(word.toLowerCase());
+        if (macro) dependencies.push(...macro.dependencies);
         parts.push({
           text: word,
-          resolved: /^\d+$/.test(word)
-            ? word
-            : (macros.get(word.toLowerCase()) ?? word),
+          resolved: macro?.resolved ?? word,
         });
       }
       space();
@@ -126,6 +131,7 @@ export function parseBib(text: string): BibEntry[] {
     return {
       value: collapse(parts.length === 1 ? parts[0].text : text.slice(start, at)),
       resolved: collapse(parts.map((p) => p.resolved).join("")),
+      ...(dependencies.length ? { dependencies: uniqueSpans(dependencies) } : {}),
     };
   };
   // `name = value` pairs up to the closing delimiter.
@@ -180,7 +186,10 @@ export function parseBib(text: string): BibEntry[] {
     at++;
     if (type === "string") {
       try {
-        for (const field of fields(close)) macros.set(field.name, field.resolved);
+        for (const field of fields(close)) macros.set(field.name, {
+          resolved: field.resolved,
+          dependencies: uniqueSpans([[lineAt(sign), lineAt(at - 1)], ...(field.dependencies ?? [])]),
+        });
       } catch {
         /* A broken macro leaves its uses unresolved. */
       }
@@ -223,6 +232,9 @@ export interface EntryChange {
   /** Lines in the new file, or in the old one for a removed entry. */
   lines: Span;
   oldLines?: Span;
+  /** Entry and macro definition lines that can change its effective values. */
+  sources: Span[];
+  oldSources?: Span[];
   error?: string;
 }
 const fieldMap = (entry: BibEntry) =>
@@ -239,6 +251,7 @@ function fieldChanges(old: BibEntry | null, next: BibEntry | null) {
       name,
       old: a?.value ?? null,
       new: b?.value ?? null,
+      ...(a && a.resolved !== a.value ? { oldResolved: a.resolved } : {}),
       ...(b && b.resolved !== b.value ? { resolved: b.resolved } : {}),
     };
   });
@@ -284,7 +297,7 @@ export function entryChanges(oldText: string, newText: string): EntryChange[] {
       old.key === next.key &&
       old.type === next.type &&
       old.error === next.error &&
-      fields.every((f) => f.old === f.new)
+      fields.every((f) => f.old === f.new && (f.oldResolved ?? f.old) === (f.resolved ?? f.new))
     )
       continue;
     changes.push({
@@ -296,6 +309,8 @@ export function entryChanges(oldText: string, newText: string): EntryChange[] {
       fields,
       lines: entry.lines,
       ...(old && next ? { oldLines: old.lines } : {}),
+      sources: entrySources(entry),
+      ...(old && next ? { oldSources: entrySources(old) } : {}),
       ...(next?.error ? { error: next.error } : {}),
     });
   }
@@ -308,11 +323,15 @@ export function entryChanges(oldText: string, newText: string): EntryChange[] {
 
 // Line ranges [start, end) of each entry, counted from 0, for grouping a
 // .bib diff's hunks by entry.
+const uniqueSpans = (spans: Span[]): Span[] =>
+  [...new Map(spans.map((span) => [span.join(":"), span])).values()];
+const entrySources = (entry: BibEntry) =>
+  uniqueSpans([entry.lines, ...entry.fields.flatMap((f) => f.dependencies ?? [])]);
 export function entrySpans(text: string) {
-  return parseBib(text).map((e) => ({
+  return parseBib(text).flatMap((e) => entrySources(e).map((span) => ({
     key: e.key,
-    span: [e.lines[0] - 1, e.lines[1]] as Span,
-  }));
+    span: [span[0] - 1, span[1]] as Span,
+  })));
 }
 
 // TeX comments, blanked so offsets and line numbers stay.
@@ -427,6 +446,16 @@ const sectionOf = (doc: Document, file: string, line: number) => {
   return node ? `${node.number} ${node.title}`.trim() : null;
 };
 const meets = (a: Span, b: Span) => a[0] <= b[1] && b[0] <= a[1];
+// A grouped macro edit can span unrelated entries. Match its actual edits,
+// not the envelope between the first and last hunk.
+function changesSources(unit: Unit, sources: Span[], side: "old" | "new") {
+  const ranges: Span[] = unit.ops.length
+    ? unit.ops.map((op) => side === "old" ? [op[1], op[2]] : [op[3], op[4]])
+    : [side === "old" ? [unit.old_start - 1, unit.old_end] : [unit.new_start - 1, unit.new_end]];
+  return sources.some(([start, end]) => ranges.some(([a, b]) =>
+    a === b ? start - 1 < a && a < end : a < end && start - 1 < b,
+  ));
+}
 
 // What a round changes in the bibliography: each added, removed or modified
 // entry under the edit it belongs to, where the revised document cites it,
@@ -450,10 +479,9 @@ export function referenceChanges(
           : u.status === "deleted"
             ? change.status === "removed"
             : change.status === "removed"
-              ? meets(change.lines, [u.old_start, u.old_end])
-              : meets(change.lines, [u.new_start, u.new_end]) ||
-                (change.oldLines !== undefined &&
-                  meets(change.oldLines, [u.old_start, u.old_end])),
+              ? changesSources(u, change.sources, "old")
+              : changesSources(u, change.sources, "new") ||
+                (change.oldSources !== undefined && changesSources(u, change.oldSources, "old")),
       );
       if (!unit) continue;
       const n = (counts.get(change.key) ?? 0) + 1;
@@ -498,7 +526,7 @@ export function referenceChanges(
   // Keys the revised document cites with no entry in its bibliography, if
   // it names one and did not already lack them.
   const missing: MissingCitation[] = [];
-  if (after.bibs.length && !after.all) {
+  if (after.bibs.length) {
     // A key whose entry this round removes or renames is shown with it.
     const lacking = new Set([
       ...before.cites.filter((c) => !before.keys.has(c.key)).map((c) => c.key),

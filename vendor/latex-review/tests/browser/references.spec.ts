@@ -38,7 +38,7 @@ const checks: ReferenceChecks = {
   },
 };
 
-async function serve(page: Page) {
+async function serve(page: Page, roundDetail = detail) {
   const decisions: Record<string, PageState["decisions"][string]> = { c001: "pending", c002: "pending", c003: "pending" },
     posted: string[][] = [],
     state = (): PageState => ({
@@ -48,7 +48,7 @@ async function serve(page: Page) {
   await page.route("**/api/tasks/refs/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/state")) return route.fulfill({ json: state() });
-    if (url.pathname.endsWith("/rounds/1")) return route.fulfill({ json: detail });
+    if (url.pathname.endsWith("/rounds/1")) return route.fulfill({ json: roundDetail });
     if (url.pathname.endsWith("/rounds/1/references")) {
       expect(url.searchParams.get("check")).toBe("1");
       return route.fulfill({ json: checks });
@@ -102,4 +102,19 @@ test("Accept all leaves a change with an unverified entry, which is accepted onl
   await page.keyboard.press("a");
   await page.locator(".references-confirm").getByRole("button", { name: "Accept anyway" }).click();
   await expect.poll(() => posted).toEqual([["c002", "c003"], ["c001"]]);
+});
+
+test("changed macro expansions are visible and unverified entries still require confirmation", async ({ page }) => {
+  const round = structuredClone(detail), entry = round.references!.entries[1];
+  entry.status = "modified";
+  entry.fields = [{ name: "title", old: "work", new: "work", oldResolved: "Original work", resolved: "A study that was never written" }];
+  const posted = await serve(page, round);
+  await page.goto("/?task=refs");
+  const row = page.locator('.reference-entry[data-status="modified"][data-check="unverified"] tr');
+  await expect(row).toHaveAttribute("data-change", "changed");
+  await expect(row.locator("del")).toHaveText("Original work");
+  await expect(row.locator("ins")).toHaveText("A study that was never written");
+  await page.locator("article.change").first().locator(".actions button.accept").click();
+  await expect(page.locator(".references-confirm")).toContainText("made-up — Not verified");
+  expect(posted).toEqual([]);
 });

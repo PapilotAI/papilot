@@ -243,12 +243,13 @@ export interface RenderedRound {
 }
 /** One field of a changed bibliography entry, before and after; null
  * where the entry lacks it. `resolved` is the new value with @string
- * macros expanded, when that differs. */
+ * macros expanded, when that differs; `oldResolved` is its old expansion. */
 export interface ReferenceField {
   name: string;
   old: string | null;
   new: string | null;
   resolved?: string;
+  oldResolved?: string;
 }
 export interface ReferenceCitation {
   file: string;

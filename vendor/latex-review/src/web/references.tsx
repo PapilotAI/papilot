@@ -352,7 +352,7 @@ export function ReferenceEntries({ entries, checks, pending, onRetry, confirmed 
                   <tr
                     key={field.name}
                     data-change={
-                      entry.status !== "modified" || field.old === field.new
+                      entry.status !== "modified" || (field.old === field.new && (field.oldResolved ?? field.old) === (field.resolved ?? field.new))
                         ? undefined
                         : field.old === null
                           ? "added"
@@ -364,7 +364,9 @@ export function ReferenceEntries({ entries, checks, pending, onRetry, confirmed 
                     <th scope="row">{field.name}</th>
                     <td>
                       <Value old={field.old} next={field.new} status={entry.status} />
-                      {field.resolved && <span className="reference-resolved"> = {field.resolved}</span>}
+                      {(field.resolved !== undefined || field.oldResolved !== undefined) && (
+                        <span className="reference-resolved"> = <Value old={field.oldResolved ?? field.old} next={field.resolved ?? field.new} status={entry.status} /></span>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -12,6 +12,7 @@ import {
 } from "../../src/core/bib.ts";
 import { applyUnits, diffUnits } from "../../src/core/changes.ts";
 import { buildOutline } from "../../src/core/outline.ts";
+import { checkInputs } from "../../src/core/verify.ts";
 import type { Unit } from "../../src/types.ts";
 
 const BIB = String.raw`% A comment line, ignored like any text outside entries.
@@ -137,6 +138,19 @@ const unit = (over: Partial<Unit>): Unit => ({
 });
 
 describe("Bibliography changes of a round", () => {
+  it("checks explicit missing citations even when nocite includes every entry", () => {
+    const before = MAIN.replace("\\bibliography", "\\nocite{*}\n\\bibliography"),
+      next = before.replace("Text \\cite{knuth1981}", "Text \\cite{knuth1981,ghost}"),
+      result = referenceChanges(
+        [unit({ file: "paper/main.tex", old_start: 4, old_end: 4, new_start: 4, new_end: 4 })],
+        doc({ "paper/main.tex": before, "paper/refs.bib": BIB }),
+        doc({ "paper/main.tex": next, "paper/refs.bib": BIB }),
+      )!;
+    expect(result.missing).toEqual([
+      { key: "ghost", file: "paper/main.tex", line: 4, unit: "c001", section: "1 Intro" },
+    ]);
+    expect(result.entries).toEqual([]);
+  });
   it("shows each entry under its edit, where it is cited, and what is wrong with it", () => {
     const next = BIB.replace("@inproceedings{ellis1989", "@inproceedings{ellis89")
       .concat("\n@misc{knuth1981,\n  title = {Twice}\n}\n");
@@ -180,6 +194,67 @@ describe("Bibliography hunks", () => {
     f = new Fixture();
   });
   afterEach(async () => f.close());
+  it("checks macro changes and keeps each affected entry's edits together", () => {
+    const main = MAIN.replace("knuth1981", "one").replace("ellis1989", "two"),
+      bib = `@string{work = "Original title"}
+@string{extended = work # " subtitle"}
+
+@article{one,
+  title = extended,
+  author = {John Smith},
+  year = 2020
+}
+
+@article{unrelated,
+  title = {Other work},
+  year = 2000
+}
+${"\n".repeat(8)}
+@article{two,
+  title = work,
+  author = {Jane Doe},
+  year = 2021
+}
+`;
+    f.write("paper/main.tex", main);
+    f.write("paper/refs.bib", bib);
+    f.repo.run(["add", "."]);
+    f.repo.run(["commit", "-qm", "macro bibliography"]);
+    const before = f.repo.rev("HEAD"),
+      next = bib.replace("Original title", "Changed title").replace("year = 2021", "year = 2022").replace("Other work", "Another work");
+    f.write("paper/refs.bib", next);
+    const after = f.repo.snapshot(["paper"]),
+      units = diffUnits(f.repo, before, after),
+      result = referenceChanges(units,
+        doc({ "paper/main.tex": main, "paper/refs.bib": bib }),
+        doc({ "paper/main.tex": main, "paper/refs.bib": next }),
+      )!;
+    expect(units).toHaveLength(2);
+    const one = result.entries.find((e) => e.key === "one")!,
+      two = result.entries.find((e) => e.key === "two")!,
+      unrelated = result.entries.find((e) => e.key === "unrelated")!;
+    expect(one.unit).toBe(two.unit);
+    expect(unrelated.unit).not.toBe(one.unit);
+    expect(one.fields.find((f) => f.name === "title")).toEqual({
+      name: "title", old: "extended", new: "extended",
+      oldResolved: "Original title subtitle", resolved: "Changed title subtitle",
+    });
+    expect(checkInputs(result).find((e) => e.id === one.id)?.fields.title).toBe("Changed title subtitle");
+    // Accepting the macro's change also accepts the dependent field edit,
+    // but leaves the unrelated entry alone, even though it sits between them.
+    const accepted = applyUnits(f.repo.blob(before, "paper/refs.bib"), f.repo.blob(after, "paper/refs.bib"), units.filter((u) => u.id === one.unit))!.toString();
+    expect(accepted).toBe(next.replace("Another work", "Other work"));
+    // A macro edit alone still produces entries, not just a source-only diff.
+    const macroOnly = bib.replace("Original title", "Changed title");
+    f.write("paper/refs.bib", macroOnly);
+    const macroUnits = diffUnits(f.repo, before, f.repo.snapshot(["paper"]));
+    const macroResult = referenceChanges(macroUnits,
+      doc({ "paper/main.tex": main, "paper/refs.bib": bib }),
+      doc({ "paper/main.tex": main, "paper/refs.bib": macroOnly }),
+    )!;
+    expect(macroResult.entries.map((e) => e.key)).toEqual(["one", "two"]);
+    expect(macroResult.entries.every((e) => e.unit === macroUnits[0].id)).toBe(true);
+  });
   it("makes one change of hunks that touch the same entry, so an entry is decided whole", () => {
     const fields = Array.from({ length: 12 }, (_, i) => `  field${i} = {${i}},`).join("\n"),
       bib = `@article{long,\n${fields}\n  title = {Old}\n}\n\n@misc{other,\n  title = {Other}\n}\n`;

@@ -10,6 +10,7 @@ import {
   Confirmations,
   doiOf,
   Http,
+  keyOf,
   plain,
   ReferenceChecker,
   titleScore,
@@ -199,6 +200,32 @@ describe("Checking an entry", () => {
 });
 
 describe("The checker", () => {
+  it("checks again when the entry type changes instead of reusing an article result for a book", async () => {
+    const { fetcher, seen } = server([
+      [/crossref/, { body: { message: { items: [KNUTH_CSL] } } }],
+      [/dblp/, { body: { result: { hits: {} } } }],
+      [/arxiv/, { body: EMPTY_ATOM }],
+    ]), checker = new ReferenceChecker(null, { fetch: fetcher, pace: NO_PACE }),
+      article = entry(knuth), book = { ...article, type: "book" };
+    checker.lookup([article], true);
+    await checker.idle();
+    expect(checker.lookup([article]).checks[article.id].status).toBe("verified");
+    const requests = seen.length;
+    expect(checker.lookup([book], true)).toEqual({ checks: {}, pending: 1 });
+    await checker.idle();
+    expect(checker.lookup([book]).checks[book.id].status).toBe("unverified");
+    expect(seen.length).toBeGreaterThan(requests);
+  });
+  it("discards cached verdicts written before entry types were part of the key", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "latex-review-cache-version-"));
+    try {
+      const file = path.join(dir, "references.json"), input = entry(knuth);
+      fs.writeFileSync(file, JSON.stringify({ version: 1, checks: {
+        [keyOf(input)]: { status: "verified", checked: Math.floor(Date.now() / 1000) },
+      } }));
+      expect(new ReferenceChecker(file).lookup([input])).toEqual({ checks: {}, pending: 0 });
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
   it("checks in the background, keeps results in a file and redoes unverified entries on request", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "latex-review-verify-")),
       file = path.join(dir, "references.json"),
@@ -249,6 +276,7 @@ describe("Confirmations", () => {
       const later = new Confirmations(file);
       expect(later.of([book, { ...book, id: "other.bib#tb" }])).toEqual({ "refs.bib#knuth": 5, "other.bib#tb": 5 });
       expect(later.of([{ ...book, fields: { ...book.fields, year: "1986" } }])).toEqual({});
+      expect(later.of([{ ...book, type: "book" }])).toEqual({});
       later.set(book, false);
       expect(new Confirmations(file).of([book])).toEqual({});
     } finally {
