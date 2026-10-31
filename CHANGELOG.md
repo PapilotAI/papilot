@@ -6,6 +6,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
+- **Claude on your Claude plan.** With Claude Code installed and signed in, Claude tasks run `claude -p` on that login, so a Claude plan works without an API key. Edits in the worktree are accepted, commands run in Claude Code's sandbox, anything that would need approval is declined and noted, and each task resumes its session. Without Claude Code, Claude still runs through the Agent SDK with an API key.
+
 - **More agents, found automatically.** Cursor (through the Cursor SDK, with `CURSOR_API_KEY`), GLM (Claude Code on Zhipu's Anthropic-compatible endpoint, with `ZHIPU_API_KEY` or `ZAI_API_KEY`), DeepSeek (`dsh acp` from DeepSeek Harness), Qwen Code (`qwen --acp`) and OpenCode (`opencode acp`) join the agent menu. Papilot offers only the agents it finds on the host, looks again on **Reconnect**, and names the rest in Settings → Runtime & diagnostics. DeepSeek keeps its workspace sandbox, Qwen runs in Auto Edit mode, and OpenCode asks before commands and anything outside the worktree. `papilot doctor` checks each of them and lists agents that are not set up for information only.
 
 - **Kimi Code support.** Choose Kimi for paper-editing tasks using your local Kimi Code CLI login. The ACP adapter supports model and thinking-level selection, streamed replies, image inputs, tool approvals, cancellation and session recovery. Diagnostics include Kimi CLI availability; set `PAPILOT_KIMI_BIN` for a custom executable path.

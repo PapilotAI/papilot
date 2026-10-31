@@ -141,9 +141,19 @@ export async function doctor(args) {
     return false;
   }
   async function claudeCheck() {
+    // With Claude Code installed, Claude runs claude -p on its own login; only the login state is read.
+    const cli = executable(process.env.PAPILOT_CLAUDE_BIN || 'claude');
+    if (cli) {
+      const result = await command(cli, ['auth', 'status', '--json']);
+      let login = null;
+      try { login = JSON.parse(result.stdout); } catch { /* Reported below. */ }
+      const ready = Boolean(login?.loggedIn);
+      check('agent.claude', ready, 'warn', `${cli}: ${ready ? `Claude Code signed in${login.subscriptionType ? ` (${login.subscriptionType} plan)` : ''}; generation was not tested` : login ? 'Claude Code is not signed in' : result.reason || 'login status unavailable'}.`, 'Run claude auth login, then select Reconnect in Papilot. Set PAPILOT_CLAUDE_BIN if needed.');
+      return ready;
+    }
     const sdk = installedModule('@anthropic-ai/claude-agent-sdk') || installedModule('@anthropic-ai/claude-agent-sdk', path.join(data, 'agents'));
     const configured = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY'].some(key => Boolean(process.env[key]));
-    check('agent.claude', Boolean(sdk && configured), configured ? 'warn' : 'info', !configured ? 'Claude API credentials are not configured in this environment, so Papilot does not offer Claude.' : sdk ? 'Claude SDK installed; API credentials configured (not validated).' : 'Claude API credentials configured; the Agent SDK is not installed yet.', !configured ? 'Start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured. A Claude subscription alone cannot be used by this adapter.' : 'Start papilot once to install the Claude Agent SDK.');
+    check('agent.claude', Boolean(sdk && configured), configured ? 'warn' : 'info', !configured ? 'Claude Code is not installed and no Claude API key is configured, so Papilot does not offer Claude.' : sdk ? 'Claude SDK installed; API credentials configured (not validated).' : 'Claude API credentials configured; the Agent SDK is not installed yet.', !configured ? 'Install Claude Code and sign in with claude auth login to use your Claude plan, or start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured.' : 'Start papilot once to install the Claude Agent SDK.');
     return Boolean(sdk && configured);
   }
   async function agyCheck() {
