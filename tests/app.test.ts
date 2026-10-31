@@ -34,7 +34,7 @@ async function fixture() {
   fs.writeFileSync(path.join(dist, 'index.html'), '<html>app</html>');
   fs.writeFileSync(path.join(dist, '.env'), 'SECRET=1');
   const review: ReviewClient = { url: 'http://127.0.0.1:9', token: 'review-token', get: async () => ({}) as any, post: async () => ({}) as any };
-  const workspace = new Workspace(store, new FakeAgent() as unknown as Codex, 2, async () => review, { claude: new FakeAgent() as unknown as Codex, antigravity: new FakeAgent() as unknown as Codex });
+  const workspace = new Workspace(store, new FakeAgent() as unknown as Codex, 2, async () => review, { claude: new FakeAgent() as unknown as Codex, antigravity: new FakeAgent() as unknown as Codex, kimi: new FakeAgent() as unknown as Codex });
   workspace.runtimes.codex.account = 'owner@example.com';
   const accounts = new Accounts(store, ORIGIN, passkeys);
   store.saveProject({ id: 'thesis', name: 'Thesis', path: '/unused/thesis', createdAt: 1 });
@@ -348,9 +348,9 @@ test('one task carries PDF notes, a skill and the overall request; retries leave
 test('annotation subsets go to separate agents while unselected notes keep their content and anchors', async () => {
   const f = await fixture();
   try {
-    const notes: Annotation[] = ['first', 'second', 'later'].map((id, index) => ({ id, projectId: 'thesis', key: 'pdf', page: index, rect: [0.1, 0.2, 0.4, 0.3], quote: `Original text ${id}`, comment: `Revise ${id}.`, source: null, group: 'yellow', createdAt: index + 1 }));
+    const notes: Annotation[] = ['first', 'second', 'kimi-note', 'later'].map((id, index) => ({ id, projectId: 'thesis', key: 'pdf', page: index, rect: [0.1, 0.2, 0.4, 0.3], quote: `Original text ${id}`, comment: `Revise ${id}.`, source: null, group: 'yellow', createdAt: index + 1 }));
     notes.forEach(note => f.store.saveAnnotation(note));
-    for (const [index, agent] of ['codex', 'claude'].entries()) {
+    for (const [index, agent] of ['codex', 'claude', 'kimi'].entries()) {
       const id = `subset-note-task-${index}`, payload = { id, projectId: 'thesis', title: 'Revise one annotation', instructions: '', agent, annotations: [notes[index].id] };
       const response = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
       assert.equal(response.statusCode, 200, response.body);
@@ -360,7 +360,8 @@ test('annotation subsets go to separate agents while unselected notes keep their
     }
     assert.equal(f.store.annotation('thesis', 'first').taskId, 'subset-note-task-0');
     assert.equal(f.store.annotation('thesis', 'second').taskId, 'subset-note-task-1');
-    assert.deepEqual(f.store.annotation('thesis', 'later'), notes[2]);
+    assert.equal(f.store.annotation('thesis', 'kimi-note').taskId, 'subset-note-task-2');
+    assert.deepEqual(f.store.annotation('thesis', 'later'), notes[3]);
   } finally { await f.close(); }
 });
 

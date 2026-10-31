@@ -162,7 +162,7 @@ export async function buildApp(options: AppOptions) {
   });
   app.post('/api/reconnect', any, async request => { await workspace.connect(); return visibleSnapshot(workspace.snapshot(), request.viewer!, accounts).runtime; });
   // Codex names reasoning efforts with short lowercase words (low, medium, xhigh).
-  const agent = (value: unknown): AgentId => value === 'claude' || value === 'antigravity' ? value : 'codex';
+  const agent = (value: unknown): AgentId => value === 'claude' || value === 'antigravity' || value === 'kimi' ? value : 'codex';
   const effort = (value: unknown) => typeof value === 'string' && /^[a-z]{1,16}$/.test(value) ? value : undefined;
   const string = (value: unknown, name: string, max = 20000) => { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
   // Adding a paper names a folder on this host, so only the owner can.

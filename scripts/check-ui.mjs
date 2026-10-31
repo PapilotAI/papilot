@@ -891,7 +891,7 @@ try {
   const effortChoice = agentSettings.getByRole('slider', { name: 'Reasoning effort', exact: true });
   const fastMode = agentSettings.getByRole('switch', { name: 'Fast mode' });
   assert.equal(await agentChoices.getByRole('radio', { name: 'Codex', exact: true }).getAttribute('aria-checked'), 'true');
-  assert.deepEqual(await agentChoices.getByRole('radio').allInnerTexts(), ['Codex', 'Claude', 'Antigravity']);
+  assert.deepEqual(await agentChoices.getByRole('radio').allInnerTexts(), ['Codex', 'Claude', 'Antigravity', 'Kimi']);
   assert.match(await settingsTrigger.innerText(), /Medium/);
   assert.equal(await fastMode.count(), 0);
   await modelChip.selectOption('deep-model');
@@ -932,6 +932,16 @@ try {
   await settingsTrigger.click();
   await agentSettings.getByRole('status').getByText('spawn agy ENOENT', { exact: true }).waitFor();
   // Long diagnostics expand within the same menu; choosing another agent clears them.
+  snapshot.runtimes.kimi = { connected: true, authenticated: true, account: 'Local Kimi configuration', error: null, models: [{ id: 'kimi/k3', name: 'K3', isDefault: true, efforts: ['low', 'high', 'max'], defaultEffort: 'high' }] };
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await chooseAgent('Kimi');
+  await modelChip.getByRole('option', { name: 'K3', exact: true }).waitFor({ state: 'attached' });
+  assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'High');
+  await modelChip.selectOption('kimi/k3');
+  await effortChoice.press('End');
+  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:kimi'), localStorage.getItem('papilot:effort:kimi')]), ['kimi', 'kimi/k3', 'max']);
+  assert.equal(await fastMode.count(), 0);
+  await page.screenshot({ path: 'test-results/kimi-agent-settings.png', fullPage: true });
   const claudeRuntime = structuredClone(snapshot.runtimes.claude);
   Object.assign(snapshot.runtimes.claude, { connected: false, authenticated: false, error: 'Claude needs an Anthropic API key: Start Papilot with ANTHROPIC_API_KEY set to use Claude.' });
   await page.evaluate(() => window.dispatchEvent(new Event('online')));

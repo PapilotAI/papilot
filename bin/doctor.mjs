@@ -156,7 +156,15 @@ export async function doctor(args) {
     check('agent.antigravity', ready, 'warn', `${file}: ${ready ? 'model listing succeeded (no generation tested)' : result.reason || 'no models returned'}.`, 'Sign in to agy and try agy models. If your region requires a proxy, set PAPILOT_AGY_PROXY.');
     return ready;
   }
-  const agents = await Promise.all([codexCheck(), claudeCheck(), agyCheck()]);
+  async function kimiCheck() {
+    const file = executable(process.env.PAPILOT_KIMI_BIN || 'kimi');
+    if (!file) { check('agent.kimi', false, 'warn', 'Kimi CLI is not installed or PAPILOT_KIMI_BIN is invalid.', 'Install Kimi Code CLI and run kimi login, or choose another agent.'); return false; }
+    const result = await command(file, ['acp', '--help']);
+    const ready = result.ok && /\bACP\b|Agent Client Protocol/i.test(result.stdout);
+    check('agent.kimi', ready, 'warn', `${file}: ${ready ? 'ACP command available; login and generation were not tested' : result.reason || 'ACP command unavailable'}.`, 'Update Kimi Code CLI and run kimi login. Set PAPILOT_KIMI_BIN if needed.');
+    return ready;
+  }
+  const agents = await Promise.all([codexCheck(), claudeCheck(), agyCheck(), kimiCheck()]);
   check('agents', agents.some(Boolean), 'warn', agents.some(Boolean) ? 'At least one agent passed its configuration check; live editing was not tested.' : 'No agent passed its configuration check. PDF reading can still be used with a working TeX installation.', 'Configure one agent before starting editing tasks.');
 
   if (repo) {
@@ -232,7 +240,7 @@ export async function doctor(args) {
     }
   }
   // Keep reports stable even though independent probes finish in any order.
-  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.codex', 'agent.claude', 'agent.antigravity', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
+  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.codex', 'agent.claude', 'agent.antigravity', 'agent.kimi', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
   checks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const report = { name: 'Papilot', version: pkg.version, ok: !checks.some(item => !item.ok && item.severity === 'error'), checks };
   if (json) console.log(JSON.stringify(report, null, 2));

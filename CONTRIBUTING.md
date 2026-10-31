@@ -29,7 +29,7 @@ npm start              # http://127.0.0.1:7274
 
 | Path | What it holds |
 | --- | --- |
-| `src/server` | The Fastify server, the agent adapters (Codex, Claude, Antigravity), tasks, Git and the PDF build |
+| `src/server` | The Fastify server, the agent adapters (Codex, Claude, Antigravity, Kimi), tasks, Git and the PDF build |
 | `src/web` | The React interface and the PDF viewer |
 | `src/shared.ts` | Types shared by the server and the interface |
 | `vendor/latex-review` | The review engine that builds and compares the PDFs, with its own tests |
