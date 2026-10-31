@@ -356,6 +356,7 @@ export const zhCN: Record<string, string> = {
   '{inviter} invited you to Papilot. You will appear as {name}.': '{inviter} 邀请你加入 Papilot。你将显示为 {name}。',
   'Create a passkey': '创建通行密钥', 'A passkey signs you in with Face ID, Touch ID, Windows Hello or your phone. Papilot never sees a password.': '通行密钥用面容 ID、触控 ID、Windows Hello 或手机为你登录，Papilot 不会接触任何密码。',
   'Resize manuscript panel': '调整稿件右栏宽度',
+  'Collapse manuscript panel': '收起稿件右栏', 'Expand manuscript panel': '展开稿件右栏',
   'Archived tasks': '已归档任务', 'Show current tasks': '显示未归档任务', 'Show archived tasks': '显示已归档任务',
   'Search tasks': '搜索任务', 'Search tasks…': '搜索任务…', 'Search task titles and instructions': '搜索任务标题和初始指令', 'Clear task search': '清除任务搜索',
   'Search archived tasks…': '搜索已归档任务…',

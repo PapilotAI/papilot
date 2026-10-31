@@ -12,6 +12,8 @@ const paths: Record<string, React.ReactNode> = {
   bolt: <path d="m13 2-9 12h7l-1 8 10-12h-7Z"/>,
   compose: <><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/></>,
   sidebar: <><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M9 3v18"/></>,
+  panelCollapse: <><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M15 3v18m-8-12 3 3-3 3"/></>,
+  panelExpand: <><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M15 3v18m-5-12-3 3 3 3"/></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16"/>,
   arrowUp: <path d="M12 19V5m-7 7 7-7 7 7"/>,
   arrowDown: <path d="M12 5v14m7-7-7 7-7-7"/>,

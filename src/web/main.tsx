@@ -618,7 +618,16 @@ type ManuscriptPanel = 'pdf' | 'task' | 'contents' | 'git';
 function ManuscriptView({ project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, openPdf, navigation, onGit, writer, reportError, tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (id: string) => void; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; openPdf?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
   const build = data?.build, notes = data?.annotations || [], git = data?.git;
   const pdf = useRef<PdfHandle>(null);
-  const panel = usePanelWidth('papilot:manuscript-width', '--manuscript-width', '.manuscript-side', t('Resize manuscript panel'), useMedia('(min-width: 901px)'), () => pdf.current?.fitWidth());
+  const [collapsed, setCollapsed] = useState(() => browserStorage.getItem('papilot:manuscript-panel') === 'hidden');
+  const canCollapse = useMedia('(min-width: 681px)'), hidden = canCollapse && collapsed;
+  const panelId = useId(), panelToggle = useRef<HTMLButtonElement>(null);
+  const panel = usePanelWidth('papilot:manuscript-width', '--manuscript-width', '.manuscript-side', t('Resize manuscript panel'), useMedia('(min-width: 901px)') && !hidden, () => pdf.current?.fitWidth());
+  useEffect(() => { browserStorage.setItem('papilot:manuscript-panel', collapsed ? 'hidden' : 'visible'); }, [collapsed]);
+  const togglePanel = canCollapse && <button ref={panelToggle} type="button" className="icon-button manuscript-panel-toggle" aria-label={hidden ? t('Expand manuscript panel') : t('Collapse manuscript panel')} title={hidden ? t('Expand manuscript panel') : t('Collapse manuscript panel')} aria-expanded={!hidden} aria-controls={panelId} onClick={() => {
+    setCollapsed(value => !value); pdf.current?.fitWidth();
+    requestAnimationFrame(() => panelToggle.current?.focus());
+  }}><Icon name={hidden ? 'panelExpand' : 'panelCollapse'} size={18}/></button>;
+  const pageTools = <>{tools}{hidden && <>{openPdf}{togglePanel}</>}</>;
   const [mode, setMode] = useState<PdfMode>('pdf'), [committing, setCommitting] = useState(false);
   const switcher = <>{navigation}<ModeSwitch mode={mode} onMode={setMode}/></>;
   const staged = Array.isArray(git?.files) && !git.merging ? git.files.filter(file => file.staged).map(file => file.path) : [];
@@ -646,20 +655,21 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
     if (!phone() && mode === 'pdf') pdf.current?.focus();
     else requestAnimationFrame(() => pdf.current?.focus());
   }
-  return <div className={'manuscript show-' + view} style={panel.style}>
+  return <div className={'manuscript show-' + view + (hidden ? ' panel-collapsed' : '')} style={panel.style}>
     {panel.resizer}
     {mode === 'changes' ? <section className="manuscript-pages" aria-label={t('Uncommitted changes in the PDF')}>
-      <ReviewFrame key={'changes:' + project.id} changesOf={project.id} lead={switcher} tools={<>{commitButton(false)}{tools}</>} completion={commitButton(true)} onDecided={reloadGit}/>
+      <ReviewFrame key={'changes:' + project.id} changesOf={project.id} lead={switcher} tools={<>{commitButton(false)}{pageTools}</>} completion={commitButton(true)} onDecided={reloadGit}/>
     </section> : <section className="manuscript-pages" aria-label={t('PDF preview')} aria-busy={!build || build.status === 'building'}>
-      {!build?.key && <div className="manuscript-lead">{switcher}{tools}</div>}
+      {!build?.key && <div className="manuscript-lead">{switcher}{pageTools}</div>}
       {error && <div className="manuscript-note error" role="alert">{error}</div>}
       {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>{t('The manuscript did not compile.')}</strong><pre>{build.error}</pre></div>}
       {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion} group={actions.group} onGroupChange={actions.setGroup} markingDisabled={actions.sending}
-          onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('task'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={tools}/></Suspense>
+          onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) { setView('task'); setCollapsed(false); pdf.current?.fitWidth(); } }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={pageTools}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
     </section>}
-    <aside className="manuscript-side" aria-label={t('Manuscript panels')}>
+    <aside id={panelId} className="manuscript-side" aria-label={t('Manuscript panels')} hidden={hidden}>
       <div className="manuscript-side-header">
+        {!hidden && togglePanel}
         <div className="side-tabs" role="tablist" aria-label={t('Manuscript panels')}>
           <button role="tab" aria-selected={side === 'task'} onClick={() => setView('task')}><Icon name="compose" size={14}/>{t('New task')}{notes.length > 0 && <span className="count" aria-hidden="true">{notes.length}</span>}</button>
           <button role="tab" aria-selected={side === 'contents'} onClick={() => setView('contents')}><Icon name="list" size={14}/>{t('Contents')}</button>
