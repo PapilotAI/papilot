@@ -7,7 +7,7 @@ import net from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
 import { activeInstallation, devRevision, newerVersion, readJson, releaseVersion, stableVersion, writeJson } from '../bin/installation.mjs';
 import { latestRelease, Updates } from '../src/server/updates.ts';
-import { DEV_REPOSITORY, health, loaderFor, prepareDev, probeInstallation, sleep } from '../src/server/update-install.ts';
+import { DEV_REPOSITORY, health, loaderFor, npmCli, prepareDev, probeInstallation, sleep } from '../src/server/update-install.ts';
 import { restartRelease } from '../src/server/update-worker.ts';
 
 const temporary = () => fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-update-test-'));
@@ -92,6 +92,36 @@ test('dev preparation builds the advertised commit, independently of a newer mai
     assert.deepEqual(calls.filter(call => call.args[0] === 'run').map(call => call.cwd), [path.join(root, 'vendor/latex-review'), root]);
     await assert.rejects(prepareDev(root, '0.7.0-dev.bad', 1), /Invalid development version/);
   } finally { fs.rmSync(data, { recursive: true, force: true }); }
+});
+test('dev builds tolerate test-only engine restrictions but reject incompatible runtime dependencies', async () => {
+  const data = temporary(), source = path.join(data, 'source'), log = fs.openSync(path.join(data, 'install.log'), 'w');
+  const git = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const npm = (cwd: string, args: string[]) => execFileSync(process.execPath, [npmCli(), ...args, '--ignore-scripts', '--engine-strict=false', '--no-audit', '--no-fund'], { cwd, stdio: ['ignore', log, log] });
+  try {
+    fs.mkdirSync(source);
+    const dependency = path.join(source, 'fixture-incompatible');
+    writeJson(path.join(dependency, 'package.json'), { name: 'fixture-incompatible', version: '1.0.0', engines: { node: '<0' } });
+    npm(dependency, ['pack', '--pack-destination', source]);
+    const build = `node -e "require('node:fs').writeFileSync('build-ok', 'yes')"`;
+    const engine = path.join(source, 'vendor/latex-review');
+    writeJson(path.join(engine, 'package.json'), { name: 'review', version: '1.0.0', scripts: { build } });
+    npm(engine, ['install', '--package-lock-only']);
+    git(source, ['init', '-q']); git(source, ['config', 'user.name', 'Test']); git(source, ['config', 'user.email', 'test@localhost']);
+    for (const kind of ['devDependencies', 'dependencies']) {
+      writeJson(path.join(source, 'package.json'), { name: 'papilot', version: '0.7.0', scripts: { build }, [kind]: { 'fixture-incompatible': 'file:./fixture-incompatible-1.0.0.tgz' } });
+      npm(source, ['install', '--package-lock-only']);
+      git(source, ['add', '.']); git(source, ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', kind]);
+      const revision = git(source, ['rev-parse', 'HEAD']), root = path.join(data, kind); fs.mkdirSync(root);
+      const preparing = prepareDev(root, `0.7.0-dev.${revision}`, log, undefined, async (args, cwd) => git(cwd, args.map(arg => arg === DEV_REPOSITORY ? source : arg)));
+      if (kind === 'dependencies') await assert.rejects(preparing, /could not be installed/);
+      else {
+        await preparing;
+        assert.equal(fs.readFileSync(path.join(root, 'build-ok'), 'utf8'), 'yes');
+        assert.equal(fs.readFileSync(path.join(root, 'vendor/latex-review/build-ok'), 'utf8'), 'yes');
+        assert.equal(fs.existsSync(path.join(root, 'node_modules/fixture-incompatible')), false);
+      }
+    }
+  } finally { fs.closeSync(log); fs.rmSync(data, { recursive: true, force: true }); }
 });
 test('checks are shared, transient failures preserve an available version, and forged install targets are refused', async () => {
   let release!: (value: string) => void;

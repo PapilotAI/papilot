@@ -67,16 +67,18 @@ export async function prepareDev(root: string, version: string, log: number, run
   if (await checkout(['rev-parse', 'HEAD'], root) !== revision) throw new Error('The development checkout does not match the requested commit.');
   const pkg = readJson(path.join(root, 'package.json'));
   if (pkg?.name !== 'papilot' || !stableVersion(pkg.version) || `${pkg.version}-dev.${revision}` !== version) throw new Error('The development checkout does not match the requested version.');
-  const flags = ['--ignore-scripts', '--no-audit', '--no-fund', '--engine-strict'];
-  await run(['ci', '--include=dev', ...flags], root, log);
+  const flags = ['--ignore-scripts', '--no-audit', '--no-fund'];
+  // Test-only tools can exclude a Node version that supports the application.
+  // Build first, then enforce engine compatibility for the retained runtime.
+  await run(['ci', '--include=dev', '--engine-strict=false', ...flags], root, log);
   const engine = path.join(root, 'vendor/latex-review');
-  await run(['ci', '--include=dev', ...flags], engine, log);
+  await run(['ci', '--include=dev', '--engine-strict=false', ...flags], engine, log);
   // Only this installed snapshot gets a dev version; the repository stays unchanged.
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ ...pkg, version }, null, 2) + '\n');
   await run(['run', 'build'], engine, log);
   await run(['run', 'build'], root, log);
-  await run(['prune', '--omit=dev', ...flags], root, log);
-  await run(['prune', '--omit=dev', ...flags], engine, log);
+  await run(['prune', '--omit=dev', '--engine-strict', ...flags], root, log);
+  await run(['prune', '--omit=dev', '--engine-strict', ...flags], engine, log);
 }
 async function installDev(data: string, version: string) {
   const releases = path.join(data, 'updates/releases'); fs.mkdirSync(releases, { recursive: true, mode: 0o700 });
