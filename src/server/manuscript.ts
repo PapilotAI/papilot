@@ -477,7 +477,7 @@ export class Manuscripts extends EventEmitter {
     const build = this.builds.get(projectId);
     if (!build?.problems) return { status: build?.status || 'building', problems: [], log: Boolean(build?.log) };
     const { problems, problemsKey: key, pdf } = build;
-    if (!key || key !== build.key || !pdf) return { status: build.status, problems: sortProblems(problems.map(({ source: _source, ...problem }) => problem)), log: Boolean(build.log) };
+    if (!key || key !== build.key || !pdf) return { status: build.status, problems: sortProblems(problems.map(({ source: _source, occurrence: _occurrence, ...problem }) => problem)), log: Boolean(build.log) };
     let placed = this.located.get(problems);
     if (!placed) {
       placed = (async () => {

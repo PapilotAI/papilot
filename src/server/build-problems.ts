@@ -9,8 +9,8 @@ const exec = promisify(execFile);
 
 // A problem as read from the log: `input` is the file as TeX named it, relative
 // to the directory TeX ran in. It never leaves the server.
-export interface LogProblem extends Omit<BuildProblem, 'file' | 'page' | 'rect'> { input?: string }
-export interface StoredProblem extends BuildProblem { source?: string }
+export interface LogProblem extends Omit<BuildProblem, 'file' | 'page' | 'rect'> { input?: string; occurrence?: number }
+export interface StoredProblem extends BuildProblem { source?: string; occurrence?: number }
 export { countProblems };
 
 // Overfull lines narrower than this are invisible in print.
@@ -63,9 +63,16 @@ const CONTEXT = /^(?:<[a-z*][a-z ]*>|l\.\d+) /;
 // parentheses in messages and wrapped text keep the stack balanced but never
 // change the current file. `opened` collects every file TeX read.
 export function parseLatexLog(text: string | Buffer, isFile: (name: string) => boolean = () => true, opened?: Set<string>): LogProblem[] {
-  const lines = unwrapLog(text), stack: (string | null)[] = [], found: LogProblem[] = [], seen = new Set<string>();
+  const lines = unwrapLog(text), stack: (string | null)[] = [], found: LogProblem[] = [], seen = new Set<string>(), occurrences = new Map<string, number>();
   const current = () => { for (let i = stack.length - 1; i >= 0; i--) if (stack[i]) return stack[i]!; return undefined; };
   const add = (problem: LogProblem) => {
+    // Keep the position among all marks on the line, before repeated keys
+    // collapse into one row. In a,a,b, b is still the third printed mark.
+    if (problem.kind === 'reference' || problem.kind === 'citation') {
+      const line = JSON.stringify([problem.input, problem.line, problem.kind]);
+      problem.occurrence = occurrences.get(line) || 0;
+      occurrences.set(line, problem.occurrence + 1);
+    }
     const id = JSON.stringify([problem.kind, problem.key, problem.input, problem.line, problem.end, problem.message]);
     if (!seen.has(id)) { seen.add(id); found.push(problem); }
   };
@@ -269,10 +276,10 @@ export async function locateProblems(problems: StoredProblem[], pdf: string, ope
   const ordinal = new Map<StoredProblem, number>(), counted = new Map<string, number>();
   for (const problem of problems) {
     const id = JSON.stringify([problem.source, problem.line, problem.kind]), seen = counted.get(id) || 0;
-    ordinal.set(problem, seen); counted.set(id, seen + 1);
+    ordinal.set(problem, problem.occurrence ?? seen); counted.set(id, (problem.occurrence ?? seen) + 1);
   }
   const place = async (problem: StoredProblem): Promise<BuildProblem> => {
-    const { source, ...shown } = problem;
+    const { source, occurrence: _occurrence, ...shown } = problem;
     if (!source || !problem.line) return shown;
     const lines = problem.end && problem.end !== problem.line ? [problem.line, problem.end] : [problem.line];
     const boxes = (await Promise.all(lines.map(line => view(source, line)))).flat();
@@ -306,7 +313,7 @@ export async function locateProblems(problems: StoredProblem[], pdf: string, ope
   let next = 0;
   await Promise.all(Array.from({ length: 6 }, async () => {
     for (let index = next++; index < problems.length; index = next++) {
-      if (!chosen.has(index)) { const { source: _source, ...shown } = problems[index]; output[index] = shown; continue; }
+      if (!chosen.has(index)) { const { source: _source, occurrence: _occurrence, ...shown } = problems[index]; output[index] = shown; continue; }
       output[index] = await place(problems[index]);
     }
   }));

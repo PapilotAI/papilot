@@ -4,8 +4,9 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { collectProblems, countProblems, parseLatexLog, parseSynctexView, placementOrder, scrubLog, unwrapLog } from '../src/server/build-problems.ts';
+import { collectProblems, countProblems, locateProblems, parseLatexLog, parseSynctexView, placementOrder, scrubLog, unwrapLog } from '../src/server/build-problems.ts';
 import { Manuscripts } from '../src/server/manuscript.ts';
+import { PdfDocument } from '../vendor/latex-review/src/render/pdf.ts';
 
 const fixture = fs.readFileSync(new URL('./fixtures/problems.log', import.meta.url), 'utf8');
 const methods = './chapters/a-rather-long-directory-name-for-wrapping/methods-and-a-long-file-name.tex';
@@ -207,6 +208,30 @@ test('synctex view records become boxes on zero-based pages', () => {
 const latexmk = (() => {
   try { execFileSync('pdflatex', ['--version'], { stdio: 'ignore' }); execFileSync('synctex', ['help'], { stdio: 'ignore' }); return execFileSync('which', ['latexmk'], { encoding: 'utf8' }).trim(); } catch { return ''; }
 })();
+
+test('duplicate references on one source line do not shift the next problem to an earlier mark', { skip: !latexmk && 'needs TeX and SyncTeX' }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-repeat-reference-'));
+  try {
+    fs.writeFileSync(path.join(root, 'main.tex'), String.raw`\documentclass{article}
+\begin{document}
+First \ref{a}; second \ref{a}; third \ref{b}.
+\end{document}
+`);
+    execFileSync(latexmk, ['-pdf', '-synctex=1', '-interaction=nonstopmode', 'main.tex'], { cwd: root, stdio: 'ignore' });
+    const problems = collectProblems(fs.readFileSync(path.join(root, 'main.log')), { cwd: root, root, sourceDir: '' });
+    assert.deepEqual(problems.filter(p => p.kind === 'reference').map(p => [p.key, p.occurrence]), [['a', 0], ['b', 2]]);
+    const pdf = path.join(root, 'main.pdf'), document = new PdfDocument(pdf), page = document.page(0);
+    try {
+      const located = await locateProblems(problems, pdf, () => page);
+      const marks = page.search('??').sort((a, b) => a[0] - b[0]);
+      assert.equal(marks.length, 3);
+      const b = located.find(p => p.key === 'b')!, center = (marks[2][0] + marks[2][2]) / 2;
+      assert.ok(b.rect && b.rect[0] * page.width + page.bounds[0] < center && b.rect[2] * page.width + page.bounds[0] > center, JSON.stringify(b));
+      assert.equal('occurrence' in b, false);
+      assert.equal(countProblems(located).warnings, 2);
+    } finally { page.close(); document.close(); }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
 test('a compiled paper lists its problems on the pages where they appear', { skip: !latexmk && 'needs latexmk, pdflatex and synctex', timeout: 120000 }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-problems-'));
