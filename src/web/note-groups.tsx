@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { canonicalGroup, GROUP_COLORS, GROUP_NAMES, NOTE_GROUPS, type NoteGroup } from '../note-groups.ts';
 import { Icon } from './icons.tsx';
 import { t, tn } from './i18n.ts';
@@ -57,6 +57,30 @@ export function GroupPicker({ value, onChange, disabled }: { value: NoteGroup | 
     </div>
   </div>;
 }
+export function GroupInstruction({ group, value, disabled, onChange }: { group: NoteGroup; value: string; disabled: boolean; onChange: (value: string) => void }) {
+  const input = useRef<HTMLTextAreaElement>(null);
+  const resize = () => {
+    const element = input.current;
+    if (!element || !element.clientWidth) return;
+    element.style.height = 'auto';
+    element.style.height = `${Math.min(element.scrollHeight + element.offsetHeight - element.clientHeight, 160)}px`;
+  };
+  useLayoutEffect(resize, [value]);
+  useEffect(() => {
+    const element = input.current!;
+    let width = element.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth !== width) { width = element.clientWidth; resize(); }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return <div className="group-instruction-input">
+    <textarea ref={input} rows={1} maxLength={4000} aria-label={t('Instructions for {group} notes', { group: groupName(group) })} placeholder={t('What should change in this group?')} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}/>
+    <Icon name="pencil" size={13}/>
+  </div>;
+}
+
 export function GroupCard({ group, count, active, selection, children }: { group: NoteGroup; count: number; active?: boolean; selection?: { count: number; disabled: boolean; toggle: () => void }; children: ReactNode }) {
   const [open, setOpen] = useState(true);
   const selectionId = useId(), locationsId = useId();

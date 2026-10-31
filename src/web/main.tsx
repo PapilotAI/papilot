@@ -1,5 +1,5 @@
 import { canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
-import { GroupCard, groupName } from './note-groups.tsx';
+import { GroupCard, GroupInstruction } from './note-groups.tsx';
 import { useNoteSelection } from './note-selection.tsx';
 import { useGroupInstructions } from './group-instructions.ts';
 import { NoteBody, NoteQuote } from './note-content.tsx';
@@ -576,13 +576,14 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
     {noteGroups(notes).map(({ group, entries }) => {
       const count = entries.filter(({ note }) => actions.selection.has(note.id)).length;
       return <GroupCard key={group} group={group} count={entries.length} active={actions.group === group || entries.some(({ note }) => note.id === active)} selection={{ count, disabled: selectionLocked, toggle: () => actions.selection.set(entries.map(({ note }) => note.id), count !== entries.length) }}>
-      <label className="group-instruction-input"><span>{t('What should change in this group?')}</span><textarea rows={2} maxLength={4000} aria-label={t('Instructions for {group} notes', { group: groupName(group) })} placeholder={t('For example: explain the reasoning, shorten the wording…')} value={actions.instructions.get(group)} disabled={locked} onChange={event => actions.instructions.set(group, event.target.value)}/></label>
-      {entries.map(({ note, index }) => <div className={'group-location note-card' + (note.id === active ? ' active' : '')} key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} onClick={event => cardClick(event, note)}>
+      <GroupInstruction group={group} value={actions.instructions.get(group)} disabled={locked} onChange={value => actions.instructions.set(group, value)}/>
+      <div className="group-references">{entries.map(({ note, index }) => <div className={'group-location note-card' + (note.id === active ? ' active' : '')} key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} onClick={event => cardClick(event, note)}>
         {selectCard(note, index)}
         <button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button>
-        <div className="group-location-target"><span>{noteWhere(note)}</span><blockquote>{note.quote || t('Marked region')}</blockquote>{note.key !== currentKey && <NotePlacementWarning/>}</div>
-        <button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} disabled={locked} onClick={() => void change(() => actions.remove(note))}><Icon name="close" size={13}/></button>
-      </div>)}
+        <div className="group-location-target"><blockquote>{note.quote || t('Marked region')}</blockquote><span>{noteWhere(note)}</span>{note.key !== currentKey && <NotePlacementWarning/>}</div>
+        <span className="group-location-selected" aria-hidden="true"><Icon name="check" size={13}/></span>
+        <button type="button" className="icon-button group-location-remove" aria-label={t('Delete note {n}', { n: index + 1 })} disabled={locked} onClick={() => void change(() => actions.remove(note))}><Icon name="close" size={13}/></button>
+      </div>)}</div>
     </GroupCard>; })}
     {notes.some(note => !note.group) && <ol className="note-list">{notes.map((note, index) => !note.group && <li key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} className={'note-card ' + (active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')} onClick={event => cardClick(event, note)}>
       {selectCard(note, index)}
