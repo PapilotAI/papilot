@@ -10,6 +10,7 @@ import { CONFIG_NAME, loadProject, type Project } from "./core/config.ts";
 import { Store } from "./core/store.ts";
 import { Tasks } from "./core/tasks.ts";
 import { Review } from "./core/review.ts";
+import { Deliveries } from "./core/delivery.ts";
 import { more, PublishError, Publisher } from "./core/publish.ts";
 import { acquireLock, now, readJson, writeJson } from "./core/files.ts";
 import { stopAll } from "./core/process.ts";
@@ -25,6 +26,7 @@ export class App {
   activity = now();
   tasks: Tasks;
   review: Review;
+  delivery: Deliveries;
   publisher: Publisher;
   private cachedProject?: Project;
   private stamp?: number;
@@ -35,8 +37,10 @@ export class App {
     this.store = new Store(path.join(this.state, "state.sqlite3"));
     this.tasks = new Tasks(this);
     this.review = new Review(this);
+    this.delivery = new Deliveries(this);
     this.publisher = new Publisher(this);
     this.review.recover();
+    this.delivery.recover();
   }
   get project() {
     const config = path.join(this.root, CONFIG_NAME),
@@ -52,9 +56,12 @@ export class App {
   }
   taskInfo(name: string) {
     const task = this.tasks.get(name),
+      delivery = this.delivery.get(name),
       scope = task.scope;
     return {
       ...this.review.summary(name),
+      deferred: Boolean(task.deferred),
+      delivery: delivery ? { ...this.delivery.result(delivery), pending: !delivery.done } : null,
       worktree: task.worktree,
       url: this.page(name),
       viewing: now() - (this.viewers.get(name) ?? 0) < 15,
@@ -232,6 +239,7 @@ export function createServer(app: App) {
         title?: string;
         sections?: string[];
         files?: string[];
+        deferred?: boolean;
       };
     }>(
       "/api/tasks",
@@ -244,6 +252,7 @@ export function createServer(app: App) {
               title: { type: "string" },
               sections: { type: "array", items: { type: "string" } },
               files: { type: "array", items: { type: "string" } },
+              deferred: { type: "boolean" },
             },
           },
         },
@@ -251,16 +260,22 @@ export function createServer(app: App) {
       (request) => {
         const d = request.body;
         return app.taskInfo(
-          app.tasks.create(d.name, d.title, d.sections, d.files).name,
+          app.tasks.create(d.name, d.title, d.sections, d.files, d.deferred).name,
         );
       },
     );
     server.post<{ Params: { name: string } }>(
       "/api/tasks/:name/publish",
       (request) => {
+        app.delivery.assertReady(request.params.name);
         const job = app.publisher.submit(request.params.name);
         return { job: job.id, status: job.status };
       },
+    );
+    server.post<{ Params: { name: string }; Body: { mode: "workspace" | "branch"; message?: string } }>(
+      "/api/tasks/:name/deliver",
+      { schema: { body: { ...objectSchema, required: ["mode"], properties: { mode: { enum: ["workspace", "branch"] }, message: { type: "string", maxLength: 5000 } } } } },
+      request => app.delivery.deliver(request.params.name, request.body.mode, request.body.message),
     );
     server.post<{
       Params: { name: string };

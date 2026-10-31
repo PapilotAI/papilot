@@ -78,6 +78,7 @@ export class Tasks {
     title?: string,
     sections: string[] = [],
     files: string[] = [],
+    deferred = false,
   ): Task {
     const { app } = this,
       project = app.project;
@@ -154,10 +155,10 @@ export class Tasks {
           name,
         );
         app.store.execute("DELETE FROM tasks WHERE name=?", name);
-        for (const table of ["rounds", "actions", "messages", "jobs"])
+        for (const table of ["rounds", "actions", "messages", "jobs", "deliveries"])
           app.store.execute(`DELETE FROM ${table} WHERE task=?`, name);
         app.store.execute(
-          "INSERT INTO tasks(name,title,worktree,base,accepted,scope,created) VALUES(?,?,?,?,?,?,?)",
+          "INSERT INTO tasks(name,title,worktree,base,accepted,scope,created,deferred) VALUES(?,?,?,?,?,?,?,?)",
           name,
           title,
           worktree,
@@ -165,6 +166,7 @@ export class Tasks {
           base,
           JSON.stringify(scope),
           now(),
+          Number(deferred),
         );
       });
     } catch (error) {
@@ -196,6 +198,7 @@ export class Tasks {
     );
   }
   async finish(name: string, force = false) {
+    this.app.delivery.assertReady(name);
     const app = this.app,
       task = this.get(name);
     if (app.publisher.busy(name))

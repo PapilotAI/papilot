@@ -1,5 +1,9 @@
 // Simplified Chinese for the review viewer, keyed by the English text.
 export const zhCN: Record<string, string> = {
+  "Accepted changes are saved in this task. Choose where to save them below.": "已接受的改动保存在此任务中，请在下方选择保存方式。",
+  "Accepted changes are committed to the task branch.": "已接受的改动已提交到任务分支。",
+  "There are no accepted changes to save.": "没有需要保存的已接受改动。",
+
   // Overview
   "All reviews": "全部审阅",
   "Search reviews": "搜索审阅",

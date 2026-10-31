@@ -3,10 +3,8 @@ import { Icon } from './icons.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { t, tn } from './i18n.ts';
 
-// Commits what a finished review accepted from one task, or what is staged
-// (described as such). The agent's message was written when the review
-// finished, or is written as the dialog opens; the author can edit it, have a
-// new one written, commit, or commit and push.
+// The manuscript's staged-change commit dialog. Task reviews use the inline
+// TaskCommit form, with an agent-written message ready at review completion.
 export function CommitDialog({ branch, files, staged, remote, agent, generate, commit, onClose }: { branch: string | null; files: string[]; staged?: boolean; remote: boolean; agent: string; generate: (fresh: boolean) => Promise<string>; commit: (message: string, push: boolean) => Promise<void>; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [message, setMessage] = useState(''), [busy, setBusy] = useState<'' | 'writing' | 'commit' | 'push'>(''), [error, setError] = useState('');

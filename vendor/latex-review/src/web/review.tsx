@@ -1322,6 +1322,14 @@ export function ReviewApp({
                       ? "New changes will appear here when ready."
                       : state?.workspace?.comments
                         ? "Your comments are saved. Send feedback so the agent can revise."
+                        : state?.workspace?.deferred
+                          ? state.workspace.accepted
+                            ? "Accepted changes are saved in this task. Choose where to save them below."
+                            : state.workspace.destination === "branch"
+                              ? "Accepted changes are committed to the task branch."
+                              : state.workspace.destination === "workspace"
+                                ? "Accepted changes are in your manuscript."
+                                : "There are no accepted changes to save."
                         : state?.workspace?.accepted
                           ? "Accepted changes are in your manuscript."
                           : state?.workspace?.unsent && !count.accepted

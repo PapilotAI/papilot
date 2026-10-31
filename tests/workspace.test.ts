@@ -1246,6 +1246,47 @@ test('an agent resolves a merge in the manuscript checkout, and review writes wa
   } finally { f.close(); fs.rmSync(base, { recursive: true, force: true }); }
 });
 
+test('deferred tasks deliver accepted changes through the review engine and generate a message from their isolated diff', async () => {
+  const { Fixture, METHOD, fakeRound } = await import(new URL('../vendor/latex-review/tests/ts/helpers.ts', import.meta.url).href);
+  const disk = new Fixture(), app = disk.app();
+  const f = fixture(async (method, route, body: any) => {
+    if (route.includes('/feedback')) return app.review.feedback('p-task');
+    if (method === 'POST' && route.endsWith('/deliver')) return app.delivery.deliver('p-task', body.mode, body.message);
+    return app.taskInfo('p-task');
+  });
+  try {
+    const target = app.tasks.create('p-task', 'Isolated revision', [], ['paper'], true);
+    disk.edit(target, METHOD, 'Method sentence 2.', 'Accepted isolated text.');
+    const round = fakeRound(app, target.name);
+    app.review.decide(target.name, { id: 'accept-isolated', action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
+    f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: disk.root, createdAt: 1 });
+    await f.workspace.refresh(f.task.id);
+    assert.equal(f.store.task(f.task.id).deferred, true);
+    assert.deepEqual(f.store.task(f.task.id).review?.files, [METHOD]);
+    f.codex.ready = true;
+    (f.workspace as any).oneOff = async (_id: string, input: any) => {
+      assert.match(input.prompt, /Accepted isolated text/);
+      assert.match(input.prompt, /Diff:/);
+      return 'Explain the method';
+    };
+    assert.equal((await f.workspace.commitMessage(f.task.projectId, [METHOD], { taskId: f.task.id })).message, 'Explain the method');
+    await assert.rejects(f.workspace.commitTask(f.task.id, 'Commit', true), /kept locally/);
+    f.store.updateTask(f.task.id, { status: 'running' });
+    await assert.rejects(f.workspace.deliverTask(f.task.id, 'workspace'), /Wait for the task/);
+    f.store.updateTask(f.task.id, { status: 'reviewing' });
+    const gate = deferred<void>();
+    const writing = f.workspace.reviewWrite(f.task.id, true, () => gate.promise);
+    await assert.rejects(f.workspace.commitTask(f.task.id, 'Commit'), /current review action/);
+    gate.resolve(); await writing;
+    const result = await f.workspace.commitTask(f.task.id, 'Explain the method');
+    assert.equal(f.store.task(f.task.id).delivery?.commit, result.commit);
+    assert.deepEqual(f.store.task(f.task.id).review?.files, []);
+    assert.doesNotMatch(disk.read(METHOD), /Accepted isolated text/);
+    assert.deepEqual(result.git.files, []);
+    assert.equal((await f.workspace.commitTask(f.task.id, 'Retry')).commit, result.commit);
+  } finally { f.close(); await disk.close(); }
+});
+
 test('a task commits only what it accepted since its last commit, never during a review write, and can push', async () => {
   const { Fixture, METHOD, fakeRound } = await import(new URL('../vendor/latex-review/tests/ts/helpers.ts', import.meta.url).href);
   const disk = new Fixture();

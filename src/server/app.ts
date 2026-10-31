@@ -237,6 +237,14 @@ export async function buildApp(options: AppOptions) {
     const task = store.task(request.params.id), b = request.body as any;
     return serialGit(task.projectId, () => workspace.commitTask(task.id, string(b.message, 'Commit message', 5000), b.push === true));
   });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/apply', task, request => {
+    const task = store.task(request.params.id);
+    return serialGit(task.projectId, () => workspace.deliverTask(task.id, 'workspace'));
+  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/commit-message', task, request => {
+    const task = store.task(request.params.id);
+    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: task.agent, fresh: (request.body as any)?.fresh === true });
+  });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/rename', task, request => workspace.renameTask(request.params.id, string((request.body as any).title, 'Task title', 120)));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/title', task, request => workspace.requestTaskTitle(request.params.id));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/archive', task, request => workspace.archiveTask(request.params.id, (request.body as any)?.archived));

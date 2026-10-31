@@ -46,7 +46,9 @@ Select a sentence or circle an equation and say what should change. SyncTeX hand
 <td width="50%" valign="top">
 <img src="docs/assets/feature-review-appinn.jpeg" alt="A change shown before and after, with Accept and Reject">
 <h3>✅ Approve change by change</h3>
-Each edit comes back as a typeset diff. Accept, reject or comment on it, and undo any decision.
+Each edit comes back as a typeset diff. Accept, reject or comment on it, and undo decisions before saving the result.
+
+For new tasks, accepting an edit keeps it inside the task until you finish reviewing. Then choose <strong>Apply to working directory</strong> to keep the accepted changes uncommitted, or <strong>Commit to task branch</strong> to save them on a separate <code>papilot/…</code> branch, leaving your current branch and working directory unchanged. You can edit the commit message before saving. Further rounds use the same destination; delivered decisions remain available in History.
 </td>
 </tr>
 <tr>

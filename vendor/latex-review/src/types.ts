@@ -39,6 +39,7 @@ export interface Scope {
   sections: SectionRef[];
 }
 export interface Task {
+  deferred?: number;
   name: string;
   title: string;
   worktree: string;
@@ -47,6 +48,17 @@ export interface Task {
   scope: Scope;
   created: number;
   closed: number | null;
+}
+export interface Delivery {
+  mode: "workspace" | "branch";
+  accepted: string;
+  seq: number;
+  branch?: string;
+  commit?: string;
+  parent?: string;
+  previous?: string;
+  done: boolean;
+  writes: { file: string; before: string | null; after: string | null }[];
 }
 export interface Unit {
   id: string;
@@ -285,6 +297,8 @@ export interface PageState {
    * and how many manuscript files this task's accepted changes touched.
    */
   workspace?: {
+    deferred?: boolean;
+    destination?: "workspace" | "branch";
     status: string;
     unsent: number;
     comments?: number;

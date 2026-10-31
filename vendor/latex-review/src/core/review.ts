@@ -121,7 +121,8 @@ export class Review {
         "SELECT * FROM actions WHERE task=? AND status='applied' ORDER BY seq DESC LIMIT 1",
         name,
       );
-    return action && latest && action.round === latest.number ? action : null;
+    const delivered = this.app.delivery.get(name);
+    return action && latest && action.round === latest.number && (!delivered || action.seq > delivered.seq) ? action : null;
   }
   summary(name: string): Summary {
     const task = this.app.tasks.get(name),
@@ -364,6 +365,7 @@ export class Review {
   ) {
     const task = this.app.tasks.get(name),
       kind = data.action;
+    this.app.delivery.assertReady(name);
     if (!Object.hasOwn(DECIDED, kind))
       throw new Error("The action must be accept, reject or comment.");
     const identity = data.id || randomUUID();
@@ -444,8 +446,8 @@ export class Review {
       records = app.repo.blobs(task.accepted, files);
     for (const [file, group] of Object.entries(groups)) {
       const proposed = applyUnits(before[file], after[file], group),
-        target = safePath(app.root, file),
-        current = readBytes(target),
+        target = task.deferred ? "" : safePath(app.root, file),
+        current = task.deferred ? records[file] : readBytes(target),
         [merged, conflict] = merge3(current, before[file], proposed),
         [recorded, recordedConflict] = merge3(
           records[file],
@@ -453,7 +455,7 @@ export class Review {
           proposed,
         );
       if (conflict || recordedConflict) conflicts.push(file);
-      else if (!same(merged, current)) writes.push([target, current, merged]);
+      else if (!task.deferred && !same(merged, current)) writes.push([target, current, merged]);
       accepted[file] = recorded;
     }
     if (conflicts.length)
@@ -676,6 +678,7 @@ export class Review {
     return this.pageState(name);
   }
   undo(name: string, identity: string) {
+    this.app.delivery.assertReady(name);
     const app = this.app,
       task = app.tasks.get(name),
       action = this.undoEntry(name);

@@ -18,7 +18,7 @@ const task = { id: 'review-flow-fixture', projectId: 'paper', name: 'flow', titl
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
 let latest = 1, serial = 0, undo = null;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
-const actions = [], writes = [], messageRequests = [], commitRequests = [];
+const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [];
 let gitFiles = [];
 const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, history: Object.keys(rounds).map(number => ({ number: Number(number), created: 1793322000 + Number(number) * 120 })), round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: null });
 function update() {
@@ -43,9 +43,15 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: [] } });
   if (url.pathname.endsWith('/git')) return route.fulfill({ json: { branch: 'main', upstream: 'origin/main', remote: true, ahead: 0, behind: 0, head: null, files: gitFiles } });
-  if (url.pathname.endsWith('/git/message')) { messageRequests.push(route.request().postDataJSON()); return route.fulfill({ json: { message: 'Explain the method', agent: 'codex' } }); }
+  if (url.pathname.endsWith('/git/message') || url.pathname.endsWith('/commit-message')) { messageRequests.push(route.request().postDataJSON()); return route.fulfill({ json: { message: 'Explain the method', agent: 'codex' } }); }
+  if (url.pathname.endsWith('/apply')) {
+    applyRequests.push(route.request().postDataJSON()); task.review.files = [];
+    task.delivery = { mode: 'workspace', accepted: 'accepted' };
+    return route.fulfill({ json: task.delivery });
+  }
   if (url.pathname.endsWith('/commit')) {
     commitRequests.push(route.request().postDataJSON()); gitFiles = []; task.review.files = [];
+    if (task.deferred) task.delivery = { mode: 'branch', branch: 'papilot/flow', commit: 'abc1234', accepted: 'accepted' };
     return route.fulfill({ json: { commit: 'abc1234', git: { branch: 'main', upstream: 'origin/main', remote: true, ahead: 0, behind: 0, head: { hash: 'abc1234', subject: 'Explain the method', date: 2 }, files: [] } } });
   }
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
@@ -222,19 +228,60 @@ try {
   task.review.files = ['main.tex']; gitFiles = [{ path: 'main.tex', status: 'M', staged: false }];
   await sync();
   const card = viewer().locator('.review-complete');
-  await expect(card.getByText('Not committed yet', { exact: true })).toBeVisible();
-  fs.mkdirSync('test-results', { recursive: true });
-  await page.screenshot({ path: 'test-results/review-completed.png', fullPage: true });
-  await card.getByRole('button', { name: 'Commit…', exact: true }).click();
-  const commitDialog = page.getByRole('dialog', { name: 'Commit to main' });
-  await expect(commitDialog.getByRole('textbox', { name: 'Commit message' })).toHaveValue('Explain the method');
-  await expect(commitDialog.getByText('main.tex', { exact: true })).toBeVisible();
+  const message = () => card.getByRole('textbox', { name: 'Commit message', exact: true });
+  await expect(message()).toHaveValue('Explain the method');
+  await expect(card.getByTitle('Commit to main', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   assert.deepEqual(messageRequests, [{ paths: ['main.tex'], agent: 'codex', fresh: false }]);
-  await commitDialog.getByRole('button', { name: 'Commit and push', exact: true }).click();
-  await expect(commitDialog).toBeHidden();
+  // Typed text survives moving the form between the iframe and chat.
+  await message().fill('My reviewed method');
+  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Commit message', exact: true })).toHaveValue('My reviewed method');
+  await page.getByRole('button', { name: 'Split', exact: true }).click();
+  await expect(message()).toHaveValue('My reviewed method');
+  assert.equal(messageRequests.length, 1, 'switching views reuses the agent message and user draft');
+  await message().fill('');
+  await expect(card.getByRole('button', { name: 'Commit', exact: true })).toBeDisabled();
+  await message().fill('Explain the method');
+  fs.mkdirSync('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/review-completed.png', fullPage: true, animations: 'disabled' });
+  await card.getByRole('button', { name: 'Commit and push', exact: true }).click();
   assert.deepEqual(commitRequests, [{ message: 'Explain the method', push: true }]);
   await expect(card.getByText('Committed abc1234 and pushed.', { exact: true })).toBeVisible();
-  await expect(card.getByRole('button', { name: 'Commit…' })).toHaveCount(0);
+  await expect(message()).toHaveCount(0);
+  // New tasks offer both destinations and an automatic message inline.
+  task.deferred = true; task.review.files = ['main.tex']; gitFiles = [];
+  await sync();
+  await expect(card.getByRole('button', { name: 'Apply to working directory', exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Commit to task branch', exact: true })).toBeVisible();
+  await expect(card.getByText('Accepted changes are saved in this task. Choose where to save them below.', { exact: true })).toBeVisible();
+  await expect(message()).toHaveValue('Explain the method');
+  await expect(card.getByTitle('Commit to papilot/flow', { exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Commit and push', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  assert.equal(commitRequests.length, 1, 'generating a message does not commit automatically');
+  await page.screenshot({ path: 'test-results/task-destinations-desktop.png', fullPage: true, animations: 'disabled' });
+  await message().fill('My accepted revision');
+  await card.getByRole('button', { name: 'Commit to task branch', exact: true }).click();
+  assert.deepEqual(commitRequests.at(-1), { message: 'My accepted revision', push: false });
+  await expect(card.getByText('Committed abc1234 to papilot/flow', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(card.getByText('Committed abc1234 to papilot/flow', { exact: true })).toBeVisible();
+  task.delivery = null; task.review.files = ['main.tex']; await sync();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('.sidebar')).toBeHidden();
+  await expect(card.getByText('Accepted changes are saved in this task. Choose where to save them below.', { exact: true })).toBeVisible();
+  await expect(message()).toHaveValue('Explain the method');
+  await expect(card.getByRole('button', { name: 'Apply to working directory', exact: true })).toBeVisible();
+  await page.screenshot({ path: 'test-results/task-destinations-mobile.png', fullPage: true, animations: 'disabled' });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
+  await card.getByRole('button', { name: 'Apply to working directory', exact: true }).click();
+  await expect(card.getByText('Applied to working directory', { exact: true })).toBeVisible();
+  assert.equal(applyRequests.length, 1);
+  assert.equal(commitRequests.length, 2, 'apply never commits');
+  task.deferred = false; task.delivery = null;
+  await page.setViewportSize({ width: 1440, height: 1000 }); await sync();
+  console.log('PASS: Automatic inline commit messages for legacy and isolated tasks; editable drafts survive view switches; no dialog; desktop and mobile; persistent result and apply without commit');
   // A note link reveals even an accepted change without opening history.
   await viewer().locator('body').evaluate(() => { location.href = '?task=flow&round=1&change=0'; });
   await expect(viewer().locator('.change[data-stop="0"] .change-head')).toBeVisible();

@@ -1,3 +1,4 @@
+import taskCommitStyles from './task-commit.css?inline';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { NoteSummary, Task } from '../shared.ts';
@@ -34,10 +35,16 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .toast.error{background:var(--red-soft);color:var(--red)}
     /* Papilot's commit step at the end of the completion card. */
     .review-complete{align-items:center}
+    .review-complete-actions{flex-wrap:wrap;justify-content:flex-end;max-width:100%}
     .review-complete-actions .commit-state{font-size:13px;color:var(--text-3)}
     .review-complete-actions .commit-button{display:inline-flex;align-items:center;height:28px;padding:0 12px;border:1px solid var(--line-strong);border-radius:7px;background:var(--bg);color:var(--text);font:500 13px var(--sans);cursor:pointer;box-shadow:0 1px 2px rgb(0 0 0/.06)}
     .review-complete-actions .commit-button:hover{background:var(--bg-subtle);border-color:var(--line-hover)}
     .review-complete-actions .commit-button:focus-visible{outline:none;box-shadow:var(--ring)}
+    .review-complete-actions .commit-button{height:auto;min-height:30px;padding:5px 12px;white-space:nowrap}
+    .review-complete-actions .commit-button:disabled{opacity:.5;cursor:default}
+    :root[data-papilot-phone] .review-complete-actions{justify-content:flex-start;margin-left:0}
+    :root[data-papilot-phone] .review-complete-actions .commit-state{flex-basis:100%}
+    :root[data-papilot-phone] .review-complete-actions .commit-button{min-height:40px}
     /* Page images follow the theme like the manuscript's PDF. They are
        transparent: the sheet is the paper, and the before/after rows tint it. */
     .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}.sheet{background:var(--pdf-page)}
@@ -186,6 +193,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     :root{--icon-history:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12a9 9 0 1 0 2.6-6.4L3 8'/><path d='M3 3v5h5M12 7v5l3 2'/></svg>")}
   `;
   doc.documentElement.dataset.theme = window.document.documentElement.dataset.theme;
+  style.textContent += taskCommitStyles;
   doc.head.append(style);
 }
 

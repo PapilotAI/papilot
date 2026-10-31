@@ -976,3 +976,5 @@ body.resizing iframe{pointer-events:none}
   .button:active:not(:disabled){transform:scale(.98)}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important;transition:none!important}}
+.task-delivery{flex-wrap:wrap;gap:8px}
+.task-delivery .commit-state{flex-basis:100%;color:var(--text-3);font-size:13px}

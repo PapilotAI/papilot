@@ -272,9 +272,9 @@ export class Workspace extends EventEmitter {
       const instructions = notes.length ? notesInstructions(notes, input.instructions, groupInstructions) : input.instructions;
       const client = await this.connectReview(project.path);
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
-      const info = await client.post('/api/tasks', { name, title: input.title });
+      const info = await client.post('/api/tasks', { name, title: input.title, deferred: true });
       const task: Task = { id: input.id, projectId: project.id, name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
-        worktree: info.worktree, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'idle',
+        worktree: info.worktree, deferred: info.deferred === true, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.saveTask(task);
       await this.enqueue(task.id, input.instructions, 'initial-' + task.id, false, { skill, notes, groupInstructions, attachments: files.map(file => file.id), author: input.author });
@@ -293,6 +293,8 @@ export class Workspace extends EventEmitter {
     const existing = this.store.runByKey(requestKey);
     if (existing) { if (existing.taskId !== taskId) throw new Error('This request ID is already in use by another task.'); return existing; }
     if (task.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
+    if (task.delivery?.pending) throw new Error('Retry the pending delivery before sending more instructions.');
+    if (this.committing.has(task.projectId)) throw new Error('Wait for the current Git operation before sending more instructions.');
     const files = this.attachments.resolve(task.projectId, options.attachments || [], options.author?.id || 'owner', taskId);
     const pauseVersion = task.pauseVersion || 0;
     if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
@@ -321,6 +323,7 @@ export class Workspace extends EventEmitter {
       }
       if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
       const current = this.store.task(taskId);
+      if (this.committing.has(current.projectId) || current.delivery?.pending) throw new Error('Wait for the current delivery before sending more instructions.');
       if (current.status === 'deleting') throw new Error('This task is being deleted. Your instructions were not queued.');
       if ((current.pauseVersion || 0) !== pauseVersion) throw new Error('The task was paused before these instructions were queued. Your draft has been kept.');
       if (current.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
@@ -349,7 +352,7 @@ export class Workspace extends EventEmitter {
       if (this.active.size >= this.concurrency) break;
       const agent = this.agentOf(this.store.task(run.taskId));
       if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) continue;
-      if (this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || BUSY.has(this.store.task(run.taskId).status)) continue;
+      if (this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status)) continue;
       this.active.set(run.taskId, run);
       void this.startRun(run).catch(e => this.failRun(run, e));
     }
@@ -667,9 +670,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       const project = this.store.project(task.projectId), client = await this.connectReview(project.path);
       const summary = await client.get(taskRoute(task.name));
       const { unsent, comments } = await this.unsentReviewFeedback(client, this.store.task(taskId));
-      const files = await acceptedFiles(project.path, task.name, task.committed?.accepted);
+      const deferred = summary.deferred === true || task.deferred;
+      const delivery = summary.delivery ?? task.delivery;
+      const files = await acceptedFiles(project.path, task.name, deferred ? delivery?.accepted : task.committed?.accepted);
       const current = this.store.task(taskId);
-      if (current.status !== 'deleting') this.store.updateTask(taskId, { review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent, comments, files } });
+      if (current.status !== 'deleting') this.store.updateTask(taskId, { deferred, delivery, review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent, comments, files } });
     } catch { /* The task remains visible even if its project is temporarily unavailable. */ }
     finally { release?.(); }
   }
@@ -768,9 +773,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   // generate button: one read-only turn on the agent's small model, with the
   // lightest reasoning it offers. The same changes get the message already
   // written, or being written, for them unless the author asks for a fresh one.
-  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; fresh?: boolean; staged?: boolean } = {}) {
+  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; fresh?: boolean; staged?: boolean; taskId?: string } = {}) {
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', true);
-    const { files, patch, recent } = await commitChanges(project.path, paths, choice.staged);
+    const task = choice.taskId ? this.store.task(choice.taskId) : undefined;
+    if (task && task.projectId !== projectId) throw new Error('Invalid task ID.');
+    const { files, patch, recent } = task?.deferred ? await this.taskCommitChanges(task) : await commitChanges(project.path, paths, choice.staged);
     const tasks = this.store.tasks().filter(task => task.projectId === projectId && task.review?.files?.some(file => paths.includes(file))).map(task => task.title);
     const prompt = [
       recent.length ? `Recent commit subjects in this repository:\n${recent.map(subject => `- ${subject}`).join('\n')}` : 'This repository has no commits yet.',
@@ -797,10 +804,35 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     try {
       const task = this.store.task(taskId), files = task.review?.files || [];
       if (task.status !== 'reviewing' || task.review?.counts?.pending || !files.length) return;
+      if (task.deferred) { await this.commitMessage(task.projectId, files, { agent: this.agentOf(task), taskId }); return; }
       const project = this.store.project(task.projectId), git = await gitStatus(project.path);
       const paths = git.merging ? [] : files.filter(file => git.files.some(item => item.path === file));
       if (paths.length) await this.commitMessage(project.id, paths, { agent: this.agentOf(task) });
-    } catch { /* The commit dialog writes the message when it opens. */ }
+    } catch { /* The inline commit form retries when the review is shown. */ }
+  }
+  private async taskCommitChanges(task: Task) {
+    const root = this.store.project(task.projectId).path;
+    const before = task.delivery?.accepted ?? `refs/latex-review/${task.name}/base`;
+    const after = `refs/latex-review/${task.name}/accepted`;
+    const paths = await acceptedFiles(root, task.name, task.delivery?.accepted);
+    if (!paths.length) throw new Error('This task has no accepted changes left to commit.');
+    const { stdout: patch } = await execute('git', ['-C', root, 'diff', '--no-ext-diff', '--no-textconv', before, after, '--'], { maxBuffer: 8 * 1024 * 1024 });
+    return { files: paths.map(path => ({ path, status: 'M', from: undefined })), patch: patch.slice(0, 80000), recent: [] as string[] };
+  }
+  async deliverTask(taskId: string, mode: 'workspace' | 'branch', message = '') {
+    const task = this.store.task(taskId), project = this.store.project(task.projectId);
+    if (!task.deferred) throw new Error('This task already applies accepted changes to the working directory.');
+    if (task.status !== 'reviewing' || this.active.has(taskId) || this.publishing.has(taskId) || task.pendingReview || this.store.runs().some(run => run.taskId === taskId && run.status === 'queued'))
+      throw new Error('Wait for the task and review actions to finish before choosing a destination.');
+    return this.exclusiveCommit(project.id, async () => {
+      this.reviewWrites.add(taskId);
+      try {
+        const client = await this.connectReview(project.path);
+        const delivery = await client.post<NonNullable<Task['delivery']>>(`${taskRoute(task.name)}/deliver`, { mode, message });
+        this.store.updateTask(taskId, { delivery });
+        return { ...delivery, git: await gitStatus(project.path) };
+      } finally { await this.refresh(taskId); this.reviewWrites.delete(taskId); this.schedule(); }
+    });
   }
   // Resolves a merge's conflicts in the manuscript checkout itself: the agent
   // edits only the conflicted files, at the model's default reasoning, and
@@ -825,6 +857,12 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   // committed as it is on disk.
   async commitTask(taskId: string, message: string, push = false) {
     const task = this.store.task(taskId);
+    if (task.deferred) {
+      if (push) throw new Error('Task branch commits are kept locally.');
+      const result = await this.deliverTask(taskId, 'branch', message);
+      if (!result.commit) throw new Error('The review engine did not confirm the commit. Retry the task commit.');
+      return { ...result, commit: result.commit, pushError: undefined as string | undefined };
+    }
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     if (task.pendingReview) throw new Error('Wait for the current review action before committing.');
     const project = this.store.project(task.projectId);

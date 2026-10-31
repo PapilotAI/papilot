@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tasks(name TEXT PRIMARY KEY,title TEXT NOT NULL,worktree TEXT NOT NULL,base TEXT NOT NULL,accepted TEXT NOT NULL,scope TEXT NOT NULL,created REAL NOT NULL,closed REAL);
+CREATE TABLE IF NOT EXISTS deliveries(task TEXT PRIMARY KEY,data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS rounds(task TEXT NOT NULL,number INTEGER NOT NULL,before TEXT NOT NULL,after TEXT NOT NULL,units TEXT NOT NULL,summary TEXT NOT NULL,created REAL NOT NULL,PRIMARY KEY(task,number));
 CREATE TABLE IF NOT EXISTS actions(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,task TEXT NOT NULL,round INTEGER NOT NULL,kind TEXT NOT NULL,changes TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',status TEXT NOT NULL,detail TEXT NOT NULL DEFAULT '{}',created REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS writes(action TEXT NOT NULL,phase TEXT NOT NULL,path TEXT NOT NULL,expected BLOB,target BLOB,PRIMARY KEY(action,phase,path));
@@ -36,6 +37,8 @@ export class Store {
     this.db = new DatabaseSync(file);
     this.db.exec("PRAGMA busy_timeout=30000; PRAGMA journal_mode=WAL;");
     this.db.exec(SCHEMA);
+    if (!this.all<{ name: string }>("PRAGMA table_info(tasks)").some(column => column.name === "deferred"))
+      this.db.exec("ALTER TABLE tasks ADD COLUMN deferred INTEGER NOT NULL DEFAULT 0");
   }
   transaction<T>(work: () => T): T {
     this.db.exec("BEGIN IMMEDIATE");

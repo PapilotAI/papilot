@@ -1,0 +1,36 @@
+.task-commit{container:task-commit/inline-size;display:flex;flex-direction:column;gap:6px;min-width:0;width:100%;font:13px/1.5 var(--sans);color:var(--text)}
+.task-commit-compose{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--bg-subtle);transition:border-color .15s,background .15s}
+.task-commit-compose:focus-within{border-color:var(--line-hover);background:var(--bg)}
+.task-commit textarea{box-sizing:border-box;display:block;width:100%;min-height:42px;max-height:132px;margin:0;padding:11px 12px 5px;resize:none;border:0;border-radius:10px;background:transparent;color:var(--text);font:14px/22px var(--sans);box-shadow:none;outline:none}
+.task-commit textarea:focus{border:0;box-shadow:none;outline:none}
+.task-commit textarea::placeholder{color:var(--text-3)}
+.task-commit-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:6px 8px 8px 12px}
+.task-commit .task-commit-branch{display:inline-flex;align-items:center;gap:5px;max-width:min(42%,260px);min-width:0;color:var(--text-3);font:11.5px/1.5 var(--mono,ui-monospace,monospace)}
+.task-commit-branch svg{flex-shrink:0}
+.task-commit .task-commit-branch>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit}
+.task-commit-generate{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:28px;height:28px;margin-left:auto;padding:0;border:0;border-radius:6px;background:transparent;color:var(--text-3);cursor:pointer}
+.task-commit-generate:hover{background:var(--bg-hover);color:var(--text)}
+.task-commit .task-commit-generate[aria-busy="true"]{opacity:1}
+.task-commit-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px}
+.task-commit-actions button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:30px;padding:4px 10px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--text-2);font:500 12px/20px var(--sans);cursor:pointer;transition:background .15s,color .15s}
+.task-commit-actions button:hover{background:var(--bg-hover);color:var(--text)}
+.task-commit-actions .task-commit-primary{padding-inline:12px;background:var(--text);color:var(--bg);box-shadow:var(--shadow-xs)}
+.task-commit-actions .task-commit-primary:hover{background:var(--text-2);color:var(--bg)}
+.task-commit button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.task-commit button:disabled{opacity:.45;cursor:default}
+.task-commit .task-commit-hint{padding-inline:2px;color:var(--text-3);font-size:11px}
+.task-commit-error{margin:0;padding-inline:2px;color:var(--red);font-size:12px;overflow-wrap:anywhere}
+.task-commit-spinner{display:inline-block;box-sizing:border-box;flex-shrink:0;width:15px;height:15px;border:1.5px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;animation:task-commit-spin .8s linear infinite}
+@keyframes task-commit-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.task-commit-spinner{animation:none}.task-commit-compose,.task-commit button{transition:none}}
+.review-complete:has(.task-commit){gap:3px 8px;padding:12px 14px;border-radius:12px}
+.review-complete:has(.task-commit)>strong{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600}
+.review-complete:has(.task-commit)>strong::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
+.review-complete:has(.task-commit)>span{font-size:12px;color:var(--text-3)}
+.review-complete-actions:has(.task-commit){width:100%;margin:8px 0 0}
+.task-delivery:has(.task-commit){align-items:stretch}
+@container task-commit (max-width:460px){
+  .task-commit-toolbar:has(.task-commit-alternative) .task-commit-actions{flex-basis:100%;padding-top:2px}
+  .task-commit-toolbar:has(.task-commit-alternative) .task-commit-branch{max-width:calc(100% - 44px)}
+}
+@media(max-width:520px){.task-commit textarea{font-size:16px;line-height:24px}.task-commit-actions button{min-height:36px}.task-commit-generate{width:32px;height:32px}}

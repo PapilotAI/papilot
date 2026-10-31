@@ -1,6 +1,8 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'Save accepted changes': '保存已接受的改动',
+  'Commit to task branch': '提交到 task 分支',
   'Built-in': '内置', 'Global': '全局', 'Search skills': '搜索技能', 'Refresh skills': '刷新技能',
   'Skill scope': '技能范围', 'All skills': '全部技能', 'New skill': '新建技能', 'Overridden': '已被覆盖',
   'All': '全部', 'Loading skills…': '正在加载技能…', 'Copy and edit': '复制并编辑',
@@ -21,6 +23,15 @@ export const zhCN: Record<string, string> = {
   'This skill was removed on disk. Reload the list before saving.': '这个技能已从磁盘上删除，请先刷新列表。',
   'The skill must contain instructions.': '请填写技能的指令正文。',
   'Skill content must contain 1–20,000 characters.': '技能内容需为 1 至 20,000 个字符。',
+  'Choose where to save accepted changes': '选择已接受改动的保存方式',
+  'Apply to working directory': '应用到工作目录',
+  'Apply accepted changes without committing': '将已接受的改动应用到工作目录，不创建提交',
+  'Applying…': '正在应用…',
+  'Applied to working directory': '已应用到工作目录',
+  'Commit to task branch…': '提交到 task 分支…',
+  'Commit accepted changes to a separate task branch': '将已接受的改动提交到独立的 task 分支',
+  'Committed {hash} to {branch}': '已提交 {hash} 到 {branch}',
+  'Save accepted changes on this task branch. Your current branch and working directory stay unchanged.': '将已接受的改动保存在此 task 分支上，当前分支和工作目录保持不变。',
   'Attachments': '附件', 'Choose attachments': '选择附件', 'Add files or skills': '添加文件或技能', 'Add files…': '添加文件…',
   'Drop files to attach': '松开以添加附件', 'Uploading…': '正在上传…', 'Upload failed. Please retry.': '上传失败，请重试。',
   'Retry uploading {name}': '重新上传 {name}', 'Remove attachment {name}': '移除附件 {name}', 'Open attachment {name}': '打开附件 {name}',
