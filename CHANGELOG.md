@@ -4,8 +4,39 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-31 — Fully Modernized UI and Interactions
+
+Papilot 0.7.0 brings a fully refreshed workspace for reading, annotating, revising and reviewing papers. Compact controls, clearer navigation and smoother transitions keep the manuscript at the center, with new ways to organize feedback and save accepted changes.
+
+### Changed
+
+- **A modernized workspace.** A simpler sidebar, compact search and archive controls, two-line task titles, clearer status indicators and consistent menus make tasks easier to scan. Agent, model and reasoning-effort controls use the provider's own labels.
+- **View switches that feel like switches.** PDF / Changes and Review / Split / Chat use compact segmented controls. Workspace layouts transition smoothly, preserve keyboard focus and respect reduced-motion preferences. The new-tab action stays at the far right of the whole workspace.
+- **More room for the paper.** Resize the PDF and conversation panels, or collapse the manuscript side panel while keeping its tab, draft and width. Resizing can restore fit-to-width, and narrow layouts keep review actions and navigation available instead of hiding them too early.
+- **One place to compose a task.** PDF notes, group instructions, skills, attachments and the revision prompt share the task composer. Starting a task keeps the manuscript open; task titles are generated from prompts and annotations, with pending and retry states.
+- **Clearer review controls.** Review progress, history, source display, batch decisions and navigation have a more compact presentation. Tasks that finish with an answer and no manuscript changes show a completed conversation without an empty review.
+- **Choose where accepted changes go.** For new tasks, accepting an edit keeps it inside the task until review is complete. Choose **Apply to working directory** to leave the accepted changes uncommitted, or **Commit to task branch** to save them on a separate `papilot/…` branch. The inline commit editor offers an agent-generated message that you can edit, and preserves the draft across view changes. Existing tasks retain their original delivery behavior; later rounds of a new task use its chosen destination.
+
+### Added
+
+- **Color-grouped PDF annotations.** Mark passages with a compact pen and color palette, collect related notes into collapsible groups and give each group its own instructions. Select individual notes or whole groups for a task; unsent notes stay available for later work.
+- **Editable, more precise notes.** Quotes show the selected words separately from your instructions in compact cards. Edit a note in place, undo note edits or deletion from the keyboard, and follow links between sent notes and the resulting review changes.
+- **Files and images in conversations.** Add files, drag them onto the composer or paste images into new tasks and follow-up messages. Image previews, upload retries and persistent attachment drafts keep supporting material with the task.
+- **A skill library in Settings.** Search and preview skills, create or edit global and paper-specific skills, and copy built-in skills to customize them. Saved skills become available in the composer immediately.
+- **Guided paper imports.** Open a local LaTeX folder or drop a ZIP, detect the main document and compiler, prepare Git history and try compilation. A failed build can be retried, repaired with an assistant or saved to resume later.
+- **Paper management from the picker.** Edit a paper's name and repository path, or remove it from Papilot while preserving its files and Git history on disk.
+- **A compact Git overview.** See task worktrees and commit history alongside file changes, making it easier to follow revisions across tasks and branches.
+- **Customizable review shortcuts.** Change or clear shortcut bindings in Settings, with conflict detection and a way to restore defaults.
+- **Diagnostics inside Settings.** Check the host and a selected paper, inspect failures, retry checks and copy a report with sensitive details redacted. Settings also includes project, contribution, changelog and third-party license links.
+- **In-app updates.** A new-version indicator offers installation from the browser. Papilot waits for active work to finish, restarts and reconnects, while retaining the previous installation for rollback.
+
 ### Fixed
 
+- PDF annotations survive recompilation when their text can be placed again. Notes whose locations cannot be confirmed are flagged instead of silently moved to the wrong passage.
+- Compilation controls distinguish building, successful and failed states, with clearer retry behavior and preserved notes and drafts.
+- The selected paper and manuscript view return after reload, and creating a task no longer unexpectedly replaces the manuscript view.
+- Review controls, long paths and comment editors fit narrow panels and phone screens; toolbar wrapping keeps actions accessible.
+- Conversation, annotation and commit drafts survive layout changes, feedback submission and recoverable loading failures.
 - The review's own bar stays under Papilot's PDF tools. When something scrolled the whole review page rather than its paper, the bar slid away and the tools sat over the PDF.
 
 ## [0.6.0] - 2026-10-30
@@ -109,7 +140,8 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/cu1ch3n/papilot/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/cu1ch3n/papilot/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/cu1ch3n/papilot/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/cu1ch3n/papilot/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/cu1ch3n/papilot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/cu1ch3n/papilot/compare/v0.3.0...v0.4.0

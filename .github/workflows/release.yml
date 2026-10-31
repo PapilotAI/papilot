@@ -40,6 +40,10 @@ jobs:
           if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
             echo "::error::CHANGELOG.md has no [$version] section."; exit 1
           fi
+          headline="$(awk -v heading="## [$version]" 'index($0, heading) == 1 { separator = " — "; offset = index($0, separator); if (offset) print substr($0, offset + length(separator)); exit }' CHANGELOG.md)"
+          title="Papilot $version"
+          if [ -n "$headline" ]; then title="$title — $headline"; fi
+          printf '%s\n' "$title" > "$RUNNER_TEMP/title.txt"
           printf '```sh\nnpm install -g papilot@latest\n```\n' >> "$RUNNER_TEMP/notes.md"
       - run: npm ci
       - run: npm run setup:review
@@ -62,5 +66,5 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             echo "The release already exists."
           else
-            gh release create "$GITHUB_REF_NAME" --title "Papilot ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag --latest
+            gh release create "$GITHUB_REF_NAME" --title "$(cat "$RUNNER_TEMP/title.txt")" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag --latest
           fi
