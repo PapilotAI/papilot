@@ -13,7 +13,7 @@ const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHA
 const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } });
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const origin = `http://127.0.0.1:${server.server.address().port}`;
-const snapshot = { csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper' }], tasks: [], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
+const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper' }], tasks: [], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
 const git = { branch: 'main', files: [] };
 let notes = [], deleted = [], serial = 0;
 const requests = [], items = new Map();

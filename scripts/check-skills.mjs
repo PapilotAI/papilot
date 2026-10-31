@@ -41,6 +41,8 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items')) return json({ items: taskItems.get(url.pathname.split('/')[3]) || items });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/git')) return json(git);
+  // A finished review writes its commit message as soon as it opens.
+  if (url.pathname.endsWith('/git/message') || url.pathname.endsWith('/commit-message')) return json({ message: 'Polish the introduction', agent: 'codex' });
   if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1 }, annotations });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return json(JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'))[Number(url.searchParams.get('page'))]);
@@ -82,7 +84,9 @@ try {
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
   await expect(page.locator('.thread .review-feedback.card:not(.commit-card)')).toContainText('4 review updates not sent yet');
   // The accepted change is in the manuscript; committing it is offered, not required.
-  await expect(page.locator('.thread .commit-card')).toContainText('Accepted changes are not committed yet');
+  const commitCard = page.locator('.thread .commit-card');
+  await expect(commitCard.getByRole('textbox', { name: 'Commit message', exact: true })).toHaveValue('Polish the introduction');
+  await expect(commitCard.getByRole('button', { name: 'Commit', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Split', exact: true }).click();
   await page.getByRole('button', { name: 'Send feedback', exact: true }).click();
   await expect.poll(() => messages.length).toBe(1);

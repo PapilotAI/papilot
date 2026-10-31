@@ -14,7 +14,7 @@ await page.clock.install();
 await page.addInitScript(() => localStorage.setItem('papilot:task', ''));
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const task = { id: 'revision', projectId: 'paper', name: 'revision', title: 'Revise the introduction', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { state: 'reviewing', round: 1, counts: { pending: 1 } } };
-const snapshot = { csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
+const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
 const git = { branch: 'main', files: [] };
 const build = { status: 'ready', key: 'pdf', pages: [[612, 792], [612, 792]], current: true };
 const annotations = [];
