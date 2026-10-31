@@ -26,7 +26,7 @@ document.head.append(styles);
 
 export type Rect = [number, number, number, number];
 export interface OutlineItem { title: string; level: number; dest: unknown; page: number; top: number | null }
-export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note: Annotation) => void; focus: () => void; fitWidth: () => void }
+export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note: Annotation) => void; showPlace: (page: number, rect: Rect) => void; focus: () => void; fitWidth: () => void }
 // A touch selection also has its ends: the edge of its first and last word, with that line's top and bottom.
 interface Selection { page: number; rects: Rect[]; quote: string; handles?: { from: [number, number, number]; to: [number, number, number] } }
 
@@ -160,6 +160,8 @@ export const PdfView = forwardRef<PdfHandle, {
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [findOpen, setFindOpen] = useState(false), [query, setQuery] = useState(''), [matches, setMatches] = useState({ current: 0, total: 0 }), [notFound, setNotFound] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
+  // A place shown from elsewhere, such as a compilation problem, marked briefly.
+  const [flash, setFlash] = useState<{ page: number; rect: Rect; id: number } | null>(null);
   const [editing, setEditing] = useState<{ page: number; rect: Rect; rects: Rect[]; quote: string } | null>(null), editingRef = useRef(editing); editingRef.current = editing;
   const picking = useRef<ReturnType<typeof touchSelection> | null>(null);
   const [draft, updateDraft] = useState<{ page: number; rect: Rect } | null>(null), draftRef = useRef(draft);
@@ -190,7 +192,22 @@ export const PdfView = forwardRef<PdfHandle, {
       if (!div || !box) return;
       box.scrollTo({ top: box.scrollTop + div.getBoundingClientRect().top - box.getBoundingClientRect().top + note.rect[1] * div.offsetHeight - 96, behavior: 'smooth' });
     },
+    showPlace(page, rect) {
+      const div = tools.current?.viewer.getPageView(page)?.div, box = container.current;
+      if (!div || !box) return;
+      const pageBox = div.getBoundingClientRect(), view = box.getBoundingClientRect();
+      const top = box.scrollTop + pageBox.top - view.top + rect[1] * div.offsetHeight - box.clientHeight / 3;
+      const middle = box.scrollLeft + pageBox.left - view.left + (rect[0] + rect[2]) / 2 * div.offsetWidth - box.clientWidth / 2;
+      // A far jump lands at once, so the mark is still showing on arrival.
+      box.scrollTo({ top, left: box.scrollWidth > box.clientWidth ? middle : box.scrollLeft, behavior: Math.abs(top - box.scrollTop) > box.clientHeight * 2 ? 'instant' : 'smooth' });
+      setFlash({ page, rect, id: Date.now() });
+    },
   }), []);
+  useEffect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => setFlash(current => current?.id === flash.id ? null : current), 2400);
+    return () => clearTimeout(timer);
+  }, [flash]);
 
   useEffect(() => {
     const box = container.current!, bus = new EventBus();
@@ -198,6 +215,23 @@ export const PdfView = forwardRef<PdfHandle, {
     const find = new PDFFindController({ eventBus: bus, linkService: links });
     const viewer = new PDFViewer({ container: box, viewer: inner.current!, eventBus: bus, linkService: links, findController: find, removePageBorders: true, annotationMode: pdfjs.AnnotationMode.ENABLE });
     links.setViewer(viewer);
+    // pdf.js moves focus into the target page's text layer the next time that
+    // page renders. For a page already on screen that happens later, on any
+    // zoom or resize, and takes focus from wherever the author is typing.
+    // Contents entries and links in the PDF scroll the same way, without it.
+    links.goToDestination = async (dest: string | unknown[]) => {
+      const document = loaded.current;
+      if (!document) return;
+      const explicit = typeof dest === 'string' ? await document.getDestination(dest) : await dest;
+      if (!Array.isArray(explicit)) return;
+      const [target] = explicit;
+      let pageNumber: number | null = null;
+      if (target && typeof target === 'object') {
+        const ref = target as { num: number; gen: number };
+        pageNumber = document.cachedPageNumber(ref) ?? await document.getPageIndex(ref).then(index => index + 1, () => null);
+      } else if (Number.isInteger(target)) pageNumber = (target as number) + 1;
+      if (pageNumber && pageNumber >= 1 && pageNumber <= viewer.pagesCount) viewer.scrollPageIntoView({ pageNumber, destArray: explicit });
+    };
     tools.current = { bus, links, find, viewer };
     const attach = ({ pageNumber, source }: { pageNumber: number; source?: { div?: HTMLElement } }) => {
       const div = source?.div ?? viewer.getPageView(pageNumber - 1)?.div;
@@ -495,6 +529,7 @@ export const PdfView = forwardRef<PdfHandle, {
           }
         }}/>}
       {draft?.page === number - 1 && <div className="note-box draft" style={percent(draft.rect)}/>}
+      {flash?.page === number - 1 && <div key={flash.id} className="problem-flash" style={percent(flash.rect)}/>}
       {selection?.handles && selection.page === number - 1 && !editing && <>
         {selection.rects.map((rect, index) => <div key={index} className="note-mark draft" style={percent(rect)}/>)}
         {(['from', 'to'] as const).map(end => { const [x, top, bottom] = selection.handles![end]; return <span key={end} className="select-handle" data-end={end} style={{ left: `${x * 100}%`, top: `${top * 100}%`, height: `${(bottom - top) * 100}%` }}/>; })}
