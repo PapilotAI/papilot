@@ -248,6 +248,7 @@ export const zhCN: Record<string, string> = {
   'Retry deletion': '重试删除', 'Pause': '暂停', 'View details': '查看详情', 'Workspace view': '工作区视图',
   'Review, {n} to decide': '审阅，{n} 处待定', 'Review': '审阅', 'Chat (reply needed)': '对话（需要回复）', 'PDF review only': '只看 PDF 审阅',
   'Split': '分栏', 'Review and chat side by side': '审阅和对话并排', 'Chat only': '只看对话',
+  'This conversation has no manuscript changes.': '本次对话没有稿件修改。',
   'Connection lost. Showing the last update; your draft is kept.': '连接已断开。正在显示最近一次更新，你的草稿仍然保留。', 'Retry connection': '重新连接',
   'Connecting to {agent}…': '正在连接 {agent}…', 'Connecting…': '正在连接…', 'Reconnect': '重新连接',
   'Resize chat panel': '调整对话面板宽度', 'Drag to resize · Double-click to reset': '拖动调整宽度 · 双击还原',

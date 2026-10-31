@@ -153,33 +153,13 @@ kbd {
 }
 .review-progress {
   flex: none;
+  min-height: 28px;
+  padding: 0 2px;
   line-height: 1;
 }
-.review-progress svg {
-  display: block;
-}
-.review-progress circle {
-  fill: none;
-  stroke-width: 2;
-}
-.review-progress-track {
-  stroke: var(--line);
-}
-.review-progress-fill {
-  stroke: var(--accept);
-  stroke-linecap: round;
-  transition: stroke-dashoffset 0.2s ease;
-}
 .review-progress-value {
-  fill: var(--ink);
-  font: 500 10px var(--sans);
-  text-anchor: middle;
-  dominant-baseline: central;
-}
-@media (prefers-reduced-motion: reduce) {
-  .review-progress-fill {
-    transition: none;
-  }
+  color: var(--ink);
+  font-weight: 500;
 }
 .track {
   width: 120px;

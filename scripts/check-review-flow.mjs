@@ -281,7 +281,13 @@ try {
   await expect(page.locator('[data-task="question-fixture"] .status')).toHaveText('Completed');
   await expect(page.getByText('This equation expresses conservation of mass.', { exact: true })).toBeVisible();
   await expect(page.locator('.review-panel')).toBeHidden();
-  await expect(page.getByRole('group', { name: 'Workspace view' })).toHaveCount(0);
+  const questionViews = page.getByRole('group', { name: 'Workspace view' });
+  await expect(questionViews.getByRole('button')).toHaveCount(1);
+  const questionChat = questionViews.getByRole('button', { name: 'Chat', exact: true });
+  await expect(questionChat).toHaveAttribute('aria-pressed', 'true');
+  await expect(questionChat).toHaveAttribute('title', 'This conversation has no manuscript changes.');
+  await expect(questionChat.locator('span')).toBeVisible();
+  await questionChat.click();
   await expect(page.getByRole('button', { name: 'Generate PDF comparison', exact: true })).toHaveCount(0);
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:layout')), 'review');
   await page.reload();
@@ -292,17 +298,22 @@ try {
   await expect(page.locator('.review-panel')).toBeHidden();
   await expect(page.locator('.sidebar')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Show task list', exact: true })).toBeVisible();
+  await expect(questionViews.getByRole('button')).toHaveCount(1);
+  await expect(questionChat).toBeVisible();
+  await expect(questionChat.locator('span')).toBeVisible();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   await page.screenshot({ path: 'test-results/answer-only-mobile.png', fullPage: true });
   for (const status of ['running', 'queued', 'waiting_input']) {
     question.status = status; await sync();
     await expect(page.locator('.task-grid')).toHaveClass(/show-conversation/);
+    await expect(questionViews.getByRole('button')).toHaveCount(1);
     await expect(page.getByText('This equation expresses conservation of mass.', { exact: true })).toBeVisible();
   }
   question.status = 'reviewing';
   question.review = { ...task.review, job: { status: 'done', outcome: 'published' } };
   await page.setViewportSize({ width: 1440, height: 1000 }); await sync();
   await expect(page.locator('.review-frame')).toBeVisible();
+  await expect(questionViews.getByRole('button')).toHaveCount(3);
   await expect(page.getByRole('button', { name: 'Review', exact: true })).toHaveAttribute('aria-pressed', 'true');
   question.review.job.outcome = 'unchanged'; await sync();
   await expect(page.locator('.review-frame')).toBeVisible();

@@ -1,6 +1,7 @@
 node_modules
 dist/
 _site/
+/promo/
 .papilot/
 .env
 .DS_Store

@@ -101,7 +101,6 @@ function jobText(job: PageState["job"]) {
 
 function ReviewProgress({ value, total, label }: { value: number; total: number; label: string }) {
   if (total === 0) return null;
-  const fraction = `${value}/${total}`;
   return (
     <div
       className="meter review-progress"
@@ -112,24 +111,7 @@ function ReviewProgress({ value, total, label }: { value: number; total: number;
       aria-valuenow={value}
       title={label}
     >
-      <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
-        <circle className="review-progress-track" cx="18" cy="18" r="16" />
-        <circle
-          className="review-progress-fill"
-          cx="18" cy="18" r="16"
-          pathLength="100"
-          strokeDasharray="100"
-          strokeDashoffset={100 - value / total * 100}
-          transform="rotate(-90 18 18)"
-          opacity={value > 0 ? 1 : 0}
-        />
-        <text
-          className="review-progress-value"
-          x="18" y="18"
-          textLength={fraction.length > 5 ? 26 : undefined}
-          lengthAdjust="spacingAndGlyphs"
-        >{fraction}</text>
-      </svg>
+      <span aria-hidden="true"><span className="review-progress-value">{value}</span> / {total}</span>
     </div>
   );
 }
