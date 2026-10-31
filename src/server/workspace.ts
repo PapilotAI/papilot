@@ -68,7 +68,7 @@ export const VIEW_PDF_TOOL = {
     type: 'object', additionalProperties: false,
     properties: {
       locations: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Source lines as file:line, relative to the worktree.' },
-      pages: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Page numbers as printed on the pages, such as "12" or "iv".' },
+      pages: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Printed page numbers, such as "12" or "iv", when the PDF provides page labels. Use locations if numbering metadata is unavailable.' },
       accepted: { type: 'boolean', description: 'Show the accepted text instead of your worktree.' },
     },
   },
@@ -574,13 +574,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, 4) : [];
     try {
       const client = await this.connectReview(this.store.project(task.projectId).path);
-      const shown = await client.post<{ pages: { index: number; label: string; shows: string[]; file: string }[]; missing: string[]; targets: string[]; error?: string; details?: string[] }>(
+      const shown = await client.post<{ pages: { index: number; label: string | null; shows: string[]; file: string }[]; missing: string[]; targets: string[]; error?: string; details?: string[] }>(
         `${taskRoute(task.name)}/view`, { locations: strings(args?.locations), pages: strings(args?.pages), ...(args?.accepted === true ? { accepted: true } : {}) }, 30 * 60000);
       if (shown.error) { reply(false, [shown.error, ...(shown.details || [])].join('\n')); return; }
       const compiled = shown.targets[0] === 'full' ? 'the whole paper' : `only ${shown.targets.join(', ')}, so page positions differ from the full PDF while printed page numbers match`;
       reply(true, [
         `${args?.accepted === true ? 'The accepted text' : 'Your worktree'} was compiled (${compiled}).`,
-        ...shown.pages.map(page => `Page ${page.label} shows ${page.shows.join(', ')}: ${page.file}`),
+        ...shown.pages.map(page => `${page.label ? `Page ${page.label}` : `PDF page ${page.index} (printed page number unavailable)`} shows ${page.shows.join(', ')}: ${page.file}`),
         ...shown.missing,
         ...(shown.pages.length ? ['Open the page files you need with your image viewer (view_image).'] : []),
       ].join('\n'));

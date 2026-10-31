@@ -21,8 +21,8 @@ export interface ViewRequest {
 export interface ViewedPage {
   /** The page's position in the PDF that was built, from 1. */
   index: number;
-  /** The page number printed on it. */
-  label: string;
+  /** The PDF's page label, or null when no numbering metadata is available. */
+  label: string | null;
   /** What asked for this page. */
   shows: string[];
   /** The drawn page. */
@@ -133,6 +133,13 @@ export async function view(
   const pdf = build.pdf,
     document = mupdf.Document.openDocument(fs.readFileSync(pdf), "application/pdf");
   try {
+    // MuPDF synthesizes 1, 2, ... when /PageLabels is absent. Those are
+    // physical positions, not the printed numbers (front matter may be i, ii).
+    const trailer = document.asPDF()?.getTrailer(),
+      pageLabels = trailer?.get("Root", "PageLabels"),
+      hasLabels = pageLabels?.isDictionary() ?? false;
+    pageLabels?.destroy();
+    trailer?.destroy();
     const wanted = new Map<number, string[]>(),
       missing: string[] = [],
       ask = (index: number, asked: string) =>
@@ -147,10 +154,12 @@ export async function view(
       if (found.length) found.forEach((page) => ask(page, l.asked));
       else missing.push(`${l.asked}: SyncTeX places no typeset text at or near this line.`);
     }
-    if (labels.length) {
+    if (labels.length && !hasLabels) {
+      missing.push("This PDF has no page-label metadata, so printed page numbers cannot be located reliably. Ask for source locations (file:line) instead.");
+    } else if (labels.length) {
       const printed = Array.from({ length: document.countPages() }, (_, i) => {
         const page = document.loadPage(i),
-          label = page.getLabel() || String(i + 1);
+          label = page.getLabel();
         page.destroy();
         return label;
       });
@@ -170,7 +179,7 @@ export async function view(
     const indices = [...wanted.keys()].sort((a, b) => a - b);
     if (indices.length > PAGES)
       missing.push(
-        `Only the first ${PAGES} pages are shown; ask again for pages ${indices.slice(PAGES).join(", ")} of this build.`,
+        `Only the first ${PAGES} pages are shown; ask for more specific source locations to see the remaining pages (physical positions ${indices.slice(PAGES).join(", ")} in this build).`,
       );
     const out = indices.length ? folder(app, name) : "";
     const pages = indices.slice(0, PAGES).map((index) => {
@@ -181,8 +190,8 @@ export async function view(
           false,
           true,
         ),
-        label = page.getLabel() || String(index),
-        file = path.join(out, `page-${/^[\w-]{1,16}$/u.test(label) ? label : index}-${index}.png`);
+        label = hasLabels ? page.getLabel() || null : null,
+        file = path.join(out, `page-${label && /^[\w-]{1,16}$/u.test(label) ? label : index}-${index}.png`);
       fs.writeFileSync(file, pixmap.asPNG());
       pixmap.destroy();
       page.destroy();

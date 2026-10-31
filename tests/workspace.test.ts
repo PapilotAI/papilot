@@ -1255,7 +1255,7 @@ test('a build the agent broke goes back to it once, and its instructions name wh
 test('Codex threads get the view_pdf tool, which Papilot answers with typeset pages', async () => {
   const views: unknown[] = [];
   const f = fixture(async (_method, route, body) => {
-    if (route.endsWith('/view')) { views.push(body); return { pages: [{ index: 3, label: '1', shows: ['main.tex:12'], file: '/paper/.git/latex-review/views/p-task/1/page-1-3.png' }], missing: ['Page 99: no page has this printed number.'], targets: ['chapters/intro'] }; }
+    if (route.endsWith('/view')) { views.push(body); return { pages: [{ index: 3, label: '1', shows: ['main.tex:12'], file: '/paper/.git/latex-review/views/p-task/1/page-1-3.png' }, { index: 4, label: null, shows: ['main.tex:20'], file: '/paper/.git/latex-review/views/p-task/1/page-4-4.png' }], missing: ['Page 99: no page has this printed number.'], targets: ['chapters/intro'] }; }
     if (route.includes('/feedback')) return feedback;
     return summary;
   });
@@ -1277,7 +1277,7 @@ test('Codex threads get the view_pdf tool, which Papilot answers with typeset pa
     assert.equal(reply.id, 41);
     assert.equal(reply.result.success, true);
     // Only text comes back: the page files, which the agent opens with its image viewer.
-    assert.deepEqual(reply.result.contentItems, [{ type: 'inputText', text: 'Your worktree was compiled (only chapters/intro, so page positions differ from the full PDF while printed page numbers match).\nPage 1 shows main.tex:12: /paper/.git/latex-review/views/p-task/1/page-1-3.png\nPage 99: no page has this printed number.\nOpen the page files you need with your image viewer (view_image).' }]);
+    assert.deepEqual(reply.result.contentItems, [{ type: 'inputText', text: 'Your worktree was compiled (only chapters/intro, so page positions differ from the full PDF while printed page numbers match).\nPage 1 shows main.tex:12: /paper/.git/latex-review/views/p-task/1/page-1-3.png\nPDF page 4 (printed page number unavailable) shows main.tex:20: /paper/.git/latex-review/views/p-task/1/page-4-4.png\nPage 99: no page has this printed number.\nOpen the page files you need with your image viewer (view_image).' }]);
     assert.equal(f.workspace.requests.size, 0);
     assert.equal(f.store.task(f.task.id).status, 'running');
     call(42, 'other_tool', {});
