@@ -77,8 +77,14 @@ export async function prepareDev(root: string, version: string, log: number, run
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ ...pkg, version }, null, 2) + '\n');
   await run(['run', 'build'], engine, log);
   await run(['run', 'build'], root, log);
-  await run(['prune', '--omit=dev', '--engine-strict', ...flags], root, log);
-  await run(['prune', '--omit=dev', '--engine-strict', ...flags], engine, log);
+  for (const cwd of [root, engine]) {
+    // npm 10 checks even omitted dev dependencies under --engine-strict.
+    // This built snapshot only needs runtime dependencies from now on.
+    const manifest = path.join(cwd, 'package.json'), runtime = readJson(manifest);
+    delete runtime.devDependencies;
+    fs.writeFileSync(manifest, JSON.stringify(runtime, null, 2) + '\n');
+    await run(['prune', '--omit=dev', '--engine-strict', ...flags], cwd, log);
+  }
 }
 async function installDev(data: string, version: string) {
   const releases = path.join(data, 'updates/releases'); fs.mkdirSync(releases, { recursive: true, mode: 0o700 });
