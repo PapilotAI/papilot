@@ -14,8 +14,9 @@ const configOptions = [
 ];
 function fixture(onPrompt: (message: any, rpc: ReturnType<typeof peer>) => void = (m, rpc) => { rpc.update(m.params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'OK' } }); rpc.reply(m.id, { stopReason: 'end_turn' }); }) {
   const calls: any[] = [], peers: ReturnType<typeof peer>[] = [];
-  const launch = (_binary: string, args: string[]) => {
+  const launch = (_binary: string, args: string[], options: { cwd: string }) => {
     assert.deepEqual(args, ['acp']);
+    assert.equal(options.cwd, os.homedir(), 'Kimi must not run from the probe folder that is removed');
     const rpc = peer(message => {
       calls.push(message);
       if (!message.method) return;
@@ -222,6 +223,7 @@ test('Kimi permission choices ask the user instead of silently selecting the fir
     const requested = new Promise<void>(resolve => f.agent.once('request', m => {
       assert.equal(m.method, 'item/tool/requestUserInput');
       assert.deepEqual(m.params.questions[0].options, [{ label: 'Introduction' }, { label: 'Model' }]);
+      assert.equal(m.params.questions[0].isOther, false, 'ACP cannot carry a typed answer');
       f.agent.respond(m.id, { answers: { choice: { answers: ['Model'] } } }); resolve();
     }));
     const done = completion(f.agent);

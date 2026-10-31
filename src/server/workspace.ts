@@ -521,6 +521,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       const questions = request.params.questions || [];
       response = { answers: Object.fromEntries(questions.map((q: any) => {
         const answer = input.answers?.[q.id]?.trim(); if (!answer) throw new Error('Answer every question before submitting.');
+        // A question without an "Other" choice only takes one of its options.
+        if (q.isOther === false && q.options?.length && !q.options.some((option: any) => option.label === answer)) throw new Error('Choose one of the offered answers.');
         return [q.id, { answers: [answer] }];
       })) };
     } else {

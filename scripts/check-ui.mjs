@@ -1152,6 +1152,21 @@ try {
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   assert.equal(await page.getByRole('textbox', { name: 'Which section should I revise?' }).inputValue(), 'Keep the theorem statement.');
   console.log('PASS: Unsent answers survive switching tasks');
+  // An agent that can only take one of its options (Kimi's ACP choices) gets no free-form answer.
+  const question = snapshot.requests[0];
+  snapshot.requests = [{ ...question, id: 'choice', params: { questions: [{ id: 'choice', question: 'Which section should Kimi edit?', isOther: false, options: [{ label: 'Introduction' }, { label: 'Model' }] }] } }];
+  await page.reload();
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
+  const choice = page.locator('.request-card').getByRole('button', { name: 'Model', exact: true });
+  await choice.waitFor();
+  assert.equal(await page.getByRole('textbox', { name: 'Which section should Kimi edit?' }).count(), 0);
+  await choice.click();
+  assert.equal(await page.getByRole('button', { name: 'Reply to Codex' }).isEnabled(), true);
+  console.log('PASS: Questions without an "Other" choice offer only their options');
+  snapshot.requests = [question];
+  await page.reload();
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
+  await page.getByRole('heading', { name: 'Codex needs your input' }).waitFor();
 
 
   for (const width of [320, 390, 768]) {

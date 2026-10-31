@@ -39,7 +39,8 @@ export class KimiAgent extends Adapter {
   private async connect() {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-kimi-'));
     try {
-      const child = this.launch(this.binary, ['acp'], { cwd, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+      // The probe folder is removed below, so Kimi itself runs from the home folder.
+      const child = this.launch(this.binary, ['acp'], { cwd: os.homedir(), env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
       this.child = child;
       const failed = (error: Error) => { if (this.child === child) this.disconnect(error); };
       createInterface({ input: child.stdout! }).on('line', line => {
@@ -216,8 +217,9 @@ export class KimiAgent extends Adapter {
     const question = options.filter((option: any) => option.kind === 'allow_once').length > 1;
     this.approvals.set(id, { rpcId: message.id, turn: live.turn, options, question });
     if (question) {
+      // An ACP permission answer can only select an option, never carry free text.
       this.emit('request', { id, method: 'item/tool/requestUserInput', params: { threadId: live.turn.threadId, turnId: live.turn.id,
-        questions: [{ id: 'choice', question: tool.title || 'Kimi needs your input.', options: options.filter((option: any) => option.kind === 'allow_once').map((option: any) => ({ label: option.name || option.optionId })) }] } });
+        questions: [{ id: 'choice', question: tool.title || 'Kimi needs your input.', isOther: false, options: options.filter((option: any) => option.kind === 'allow_once').map((option: any) => ({ label: option.name || option.optionId })) }] } });
       return;
     }
     this.emit('request', { id, method: edit ? 'item/fileChange/requestApproval' : 'item/commandExecution/requestApproval',

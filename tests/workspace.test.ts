@@ -962,6 +962,26 @@ test('Codex receives the saved Fast or explicit standard tier without changing r
   }
 });
 
+test('a question without an "Other" choice only accepts one of its options', async () => {
+  const claude = new FakeCodex();
+  const f = fixture(undefined, { claude });
+  try {
+    f.codex.ready = true; claude.ready = true;
+    f.workspace.runtimes.claude.authenticated = true;
+    f.store.updateTask(f.task.id, { agent: 'claude', threadId: 'claude-thread' });
+    (f.workspace as any).loaded.add('claude-thread');
+    await f.workspace.enqueue(f.task.id, 'Tighten the abstract.', 'choice-run', false);
+    await tick();
+    claude.emit('request', { id: 'choice-1', method: 'item/tool/requestUserInput', params: { threadId: 'claude-thread', turnId: 'turn-new', questions: [{ id: 'choice', question: 'Which section?', isOther: false, options: [{ label: 'Introduction' }, { label: 'Model' }] }] } });
+    const [request] = f.workspace.snapshot().requests;
+    assert.throws(() => f.workspace.answer(request.id, { answers: { choice: 'Both, model first' } }), /Choose one of the offered answers/);
+    assert.deepEqual(claude.replies, []);
+    assert.equal(f.workspace.snapshot().requests.length, 1);
+    f.workspace.answer(request.id, { answers: { choice: 'Model' } });
+    assert.deepEqual(claude.replies, [{ id: 'choice-1', result: { answers: { choice: { answers: ['Model'] } } } }]);
+  } finally { f.close(); }
+});
+
 test('a task runs on its own agent: turns, approvals and pausing go to that agent only', async () => {
   const claude = new FakeCodex();
   const f = fixture(undefined, { claude });
