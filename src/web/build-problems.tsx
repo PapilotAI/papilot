@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState } from 'react';
-import type { BuildProblem, BuildProblemCounts, ManuscriptBuild, ManuscriptProblems } from '../shared.ts';
+import { countProblems, type BuildProblem, type BuildProblemCounts, type ManuscriptBuild, type ManuscriptProblems } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t, tn } from './i18n.ts';
 import './build-problems.css';
@@ -20,6 +20,8 @@ export function problemTitle(problem: BuildProblem) {
   }
 }
 const hasKey = (problem: BuildProblem) => problem.key && ['reference', 'citation', 'label', 'missing-file', 'glyph'].includes(problem.kind);
+// Headings count like the badge: a label defined twice is one problem.
+const total = (list: BuildProblem[]) => { const counts = countProblems(list); return counts.errors + counts.warnings + counts.minor; };
 export const problemPlace = (problem: BuildProblem) => problem.file ? `${problem.file}${problem.line ? `:${problem.line}${problem.end ? `–${problem.end}` : ''}` : ''}` : '';
 
 // The list an agent receives: the agent reads English, like note locations.
@@ -32,7 +34,7 @@ export function fixRequest(problems: BuildProblem[], limit = 40) {
   const chosen = problems.filter(problem => problem.kind !== 'other');
   const lines = chosen.slice(0, limit).map(agentText);
   if (chosen.length > limit) lines.push(`- …and ${chosen.length - limit} more in the build log`);
-  return `${t('Fix these problems from the last compilation:')}\n${lines.join('\n')}`;
+  return `Fix these problems from the last compilation:\n${lines.join('\n')}`;
 }
 
 // Like Overleaf's log button: a quiet icon beside Recompile. Errors turn its
@@ -79,7 +81,7 @@ export const ProblemsButton = forwardRef<ProblemsHandle, {
   const row = (problem: BuildProblem, index: number) => {
     const where = problemPlace(problem), canJump = problem.page !== undefined && Boolean(problem.rect) && data?.key === pdfKey;
     const content = <>
-      <span className="problem-title"><span>{problemTitle(problem)}</span>{hasKey(problem) && <code>{problem.key}</code>}{(problem.count || 0) > 1 && <span className="problem-repeat" title={t('Reported {n} times', { n: problem.count! })}>×{problem.count}</span>}</span>
+      <span className="problem-title">{problem.message.includes('\n') && problem.kind === 'error' ? <span className="problem-output">{problem.message}</span> : <span>{problemTitle(problem)}</span>}{hasKey(problem) && <code>{problem.key}</code>}{(problem.count || 0) > 1 && <span className="problem-repeat" title={t('Reported {n} times', { n: problem.count! })}>×{problem.count}</span>}</span>
       {(where || problem.page !== undefined) && <span className="problem-place">{where && <span className="problem-file" title={where}>{where}</span>}{problem.page !== undefined && <span className="problem-page">{t('p. {page}', { page: problem.page + 1 })}</span>}</span>}
     </>;
     return <li key={index} data-severity={problem.severity}>{canJump
@@ -88,7 +90,7 @@ export const ProblemsButton = forwardRef<ProblemsHandle, {
   };
   return <span className="menu-anchor problems-anchor">
     <button ref={trigger} type="button" className="icon-button problems-button" data-severity={errors ? 'error' : warnings ? 'warning' : undefined} aria-label={label} title={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
-      onClick={() => { if (panel.current?.matches(':popover-open')) panel.current.hidePopover(); else show(); }}>
+      popoverTarget={id} onClick={event => { event.preventDefault(); if (panel.current?.matches(':popover-open')) panel.current.hidePopover(); else show(); }}>
       <Icon name="log" size={17}/>{shown > 0 && <b className="problems-count" aria-hidden="true">{shown > 99 ? '99+' : shown}</b>}
     </button>
     <div ref={panel} id={id} popover="auto" role="dialog" aria-label={t('Compilation problems')} className="problems-panel"
@@ -104,11 +106,11 @@ export const ProblemsButton = forwardRef<ProblemsHandle, {
           : !problems.length ? <p className="problems-empty">{data.status === 'building' ? t('The first build is still running.') : t('No problems in the last build.')}</p>
           : <>
             {groups.map(([title, list]) => list.length > 0 && <section key={title}>
-              <h3>{title} <span>{list.length}</span></h3>
+              <h3>{title} <span>{total(list)}</span></h3>
               <ul>{list.map(row)}</ul>
             </section>)}
             {minor.length > 0 && <details className="problems-minor" open={!groups.some(([, list]) => list.length)}>
-              <summary>{t('Typesetting and other remarks')} <span>{minor.length}</span></summary>
+              <summary>{t('Typesetting and other remarks')} <span>{total(minor)}</span></summary>
               <ul>{minor.map(row)}</ul>
             </details>}
           </>}

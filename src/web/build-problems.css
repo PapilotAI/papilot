@@ -24,6 +24,7 @@
 .problems-body li[data-severity=warning]>*::before{background:var(--text-3)}
 .problem-title{display:flex;align-items:baseline;gap:6px;min-width:0;overflow-wrap:anywhere}
 .problem-title code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-2);font:12px var(--mono)}
+.problem-output{display:block;flex:1;min-width:0;max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text);font:11.5px/1.5 var(--mono)}
 .problem-repeat{flex-shrink:0;color:var(--text-3);font-size:12px;font-variant-numeric:tabular-nums}
 .problem-place{display:flex;gap:10px;min-width:0;color:var(--text-3);font-size:12px}
 .problem-file{min-width:0;overflow-wrap:anywhere;font-family:var(--mono);font-size:11.5px}

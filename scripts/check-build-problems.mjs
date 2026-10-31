@@ -18,6 +18,8 @@ const warnings = [
   { kind: 'other', severity: 'minor', message: 'destination with the same identifier (name{equation.1}) has been already used, duplicate ignored', count: 51, file: 'sections/model.tex' },
 ];
 const error = { kind: 'missing-file', severity: 'error', message: "LaTeX Error: File `figures/plot' not found.", key: 'figures/plot', file: 'sections/geometry.tex', line: 4 };
+// What BibTeX said when it failed outside the TeX log, kept line by line.
+const bibtex = { kind: 'error', severity: 'error', message: 'LaTeX failed to compile.\nDatabase file #1: refs.bib\nIllegal end of database file---line 2 of file refs.bib' };
 const state = { build: { status: 'ready', key: 'pdf', pages: [[612, 792], [612, 792]], current: true, problems: { errors: 0, warnings: 2, minor: 2 } }, problems: { status: 'ready', key: 'pdf', problems: warnings, log: true } };
 let problemReads = 0;
 
@@ -57,6 +59,11 @@ try {
   assert.equal(problemReads, 0, 'The list loads only when opened');
   assert.equal(await button.innerText(), '2', 'The toolbar shows only the count');
 
+  // The icon toggles the list.
+  await button.click();
+  await expect(panel).toBeVisible();
+  await button.click();
+  await expect(panel).toBeHidden();
   await button.click();
   await expect(panel).toBeVisible();
   await expect(panel.locator('h3')).toHaveText(['Warnings 2']);
@@ -94,21 +101,23 @@ try {
   assert.doesNotMatch(draft, /destination/, 'Package remarks are not sent to the agent');
 
   // A failed rebuild keeps the last PDF, says so in one line and turns the count red.
-  state.build = { ...state.build, status: 'failed', current: false, error: 'LaTeX failed to compile.', problems: { errors: 1, warnings: 2, minor: 2 } };
-  state.problems = { status: 'failed', key: 'pdf', problems: [error, ...warnings], log: true };
+  state.build = { ...state.build, status: 'failed', current: false, error: 'LaTeX failed to compile.', problems: { errors: 2, warnings: 2, minor: 2 } };
+  state.problems = { status: 'failed', key: 'pdf', problems: [error, bibtex, ...warnings], log: true };
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(button).toHaveAttribute('data-severity', 'error');
-  await expect(button).toHaveAccessibleName('1 compilation error');
+  await expect(button).toHaveAccessibleName('2 compilation errors');
   await expect(button.locator('.problems-count')).toHaveCSS('background-color', 'rgb(220, 38, 38)');
   const notice = page.locator('.manuscript-note.brief');
   await expect(notice).toHaveText(/The latest changes did not compile\. This is the last PDF that did\./);
   await expect(page.locator('.manuscript-note pre')).toHaveCount(0);
   await expect(page.locator('.pdfViewer .page').first()).toBeVisible();
   await notice.getByRole('button', { name: 'Show problems' }).click();
-  await expect(panel.locator('h3').first()).toHaveText('Errors 1');
+  await expect(panel.locator('h3').first()).toHaveText('Errors 2');
   await expect(panel.locator('li').first()).toContainText('Missing file');
   await expect(panel.locator('li').first()).toContainText('sections/geometry.tex:4');
   await expect(panel.locator('li').first().locator('button')).toHaveCount(0);
+  await expect(panel.locator('li').nth(1).locator('.problem-output')).toHaveText(bibtex.message);
+  await expect(panel.locator('li').nth(1).locator('.problem-output')).toHaveCSS('white-space', 'pre-wrap');
   await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
   assert.deepEqual(errors, []);

@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import type { BuildProblem, BuildProblemCounts } from '../shared.ts';
+import { countProblems, type BuildProblem } from '../shared.ts';
 
 const exec = promisify(execFile);
 
@@ -10,25 +11,38 @@ const exec = promisify(execFile);
 // to the directory TeX ran in. It never leaves the server.
 export interface LogProblem extends Omit<BuildProblem, 'file' | 'page' | 'rect'> { input?: string }
 export interface StoredProblem extends BuildProblem { source?: string }
+export { countProblems };
 
 // Overfull lines narrower than this are invisible in print.
 export const OVERFULL_MIN_PT = 1;
 // Locating runs SyncTeX once or twice per problem; a paper with more problems
-// lists the rest without a page.
-const LOCATE_LIMIT = 300;
+// lists the rest without a page, starting with the least important.
+export const LOCATE_LIMIT = 300;
 const WRAP = 79;
+const utf8Length = (lead: number) => lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
 
-// TeX breaks every log line at 79 characters (bytes in pdfTeX), even inside
-// file names and words. Rejoin the pieces before reading anything else.
-export function unwrapLog(text: string) {
-  const out: string[] = [];
-  let current = '', joining = false;
-  for (const line of text.split(/\r?\n/)) {
-    current = joining ? current + line : line;
-    joining = line.length === WRAP || Buffer.byteLength(line) === WRAP;
-    if (!joining) out.push(current);
+// TeX breaks every log line at 79 columns, even inside file names. pdfTeX
+// counts bytes and may cut a character in two, LuaTeX breaks early rather than
+// cut one, and XeTeX counts characters. Rejoin the pieces on the raw bytes,
+// before decoding splits a character for good.
+export function unwrapLog(input: string | Buffer) {
+  const bytes = typeof input === 'string' ? Buffer.from(input, 'utf8') : input, raw: Buffer[] = [];
+  for (let start = 0, i = 0; i <= bytes.length; i++) {
+    if (i < bytes.length && bytes[i] !== 0x0a) continue;
+    raw.push(bytes.subarray(start, i > start && bytes[i - 1] === 0x0d ? i - 1 : i)); start = i + 1;
   }
-  if (joining) out.push(current);
+  const out: string[] = [];
+  let parts: Buffer[] = [];
+  for (let k = 0; k < raw.length; k++) {
+    const line = raw[k], next = raw[k + 1], text = line.toString('utf8');
+    parts.push(line);
+    const wrapped = next !== undefined && (line.length === WRAP || [...text].length === WRAP
+      || (line.length < WRAP && next.length > 0 && next[0] >= 0xc0 && line.length + utf8Length(next[0]) > WRAP)
+      // Text decoded earlier keeps each half of a cut character as U+FFFD.
+      || (text.endsWith('�') && next.toString('utf8').startsWith('�')));
+    if (!wrapped) { out.push(parts.length === 1 ? text : Buffer.concat(parts).toString('utf8')); parts = []; }
+  }
+  if (parts.length) out.push(Buffer.concat(parts).toString('utf8'));
   return out;
 }
 
@@ -37,31 +51,53 @@ const IGNORED = [
   /^There (?:were|was) (?:undefined|multiply)/, /^Rerun to get/, /Label\(s\) may have changed/, /^Please (?:\(re\))?run/i,
   /^Writing or overwriting file/, /^File [`'][^']+' already exists on the system/, /^Unused global option/,
 ];
+// The source context TeX prints after an error or a pdfTeX warning: a line
+// starting "<to be read again> " or "l.12 " quotes the source up to where TeX
+// stopped, cut on the left, so its parentheses may be unmatched. The indented
+// line below it continues the source and then TeX's own output, which can
+// close and open files, so that one is read as usual.
+const CONTEXT = /^(?:<[a-z*][a-z ]*>|l\.\d+) /;
 
 // TeX reports which file it is reading with "(name" and ")" around everything
 // that file prints. Only a "(" followed by a file that exists opens a file, so
 // parentheses in messages and wrapped text keep the stack balanced but never
-// change the current file.
-export function parseLatexLog(text: string, isFile: (name: string) => boolean = () => true): LogProblem[] {
+// change the current file. `opened` collects every file TeX read.
+export function parseLatexLog(text: string | Buffer, isFile: (name: string) => boolean = () => true, opened?: Set<string>): LogProblem[] {
   const lines = unwrapLog(text), stack: (string | null)[] = [], found: LogProblem[] = [], seen = new Set<string>();
   const current = () => { for (let i = stack.length - 1; i >= 0; i--) if (stack[i]) return stack[i]!; return undefined; };
   const add = (problem: LogProblem) => {
     const id = JSON.stringify([problem.kind, problem.key, problem.input, problem.line, problem.end, problem.message]);
     if (!seen.has(id)) { seen.add(id); found.push(problem); }
   };
+  // pdfTeX prints a name with spaces unquoted, so the longest run of the line
+  // that names an existing file wins.
+  const fileAt = (rest: string): [string, number] | null => {
+    const quoted = /^"([^"]+)"/.exec(rest);
+    if (quoted) return isFile(quoted[1]) ? [quoted[1], quoted[0].length] : null;
+    const run = /^[^()[\]{}<>"]*/.exec(rest.slice(0, 512))![0];
+    if (!run || /^\s/.test(run)) return null;
+    const cuts = [run.length];
+    for (let at = run.lastIndexOf(' '); at > 0; at = run.lastIndexOf(' ', at - 1)) cuts.push(at);
+    for (const cut of cuts) {
+      const name = run.slice(0, cut).trimEnd();
+      if (name && looksLikeFile(name) && isFile(name)) return [name, name.length];
+    }
+    return null;
+  };
   const scan = (line: string) => {
     for (let j = 0; j < line.length; j++) {
       if (line[j] === ')') { stack.pop(); continue; }
       if (line[j] !== '(') continue;
-      const match = /^"([^"]+)"|^([^\s()[\]{}<>"]+)/.exec(line.slice(j + 1)), name = match?.[1] ?? match?.[2];
-      if (name && looksLikeFile(name) && isFile(name)) { stack.push(name); j += match![0].length; } else stack.push(null);
+      const file = fileAt(line.slice(j + 1));
+      if (file) { stack.push(file[0]); opened?.add(file[0]); j += file[1]; } else stack.push(null);
     }
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // file:line: message (from -file-line-error) or "! message".
+    // file:line: message (from -file-line-error) or "! message". The file may
+    // be one TeX generated, such as the .bbl, which a failed build has removed.
     const located = /^(.+?):(\d+): (.*)$/.exec(line);
-    const errorFile = located && (located[1] === current() || (looksLikeFile(located[1]) && isFile(located[1]))) ? located : null;
+    const errorFile = located && (located[1] === current() || looksLikeFile(located[1])) ? located : null;
     if (errorFile || line.startsWith('! ')) {
       let message = errorFile ? errorFile[3] : line.slice(2), last = line, end = i + 1;
       for (; end < lines.length && end < i + 20; end++) {
@@ -79,13 +115,14 @@ export function parseLatexLog(text: string, isFile: (name: string) => boolean = 
           input: errorFile ? errorFile[1] : current(), line: errorFile ? Number(errorFile[2]) : context >= 0 ? Number(/^l\.(\d+)/.exec(lines[context])![1]) : undefined,
         });
       }
-      // Help text and the source context are TeX's commentary, not file events.
-      i = context >= 0 ? context + 1 : end - 1;
+      // Help text and the quoted source are TeX's commentary, not file events.
+      i = context >= 0 ? context : end - 1;
       continue;
     }
+    if (CONTEXT.test(line)) continue;
     const warning = /^(LaTeX|Package|Class|Module)(?: (\S+))? Warning: (.*)$|^(pdfTeX) warning(?: \([^)]*\))?: (.*)$/i.exec(line);
     if (warning) {
-      const owner = warning[1] === 'LaTeX' ? warning[2] || '' : warning[2] || '', isLatex = warning[1] === 'LaTeX';
+      const owner = warning[2] || '', isLatex = warning[1] === 'LaTeX';
       let message = warning[3] ?? warning[5], end = i + 1;
       // Continuation lines start with "(package)" or, for LaTeX, an indent.
       for (; end < lines.length; end++) {
@@ -105,7 +142,7 @@ export function parseLatexLog(text: string, isFile: (name: string) => boolean = 
       else if (citation) add({ kind: 'citation', severity: 'warning', message, key: citation[1], input: current(), line: at });
       // cleveref repeats every label as `name@cref`; the user's label is reported already.
       else if (label) { if (!label[1].includes('@')) add({ kind: 'label', severity: 'warning', message, key: label[1] }); }
-      else add({ kind: 'other', severity: 'minor', message: `${warning[2] && !isLatex ? warning[2] + ': ' : ''}${message}`, input: current(), line: at });
+      else add({ kind: 'other', severity: 'minor', message: `${owner && !isLatex ? owner + ': ' : ''}${message}`, input: current(), line: at });
       continue;
     }
     const box = /^(Overfull|Underfull) \\([hv])box \((?:badness \d+|([\d.]+)pt too (?:wide|high))\)(?: (?:in paragraph|in alignment|detected) at lines? (\d+)(?:--(\d+))?)?/.exec(line);
@@ -136,43 +173,45 @@ export function parseLatexLog(text: string, isFile: (name: string) => boolean = 
   });
 }
 
-export function countProblems(problems: { severity: BuildProblem['severity'] }[]): BuildProblemCounts {
-  const counts = { errors: 0, warnings: 0, minor: 0 };
-  for (const problem of problems) counts[problem.severity === 'error' ? 'errors' : problem.severity === 'warning' ? 'warnings' : 'minor']++;
-  return counts;
+// The log without the build folder's path or the home directory.
+export function scrubLog(text: string, folder?: string, home = os.homedir()) {
+  if (folder && folder.length > 1) text = text.split(folder).join('…');
+  if (home && home.length > 1) text = text.split(home + path.sep).join('~' + path.sep);
+  return text;
 }
 
 const stripComments = (line: string) => line.replace(/(^|[^\\])%.*$/, '$1');
-function texFiles(folder: string, skip: string) {
-  const files: string[] = [];
-  const walk = (dir: string) => {
-    let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) { if (!entry.name.startsWith('.') && entry.name !== 'node_modules' && full !== skip) walk(full); }
-      else if (entry.name.endsWith('.tex')) files.push(full);
-    }
-  };
-  walk(folder);
-  return files;
-}
+// Files TeX writes for itself: the build folder and auxiliary files. A problem
+// reported in one has no place in the manuscript to show.
+const GENERATED = new Set(['.aux', '.bbl', '.toc', '.lof', '.lot', '.loa', '.out', '.ind', '.idx', '.gls', '.glo', '.nls', '.brf', '.nav', '.snm', '.vrb', '.bcf']);
 
 // Where every problem is in the manuscript. TeX names files relative to the
 // directory it ran in; the paper shows them relative to its repository, like
-// note sources. A label defined twice is listed at each definition.
-export function collectProblems(log: string, { cwd, root, sourceDir }: { cwd: string; root: string; sourceDir: string }): StoredProblem[] {
-  const resolve = (name: string) => path.resolve(cwd, name);
-  const parsed = parseLatexLog(log, name => { try { return fs.statSync(resolve(name)).isFile(); } catch { return false; } });
+// note sources. A label defined twice is listed at each definition among the
+// files TeX read.
+export function collectProblems(log: string | Buffer, { cwd, root, sourceDir, outDir = path.join(cwd, 'build') }: { cwd: string; root: string; sourceDir: string; outDir?: string }): StoredProblem[] {
+  const resolve = (name: string) => path.resolve(cwd, name), known = new Map<string, boolean>(), opened = new Set<string>();
+  const isFile = (name: string) => {
+    let result = known.get(name);
+    if (result === undefined) { try { result = fs.statSync(resolve(name)).isFile(); } catch { result = false; } known.set(name, result); }
+    return result;
+  };
+  const parsed = parseLatexLog(log, isFile, opened);
   const display = (absolute: string) => {
     const relative = path.relative(root, absolute);
     return relative.startsWith('..') || path.isAbsolute(relative) ? undefined : path.posix.join(sourceDir || '', relative.split(path.sep).join('/'));
+  };
+  const generated = (absolute: string) => {
+    const inside = path.relative(outDir, absolute);
+    return (!inside.startsWith('..') && !path.isAbsolute(inside)) || GENERATED.has(path.extname(absolute)) || absolute.endsWith('.run.xml');
   };
   let sources: { file: string; lines: string[] }[] | null = null;
   const output: StoredProblem[] = [];
   for (const { input, ...problem } of parsed) {
     if (problem.kind === 'label' && problem.key) {
-      sources ??= texFiles(root, path.join(cwd, 'build')).map(file => ({ file, lines: fs.readFileSync(file, 'utf8').split('\n') }));
+      sources ??= [...opened].map(resolve).filter(file => file.endsWith('.tex') && display(file) !== undefined && !generated(file)).flatMap(file => {
+        try { return [{ file, lines: fs.readFileSync(file, 'utf8').split('\n') }]; } catch { return []; }
+      });
       const needle = `\\label{${problem.key}}`, places: StoredProblem[] = [];
       for (const { file, lines } of sources) lines.forEach((text, index) => {
         if (stripComments(text).includes(needle)) places.push({ ...problem, file: display(file), line: index + 1, source: file });
@@ -180,7 +219,14 @@ export function collectProblems(log: string, { cwd, root, sourceDir }: { cwd: st
       output.push(...(places.length ? places : [problem]));
       continue;
     }
-    const absolute = input ? resolve(input) : undefined, file = absolute ? display(absolute) : undefined;
+    const absolute = input ? resolve(input) : undefined;
+    if (absolute && generated(absolute)) {
+      // An error in, say, the .bbl names that file so its cause can be traced.
+      const named = problem.severity === 'error' ? { message: `${path.basename(absolute)}${problem.line ? ':' + problem.line : ''}: ${problem.message}` } : {};
+      output.push({ ...problem, ...named, line: undefined, end: undefined });
+      continue;
+    }
+    const file = absolute ? display(absolute) : undefined;
     output.push(file ? { ...problem, file, source: absolute } : { ...problem, line: undefined, end: undefined });
   }
   return output;
@@ -203,9 +249,20 @@ export function parseSynctexView(output: string): SyncBox[] {
 interface PageText { width: number; height: number; bounds: number[]; search(needle: string): number[][] }
 // Put each problem on the page SyncTeX names. A missing reference or citation
 // is narrowed to its "??" or "?" in that line; everything else marks its lines.
-export async function locateProblems(problems: StoredProblem[], pdf: string, openPage: (page: number) => PageText | null): Promise<BuildProblem[]> {
-  const view = async (file: string, line: number) => {
-    try { return parseSynctexView((await exec('synctex', ['view', '-i', `${line}:0:${file}`, '-o', pdf], { timeout: 10000 })).stdout); } catch { return []; }
+// Which problems get a place when there are more than `limit`: errors, then
+// warnings, then typesetting, each in the order TeX reported them.
+export function placementOrder(problems: Pick<BuildProblem, 'severity'>[], limit = LOCATE_LIMIT) {
+  const rank = { error: 0, warning: 1, minor: 2 };
+  return new Set(problems.map((problem, index) => index).sort((a, b) => rank[problems[a].severity] - rank[problems[b].severity] || a - b).slice(0, limit));
+}
+
+export async function locateProblems(problems: StoredProblem[], pdf: string, openPage: (page: number) => PageText | null, limit = LOCATE_LIMIT): Promise<BuildProblem[]> {
+  // SyncTeX reads its whole file on every call, so each source line is asked once.
+  const views = new Map<string, Promise<SyncBox[]>>();
+  const view = (file: string, line: number) => {
+    const id = `${line}:${file}`;
+    if (!views.has(id)) views.set(id, exec('synctex', ['view', '-i', `${line}:0:${file}`, '-o', pdf], { timeout: 10000 }).then(result => parseSynctexView(result.stdout), () => []));
+    return views.get(id)!;
   };
   // TeX warns about the missing references of one source line in reading
   // order, so the second warning for a line belongs to its second "??".
@@ -245,11 +302,11 @@ export async function locateProblems(problems: StoredProblem[], pdf: string, ope
     const unit = (value: number) => Math.min(1, Math.max(0, Math.round(value * 10000) / 10000));
     return { ...shown, page, rect: [unit((rect[0] - x0) / text.width), unit((rect[1] - y0) / text.height), unit((rect[2] - x0) / text.width), unit((rect[3] - y0) / text.height)] };
   };
-  const output: BuildProblem[] = new Array(problems.length);
+  const output: BuildProblem[] = new Array(problems.length), chosen = placementOrder(problems, limit);
   let next = 0;
   await Promise.all(Array.from({ length: 6 }, async () => {
     for (let index = next++; index < problems.length; index = next++) {
-      if (index >= LOCATE_LIMIT) { const { source: _source, ...shown } = problems[index]; output[index] = shown; continue; }
+      if (!chosen.has(index)) { const { source: _source, ...shown } = problems[index]; output[index] = shown; continue; }
       output[index] = await place(problems[index]);
     }
   }));

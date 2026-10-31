@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { countProblems, parseLatexLog, parseSynctexView, unwrapLog } from '../src/server/build-problems.ts';
+import { collectProblems, countProblems, parseLatexLog, parseSynctexView, placementOrder, scrubLog, unwrapLog } from '../src/server/build-problems.ts';
 import { Manuscripts } from '../src/server/manuscript.ts';
 
 const fixture = fs.readFileSync(new URL('./fixtures/problems.log', import.meta.url), 'utf8');
@@ -102,6 +102,98 @@ test('a remark repeated for many objects is listed once, and cleveref copies of 
   assert.deepEqual(problems.map(p => [p.kind, p.key ?? null, p.count ?? 1]), [['other', null, 3], ['label', 's:one', 1]]);
 });
 
+test('the source context after a pdfTeX warning cannot close the current file', () => {
+  // hyperref's duplicate page anchor quotes the line from its left edge, so
+  // the ")" of a parenthetical remark arrives without its "(".
+  const log = [
+    '(./main.tex (./chap.tex [1]',
+    'pdfTeX warning (ext4): destination with the same identifier (name{page.1}) has ',
+    'been already used, duplicate ignored',
+    '<to be read again> ',
+    '                   \\relax ',
+    'l.4 ...that goes on and on and on and on) \\newpage',
+    '                                                   [1]',
+    '',
+    "LaTeX Warning: Reference `c:missing' on page 2 undefined on input line 5.",
+    '',
+    ')',
+    '',
+    "LaTeX Warning: Reference `m:after' on page 2 undefined on input line 5.",
+    ')',
+  ].join('\n');
+  const problems = parseLatexLog(log, name => ['./main.tex', './chap.tex'].includes(name));
+  assert.deepEqual(problems.filter(p => p.kind === 'reference').map(p => [p.key, p.input]), [['c:missing', './chap.tex'], ['m:after', './main.tex']]);
+  // TeX goes on printing after the context's indented second half, so a file
+  // that ends there closes, and the next one opens, on that line.
+  const next = [
+    '(./main.tex (./a.tex',
+    'pdfTeX warning (ext4): destination with the same identifier (name{equation.5}) ',
+    'has been already used, duplicate ignored',
+    '<to be read again> ',
+    '                   \\relax ',
+    'l.105 \\begin{equation}',
+    '                      ) (./b.tex',
+    "LaTeX Warning: Reference `b:one' on page 3 undefined on input line 4.",
+    '',
+    '))',
+  ].join('\n');
+  assert.deepEqual(parseLatexLog(next, name => ['./main.tex', './a.tex', './b.tex'].includes(name)).filter(p => p.kind === 'reference').map(p => [p.key, p.input]), [['b:one', './b.tex']]);
+});
+
+test('file names TeX wrapped inside a character, or with spaces, keep their file', () => {
+  const name = './章节目录/第一部分的很长的目录名称用于测试/引言和背景介绍.tex', opened = Buffer.from('(' + name);
+  // pdfTeX cuts at 79 bytes, here inside 背; LuaTeX breaks before a character that would not fit.
+  let lua = 79; while ((opened[lua] & 0xc0) === 0x80) lua--;
+  const isFile = (file: string) => ['./main.tex', name, './sub dir/my chapter.tex'].includes(file);
+  for (const cut of [79, lua]) {
+    const log = Buffer.concat([Buffer.from('(./main.tex\n'), opened.subarray(0, cut), Buffer.from('\n'), opened.subarray(cut), Buffer.from("\n\nLaTeX Warning: Reference `a:inside' on page 1 undefined on input line 3.\n\n)\n)\n")]);
+    assert.deepEqual(brief(parseLatexLog(log, isFile)), [['reference', 'a:inside', name, 3, null]], `cut at ${cut} bytes`);
+  }
+  // pdfTeX prints a name with spaces without quotes.
+  const spaced = "(./main.tex (./sub dir/my chapter.tex\n\nLaTeX Warning: Reference `c:in' on page 1 undefined on input line 1.\n\n)\n)";
+  assert.deepEqual(brief(parseLatexLog(spaced, isFile)), [['reference', 'c:in', './sub dir/my chapter.tex', 1, null]]);
+});
+
+test('labels are looked up only in files TeX read, count once, and generated files are named rather than shown', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-labels-'));
+  try {
+    fs.mkdirSync(path.join(root, 'build'));
+    fs.writeFileSync(path.join(root, 'main.tex'), '\\section{A}\\label{dup}\n\\input{chap}\n');
+    fs.writeFileSync(path.join(root, 'chap.tex'), 'Text.\n\\section{B}\\label{dup}\n');
+    fs.writeFileSync(path.join(root, 'main_old.tex'), '\\label{dup}\n');
+    fs.writeFileSync(path.join(root, 'build/main.bbl'), '\\begin{thebibliography}{1}\n');
+    const log = [
+      '(./main.tex (build/main.aux',
+      '',
+      "LaTeX Warning: Label `dup' multiply defined.",
+      '',
+      ') (./chap.tex) (build/main.bbl',
+      '',
+      'Package biblatex Warning: The following entry could not be found',
+      '(biblatex)                in the database: knuth',
+      '',
+      'build/main.bbl:5: Misplaced alignment tab character &.',
+      'l.5 \\newblock {\\em Tables &',
+      '                            ',
+      '))',
+    ].join('\n');
+    const problems = collectProblems(log, { cwd: root, root, sourceDir: 'paper' });
+    assert.deepEqual(problems.map(p => [p.kind, p.file ?? null, p.line ?? null]), [['label', 'paper/main.tex', 1], ['label', 'paper/chap.tex', 2], ['other', null, null], ['error', null, null]]);
+    assert.equal(problems[3].message, 'main.bbl:5: Misplaced alignment tab character &.');
+    assert.deepEqual(countProblems(problems), { errors: 1, warnings: 1, minor: 1 });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('errors and warnings are placed before typesetting remarks when there are too many', () => {
+  const severities = ['minor', 'minor', 'warning', 'minor', 'error'] as const;
+  assert.deepEqual([...placementOrder(severities.map(severity => ({ severity })), 2)].sort(), [2, 4]);
+});
+
+test('the served log hides the build folder and home, even when home is the root', () => {
+  assert.equal(scrubLog('/data/build/x.tex in /Users/me/paper', '/data/build', '/Users/me'), '…/x.tex in ~/paper');
+  assert.equal(scrubLog('(/usr/share/a.sty)', undefined, '/'), '(/usr/share/a.sty)');
+});
+
 test('log lines TeX wrapped at 79 characters are joined again', () => {
   const long = 'x'.repeat(79);
   assert.deepEqual(unwrapLog(`${long}\nend\nshort\n`), [`${long}end`, 'short', '']);
@@ -135,7 +227,8 @@ test('a compiled paper lists its problems on the pages where they appear', { ski
     git('init', '-q'); git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Paper');
     const build = await settled();
     assert.equal(build.status, 'ready', build.error);
-    assert.deepEqual(build.problems, { errors: 0, warnings: 5, minor: 1 });
+    // The label defined twice is listed at both places but counts once.
+    assert.deepEqual(build.problems, { errors: 0, warnings: 4, minor: 1 });
     const result = await manuscripts.problems('paper');
     assert.equal(result.key, build.key);
     const brief = result.problems.map(p => [p.kind, p.key ?? null, p.file, p.line, p.page]);
@@ -160,9 +253,39 @@ test('a compiled paper lists its problems on the pages where they appear', { ski
     const failed = await settled();
     assert.equal(failed.status, 'failed');
     assert.equal(failed.key, build.key);
-    assert.deepEqual(failed.problems, { errors: 1, warnings: 5, minor: 1 });
+    assert.deepEqual(failed.problems, { errors: 1, warnings: 4, minor: 1 });
     const errors = await manuscripts.problems('paper');
     assert.equal(errors.key, build.key);
     assert.deepEqual(errors.problems.map(p => [p.kind, p.file, p.line, p.page]), [['error', 'chapters/two.tex', 2, undefined], ...brief.map(([kind, , file, line, page]) => [kind, file, line, page])]);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a failure outside TeX, or in a file TeX generated, still says what went wrong', { skip: !latexmk && 'needs latexmk, pdflatex and bibtex', timeout: 120000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-bib-'));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root }).toString().trim();
+  const manuscripts = new Manuscripts();
+  async function settled() {
+    for (let attempt = 0; attempt < 600; attempt++) {
+      const { build } = await manuscripts.state('paper', root);
+      if (build.status !== 'building') return build;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Compilation did not finish');
+  }
+  try {
+    fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nHello \\cite{knuth}.\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n');
+    fs.writeFileSync(path.join(root, 'refs.bib'), '@book{knuth, author={Donald Knuth}, title={The TeXbook}, year={1984}, publisher={AW}}\n@article{broken, author = {A, title = {unterminated\n');
+    git('init', '-q'); git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Paper');
+    // BibTeX fails; the TeX log has no error at all.
+    assert.equal((await settled()).status, 'failed');
+    const bibtex = (await manuscripts.problems('paper')).problems.filter(p => p.severity === 'error');
+    assert.equal(bibtex.length, 1);
+    assert.match(bibtex[0].message, /Illegal end of database file---line 2 of file refs\.bib/);
+    assert.doesNotMatch(bibtex[0].message, /cache\/builds/);
+    // TeX fails inside the .bbl that BibTeX wrote.
+    fs.writeFileSync(path.join(root, 'refs.bib'), '@book{knuth, author={Donald Knuth}, title={Tables & Alignment}, year={1984}, publisher={AW}}\n');
+    assert.equal((await settled()).status, 'failed');
+    const bbl = (await manuscripts.problems('paper')).problems.filter(p => p.severity === 'error');
+    assert.deepEqual(bbl.map(p => [p.message, p.file]), [['main.bbl:5: Misplaced alignment tab character &.', undefined]]);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

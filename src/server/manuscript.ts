@@ -11,7 +11,7 @@ import type { Annotation, BuildProblem, GitFile, GitStatus, ManuscriptBuild, Man
 import { notesInstructions } from '../notes.ts';
 import { ignorePattern } from '../commit.ts';
 import { AnnotationPages, placeAnnotation } from './annotation-placement.ts';
-import { collectProblems, countProblems, locateProblems, sortProblems, type StoredProblem } from './build-problems.ts';
+import { collectProblems, countProblems, locateProblems, scrubLog, sortProblems, type StoredProblem } from './build-problems.ts';
 
 type Rect = [number, number, number, number];
 
@@ -348,12 +348,7 @@ interface Build {
   problems?: StoredProblem[]; problemsKey?: string; log?: string; logFolder?: string;
 }
 
-// The TeX log, without the build folder's absolute path.
-function readLog(file: string, folder?: string) {
-  let text = fs.readFileSync(file, 'utf8');
-  if (folder) text = text.split(folder).join('…');
-  return text.split(os.homedir()).join('~');
-}
+
 
 export class Manuscripts extends EventEmitter {
   private builds = new Map<string, Build>();
@@ -392,8 +387,10 @@ export class Manuscripts extends EventEmitter {
         if (this.builds.get(projectId) !== build) return;
         const log = String(result.pdf).replace(/\.pdf$/, '.log');
         let problems: StoredProblem[] = [];
-        try { problems = collectProblems(fs.readFileSync(log, 'utf8'), { cwd: result.cwd, root: result.root, sourceDir: project!.source_dir || '' }); } catch { /* A build without a readable log reports no problems. */ }
+        try { problems = collectProblems(fs.readFileSync(log), { cwd: result.cwd, root: result.root, sourceDir: project!.source_dir || '', outDir: path.dirname(result.pdf) }); } catch { /* A build without a readable log reports no problems. */ }
         Object.assign(build, { status: 'ready', key, pdf: result.pdf, root: result.root, sourceDir: project!.source_dir || '', pages, builtAt: Date.now(), error: undefined, problems, problemsKey: key, log: fs.existsSync(log) ? log : undefined, logFolder: path.dirname(result.root) });
+        // Place the problems now, so the list is ready when someone opens it.
+        if (problems.length) void this.problems(projectId).catch(() => undefined);
       } catch (error) {
         if (this.builds.get(projectId) !== build) return;
         const detail = error as { message?: string; details?: string[]; log?: string };
@@ -402,16 +399,20 @@ export class Manuscripts extends EventEmitter {
         // build; its sources are gone, so files resolve in the working tree.
         let problems: StoredProblem[] = [];
         if (detail.log && project) try {
-          const kept = fs.readFileSync(detail.log, 'utf8'), marker = '\n\n--- TeX log ---\n', at = kept.indexOf(marker);
+          const kept = fs.readFileSync(detail.log), marker = Buffer.from('\n\n--- TeX log ---\n'), at = kept.indexOf(marker);
           // TeX stopped in its first pass, before references resolve, so only
           // the errors of a failed run mean anything.
-          if (at >= 0) problems = collectProblems(kept.slice(at + marker.length), { cwd: path.join(root, project.doc_dir || '.'), root: path.join(root, project.source_dir || '.'), sourceDir: project.source_dir || '' })
+          if (at >= 0) problems = collectProblems(kept.subarray(at + marker.length), { cwd: path.join(root, project.doc_dir || '.'), root: path.join(root, project.source_dir || '.'), sourceDir: project.source_dir || '' })
             .filter(problem => problem.severity === 'error').map(({ source: _source, ...problem }) => problem);
         } catch { /* Fall back to the compiler's own message below. */ }
-        if (!problems.length) problems.push({ kind: 'error', severity: 'error', message: detail.message || message });
+        // BibTeX, Biber, latexmk and helper programs fail outside the TeX log;
+        // whatever the compiler said that the parsed errors do not cover stays.
+        const plain = (text: string) => text.replace(/\s+/g, ' ').trim();
+        const unexplained = (detail.details || []).filter(line => line.trim() && !/==> Fatal error occurred|^Emergency stop/.test(line) && !problems.some(problem => plain(line).includes(plain(problem.message).replace(/^[^:]+:\d+: /, ''))));
+        const logFolder = detail.log && project ? path.join(project.state, 'cache/builds', path.basename(detail.log, '.log')) : undefined;
+        if (!problems.length || unexplained.length) problems.push({ kind: 'error', severity: 'error', message: scrubLog([...(problems.length ? [] : [detail.message || 'The manuscript could not be compiled.']), ...unexplained].join('\n'), logFolder) });
         // The previous PDF stays on screen, and so do its warnings and places.
         const shown = build.problemsKey && build.problemsKey === build.key ? (build.problems || []).filter(problem => problem.severity !== 'error') : [];
-        const logFolder = detail.log && project ? path.join(project.state, 'cache/builds', path.basename(detail.log, '.log')) : undefined;
         Object.assign(build, { status: 'failed', error: message, problems: [...problems, ...shown], problemsKey: shown.length ? build.problemsKey : undefined, log: detail.log && fs.existsSync(detail.log) ? detail.log : undefined, logFolder });
       }
       this.emit('change', projectId);
@@ -499,7 +500,7 @@ export class Manuscripts extends EventEmitter {
   log(projectId: string) {
     const build = this.builds.get(projectId);
     if (!build?.log || !fs.existsSync(build.log)) throw Object.assign(new Error('There is no compilation log yet.'), { statusCode: 404 });
-    return readLog(build.log, build.logFolder);
+    return scrubLog(fs.readFileSync(build.log, 'utf8'), build.logFolder);
   }
 
   pdf(projectId: string, key: string) {

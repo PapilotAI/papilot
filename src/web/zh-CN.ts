@@ -428,7 +428,7 @@ export const zhCN: Record<string, string> = {
   'Close the current editor or cancel region selection.': '关闭当前编辑器或取消画框。',
   'Undefined reference': '未定义的引用', 'Undefined citation': '未定义的文献', 'Label defined more than once': '标签重复定义',
   'Missing file': '缺少文件', 'Missing character': '缺少字符', 'Line too wide by {amount}pt': '行宽超出 {amount}pt',
-  'Fix these problems from the last compilation:': '修复上次编译报告的这些问题：', 'Errors': '错误', 'Warnings': '警告',
+  'Errors': '错误', 'Warnings': '警告',
   '{n} compilation error': '{n} 个编译错误', '{n} compilation errors': '{n} 个编译错误', '{n} compilation warning': '{n} 个编译警告', '{n} compilation warnings': '{n} 个编译警告',
   'Compilation log': '编译日志', 'p. {page}': '第 {page} 页', 'Compilation problems': '编译问题', 'Recompiling; this list will update.': '正在重新编译，列表稍后更新。',
   'Loading…': '正在加载…', 'The first build is still running.': '首次编译仍在进行。', 'No problems in the last build.': '上次编译没有发现问题。',

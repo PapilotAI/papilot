@@ -97,6 +97,15 @@ export interface BuildProblem {
   page?: number; rect?: [number, number, number, number];
 }
 export interface BuildProblemCounts { errors: number; warnings: number; minor: number }
+// A label defined twice is listed at each definition but counts as one problem.
+export function countProblems(problems: Pick<BuildProblem, 'severity' | 'kind' | 'key'>[]): BuildProblemCounts {
+  const counts = { errors: 0, warnings: 0, minor: 0 }, labels = new Set<string>();
+  for (const problem of problems) {
+    if (problem.kind === 'label' && problem.key) { if (labels.has(problem.key)) continue; labels.add(problem.key); }
+    counts[problem.severity === 'error' ? 'errors' : problem.severity === 'warning' ? 'warnings' : 'minor']++;
+  }
+  return counts;
+}
 // `key` names the PDF whose pages the locations refer to.
 export interface ManuscriptProblems { status: ManuscriptBuild['status']; key?: string; problems: BuildProblem[]; log: boolean }
 export interface Annotation { group?: NoteGroup; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
