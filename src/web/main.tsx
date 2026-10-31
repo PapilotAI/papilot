@@ -44,7 +44,7 @@ import { locale, t, tn, useLanguage } from './i18n.ts';
 import { notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
 import { Markdown } from './markdown.tsx';
 import logo from './logo.svg';
-import { AgentConnectionNotice, AgentPicker, ModelLabel } from './agent-picker.tsx';
+import { AgentConnectionNotice, AgentPicker, ModelLabel, taskEffort } from './agent-picker.tsx';
 import { UsageSummary } from './usage.tsx';
 import { useNoteUndo } from './use-note-undo.ts';
 import { NoteResultsProvider, NoteResultLinks, useNoteResults } from './note-results.tsx';
@@ -757,9 +757,10 @@ function App() {
   const [savedAgent, setAgentChoice] = useState<AgentId>(() => { const saved = browserStorage.getItem('papilot:agent'); return isAgentId(saved) ? saved : 'codex'; });
   const [agentPrefs, setAgentPrefs] = useState(() => Object.fromEntries(AGENT_IDS.map(id => [id, {
     model: browserStorage.getItem(`papilot:model:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:model') : null) ?? '',
-    effort: browserStorage.getItem(`papilot:effort:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:effort') : null) ?? '',
+    // null until an effort is chosen; '' is an explicit choice of the model's default.
+    effort: browserStorage.getItem(`papilot:effort:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:effort') : null),
     fast: browserStorage.getItem(`papilot:fast:${id}`) === 'true',
-  }])) as Record<AgentId, { model: string; effort: string; fast: boolean }>);
+  }])) as Record<AgentId, { model: string; effort: string | null; fast: boolean }>);
   const [creating, setCreating] = useState(false), [createError, setCreateError] = useState('');
   const [addedTask, setAddedTask] = useState<Pick<Task, 'id' | 'title'> | null>(null);
   useEffect(() => {
@@ -967,7 +968,6 @@ function App() {
   // A remembered choice the host no longer offers falls back to its default;
   // the preference is kept in case another model offers it again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
-  const unavailable = (id: AgentId) => Boolean(runtimes[id]?.error && !(runtimes[id]?.connected && runtimes[id]?.authenticated));
   // Only agents found on the host are offered. A remembered agent that is not
   // found falls back to Codex without forgetting the choice.
   const offered = AGENT_IDS.filter(id => id === 'codex' || Boolean(runtimes[id] && runtimes[id]!.installed !== false));
@@ -975,15 +975,19 @@ function App() {
   const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;
   const modelInfo = models.find(m => m.id === chosenModel) || models.find(m => m.isDefault);
-  const agent = { agent: agentChoice, model: chosenModel, effort: modelInfo && !modelInfo.efforts.includes(pref.effort) ? '' : pref.effort, serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
+  const agent = { agent: agentChoice, model: chosenModel, effort: taskEffort(pref.effort, modelInfo), serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
   const remember = (change: Partial<{ model: string; effort: string; fast: boolean }>) => {
     setAgentPrefs(current => ({ ...current, [agentChoice]: { ...current[agentChoice], ...change } }));
     for (const [key, value] of Object.entries(change)) browserStorage.setItem(`papilot:${key}:${agentChoice}`, String(value));
   };
-  const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast} models={models}
-    agents={offered.map(id => ({ value: id, label: AGENT_LABELS[id], unavailable: unavailable(id) }))}
-    runtime={runtimes[agentChoice]} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}
-    onAgent={value => { setAgentChoice(value); browserStorage.setItem('papilot:agent', value); }} onChange={remember}/>;
+  // One choice in the picker sets both the agent and its model.
+  const chooseModel = (id: AgentId, model: string) => {
+    setAgentChoice(id); browserStorage.setItem('papilot:agent', id);
+    setAgentPrefs(current => ({ ...current, [id]: { ...current[id], model } })); browserStorage.setItem(`papilot:model:${id}`, model);
+  };
+  const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
+    agents={offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] }))}
+    reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onSelect={chooseModel} onChange={remember}/>;
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
     const attached = noteSelection.selected, files = newFiles.draft.getSnapshot().files;
