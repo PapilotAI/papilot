@@ -1,5 +1,6 @@
 import { noteGroups, type NoteGroup } from '../note-groups.ts';
 import { GroupPicker, GroupCard, GroupAction, groupStyle, groupName } from './note-groups.tsx';
+import { NoteBody, NoteQuote } from './note-content.tsx';
 import groupStyles from './note-groups.css?inline';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -302,8 +303,10 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
       <header><strong>{hasGroups ? t('PDF annotations') : draft.notes.length ? t('Review notes ({n})', { n: draft.notes.length }) : t('Review notes')}</strong><button type="button" aria-label={t('Close review notes')} onClick={close}>×</button></header>
         {draft.editing ? <form onSubmit={e => { e.preventDefault(); save(); }}>
           <small>{noteLocation(draft.editing.where)}</small>
-          {draft.editing.quote && <blockquote>{draft.editing.quote}</blockquote>}
+          <NoteQuote text={draft.editing.quote}/>
+          <NoteBody>
           <textarea autoFocus aria-label={t('Note for the agent')} rows={3} maxLength={4000} placeholder={t('What should change here?')} value={draft.editing.comment} onChange={e => update({ ...draft, editing: { ...draft.editing!, comment: e.target.value } })} onKeyDown={e => { if (sendsMessage(e.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { e.preventDefault(); save(); } }}/>
+          </NoteBody>
           <footer><button type="button" onClick={finishEdit}>{t('Cancel')}</button><button className="primary" disabled={!draft.editing.comment.trim()}>{draft.editing.id ? t('Save') : t('Add note')}</button></footer>
         </form> : <>
           {noteGroups(draft.notes).map(({ group, entries }) => <GroupCard key={group} group={group} count={entries.length}>
@@ -311,8 +314,9 @@ export function ReviewNotes({ doc, task, onSend }: { doc: Document | null; task:
           </GroupCard>)}
           {hasGroups && <textarea aria-label={t('Instructions for color groups')} placeholder={t('What should change in each color group?')} value={draft.instructions || ''} disabled={busy} onChange={event => update({ ...current.current.draft, instructions: event.target.value, requestKey: uuid() })}/>}
           {draft.notes.length ? <ol>{draft.notes.map((note, index) => !note.group && <li key={note.id} data-note={note.id}>
-            <div><button className="review-note-location" onClick={() => { layers.find(layer => layer.key === note.strip)?.strip.scrollIntoView({ block: 'center' }); setOpen(false); }}>{index + 1}. {noteLocation(note.where)}</button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={busy} onClick={() => remove(note)}>×</button></div>
-            {note.quote && <blockquote>{note.quote}</blockquote>}<button type="button" className="note-comment" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={busy} onClick={() => editNote(note)}><span>{note.comment}</span><Icon name="pencil" size={13}/></button>
+            <div className="review-note-head"><button className="review-note-location" onClick={() => { layers.find(layer => layer.key === note.strip)?.strip.scrollIntoView({ block: 'center' }); setOpen(false); }}>{index + 1}. {noteLocation(note.where)}</button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={busy} onClick={() => remove(note)}>×</button></div>
+            <NoteQuote text={note.quote}/>
+            <NoteBody><button type="button" className="note-comment" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={busy} onClick={() => editNote(note)}><span>{note.comment}</span><Icon name="pencil" size={13}/></button></NoteBody>
             {note.round !== task.review?.round && <small>{t('Marked on earlier changes.')}</small>}
           </li>)}</ol> : <div className="review-notes-empty"><p>{t('No notes yet')}</p><div className="review-note-actions">
             <button type="button" onClick={() => annotate(true)}><Icon name="region" size={16}/>{t('Region note')}</button>

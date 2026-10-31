@@ -570,7 +570,7 @@ try {
   noteBox = await selectText();
   await noteBox.fill('Shorten this sentence.');
   await noteBox.press('Enter');
-  await notesPanel.getByText('The marked \\emph{fixture} sentence.', { exact: true }).waitFor();
+  await notesPanel.getByText('Fixture sentence about', { exact: true }).waitFor();
   assert.equal(annotations[0].page, 0);
   assert.equal(annotations[0].key, 'fixture');
   assert.equal(annotations[0].quote, 'Fixture sentence about');

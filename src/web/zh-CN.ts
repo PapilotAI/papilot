@@ -6,6 +6,7 @@ export const zhCN: Record<string, string> = {
   'Yellow': '黄色', 'Green': '绿色', 'Purple': '紫色', 'Orange': '橙色', 'Red': '红色',
   'Annotation groups': '批注组', 'Annotation group color': '批注组颜色', 'Individual notes': '单条批注',
   'Color': '颜色', 'Add to group': '加入批注组',
+  'Quoted text': '引用原文', 'Your note': '批注内容',
   '{n} location': '{n} 处', '{n} locations': '{n} 处', 'Add to {group}': '加入{group}组',
   'Instructions for color groups': '各颜色组的修改要求',
   'Send annotations': '发送标注', 'Send annotations to the agent': '发送标注给代理',

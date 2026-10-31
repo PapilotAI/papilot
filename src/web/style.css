@@ -523,17 +523,15 @@ body.resizing iframe{pointer-events:none}
 .draft-notes-head{flex:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px;padding-bottom:6px;font-size:12px;color:var(--text-3)}
 .note-entry-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px}
 .note-entry-hint{font-size:12px;white-space:nowrap}
-.note-list{flex:1;min-height:0;overflow:auto;list-style:none;margin:0;padding:4px}
-.note-list li{padding:10px 10px 12px 12px;margin-bottom:6px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg);transition:border-color .15s,box-shadow .15s}
+.note-list{flex:1;min-height:0;overflow:auto;list-style:none;margin:2px 0 0;padding:0}
+.note-list li{padding:6px 10px;margin-bottom:6px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg);transition:border-color .15s}
 .note-list li:hover{border-color:var(--line-strong)}
-.note-list li.active{border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+.note-list li.active{border-color:var(--accent-line)}
 .note-list li.stale{background:var(--bg-subtle)}
-.note-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.note-number{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--primary);color:#fff;font-size:11.5px;font-weight:600;line-height:20px;text-align:center}
-.note-where{flex:1;min-width:0;font:12px/1.4 var(--mono);color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note-head{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.note-number{min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:500;line-height:20px;text-align:center}
+.note-where{flex:1;min-width:0;font:12px/1.5 var(--sans);color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .note-head .icon-button{width:26px;height:26px;border-radius:var(--r-sm)}
-.note-list blockquote{margin:0 0 6px;padding-left:10px;border-left:3px solid var(--line-strong);font-size:13px;line-height:1.5;font-style:italic;color:var(--text-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.note-source{margin:0 0 8px;padding:7px 9px;max-height:7.5em;overflow:auto;background:var(--bg-subtle);border:1px solid var(--line);border-radius:var(--r);font:12px/1.5 var(--mono);color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere}
 .note-list p{margin:0;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .note-edit textarea{display:block;width:100%;min-height:80px;resize:vertical;padding:8px;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
 .note-edit textarea:focus{outline:2px solid var(--accent-line);border-color:var(--primary)}

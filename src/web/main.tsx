@@ -1,5 +1,6 @@
 import { noteGroups, type NoteGroup } from '../note-groups.ts';
 import { GroupCard } from './note-groups.tsx';
+import { NoteBody, NoteQuote } from './note-content.tsx';
 import { StrictMode, Suspense, createContext, lazy, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
@@ -529,7 +530,8 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
     </GroupCard>)}
     {notes.some(note => !note.group) && <ol ref={list} className="note-list">{notes.map((note, index) => !note.group && <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
       <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); })}><Icon name="close" size={14}/></button></div>
-      {note.source?.excerpt ? <pre className="note-source" title={t('{file}, the LaTeX that produced the marked region', { file: note.source.file })}>{note.source.excerpt}</pre> : note.quote && <blockquote>{note.quote}</blockquote>}
+      <NoteQuote text={note.quote}/>
+      <NoteBody>
       {editing?.id === note.id ? <form className="note-edit" onSubmit={e => { e.preventDefault(); save(note); }}>
         <textarea autoFocus aria-label={t('Edit note {n}', { n: index + 1 })} value={editing.comment} rows={3} maxLength={4000} disabled={locked}
           onChange={e => setEditing({ id: note.id, comment: e.target.value })} onKeyDown={e => {
@@ -538,6 +540,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
           }}/>
         <div className="button-row"><button type="button" className="button ghost compact" disabled={locked} onClick={() => { setError(''); finish(note.id); }}>{t('Cancel')}</button><button className="button primary compact" disabled={locked || !editing.comment.trim()}>{busy ? t('Saving…') : t('Save')}</button></div>
       </form> : <button type="button" className="note-comment" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={locked || Boolean(editing)} onClick={() => { setError(''); setEditing({ id: note.id, comment: note.comment }); }}><span>{note.comment}</span><Icon name="pencil" size={13}/></button>}
+      </NoteBody>
       {note.key !== currentKey && <small className="muted">{t('Marked on an earlier version of the PDF.')}</small>}
     </li>)}</ol>}
     {error && <p className="inline-error" role="alert">{error}</p>}
