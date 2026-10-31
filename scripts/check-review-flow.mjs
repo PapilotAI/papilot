@@ -20,6 +20,7 @@ let latest = 1, serial = 0, undo = null;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
 const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [];
 let gitFiles = [];
+let timeline = [];
 const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, history: Object.keys(rounds).map(number => ({ number: Number(number), created: 1793322000 + Number(number) * 120 })), round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: null });
 function update() {
   const values = Object.values(rounds[latest]);
@@ -41,7 +42,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
-  if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: [] } });
+  if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: timeline } });
   if (url.pathname.endsWith('/git')) return route.fulfill({ json: { branch: 'main', upstream: 'origin/main', remote: true, ahead: 0, behind: 0, head: null, files: gitFiles } });
   if (url.pathname.endsWith('/git/message') || url.pathname.endsWith('/commit-message')) { messageRequests.push(route.request().postDataJSON()); return route.fulfill({ json: { message: 'Explain the method', agent: 'codex' } }); }
   if (url.pathname.endsWith('/apply')) {
@@ -86,6 +87,69 @@ const sync = async () => page.evaluate(() => window.dispatchEvent(new Event('onl
 try {
   await page.goto(origin);
   await viewer().locator('.change.current').waitFor();
+  // Decisions replace the iframe's scroll layers. Wheel gestures must follow
+  // the pointer even if the browser retains Chat as their previous target.
+  timeline = Array.from({ length: 40 }, (_, i) => ({ id: `scroll-${i}`, taskId: task.id, type: 'assistant', text: `Review feedback ${i}.`, createdAt: i + 1 }));
+  await sync();
+  await expect(page.locator('.messages .message')).toHaveCount(40);
+  const paper = viewer().locator('#paper'), chat = page.locator('.messages');
+  const wheelReview = async () => {
+    await paper.evaluate(el => el.scrollTo({ top: 0, behavior: 'instant' }));
+    await chat.evaluate(el => { el.scrollTop = 200; });
+    await expect(chat).toHaveJSProperty('scrollTop', 200);
+    // Reproduce a stale wheel target with coordinates over the review pane.
+    const forwarded = await page.evaluate(() => {
+      const frame = document.querySelector('.review-frame'), box = frame.getBoundingClientRect();
+      const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2, deltaY: 120 });
+      document.querySelector('.messages').dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    assert.equal(forwarded, true, 'A stale Chat wheel target must be redirected to the paper under the pointer');
+    await expect.poll(() => paper.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+    assert.equal(await chat.evaluate(el => el.scrollTop), 200);
+    // A real wheel over the document also works with the Chat input focused.
+    await page.getByRole('textbox', { name: 'Instructions for Codex', exact: true }).focus();
+    await paper.evaluate(el => { el.scrollTop = 0; });
+    const box = await page.locator('.review-frame').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 120);
+    await expect.poll(() => paper.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+    assert.equal(await chat.evaluate(el => el.scrollTop), 200);
+  };
+  await page.setViewportSize({ width: 1440, height: 650 });
+  for (const decision of ['accept', 'reject']) {
+    await viewer().locator('.change.current button.' + decision).click();
+    await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '1');
+    await sync(); await wheelReview();
+    await viewer().getByRole('button', { name: 'History', exact: true }).click();
+    await viewer().getByRole('button', { name: 'Undo last decision', exact: true }).click();
+    await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '0');
+  }
+  // Nested editors keep their own wheel scrolling and zoom is left native.
+  const nested = await paper.evaluate(el => {
+    el.scrollTop = 0;
+    const area = document.createElement('textarea');
+    area.value = Array.from({ length: 40 }, (_, i) => `Line ${i}`).join('\n');
+    area.style.cssText = 'display:block;width:240px;height:100px;overflow:auto;position:sticky;top:0;z-index:20';
+    el.prepend(area);
+    const box = area.getBoundingClientRect();
+    area.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: box.x + 30, clientY: box.y + 30, deltaY: 50 }));
+    const scroll = area.scrollTop, rootScroll = el.scrollTop;
+    const zoom = new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true, clientX: box.x + 30, clientY: box.y + 30, deltaY: 50 });
+    area.dispatchEvent(zoom); area.remove();
+    return { scroll, rootScroll, zoomPrevented: zoom.defaultPrevented };
+  });
+  assert.equal(nested.scroll, 50); assert.equal(nested.rootScroll, 0); assert.equal(nested.zoomPrevented, false);
+  const paperTop = await paper.evaluate(el => el.scrollTop), chatBox = await chat.boundingBox();
+  await page.mouse.move(chatBox.x + 40, chatBox.y + 60);
+  await page.mouse.wheel(0, 120);
+  await expect.poll(() => chat.evaluate(el => el.scrollTop)).toBeGreaterThan(200);
+  assert.equal(await paper.evaluate(el => el.scrollTop), paperTop);
+  assert.deepEqual(await page.evaluate(() => [document.querySelector('.main').scrollTop, document.querySelector('.task-grid').scrollTop]), [0, 0]);
+  timeline = []; task.review.unsent = 0; await sync();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await paper.evaluate(el => { el.scrollTop = 0; });
+  console.log('PASS: Pointer-based review scrolling after accept/reject, independent Chat, nested editors, and native zoom');
   await expect(viewer().getByRole('button', { name: 'Keyboard shortcuts', exact: true })).toBeHidden();
   assert.equal(await page.locator('.review-notes-toggle').count(), 0);
   // Shortcut settings update the running review, survive reload, and retain
@@ -168,7 +232,7 @@ try {
     await expect(viewer().getByRole('button', { name: 'Previous change', exact: true })).toBeInViewport();
     await expect(viewer().getByRole('button', { name: 'Next change', exact: true })).toBeInViewport();
     await expect(viewer().getByRole('button', { name: 'History', exact: true })).toBeInViewport();
-    await expect(page.locator('.review-tools .review-open')).toBeInViewport();
+    await expect(page.getByRole('link', { name: 'Open review in new tab', exact: true })).toBeInViewport();
     await expect(page.locator('.review-tools .review-rebuild')).toBeInViewport();
     const position = await viewer().locator('.change.current .dock').evaluate(el => getComputedStyle(el).position);
     if (width > 520) assert.notEqual(position, 'fixed');

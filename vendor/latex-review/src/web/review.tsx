@@ -281,10 +281,19 @@ export function ReviewApp({
         const article = paper.current?.querySelector<HTMLElement>(
           `[data-stop="${index}"]`,
         );
-        article?.scrollIntoView({ block: "start", behavior: "smooth" });
+        if (article) reveal(article, "smooth");
         article?.focus({ preventScroll: true });
       });
     }
+  }
+  function reveal(article: HTMLElement, behavior: ScrollBehavior = "instant") {
+    const root = paper.current;
+    if (!root) return;
+    // scrollIntoView also scrolls ancestors across the embedding iframe.
+    // Navigation belongs to the paper, independently of the host's Chat.
+    const padding = parseFloat(getComputedStyle(root).scrollPaddingTop) || 0;
+    const margin = parseFloat(getComputedStyle(article).scrollMarginTop) || 0;
+    root.scrollTo({ top: root.scrollTop + article.getBoundingClientRect().top - root.getBoundingClientRect().top - padding - margin, behavior });
   }
   useEffect(() => {
     let cancelled = false,
@@ -369,11 +378,10 @@ export function ReviewApp({
   }, [task, pinned]);
   useEffect(() => {
     if (detail && current >= 0)
-      requestAnimationFrame(() =>
-        paper.current
-          ?.querySelector<HTMLElement>(`[data-stop="${current}"]`)
-          ?.scrollIntoView({ block: "start" }),
-      );
+      requestAnimationFrame(() => {
+        const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${current}"]`);
+        if (article) reveal(article);
+      });
   }, [detail?.round]);
   useEffect(() => {
     if (state) document.title = `${t(state.title)} · LaTeX Review`;

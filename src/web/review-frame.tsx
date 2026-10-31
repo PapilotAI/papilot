@@ -8,6 +8,7 @@ import { language, t, useLanguage } from './i18n.ts';
 import { useNoteResults } from './note-results.tsx';
 import { ReviewNoteConnections } from './review-note-connections.tsx';
 import { SHORTCUT_EVENT, useShortcuts } from './shortcuts.ts';
+import { installReviewScroll } from './review-scroll.ts';
 
 // The viewer reads the interface language from its address.
 export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number, change?: number) => `/review/${task.projectId}/?task=${task.name}${round ? `&round=${round}${change === undefined ? '&history=1' : `&change=${change}`}` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
@@ -131,7 +132,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       }
     }
     #paper{--paper-top:14px;padding-top:14px}
-    .review-body>#paper{padding-right:34px}
+    .review-body>#paper{padding-right:34px;overscroll-behavior:contain}
     .change-map{top:10px;bottom:10px;right:8px;width:14px;border:0;border-radius:0;background:none;box-shadow:none}
     .change-map::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;border-radius:2px;background:var(--line)}
     .change-map-viewport{left:50%;right:auto;width:4px;margin-left:-2px;border:0;border-radius:999px;background:var(--scroll-thumb);transition:width .15s,margin .15s,background-color .15s}
@@ -239,6 +240,9 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
   const [phase, setPhase] = useState<'loading' | 'ready' | 'slow' | 'error'>('loading');
   // A new language reloads the viewer in that language.
   const shown = useLanguage().language;
+  useEffect(() => {
+    if (document && frame.current) return installReviewScroll(frame.current, document);
+  }, [document]);
   useEffect(() => {
     const view = document?.defaultView;
     if (!view) return;
