@@ -1,0 +1,40 @@
+.settings-dialog:has(.about-settings){width:520px}
+.settings-dialog:has(.license-settings){width:640px}
+.settings-section-title{margin:22px 0 8px;font-size:12px;font-weight:500;color:var(--text-3)}
+.settings-preferences-title{margin:18px 0 0}
+.settings-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);margin-top:14px;padding-top:16px;font-size:12px;color:var(--text-3)}
+.settings-footer a{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+.settings-footer a:hover{color:var(--text)}
+.settings-resource{text-decoration:none;padding:12px 8px;gap:12px}
+.settings-resource strong{display:block;font-size:14px;font-weight:500;color:var(--text)}
+.settings-resource small{display:block;margin-top:3px;font-size:12px;font-weight:400;line-height:1.5;color:var(--text-3)}
+.settings-resource>span{min-width:0;overflow-wrap:anywhere}
+.settings-resource>.sr-only{flex:none}
+.settings-product{display:flex;align-items:center;gap:14px;margin:24px 0 18px}
+.settings-product img{flex:none}
+.settings-product-name{display:flex;align-items:center;gap:10px;font:400 29px/1.25 var(--serif)}
+.settings-version{padding:3px 7px;border:1px solid var(--line);border-radius:6px;font:12px/1.2 var(--sans);color:var(--text-3)}
+.settings-product p{margin:5px 0 0;font-size:13px;color:var(--text-2)}
+.settings-about-intro{font-size:13px;line-height:1.7;color:var(--text-2);margin-bottom:18px}
+.settings-resources{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px 0}
+.settings-credit{margin:20px 0 0;padding-top:16px;border-top:1px solid var(--line);font-size:12px;line-height:1.6;color:var(--text-3)}
+.settings-project-license summary,.settings-license-item summary{display:flex;align-items:center;gap:10px;padding:13px 8px;cursor:pointer;list-style:none;border-radius:var(--r)}
+.settings-project-license summary::-webkit-details-marker,.settings-license-item summary::-webkit-details-marker{display:none}
+.settings-project-license summary:hover,.settings-license-item summary:hover{background:var(--bg-hover)}
+.settings-project-license summary>span:first-child,.settings-license-component{flex:1;min-width:0;overflow-wrap:anywhere}
+.settings-project-license summary>svg,.settings-license-item summary>svg{color:var(--text-3);transition:transform .15s}
+.settings-project-license[open]>summary>svg,.settings-license-item[open]>summary>svg{transform:rotate(180deg)}
+.settings-license-badge{flex:none;max-width:45%;padding:3px 7px;border-radius:5px;background:var(--bg-muted);font:11px/1.5 var(--mono);color:var(--text-2);overflow-wrap:anywhere}
+.settings-project-license pre,.settings-license-body pre{max-height:280px;overflow:auto;margin:8px 0 14px;padding:14px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-subtle);font:12px/1.65 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2;color:var(--text-2)}
+.settings-license-search{position:relative;display:block;margin-bottom:12px;color:var(--text-3)}
+.settings-license-search>svg{position:absolute;top:11px;left:12px;pointer-events:none}
+.settings-dialog .settings-license-search input{padding-left:37px}
+.settings-license-count{margin:0 0 6px;font-size:12px;color:var(--text-3)}
+.settings-license-item{border-bottom:1px solid var(--line)}
+.settings-license-component strong{display:block;font-size:13px;font-weight:500}
+.settings-license-component small{display:block;margin-top:2px;color:var(--text-3);font-size:11px}
+.settings-license-body{padding:4px 8px 8px}
+.settings-license-body>a{display:inline-flex;align-items:center;gap:6px;color:var(--accent);font-size:12px;text-underline-offset:3px}
+.settings-license-body h4{margin:16px 0 6px;font-size:12px;font-weight:500;overflow-wrap:anywhere}
+.settings-license-empty,.settings-license-error{padding:24px 8px;color:var(--text-3);font-size:13px;text-align:center}
+@media(max-width:480px){.settings-product{gap:10px}.settings-product-name{font-size:26px}.settings-license-item summary{flex-wrap:wrap}.settings-license-item summary>.settings-license-component{flex-basis:calc(100% - 30px)}.settings-license-item summary>.settings-license-badge{order:2;max-width:100%}.settings-back{min-height:32px}}
