@@ -16,7 +16,7 @@ import { Diagnostics } from '../src/server/diagnostics.ts';
 import { PassThrough } from 'node:stream';
 import type { Codex } from '../src/server/codex.ts';
 import type { ReviewClient } from '../src/server/review.ts';
-import type { Task } from '../src/shared.ts';
+import type { Annotation, Task } from '../src/shared.ts';
 
 const ORIGIN = 'https://mini.example.ts.net:10000', PUBLIC = 'https://mini.example.ts.net:8443';
 const LOCAL = { host: '127.0.0.1:7274' }, REMOTE = { host: 'mini.example.ts.net:10000' };
@@ -74,6 +74,34 @@ test('diagnostics are owner-only, require CSRF and resolve only registered paper
     assert.deepEqual(f.diagnosticRequests, [{ repo: '/unused/thesis', port: 7274 }]);
     assert.equal((await f.local.inject({ ...request, headers, payload: {} })).statusCode, 200);
     assert.deepEqual(f.diagnosticRequests[1], { repo: undefined, port: 7274 });
+  } finally { await f.close(); }
+});
+
+test('recompilation persists confirmed note positions without losing edits, deleted notes, or unresolved notes', async () => {
+  const f = await fixture();
+  try {
+    const makeNote = (id: string): Annotation => ({ id, projectId: 'thesis', key: 'old', page: 0, rect: [0.1, 0.1, 0.3, 0.2], quote: 'Original marked text', comment: 'Original comment', source: null, createdAt: 1 });
+    const notes = ['matched', 'deleted', 'sent', 'unresolved'].map(makeNote);
+    notes.forEach(note => f.store.saveAnnotation(note));
+    f.manuscripts.state = async () => ({ git: { branch: 'main', upstream: null, ahead: 0, behind: 0, files: [], head: null }, build: { key: 'new', status: 'ready', current: true } });
+    f.manuscripts.reanchor = async (_id, _root, annotations) => {
+      f.store.saveAnnotation({ ...f.store.annotation('thesis', 'matched'), comment: 'Edited while compiling' });
+      f.store.deleteAnnotation('thesis', 'deleted');
+      f.store.saveAnnotation({ ...f.store.annotation('thesis', 'sent'), taskId: 'thesis-task' });
+      return annotations.map(note => note.id === 'unresolved' ? note : { ...note, key: 'new', page: 2 });
+    };
+    const response = await f.local.inject({ url: '/api/projects/thesis/manuscript', headers: LOCAL });
+    assert.equal(response.statusCode, 200);
+    const result = response.json().annotations;
+    assert.deepEqual(result.map((note: Annotation) => note.id), ['matched', 'unresolved']);
+    assert.equal(result[0].key, 'new');
+    assert.equal(result[0].page, 2);
+    assert.equal(result[0].comment, 'Edited while compiling');
+    assert.equal(result[0].quote, 'Original marked text');
+    assert.deepEqual(result[1], notes[3]);
+    assert.equal(f.store.annotation('thesis', 'matched').key, 'new');
+    assert.ok(f.store.annotation('thesis', 'deleted').deletedAt);
+    assert.equal(f.store.annotation('thesis', 'sent').key, 'old');
   } finally { await f.close(); }
 });
 

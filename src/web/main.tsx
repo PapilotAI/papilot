@@ -18,6 +18,7 @@ import { DeleteTaskDialog } from './task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { UpdateNotice } from './update-notice.tsx';
+import { CompileButton } from './compile-button.tsx';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog } from './settings.tsx';
 import type { DiagnosticReport } from '../shared.ts';
@@ -484,6 +485,10 @@ function GitPanel({ projectId, git, onStatus, writer, tasks, onOpenTask }: { tas
 
 function noteWhere(note: Annotation) { return t('Page {n}', { n: note.page + 1 }) + (note.source ? ` · ${note.source.file}:${note.source.lines[0]}${note.source.lines[1] !== note.source.lines[0] ? `–${note.source.lines[1]}` : ''}` : ''); }
 
+function NotePlacementWarning() {
+  return <small className="note-placement-warning" title={t('The position in the new PDF could not be confirmed. The original text and note are kept.')}><Icon name="alert" size={12}/>{t('Position needs confirmation')}</small>;
+}
+
 interface NoteActions {
   group: NoteGroup | null;
   setGroup: (group: NoteGroup | null) => void;
@@ -496,7 +501,7 @@ interface NoteActions {
 }
 
 function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void; onAnnotate: (region: boolean) => void }) {
-  const list = useRef<HTMLOListElement>(null);
+  const list = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState<{ id: string; comment: string } | null>(null);
 
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -516,7 +521,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
     if (!editing?.comment.trim()) return;
     void change(async () => { await actions.edit(note, editing.comment.trim()); finish(note.id); });
   }
-  return <section className="notes-panel" aria-label={t('PDF notes')}>
+  return <section ref={list} className="notes-panel" aria-label={t('PDF notes')}>
     <div className="draft-notes-head">
       {notes.some(note => note.group) && <span>{tn(noteGroups(notes).length, '{n} annotation group', '{n} annotation groups')}</span>}
       {notes.some(note => !note.group) && <span>{tn(notes.filter(note => !note.group).length, '{n} note attached', '{n} notes attached')}</span>}
@@ -525,14 +530,15 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
         <span className="note-entry-hint">{t('or select text to annotate')}</span>
       </div>
     </div>
+    {currentKey && notes.some(note => note.key !== currentKey) && <p className="note-placement-summary" role="status">{t('Some note positions need confirmation. Their original text and comments are kept.')}</p>}
     {noteGroups(notes).map(({ group, entries }) => <GroupCard key={group} group={group} count={entries.length} active={actions.group === group || entries.some(({ note }) => note.id === active)}>
-      {entries.map(({ note, index }) => <div className="group-location" key={note.id} data-note={note.id}>
-        <button type="button" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}><span>{noteWhere(note)}</span><blockquote>{note.quote || t('Marked region')}</blockquote></button>
+      {entries.map(({ note, index }) => <div className={'group-location' + (note.id === active ? ' active' : '')} key={note.id} data-note={note.id}>
+        <button type="button" aria-label={t('Show note {n} on the page', { n: index + 1 })} aria-disabled={note.key !== currentKey} onClick={() => onShow(note)}><span>{noteWhere(note)}</span><blockquote>{note.quote || t('Marked region')}</blockquote>{note.key !== currentKey && <NotePlacementWarning/>}</button>
         <button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} disabled={locked} onClick={() => void change(() => actions.remove(note))}><Icon name="close" size={13}/></button>
       </div>)}
     </GroupCard>)}
-    {notes.some(note => !note.group) && <ol ref={list} className="note-list">{notes.map((note, index) => !note.group && <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
-      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); })}><Icon name="close" size={14}/></button></div>
+    {notes.some(note => !note.group) && <ol className="note-list">{notes.map((note, index) => !note.group && <li key={note.id} data-note={note.id} className={(active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
+      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); })}><Icon name="close" size={14}/></button></div>
       <NoteQuote text={note.quote}/>
       <NoteBody>
       {editing?.id === note.id ? <form className="note-edit" onSubmit={e => { e.preventDefault(); save(note); }}>
@@ -544,7 +550,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
         <div className="button-row"><button type="button" className="button ghost compact" disabled={locked} onClick={() => { setError(''); finish(note.id); }}>{t('Cancel')}</button><button className="button primary compact" disabled={locked || !editing.comment.trim()}>{busy ? t('Saving…') : t('Save')}</button></div>
       </form> : <button type="button" className="note-comment" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={locked || Boolean(editing)} onClick={() => { setError(''); setEditing({ id: note.id, comment: note.comment }); }}><span>{note.comment}</span><Icon name="pencil" size={13}/></button>}
       </NoteBody>
-      {note.key !== currentKey && <small className="muted">{t('Marked on an earlier version of the PDF.')}</small>}
+      {note.key !== currentKey && <NotePlacementWarning/>}
     </li>)}</ol>}
     {error && <p className="inline-error" role="alert">{error}</p>}
   </section>;
@@ -605,6 +611,7 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
     requestAnimationFrame(() => pdf.current?.goTo(item));
   }
   function show(note: Annotation) {
+    if (note.key !== build?.key) return;
     setActive(note.id);
     if (phone()) setView('pdf');
     requestAnimationFrame(() => pdf.current?.goToNote(note));
@@ -623,7 +630,6 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
       {!build?.key && <div className="manuscript-lead">{switcher}{tools}</div>}
       {error && <div className="manuscript-note error" role="alert">{error}</div>}
       {build?.status === 'failed' && <div className="manuscript-note error" role="alert"><strong>{t('The manuscript did not compile.')}</strong><pre>{build.error}</pre></div>}
-      {build?.status === 'building' && build.key && <div className="manuscript-note">{t('Compiling the latest changes…')}</div>}
       {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion} group={actions.group} onGroupChange={actions.setGroup} markingDisabled={actions.sending}
           onCreate={actions.add} onSelect={note => { setActive(note.id); if (!phone()) setView('task'); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={tools}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
@@ -736,8 +742,9 @@ function App() {
   const [noteEditing, setNoteEditing] = useState(false);
   const [manuscript, setManuscript] = useState<{ projectId: string; data: Manuscript | null; error: string }>({ projectId: '', data: null, error: '' });
   const manuscriptRequest = useRef(0);
+  const manuscriptBuildRequests = useRef(new Set<string>());
+  const [pendingManuscriptBuilds, setPendingManuscriptBuilds] = useState(new Set<string>());
   const [git, setGit] = useState<{ projectId: string; status: GitStatus | null }>({ projectId: '', status: null });
-  const building = useRef(false);
   const [chatWidth, setChatWidth] = useState(() => Number(browserStorage.getItem('papilot:chat-width')) || 0);
   const [form, setForm] = useState({ path: '', name: '' });
   // Appearance, language and notifications live in Settings; a new language re-renders everything.
@@ -1000,24 +1007,35 @@ function App() {
   }
   const manuscriptOpen = !task && Boolean(project);
   const loadManuscript = useCallback(async (projectId: string, rebuild = false) => {
+    // A background read must not replace the result of an in-flight compile.
+    if (manuscriptBuildRequests.current.has(projectId)) return;
     const request = ++manuscriptRequest.current;
+    if (rebuild) { manuscriptBuildRequests.current.add(projectId); setPendingManuscriptBuilds(new Set(manuscriptBuildRequests.current)); }
     try {
       const data = await api<Manuscript>(`/projects/${projectId}/manuscript`, rebuild ? {} : undefined);
       if (request !== manuscriptRequest.current) return;
-      building.current = data.build.status === 'building';
       setManuscript({ projectId, data, error: '' }); setGit({ projectId, status: data.git });
     } catch (e) { if (request === manuscriptRequest.current) setManuscript(current => ({ projectId, data: current.projectId === projectId ? current.data : null, error: e instanceof Error ? e.message : String(e) })); }
+    finally { if (rebuild) { manuscriptBuildRequests.current.delete(projectId); setPendingManuscriptBuilds(new Set(manuscriptBuildRequests.current)); } }
   }, []);
-  // Poll quickly while the preview compiles; otherwise recheck the working tree now and then.
+  const manuscriptBuilding = manuscript.projectId === project?.id && manuscript.data?.build.status === 'building';
   useEffect(() => {
     if (!manuscriptOpen || !project) return;
-    let stopped = false, timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => { await loadManuscript(project.id); if (!stopped) timer = setTimeout(() => void tick(), building.current ? 1500 : 15000); };
-    void tick();
+    void loadManuscript(project.id);
     const focus = () => void loadManuscript(project.id);
     window.addEventListener('focus', focus);
-    return () => { stopped = true; ++manuscriptRequest.current; clearTimeout(timer); window.removeEventListener('focus', focus); };
+    return () => { ++manuscriptRequest.current; window.removeEventListener('focus', focus); };
   }, [manuscriptOpen, project?.id, loadManuscript]);
+  // Starting a compile switches to fast polling immediately, including a
+  // manual retry made between the regular working-tree refreshes.
+  useEffect(() => {
+    if (!manuscriptOpen || !project) return;
+    const delay = manuscriptBuilding ? 1500 : 15000;
+    let stopped = false, timer: ReturnType<typeof setTimeout>;
+    const tick = async () => { await loadManuscript(project.id); if (!stopped) timer = setTimeout(() => void tick(), delay); };
+    timer = setTimeout(() => void tick(), delay);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [manuscriptOpen, project?.id, manuscriptBuilding, loadManuscript]);
   // Accepting a change updates the working tree, so the status reloads with
   // the tasks' reviews as well as every 20 seconds.
   const reviewKey = (state?.tasks || []).filter(t => t.projectId === project?.id).map(t => `${t.review?.files?.join()}:${t.review?.counts?.accepted}`).join('|');
@@ -1141,7 +1159,7 @@ function App() {
   </>;
   const reviewTools = task && fullPdfUrl ? <>
     <a className="icon-button full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" aria-label={t('Full PDF')} title={t('Open the full PDF')}><Icon name="pdf" size={16}/></a>
-    <button type="button" className="icon-button review-rebuild" aria-label={t('Regenerate PDF comparison')} title={t('Regenerate PDF comparison')} disabled={['running', 'waiting_input', 'queued', 'building', 'uncertain'].includes(task.status) || taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="refresh" size={16}/></button>
+    <CompileButton key={task.id} className="review-rebuild" label={t('Regenerate PDF comparison')} status={task.status === 'building' ? 'building' : task.review?.job?.status === 'failed' || task.review?.state === 'build_failed' ? 'failed' : 'ready'} disabled={['running', 'waiting_input', 'queued', 'building', 'uncertain', 'deleting'].includes(task.status) || taskActionBusy} onCompile={() => action('/tasks/' + task.id + '/publish')}/>
     <a className="icon-button review-open" href={reviewUrl(task)} target="_blank" rel="noreferrer" aria-label={t('Open review in new tab')} title={t('Open review in new tab')}><Icon name="external" size={16}/></a>
   </> : null;
 
@@ -1152,7 +1170,7 @@ function App() {
 
   const manuscriptOpenPdf = project && manuscriptData.data?.build.key && <a className="icon-button" aria-label={t('Open PDF')} title={t('Open PDF')} href={`/api/projects/${project.id}/manuscript.pdf?key=${manuscriptData.data.build.key}`} target="_blank" rel="noreferrer"><Icon name="external" size={16}/></a>;
   const manuscriptTools = project && <>
-    <button type="button" className="icon-button" aria-label={t('Recompile')} title={t('Recompile')} onClick={() => void loadManuscript(project.id, true)}><Icon name="refresh" size={16}/></button>
+    <CompileButton key={project.id} label={t('Recompile PDF')} status={pendingManuscriptBuilds.has(project.id) ? 'building' : manuscriptData.error ? 'unknown' : manuscriptData.data?.build.status || 'unknown'} disabled={!manuscriptData.data && !manuscriptData.error} onCompile={() => loadManuscript(project.id, true)}/>
   </>;
   const manuscriptNavigation = manuscriptOpen && project && <>
     {manuscriptTools}

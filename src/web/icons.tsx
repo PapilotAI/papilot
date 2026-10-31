@@ -22,6 +22,7 @@ const paths: Record<string, React.ReactNode> = {
   more: <><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></>,
   external: <><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></>,
   paper: <><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5M16 13H8M16 17H8M10 9H8"/></>,
+  compile: <path d="M6 3.5 21 12 6 20.5Z" fill="currentColor" stroke="none"/>,
   pdf: <><path d="M4 9V4a2 2 0 0 1 2-2h9l5 5v2M14 2v5h6M4 20a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2"/><path strokeWidth="1.5" d="M2.5 18v-6h2a2 2 0 0 1 0 4h-2M9.5 12v6h1.5a3 3 0 0 0 0-6ZM17 18v-6h4m-4 3h3"/></>,
   chat: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>,
   split: <><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M14 3v18"/></>,

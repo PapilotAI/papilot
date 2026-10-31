@@ -10,6 +10,7 @@ import { ENGINE } from './paths.ts';
 import type { Annotation, GitFile, GitStatus, ManuscriptBuild } from '../shared.ts';
 import { notesInstructions } from '../notes.ts';
 import { ignorePattern } from '../commit.ts';
+import { AnnotationPages, placeAnnotation } from './annotation-placement.ts';
 
 type Rect = [number, number, number, number];
 
@@ -343,24 +344,27 @@ interface Build { tree: string; status: ManuscriptBuild['status']; key?: string;
 
 export class Manuscripts extends EventEmitter {
   private builds = new Map<string, Build>();
+  private oldPdfs = new Map<string, string | null>();
+  private placements = new Map<string, (Pick<Annotation, 'key' | 'page' | 'rect' | 'rects' | 'source'>) | null>();
   get busyForUpdate() { return [...this.builds.values()].some(build => build.status === 'building'); }
 
   async state(projectId: string, root: string, rebuild = false): Promise<{ git: GitStatus; build: ManuscriptBuild }> {
     const [status, tree] = await Promise.all([gitStatus(root), workingTree(root)]);
     let build = this.builds.get(projectId);
-    if (!build || (build.status !== 'building' && (build.tree !== tree || (rebuild && build.status === 'failed')))) build = this.start(projectId, root, tree, build);
+    if (!build || (build.status !== 'building' && (build.tree !== tree || rebuild))) build = this.start(projectId, root, tree, build, rebuild);
     const { status: state, key, pages, builtAt, error } = build;
     return { git: status, build: { status: state, key, pages, builtAt, error, current: build.tree === tree && state === 'ready' } };
   }
 
   // Keep the previous pages visible while a newer working tree compiles.
-  private start(projectId: string, root: string, tree: string, previous?: Build) {
-    const build: Build = { tree, status: 'building', key: previous?.key, pdf: previous?.pdf, pages: previous?.pages, builtAt: previous?.builtAt };
+  private start(projectId: string, root: string, tree: string, previous?: Build, force = false) {
+    if (previous?.key && previous.pdf) this.oldPdfs.set(`${root}:${previous.key}`, previous.pdf);
+    const build: Build = { tree, status: 'building', key: previous?.key, pdf: previous?.pdf, root: previous?.root, sourceDir: previous?.sourceDir, pages: previous?.pages, builtAt: previous?.builtAt };
     this.builds.set(projectId, build);
     void (async () => {
       try {
         const { Builder, Repo, loadProject, mupdf } = await engine();
-        const project = loadProject(root), result = await new Builder(project, new Repo(root)).build(tree, ['full']);
+        const project = loadProject(root), result = await new Builder(project, new Repo(root)).build(tree, ['full'], null, { force });
         const document = mupdf.Document.openDocument(fs.readFileSync(result.pdf), 'application/pdf');
         const pages: [number, number][] = [];
         for (let i = 0; i < document.countPages(); i++) { const [x0, y0, x1, y1] = document.loadPage(i).getBounds(); pages.push([Math.round(x1 - x0), Math.round(y1 - y0)]); }
@@ -376,6 +380,57 @@ export class Manuscripts extends EventEmitter {
       this.emit('change', projectId);
     })();
     return build;
+  }
+
+  // Old annotations keep their saved content. Only their proven PDF position
+  // changes; ambiguous or missing content stays on the earlier version.
+  async reanchor(projectId: string, root: string, notes: Annotation[]): Promise<Annotation[]> {
+    const build = this.builds.get(projectId);
+    if (!build?.pdf || !build.key || build.status !== 'ready' || !notes.some(note => note.key !== build.key)) return notes;
+    const { PdfDocument, loadProject } = await engine();
+    const current = new PdfDocument(build.pdf), target = new AnnotationPages(current);
+    const old = new Map<string, { document: InstanceType<typeof PdfDocument>; pages: AnnotationPages }>();
+    try {
+      const output: Annotation[] = [];
+      for (const note of notes) {
+        if (note.key === build.key) { output.push(note); continue; }
+        const cacheKey = JSON.stringify([projectId, build.key, note.key, note.page, note.rect, note.rects, note.quote]);
+        if (!this.placements.has(cacheKey)) {
+          let placement: Pick<Annotation, 'key' | 'page' | 'rect' | 'rects' | 'source'> | null = null;
+          try {
+            const lookup = `${root}:${note.key}`;
+            if (!this.oldPdfs.has(lookup)) {
+              const cache = path.join(loadProject(root).state, 'cache/builds');
+              let found: string | null = null;
+              for (const entry of fs.readdirSync(cache, { withFileTypes: true })) {
+                if (!entry.isDirectory() || entry.name.endsWith('.lock')) continue;
+                try {
+                  const folder = path.join(cache, entry.name), saved = JSON.parse(fs.readFileSync(path.join(folder, 'result.json'), 'utf8'));
+                  if (typeof saved.pdf !== 'string' || !path.resolve(saved.pdf).startsWith(path.resolve(folder) + path.sep)) continue;
+                  if (createHash('sha256').update(saved.key + saved.pdf).digest('hex').slice(0, 16) === note.key && fs.existsSync(saved.pdf)) { found = saved.pdf; break; }
+                } catch { /* An incomplete or pruned build cannot locate a note. */ }
+              }
+              this.oldPdfs.set(lookup, found);
+            }
+            const pdf = this.oldPdfs.get(lookup);
+            if (pdf) {
+              if (!old.has(pdf)) { const document = new PdfDocument(pdf); old.set(pdf, { document, pages: new AnnotationPages(document) }); }
+              const match = placeAnnotation(note, old.get(pdf)!.pages, target);
+              if (match) {
+                const { source } = await this.locate(projectId, build.key, match.page, match.rect, match.rects, note.quote);
+                placement = { ...match, key: build.key, source };
+              }
+            }
+          } catch { /* Keep the annotation intact when its position cannot be verified. */ }
+          this.placements.set(cacheKey, placement);
+        }
+        const placement = this.placements.get(cacheKey);
+        output.push(placement ? { ...note, ...placement } : note);
+      }
+      if (this.placements.size > 2000) this.placements.clear();
+      if (this.oldPdfs.size > 500) this.oldPdfs.clear();
+      return this.builds.get(projectId)?.key === build.key ? output : notes;
+    } finally { current.close(); for (const entry of old.values()) entry.document.close(); }
   }
 
   pdf(projectId: string, key: string) {

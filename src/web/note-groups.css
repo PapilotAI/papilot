@@ -22,6 +22,7 @@
 .annotation-group[open]>summary>svg{transform:rotate(180deg)}
 .group-locations{padding:0 10px 5px;max-height:240px;overflow:auto}
 .group-location{display:flex;gap:6px;align-items:center;border-top:1px solid var(--line);padding:4px 0 1px;font:12px/1.5 var(--sans)}
+.group-location.active{--note-soft:color-mix(in srgb,var(--note-color) 14%,transparent);background:var(--note-soft);box-shadow:0 0 0 4px var(--note-soft);border-radius:3px}
 .group-location>button:first-child{flex:1;min-width:0;text-align:left;color:var(--text-2);background:none;border:0;cursor:pointer}
 .group-location>button:first-child>span{font-size:11px;color:var(--text-3)}
 .group-location blockquote{margin:1px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}

@@ -55,6 +55,14 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .danger:hover:not(:disabled){background:var(--danger-hover)}
 .icon-button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:var(--r);color:var(--text-2);text-decoration:none;flex-shrink:0;transition:background-color .15s,color .15s}
 .icon-button:hover:not(:disabled),.icon-button[aria-expanded=true]{background:var(--bg-hover);color:var(--text)}
+.compile-button,.compile-button:hover:not(:disabled){color:var(--green)}
+.compile-button:hover:not(:disabled){background:var(--green-soft)}
+.compile-button[data-state="failed"],.compile-button[data-state="failed"]:hover{color:var(--red)}
+.compile-button[data-state="failed"]:hover{background:var(--red-soft)}
+.compile-button[data-state="unknown"],.compile-button[data-state="unknown"]:hover,.compile-button:disabled:not([aria-busy="true"]){color:var(--text-3)}
+.compile-button[data-state="unknown"]:hover{background:var(--bg-hover)}
+.compile-button[aria-busy="true"]{color:var(--accent);opacity:1}
+.compile-button .spinner{width:20px;height:20px;border-color:var(--accent-line);border-top-color:currentColor}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--line-strong);border-top-color:var(--text-2);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
 .spinner.light{border-color:rgb(255 255 255/.35);border-top-color:#fff}
 .spinner.large{width:22px;height:22px}
@@ -531,6 +539,9 @@ body.resizing iframe{pointer-events:none}
 .note-list li:hover{border-color:var(--line-strong)}
 .note-list li.active{border-color:var(--accent-line)}
 .note-list li.stale{background:var(--bg-subtle)}
+.notes-panel .note-placement-warning{display:flex;align-items:center;gap:4px;margin-top:4px;color:var(--amber-text);font:12px/1.5 var(--sans)}
+.note-placement-summary{margin:0 0 10px;color:var(--text-2);font-size:12px;line-height:1.5}
+.group-location>button[aria-disabled="true"]{cursor:default}
 .note-head{display:flex;align-items:center;gap:8px;margin-bottom:2px}
 .note-number{min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:500;line-height:20px;text-align:center}
 .note-where{flex:1;min-width:0;font:12px/1.5 var(--sans);color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

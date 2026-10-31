@@ -808,7 +808,7 @@ try {
   Object.assign(gitState, structuredClone(originalGit));
   const pdfToolbar = page.getByRole('toolbar', { name: 'PDF controls' });
   assert.equal(await page.locator('.manuscript-side-header').getByRole('link', { name: 'Open PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
-  await pdfToolbar.getByRole('button', { name: 'Recompile', exact: true }).waitFor();
+  await pdfToolbar.getByRole('button', { name: 'Recompile PDF', exact: true }).waitFor();
   assert.equal(await page.title(), 'Example paper · Papilot');
   await worktrees.getByRole('button', { name: `Open task: ${task.title}`, exact: true }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();

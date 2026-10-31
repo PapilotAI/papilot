@@ -273,6 +273,51 @@ export const PdfView = forwardRef<PdfHandle, {
       setTimeout(() => { if (disposed) return; const value = select(); if (value && latest.current.group) addToGroup(value); }, 0);
     };
     document.addEventListener('pointerup', finishGroup);
+    // Keep marks transparent to pointer events so dragging still selects the
+    // underlying text. A click/tap on a mark selects its note after the native
+    // selection gesture has finished; drags, scrolling and long presses do not.
+    const noteAt = (event: MouseEvent) => {
+      if (latest.current.region || editingRef.current) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('button,a,input,textarea,select,[contenteditable],.select-handle,.note-editor')) return;
+      const page = target?.closest<HTMLElement>('.page');
+      if (!page || !box.contains(page)) return;
+      const frame = page.getBoundingClientRect(), x = (event.clientX - frame.left) / frame.width, y = (event.clientY - frame.top) / frame.height;
+      let hit: Annotation | undefined, area = Infinity;
+      for (const { note } of latest.current.notes) {
+        if (note.page !== Number(page.dataset.pageNumber) - 1) continue;
+        for (const [left, top, right, bottom] of note.rects?.length ? note.rects : [note.rect]) {
+          // Prefer the more specific mark when text and a larger region overlap.
+          const size = (right - left) * (bottom - top);
+          if (x >= left && x <= right && y >= top && y <= bottom && size <= area) { hit = note; area = size; }
+        }
+      }
+      return hit;
+    };
+    let press: { id: string; x: number; y: number; time: number; touch: boolean } | null = null;
+    const cancelPress = () => { press = null; };
+    const pressNote = (event: PointerEvent) => {
+      press = null;
+      if (!event.isPrimary || event.button !== 0) return;
+      const note = noteAt(event);
+      if (note) press = { id: note.id, x: event.clientX, y: event.clientY, time: event.timeStamp, touch: event.pointerType !== 'mouse' };
+    };
+    const moveNote = (event: PointerEvent) => {
+      if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > (press.touch ? 10 : 4)) cancelPress();
+    };
+    const releaseNote = (event: PointerEvent) => {
+      const start = press; press = null;
+      if (!start || event.defaultPrevented || event.button !== 0 || (start.touch && event.timeStamp - start.time >= 450)
+        || document.getSelection()?.isCollapsed === false) return;
+      const note = noteAt(event);
+      if (note?.id !== start.id) return;
+      // pdf.js can remove its blank-page hit target on mouseup, suppressing
+      // click entirely. Touch taps first let touchend clear any old handles.
+      if (start.touch) setTimeout(() => { if (!disposed && !picking.current?.active()) latest.current.onSelect(note); }, 0);
+      else latest.current.onSelect(note);
+    };
+    box.addEventListener('pointerdown', pressNote); box.addEventListener('scroll', cancelPress);
+    document.addEventListener('pointermove', moveNote); document.addEventListener('pointerup', releaseNote); document.addEventListener('pointercancel', cancelPress);
     // Touch screens select words with Papilot's own handles and menu (style.css
     // turns native selection off there). Each text run is one word.
     picking.current = touchSelection<HTMLElement>(box, {
@@ -299,6 +344,8 @@ export const PdfView = forwardRef<PdfHandle, {
       disposed = true; clearTimeout(timer); picking.current?.stop(); picking.current = null;
       resize.disconnect(); cancelAnimationFrame(resizeFrame);
       document.removeEventListener('selectionchange', selectionChange); document.removeEventListener('pointerup', finishGroup);
+      box.removeEventListener('pointerdown', pressNote); box.removeEventListener('scroll', cancelPress);
+      document.removeEventListener('pointermove', moveNote); document.removeEventListener('pointerup', releaseNote); document.removeEventListener('pointercancel', cancelPress);
       box.removeEventListener('wheel', wheel); box.removeEventListener('touchstart', touchStart); box.removeEventListener('touchmove', touchMove); box.removeEventListener('touchend', touchEnd);
       viewer.cleanup(); void loaded.current?.loadingTask.destroy(); loaded.current = null; tools.current = null; layerMap.current.clear();
     };
@@ -413,8 +460,8 @@ export const PdfView = forwardRef<PdfHandle, {
       {(() => {
         const notes = props.notes.filter(({ note }) => note.page === number - 1), spots = tagSpots(notes.map(({ note }) => (note.rects?.length ? note.rects : [note.rect])[0]));
         return notes.map(({ note, number: label }, index) => <Fragment key={note.id}>
-          {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} data-group={note.group} style={{ ...percent(rect), ...groupStyle(note.group) }}/>) }
-          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-group={note.group} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={t('Note {n}: {comment}', { n: label, comment: note.group ? groupName(note.group) : note.comment })} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}</button>
+          {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} style={{ ...percent(rect), ...groupStyle(note.group) }}/>) }
+          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={t('Note {n}: {comment}', { n: label, comment: note.group ? groupName(note.group) : note.comment })} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}</button>
         </Fragment>);
       })()}
       {props.region && <div className="region-capture"

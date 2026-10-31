@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Repo } from "./git.ts";
 import { listFiles, readJson, writeJson, withLock, now } from "./files.ts";
@@ -197,6 +197,7 @@ export class Builder {
     rev: string,
     targets = ["full"],
     seed: BuildInfo | null = null,
+    options: { force?: boolean } = {},
   ): Promise<BuildInfo> {
     const p = this.project,
       partial = JSON.stringify(targets) !== '["full"]';
@@ -223,6 +224,9 @@ export class Builder {
           version,
           date,
           hash(fs.readFileSync(fileURLToPath(import.meta.url))),
+          // Manual recompilation gets a fresh output directory. Other previews
+          // and review rounds may still be reading the previous cached PDF.
+          ...(options.force ? [randomUUID()] : []),
         ]),
       ).slice(0, 32),
       folder = path.join(this.cache, key);

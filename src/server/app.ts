@@ -60,6 +60,21 @@ export async function buildApp(options: AppOptions) {
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
   const any = { config: { access: 'any' as const } }, owner = { config: { access: 'owner' as const } };
   const project = (param = 'id') => ({ config: { access: { project: param } } }), task = { config: { access: { task: 'id' } } };
+  async function manuscript(id: string, rebuild = false) {
+    const root = store.project(id).path, state = await manuscripts.state(id, root, rebuild);
+    const notes = store.annotations(id).filter(note => !note.taskId);
+    const placed = await manuscripts.reanchor(id, root, notes).catch(() => notes);
+    for (let index = 0; index < notes.length; index++) {
+      const next = placed[index], previous = notes[index];
+      if (next.key === previous.key || next.key !== state.build.key) continue;
+      const current = store.annotation(id, previous.id);
+      // A comment edit, deletion, or task submission may have happened while
+      // PDF positions were being checked. Never restore or overwrite that work.
+      if (current.deletedAt !== undefined || current.taskId || workspace.annotationSending(current.id) || current.key !== previous.key) continue;
+      store.saveAnnotation({ ...current, key: next.key, page: next.page, rect: next.rect, rects: next.rects, source: next.source });
+    }
+    return { ...state, annotations: store.annotations(id).filter(note => !note.taskId) };
+  }
 
   app.get('/api/health', { config: { access: 'public' } }, () => listener.kind === 'local' ? { ok: true, name: 'Papilot', version: options.version, ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) } : { ok: true });
   // Environment reports include host paths, so they are available only to the owner.
@@ -177,7 +192,7 @@ export async function buildApp(options: AppOptions) {
     void workspace.publish(task.id); return { ok: true };
   });
   // The manuscript preview compiles each paper's working tree and reports its Git status.
-  app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));
+  app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), request => manuscript(request.params.id));
   app.get<{ Params: { id: string } }>('/api/projects/:id/git', project(), request => gitStatus(store.project(request.params.id).path));
   app.get<{ Params: { id: string } }>('/api/projects/:id/git/overview', project(), request => gitOverview(store.project(request.params.id).path, store.tasks().filter(task => task.projectId === request.params.id)));
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/projects/:id/git/diff', project(), request => gitDiff(store.project(request.params.id).path, string(request.query.path, 'File path', 4096)));
@@ -227,7 +242,7 @@ export async function buildApp(options: AppOptions) {
     if (action !== 'fetch' && action !== 'pull' && action !== 'merge' && action !== 'push') throw Object.assign(new Error('Unknown Git action.'), { statusCode: 404 });
     return serialGit(project.id, async () => { await gitRemote(project.path, action); return { git: await gitStatus(project.path) }; });
   });
-  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), async request => ({ ...(await manuscripts.state(request.params.id, store.project(request.params.id).path, true)), annotations: store.annotations(request.params.id).filter(note => !note.taskId) }));
+  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), request => manuscript(request.params.id, true));
   // Notes marked on the manuscript PDF become one agent task when sent.
   app.post<{ Params: { id: string } }>('/api/projects/:id/annotations', project(), async request => {
     const project = store.project(request.params.id), b = request.body as any;

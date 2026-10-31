@@ -17,7 +17,7 @@ const snapshot = { csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', pat
 const git = { branch: 'main', files: [] };
 let notes = [], deleted = [], serial = 0;
 const requests = [], items = new Map();
-await page.route('**/api/**', async route => {
+const routeApi = async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
   if (url.pathname === '/api/state') return json(snapshot);
@@ -49,7 +49,8 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items')) return json({ items: items.get(url.pathname.split('/')[3]) || [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   throw Error(`Unexpected fixture request ${url.pathname}`);
-});
+};
+await page.route('**/api/**', routeApi);
 const picker = () => page.getByRole('button', { name: 'Annotation group color', exact: true });
 async function chooseGroup(name) {
   await picker().click();
@@ -63,6 +64,18 @@ async function selectText(index, automatic = true) {
     document.dispatchEvent(new Event('selectionchange'));
     if (automatic) el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }));
   }, automatic);
+}
+async function markPoint(note, target = page) {
+  const mark = target.locator(`.note-layer [data-note="${note.id}"]`).first();
+  await mark.scrollIntoViewIfNeeded();
+  const rect = await mark.boundingBox();
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
+async function clickMark(note) {
+  const { x, y } = await markPoint(note);
+  await page.mouse.click(x, y);
+  await expect(page.locator('.note-tag.active')).toHaveAttribute('data-note', note.id);
+  await expect(page.locator('.group-location.active')).toHaveAttribute('data-note', note.id);
 }
 try {
   await page.goto(origin);
@@ -86,6 +99,11 @@ try {
   assert.equal(notes.at(-1).group, 'yellow');
   assert.equal(notes.at(-1).rects, undefined);
   await expect(page.getByRole('textbox', { name: 'Note for the agent' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await chooseGroup('Yellow');
+  await clickMark(notes[0]);
+  await clickMark(notes.at(-1));
+  assert.equal(notes.length, 3, 'Clicking existing marks must not create annotations, even with a color selected');
   await page.locator('.pdf-container').focus();
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
   await expect.poll(() => notes.length).toBe(2);
@@ -98,6 +116,47 @@ try {
   await page.reload();
   await expect(page.locator('.annotation-group')).toHaveCount(2);
   await expect(page.locator('.note-tag[data-group="yellow"]')).toHaveCount(2);
+  await page.getByRole('tab', { name: 'Contents', exact: true }).click();
+  await clickMark(notes[0]);
+  await clickMark(notes[2]);
+  await expect(page.locator('.annotation-group.active')).toHaveCount(1);
+  // Start on an existing highlight and drag across its text. The old note
+  // remains selected and the normal text annotation action is still offered.
+  const dragMark = page.locator(`.note-mark[data-note="${notes[0].id}"]`).first();
+  const dragBox = await dragMark.boundingBox();
+  await page.mouse.move(dragBox.x + 1, dragBox.y + dragBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dragBox.x + dragBox.width - 1, dragBox.y + dragBox.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => document.getSelection()?.toString().trim())).not.toBe('');
+  await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeVisible();
+  await expect(page.locator('.note-tag.active')).toHaveAttribute('data-note', notes[2].id);
+  assert.equal(notes.length, 3);
+  const paper = await page.locator('.page[data-page-number="1"]').boundingBox();
+  await page.mouse.click(paper.x + 20, paper.y + 20);
+  await expect(page.getByRole('button', { name: 'Add note', exact: true })).toHaveCount(0);
+  await clickMark(notes[1]);
+  // Real touch events: a tap selects a note, whereas a long press still
+  // selects text and must not change the active annotation.
+  const mobile = await browser.newPage({ locale: 'en-US', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  mobile.on('pageerror', error => errors.push(error.message));
+  await mobile.route('**/api/**', routeApi);
+  await mobile.goto(origin);
+  await mobile.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
+  const tap = await markPoint(notes[2], mobile);
+  await mobile.touchscreen.tap(tap.x, tap.y);
+  await expect(mobile.locator('.note-tag.active')).toHaveAttribute('data-note', notes[2].id);
+  const hold = await markPoint(notes[0], mobile), touch = await mobile.context().newCDPSession(mobile);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [hold] });
+  await expect(mobile.locator('.select-handle')).toHaveCount(2);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(mobile.locator('.note-tag.active')).toHaveAttribute('data-note', notes[2].id);
+  await mobile.touchscreen.tap(tap.x, tap.y);
+  await expect(mobile.locator('.select-handle')).toHaveCount(0);
+  await mobile.touchscreen.tap(hold.x, hold.y);
+  await expect(mobile.locator('.note-tag.active')).toHaveAttribute('data-note', notes[0].id);
+  assert.equal(notes.length, 3);
+  await mobile.close();
   await page.getByRole('textbox', { name: 'Describe the revision' }).fill('Explain yellow selections. Shorten purple selections.');
   await page.screenshot({ path: 'test-results/note-groups-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
@@ -109,7 +168,7 @@ try {
   await expect(page.locator('.notes-request')).toHaveText('Explain yellow selections. Shorten purple selections.');
   await page.locator('.manuscript-link').click();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'PDF', exact: true }).click();
+  await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
   await page.getByLabel('Page number').fill('1');
   await page.getByLabel('Page number').press('Enter');
   await chooseGroup('Yellow');
@@ -123,5 +182,5 @@ try {
   await page.screenshot({ path: 'test-results/note-groups-mobile.png', fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   assert.deepEqual(errors, []);
-  console.log('PASS: Continuous same-color marking, groups, undo, neutral colors, persistence, grouped messages, stay in manuscript, and mobile marking.');
+  console.log('PASS: Continuous marking, groups, undo, persistence, direct text/region note selection, text dragging through highlights, grouped messages, and mobile marking.');
 } finally { await browser.close(); await server.close(); }
