@@ -37,7 +37,7 @@ export { AGENT_NAMES };
 // lacks these folders, so a CLI not on PATH is looked for here too.
 export function agentDirs(env: NodeJS.ProcessEnv = process.env) {
   const home = env.HOME || os.homedir();
-  return ['.local/bin', '.claude/local', '.kimi-code/bin', '.opencode/bin', '.bun/bin', '.npm-global/bin'].map(dir => path.join(home, dir)).concat('/opt/homebrew/bin', '/usr/local/bin');
+  return ['.local/bin', '.claude/local', '.kimi-code/bin', '.grok/bin', '.opencode/bin', '.bun/bin', '.npm-global/bin'].map(dir => path.join(home, dir)).concat('/opt/homebrew/bin', '/usr/local/bin');
 }
 // The executable a command name resolves to on PATH or in an agent folder (or the path itself), or null.
 export function findExecutable(command: string, env: NodeJS.ProcessEnv = process.env): string | null {

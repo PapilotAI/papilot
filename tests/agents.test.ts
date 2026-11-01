@@ -246,6 +246,9 @@ test('executables are found on PATH or by path', () => {
     fs.mkdirSync(path.join(dir, '.local/bin'), { recursive: true });
     fs.copyFileSync(file, path.join(dir, '.local/bin/claude')); fs.chmodSync(path.join(dir, '.local/bin/claude'), 0o755);
     assert.equal(findExecutable('claude', { PATH: '/usr/bin:/bin', HOME: dir }), path.join(dir, '.local/bin/claude'));
+    fs.mkdirSync(path.join(dir, '.grok/bin'), { recursive: true });
+    fs.copyFileSync(file, path.join(dir, '.grok/bin/grok')); fs.chmodSync(path.join(dir, '.grok/bin/grok'), 0o755);
+    assert.equal(findExecutable('grok', { PATH: '/usr/bin:/bin', HOME: dir }), path.join(dir, '.grok/bin/grok'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

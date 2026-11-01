@@ -4,6 +4,11 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- **Grok Build CLI support.** Papilot connects through ACP with the CLI’s saved login or configured API credentials. It disables automatic approvals in new and restored sessions and supports streamed replies, tool approvals, images and model selection. Setup guidance and `papilot doctor` include Grok; use `PAPILOT_GROK_BIN` for a custom executable.
+- **GitHub Copilot CLI support.** Papilot detects `copilot` and connects through ACP using its local login or configured provider. Tasks support streamed replies, tool approvals, images and session recovery. Papilot selects Agent mode and turns off allow-all for each new or resumed session. Settings and `papilot doctor` include setup guidance; use `PAPILOT_COPILOT_BIN` for a custom CLI path.
+
 ## [0.8.0] - 2026-11-01 — AI Review and PDF Notes
 
 Papilot 0.8.0 adds AI reviews on task copies of your paper, with concise suggestions beside the relevant PDF passages. Keep selected suggestions on the main manuscript, write private reading notes, and decide which notes to send to an agent. This release also adds reference checks, more agents and a reorganized Settings interface.

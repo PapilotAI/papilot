@@ -383,6 +383,8 @@ export const zhCN: Record<string, string> = {
   'Uses the Cursor SDK with CURSOR_API_KEY. Papilot installs the SDK on first use.': '通过 CURSOR_API_KEY 使用 Cursor SDK，首次使用时由 Papilot 安装 SDK。',
   'Uses the local Antigravity CLI and its saved Google login.': '使用本机 Antigravity CLI 及其保存的 Google 登录。',
   'Uses Kimi Code CLI and its saved login through ACP.': '通过 ACP 连接 Kimi Code CLI，沿用其登录。',
+  'Uses Grok Build CLI through ACP with its saved login or configured API credentials.': '通过 ACP 连接 Grok Build CLI，沿用其登录或已配置的 API 凭据。',
+  'Uses GitHub Copilot CLI and its saved login or configured provider through ACP.': '通过 ACP 连接 GitHub Copilot CLI，沿用其登录或已配置的模型服务商。',
   'Uses Claude Code or the Claude Agent SDK with ZHIPU_API_KEY or ZAI_API_KEY.': '通过 ZHIPU_API_KEY 或 ZAI_API_KEY，使用 Claude Code 或 Claude Agent SDK。',
   'Uses DeepSeek Harness and the providers configured in dsh.': '使用 DeepSeek Harness，以及在 dsh 中配置的模型服务商。',
   'Uses Qwen Code and its saved login through ACP.': '通过 ACP 连接 Qwen Code，沿用其登录。',
