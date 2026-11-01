@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isFeedbackPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../src/conversation.ts';
+import { aiReviewSummary, isFeedbackPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../src/conversation.ts';
 
 test('review feedback is summarized as the author gave it', () => {
   const summary = summarizeFeedback({ feedback: [
@@ -27,4 +27,12 @@ test('feedback prompts from this and earlier versions are recognized', () => {
   assert.equal(isFeedbackPrompt(reviewInstructions), true);
   assert.equal(isFeedbackPrompt('Address the comments from this review round. Preserve accepted changes and do not reintroduce rejected edits.'), true);
   assert.equal(isFeedbackPrompt('Address the comments.'), false);
+});
+
+test('AI review chat keeps its summary while legacy PDF findings stay out of the conversation', () => {
+  const summary = 'Clarify the assumptions.\n\nThe main theorem needs a narrower claim.';
+  const old = summary + '\n\n1. **Page 9** — Explain the assumptions.\n\n2. **Page 10** — State the boundary case.';
+  assert.equal(aiReviewSummary(old), summary);
+  assert.equal(aiReviewSummary(summary), summary);
+  assert.equal(aiReviewSummary('1. A summary point\n2. Another point'), '1. A summary point\n2. Another point');
 });

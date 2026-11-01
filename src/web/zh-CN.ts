@@ -431,7 +431,7 @@ export const zhCN: Record<string, string> = {
   'Search tasks': '搜索任务', 'Search tasks…': '搜索任务…', 'Search task titles and instructions': '搜索任务标题和初始指令', 'Clear task search': '清除任务搜索',
   'Search archived tasks…': '搜索已归档任务…',
   'Restore task': '恢复任务', 'Archive task': '归档任务', 'No matching tasks': '没有匹配的任务', 'No archived tasks': '暂无归档任务',
-  'Archived': '已归档', 'Undo': '撤销',
+  'Undo': '撤销',
   'Keyboard shortcuts': '键盘快捷键',
   'Accept change': '接受改动', 'Accept the current proposal. In Changes, stage or unstage it.': '接受当前建议；在“改动”视图中，暂存或取消暂存。',
   'Reject change': '拒绝改动', 'Reject the current proposal. In Changes, revert it.': '拒绝当前建议；在“改动”视图中，还原这处改动。',

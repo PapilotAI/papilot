@@ -34,16 +34,12 @@ store.recover();
 console.log(`Papilot is running at http://127.0.0.1:${PORT}${PUBLIC_ORIGIN ? `\nRemote: ${PUBLIC_ORIGIN}` : ''}${ACCOUNT_ORIGIN ? `\nSign-in for invited people: ${ACCOUNT_ORIGIN} (forwarded to 127.0.0.1:${ACCOUNT_PORT})` : ''}`);
 if (!process.env.PAPILOT_UPDATE_PROBE) { void workspace.connect(); updates.start(); }
 // Recompute cached feedback counts, including decisions from before this restart.
-const refreshes: Promise<void>[] = [];
 for (const task of store.tasks()) {
   if (task.status === 'building') {
     store.updateTask(task.id, { status: 'interrupted', error: 'The server restarted during the PDF build. Check the review and rebuild it if needed.' });
-    refreshes.push(workspace.refresh(task.id));
-  } else if (task.review?.round && task.status !== 'deleting') refreshes.push(workspace.refresh(task.id));
+    void workspace.refresh(task.id);
+  } else if (task.review?.round && task.status !== 'deleting') void workspace.refresh(task.id);
 }
-// Finished tasks are archived as the author leaves them. Once the counts are
-// current, archive the ones finished before Papilot did that.
-void Promise.all(refreshes).then(() => { if (!shuttingDown) store.migrate('archive-finished-tasks', () => workspace.archiveFinished()); });
 // Expired invites and sessions are removed as they lapse.
 setInterval(() => accounts.purge(), 3600000).unref();
 let shuttingDown = false;

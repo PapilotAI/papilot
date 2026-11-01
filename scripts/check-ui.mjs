@@ -1141,7 +1141,7 @@ try {
   assert.deepEqual(archives.map(item => item.archived), [true, false, true, false]);
   console.log('PASS: Tasks search by title and instructions, archive without losing history, and restore from the archive');
 
-  // A finished task is archived when the author moves on from it, with an undo.
+  // Navigation only changes the view, even after a task has finished.
   archives.length = 0;
   const finishedTask = { ...task, id: 'fixture-task-0003', name: 'p-finished', title: 'Tidy the bibliography', status: 'reviewing', review: { state: 'done', round: 1, counts: { accepted: 2 }, unsent: 2, comments: 0, files: [] } };
   snapshot.tasks.push(finishedTask);
@@ -1154,26 +1154,23 @@ try {
   await finishedLink.click(); await input.waitFor();
   await input.fill('');
   await firstLink.click(); await input.waitFor();
-  const archiveNotice = page.getByRole('status').filter({ hasText: 'Archived' });
-  await archiveNotice.filter({ hasText: 'Tidy the bibliography' }).waitFor();
-  await finishedLink.waitFor({ state: 'hidden' });
-  assert.deepEqual(archives, [{ id: finishedTask.id, archived: true, finished: true }]);
-  await page.screenshot({ path: 'test-results/auto-archive-notice.png' });
-  await archiveNotice.getByRole('button', { name: 'Undo', exact: true }).click();
   await finishedLink.waitFor();
-  await archiveNotice.waitFor({ state: 'hidden' });
-  assert.match(await page.locator('.task-link.active').innerText(), /Clarify the introduction/, 'undo keeps the current task open');
+  assert.deepEqual(archives, [], 'leaving a completed task does not archive it');
   await finishedLink.click(); await input.waitFor();
+  await page.locator('.manuscript-link').click();
+  await finishedLink.waitFor();
+  assert.deepEqual(archives, [], 'opening the PDF does not archive a completed task');
+  await page.reload(); await finishedLink.waitFor();
+  assert.deepEqual(archives, [], 'reloading preserves the task list');
+  await page.screenshot({ path: 'test-results/tasks-retained-after-navigation.png' });
   await firstLink.click(); await input.waitFor();
-  assert.deepEqual(archives.map(item => item.archived), [true, false], 'a restored task stays listed');
   await page.getByRole('button', { name: /^Check the notation/ }).click(); await input.waitFor();
   await firstLink.click(); await input.waitFor();
-  assert.equal(archives.length, 2, 'an unfinished task stays listed');
+  assert.equal(archives.length, 0, 'an unfinished task also stays listed');
   snapshot.tasks.splice(snapshot.tasks.indexOf(finishedTask), 1);
   await page.clock.runFor(3000);
   await finishedLink.waitFor({ state: 'hidden' });
-  console.log('PASS: A finished task archives when the author leaves it, and Undo restores it for good');
-
+  console.log('PASS: Completed tasks remain listed after switching tasks, opening the PDF and reloading');
 
   await input.fill('Only send this once.');
   holdMessage = new Promise(resolve => { releaseMessage = resolve; });

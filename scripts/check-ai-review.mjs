@@ -11,6 +11,7 @@ await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 1000 } });
+const archives = [];
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const runtime = { connected: true, authenticated: true, models: [] };
 const state = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Review example', path: '/tmp/paper' }], tasks: [], requests: [], runtime };
@@ -31,11 +32,11 @@ await page.route('**/api/**', route => {
   if (url.pathname.endsWith('/manuscript')) return json({ git: { branch: 'main', files: [] }, build: { current: true, status: 'ready', key: 'pdf', pages: [[612, 792], [612, 792]] }, annotations: notes });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
-  if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'answer', taskId: state.tasks[0]?.id, type: 'assistant', text: 'Clarify the assumptions behind the main claim.', createdAt: 1 }] });
+  if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'answer', taskId: state.tasks[0]?.id, type: 'assistant', text: 'Clarify the assumptions behind the main claim.\n\n1. **Page 1** — ' + note.comment + '\n\n2. **Page 2** — ' + second.comment, createdAt: 1 }] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/annotations/ai-finding-1/delete')) { if (failDelete) { failDelete = false; return route.fulfill({ status: 503, json: { error: 'Could not ignore. Try again.' } }); } notes = notes.filter(item => item.id !== note.id); return json({ ok: true }); }
   if (url.pathname.endsWith('/annotations/ai-finding-1/restore')) { notes = [note, ...notes]; return json({ annotations: notes }); }
-  if (url.pathname.endsWith('/archive')) return json(state.tasks[0]);
+  if (url.pathname.endsWith('/archive')) { archives.push(route.request().postDataJSON()); return json(state.tasks[0]); }
   if (url.pathname === '/api/tasks' && route.request().postDataJSON().skill === 'ai-review') {
     const body = route.request().postDataJSON(); attempts.push(body);
     if (fail) { fail = false; return route.fulfill({ status: 503, json: { error: 'Temporary failure. Try again.' } }); }
@@ -70,7 +71,12 @@ try {
   await expect(page.getByRole('textbox', { name: 'Describe the revision' })).toHaveValue('Check assumptions and clarity.');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await page.locator('.task-link').first().click();
+  await expect(page.locator('.message.assistant .message-body')).toHaveText('Clarify the assumptions behind the main claim.');
+  await expect(page.locator('.message.assistant ol')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/ai-review-summary.png', fullPage: true });
   await page.getByRole('button', { name: 'View 2 review suggestions', exact: true }).click();
+  await expect(page.locator(`.task-row[data-task="${state.tasks[0].id}"]`)).toBeVisible();
+  assert.deepEqual(archives, [], 'opening review suggestions must not archive the task');
   assert.equal(attempts.length, 2);
   assert.equal(attempts[0].id, attempts[1].id);
   assert.equal(attempts[0].instructions, 'Check assumptions and clarity.');
@@ -166,5 +172,6 @@ try {
   await page.screenshot({ path: 'test-results/ai-review-mobile.png', fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.deepEqual(errors, []);
+  assert.deepEqual(archives, [], 'navigating and reloading never archive a review');
   console.log('AI review skill UI: single composer, menu and slash command, retry, in-PDF suggestions, page navigation, zoom, ignore/undo, explicit selection, edit handoff and mobile layout passed.');
 } finally { await browser.close(); await server.close(); }

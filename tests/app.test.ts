@@ -254,7 +254,7 @@ test('archive API persists and restores shared tasks and rejects malformed reque
     const archive = (payload: object) => f.remote.inject({ method: 'POST', url: '/api/tasks/thesis-task/archive', headers: f.as, payload });
     for (const payload of [{}, { archived: 'true' }, { archived: null }]) assert.equal((await archive(payload)).statusCode, 400);
     assert.equal(f.store.task('thesis-task').archivedAt, undefined);
-    assert.equal((await archive({ archived: true, finished: true })).json().archivedAt, undefined, 'only a finished task archives on leaving');
+    assert.equal((await archive({ archived: true, finished: true })).json().archivedAt, undefined, 'legacy navigation does not archive tasks');
     const archived = await archive({ archived: true });
     assert.equal(archived.statusCode, 200);
     assert.ok(archived.json().archivedAt);

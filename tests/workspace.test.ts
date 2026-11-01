@@ -305,39 +305,23 @@ test('archiving survives a restart, retains task history and review, and restore
   } finally { f.close(); fs.rmSync(dir, { recursive: true }); }
 });
 
-test('leaving archives only a task that is still finished, and writing to it restores it', async () => {
+test('legacy navigation requests do not archive completed tasks; explicit archiving and follow-ups still work', async () => {
   const f = fixture();
   try {
     const finished = { state: 'done', round: 1, counts: { accepted: 1 }, unsent: 1, comments: 0, files: [] };
     f.store.updateTask(f.task.id, { review: { ...finished, state: 'revise', counts: { commented: 1 }, comments: 1 } });
     assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, undefined, 'a comment still waits for the agent');
     f.store.updateTask(f.task.id, { review: finished });
-    assert.ok(f.workspace.archiveTask(f.task.id, true, true).archivedAt);
+    assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, undefined);
+    f.store.updateTask(f.task.id, { mode: 'review', review: { ...finished, round: null } });
+    assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, undefined, 'opening the PDF is not an archive action');
+    f.store.updateTask(f.task.id, { mode: 'edit' });
+    assert.ok(f.workspace.archiveTask(f.task.id, true).archivedAt);
     await f.workspace.enqueue(f.task.id, 'One more pass on the abstract.', 'follow-up');
     assert.equal(f.store.task(f.task.id).archivedAt, null, 'a follow-up brings the task back');
     assert.equal(f.store.task(f.task.id).status, 'queued');
     assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, null, 'new work keeps it listed');
     assert.ok(f.workspace.archiveTask(f.task.id, true).archivedAt, 'the author can still archive it by hand');
-  } finally { f.close(); }
-});
-
-test('finished tasks from before auto-archiving are archived once', () => {
-  const f = fixture();
-  try {
-    const finished = { state: 'done', round: 1, counts: { accepted: 1 }, unsent: 1, comments: 0, files: [] };
-    f.store.updateTask(f.task.id, { review: finished });
-    f.store.saveTask({ ...f.task, id: 'open-task', name: 'p-open', review: { ...finished, state: 'reviewing', counts: { pending: 2 } } });
-    f.store.saveTask({ ...f.task, id: 'kept-task', name: 'p-kept', review: finished, archivedAt: 5 });
-    let runs = 0;
-    const sweep = () => { runs++; f.workspace.archiveFinished(); };
-    f.store.migrate('archive-finished-tasks', sweep);
-    assert.ok(f.store.task(f.task.id).archivedAt);
-    assert.equal(f.store.task('open-task').archivedAt, undefined);
-    assert.equal(f.store.task('kept-task').archivedAt, 5, 'an earlier archive keeps its time');
-    f.workspace.archiveTask(f.task.id, false);
-    f.store.migrate('archive-finished-tasks', sweep);
-    assert.equal(runs, 1);
-    assert.equal(f.store.task(f.task.id).archivedAt, null, 'a restored task is not archived again');
   } finally { f.close(); }
 });
 
@@ -1581,7 +1565,7 @@ test('AI review runs read-only, saves PDF notes, and never publishes or delivers
     await assert.rejects(f.workspace.deliverTask(f.task.id, 'workspace'), /no manuscript changes/);
     await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => {}), /PDF notes/);
     await assert.rejects(f.workspace.enqueue(f.task.id, 'Apply the notes', 'wrong-mode', true, { notes }), /editing task/);
-    assert.match(f.store.items(f.task.id).at(-1)!.text, /Which assumptions/);
+    assert.equal(f.store.items(f.task.id).at(-1)!.text, 'Clarify the assumptions.');
   } finally { f.close(); }
 });
 
@@ -1605,7 +1589,7 @@ test('a review containing a 14-line suggestion completes and retains every findi
     const notes = f.store.annotations(f.task.projectId);
     assert.equal(notes.length, 2);
     assert.deepEqual(notes[1].rects, lines.slice(6, 20).map(line => line.rect));
-    assert.match(f.store.items(f.task.id).at(-1)!.text, /Explain the page reflow case/);
+    assert.equal(f.store.items(f.task.id).at(-1)!.text, 'Clarify the comparison.');
     assert.equal(f.calls.length, 0);
   } finally { f.close(); }
 });
