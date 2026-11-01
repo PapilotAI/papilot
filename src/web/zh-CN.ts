@@ -16,6 +16,7 @@ export const zhCN: Record<string, string> = {
   'My notes': '我的批注', 'AI suggestions': 'AI 审阅建议',
   'Write a note…': '写下你的想法…',
   'Add to task': '加入任务', 'Added to task': '已加入任务', 'Remove from task': '从任务中移除',
+  'Quote in chat': '引用到对话', 'Remove from draft': '从草稿移除',
   'Added to task: {n}': '已加入任务：{n} 条', 'Add all to task': '全部加入任务',
   'Notes stay here unless you add them to a task.': '批注默认仅保存，加入任务后才会发给 agent。',
   'Include suggestion {n} in this task': '将建议 {n} 加入任务',
