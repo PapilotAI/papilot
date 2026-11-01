@@ -1585,6 +1585,31 @@ test('AI review runs read-only, saves PDF notes, and never publishes or delivers
   } finally { f.close(); }
 });
 
+test('a review containing a 14-line suggestion completes and retains every finding', async () => {
+  const f = fixture();
+  try {
+    const lines = Array.from({ length: 20 }, (_, index) => ({ id: `p13-l${index + 1}`, page: 12, text: `Line ${index + 1}`, rect: [0.1, index / 30, 0.8, (index + 1) / 30] as [number, number, number, number] }));
+    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf' } });
+    f.store.saveReviewInput(f.task.id, { key: 'pdf', lines });
+    f.codex.ready = true;
+    await f.workspace.enqueue(f.task.id, 'Review.', 'long-passage-review');
+    await tick(); await tick();
+    const text = JSON.stringify({ summary: 'Clarify the comparison.', notes: [{ start: 'p13-l1', end: 'p13-l1', comment: 'Define the term.' }, { start: 'p13-l7', end: 'p13-l20', comment: 'Explain the page reflow case.' }] });
+    await (f.workspace as any).notification({ method: 'item/completed', params: { threadId: 'thread', turnId: 'turn-new', item: { id: 'answer', type: 'agentMessage', text } } });
+    const completion = { method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } };
+    await (f.workspace as any).notification(completion);
+    await (f.workspace as any).notification(completion);
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).error, null);
+    assert.equal(f.store.task(f.task.id).aiReview?.notes, 2);
+    const notes = f.store.annotations(f.task.projectId);
+    assert.equal(notes.length, 2);
+    assert.deepEqual(notes[1].rects, lines.slice(6, 20).map(line => line.rect));
+    assert.match(f.store.items(f.task.id).at(-1)!.text, /Explain the page reflow case/);
+    assert.equal(f.calls.length, 0);
+  } finally { f.close(); }
+});
+
 test('an invalid AI response creates no partial notes and a follow-up can recover', async () => {
   const f = fixture();
   try {

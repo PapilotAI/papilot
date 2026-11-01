@@ -28,6 +28,24 @@ test('malformed, nonexistent, backwards and cross-page anchors are rejected as o
   for (const text of ['not JSON', '{}', reply(Array(31).fill(finding)), JSON.stringify({ summary: '', notes: [] })]) assert.throws(() => parseAiReview(text, snapshot));
 });
 
+test('a valid same-page passage may exceed the preferred 12-line highlight length', () => {
+  const long: ReviewSnapshot = { key: 'pdf', lines: Array.from({ length: 30 }, (_, index) => ({ id: `p13-l${index + 1}`, page: 12, text: `Line ${index + 1}.`, rect: [0.1, index / 40, 0.8, (index + 1) / 40] })) };
+  for (const count of [12, 13, 14, 30]) {
+    const result = parseAiReview(reply([{ start: 'p13-l1', end: `p13-l${count}`, comment: 'Clarify how this paragraph handles reflow.' }]), long);
+    assert.equal(result.notes.length, 1);
+    assert.equal(result.notes[0].page, 12);
+    assert.deepEqual(result.notes[0].rects, long.lines.slice(0, count).map(line => line.rect));
+    assert.deepEqual(result.notes[0].rect, [0.1, 0, 0.8, count / 40]);
+    assert.match(result.notes[0].quote, new RegExp(`Line ${count}\\.$`));
+  }
+});
+
+test('location errors distinguish missing IDs, reversed ranges and page boundaries', () => {
+  assert.throws(() => parseAiReview(reply([{ ...finding, end: 'missing' }]), snapshot), /unknown PDF location/);
+  assert.throws(() => parseAiReview(reply([{ ...finding, start: 'p1-l2', end: 'p1-l1' }]), snapshot), /reverse order/);
+  assert.throws(() => parseAiReview(reply([{ ...finding, end: 'p2-l1' }]), snapshot), /multiple PDF pages/);
+});
+
 test('a real PDF produces stable line IDs and normalized highlights on the original version', async () => {
   const manuscripts = new Manuscripts();
   (manuscripts as any).builds.set('paper', { key: 'original-pdf', pdf: path.resolve('tests/fixtures/outline.pdf'), status: 'ready' });
