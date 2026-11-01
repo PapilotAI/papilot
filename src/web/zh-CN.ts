@@ -10,7 +10,7 @@ export const zhCN: Record<string, string> = {
   'Unplaced suggestions': '位置待确认的建议',
   'Remove suggestion {n} from task': '从任务中移除建议 {n}',
   'PDF note {n}': 'PDF 批注 {n}', 'Close note': '关闭批注', 'Note deleted.': '已删除批注。',
-  'Previous note': '上一条批注', 'Next note': '下一条批注', 'Highlighted in {group}': '{group}高亮',
+  'Highlighted in {group}': '{group}高亮',
   'Notes in this task': '已加入任务的批注', 'Remove note {n} from task': '从任务中移除批注 {n}',
   'PDF note library': 'PDF 批注列表', 'Close notes': '关闭批注列表',
   'My notes': '我的批注', 'AI suggestions': 'AI 审阅建议',
