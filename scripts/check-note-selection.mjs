@@ -86,6 +86,14 @@ try {
   await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(personalCard).toBeVisible();
   await expect(page.locator('.new-task-panel')).not.toBeVisible();
+  await personalCard.getByText('Revise n1.', { exact: true }).click();
+  const mobileEditor = personalCard.getByRole('textbox', { name: 'Edit note 1', exact: true });
+  await expect(mobileEditor).toBeFocused();
+  await mobileEditor.fill('A temporary reading thought.');
+  await page.screenshot({ path: 'test-results/personal-note-edit-mobile.png', fullPage: true, animations: 'disabled' });
+  await personalCard.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(personalCard.getByText('Revise n1.', { exact: true })).toBeVisible();
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
   const cardBox = await personalCard.boundingBox(), pdfBox = await page.locator('.pdf-container').boundingBox();
   assert.ok(cardBox.x >= pdfBox.x && cardBox.x + cardBox.width <= pdfBox.x + pdfBox.width + 1);
   await page.screenshot({ path: 'test-results/personal-note-mobile.png', fullPage: true, animations: 'disabled' });

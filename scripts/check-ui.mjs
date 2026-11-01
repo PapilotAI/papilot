@@ -654,16 +654,19 @@ try {
   await expect(notesPanel).toBeVisible();
   await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/personal-note-inline.png', fullPage: true });
-  // The pencil edits a comment; failed saves keep the text, and Cancel changes nothing.
+  // Clicking the text edits in place; failed saves retain the draft and Escape cancels.
   const anchor = structuredClone(annotations[0]);
-  await notesPanel.getByRole('button', { name: 'Edit note 1: Only these words.' }).click();
+  await notesPanel.getByText('Only these words.', { exact: true }).click();
   const editingNote = notesPanel.getByRole('textbox', { name: 'Edit note 1', exact: true });
+  await expect(editingNote).toBeFocused();
+  await page.screenshot({ path: 'test-results/personal-note-edit.png', fullPage: true });
   await editingNote.fill('');
   assert.equal(await notesPanel.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole('button', { name: 'Start task', exact: true }).isDisabled(), true);
   await editingNote.fill('Discarded edit.'); await editingNote.press('Escape');
   assert.equal(annotations[0].comment, 'Only these words.');
-  await notesPanel.getByRole('button', { name: 'Edit note 1: Only these words.' }).click();
+  await expect(notesPanel.getByText('Only these words.', { exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
   await editingNote.fill('Only these words, please.');
   failNoteEdit = true;
   await notesPanel.getByRole('button', { name: 'Save', exact: true }).click();
