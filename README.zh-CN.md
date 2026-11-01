@@ -109,7 +109,7 @@ Papilot 会自动找出电脑上已有的智能体，只列出这些；Codex 始
 
 Papilot 从不保存你的凭据。CLI 智能体使用各自的登录；为 Claude、Cursor 或 GLM 设置的密钥只会交给对应的服务。已找到但没有登录的智能体会显示为不可用。
 
-启动遇到问题？打开 **设置 → 运行状态与诊断**，或运行 `papilot doctor` 检查环境并查看修复建议，用 `papilot doctor --repo /path/to/paper` 一并检查论文。加上 `--json` 可输出机器可读的报告。诊断不会安装软件、启动服务或修改论文。检查范围见[诊断指南](docs/guide.md#diagnostics)。
+启动遇到问题？打开 **设置 → 运行环境 → 智能体** 查看智能体配置，或运行 `papilot doctor` 检查环境并查看修复建议，用 `papilot doctor --repo /path/to/paper` 一并检查论文。加上 `--json` 可输出机器可读的报告。诊断不会安装软件、启动服务或修改论文。检查范围见[诊断指南](docs/guide.md#diagnostics)。
 
 <details>
 <summary><b>⚙️ 选项与远程访问</b></summary>

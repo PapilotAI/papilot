@@ -18,7 +18,7 @@ import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions 
 import { ModelDefaultSettings, type ModelDefaultSettingsProps } from './model-default-settings.tsx';
 import { PeopleSettings, type PeopleSettingsProps, type PeopleSettingsControls } from './people-settings.tsx';
 
-type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'shortcuts' | 'about' | 'licenses' | 'diagnostics' | 'skills' | 'people' | 'updates';
+type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'shortcuts' | 'about' | 'licenses' | 'agents' | 'skills' | 'people' | 'updates';
 type SettingsEntry = { page: SettingsPage; label: string; icon: string; keywords?: string };
 
 // Shared with the review page's bibliography checks.
@@ -82,8 +82,10 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
       ...(skills ? [{ page: 'skills' as const, label: t('Skills'), icon: 'spark' }] : []),
       ...(people ? [{ page: 'people' as const, label: t('People'), icon: 'people' }] : []),
     ] },
+    { label: t('Runtime'), entries: diagnostics ? [
+      { page: 'agents', label: t('Agents'), icon: 'terminal', keywords: `${t('Agent configuration')} ${t('Available models')} ${t('Usage & limits')}` },
+    ] : [] },
     { label: t('Application'), entries: [
-      ...(diagnostics ? [{ page: 'diagnostics' as const, label: t('Runtime & diagnostics'), icon: 'monitor' }] : []),
       ...(updates ? [{ page: 'updates' as const, label: t('Updates'), icon: 'refresh' }] : []),
       { page: 'about', label: t('About Papilot'), icon: 'info', keywords: t('Third-party licenses') },
     ] },
@@ -167,7 +169,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
         {page === 'shortcuts' && <ShortcutSettings/>}
         {page === 'about' && <AboutSettings onLicenses={() => goTo('licenses')}/>}
         {page === 'licenses' && <LicenseSettings/>}
-        {page === 'diagnostics' && diagnostics && <DiagnosticsSettings {...diagnostics}/>}
+        {page === 'agents' && diagnostics && <DiagnosticsSettings {...diagnostics}/>}
         {page === 'updates' && updates && <UpdateSettings api={updates}/>}
         {peopleVisited && people && <div hidden={page !== 'people'}><PeopleSettings {...people} controls={peopleControls}/></div>}
         {page === 'skills' && skills && <SkillLibraryPanel {...skills} controls={skillControls} onClose={onClose}/>}

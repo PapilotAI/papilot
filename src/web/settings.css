@@ -118,30 +118,98 @@
 .settings-license-empty,.settings-license-error{padding:24px 8px;color:var(--text-3);font-size:13px;text-align:center}
 @media(max-width:480px){.settings-product{gap:10px}.settings-product-name{font-size:21px;flex-wrap:wrap}.settings-license-item summary{flex-wrap:wrap}.settings-license-item summary>.settings-license-component{flex-basis:calc(100% - 30px)}.settings-license-item summary>.settings-license-badge{order:2;max-width:100%}.settings-back{min-height:32px}}
 
-.diagnostic-connection{font-size:14px}
+.diagnostic-agent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;list-style:none;padding:0;margin:0}
+.diagnostic-agent-card{min-width:0;min-height:112px;list-style:none}
+.diagnostic-agent-button{display:flex;flex-direction:column;align-items:flex-start;gap:18px;width:100%;height:100%;min-width:0;padding:20px;border:1px solid var(--line);border-radius:var(--settings-card-radius);background:var(--bg);text-align:left;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
+.diagnostic-agent-button:hover{border-color:var(--accent-line);background:var(--bg-subtle);box-shadow:var(--shadow-sm)}
+.diagnostic-agent-button:active{background:var(--bg-hover)}
+.diagnostic-agent-button[aria-expanded=true]{border-color:var(--accent);background:var(--accent-soft)}
+.diagnostic-agent-button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.diagnostic-agent-heading{display:flex;align-items:center;gap:10px;width:100%;min-width:0}
+.diagnostic-agent-heading h4{margin:0;font-size:15px;font-weight:500;line-height:1.4;overflow-wrap:anywhere}
+.diagnostic-availability{display:inline-flex;align-items:center;gap:5px;max-width:100%;margin-top:auto;padding:3px 8px;border-radius:6px;background:var(--bg-muted);color:var(--text-3);font-size:12px;line-height:1.5}
+.diagnostic-availability>svg{flex:none}
+.diagnostic-availability.ready{color:var(--green);background:var(--green-soft)}
+.diagnostic-availability.signin,.diagnostic-availability.limited{color:var(--amber-text);background:var(--amber-soft)}
+.diagnostic-availability.unavailable{color:var(--red);background:var(--red-soft)}
+.diagnostic-availability.connecting{color:var(--accent);background:var(--accent-soft)}
+.diagnostic-agent-card[data-availability=missing] .diagnostic-agent-button:not([aria-expanded=true]),.diagnostic-agent-card[data-availability=unknown] .diagnostic-agent-button:not([aria-expanded=true]){background:var(--bg-subtle)}
+@media(max-width:1000px){.diagnostic-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.diagnostic-agent-grid{gap:10px}.diagnostic-agent-button{padding:14px;gap:14px}.diagnostic-agent-heading .brand-icon{width:22px!important;height:22px!important}.diagnostic-agent-heading{gap:8px}.diagnostic-agent-heading h4{font-size:13px}.diagnostic-availability{font-size:11px;padding:3px 6px}}
 .diagnostic-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
-.diagnostic-state i{width:6px;height:6px;border-radius:50%;background:currentColor}
 .diagnostics-settings .ok{color:var(--green)}
 .diagnostics-settings .warn{color:var(--amber-text)}
 .diagnostics-settings .error{color:var(--red)}
 .diagnostics-settings .info{color:var(--text-3)}
-.diagnostic-missing{margin-top:8px}
-.diagnostic-context,.diagnostic-metadata,.diagnostic-sharing{font-size:12px;line-height:1.6;color:var(--text-3);overflow-wrap:anywhere}
-.diagnostic-context{margin:0 0 12px}
-.diagnostic-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
-.diagnostic-result{display:flex;align-items:center;gap:8px;font-size:13px;margin:18px 0 8px}
-.diagnostic-progress,.diagnostic-failure{font-size:13px;line-height:1.6;padding:16px 0;color:var(--text-2)}
-.diagnostic-failure{color:var(--red)}
-.diagnostic-check{border-top:1px solid var(--line)}
-.diagnostic-check summary{display:flex;align-items:center;gap:8px;padding:18px 0;list-style:none;cursor:pointer;font-size:13px;border-radius:4px}
-.diagnostic-check summary::-webkit-details-marker{display:none}
-.diagnostic-check summary>span{flex:1;min-width:0;overflow-wrap:anywhere}
-.diagnostic-check summary>svg{color:var(--text-3)}
-.diagnostic-check[open] summary>svg:last-child{transform:rotate(180deg)}
-.diagnostic-detail{margin:0 0 14px 25px;color:var(--text-2);font-size:12px;line-height:1.65;overflow-wrap:anywhere}
-.diagnostic-detail p{margin-bottom:8px;white-space:pre-wrap}
 .diagnostic-fix{padding:10px 12px;border-radius:var(--r);background:var(--bg-subtle)}
 .diagnostic-fix strong{display:block;margin-bottom:3px;font-weight:500;color:var(--text)}
-.diagnostic-sharing{margin:18px 0 0;padding-top:14px;border-top:1px solid var(--line)}
-.diagnostic-copy{display:block;font-size:12px;color:var(--text-2);margin-top:12px}
-.settings-dialog .diagnostic-copy textarea{height:180px;padding:10px;font:12px/1.6 var(--mono);resize:vertical}
+
+.settings-content-header #settings-title{display:flex;align-items:center;gap:12px}
+.runtime-agent-drawer{grid-column:1/-1;min-width:0;list-style:none;animation:runtime-agent-open .18s ease-out}
+.runtime-agent-detail{margin:0;border-color:var(--accent-line)}
+@keyframes runtime-agent-open{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.runtime-agent-drawer{animation:none}}
+.runtime-agent-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.runtime-agent-header>div{flex:1;min-width:0}
+.runtime-agent-header h4{margin:0 0 6px;font-size:17px;font-weight:600;outline:none;scroll-margin:24px}
+.runtime-agent-header>.icon-button{align-self:flex-start;color:var(--text-3)}
+.runtime-agent-command{display:block;max-width:100%;margin:5px 0 12px;padding:8px 10px;background:var(--bg-subtle);border:1px solid var(--line);border-radius:6px;font:11px/1.6 var(--mono);overflow-wrap:anywhere;user-select:all}
+.runtime-agent-guide{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-2);text-underline-offset:3px}
+.runtime-agent-usage{min-width:0}
+.runtime-agent-usage .usage-expanded-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.runtime-agent-usage .usage-expanded-head:empty{display:none}
+.runtime-agent-usage .usage-details{border:0;margin:0;padding:0;gap:10px}
+.runtime-agent-usage .usage-limit{display:grid;grid-template-columns:1fr auto;gap:7px}
+.runtime-agent-usage .usage-bar{width:100%;grid-column:1/-1;grid-row:2}
+.runtime-agent-usage .usage-value{grid-column:2;grid-row:1}
+.runtime-agent-usage .usage-reset{grid-column:1/-1;font-size:11px}
+.runtime-agent-error{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:8px;background:var(--red-soft);color:var(--red);font-size:12px;overflow-wrap:anywhere}
+.runtime-agent-error svg{flex:none;margin-top:2px}
+.runtime-agent-detection{border-top:1px solid var(--line);font-size:12px;color:var(--text-3)}
+.runtime-agent-detection summary{display:flex;align-items:center;gap:7px;padding:14px 0 0;cursor:pointer;list-style:none}
+.runtime-agent-detection summary::-webkit-details-marker{display:none}
+.runtime-agent-detection summary>svg:last-child{margin-left:auto}
+.runtime-agent-detection[open] summary>svg:last-child{transform:rotate(180deg)}
+.runtime-agent-detection p{margin:12px 0 0;overflow-wrap:anywhere;white-space:pre-wrap}
+.runtime-agent-models{min-width:0}
+.runtime-agent-models h5{display:flex;align-items:center;gap:7px;margin:0 0 10px;font-size:12px;font-weight:500}
+.runtime-agent-models h5 small{color:var(--text-3);font-size:11px;font-weight:400}
+.runtime-agent-models>p{margin:0;font-size:12px;color:var(--text-3)}
+.runtime-model-list{display:flex;flex-wrap:wrap;gap:7px;list-style:none;margin:0;padding:0;max-height:220px;overflow:auto}
+.runtime-model-list li{display:inline-flex;align-items:center;gap:7px;min-width:0;max-width:100%;padding:5px 9px;border:1px solid var(--line);border-radius:7px;font-size:12px;line-height:1.45;background:var(--bg-subtle)}
+.runtime-model-list li>span{min-width:0;overflow-wrap:anywhere}
+.runtime-model-list li>small{flex:none;font-size:10px;color:var(--text-3)}
+.runtime-model-more{display:inline-flex;align-items:center;gap:5px;margin-top:10px;font-size:12px;color:var(--text-3)}
+.runtime-model-more:hover{color:var(--text)}
+.runtime-agent-help{margin:0 0 16px;font-size:12px;color:var(--text-2);overflow-wrap:anywhere}
+.runtime-agent-help p{margin:0 0 10px}
+.runtime-setup-actions{display:flex;align-items:center;flex-wrap:wrap;gap:14px}
+
+.diagnostic-agent-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;width:100%;margin-top:auto}
+.diagnostic-agent-footer .diagnostic-availability{margin-top:0}
+.diagnostic-agent-action{display:inline-flex;align-items:center;gap:5px;margin-left:auto;font-size:12px;font-weight:500;color:var(--accent);white-space:nowrap}
+.diagnostic-agent-chevron{display:inline-flex;margin-left:auto;color:var(--text-3)}
+.diagnostic-agent-button:hover .diagnostic-agent-chevron,.diagnostic-agent-button[aria-expanded=true] .diagnostic-agent-chevron{color:var(--accent)}
+.runtime-agent-contribute>.menu-anchor{display:flex;width:100%;height:100%}
+.runtime-agent-contribute .diagnostic-agent-heading>svg{color:var(--text-3)}
+@media(max-width:480px){.diagnostic-agent-action{font-size:11px}}
+
+.runtime-agent-compact .runtime-agent-header{gap:10px;margin-bottom:16px;align-items:center}
+.runtime-agent-compact .runtime-agent-header h4{margin:0;font-size:14px;line-height:1.5;flex:none}
+.runtime-agent-account{min-width:0;color:var(--text-3);font-size:12px;overflow-wrap:anywhere}
+.runtime-agent-compact .runtime-agent-header>.icon-button{margin-left:auto;align-self:center;flex:none}
+.runtime-agent-overview{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:28px;padding-bottom:16px}
+.runtime-agent-usage h5,.runtime-agent-check-heading h5{margin:0 0 10px;font-size:12px;font-weight:500}
+.runtime-agent-note{margin:0 0 16px;font-size:12px;color:var(--text-3)}
+.runtime-agent-usage>.runtime-agent-note{margin:0}
+.runtime-agent-reason{color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.runtime-agent-help .runtime-agent-command{margin:8px 0 12px}
+.runtime-agent-help [role=alert]{margin:10px 0 0;color:var(--red)}
+.runtime-agent-caption{display:block;font-size:11px;color:var(--text-3);margin-top:12px}
+.runtime-agent-installation{padding-top:4px;color:var(--text-2)}
+.runtime-agent-installation ol{margin:12px 0;padding-left:18px;line-height:1.65}
+.runtime-agent-installation li+li{margin-top:6px}
+.runtime-agent-installation .runtime-setup-actions{margin-top:12px}
+.runtime-agent-check-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px}
+.runtime-agent-check-heading h5{margin:0}
+@media(max-width:760px){.runtime-agent-overview{grid-template-columns:1fr;gap:16px}.runtime-agent-account{font-size:11px}}

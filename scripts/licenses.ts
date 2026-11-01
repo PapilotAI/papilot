@@ -72,6 +72,8 @@ export function collectLicenses(root = projectRoot): LicenseNotice[] {
     fontNotice('newpx README', 'vendor/latex-review/src/web/fonts/README-newpx.txt'),
   ] });
   packages.set('inconsolata', { name: 'Inconsolata zi4', version: '', license: 'OFL-1.1', url: 'https://ctan.org/pkg/inconsolata', notices: [fontNotice('SIL Open Font License', 'src/web/fonts/OFL-Inconsolata.txt')] });
+  packages.set('lobe-icons', { name: 'Lobe Icons', version: '1.101.0', license: 'MIT', url: 'https://github.com/lobehub/lobe-icons', notices: [fontNotice('MIT License', 'src/web/brand-icons/LICENSE-LobeHub.txt'), fontNotice('Icon sources', 'src/web/brand-icons/SOURCES.txt')] });
+  packages.set('simple-icons', { name: 'Simple Icons', version: '16.36.0', license: 'CC0-1.0', url: 'https://github.com/simple-icons/simple-icons', notices: [fontNotice('CC0', 'src/web/brand-icons/LICENSE-Simple-Icons.txt')] });
   return [...packages.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 }
 

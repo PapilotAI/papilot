@@ -27,6 +27,14 @@ const diagnosticReport = { version: '0.6.0', checkedAt: 1700000000000, platform:
   { id: 'node', ok: true, severity: 'error', detail: 'Node.js 22.22.0', fix: null },
   { id: 'latexmk', ok: false, severity: 'error', detail: '/Users/private/bin/latexmk was not found.', fix: 'Install a full TeX distribution and add it to PATH.' },
   { id: 'agent.antigravity', ok: false, severity: 'warn', detail: 'Antigravity is not configured.', fix: 'Sign in to agy or choose another agent.' },
+  { id: 'git', ok: true, severity: 'error', detail: 'Git is installed.', fix: null },
+  { id: 'project.head', ok: false, severity: 'error', detail: 'The repository has no initial commit.', fix: 'Create the first Git commit.' },
+  { id: 'synctex', ok: true, severity: 'warn', detail: 'SyncTeX is installed.', fix: null },
+  { id: 'tex-engines', ok: true, severity: 'error', detail: 'pdfLaTeX, XeLaTeX, LuaLaTeX are installed.', fix: null },
+  { id: 'project.main', ok: true, severity: 'error', detail: 'main.tex', fix: null },
+  { id: 'project.engine', ok: true, severity: 'error', detail: 'XeLaTeX', fix: null },
+  { id: 'project.git', ok: true, severity: 'error', detail: 'The paper is a Git repository.', fix: null },
+  { id: 'project.worktrees', ok: true, severity: 'warn', detail: 'Task folders are writable.', fix: null },
 ] };
 const creates = [];
 let failCreate = true;
@@ -77,6 +85,7 @@ const fixturePdf = fs.readFileSync('tests/fixtures/outline.pdf');
 const fixtureWords = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 const interruptions = [];
 let reconnects = 0;
+let reconnectFailure = false;
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
@@ -89,7 +98,7 @@ await page.route('**/api/**', async route => {
     if (heldState) { const hold = heldState; heldState = null; stateStarted?.(); await hold; }
     return json(captured);
   }
-  if (url.pathname === '/api/reconnect') { reconnects++; return json({ ok: true }); }
+  if (url.pathname === '/api/reconnect') { reconnects++; return reconnectFailure ? route.fulfill({ status: 503, json: { error: 'Connection failed.' } }) : json({ ok: true }); }
   if (url.pathname === '/api/diagnostics') {
     diagnosticRequests.push(route.request().postDataJSON());
     return diagnosticFailure ? route.fulfill({ status: 503, json: { error: 'Probe unavailable.' } }) : json(diagnosticReport);
@@ -247,40 +256,138 @@ try {
   await settingsDialog.getByRole('switch', { name: 'Expand indirect changes' }).waitFor();
   await settingsDialog.getByRole('searchbox', { name: 'Search settings' }).fill('');
   await page.screenshot({ path: 'test-results/settings-review-desktop.png' });
-  await settingsDialog.getByRole('button', { name: 'Runtime & diagnostics', exact: true }).click();
-  const diagnostics = page.getByRole('dialog', { name: 'Runtime & diagnostics', exact: true });
+  const runtimeGroup = settingsDialog.locator('.settings-category-group').filter({ has: page.getByRole('heading', { name: 'Runtime', exact: true }) });
+  assert.deepEqual(await runtimeGroup.getByRole('button').allTextContents(), ['Agents']);
+  await runtimeGroup.getByRole('button', { name: 'Agents', exact: true }).click();
+  const diagnostics = settingsDialog;
+  assert.equal(await diagnostics.locator('.runtime-advanced').count(), 0);
+  assert.equal(await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).count(), 0);
+  await diagnostics.getByRole('button', { name: 'Codex details', exact: true }).click();
+  await diagnostics.locator('.runtime-agent-detection').getByText('Installation & setup', { exact: true }).click();
   await diagnostics.getByRole('alert').waitFor();
-  assert.equal(await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).isDisabled(), true);
   diagnosticFailure = false;
   await diagnostics.getByRole('button', { name: 'Check again', exact: true }).click();
-  await diagnostics.getByText('Errors: 1 · Warnings: 1', { exact: true }).waitFor();
+  await diagnostics.getByText('No installation details were returned. Run the checks again to refresh.', { exact: true }).waitFor();
+  await diagnostics.getByRole('button', { name: 'Close agent details' }).click();
   assert.deepEqual(diagnosticRequests, [{ projectId: task.projectId }, { projectId: task.projectId }]);
-  await diagnostics.locator('.diagnostic-fix').filter({ hasText: 'Install a full TeX distribution and add it to PATH.' }).waitFor();
-  await page.evaluate(() => { window.diagnosticCopies = []; window.originalCopy = navigator.clipboard.writeText; navigator.clipboard.writeText = async value => { window.diagnosticCopies.push(value); }; });
-  await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).click();
-  await diagnostics.getByRole('button', { name: 'Copied', exact: true }).waitFor();
-  const copiedDiagnostic = await page.evaluate(() => window.diagnosticCopies[0]);
-  assert.doesNotMatch(copiedDiagnostic, /private|\/Users\//);
-  assert.equal(JSON.parse(copiedDiagnostic).checks[1].ok, false);
-  await page.clock.runFor(2100);
-  await page.evaluate(() => { navigator.clipboard.writeText = async () => { throw new Error('Clipboard blocked'); }; });
-  await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).click();
-  const manualSummary = diagnostics.getByRole('textbox', { name: 'Diagnostic summary' });
-  await manualSummary.waitFor();
-  assert.equal(await manualSummary.inputValue(), copiedDiagnostic);
-  assert.equal(await manualSummary.evaluate(el => document.activeElement === el && el.selectionEnd === el.value.length), true);
-  await page.evaluate(() => { navigator.clipboard.writeText = window.originalCopy; });
+  assert.equal(await diagnostics.locator('.diagnostic-checks').count(), 0, 'Agent checks belong in their card details, without a second list');
+  assert.equal(await diagnostics.getByRole('heading', { name: 'Agent configuration', exact: true }).count(), 0);
+  assert.equal(await diagnostics.getByRole('button', { name: 'Check again', exact: true }).count(), 0);
+  const agentCards = diagnostics.locator('.diagnostic-agent-card[data-agent]');
+  assert.deepEqual(await agentCards.locator('h4').allTextContents(), ['Codex', 'Claude', 'Cursor', 'Antigravity', 'Kimi', 'GLM', 'DeepSeek', 'Qwen', 'OpenCode']);
+  const availability = id => diagnostics.locator(`[data-agent="${id}"] .diagnostic-availability`);
+  assert.equal(await availability('codex').innerText(), 'Ready');
+  assert.equal(await availability('cursor').innerText(), 'Not detected');
+  assert.equal(await availability('antigravity').innerText(), 'Unavailable');
+  assert.equal(await availability('kimi').innerText(), 'Connecting…');
+  assert.equal(await availability('glm').innerText(), 'Unknown');
+  snapshot.runtimes.claude.authenticated = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await availability('claude').getByText('Sign-in required', { exact: true }).waitFor();
+  stateFailure = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await availability('codex').getByText('Unknown', { exact: true }).waitFor();
+  assert.equal((await agentCards.locator('.diagnostic-availability').allTextContents()).every(value => value === 'Unknown'), true, 'Disconnected hosts cannot report stale availability');
+  stateFailure = false; snapshot.runtimes.claude.authenticated = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await availability('claude').getByText('Ready', { exact: true }).waitFor();
+  await diagnostics.locator('.settings-content').evaluate(element => { element.scrollTop = 0; });
+  await page.screenshot({ path: 'test-results/settings-agents-desktop.png' });
+  assert.equal(await agentCards.locator('.brand-icon').count(), 9);
+  const agentDetail = diagnostics.locator('#runtime-agent-detail');
+  const codexCard = diagnostics.getByRole('button', { name: 'Codex details', exact: true });
+  const originalCatalog = snapshot.runtime.models;
+  snapshot.runtime.models = [...originalCatalog, ...Array.from({ length: 6 }, (_, index) => ({ id: `research-${index}`, name: index === 5 ? 'Research model with a longer display name' : `Research model ${index + 1}`, isDefault: false, efforts: [], defaultEffort: null }))];
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await codexCard.click();
+  await agentDetail.getByRole('button', { name: 'Show 2 more models', exact: true }).waitFor();
+  assert.equal(await codexCard.evaluate(element => element === document.activeElement), true, 'Opening the drawer keeps focus on its trigger');
+  assert.equal(await agentDetail.locator('.runtime-model-list li').count(), 6);
+  assert.deepEqual((await agentDetail.locator('.runtime-model-list li>span').allTextContents()).slice(0, 2), ['Fast model', 'Deep model']);
+  assert.equal(await agentDetail.locator('.runtime-model-list li').first().getAttribute('title'), 'fast-model');
+  await agentDetail.getByRole('button', { name: 'Show 2 more models', exact: true }).click();
+  assert.equal(await agentDetail.locator('.runtime-model-list li').count(), 8);
+  assert.equal(await codexCard.getAttribute('aria-expanded'), 'true');
+  assert.equal(await agentDetail.getByRole('meter').getAttribute('aria-valuenow'), '83');
+  await agentDetail.getByText('12,418 credits', { exact: true }).waitFor();
+  assert.equal(await agentDetail.getByText('papilot codex login', { exact: true }).isVisible(), false);
+  await agentDetail.locator('.runtime-agent-detection').getByText('Installation & setup', { exact: true }).click();
+  await agentDetail.getByText('papilot codex login', { exact: true }).waitFor();
+  await agentDetail.locator('.runtime-agent-detection').getByText('Installation & setup', { exact: true }).click();
+  assert.equal(await page.locator('dialog[open]').count(), 1, 'Agent details stay in the settings page');
+  await diagnostics.locator('.settings-content').evaluate(element => { element.scrollTop = 0; });
+  await page.screenshot({ path: 'test-results/settings-agent-details-desktop.png', animations: 'disabled' });
+  await agentDetail.getByRole('button', { name: 'Show fewer models', exact: true }).click();
+  assert.equal(await agentDetail.locator('.runtime-model-list li').count(), 6);
+  snapshot.runtime.models = originalCatalog;
+  snapshot.runtime.usage.reached = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await availability('codex').getByText('Limit reached', { exact: true }).waitFor();
+  snapshot.runtime.usage.reached = false;
+  stateFailure = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await availability('codex').getByText('Unknown', { exact: true }).waitFor();
+  assert.equal(await agentDetail.getByRole('meter').count(), 0, 'Disconnected agents must not show stale usage');
+  assert.equal(await agentDetail.locator('.runtime-model-list').count(), 0, 'Disconnected agents must not show stale model availability');
+  stateFailure = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await agentDetail.getByRole('meter').waitFor();
+  await agentDetail.locator('#runtime-agent-title').focus();
+  await page.keyboard.press('Escape');
+  assert.equal(await agentDetail.count(), 0);
+  assert.equal(await codexCard.evaluate(element => element === document.activeElement), true);
+  await diagnostics.getByRole('button', { name: 'Claude details', exact: true }).click();
+  await agentDetail.getByText('Claude Max', { exact: true }).waitFor();
+  await agentDetail.getByText('Usage not reported', { exact: true }).waitFor();
+  await diagnostics.getByRole('button', { name: 'Antigravity details', exact: true }).click();
+  await agentDetail.locator('.runtime-agent-help').getByText('spawn agy ENOENT', { exact: true }).waitFor();
+  await agentDetail.locator('.runtime-agent-detection').getByText('Installation & setup', { exact: true }).click();
+  await agentDetail.getByText('Antigravity is not configured.', { exact: true }).waitFor();
+  await agentDetail.locator('.runtime-agent-detection').getByText('Warning', { exact: true }).waitFor();
+  await agentDetail.locator('.runtime-agent-detection .diagnostic-fix').filter({ hasText: 'Sign in to agy or choose another agent.' }).waitFor();
+  await agentDetail.getByRole('button', { name: 'Close agent details' }).click();
+
+  await diagnostics.getByRole('button', { name: 'Cursor details', exact: true }).click();
+  await agentDetail.getByText('Cursor SDK credentials were not detected.', { exact: true }).waitFor();
+  await page.screenshot({ path: 'test-results/settings-agent-setup-desktop.png', animations: 'disabled' });
+  await agentDetail.locator('.runtime-agent-detection').getByText('Installation & setup', { exact: true }).click();
+  await agentDetail.getByText(/The last connection attempt found neither CURSOR_API_KEY/).waitFor();
+  await agentDetail.getByText(/An environment variable set in a new terminal/).waitFor();
+  await agentDetail.locator('.runtime-agent-detection').getByText('Installation & setup', { exact: true }).click();
+  const reconnectsBeforeSetup = reconnects;
+  reconnectFailure = true;
+  await agentDetail.getByRole('button', { name: 'Reconnect', exact: true }).click();
+  await agentDetail.getByRole('alert').waitFor();
+  assert.equal(reconnects, reconnectsBeforeSetup + 1);
+  reconnectFailure = false;
+  const originalCursor = snapshot.runtimes.cursor;
+  snapshot.runtimes.cursor = { ...originalCursor, installed: true, connected: true, authenticated: true, account: 'SDK account', models: [{ id: 'auto', name: 'Auto', isDefault: true, efforts: [], defaultEffort: null }] };
+  await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/diagnostics')), agentDetail.getByRole('button', { name: 'Reconnect', exact: true }).click()]);
+  await availability('cursor').getByText('Ready', { exact: true }).waitFor();
+  await agentDetail.locator('.runtime-agent-header').getByText('SDK account', { exact: true }).waitFor();
+  await agentDetail.locator('.runtime-model-list').getByText('Auto', { exact: true }).waitFor();
+  assert.equal(await agentDetail.locator('.runtime-agent-help').count(), 0);
+  assert.equal(reconnects, reconnectsBeforeSetup + 2);
+  snapshot.runtimes.cursor = originalCursor;
+  await agentDetail.getByRole('button', { name: 'Close agent details' }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await availability('cursor').getByText('Not detected', { exact: true }).waitFor();
   await diagnostics.getByRole('button', { name: 'General', exact: true }).click();
   assert.equal(await page.evaluate(() => document.activeElement.textContent), 'General');
   await settingsDialog.getByRole('combobox', { name: 'Language', exact: true }).selectOption('zh-CN');
   await settingsDialog.getByRole('button', { name: '外观', exact: true }).click();
   await settingsDialog.getByRole('radio', { name: '深色', exact: true }).check();
-  await page.getByRole('button', { name: '运行状态与诊断', exact: true }).click();
-  await page.getByText('1 项错误 · 1 项提醒', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '智能体', exact: true }).click();
+  await diagnostics.getByRole('button', { name: 'Codex 详情', exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/settings-diagnostics-dark.png' });
   await page.setViewportSize({ width: 320, height: 740 });
   assert.equal(await page.locator('.settings-dialog').evaluate(el => el.scrollWidth > el.clientWidth), false);
   await page.screenshot({ path: 'test-results/settings-diagnostics-mobile.png' });
+  await diagnostics.getByRole('button', { name: 'Codex 详情', exact: true }).click();
+  await agentDetail.getByRole('meter').waitFor();
+  assert.equal(await diagnostics.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth), false);
+  await page.screenshot({ path: 'test-results/settings-agent-details-mobile.png', animations: 'disabled' });
+  await agentDetail.getByRole('button', { name: '关闭智能体详情' }).click();
   await page.locator('dialog[open]').getByRole('button', { name: '设置', exact: true }).click();
   await page.getByRole('button', { name: /关于 Papilot/ }).click();
   assert.equal(await page.getByRole('link', { name: /更新日志/ }).getAttribute('href'), 'https://github.com/cu1ch3n/papilot/blob/main/CHANGELOG.md');
@@ -294,7 +401,7 @@ try {
   await settingsDialog.getByRole('combobox', { name: '语言', exact: true }).selectOption('system');
   await closeSettings();
   await page.setViewportSize({ width: 1440, height: 900 });
-  console.log('PASS: Diagnostics retry, paper scope, redacted sharing and clipboard fallback, translated mobile layout, changelog and contribution links');
+  console.log('PASS: Agent diagnostics retry, inline details, translated mobile layout, changelog and contribution links');
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('Preserve this draft while changing appearance.');
   await page.emulateMedia({ colorScheme: 'dark' });
   await themeIs('dark');
