@@ -55,3 +55,19 @@ The approved app icon uses the blue-and-white Papilot pen nib on a rounded tile 
 `desktop/assets/icon-composer/` contains unmasked background and foreground SVG layers for a future Icon Composer integration. These are source assets, not a compiled `.icon` project; the current Electron build uses the ICNS above.
 
 The DMG uses `desktop/assets/dmg-background.svg`, rendered at 1× and 2× for Retina displays. Run `node scripts/render-dmg.mjs` with `rsvg-convert` installed to regenerate both PNGs. The fonts come from the existing web assets. To update the bundled example PDF after editing its sources, run `node scripts/build-demo-preview.mjs` with TeX Live/MacTeX installed. Release CI uses the checked-in previews and backgrounds.
+
+## Windows preview
+
+Windows x64 builds use the same Electron app, with bundled Node, npm and Codex.
+Build on Windows with an official Node distribution and run `npm run desktop:build`.
+If Node's LICENSE is not installed beside node.exe, set `PAPILOT_NODE_LICENSE` to
+its official LICENSE file before building. The NSIS installer is written to
+`release/desktop/Papilot-VERSION-win-x64.exe`. It installs for the current user
+and creates a desktop shortcut. Local builds are unsigned.
+
+Git and a full TeX distribution remain external prerequisites for paper editing.
+The bundled demo PDF can be read without TeX. This preview has not yet validated
+a complete TeX build and review on Windows.
+
+Run `node scripts/check-windows-local.mjs PATH_TO_PACKAGED_EXE` for the Windows
+startup smoke check. Set `PAPILOT_SCREENSHOT` to save a screenshot.

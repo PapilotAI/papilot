@@ -53,7 +53,7 @@ else {
       else if (action === 'close') window.close();
     });
     const root = app.isPackaged ? path.join(process.resourcesPath, 'server') : path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-    const node = app.isPackaged ? path.join(process.resourcesPath, 'runtime/bin/node') : process.env.PAPILOT_DESKTOP_NODE;
+    const node = app.isPackaged ? path.join(process.resourcesPath, process.platform === 'win32' ? 'runtime/bin/node.exe' : 'runtime/bin/node') : process.env.PAPILOT_DESKTOP_NODE;
     if (!node) throw new Error('Use npm run desktop to start the development app.');
     const data = app.getPath('userData'), log = path.join(app.getPath('logs'), 'backend.log');
     const env: NodeJS.ProcessEnv = backendEnvironment(node, root, data);

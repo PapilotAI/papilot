@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -28,8 +29,8 @@ export function startBackend(options: { node: string; root: string; data: string
   const fd = fs.openSync(options.log, 'a', 0o600);
   let child: ChildProcess;
   try {
-    child = spawn(options.node, ['--import', path.join(options.root, 'node_modules/tsx/dist/loader.mjs'), path.join(options.root, 'src/server/start.ts')], {
-      cwd: options.root, env: options.env, stdio: ['ignore', fd, fd, 'ipc'], detached: process.platform !== 'win32',
+    child = spawn(options.node, ['--import', pathToFileURL(path.join(options.root, 'node_modules/tsx/dist/loader.mjs')).href, path.join(options.root, 'src/server/start.ts')], {
+      windowsHide: true, cwd: options.root, env: options.env, stdio: ['ignore', fd, fd, 'ipc'], detached: process.platform !== 'win32',
     });
   } finally { fs.closeSync(fd); }
   const ready = new Promise<string>((resolve, reject) => {

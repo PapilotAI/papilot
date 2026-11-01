@@ -21,7 +21,7 @@ export class Codex extends EventEmitter {
   }
   private async launch() {
     this.stderr = '';
-    const child = spawn(this.binary, this.args, { cwd: ROOT, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(this.binary, this.args, { windowsHide: true, cwd: ROOT, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
     this.child = child;
     const lines = createInterface({ input: child.stdout });
     lines.on('line', line => { try { this.receive(JSON.parse(line)); } catch { /* non-protocol stdout is ignored */ } });

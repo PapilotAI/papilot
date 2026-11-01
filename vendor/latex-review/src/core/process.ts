@@ -20,6 +20,7 @@ export function run(
 ) {
   const { check = true, ...rest } = options;
   const result = spawnSync(command, args, {
+    windowsHide: true,
     timeout: 300000,
     maxBuffer: 128 * 1024 * 1024,
     ...rest,
@@ -63,7 +64,8 @@ export function runAsync(
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
-      detached: true,
+      detached: process.platform !== "win32",
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     running.add(child);
@@ -106,6 +108,6 @@ export function runAsync(
   });
 }
 export function which(command: string): string | null {
-  const found = run("which", [command], { check: false });
-  return found.status === 0 ? found.stdout.toString().trim() : null;
+  const found = run(process.platform === "win32" ? "where.exe" : "which", [command], { check: false });
+  return found.status === 0 ? found.stdout.toString().trim().split(/\r?\n/)[0] : null;
 }
