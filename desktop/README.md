@@ -16,6 +16,8 @@ Artifacts are in `release/desktop/`. macOS produces DMG and ZIP files: Apple Sil
 
 Linux release CI builds on Ubuntu 22.04 x64. Other Linux versions and desktop environments need their own compatibility checks. The AppImage is a portable executable; the deb installs Papilot in the application menu and declares Git and desktop library dependencies. Install Git separately when using AppImage, and TeX Live to compile manuscript edits. The included demo PDF can be read without TeX. Windows packaging is not implemented yet; the review engine's POSIX process handling and agent CLI launching need adaptation before a Windows release.
 
+After downloading an AppImage, grant execute permission with `chmod +x Papilot-*.AppImage`. If FUSE is unavailable, run it with `APPIMAGE_EXTRACT_AND_RUN=1` to use temporary extraction instead. The deb can be installed with `sudo apt install ./Papilot-*.deb`.
+
 After changing desktop TypeScript, run `npm run desktop:compile`. After changing web code, run `npm run build`. Restart the development app to pick up those changes.
 
 ```sh
@@ -38,7 +40,7 @@ The smoke test opens the real app with temporary data, exercises the local API a
 
 ## Releases and signing
 
-The Desktop workflow builds and tests on native macOS ARM64, macOS x64 and Ubuntu x64 runners. Branch/PR checks save installers and screenshots as Actions artifacts for seven days. It can also be run manually. The version-tag release workflow first publishes npm and creates the GitHub release, then calls the same desktop workflow to attach `Papilot-VERSION-mac-ARCH.dmg/.zip` and `Papilot-VERSION-linux-x64.AppImage/.deb`. Rerunning a failed release job replaces its assets. No separate Electron version is maintained.
+The Desktop workflow builds and tests on native macOS ARM64, macOS x64 and Ubuntu x64 runners. Branch/PR checks save installers and screenshots as Actions artifacts for seven days. It can also be run manually. The version-tag release workflow first publishes npm and creates the GitHub release, then calls the same desktop workflow to attach `Papilot-VERSION-mac-ARCH.dmg/.zip`, `Papilot-VERSION-linux-x86_64.AppImage` and `Papilot-VERSION-linux-amd64.deb`. Rerunning a failed release job replaces its assets. No separate Electron version is maintained.
 
 Local builds and CI without signing credentials use ad hoc signatures. These builds can be tested locally, but distributing them does not provide Developer ID/Gatekeeper trust. For signed, notarized release builds, configure these repository secrets:
 
