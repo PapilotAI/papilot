@@ -20,6 +20,8 @@ export interface UpdateStatus {
 export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: { phase: string; status: string; error?: string; details?: string[] } | null }
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface Task {
+  mode?: 'edit' | 'review';
+  aiReview?: { key: string; notes?: number; revision?: number };
   // New tasks keep acceptance isolated until the author chooses a destination.
   deferred?: boolean;
   delivery?: { mode: 'workspace' | 'branch'; accepted: string; branch?: string; commit?: string; pending?: boolean } | null;
@@ -66,7 +68,7 @@ export interface Author { id: string; name: string }
 // A failed review build as the engine reports it; log is the compiler log's path.
 export interface BuildFailure { error: string; details: string[]; log?: string }
 export interface FeedbackSummary { round: number | null; accepted: number; rejected: number; undone: number; comments: { where: string; text: string }[]; buildError?: boolean }
-export interface Skill { id: string; name: string; description: string; hint: string; icon?: SkillIcon; source: 'builtin' | 'user' | 'paper' }
+export interface Skill { output?: 'annotations'; id: string; name: string; description: string; hint: string; icon?: SkillIcon; source: 'builtin' | 'user' | 'paper' }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
 export type AgentId = 'codex' | 'claude' | 'antigravity' | 'kimi' | 'cursor' | 'opencode' | 'qwen' | 'glm' | 'deepseek';
 // Every agent Papilot can drive, in menu order. Only the ones found on the host are offered.
@@ -135,7 +137,9 @@ export function countProblems(problems: Pick<BuildProblem, 'severity' | 'kind' |
 }
 // `key` names the PDF whose pages the locations refer to.
 export interface ManuscriptProblems { status: ManuscriptBuild['status']; key?: string; problems: BuildProblem[]; log: boolean }
-export interface Annotation { group?: NoteGroup; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
+export interface Annotation { aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
+// Review findings stay with their task; only explicit copies belong to the manuscript.
+export const isTaskReviewNote = (note: Annotation) => Boolean(note.aiReview && !note.aiReview.sourceId);
 export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }
 export interface PaperImport {
   id: string; path: string; name: string; copied: boolean; candidates: string[]; main: string; engine: string;

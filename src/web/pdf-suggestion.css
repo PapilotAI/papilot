@@ -1,0 +1,33 @@
+.pdf-note-card{position:absolute;z-index:5;display:flex;flex-direction:column;gap:10px;box-sizing:border-box;width:280px;padding:14px 12px 10px 14px;border:1px solid color-mix(in srgb,var(--line-strong) 65%,transparent);border-radius:14px;background:var(--bg);color:var(--text);box-shadow:var(--float),inset 0 1px 0 color-mix(in srgb,var(--bg) 75%,transparent);font:13px/1.5 var(--sans);pointer-events:auto;text-align:left;outline:none}
+.pdf-note-content{display:flex;align-items:stretch;gap:6px;min-height:0}
+.pdf-suggestion-body{flex:1;min-width:0;min-height:0;max-height:inherit;overflow:auto;overscroll-behavior:contain;-webkit-user-select:text;user-select:text}
+.pdf-suggestion-body p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.55 var(--sans)}
+.pdf-note-text{cursor:text;border-radius:5px;outline:none}
+.pdf-note-text:hover{background:var(--bg-hover)}
+.pdf-note-text:focus-visible{box-shadow:0 0 0 2px var(--line-strong)}
+.pdf-note-input{display:block;box-sizing:border-box;width:100%;min-height:22px;max-height:min(240px,40dvh);margin:0;padding:0;border:0;border-radius:0;background:transparent;color:var(--text);font:14px/1.55 var(--sans);resize:none;outline:none;box-shadow:none}
+.pdf-note-input:focus{outline:none;box-shadow:none}
+.pdf-note-card .icon-button{flex:none;width:26px;height:26px;border-radius:8px;color:var(--text-3)}
+.pdf-note-card .icon-button:hover{color:var(--text);background:var(--bg-hover)}
+.pdf-note-card .icon-button:focus-visible{outline-color:var(--text-3)}
+.pdf-note-card .pdf-note-close{align-self:flex-start;margin-top:-2px}
+.pdf-note-tools{display:flex;align-items:center;gap:4px;flex:none;color:var(--text-3)}
+.pdf-note-tools-space{flex:1}
+.pdf-note-origin{margin-left:3px;font-size:10px;color:var(--text-3)}
+.pdf-note-attach[aria-pressed=true] svg{transform:rotate(180deg)}
+.pdf-note-card .pdf-note-delete:hover{color:var(--danger)}
+.pdf-suggestion-navigation{display:flex;align-items:center;gap:1px;margin-left:3px;font-size:10px;color:var(--text-3);flex:none;font-variant-numeric:tabular-nums}
+.pdf-suggestion-navigation>span{min-width:28px;text-align:center}
+.pdf-suggestion-trigger{display:inline-flex;align-items:center;gap:4px;flex:none;min-width:30px;height:30px;padding:0 6px;border-radius:6px;color:#b45309;font-size:12px}
+.pdf-suggestion-trigger:hover,.pdf-suggestion-trigger[aria-pressed=true]{background:var(--bg-hover)}
+.pdf-suggestion-undo{position:absolute;z-index:15;bottom:12px;left:50%;transform:translateX(-50%);max-width:calc(100% - 24px);padding:8px 12px;border:1px solid var(--line);border-radius:8px;box-shadow:var(--float);background:var(--bg);color:var(--text);font-size:12px}
+.pdf-suggestion-undo button{color:var(--accent);text-decoration:underline;margin-left:8px}
+@media(pointer:coarse){.pdf-note-card .icon-button{width:36px;height:36px}.pdf-suggestion-navigation{gap:0;margin-left:0}.pdf-suggestion-navigation .icon-button{width:32px}.pdf-suggestion-navigation>span{min-width:24px}.pdf-personal-note .pdf-note-text,.pdf-note-input{font-size:16px}}
+
+.pdf-note-card.pdf-note-inline{position:relative;z-index:auto;width:100%;padding:12px;box-shadow:none;border-radius:12px}
+.pdf-note-inline:hover,.note-list>li.active>.pdf-note-inline{border-color:var(--line-strong)}
+.note-list>li.stale>.pdf-note-inline{background:var(--bg-subtle)}
+.pdf-note-inline .note-head{margin-bottom:6px}
+.pdf-note-attach{display:inline-flex;align-items:center;justify-content:center;flex:none;width:26px;height:26px;border-radius:8px;color:var(--text-3)}
+.pdf-note-attach:hover:not(:disabled){color:var(--text);background:var(--bg-hover)}
+@media(pointer:coarse){.pdf-note-attach{width:36px;height:36px}}

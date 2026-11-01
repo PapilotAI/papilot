@@ -1,3 +1,4 @@
+import type { ReviewSnapshot } from './ai-review.ts';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -436,21 +437,7 @@ export class Manuscripts extends EventEmitter {
         if (!this.placements.has(cacheKey)) {
           let placement: Pick<Annotation, 'key' | 'page' | 'rect' | 'rects' | 'source'> | null = null;
           try {
-            const lookup = `${root}:${note.key}`;
-            if (!this.oldPdfs.has(lookup)) {
-              const cache = path.join(loadProject(root).state, 'cache/builds');
-              let found: string | null = null;
-              for (const entry of fs.readdirSync(cache, { withFileTypes: true })) {
-                if (!entry.isDirectory() || entry.name.endsWith('.lock')) continue;
-                try {
-                  const folder = path.join(cache, entry.name), saved = JSON.parse(fs.readFileSync(path.join(folder, 'result.json'), 'utf8'));
-                  if (typeof saved.pdf !== 'string' || !path.resolve(saved.pdf).startsWith(path.resolve(folder) + path.sep)) continue;
-                  if (createHash('sha256').update(saved.key + saved.pdf).digest('hex').slice(0, 16) === note.key && fs.existsSync(saved.pdf)) { found = saved.pdf; break; }
-                } catch { /* An incomplete or pruned build cannot locate a note. */ }
-              }
-              this.oldPdfs.set(lookup, found);
-            }
-            const pdf = this.oldPdfs.get(lookup);
+            const pdf = await this.cachedPdf(root, note.key);
             if (pdf) {
               if (!old.has(pdf)) { const document = new PdfDocument(pdf); old.set(pdf, { document, pages: new AnnotationPages(document) }); }
               const match = placeAnnotation(note, old.get(pdf)!.pages, target);
@@ -501,6 +488,93 @@ export class Manuscripts extends EventEmitter {
     const build = this.builds.get(projectId);
     if (!build?.log || !fs.existsSync(build.log)) throw Object.assign(new Error('There is no compilation log yet.'), { statusCode: 404 });
     return scrubLog(fs.readFileSync(build.log, 'utf8'), build.logFolder);
+  }
+
+  // Compile the task's frozen source tree, then retain its PDF outside the build cache.
+  async captureReview(root: string, worktree: string, taskId: string): Promise<ReviewSnapshot> {
+    const { Builder, Repo, loadProject } = await engine();
+    const tree = await workingTree(worktree);
+    const result = await new Builder(loadProject(root), new Repo(root)).build(tree, ['full']);
+    const pdf = await this.preserveReviewPdf(root, taskId, result.pdf);
+    const key = createHash('sha256').update(fs.readFileSync(pdf)).digest('hex').slice(0, 16);
+    return { ...await this.snapshotPdf(pdf, key), pdf };
+  }
+
+  private async reviewPdfPath(root: string, taskId: string) {
+    const { loadProject } = await engine();
+    return path.join(loadProject(root).state, 'ai-reviews', createHash('sha256').update(taskId).digest('hex'), 'review.pdf');
+  }
+
+  async savedReviewPdf(root: string, taskId: string): Promise<string | null> {
+    const pdf = await this.reviewPdfPath(root, taskId);
+    return fs.existsSync(pdf) ? pdf : null;
+  }
+
+  async preserveReviewPdf(root: string, taskId: string, source: string) {
+    const pdf = await this.reviewPdfPath(root, taskId), folder = path.dirname(pdf);
+    fs.mkdirSync(folder, { recursive: true });
+    // A retry always uses the original task copy, even after its build cache is pruned.
+    if (!fs.existsSync(pdf)) { const temporary = path.join(folder, 'review.tmp'); fs.copyFileSync(source, temporary); fs.renameSync(temporary, pdf); }
+    return pdf;
+  }
+
+  async cachedPdf(root: string, key: string): Promise<string | null> {
+    const lookup = `${root}:${key}`;
+    if (this.oldPdfs.has(lookup)) return this.oldPdfs.get(lookup)!;
+    const { loadProject } = await engine();
+    const cache = path.join(loadProject(root).state, 'cache/builds');
+    let found: string | null = null;
+    if (fs.existsSync(cache)) for (const entry of fs.readdirSync(cache, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.endsWith('.lock')) continue;
+      try {
+        const folder = path.join(cache, entry.name), saved = JSON.parse(fs.readFileSync(path.join(folder, 'result.json'), 'utf8'));
+        if (typeof saved.pdf !== 'string' || !path.resolve(saved.pdf).startsWith(path.resolve(folder) + path.sep)) continue;
+        if (createHash('sha256').update(saved.key + saved.pdf).digest('hex').slice(0, 16) === key && fs.existsSync(saved.pdf)) { found = saved.pdf; break; }
+      } catch { /* Incomplete builds have no usable PDF. */ }
+    }
+    this.oldPdfs.set(lookup, found); return found;
+  }
+
+  async placeReviewNote(projectId: string, root: string, note: Annotation, pdf: string): Promise<Annotation> {
+    const state = await this.state(projectId, root);
+    if (!state.build.current || !state.build.key) throw new Error('Wait for the current manuscript PDF to finish compiling, then copy the suggestion again.');
+    const key = state.build.key, { PdfDocument } = await engine();
+    const original = new PdfDocument(pdf), current = new PdfDocument(this.pdf(projectId, key));
+    try {
+      const match = placeAnnotation(note, new AnnotationPages(original), new AnnotationPages(current));
+      if (!match) throw new Error('This passage could not be located reliably in the current manuscript. The suggestion remains in the review task.');
+      const { source } = await this.locate(projectId, key, match.page, match.rect, match.rects, note.quote);
+      const latest = await this.state(projectId, root);
+      if (!latest.build.current || latest.build.key !== key) throw new Error('The manuscript changed while copying this suggestion. Try again.');
+      return { ...note, ...match, key, source };
+    } finally { original.close(); current.close(); }
+  }
+
+  async reviewSnapshot(projectId: string, key: string): Promise<ReviewSnapshot> {
+    return this.snapshotPdf(this.pdf(projectId, key), key);
+  }
+
+  private async snapshotPdf(pdf: string, key: string): Promise<ReviewSnapshot> {
+    const { PdfDocument } = await engine();
+    const document = new PdfDocument(pdf), lines: ReviewSnapshot['lines'] = [];
+    let length = 0;
+    try {
+      for (let index = 0; index < document.length; index++) {
+        const page = document.page(index), [left, top, right, bottom] = page.bounds;
+        for (const [number, line] of page.lines.entries()) {
+          const text = line.chars.map((char: { text: string }) => char.text).join('').trim();
+          if (!text) continue;
+          length += text.length;
+          if (length > 180000) throw new Error('This PDF is too long for one AI review (180,000 characters maximum).');
+          const [x0, y0, x1, y1] = line.rect;
+          const rect = [(x0 - left) / (right - left), (y0 - top) / (bottom - top), (x1 - left) / (right - left), (y1 - top) / (bottom - top)].map(value => Math.max(0, Math.min(1, value))) as Rect;
+          if (rect[2] <= rect[0] || rect[3] <= rect[1]) continue;
+          lines.push({ id: `p${index + 1}-l${number + 1}`, page: index, text, rect });
+        }
+      }
+      if (!lines.length) throw new Error('This PDF has no selectable text to review.');
+      return { key, lines };
+    } finally { document.close(); }
   }
 
   pdf(projectId: string, key: string) {

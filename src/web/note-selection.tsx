@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Annotation } from '../shared.ts';
 import { browserStorage } from './storage.ts';
 
-const storageKey = 'papilot:excluded-notes';
+const storageKey = 'papilot:selected-notes';
 function savedSelections(): Record<string, string[]> {
   try {
     const value = JSON.parse(browserStorage.getItem(storageKey) || '{}');
@@ -11,27 +11,28 @@ function savedSelections(): Record<string, string[]> {
   } catch { return {}; }
 }
 
-// New notes start checked. Keep exclusions per paper across polling, builds,
-// navigation and reloads; a successful send starts a fresh selection.
+// A note is reading material until the author explicitly adds it to a task.
+// Persist only positive selections per paper; legacy exclusions never implied consent.
 export function useNoteSelection(projectId: string, notes: Annotation[]) {
-  const [excluded, setExcluded] = useState(savedSelections);
+  const [included, setIncluded] = useState(savedSelections);
   useEffect(() => {
-    if (Object.keys(excluded).length) browserStorage.setItem(storageKey, JSON.stringify(excluded));
+    if (Object.keys(included).length) browserStorage.setItem(storageKey, JSON.stringify(included));
     else browserStorage.removeItem(storageKey);
-  }, [excluded]);
-  const omitted = new Set(excluded[projectId] || []);
+  }, [included]);
+  const selected = new Set(included[projectId] || []);
+  const has = (id: string) => selected.has(id);
   return {
-    selected: notes.filter(note => !omitted.has(note.id)),
-    has: (id: string) => !omitted.has(id),
+    selected: notes.filter(note => has(note.id)),
+    has,
     set(ids: string[], checked: boolean) {
-      setExcluded(current => {
+      setIncluded(current => {
         const next = new Set(current[projectId] || []);
-        for (const id of ids) { if (checked) next.delete(id); else next.add(id); }
+        for (const id of ids) { if (checked) next.add(id); else next.delete(id); }
         const updated = { ...current };
         if (next.size) updated[projectId] = [...next]; else delete updated[projectId];
         return updated;
       });
     },
-    reset(target: string) { setExcluded(current => { const next = { ...current }; delete next[target]; return next; }); },
+    reset(target: string) { setIncluded(current => { const next = { ...current }; delete next[target]; return next; }); },
   };
 }

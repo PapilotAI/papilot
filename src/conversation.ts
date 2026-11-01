@@ -6,6 +6,12 @@ export const reviewInstructions = 'Continue this task using the decisions and co
 // Earlier versions stored the prompt itself as the author's message.
 export const isFeedbackPrompt = (text: string) => text === reviewInstructions || text === 'Address the comments from this review round. Preserve accepted changes and do not reintroduce rejected edits.';
 
+// Older AI reviews appended a generated copy of every PDF suggestion to the
+// chat summary. Keep those records intact, but display only their summary.
+export function aiReviewSummary(text: string) {
+  return text.split(/\n\n1\. \*\*Page \d+\*\* — /, 1)[0].trimEnd();
+}
+
 // What the agent receives when its own edits stop the review build. The chat
 // shows the error, never this prompt.
 export function buildFixPrompt(failure: BuildFailure) {

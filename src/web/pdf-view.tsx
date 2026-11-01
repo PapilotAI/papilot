@@ -9,12 +9,12 @@ import viewerStyles from 'pdfjs-dist/web/pdf_viewer.css?inline';
 import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { Annotation } from '../shared.ts';
 import { ChipSelect } from './chip-select.tsx';
-import { sendsMessage } from './composer.ts';
 import { Icon } from './icons.tsx';
 import { browserStorage } from './storage.ts';
 import { mergeLines } from './note-geometry.ts';
 import { touchSelection } from './touch-select.ts';
 import { t } from './i18n.ts';
+import { PdfNoteCard, type PdfNoteActions } from './pdf-suggestion.tsx';
 
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
 
@@ -120,31 +120,17 @@ async function readOutline(document: PDFDocumentProxy) {
   return items;
 }
 
-export function NoteEditor({ rect, onSave, onCancel }: { rect: Rect; onSave: (comment: string) => Promise<void>; onCancel: () => void }) {
-  const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
-  async function save() {
-    if (!text.trim() || busy) return;
-    setBusy(true); setError('');
-    try { await onSave(text.trim()); } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false); }
-  }
-  // Open below the marked text, or above it when it ends near the bottom of the page.
-  const below = rect[3] < 0.75;
-  return <form className="note-editor" style={{ left: `min(${rect[0] * 100}%, calc(100% - min(340px, 100%)))`, ...(below ? { top: `calc(${rect[3] * 100}% + 8px)` } : { bottom: `calc(${(1 - rect[1]) * 100}% + 8px)` }) }} onPointerDown={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); void save(); }}>
-    <textarea autoFocus aria-label={t('Note for the agent')} placeholder={t('What should change here?')} rows={3} value={text} readOnly={busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel(); } else if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); void save(); } }}/>
-    {error && <p className="inline-error" role="alert">{error}</p>}
-    <div className="button-row"><button type="button" className="button secondary compact" disabled={busy} onClick={onCancel}>{t('Cancel')}</button><button className="button primary compact" disabled={busy || !text.trim()}>{busy ? t('Adding…') : t('Add note')}</button></div>
-  </form>;
-}
-
 // A pdf.js viewer that behaves like a local PDF reader: continuous pages,
 // crisp zoom, selectable text, search, links and bookmarks. Notes live in a
 // layer above each page; pdf.js clears unknown children when it redraws a
 // page, so each layer is re-attached after rendering.
 export const PdfView = forwardRef<PdfHandle, {
+  readOnly?: boolean;
   group?: NoteGroup | null; onGroupChange?: (group: NoteGroup | null) => void; markingDisabled?: boolean;
   url: string; words?: string; notes: { note: Annotation; number: number }[]; active: string; region: boolean; setRegion: (on: boolean) => void;
-  onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup) => Promise<void>;
+  onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup, options?: { reveal?: boolean; quote?: boolean }) => Promise<void>;
   onSelect: (note: Annotation) => void; outline: OutlineItem[]; section: number;
+  noteActions?: PdfNoteActions; onDeselect?: () => void;
   onOutline: (items: OutlineItem[]) => void; onSection: (index: number) => void;
   lead?: ReactNode;
   tools?: ReactNode;
@@ -167,6 +153,58 @@ export const PdfView = forwardRef<PdfHandle, {
   const [draft, updateDraft] = useState<{ page: number; rect: Rect } | null>(null), draftRef = useRef(draft);
   const setDraft = (value: typeof draft) => { draftRef.current = value; updateDraft(value); };
   const origin = useRef<{ page: number; x: number; y: number; box: DOMRect } | null>(null);
+  const [noteBusy, setNoteBusy] = useState(false), [noteError, setNoteError] = useState('');
+  // Keep drafts available when a save fails or a blank edit is closed.
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [newNoteDraft, setNewNoteDraft] = useState('');
+  const [dismissedNote, setDismissedNote] = useState<Annotation | null>(null);
+  const suggestions = props.notes.filter(({ note }) => note.aiReview).sort((a, b) => a.note.page - b.note.page || a.note.rect[1] - b.note.rect[1] || a.note.rect[0] - b.note.rect[0]);
+  const suggestionIndex = suggestions.findIndex(({ note }) => note.id === props.active);
+  const activeSuggestion = suggestions[suggestionIndex];
+  const personal = props.notes.filter(({ note }) => !note.aiReview).sort((a, b) => a.note.page - b.note.page || a.note.rect[1] - b.note.rect[1]);
+  const personalIndex = personal.findIndex(({ note }) => note.id === props.active);
+  const activeNote = activeSuggestion || personal[personalIndex];
+  const noteIndex = activeSuggestion ? suggestionIndex : personalIndex, peers = activeSuggestion ? suggestions : personal;
+  const noteLocked = noteBusy || Boolean(props.noteActions?.disabled);
+  const onNoteBusy = props.noteActions?.onBusy;
+  useEffect(() => { onNoteBusy?.(noteBusy); return () => onNoteBusy?.(false); }, [noteBusy, onNoteBusy]);
+  useEffect(() => { setNoteError(''); }, [props.active]);
+  useEffect(() => { if (dismissedNote && props.notes.some(({ note }) => note.id === dismissedNote.id)) setDismissedNote(null); }, [props.notes, dismissedNote]);
+  function closeNote(restoreFocus = true) {
+    if (latest.current.active !== props.active) return;
+    const tag = container.current?.querySelector<HTMLButtonElement>(`.note-tag[data-note="${props.active}"]`);
+    props.onDeselect?.(); if (restoreFocus) (tag || container.current)?.focus({ preventScroll: true });
+  }
+  function adjacentNote(direction: -1 | 1) {
+    const next = peers[noteIndex + direction];
+    if (!next || noteLocked) return;
+    // The next card may still be offscreen during a cross-page scroll. Keep
+    // focus in the PDF so repeated arrow keys continue to reach the viewer.
+    container.current?.focus({ preventScroll: true });
+    props.onSelect(next.note);
+  }
+  async function dismissNote(note: Annotation) {
+    if (!props.noteActions || noteLocked) return;
+    setNoteBusy(true); setNoteError('');
+    try { await props.noteActions.remove(note); setDismissedNote(note); if (latest.current.active === note.id) latest.current.onDeselect?.(); }
+    catch (error) { setNoteError(error instanceof Error ? error.message : String(error)); }
+    finally { setNoteBusy(false); }
+  }
+  async function restoreNote() {
+    if (!props.noteActions || !dismissedNote || noteLocked) return;
+    setNoteBusy(true); setNoteError('');
+    try { await props.noteActions.restore(dismissedNote); setDismissedNote(null); }
+    catch (error) { setNoteError(error instanceof Error ? error.message : String(error)); }
+    finally { setNoteBusy(false); }
+  }
+
+  async function copyNote(note: Annotation) {
+    if (!props.noteActions?.copy || noteLocked) return;
+    setNoteBusy(true); setNoteError('');
+    try { await props.noteActions.copy(note); }
+    catch (error) { setNoteError(error instanceof Error ? error.message : String(error)); }
+    finally { setNoteBusy(false); }
+  }
 
   useImperativeHandle(ref, () => ({
     focus() { container.current?.focus({ preventScroll: true }); },
@@ -306,7 +344,7 @@ export const PdfView = forwardRef<PdfHandle, {
       if (!current || current.isCollapsed || !current.rangeCount) { setSelection(null); return; }
       const { range, before, after } = wholeWords(current.getRangeAt(0)), node = range.startContainer, element = node instanceof Element ? node : node.parentElement;
       const pageDiv = element?.closest<HTMLElement>('.page');
-      if (!pageDiv || !box.contains(pageDiv)) { setSelection(null); return; }
+      if (!pageDiv || !box.contains(pageDiv) || element?.closest('.pdf-note-card')) { setSelection(null); return; }
       const frame = pageDiv.getBoundingClientRect();
       const rects = mergeLines(Array.from(range.getClientRects()).filter(r => r.width > 1 && r.height > 1 && r.top >= frame.top - 1 && r.bottom <= frame.bottom + 1)
         .map(r => [unit((r.left - frame.left) / frame.width), unit((r.top - frame.top) / frame.height), unit((r.right - frame.left) / frame.width), unit((r.bottom - frame.top) / frame.height)] as Rect));
@@ -318,7 +356,7 @@ export const PdfView = forwardRef<PdfHandle, {
     const selectionChange = () => { clearTimeout(timer); timer = setTimeout(select, 120); };
     document.addEventListener('selectionchange', selectionChange);
     const finishGroup = (event: PointerEvent) => {
-      if (!latest.current.group || latest.current.markingDisabled || editingRef.current || latest.current.region || event.pointerType === 'touch' || !box.contains(event.target as Node) || (event.target as Element).closest('button,input,select')) return;
+      if (!latest.current.group || latest.current.markingDisabled || editingRef.current || latest.current.region || event.pointerType === 'touch' || !box.contains(event.target as Node) || (event.target as Element).closest('button,input,select,.pdf-note-card')) return;
       setTimeout(() => { if (disposed) return; const value = select(); if (value && latest.current.group) addToGroup(value); }, 0);
     };
     document.addEventListener('pointerup', finishGroup);
@@ -328,7 +366,7 @@ export const PdfView = forwardRef<PdfHandle, {
     const noteAt = (event: MouseEvent) => {
       if (latest.current.region || editingRef.current) return;
       const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('button,a,input,textarea,select,[contenteditable],.select-handle,.note-editor')) return;
+      if (target?.closest('button,a,input,textarea,select,[contenteditable],.select-handle,.pdf-note-card')) return;
       const page = target?.closest<HTMLElement>('.page');
       if (!page || !box.contains(page)) return;
       const frame = page.getBoundingClientRect(), x = (event.clientX - frame.left) / frame.width, y = (event.clientY - frame.top) / frame.height;
@@ -422,6 +460,23 @@ export const PdfView = forwardRef<PdfHandle, {
     return () => { cancelled = true; if (!settled) void task.destroy(); };
   }, [props.url]);
 
+  // Opening a suggestion from the task or navigation reveals its passage.
+  // Page views exist after pagesinit even when their canvases have not rendered.
+  useEffect(() => {
+    const reveal = () => {
+      const entry = latest.current.notes.find(({ note }) => note.id === latest.current.active);
+      const viewer = tools.current?.viewer, box = container.current;
+      const div = entry && viewer?.getPageView(entry.note.page)?.div;
+      if (!entry || !div || !box) return;
+      const page = div.getBoundingClientRect(), view = box.getBoundingClientRect();
+      const top = page.top + entry.note.rect[1] * page.height, bottom = page.top + entry.note.rect[3] * page.height;
+      if (top < view.top + 16 || bottom > view.bottom - 240) box.scrollTo({ top: box.scrollTop + top - view.top - 72 });
+    };
+    const bus = tools.current?.bus;
+    bus?.on('pagesinit', reveal); reveal();
+    return () => bus?.off('pagesinit', reveal);
+  }, [props.active, props.url, loading]);
+
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const viewer = tools.current?.viewer, mod = e.metaKey || e.ctrlKey;
@@ -459,19 +514,38 @@ export const PdfView = forwardRef<PdfHandle, {
   function startNote() {
     if (!selection) return;
     if (props.group) { addToGroup(selection); return; }
+    setNewNoteDraft(''); setNoteError('');
     setEditing({ page: selection.page, rect: bounds(selection.rects), rects: selection.rects, quote: selection.quote });
     document.getSelection()?.removeAllRanges(); picking.current?.reset(); setSelection(null);
   }
-  async function save(comment: string) {
-    if (!editing) return;
-    await latest.current.onCreate(editing.page, editing.rect, editing.rects, editing.quote, comment);
+  function closeNewNote(restoreFocus = true) {
     setEditing(null); latest.current.setRegion(false);
+    if (restoreFocus) container.current?.focus({ preventScroll: true });
+  }
+  async function saveNewNote(comment: string, action: 'keep' | 'close' | 'quote') {
+    if (!editing) return false;
+    setNoteBusy(true); setNoteError('');
+    try {
+      await latest.current.onCreate(editing.page, editing.rect, editing.rects, editing.quote, comment, undefined, { reveal: action !== 'close', quote: action === 'quote' });
+      setEditing(null); latest.current.setRegion(false); return true;
+    } catch (error) { setNoteError(error instanceof Error ? error.message : String(error)); return false; }
+    finally { setNoteBusy(false); }
   }
   const section = props.outline[props.section];
   const presets = zooms(), zoomLabel = presets.find(option => option.value === zoom.value) ? zoom.value : String(Math.round(zoom.scale * 100) / 100);
   const zoomOptions = presets.some(option => option.value === zoomLabel) ? presets : [...presets, { value: zoomLabel, label: `${Math.round(zoom.scale * 100)}%` }];
 
-  return <div className={'pdf-view' + (props.region ? ' marking' : '')}>
+  return <div className={'pdf-view' + (props.region ? ' marking' : '')} onKeyDown={event => {
+    if (!activeSuggestion || noteLocked || editing || props.region || event.defaultPrevented || event.nativeEvent.isComposing || event.keyCode === 229 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"],[role="menu"],[role="listbox"]')) return;
+    const dialog = target.closest('dialog,[role="dialog"]');
+    if (dialog && !dialog.classList.contains('pdf-suggestion')) return;
+    if (window.getSelection()?.isCollapsed === false) return;
+    event.preventDefault(); event.stopPropagation();
+    adjacentNote(event.key === 'ArrowLeft' ? -1 : 1);
+  }}>
     <div className="pdf-toolbar" role="toolbar" aria-label={t('PDF controls')}>
       {props.lead}
       <div className="pdf-section" title={section?.title}>{section?.title && <span className="pdf-section-title">{section.title}</span>}</div>
@@ -487,8 +561,9 @@ export const PdfView = forwardRef<PdfHandle, {
         <button type="button" className="icon-button" aria-label={t('Zoom in')} title={t('Zoom in (⌘+)')} onClick={() => tools.current?.viewer.increaseScale()}><Icon name="plus" size={16}/></button>
       </div>
       <button type="button" className={'icon-button' + (findOpen ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={findOpen} title={t('Find (⌘F)')} onClick={() => { if (findOpen) closeFind(); else setFindOpen(true); }}><Icon name="search" size={16}/></button>
-      <button type="button" className={'icon-button region-toggle' + (props.region ? ' active' : '')} aria-label={t('Mark region')} aria-pressed={props.region} title={t('Mark a figure or region')} onClick={() => props.setRegion(!props.region)}><Icon name="region" size={16}/></button>
+      {!props.readOnly && <button type="button" className={'icon-button region-toggle' + (props.region ? ' active' : '')} aria-label={t('Mark region')} aria-pressed={props.region} title={t('Mark a figure or region')} onClick={() => props.setRegion(!props.region)}><Icon name="region" size={16}/></button>}
       {props.onGroupChange && <GroupPicker value={props.group || null} onChange={props.onGroupChange} disabled={props.markingDisabled || Boolean(editing)}/>}
+      {suggestions.length > 0 && <button type="button" className="pdf-suggestion-trigger" aria-label={t('AI suggestions')} title={t('AI suggestions')} aria-pressed={Boolean(activeSuggestion)} disabled={noteLocked} onClick={() => activeSuggestion ? closeNote() : props.onSelect(suggestions.find(({ note }) => note.page >= page - 1)?.note || suggestions[0].note)}><Icon name="spark" size={15}/><span>{suggestions.length}</span></button>}
       {props.tools}
     </div>
     {findOpen && <div className="pdf-find">
@@ -504,15 +579,34 @@ export const PdfView = forwardRef<PdfHandle, {
         <div ref={inner} className="pdfViewer"/>
       </div>
       {(loading || error) && <div className="review-loading"><p role={error ? 'alert' : 'status'}>{error ? t('The PDF could not be opened: {error}', { error }) : t('Opening the PDF…')}</p></div>}
+      {dismissedNote && <div className="pdf-suggestion-undo" role="status">{dismissedNote.aiReview ? t('Suggestion ignored.') : t('Note deleted.')}<button type="button" disabled={noteLocked} onClick={() => void restoreNote()}>{t('Undo')}</button>{noteError && <p role="alert">{noteError}</p>}</div>}
     </div>
     {[...layers].map(([number, layer]) => createPortal(<Fragment>
       {(() => {
         const notes = props.notes.filter(({ note }) => note.page === number - 1), spots = tagSpots(notes.map(({ note }) => (note.rects?.length ? note.rects : [note.rect])[0]));
         return notes.map(({ note, number: label }, index) => <Fragment key={note.id}>
-          {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} style={{ ...percent(rect), ...groupStyle(note.group) }}/>) }
-          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={t('Note {n}: {comment}', { n: label, comment: note.group ? groupName(note.group) : note.comment })} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}</button>
+          {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} data-review={note.aiReview ? true : undefined} style={{ ...percent(rect), ...groupStyle(note.group) }}/>) }
+          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} data-review={note.aiReview ? true : undefined} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={note.aiReview ? t('Suggestion {n}: {comment}', { n: label, comment: note.comment }) : t('Note {n}: {comment}', { n: label, comment: note.group ? groupName(note.group) : note.comment })} aria-expanded={props.noteActions ? props.active === note.id : undefined} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}</button>
         </Fragment>);
       })()}
+      {activeNote?.note.page === number - 1 && props.noteActions && !editing && !props.region && <PdfNoteCard key={activeNote.note.id} note={activeNote.note} number={activeNote.number} index={noteIndex} total={peers.length} selected={props.noteActions.has(activeNote.note.id)} busy={noteLocked} error={noteError}
+        draft={noteDrafts[activeNote.note.id] ?? null} onDraftChange={draft => setNoteDrafts(current => {
+          const next = { ...current };
+          if (draft === null) delete next[activeNote.note.id]; else next[activeNote.note.id] = draft;
+          return next;
+        })}
+        destination={props.noteActions.copy ? 'manuscript' : undefined}
+        onToggle={() => props.noteActions!.copy ? void copyNote(activeNote.note) : props.noteActions!.toggle(activeNote.note)} onDismiss={() => void dismissNote(activeNote.note)} onClose={closeNote}
+        onEditing={props.noteActions.onEditing} onSave={async (comment, action) => {
+          setNoteBusy(true); setNoteError('');
+          try {
+            await props.noteActions!.edit(activeNote.note, comment);
+            if (action === 'quote') props.noteActions!.toggle(activeNote.note);
+            return true;
+          }
+          catch (error) { setNoteError(error instanceof Error ? error.message : String(error)); return false; }
+          finally { setNoteBusy(false); }
+        }} onPrevious={() => adjacentNote(-1)} onNext={() => adjacentNote(1)}/>}
       {props.region && <div className="region-capture"
         onPointerDown={e => {
           if (editing || e.button > 0) return;
@@ -525,7 +619,7 @@ export const PdfView = forwardRef<PdfHandle, {
           const current = draftRef.current; origin.current = null; setDraft(null);
           if (current && (current.rect[2] - current.rect[0] > 0.015 || current.rect[3] - current.rect[1] > 0.01)) {
             if (latest.current.group) addToGroup({ page: current.page, rects: [], quote: '' }, current.rect);
-            else setEditing({ page: current.page, rect: current.rect, rects: [], quote: '' });
+            else { setNewNoteDraft(''); setNoteError(''); setEditing({ page: current.page, rect: current.rect, rects: [], quote: '' }); }
           }
         }}/>}
       {draft?.page === number - 1 && <div className="note-box draft" style={percent(draft.rect)}/>}
@@ -534,10 +628,12 @@ export const PdfView = forwardRef<PdfHandle, {
         {selection.rects.map((rect, index) => <div key={index} className="note-mark draft" style={percent(rect)}/>)}
         {(['from', 'to'] as const).map(end => { const [x, top, bottom] = selection.handles![end]; return <span key={end} className="select-handle" data-end={end} style={{ left: `${x * 100}%`, top: `${top * 100}%`, height: `${(bottom - top) * 100}%` }}/>; })}
       </>}
-      {selection?.page === number - 1 && !editing && <button type="button" className={'add-note' + (selection.handles ? ' touch' : '')} aria-label={props.group ? t('Add to {group}', { group: groupName(props.group) }) : t('Add note')} style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={startNote}><Icon name="pencil" size={14}/><GroupAction group={props.group}/></button>}
+      {!props.readOnly && selection?.page === number - 1 && !editing && <button type="button" className={'add-note' + (selection.handles ? ' touch' : '')} aria-label={props.group ? t('Add to {group}', { group: groupName(props.group) }) : t('Add note')} style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={startNote}><Icon name="pencil" size={14}/><GroupAction group={props.group}/></button>}
       {editing?.page === number - 1 && <>
         {(editing.rects.length ? editing.rects : [editing.rect]).map((rect, index) => <div key={index} className={(editing.rects.length ? 'note-mark' : 'note-box') + ' draft'} style={percent(rect)}/>)}
-        <NoteEditor rect={editing.rect} onCancel={() => { setEditing(null); }} onSave={save}/>
+        <PdfNoteCard note={{ rect: editing.rect, comment: '' }} number={props.notes.length + 1} index={0} total={1} selected={false} busy={noteLocked} error={noteError}
+          draft={newNoteDraft} onDraftChange={value => setNewNoteDraft(value ?? '')} onDismiss={closeNewNote} onClose={closeNewNote}
+          onEditing={props.noteActions?.onEditing} onSave={saveNewNote}/>
       </>}
     </Fragment>, layer, `layer-${number}`))}
   </div>;

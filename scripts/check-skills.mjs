@@ -38,6 +38,11 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/skills')) return json({ skills });
+  if (url.pathname.endsWith('/archive')) {
+    const saved = snapshot.tasks.find(task => task.id === url.pathname.split('/')[3]);
+    if (saved) saved.archivedAt = route.request().postDataJSON().archived ? Date.now() : null;
+    return json(saved);
+  }
   if (url.pathname.endsWith('/items')) return json({ items: taskItems.get(url.pathname.split('/')[3]) || items });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/git')) return json(git);
@@ -154,7 +159,10 @@ try {
   await page.locator('.manuscript-link').click();
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByText('Notes to send: 2 / 2', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Notes in this task', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'My notes', exact: true }).click();
+  await page.getByRole('button', { name: 'Select all notes for this task', exact: true }).click();
+  await page.getByRole('button', { name: 'Close notes', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Notes', exact: true })).toHaveCount(0);
   const draft = page.getByRole('textbox', { name: 'Describe the revision', exact: true });
   await expect(draft).toHaveAttribute('placeholder', 'Add overall instructions (optional)');
@@ -165,11 +173,11 @@ try {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('dialog', { name: 'Settings' }).getByRole('combobox', { name: 'Language' }).selectOption('zh-CN');
   await page.keyboard.press('Escape');
-  await expect(page.getByText('本轮发送 2 / 2 条批注', { exact: true })).toBeVisible();
+  await expect(page.getByText('已加入任务：2 条', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/merged-task-notes.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
-  await expect(page.getByText('本轮发送 2 / 2 条批注', { exact: true })).toBeVisible();
+  await expect(page.getByText('已加入任务：2 条', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '开始任务', exact: true })).toBeInViewport();
   await page.screenshot({ path: 'test-results/merged-task-notes-mobile.png' });
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -181,7 +189,7 @@ try {
   await expect(page.getByText('Connection lost. Try again.', { exact: true })).toBeVisible();
   await expect(draft).toHaveValue('Keep all technical terms.');
   await expect(page.locator('.composer-skill .skill-chip')).toHaveText('Polish');
-  await expect(page.getByText('Notes to send: 2 / 2', { exact: true })).toBeVisible();
+  await expect(page.getByText('Added to task: 2', { exact: true })).toBeVisible();
   failCreate = false;
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await expect.poll(() => creates.length).toBe(3);

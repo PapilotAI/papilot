@@ -13,6 +13,6 @@ export type SkillIcon = typeof SKILL_ICONS[number]['id'];
 export const isSkillIcon = (value: unknown): value is SkillIcon => SKILL_ICONS.some(icon => icon.id === value);
 const defaults: Record<string, SkillIcon> = {
   polish: 'spark', proofread: 'spellcheck', shorten: 'compress', 'check-math': 'sigma',
-  consistency: 'checklist', 'latex-warnings': 'tool', 'reviewer-response': 'notes',
+  consistency: 'checklist', 'latex-warnings': 'tool', 'reviewer-response': 'notes', 'ai-review': 'notes',
 };
 export const resolveSkillIcon = (skill: { id: string; icon?: string }): SkillIcon => isSkillIcon(skill.icon) ? skill.icon : Object.hasOwn(defaults, skill.id) ? defaults[skill.id] : 'spark';
