@@ -9,6 +9,7 @@ on:
       - src/web/fonts/**
       - public/*.png
       - scripts/build-site.mjs
+      - package.json
       - .github/workflows/pages.yml
   workflow_dispatch:
 
