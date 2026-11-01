@@ -775,18 +775,6 @@ body.resizing iframe{pointer-events:none}
 .settings-dialog h2{margin-bottom:12px}
 .settings-back{display:flex;align-items:center;gap:3px;margin:0 0 8px -4px;color:var(--text-3);font-size:13px}
 .settings-back:hover{color:var(--text)}
-.shortcut-instructions{font-size:13px;line-height:1.6;color:var(--text-3);margin:18px 0}
-.shortcut-list{margin:0}
-.shortcut-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:18px;padding:20px 0;border-top:1px solid var(--line)}
-.shortcut-row p{margin:5px 0 0;color:var(--text-3);font-size:13px;line-height:1.5}
-.shortcut-key{min-width:100px;max-width:200px;min-height:36px;padding:7px 12px;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--bg-subtle);text-align:center;overflow-wrap:anywhere}
-.shortcut-key:hover{background:var(--bg-hover)}
-.shortcut-key.recording{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);box-shadow:var(--ring)}
-.shortcut-settings kbd{font:12px/1.5 var(--sans)}
-.shortcut-system dd{font-size:13px;line-height:1.6;color:var(--text-3)}
-.shortcut-system dl{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;margin-bottom:0}
-.shortcut-system dd{margin:0}
-@media(max-width:480px){.shortcut-row{grid-template-columns:1fr;gap:8px}.shortcut-key{justify-self:start}.shortcut-system dl{grid-template-columns:1fr;gap:4px}.shortcut-system dd{margin-bottom:10px}}
 .settings-navigation-row{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:10px 8px;border-radius:var(--r);font-size:14px;text-align:left;color:var(--text-2)}
 .settings-navigation-row:hover{background:var(--bg-hover);color:var(--text)}
 .settings-navigation-row>svg{flex-shrink:0;color:var(--text-3)}
