@@ -5,7 +5,7 @@ import { ActionMenu } from './action-menu.tsx';
 
 const skillIcons: Record<string, string> = {
   polish: 'spark', proofread: 'spellcheck', shorten: 'compress', 'check-math': 'sigma',
-  consistency: 'checklist', 'latex-warnings': 'tool', 'reviewer-response': 'notes',
+  consistency: 'checklist', 'latex-warnings': 'tool', 'reviewer-response': 'notes', 'ai-review': 'notes',
 };
 export const skillIcon = (id: string) => skillIcons[id] || 'spark';
 

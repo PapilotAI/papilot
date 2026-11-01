@@ -195,21 +195,17 @@ export async function buildApp(options: AppOptions) {
     const b = request.body as any, skill = skillName(b.skill), attachments = attachmentIds(b.attachments);
     if (b.annotations !== undefined && (!Array.isArray(b.annotations) || b.annotations.length > 500 || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64))) throw new Error('Select valid PDF notes for this task.');
     const annotations: string[] | undefined = b.annotations, groupInstructions = parseGroupInstructions(b.groupInstructions);
-    return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
-  });
-  app.post('/api/ai-reviews', { config: { access: { project: 'projectId', from: 'body' } } }, async request => {
-    const b = request.body as any, id = string(b.id, 'Task ID', 64), projectId = string(b.projectId, 'Paper ID', 64);
+    const id = string(b.id, 'Task ID', 64), projectId = string(b.projectId, 'Paper ID', 64);
+    // A skill submission uses the same task endpoint and retry identity as editing.
     const existing = store.tasks().find(task => task.id === id);
-    if (existing) {
-      if (existing.projectId !== projectId || existing.mode !== 'review') throw new Error('Invalid task ID.');
-      return existing;
+    if (existing) { if (existing.projectId !== projectId) throw new Error('Invalid task ID.'); return existing; }
+    let reviewInput;
+    if (skill && findSkill(store.project(projectId).path, skill).output === 'annotations') {
+      const state = await manuscripts.state(projectId, store.project(projectId).path);
+      if (!state.build.current || !state.build.key) throw new Error('Wait for the current PDF to finish compiling, then run the AI review skill.');
+      reviewInput = await manuscripts.reviewSnapshot(projectId, state.build.key);
     }
-    const key = string(b.key, 'PDF version', 64);
-    const state = await manuscripts.state(projectId, store.project(projectId).path);
-    if (!state.build.current || state.build.key !== key) throw new Error('Wait for the current PDF to finish compiling, then start AI review.');
-    const reviewInput = await manuscripts.reviewSnapshot(projectId, key);
-    return workspace.createTask({ id, projectId, title: string(b.title, 'Task title', 120), instructions: optional(b.instructions, 'Review focus'), reviewInput,
-      agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
+    return workspace.createTask({ id, projectId, reviewInput, title: string(b.title, 'Task title', 120), instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
   });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/items', task, request => { store.task(request.params.id); return { items: store.items(request.params.id) }; });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {

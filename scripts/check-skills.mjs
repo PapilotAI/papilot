@@ -38,6 +38,11 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/skills')) return json({ skills });
+  if (url.pathname.endsWith('/archive')) {
+    const saved = snapshot.tasks.find(task => task.id === url.pathname.split('/')[3]);
+    if (saved) saved.archivedAt = route.request().postDataJSON().archived ? Date.now() : null;
+    return json(saved);
+  }
   if (url.pathname.endsWith('/items')) return json({ items: taskItems.get(url.pathname.split('/')[3]) || items });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/git')) return json(git);
@@ -49,7 +54,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/tasks') {
     const body = route.request().postDataJSON(); creates.push(body);
     if (failCreate) return route.fulfill({ status: 503, json: { error: 'Connection lost. Try again.' } });
-    const created = { ...task, id: body.id, title: body.title, review: null, status: 'queued' };
+    const created = { ...task, id: body.id, title: body.title, review: null, status: 'queued', archivedAt: null };
     const attached = annotations.filter(note => body.annotations?.includes(note.id));
     if (attached.length) {
       taskItems.set(body.id, [{ id: 'combined', taskId: body.id, type: 'user', text: body.instructions, createdAt: 1, meta: { skill: skills.find(skill => skill.id === body.skill), notes: attached.map(note => ({ where: `Page ${note.page + 1}`, quote: note.quote, comment: note.comment })) } }]);

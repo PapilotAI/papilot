@@ -662,7 +662,7 @@ test('attachment uploads and downloads follow paper membership and keep unsent f
   } finally { await f.close(); }
 });
 
-test('AI review requires paper access, CSRF and a current PDF; retries reuse the saved task', async () => {
+test('the AI review skill uses normal task submission with paper access, CSRF and a current PDF', async () => {
   const f = await fixture();
   try {
     const inputs: Parameters<Workspace['createTask']>[0][] = [];
@@ -672,17 +672,21 @@ test('AI review requires paper access, CSRF and a current PDF; retries reuse the
       inputs.push(input);
       return f.store.saveTask({ ...task(input.id, input.projectId), mode: 'review', aiReview: { key: input.reviewInput!.key } });
     };
-    const payload = { id: 'ai-review-request-1', projectId: 'thesis', key: 'pdf', title: 'AI review', instructions: '', agent: 'codex' };
-    const send = (body = payload, headers = f.as) => f.remote.inject({ method: 'POST', url: '/api/ai-reviews', headers, payload: body });
+    const payload = { id: 'ai-review-request-1', projectId: 'thesis', skill: 'ai-review', title: 'AI review', instructions: '', agent: 'codex' };
+    const send = (body = payload, headers = f.as) => f.remote.inject({ method: 'POST', url: '/api/tasks', headers, payload: body });
     assert.equal((await send(payload, { ...f.as, 'x-papilot-token': '' })).statusCode, 403);
     const denied = await send({ ...payload, projectId: 'grant' }), missing = await send({ ...payload, projectId: 'missing' });
     assert.equal(denied.statusCode, 400);
     assert.equal(denied.body, missing.body);
-    assert.equal((await send({ ...payload, key: 'old' })).statusCode, 400);
+    const ready = f.manuscripts.state;
+    f.manuscripts.state = async () => ({ ...(await ready('thesis', '/unused')), build: { status: 'building', current: false } });
+    assert.equal((await send()).statusCode, 400);
+    f.manuscripts.state = ready;
     assert.equal(inputs.length, 0);
     assert.equal((await send()).statusCode, 200);
     assert.equal(inputs[0].author?.name, 'Ada');
     assert.equal(inputs[0].reviewInput?.lines[0].text, 'Claim');
+    assert.equal(inputs[0].skill, 'ai-review');
     f.manuscripts.state = async () => { throw new Error('The PDF has changed since submission.'); };
     assert.equal((await send()).statusCode, 200, 'A retry uses the existing review even after rebuilding');
     assert.equal(inputs.length, 1);

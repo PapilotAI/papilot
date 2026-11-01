@@ -1620,18 +1620,20 @@ test('reconciling an AI review recovers annotations from the completed thread re
   } finally { f.close(); }
 });
 
-test('creating an AI review persists its snapshot and queues review-only instructions once', async () => {
+test('creating an AI review skill task persists its snapshot and queues review-only instructions once', async () => {
   const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/isolated-review', deferred: true } : {});
   try {
     const reviewInput = { key: 'pdf-at-start', lines: [{ id: 'p1-l1', page: 0, text: 'Read this claim.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
-    const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', reviewInput };
+    const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', reviewInput };
     const created = await f.workspace.createTask(input);
     assert.equal(created.mode, 'review');
     assert.equal(created.worktree, '/isolated-review');
     assert.equal(created.status, 'queued');
     assert.deepEqual(f.store.reviewInput(created.id), reviewInput);
     assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /Read this claim/);
-    assert.equal(f.store.items(created.id)[0].text, 'Review this manuscript and suggest improvements.');
+    assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /do not edit, rewrite, commit, or apply changes/i);
+    assert.equal(f.store.items(created.id)[0].meta?.skill?.id, 'ai-review');
+    assert.equal(f.store.items(created.id)[0].text, '');
     assert.equal((await f.workspace.createTask(input)).id, created.id);
     assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 1);
     await assert.rejects(f.workspace.createTask({ ...input, reviewInput: undefined, instructions: 'Edit it.' }), /Invalid task ID/);

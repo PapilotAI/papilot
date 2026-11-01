@@ -278,7 +278,7 @@ export class Workspace extends EventEmitter {
     const existing = this.store.tasks().find(t => t.id === input.id);
     if (existing) { if (existing.projectId !== input.projectId || (existing.mode === 'review') !== Boolean(input.reviewInput)) throw new Error('Invalid task ID.'); return existing; }
     if (input.reviewInput && !REVIEW_AGENTS.includes(input.agent || 'codex')) throw new Error('Choose Codex, Claude or GLM for AI review.');
-    if (input.reviewInput && (input.skill || input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
+    if (input.reviewInput && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
     if (input.serviceTier !== undefined) {
       if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
       const models = this.runtimes.codex.models;
@@ -291,6 +291,7 @@ export class Workspace extends EventEmitter {
     let releaseAttachments = () => {};
     try {
       const project = this.store.project(input.projectId), skill = input.skill ? findSkill(project.path, input.skill) : undefined;
+      if (skill?.output === 'annotations' && !input.reviewInput) throw new Error('Start a new task to run the AI review skill on the current PDF.');
       const files = this.attachments.resolve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
       releaseAttachments = this.attachments.reserve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
       const available = new Map(this.store.annotations(project.id).filter(note => !note.taskId).map(note => [note.id, note]));
@@ -317,7 +318,7 @@ export class Workspace extends EventEmitter {
         this.store.saveTask(task);
         if (input.reviewInput) this.store.saveReviewInput(task.id, input.reviewInput);
       });
-      await this.enqueue(task.id, input.instructions || (input.reviewInput ? 'Review this manuscript and suggest improvements.' : ''), 'initial-' + task.id, false, { skill, notes, groupInstructions, attachments: files.map(file => file.id), author: input.author });
+      await this.enqueue(task.id, input.instructions || (input.reviewInput && !skill ? 'Review this manuscript and suggest improvements.' : ''), 'initial-' + task.id, false, { skill, notes, groupInstructions, attachments: files.map(file => file.id), author: input.author });
       // Naming is independent of the editing turn. An unavailable helper must
       // not fail creation or prevent the queued task from running.
       try { this.requestTaskTitle(task.id); } catch { /* Keep the prompt-derived title. */ }
@@ -330,7 +331,8 @@ export class Workspace extends EventEmitter {
   async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { attachments?: string[]; skill?: SkillFile; notes?: Annotation[]; groupInstructions?: GroupInstructions; reviewNotes?: NoteSummary[]; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
-    if (task.mode === 'review' && (options.skill || options.notes?.length || options.reviewNotes?.length || options.attachments?.length || options.feedback || options.build)) throw new Error('AI review accepts review instructions only. Start an editing task to send notes, skills or attachments.');
+    if (task.mode === 'review' && ((options.skill && options.skill.output !== 'annotations') || options.notes?.length || options.reviewNotes?.length || options.attachments?.length || options.feedback || options.build)) throw new Error('AI review accepts review instructions only. Start an editing task to send notes, skills or attachments.');
+    if (task.mode !== 'review' && options.skill?.output === 'annotations') throw new Error('Start a new task to run the AI review skill on the current PDF.');
     const existing = this.store.runByKey(requestKey);
     if (existing) { if (existing.taskId !== taskId) throw new Error('This request ID is already in use by another task.'); return existing; }
     if (task.status === 'uncertain') throw new Error('Check the task status before sending more instructions.');
@@ -411,7 +413,7 @@ export class Workspace extends EventEmitter {
     } catch { return []; }
   }
   private instructions(task: Task, scope: string[] = [], viewPdf = false) {
-    if (task.mode === 'review') return aiReviewInstructions;
+    if (task.mode === 'review') return aiReviewInstructions + '\n\nOriginal review skill and request:\n' + task.instructions;
     return `You are ${this.agentOf(task) === 'codex' ? 'the official Codex agent' : AGENT_NAMES[this.agentOf(task)]} running inside Papilot, a paper editing and review workspace.
 Your task is already created. Your editable working directory is ${task.worktree}.
 Original task: ${task.instructions}

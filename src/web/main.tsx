@@ -328,8 +328,8 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
     <div className="composer-wrap">
       {connection}
-      <Composer attachments={task.mode === 'review' ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : t('Ask a question or request changes…')} skills={task.mode === 'review' ? [] : skills} skill={skill} onSkill={setSkill}
-        footer={attach => <div className="composer-options">{task.mode !== 'review' && <SkillPicker onAttach={attach} skills={skills} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/>}<span className="composer-model" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}><ModelLabel model={modelName} effort={task.effort || model?.defaultEffort} fast={Boolean(task.serviceTier && task.serviceTier !== 'default')}/></span></div>}
+      <Composer attachments={task.mode === 'review' ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : t('Ask a question or request changes…')} skills={task.mode === 'review' ? [] : skills.filter(skill => skill.output !== 'annotations')} skill={skill} onSkill={setSkill}
+        footer={attach => <div className="composer-options">{task.mode !== 'review' && <SkillPicker onAttach={attach} skills={skills.filter(skill => skill.output !== 'annotations')} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/>}<span className="composer-model" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}><ModelLabel model={modelName} effort={task.effort || model?.defaultEffort} fast={Boolean(task.serviceTier && task.serviceTier !== 'default')}/></span></div>}
         action={<div className="composer-actions">
           {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
           {(!active || draft.trim() || skill || files.entries.length || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={(!draft.trim() && !skill && !files.files.length) || files.blocked || sending || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
@@ -761,9 +761,6 @@ function App() {
   const formTaskId = useRef<string>(uuid());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
-  const [newTaskMode, setNewTaskMode] = useState<'edit' | 'review'>('edit');
-  const [reviewFocus, setReviewFocus] = useState(() => browserStorage.getItem('papilot:review-focus') || '');
-  useEffect(() => { browserStorage.setItem('papilot:review-focus', reviewFocus); }, [reviewFocus]);
   const [newSkill, setNewSkill] = useState<Skill | null>(null);
   const [skills, setSkills] = useState<{ projectId: string; list: Skill[] }>({ projectId: '', list: [] });
   const [skillsRevision, setSkillsRevision] = useState(0);
@@ -1006,33 +1003,12 @@ function App() {
   const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
     agents={offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] }))}
     reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onSelect={chooseModel} onChange={remember}/>;
-  async function createAiReview() {
-    if (!project || creating || !['codex', 'claude', 'glm'].includes(agentChoice) || !manuscriptData.data?.build.current || !manuscriptData.data.build.key) return;
-    setCreating(true); setCreateError('');
-    try {
-      const body = { projectId: project.id, key: manuscriptData.data.build.key, title: reviewFocus.trim() ? `${t('AI review')}: ${reviewFocus.trim()}`.slice(0, 120) : t('AI review'), instructions: reviewFocus.trim(), ...agent };
-      const signature = JSON.stringify(body);
-      let previous: { signature?: string; id?: string } = {};
-      try { previous = JSON.parse(browserStorage.getItem('papilot:ai-review-request') || '{}'); } catch { /* Invalid saved request. */ }
-      const id = previous?.signature === signature && previous.id ? previous.id : uuid();
-      browserStorage.setItem('papilot:ai-review-request', JSON.stringify({ signature, id }));
-      const created = await api<Task>('/ai-reviews', { ...body, id });
-      browserStorage.removeItem('papilot:ai-review-request'); setReviewFocus(''); setCreateError(''); setNewTaskMode('edit');
-      snapshotRequest.cancel();
-      if (snapshotRef.current) {
-        const next = { ...snapshotRef.current, tasks: [...snapshotRef.current.tasks.filter(task => task.id !== created.id), created] };
-        snapshotRef.current = next; setState(next);
-      }
-      setSelected(created.id); setSidebar(false); setTaskSearch(''); setShowArchived(false);
-      await refresh(true);
-    } catch (e) { setCreateError(e instanceof Error ? e.message : String(e)); }
-    finally { setCreating(false); }
-  }
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
-    const attached = noteSelection.selected, files = newFiles.draft.getSnapshot().files;
+    const reviewing = skill?.output === 'annotations';
+    const attached = reviewing ? [] : noteSelection.selected, files = reviewing ? [] : newFiles.draft.getSnapshot().files;
     const groupInstructions = groupDrafts.forNotes(attached);
-    if ((!text && !skill && !files.length && !attached.some(note => note.comment.trim()) && !Object.keys(groupInstructions).length) || (!text && !skill && groupsWithoutInstructions(attached, groupInstructions).length > 0) || newFiles.draft.getSnapshot().blocked || creating || marking || noteEditing || !target) return;
+    if ((!text && !skill && !files.length && !attached.some(note => note.comment.trim()) && !Object.keys(groupInstructions).length) || (!text && !skill && groupsWithoutInstructions(attached, groupInstructions).length > 0) || (!reviewing && newFiles.draft.getSnapshot().blocked) || creating || marking || noteEditing || !target) return;
     const input = newTaskInput.current, submittedNotes = new Set(attached.map(note => note.id));
     const restoreFocus = input?.closest('form')?.contains(document.activeElement);
     setCreating(true); setCreateError('');
@@ -1058,7 +1034,7 @@ function App() {
       setAddedTask({ id: created.id, title: created.title });
       ++manuscriptRequest.current;
       setManuscript(current => current.projectId === target && current.data ? { ...current, data: { ...current.data, annotations: (current.data.annotations || []).filter(note => !submittedNotes.has(note.id)) } } : current);
-      noteSelection.reset(target);
+      if (!reviewing) noteSelection.reset(target);
       groupDrafts.sent(target, attached, notes);
       setActiveNote(id => submittedNotes.has(id) ? '' : id);
       setNoteGroup(null); annotationUndo.current = annotationUndo.current.filter(entry => !submittedNotes.has(entry.note.id));
@@ -1309,7 +1285,7 @@ function App() {
     : !saved ? null
     : task.deferred && task.delivery ? <span className="commit-state">{task.delivery.mode === 'workspace' ? t('Applied to working directory') : t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' })}</span>
     : task.committed ? <span className="commit-state">{saved === 'pushed' ? t('Committed {hash} and pushed.', { hash: task.committed.hash }) : t('Committed {hash}.', { hash: task.committed.hash })}</span> : null);
-  const reviewFeedback = (card: boolean) => task?.mode === 'review' ? <div className="review-feedback card ai-review-result"><strong>{t('AI review')}</strong><p>{task.aiReview?.notes !== undefined ? t('AI added {n} PDF notes. Choose which suggestions to use.', { n: task.aiReview.notes }) : t('The reviewer will leave suggestions on your PDF. Your manuscript stays unchanged.')}</p><button className="button secondary compact" onClick={() => { setSelected(''); setPage('manuscript'); setManuscriptView('task'); setNewTaskMode('edit'); void loadManuscript(task.projectId); }}>{t('View PDF notes')}</button></div> : task && <ReviewFeedback key={'review-feedback:' + task.id} card={card} task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError}
+  const reviewFeedback = (card: boolean) => task?.mode === 'review' ? <div className="review-feedback card ai-review-result"><strong>{t('AI review')}</strong><p>{task.aiReview?.notes !== undefined ? t('AI added {n} PDF notes. Choose which suggestions to use.', { n: task.aiReview.notes }) : t('The reviewer will leave suggestions on your PDF. Your manuscript stays unchanged.')}</p><button className="button secondary compact" onClick={() => { setSelected(''); setPage('manuscript'); setManuscriptView('task'); void loadManuscript(task.projectId); }}>{t('View PDF notes')}</button></div> : task && <ReviewFeedback key={'review-feedback:' + task.id} card={card} task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError}
     onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>;
   const sidebarToggle = (narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/>{addedTask && !sidebarShown && <span key={addedTask.id} className="task-added-dot" aria-hidden="true"/>}</button>;
   function selectLayout(next: typeof layout) {
@@ -1380,29 +1356,15 @@ function App() {
   </>;
   const newTaskPanel = (attachments: React.ReactNode) => <section className={'new-task-panel' + (notes.length ? ' has-notes' : '')} aria-label={t('New task')}>
     <div className="new-task-start">
-    <div className="task-mode-picker" role="group" aria-label={t('Task type')}>
-      <button type="button" aria-pressed={newTaskMode === 'edit'} disabled={creating} onClick={() => { setNewTaskMode('edit'); setCreateError(''); }}>{t('Revise')}</button>
-      <button type="button" aria-pressed={newTaskMode === 'review'} disabled={creating} onClick={() => { setNewTaskMode('review'); setCreateError(''); }}>{t('AI review')}</button>
-    </div>
-    {newTaskMode === 'review' ? <div className="ai-review-start">
-      <h2>{t('Let AI review your paper')}</h2>
-      <p>{t('Get suggestions highlighted on the PDF. Select any notes you want to turn into an editing task.')}</p>
-      <Composer label={t('Review focus (optional)')} value={reviewFocus} onChange={setReviewFocus} readOnly={creating} onSubmit={() => void createAiReview()} placeholder={t('For example: check the argument, clarity, and unsupported claims')}
-        footer={() => <div className="composer-options">{agentOptions(creating)}</div>}
-        action={<button className="send-button" type="submit" aria-label={t('Start AI review')} title={t('Start AI review')} disabled={creating || !manuscriptData.data?.build.current || !['codex', 'claude', 'glm'].includes(agentChoice)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
-      {!manuscriptData.data?.build.current && <p className="muted" role="status">{t('Compile the current PDF to start AI review.')}</p>}
-      {!['codex', 'claude', 'glm'].includes(agentChoice) && <p className="muted" role="status">{t('Choose Codex, Claude or GLM for AI review.')}</p>}
-    </div> : <>
     {!notes.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
-    {attachments}
-    <Composer attachments={newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
+    {newSkill?.output !== 'annotations' && attachments}
+    <Composer attachments={newSkill?.output === 'annotations' ? undefined : newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
       skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
       footer={attach => <div className="composer-options">
-        <SkillPicker onAttach={attach} skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
+        <SkillPicker onAttach={newSkill?.output === 'annotations' ? undefined : attach} skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
         {agentOptions(creating)}
       </div>}
-      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || newFiles.blocked || marking > 0 || noteEditing || missingGroupDirections || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(note => note.comment.trim()) && !Object.keys(groupDirections).length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
-    </>}
+      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || (newSkill?.output !== 'annotations' && (newFiles.blocked || marking > 0 || noteEditing || missingGroupDirections)) || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(note => note.comment.trim()) && !Object.keys(groupDirections).length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
     </div>

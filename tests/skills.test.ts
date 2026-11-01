@@ -7,7 +7,7 @@ import { findSkill, listedSkill, loadSkills, parseSkill } from '../src/server/sk
 
 test('Papilot ships paper skills with names, descriptions and hints, in order', () => {
   const skills = loadSkills(undefined, { builtin: path.resolve('skills'), user: path.join(os.tmpdir(), 'papilot-no-user-skills-' + process.pid) });
-  assert.deepEqual(skills.map(skill => skill.id), ['polish', 'proofread', 'shorten', 'check-math', 'consistency', 'latex-warnings', 'reviewer-response']);
+  assert.deepEqual(skills.map(skill => skill.id), ['polish', 'proofread', 'shorten', 'check-math', 'consistency', 'latex-warnings', 'reviewer-response', 'ai-review']);
   for (const skill of skills) {
     assert.equal(skill.source, 'builtin');
     assert.ok(skill.name && skill.description && skill.hint && skill.body.length > 100, skill.id);
@@ -45,4 +45,13 @@ test('skill files may start with a byte-order mark and be ordered first with 0',
   assert.equal(skill?.name, 'First');
   assert.equal(skill?.order, 0);
   assert.equal(skill?.body, 'Do it.');
+});
+
+
+test('the AI review skill requests annotation output and explicitly leaves the manuscript unchanged', () => {
+  const skill = findSkill(os.tmpdir(), 'ai-review');
+  assert.equal(skill.output, 'annotations');
+  assert.equal(listedSkill(skill).output, 'annotations');
+  assert.match(skill.body, /do not edit, rewrite, commit, or apply changes/i);
+  assert.match(skill.body, /relevant passage in the supplied PDF/);
 });
