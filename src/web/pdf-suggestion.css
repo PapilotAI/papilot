@@ -1,0 +1,20 @@
+.pdf-suggestion{position:absolute;z-index:5;display:flex;flex-direction:column;gap:10px;box-sizing:border-box;width:330px;padding:12px;border:1px solid var(--line-strong);border-top:3px solid #b45309;border-radius:10px;background:var(--bg);color:var(--text);box-shadow:var(--float);font:13px/1.5 var(--sans);pointer-events:auto;text-align:left;outline:none}
+.pdf-suggestion-head{display:flex;align-items:center;gap:7px;flex:none;color:var(--text-2)}
+.pdf-suggestion-head>svg{color:#b45309}
+.pdf-suggestion-head strong{font-size:12px;font-weight:600}
+.pdf-suggestion-head>span{font-size:11px;color:var(--text-3)}
+.pdf-suggestion-head>.icon-button{margin-left:auto;width:24px;height:24px}
+.pdf-suggestion-body{min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-user-select:text;user-select:text}
+.pdf-suggestion-body p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.55 var(--sans)}
+.pdf-suggestion-actions{display:flex;align-items:center;gap:8px;flex:none}
+.pdf-suggestion-navigation{display:flex;align-items:center;justify-content:center;gap:12px;border-top:1px solid var(--line);padding-top:6px;font-size:11px;color:var(--text-3);flex:none}
+.pdf-suggestion-navigation .icon-button{width:28px;height:26px}
+.pdf-suggestion-trigger{display:inline-flex;align-items:center;gap:4px;flex:none;min-width:30px;height:30px;padding:0 6px;border-radius:6px;color:#b45309;font-size:12px}
+.pdf-suggestion-trigger:hover,.pdf-suggestion-trigger[aria-pressed=true]{background:var(--bg-hover)}
+.pdf-suggestion-undo{position:absolute;z-index:15;bottom:12px;left:50%;transform:translateX(-50%);max-width:calc(100% - 24px);padding:8px 12px;border:1px solid var(--line);border-radius:8px;box-shadow:var(--float);background:var(--bg);color:var(--text);font-size:12px}
+.pdf-suggestion-undo button{color:var(--accent);text-decoration:underline;margin-left:8px}
+.selected-suggestions{list-style:none;margin:0;padding:0}
+.selected-suggestions li{display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:6px;border:1px solid var(--line);border-radius:6px}
+.selected-suggestion-link{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:12px;color:var(--text-2)}
+.selected-suggestions .icon-button{flex:none;width:26px;height:26px}
+@media(pointer:coarse){.pdf-suggestion .icon-button{min-width:36px;min-height:36px}}

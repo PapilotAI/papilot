@@ -15,6 +15,7 @@ import { browserStorage } from './storage.ts';
 import { mergeLines } from './note-geometry.ts';
 import { touchSelection } from './touch-select.ts';
 import { t } from './i18n.ts';
+import { PdfSuggestion, type PdfSuggestionActions } from './pdf-suggestion.tsx';
 
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
 
@@ -145,6 +146,7 @@ export const PdfView = forwardRef<PdfHandle, {
   url: string; words?: string; notes: { note: Annotation; number: number }[]; active: string; region: boolean; setRegion: (on: boolean) => void;
   onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup) => Promise<void>;
   onSelect: (note: Annotation) => void; outline: OutlineItem[]; section: number;
+  suggestions?: PdfSuggestionActions; onDeselect?: () => void;
   onOutline: (items: OutlineItem[]) => void; onSection: (index: number) => void;
   lead?: ReactNode;
   tools?: ReactNode;
@@ -167,6 +169,34 @@ export const PdfView = forwardRef<PdfHandle, {
   const [draft, updateDraft] = useState<{ page: number; rect: Rect } | null>(null), draftRef = useRef(draft);
   const setDraft = (value: typeof draft) => { draftRef.current = value; updateDraft(value); };
   const origin = useRef<{ page: number; x: number; y: number; box: DOMRect } | null>(null);
+  const [suggestionBusy, setSuggestionBusy] = useState(false), [suggestionError, setSuggestionError] = useState('');
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<Annotation | null>(null);
+  const suggestions = props.notes.filter(({ note }) => note.aiReview).sort((a, b) => a.note.page - b.note.page || a.note.rect[1] - b.note.rect[1] || a.note.rect[0] - b.note.rect[0]);
+  const suggestionIndex = suggestions.findIndex(({ note }) => note.id === props.active);
+  const activeSuggestion = suggestions[suggestionIndex];
+  const suggestionLocked = suggestionBusy || Boolean(props.suggestions?.disabled);
+  const onSuggestionBusy = props.suggestions?.onBusy;
+  useEffect(() => { onSuggestionBusy?.(suggestionBusy); return () => onSuggestionBusy?.(false); }, [suggestionBusy, onSuggestionBusy]);
+  useEffect(() => { setSuggestionError(''); }, [props.active]);
+  useEffect(() => { if (dismissedSuggestion && props.notes.some(({ note }) => note.id === dismissedSuggestion.id)) setDismissedSuggestion(null); }, [props.notes, dismissedSuggestion]);
+  function closeSuggestion() {
+    const tag = container.current?.querySelector<HTMLButtonElement>(`.note-tag[data-note="${props.active}"]`);
+    props.onDeselect?.(); (tag || container.current)?.focus({ preventScroll: true });
+  }
+  async function dismissSuggestion(note: Annotation) {
+    if (!props.suggestions || suggestionLocked) return;
+    setSuggestionBusy(true); setSuggestionError('');
+    try { await props.suggestions.remove(note); setDismissedSuggestion(note); if (latest.current.active === note.id) latest.current.onDeselect?.(); }
+    catch (error) { setSuggestionError(error instanceof Error ? error.message : String(error)); }
+    finally { setSuggestionBusy(false); }
+  }
+  async function restoreSuggestion() {
+    if (!props.suggestions || !dismissedSuggestion || suggestionLocked) return;
+    setSuggestionBusy(true); setSuggestionError('');
+    try { await props.suggestions.restore(dismissedSuggestion); setDismissedSuggestion(null); }
+    catch (error) { setSuggestionError(error instanceof Error ? error.message : String(error)); }
+    finally { setSuggestionBusy(false); }
+  }
 
   useImperativeHandle(ref, () => ({
     focus() { container.current?.focus({ preventScroll: true }); },
@@ -306,7 +336,7 @@ export const PdfView = forwardRef<PdfHandle, {
       if (!current || current.isCollapsed || !current.rangeCount) { setSelection(null); return; }
       const { range, before, after } = wholeWords(current.getRangeAt(0)), node = range.startContainer, element = node instanceof Element ? node : node.parentElement;
       const pageDiv = element?.closest<HTMLElement>('.page');
-      if (!pageDiv || !box.contains(pageDiv)) { setSelection(null); return; }
+      if (!pageDiv || !box.contains(pageDiv) || element?.closest('.pdf-suggestion')) { setSelection(null); return; }
       const frame = pageDiv.getBoundingClientRect();
       const rects = mergeLines(Array.from(range.getClientRects()).filter(r => r.width > 1 && r.height > 1 && r.top >= frame.top - 1 && r.bottom <= frame.bottom + 1)
         .map(r => [unit((r.left - frame.left) / frame.width), unit((r.top - frame.top) / frame.height), unit((r.right - frame.left) / frame.width), unit((r.bottom - frame.top) / frame.height)] as Rect));
@@ -318,7 +348,7 @@ export const PdfView = forwardRef<PdfHandle, {
     const selectionChange = () => { clearTimeout(timer); timer = setTimeout(select, 120); };
     document.addEventListener('selectionchange', selectionChange);
     const finishGroup = (event: PointerEvent) => {
-      if (!latest.current.group || latest.current.markingDisabled || editingRef.current || latest.current.region || event.pointerType === 'touch' || !box.contains(event.target as Node) || (event.target as Element).closest('button,input,select')) return;
+      if (!latest.current.group || latest.current.markingDisabled || editingRef.current || latest.current.region || event.pointerType === 'touch' || !box.contains(event.target as Node) || (event.target as Element).closest('button,input,select,.pdf-suggestion')) return;
       setTimeout(() => { if (disposed) return; const value = select(); if (value && latest.current.group) addToGroup(value); }, 0);
     };
     document.addEventListener('pointerup', finishGroup);
@@ -328,7 +358,7 @@ export const PdfView = forwardRef<PdfHandle, {
     const noteAt = (event: MouseEvent) => {
       if (latest.current.region || editingRef.current) return;
       const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('button,a,input,textarea,select,[contenteditable],.select-handle,.note-editor')) return;
+      if (target?.closest('button,a,input,textarea,select,[contenteditable],.select-handle,.note-editor,.pdf-suggestion')) return;
       const page = target?.closest<HTMLElement>('.page');
       if (!page || !box.contains(page)) return;
       const frame = page.getBoundingClientRect(), x = (event.clientX - frame.left) / frame.width, y = (event.clientY - frame.top) / frame.height;
@@ -422,6 +452,23 @@ export const PdfView = forwardRef<PdfHandle, {
     return () => { cancelled = true; if (!settled) void task.destroy(); };
   }, [props.url]);
 
+  // Opening a suggestion from the task or navigation reveals its passage.
+  // Page views exist after pagesinit even when their canvases have not rendered.
+  useEffect(() => {
+    const reveal = () => {
+      const entry = latest.current.notes.find(({ note }) => note.id === latest.current.active && note.aiReview);
+      const viewer = tools.current?.viewer, box = container.current;
+      const div = entry && viewer?.getPageView(entry.note.page)?.div;
+      if (!entry || !div || !box) return;
+      const page = div.getBoundingClientRect(), view = box.getBoundingClientRect();
+      const top = page.top + entry.note.rect[1] * page.height, bottom = page.top + entry.note.rect[3] * page.height;
+      if (top < view.top + 16 || bottom > view.bottom - 240) box.scrollTo({ top: box.scrollTop + top - view.top - 72 });
+    };
+    const bus = tools.current?.bus;
+    bus?.on('pagesinit', reveal); reveal();
+    return () => bus?.off('pagesinit', reveal);
+  }, [props.active, props.url, loading]);
+
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const viewer = tools.current?.viewer, mod = e.metaKey || e.ctrlKey;
@@ -489,6 +536,7 @@ export const PdfView = forwardRef<PdfHandle, {
       <button type="button" className={'icon-button' + (findOpen ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={findOpen} title={t('Find (⌘F)')} onClick={() => { if (findOpen) closeFind(); else setFindOpen(true); }}><Icon name="search" size={16}/></button>
       <button type="button" className={'icon-button region-toggle' + (props.region ? ' active' : '')} aria-label={t('Mark region')} aria-pressed={props.region} title={t('Mark a figure or region')} onClick={() => props.setRegion(!props.region)}><Icon name="region" size={16}/></button>
       {props.onGroupChange && <GroupPicker value={props.group || null} onChange={props.onGroupChange} disabled={props.markingDisabled || Boolean(editing)}/>}
+      {suggestions.length > 0 && <button type="button" className="pdf-suggestion-trigger" aria-label={t('AI suggestions')} title={t('AI suggestions')} aria-pressed={Boolean(activeSuggestion)} disabled={suggestionLocked} onClick={() => activeSuggestion ? closeSuggestion() : props.onSelect(suggestions.find(({ note }) => note.page >= page - 1)?.note || suggestions[0].note)}><Icon name="spark" size={15}/><span>{suggestions.length}</span></button>}
       {props.tools}
     </div>
     {findOpen && <div className="pdf-find">
@@ -504,15 +552,19 @@ export const PdfView = forwardRef<PdfHandle, {
         <div ref={inner} className="pdfViewer"/>
       </div>
       {(loading || error) && <div className="review-loading"><p role={error ? 'alert' : 'status'}>{error ? t('The PDF could not be opened: {error}', { error }) : t('Opening the PDF…')}</p></div>}
+      {dismissedSuggestion && <div className="pdf-suggestion-undo" role="status">{t('Suggestion ignored.')}<button type="button" disabled={suggestionLocked} onClick={() => void restoreSuggestion()}>{t('Undo')}</button>{suggestionError && <p role="alert">{suggestionError}</p>}</div>}
     </div>
     {[...layers].map(([number, layer]) => createPortal(<Fragment>
       {(() => {
         const notes = props.notes.filter(({ note }) => note.page === number - 1), spots = tagSpots(notes.map(({ note }) => (note.rects?.length ? note.rects : [note.rect])[0]));
         return notes.map(({ note, number: label }, index) => <Fragment key={note.id}>
           {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} data-review={note.aiReview ? true : undefined} style={{ ...percent(rect), ...groupStyle(note.group) }}/>) }
-          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} data-review={note.aiReview ? true : undefined} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={note.aiReview ? t('Suggestion {n}: {comment}', { n: label, comment: note.comment }) : t('Note {n}: {comment}', { n: label, comment: note.group ? groupName(note.group) : note.comment })} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}</button>
+          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} data-review={note.aiReview ? true : undefined} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={note.aiReview ? t('Suggestion {n}: {comment}', { n: label, comment: note.comment }) : t('Note {n}: {comment}', { n: label, comment: note.group ? groupName(note.group) : note.comment })} aria-expanded={note.aiReview ? props.active === note.id : undefined} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}</button>
         </Fragment>);
       })()}
+      {activeSuggestion?.note.page === number - 1 && props.suggestions && !editing && !props.region && <PdfSuggestion key={activeSuggestion.note.id} note={activeSuggestion.note} number={activeSuggestion.number} index={suggestionIndex} total={suggestions.length} selected={props.suggestions.has(activeSuggestion.note.id)} busy={suggestionLocked} error={suggestionError}
+        onToggle={() => props.suggestions!.toggle(activeSuggestion.note)} onDismiss={() => void dismissSuggestion(activeSuggestion.note)} onClose={closeSuggestion}
+        onPrevious={() => props.onSelect(suggestions[suggestionIndex - 1].note)} onNext={() => props.onSelect(suggestions[suggestionIndex + 1].note)}/>}
       {props.region && <div className="region-capture"
         onPointerDown={e => {
           if (editing || e.button > 0) return;

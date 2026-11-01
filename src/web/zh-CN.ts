@@ -5,6 +5,10 @@ export const zhCN: Record<string, string> = {
   'AI review': 'AI 审阅',
   'Read the paper and leave PDF comments without editing the manuscript': '只读论文并留下 PDF 批注，不修改原稿',
 
+  'AI suggestion': 'AI 审阅建议', 'AI suggestion {n}': 'AI 审阅建议 {n}',
+  'Close suggestion': '关闭建议', 'Previous suggestion': '上一条建议', 'Next suggestion': '下一条建议',
+  'Suggestions in this task': '已加入任务的建议', 'Unplaced suggestions': '位置待确认的建议',
+  'Remove suggestion {n} from task': '从任务中移除建议 {n}',
   'My notes': '我的批注', 'AI suggestions': 'AI 审阅建议',
   'Write a note…': '写下你的想法…',
   'Add to task': '加入任务', 'Added to task': '已加入任务', 'Remove from task': '从任务中移除',

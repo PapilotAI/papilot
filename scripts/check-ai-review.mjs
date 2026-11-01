@@ -17,8 +17,10 @@ const state = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name
 const words = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 const text = words[0].words[1], rect = [text[1] / 612, (text[2] - text[3]) / 792, (text[1] + text[4]) / 612, text[2] / 792];
 const note = { id: 'ai-finding-1', projectId: 'paper', key: 'pdf', page: 0, rect, rects: [rect], quote: text[0], comment: 'State the assumptions under which this claim holds.', source: null, createdAt: Date.now(), aiReview: { taskId: 'review', agent: 'codex' } };
+const nextText = words[1].words.at(-1), nextRect = [nextText[1] / 612, (nextText[2] - nextText[3]) / 792, (nextText[1] + nextText[4]) / 612, nextText[2] / 792];
+const second = { ...note, id: 'ai-finding-2', page: 1, rect: nextRect, rects: [nextRect], quote: nextText[0], comment: 'Explain how this conclusion follows from the evidence. ' + 'Specify the assumptions and distinguish the observed result from the broader claim. '.repeat(18) };
 const personal = { ...note, id: 'personal-note', comment: 'My reading thought.', aiReview: undefined };
-let notes = [personal], attempts = [], edits = [], fail = true;
+let notes = [personal], attempts = [], edits = [], fail = true, failDelete = true;
 await page.route('**/api/**', route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/state') return json(state);
@@ -31,14 +33,15 @@ await page.route('**/api/**', route => {
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
   if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'answer', taskId: state.tasks[0]?.id, type: 'assistant', text: 'Clarify the assumptions behind the main claim.', createdAt: 1 }] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
-  if (url.pathname.endsWith('/annotations/ai-finding-1/delete')) { notes = notes.filter(item => item.id !== note.id); return json({ ok: true }); }
+  if (url.pathname.endsWith('/annotations/ai-finding-1/delete')) { if (failDelete) { failDelete = false; return route.fulfill({ status: 503, json: { error: 'Could not ignore. Try again.' } }); } notes = notes.filter(item => item.id !== note.id); return json({ ok: true }); }
   if (url.pathname.endsWith('/annotations/ai-finding-1/restore')) { notes = [note, ...notes]; return json({ annotations: notes }); }
   if (url.pathname.endsWith('/archive')) return json(state.tasks[0]);
   if (url.pathname === '/api/tasks' && route.request().postDataJSON().skill === 'ai-review') {
     const body = route.request().postDataJSON(); attempts.push(body);
     if (fail) { fail = false; return route.fulfill({ status: 503, json: { error: 'Temporary failure. Try again.' } }); }
-    const task = { ...body, name: body.id, mode: 'review', status: 'reviewing', aiReview: { key: 'pdf', notes: 1 }, createdAt: 1, updatedAt: 1, review: { state: 'done', round: null, counts: {}, files: [], unsent: 0, comments: 0 } };
-    state.tasks.push(task); notes = [note, personal];
+    const task = { ...body, name: body.id, mode: 'review', status: 'reviewing', aiReview: { key: 'pdf', notes: 2 }, createdAt: 1, updatedAt: 1, review: { state: 'done', round: null, counts: {}, files: [], unsent: 0, comments: 0 } };
+    note.aiReview.taskId = body.id; second.aiReview = { ...note.aiReview };
+    state.tasks.push(task); notes = [note, personal, second];
     return json(task);
   }
   if (url.pathname === '/api/tasks') {
@@ -67,7 +70,7 @@ try {
   await expect(page.getByRole('textbox', { name: 'Describe the revision' })).toHaveValue('Check assumptions and clarity.');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await page.locator('.task-link').first().click();
-  await page.getByRole('button', { name: 'View 1 review suggestion', exact: true }).click();
+  await page.getByRole('button', { name: 'View 2 review suggestions', exact: true }).click();
   assert.equal(attempts.length, 2);
   assert.equal(attempts[0].id, attempts[1].id);
   assert.equal(attempts[0].instructions, 'Check assumptions and clarity.');
@@ -77,20 +80,69 @@ try {
   const selected = page.getByRole('button', { name: 'Include suggestion 1 in this task', exact: true });
   await expect(selected).toHaveAttribute('aria-pressed', 'false');
   const own = page.getByRole('region', { name: 'My notes', exact: true });
-  const suggestions = page.getByRole('region', { name: 'AI suggestions', exact: true });
+  const suggestions = page.getByRole('dialog', { name: 'AI suggestion 1', exact: true });
+  await expect(page.locator('.notes-panel .review-suggestion')).toHaveCount(0);
+  await expect(page.locator('.pdf-container .pdf-suggestion')).toHaveCount(1);
   await expect(own.getByText(personal.comment, { exact: true })).toBeVisible();
   await expect(suggestions.getByText(note.comment, { exact: true })).toBeVisible();
   await expect(suggestions.getByRole('button', { name: /^Edit note/ })).toHaveCount(0);
   await expect(own.getByRole('button', { name: 'Include note 2 in this task' })).toHaveAttribute('aria-pressed', 'false');
-  await suggestions.locator('.note-comment-text').click();
+  await page.getByRole('button', { name: 'Select all notes for this task', exact: true }).click();
+  await expect(selected).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: 'Select all notes for this task', exact: true }).click();
+  await suggestions.locator('.pdf-suggestion-body').click();
   await expect(selected).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', { name: 'Start task', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Show suggestion 1 on the page', exact: true }).click();
+  await suggestions.getByRole('button', { name: 'Close suggestion' }).click();
+  await expect(suggestions).toHaveCount(0);
+  await page.getByRole('button', { name: `Suggestion 1: ${note.comment}`, exact: true }).click();
+  await expect(suggestions).toBeVisible();
   await expect(page.locator('.note-mark[data-note="ai-finding-1"]')).toBeVisible();
   await expect(page.locator('.pdfViewer canvas').first()).toBeVisible();
   await expect(page.locator('.note-mark[data-note="ai-finding-1"]')).toHaveAttribute('data-review', 'true');
   await page.screenshot({ path: 'test-results/ai-review-notes.png', fullPage: true });
+  const fits = async () => {
+    const dialog = await page.locator('.pdf-suggestion').boundingBox(), area = await page.locator('.pdf-container').boundingBox();
+    assert.ok(dialog && area && dialog.x >= area.x && dialog.x + dialog.width <= area.x + area.width + 1 && dialog.y >= area.y && dialog.y + dialog.height <= area.y + area.height + 1, JSON.stringify({dialog,area}));
+  };
+  await fits();
+  await suggestions.getByRole('button', { name: 'Next suggestion' }).click();
+  await expect(page.getByRole('dialog', { name: 'AI suggestion 3', exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('2');
+  await fits();
+  assert.equal(await page.locator('.pdf-suggestion-body').evaluate(element => element.scrollHeight > element.clientHeight), true);
+  await page.getByRole('button', { name: 'Close suggestion', exact: true }).click();
+  const markedPage = await page.locator('.pdfViewer .page[data-page-number="2"]').boundingBox();
+  await page.mouse.click(markedPage.x + (second.rect[0] + second.rect[2]) / 2 * markedPage.width, markedPage.y + (second.rect[1] + second.rect[3]) / 2 * markedPage.height);
+  await expect(page.getByRole('dialog', { name: 'AI suggestion 3', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Previous suggestion', exact: true }).click();
+  await expect(suggestions).toBeVisible();
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await expect(suggestions).toBeVisible(); await fits();
+  await suggestions.focus(); await page.keyboard.press('Escape');
+  await expect(suggestions).toHaveCount(0);
+  await expect(page.getByRole('button', { name: `Suggestion 1: ${note.comment}`, exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'AI suggestions', exact: true }).click();
+  await expect(suggestions).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(suggestions).toBeVisible();
+  await fits();
+  await page.screenshot({ path: 'test-results/ai-review-inline-mobile.png', fullPage: true, animations: 'disabled' });
   await selected.click();
+  await expect(page.locator('.manuscript-pages').first()).toBeVisible();
+  await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'New task', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Suggestions in this task', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show suggestion 1 on the page', exact: true }).click();
+  await expect(suggestions).toBeVisible();
+  await selected.click();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(suggestions).toBeVisible();
+  await selected.click();
+  await suggestions.getByRole('button', { name: 'Ignore suggestion 1', exact: true }).click();
+  await expect(suggestions.getByRole('alert')).toHaveText('Could not ignore. Try again.');
+  await expect(selected).toHaveAttribute('aria-pressed', 'true');
   await suggestions.getByRole('button', { name: 'Ignore suggestion 1', exact: true }).click();
   await expect(suggestions).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Start task', exact: true })).toBeDisabled();
@@ -99,12 +151,14 @@ try {
   await selected.focus(); await page.keyboard.press('Space');
   await expect(selected).toHaveAttribute('aria-pressed', 'true');
   await page.reload();
+  await expect(page.getByRole('region', { name: 'Suggestions in this task', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show suggestion 1 on the page', exact: true }).click();
   await expect(selected).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await expect.poll(() => edits.length).toBe(1);
   assert.deepEqual(edits[0].annotations, [note.id]);
   await expect(page.getByRole('button', { name: 'Include note 1 in this task', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  assert.deepEqual(notes.map(item => item.id), [personal.id]);
+  assert.deepEqual(notes.map(item => item.id), [personal.id, second.id]);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('textbox', { name: 'Describe the revision' }).fill('/ai-review');
   await page.getByRole('option', { name: 'AI review', exact: true }).click();
@@ -112,5 +166,5 @@ try {
   await page.screenshot({ path: 'test-results/ai-review-mobile.png', fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.deepEqual(errors, []);
-  console.log('AI review skill UI: single composer, menu and slash command, retry, PDF notes, explicit selection, edit handoff and mobile layout passed.');
+  console.log('AI review skill UI: single composer, menu and slash command, retry, in-PDF suggestions, page navigation, zoom, ignore/undo, explicit selection, edit handoff and mobile layout passed.');
 } finally { await browser.close(); await server.close(); }
