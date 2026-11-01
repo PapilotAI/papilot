@@ -4,7 +4,15 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-01 — AI Review and PDF Notes
+
+Papilot 0.8.0 adds AI reviews on task copies of your paper, with concise suggestions beside the relevant PDF passages. Keep selected suggestions on the main manuscript, write private reading notes, and decide which notes to send to an agent. This release also adds reference checks, more agents and a reorganized Settings interface.
+
 ### Added
+
+- **AI review on a task copy.** Choose the **AI review** skill to ask Codex, Claude or GLM for short, specific comments without changing the manuscript. Each task preserves its own PDF and anchors suggestions to the reviewed passages. Use the bookmark action to keep selected comments on the main manuscript; the manuscript text stays unchanged. Ignore and restore suggestions, and use the left and right arrow keys to move between them. Reviews use extracted text, equations and captions; they do not inspect figure images.
+- **Private PDF notes.** Reading notes stay on the PDF until you explicitly quote them into a task. Create and edit notes in the same compact card, click the text to edit, and save and close with Escape or a click outside. The notes library shares these controls and preserves drafts if saving fails.
+- **A development update channel.** Choose **Dev (GitHub main)** in Settings → Updates to install a specific development build, or return to **Stable** for npm releases. Both channels preserve your data and retain the previous installation for rollback.
 
 - **Codex can see the PDF.** New Codex tasks get a `view_pdf` tool: Codex asks for the pages where source lines or printed page numbers appear, in its worktree or in the accepted text, and Papilot compiles them and draws the pages as images that Codex opens with its image viewer. Codex uses it when the look of the page matters, such as line breaks and spacing, and the conversation shows each look. Only the chapters needed are compiled, and the review after the turn reuses the build.
 
@@ -21,11 +29,16 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
-- **Finished tasks archive themselves.** When you leave a task whose changes are all decided and applied or committed, or one that only answered a question, it moves to the archive and a notice offers **Undo**. Tasks with undecided changes, comments to send, isolated accepted changes or an unsent follow-up stay listed. Sending a message to an archived task brings it back. The first start after updating archives tasks finished earlier; restore any of them from the archive.
+- **Tasks stay available until you archive them.** Leaving a finished task or restarting Papilot keeps it in the task list, including AI reviews and conversations without manuscript edits. Completed reviews remain accessible after applying or committing their changes.
+- **Settings organized by purpose.** Appearance, notifications, sharing, updates, skills and runtime setup have dedicated pages. Agent details show availability and setup instructions, LaTeX settings show the detected installation, shortcuts have an interactive keyboard overview, and custom skills can choose their own icons.
+- **Quieter review navigation.** Indirect PDF changes start collapsed, with a preference to expand them. Scrolling and change navigation stay inside the review, and sending a task animates it into the sidebar while keeping the manuscript open.
 
 ### Fixed
 
 - Jumping to a section from the contents no longer moves keyboard focus into the PDF later, the next time that page redraws, for example after collapsing the side panel.
+- Unsaved note edits are saved before navigating away; failed saves keep the draft visible for retry.
+- AI review annotation changes synchronize across browsers, and restoring a suggestion cannot create a duplicate during a simultaneous refresh.
+- Preserved review PDFs remain available after moving a paper and updating its repository path. Keeping a suggestion on the manuscript verifies its current location and avoids duplicate copies.
 
 ## [0.7.0] - 2026-10-31 — Fully Modernized UI and Interactions
 
