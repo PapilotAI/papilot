@@ -305,39 +305,23 @@ test('archiving survives a restart, retains task history and review, and restore
   } finally { f.close(); fs.rmSync(dir, { recursive: true }); }
 });
 
-test('leaving archives only a task that is still finished, and writing to it restores it', async () => {
+test('legacy navigation requests do not archive completed tasks; explicit archiving and follow-ups still work', async () => {
   const f = fixture();
   try {
     const finished = { state: 'done', round: 1, counts: { accepted: 1 }, unsent: 1, comments: 0, files: [] };
     f.store.updateTask(f.task.id, { review: { ...finished, state: 'revise', counts: { commented: 1 }, comments: 1 } });
     assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, undefined, 'a comment still waits for the agent');
     f.store.updateTask(f.task.id, { review: finished });
-    assert.ok(f.workspace.archiveTask(f.task.id, true, true).archivedAt);
+    assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, undefined);
+    f.store.updateTask(f.task.id, { mode: 'review', review: { ...finished, round: null } });
+    assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, undefined, 'opening the PDF is not an archive action');
+    f.store.updateTask(f.task.id, { mode: 'edit' });
+    assert.ok(f.workspace.archiveTask(f.task.id, true).archivedAt);
     await f.workspace.enqueue(f.task.id, 'One more pass on the abstract.', 'follow-up');
     assert.equal(f.store.task(f.task.id).archivedAt, null, 'a follow-up brings the task back');
     assert.equal(f.store.task(f.task.id).status, 'queued');
     assert.equal(f.workspace.archiveTask(f.task.id, true, true).archivedAt, null, 'new work keeps it listed');
     assert.ok(f.workspace.archiveTask(f.task.id, true).archivedAt, 'the author can still archive it by hand');
-  } finally { f.close(); }
-});
-
-test('finished tasks from before auto-archiving are archived once', () => {
-  const f = fixture();
-  try {
-    const finished = { state: 'done', round: 1, counts: { accepted: 1 }, unsent: 1, comments: 0, files: [] };
-    f.store.updateTask(f.task.id, { review: finished });
-    f.store.saveTask({ ...f.task, id: 'open-task', name: 'p-open', review: { ...finished, state: 'reviewing', counts: { pending: 2 } } });
-    f.store.saveTask({ ...f.task, id: 'kept-task', name: 'p-kept', review: finished, archivedAt: 5 });
-    let runs = 0;
-    const sweep = () => { runs++; f.workspace.archiveFinished(); };
-    f.store.migrate('archive-finished-tasks', sweep);
-    assert.ok(f.store.task(f.task.id).archivedAt);
-    assert.equal(f.store.task('open-task').archivedAt, undefined);
-    assert.equal(f.store.task('kept-task').archivedAt, 5, 'an earlier archive keeps its time');
-    f.workspace.archiveTask(f.task.id, false);
-    f.store.migrate('archive-finished-tasks', sweep);
-    assert.equal(runs, 1);
-    assert.equal(f.store.task(f.task.id).archivedAt, null, 'a restored task is not archived again');
   } finally { f.close(); }
 });
 
@@ -1555,4 +1539,141 @@ test('agents that are not found on the host are neither started nor offered, and
     await workspace.connect();
     assert.equal(workspace.runtimes.qwen.installed, true);
   } finally { workspace.close(); store.close(); }
+});
+
+test('AI review runs read-only, saves PDF notes, and never publishes or delivers edits', async () => {
+  const f = fixture();
+  try {
+    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf-original' }, threadId: null });
+    f.store.saveReviewInput(f.task.id, { key: 'pdf-original', lines: [{ id: 'p1-l1', page: 0, text: 'This always holds.', rect: [0.1, 0.2, 0.7, 0.25] }] });
+    f.codex.ready = true;
+    await f.workspace.enqueue(f.task.id, 'Check the assumptions.', 'ai-review-run');
+    await tick(); await tick();
+    const start = f.codex.calls.find(call => call.method === 'thread/start')!.params;
+    assert.equal(start.sandbox, 'read-only');
+    assert.equal(start.approvalPolicy, 'never');
+    assert.equal(start.dynamicTools, undefined);
+    assert.match(start.developerInstructions, /Do not edit files/);
+    assert.match(f.codex.calls.find(call => call.method === 'turn/start')!.params.input[0].text, /p1-l1/);
+    (f.workspace as any).serverRequest({ id: 100, method: 'item/fileChange/requestApproval', params: { threadId: 'thread', turnId: 'turn-new' } });
+    assert.match(f.codex.rejections[0].message, /read-only/);
+    await (f.workspace as any).notification({ method: 'item/completed', params: { threadId: 'thread', turnId: 'turn-new', item: { id: 'answer', type: 'agentMessage', text: JSON.stringify({ summary: 'Clarify the assumptions.', notes: [{ start: 'p1-l1', end: 'p1-l1', comment: 'Which assumptions are required?' }] }) } } });
+    const completion = { method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } };
+    await (f.workspace as any).notification(completion);
+    await (f.workspace as any).notification(completion);
+    const notes = f.store.annotations(f.task.projectId);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].key, 'pdf-original');
+    assert.deepEqual(notes[0].rects, [[0.1, 0.2, 0.7, 0.25]]);
+    assert.equal(notes[0].taskId, undefined, 'Findings remain available for the author to choose');
+    assert.deepEqual(notes[0].aiReview, { taskId: f.task.id, agent: 'codex' });
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).aiReview?.notes, 1);
+    assert.equal(f.store.runs()[0].reviewRound, null);
+    await f.workspace.refresh(f.task.id);
+    assert.equal(f.calls.length, 0, 'No engine feedback, publish, build or delivery requests');
+    assert.throws(() => f.workspace.publish(f.task.id), /cannot publish/);
+    await assert.rejects(f.workspace.deliverTask(f.task.id, 'workspace'), /no manuscript changes/);
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => {}), /PDF notes/);
+    await assert.rejects(f.workspace.enqueue(f.task.id, 'Apply the notes', 'wrong-mode', true, { notes }), /editing task/);
+    assert.equal(f.store.items(f.task.id).at(-1)!.text, 'Clarify the assumptions.');
+  } finally { f.close(); }
+});
+
+test('a review containing a 14-line suggestion completes and retains every finding', async () => {
+  const f = fixture();
+  try {
+    const lines = Array.from({ length: 20 }, (_, index) => ({ id: `p13-l${index + 1}`, page: 12, text: `Line ${index + 1}`, rect: [0.1, index / 30, 0.8, (index + 1) / 30] as [number, number, number, number] }));
+    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf' } });
+    f.store.saveReviewInput(f.task.id, { key: 'pdf', lines });
+    f.codex.ready = true;
+    await f.workspace.enqueue(f.task.id, 'Review.', 'long-passage-review');
+    await tick(); await tick();
+    const text = JSON.stringify({ summary: 'Clarify the comparison.', notes: [{ start: 'p13-l1', end: 'p13-l1', comment: 'Define the term.' }, { start: 'p13-l7', end: 'p13-l20', comment: 'Explain the page reflow case.' }] });
+    await (f.workspace as any).notification({ method: 'item/completed', params: { threadId: 'thread', turnId: 'turn-new', item: { id: 'answer', type: 'agentMessage', text } } });
+    const completion = { method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } };
+    await (f.workspace as any).notification(completion);
+    await (f.workspace as any).notification(completion);
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).error, null);
+    assert.equal(f.store.task(f.task.id).aiReview?.notes, 2);
+    const notes = f.store.annotations(f.task.projectId);
+    assert.equal(notes.length, 2);
+    assert.deepEqual(notes[1].rects, lines.slice(6, 20).map(line => line.rect));
+    assert.equal(f.store.items(f.task.id).at(-1)!.text, 'Clarify the comparison.');
+    assert.equal(f.calls.length, 0);
+  } finally { f.close(); }
+});
+
+test('an invalid AI response creates no partial notes and a follow-up can recover', async () => {
+  const f = fixture();
+  try {
+    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf' } });
+    f.store.saveReviewInput(f.task.id, { key: 'pdf', lines: [{ id: 'p1-l1', page: 0, text: 'A claim.', rect: [0, 0, 1, 1] }] });
+    f.codex.ready = true;
+    const finish = async (text: string, key: string) => {
+      await f.workspace.enqueue(f.task.id, 'Review.', key);
+      await tick(); await tick();
+      await (f.workspace as any).notification({ method: 'item/completed', params: { threadId: 'thread', turnId: 'turn-new', item: { id: key, type: 'agentMessage', text } } });
+      await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } });
+    };
+    await finish(JSON.stringify({ summary: 'Review', notes: [{ start: 'p1-l1', end: 'p1-l1', comment: 'Valid' }, { start: 'missing', end: 'missing', comment: 'Invalid' }] }), 'invalid');
+    assert.equal(f.store.annotations(f.task.projectId).length, 0);
+    assert.equal(f.store.task(f.task.id).status, 'failed');
+    await finish(JSON.stringify({ summary: 'No actionable issues.', notes: [] }), 'retry');
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).aiReview?.notes, 0);
+  } finally { f.close(); }
+});
+
+test('reconciling an AI review recovers annotations from the completed thread reply', async () => {
+  const f = fixture();
+  try {
+    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf' } });
+    f.store.saveReviewInput(f.task.id, { key: 'pdf', lines: [{ id: 'p1-l1', page: 0, text: 'A claim.', rect: [0, 0, 1, 1] }] });
+    const run = uncertainRun(f);
+    f.codex.handler = async () => ({ thread: { status: { type: 'loaded' }, turns: [{ ...identifiedTurn(run, 'completed'), items: [{ type: 'userMessage', clientId: run.id }, { id: 'reply', type: 'agentMessage', text: JSON.stringify({ summary: 'Needs evidence.', notes: [{ start: 'p1-l1', end: 'p1-l1', comment: 'Support this claim.' }] }) }] }] } });
+    await f.workspace.reconcile(f.task.id);
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.annotations(f.task.projectId)[0].comment, 'Support this claim.');
+    assert.equal(f.calls.length, 0);
+  } finally { f.close(); }
+});
+
+test('creating an AI review skill task persists its snapshot and queues review-only instructions once', async () => {
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/isolated-review', deferred: true } : {});
+  try {
+    const reviewInput = { key: 'pdf-at-start', lines: [{ id: 'p1-l1', page: 0, text: 'Read this claim.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
+    const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', reviewInput };
+    const created = await f.workspace.createTask(input);
+    assert.equal(created.mode, 'review');
+    assert.equal(created.worktree, '/isolated-review');
+    assert.equal(created.status, 'queued');
+    assert.deepEqual(f.store.reviewInput(created.id), reviewInput);
+    assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /Read this claim/);
+    assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /do not edit, rewrite, commit, or apply changes/i);
+    assert.equal(f.store.items(created.id)[0].meta?.skill?.id, 'ai-review');
+    assert.equal(f.store.items(created.id)[0].text, '');
+    assert.equal((await f.workspace.createTask(input)).id, created.id);
+    assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 1);
+    await assert.rejects(f.workspace.createTask({ ...input, reviewInput: undefined, instructions: 'Edit it.' }), /Invalid task ID/);
+    await assert.rejects(f.workspace.createTask({ ...input, id: 'ai-review-task-0002', agent: 'cursor' }), /Choose Codex, Claude or GLM/);
+  } finally { f.close(); }
+});
+
+test('AI review captures the task worktree before enqueueing and retries keep that snapshot', async () => {
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : {});
+  try {
+    const requested = { key: 'main-pdf', lines: [] };
+    const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The task copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
+    let calls = 0;
+    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', reviewInput: requested, prepareReview: async (worktree: string) => { calls++; assert.equal(worktree, '/task-copy'); return captured; } };
+    const created = await f.workspace.createTask(input);
+    assert.equal(created.aiReview?.key, 'task-pdf');
+    assert.deepEqual(f.store.reviewInput(created.id), captured);
+    assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /The task copy/);
+    await f.workspace.createTask(input); assert.equal(calls, 1);
+    f.store.saveAnnotation({ id: 'private-finding', projectId: f.task.projectId, key: 'task-pdf', page: 0, rect: [0, 0, 1, 1], comment: 'Clarify.', quote: 'Claim', source: null, createdAt: 1, aiReview: { taskId: created.id, agent: 'codex' } });
+    await assert.rejects(f.workspace.createTask({ id: 'send-private-finding', projectId: f.task.projectId, title: 'Edit', instructions: '', annotations: ['private-finding'] }), /no longer available/);
+  } finally { f.close(); }
 });

@@ -37,7 +37,7 @@ export function parseSkill(text: string, id: string, source: Skill['source'], fo
   text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
   const fields = skillMetadata(text), body = skillInstructions(text).trim().slice(0, 20000);
   if (!body) return null;
-  return { id, name: (fields.name || id).slice(0, 60), description: (fields.description || '').slice(0, 300), hint: (fields.hint || '').slice(0, 200), ...(isSkillIcon(fields.icon) ? { icon: fields.icon } : {}), source, body, ...(folder ? { folder } : {}), order: fields.order && Number.isFinite(Number(fields.order)) ? Number(fields.order) : 1000 };
+  return { id, name: (fields.name || id).slice(0, 60), description: (fields.description || '').slice(0, 300), hint: (fields.hint || '').slice(0, 200), ...(isSkillIcon(fields.icon) ? { icon: fields.icon } : {}), source, body, ...(fields.output === 'annotations' ? { output: 'annotations' as const } : {}), ...(folder ? { folder } : {}), order: fields.order && Number.isFinite(Number(fields.order)) ? Number(fields.order) : 1000 };
 }
 
 function read(dir: string, source: Skill['source']): SkillFile[] {
@@ -64,4 +64,4 @@ export function findSkill(paper: string, id: string) {
   return skill;
 }
 
-export const listedSkill = ({ id, name, description, hint, source, icon }: SkillFile): Skill => ({ id, name, description, hint, source, ...(icon ? { icon } : {}) });
+export const listedSkill = ({ id, name, description, hint, source, icon, output }: SkillFile): Skill => ({ id, name, description, hint, source, ...(icon ? { icon } : {}), ...(output ? { output } : {}) });

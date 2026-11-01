@@ -18,7 +18,7 @@ import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
 import { type Accounts, deviceLabel } from './accounts.ts';
 import { type Listener, Limiter, SESSION_COOKIE, author, clientAddress, cookie, equals, guard, viewerInfo, visibleSnapshot } from './access.ts';
-import { isAgentId, type AgentId, type NoteSummary } from '../shared.ts';
+import { isTaskReviewNote, isAgentId, type AgentId, type NoteSummary } from '../shared.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
 import { taskNoteResults } from './note-results.ts';
 import type { Updates } from './updates.ts';
@@ -27,6 +27,7 @@ import { attachmentIds } from './attachments.ts';
 import { MAX_ATTACHMENT_BYTES } from '../shared.ts';
 import { PaperImports } from './imports.ts';
 import { DATA } from './paths.ts';
+import { registerAiReviewRoutes } from './ai-review-routes.ts';
 import { detectLatex } from './latex-installation.ts';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
@@ -85,6 +86,7 @@ export async function buildApp(options: AppOptions) {
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
   const any = { config: { access: 'any' as const } }, owner = { config: { access: 'owner' as const } };
   registerSkillRoutes(app, store);
+  registerAiReviewRoutes(app, store, manuscripts);
   const project = (param = 'id') => ({ config: { access: { project: param } } }), task = { config: { access: { task: 'id' } } };
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
   app.post<{ Params: { id: string } }>('/api/projects/:id/attachments', { ...project(), bodyLimit: MAX_ATTACHMENT_BYTES }, async request => {
@@ -107,7 +109,7 @@ export async function buildApp(options: AppOptions) {
   });
   async function manuscript(id: string, rebuild = false) {
     const root = store.project(id).path, state = await manuscripts.state(id, root, rebuild);
-    const notes = store.annotations(id).filter(note => !note.taskId);
+    const notes = store.annotations(id).filter(note => !note.taskId && !isTaskReviewNote(note));
     const placed = await manuscripts.reanchor(id, root, notes).catch(() => notes);
     for (let index = 0; index < notes.length; index++) {
       const next = placed[index], previous = notes[index];
@@ -118,7 +120,7 @@ export async function buildApp(options: AppOptions) {
       if (current.deletedAt !== undefined || current.taskId || workspace.annotationSending(current.id) || current.key !== previous.key) continue;
       store.saveAnnotation({ ...current, key: next.key, page: next.page, rect: next.rect, rects: next.rects, source: next.source });
     }
-    return { ...state, annotations: store.annotations(id).filter(note => !note.taskId) };
+    return { ...state, annotations: store.annotations(id).filter(note => !note.taskId && !isTaskReviewNote(note)) };
   }
 
   app.get('/api/health', { config: { access: 'public' } }, () => listener.kind === 'local' ? { ok: true, name: 'Papilot', version: options.version, ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) } : { ok: true });
@@ -198,7 +200,17 @@ export async function buildApp(options: AppOptions) {
     const b = request.body as any, skill = skillName(b.skill), attachments = attachmentIds(b.attachments);
     if (b.annotations !== undefined && (!Array.isArray(b.annotations) || b.annotations.length > 500 || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64))) throw new Error('Select valid PDF notes for this task.');
     const annotations: string[] | undefined = b.annotations, groupInstructions = parseGroupInstructions(b.groupInstructions);
-    return workspace.createTask({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), title: string(b.title, 'Task title', 120), instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
+    const id = string(b.id, 'Task ID', 64), projectId = string(b.projectId, 'Paper ID', 64);
+    // A skill submission uses the same task endpoint and retry identity as editing.
+    const existing = store.tasks().find(task => task.id === id);
+    if (existing) { if (existing.projectId !== projectId) throw new Error('Invalid task ID.'); return existing; }
+    let reviewInput;
+    if (skill && findSkill(store.project(projectId).path, skill).output === 'annotations') {
+      const state = await manuscripts.state(projectId, store.project(projectId).path);
+      if (!state.build.current || !state.build.key) throw new Error('Wait for the current PDF to finish compiling, then run the AI review skill.');
+      reviewInput = await manuscripts.reviewSnapshot(projectId, state.build.key);
+    }
+    return workspace.createTask({ id, projectId, reviewInput, ...(reviewInput ? { prepareReview: (worktree: string) => manuscripts.captureReview(store.project(projectId).path, worktree, id) } : {}), title: string(b.title, 'Task title', 120), instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
   });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/items', task, request => { store.task(request.params.id); return { items: store.items(request.params.id) }; });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {
@@ -324,7 +336,7 @@ export async function buildApp(options: AppOptions) {
     return serialGit(project.id, async () => { await gitRemote(project.path, action); return { git: await gitStatus(project.path) }; });
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), request => manuscript(request.params.id, true));
-  // Notes marked on the manuscript PDF become one agent task when sent.
+  // Notes are saved for reading; only explicitly attached IDs reach an agent task.
   app.post<{ Params: { id: string } }>('/api/projects/:id/annotations', project(), async request => {
     const project = store.project(request.params.id), b = request.body as any;
     const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] > value[0] && value[3] > value[1];
@@ -339,6 +351,7 @@ export async function buildApp(options: AppOptions) {
   });
   app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note', project(), request => {
     const note = store.annotation(request.params.id, request.params.note);
+    if (isTaskReviewNote(note)) throw new Error('Manage this suggestion in its AI review task, or copy it to the manuscript first.');
     if (workspace.annotationSending(note.id)) throw new Error('This note is being sent. Wait for the task to finish creating.');
     if (note.taskId) throw new Error('This note has already been sent.');
     if (note.deletedAt !== undefined) throw new Error('This note has been deleted. Undo the deletion first.');
@@ -346,25 +359,28 @@ export async function buildApp(options: AppOptions) {
   });
   app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/delete', project(), request => {
     const note = store.annotation(request.params.id, request.params.note);
+    if (isTaskReviewNote(note)) throw new Error('Manage this suggestion in its AI review task, or copy it to the manuscript first.');
     if (workspace.annotationSending(note.id)) throw new Error('This note is being sent. Wait for the task to finish creating.');
     store.deleteAnnotation(request.params.id, request.params.note); return { ok: true };
   });
   app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/restore', project(), request => {
     const note = store.annotation(request.params.id, request.params.note);
+    if (isTaskReviewNote(note)) throw new Error('Manage this suggestion in its AI review task, or copy it to the manuscript first.');
     if (workspace.annotationSending(note.id)) throw new Error('This note is being sent. Wait for the task to finish creating.');
     if (note.taskId) throw new Error('This note has already been sent.');
     const { deletedAt: _, ...restored } = note;
     store.saveAnnotation(restored);
     // Return the original order, including any notes added since the deletion.
-    return { annotations: store.annotations(request.params.id).filter(note => !note.taskId) };
+    return { annotations: store.annotations(request.params.id).filter(note => !note.taskId && !isTaskReviewNote(note)) };
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', project(), async request => {
     const project = store.project(request.params.id), b = request.body as any, id = string(b.id, 'Task ID', 64);
     // A retried send returns its task; an ID from another paper is refused.
     const existing = store.tasks().find(task => task.id === id);
     if (existing) { if (existing.projectId !== project.id) throw new Error('Invalid task ID.'); return existing; }
-    const notes = store.annotations(project.id).filter(note => !note.taskId);
-    if (!notes.length) throw new Error('Mark a region on the PDF and add a note first.');
+    if (!Array.isArray(b.annotations) || !b.annotations.length || b.annotations.length > 500 || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64)) throw new Error('Select valid PDF notes for this task.');
+    const notes = [...new Set<string>(b.annotations)].map(id => store.annotation(project.id, id));
+    if (notes.some(note => note.taskId || isTaskReviewNote(note) || note.deletedAt !== undefined)) throw new Error('Select unsent PDF notes for this task.');
     const { title } = annotationTask(notes);
     return workspace.createTask({ id, projectId: project.id, title, instructions: '', annotations: notes.map(note => note.id), agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
   });

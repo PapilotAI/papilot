@@ -24,7 +24,7 @@ function note(id, index, group) {
 let notes = [note('n1', 1), note('n2', 2, 'yellow'), note('n3', 3, 'yellow'), note('n4', 4, 'purple'), note('n5', 5)];
 const otherNote = { ...note('other-note', 6), projectId: 'other' };
 const original = structuredClone(notes), sent = [], attempts = [], items = new Map();
-let fail = false, hold = false, release;
+let fail = false, hold = false, release, failEdit = false;
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/state') return json(snapshot);
@@ -37,6 +37,11 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
   if (url.pathname.endsWith('/items')) return json({ items: items.get(url.pathname.split('/')[3]) || [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
+  if (/\/annotations\/[^/]+$/.test(url.pathname)) {
+    if (failEdit) return route.fulfill({ status: 503, json: { error: 'Could not save the note.' } });
+    const note = notes.find(note => note.id === url.pathname.split('/').at(-1));
+    note.comment = route.request().postDataJSON().comment; return json(note);
+  }
   if (url.pathname === '/api/tasks') {
     const body = route.request().postDataJSON(); attempts.push(body);
     if (fail) { fail = false; return route.fulfill({ status: 503, json: { error: 'Try again.' } }); }
@@ -57,12 +62,11 @@ const send = () => page.getByRole('button', { name: 'Start task', exact: true })
 const instruction = color => page.getByRole('textbox', { name: `Instructions for ${color} notes`, exact: true });
 async function setSelection(control, selected) {
   if (await control.getAttribute('aria-pressed') === String(selected)) return;
-  if ((await control.getAttribute('class'))?.includes('note-card-select')) {
-    await control.locator('..').locator('.note-quote-text,.group-location-target').first().click();
-  } else await control.click();
+  await control.click();
   await expect(control).toHaveAttribute('aria-pressed', String(selected));
 }
 async function notesReady() {
+  if (!await page.getByRole('complementary', { name: 'PDF note library' }).isVisible()) await page.getByRole('button', { name: 'My notes', exact: true }).click();
   await expect(all()).toBeVisible();
 }
 async function switchPaper(name) {
@@ -71,10 +75,67 @@ async function switchPaper(name) {
 }
 try {
   await page.goto(origin);
-  await expect(all()).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Note 1: Revise n1.', exact: true }).click();
+  const personalCard = page.getByRole('dialog', { name: 'PDF note 1', exact: true });
+  await expect(personalCard).toBeVisible();
+  await personalCard.locator('.pdf-suggestion-body p').evaluate(element => {
+    const range = document.createRange(); range.selectNodeContents(element);
+    const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+  });
+  await page.waitForTimeout(250);
+  await expect(page.getByRole('button', { name: 'Add note', exact: true })).toHaveCount(0);
+  await page.evaluate(() => document.getSelection().removeAllRanges());
+  await page.keyboard.press('Escape');
+  await expect(personalCard).toHaveCount(0);
+  const marker = page.locator('.note-tag[data-note="n1"]');
+  await expect(marker).toBeFocused(); await page.keyboard.press('Enter');
+  await expect(personalCard).toBeVisible();
+  await prompt().focus(); await page.keyboard.press('Escape');
+  await expect(personalCard).toHaveCount(0); await expect(prompt()).toBeFocused();
+  await marker.click(); await expect(personalCard).toBeVisible();
+  await prompt().click();
+  await expect(personalCard).toHaveCount(0); await expect(prompt()).toBeFocused();
+  await marker.click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(personalCard).toHaveCount(0);
+  await marker.click();
+  await expect(personalCard).toBeVisible();
+  await expect(page.locator('.new-task-panel')).not.toBeVisible();
+  await personalCard.getByText('Revise n1.', { exact: true }).click();
+  const mobileEditor = personalCard.getByRole('textbox', { name: 'Edit note 1', exact: true });
+  await expect(mobileEditor).toBeFocused();
+  await mobileEditor.fill('A temporary reading thought.');
+  await page.screenshot({ path: 'test-results/personal-note-edit-mobile.png', fullPage: true, animations: 'disabled' });
+  await mobileEditor.dispatchEvent('keydown', { key: 'Escape', isComposing: true });
+  await expect(mobileEditor).toBeVisible();
+  await page.getByRole('textbox', { name: 'Page number', exact: true }).click();
+  await expect(personalCard).toHaveCount(0);
+  assert.equal(notes[0].comment, 'A temporary reading thought.');
+  await marker.click();
+  await personalCard.getByText('A temporary reading thought.', { exact: true }).click();
+  await expect(mobileEditor).toBeFocused();
+  await expect(mobileEditor).toHaveValue('A temporary reading thought.');
+  await mobileEditor.fill('Revise n1.');
+  await mobileEditor.press('ControlOrMeta+Enter');
+  await expect(personalCard.getByText('Revise n1.', { exact: true })).toBeVisible();
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  const cardBox = await personalCard.boundingBox(), pdfBox = await page.locator('.pdf-container').boundingBox();
+  assert.ok(cardBox.x >= pdfBox.x && cardBox.x + cardBox.width <= pdfBox.x + pdfBox.width + 1);
+  await page.screenshot({ path: 'test-results/personal-note-mobile.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await personalCard.getByRole('button', { name: 'Close note', exact: true }).click();
   await notesReady();
+  await expect(all()).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('.notes-panel input[type="checkbox"]')).toHaveCount(0);
-  for (const item of notes) await expect(check(item.id)).toHaveAttribute('aria-pressed', 'true');
+  for (const item of notes) await expect(check(item.id)).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('.notes-panel [data-note="n1"] .note-quote-text').click();
+  await expect(check('n1')).toHaveAttribute('aria-pressed', 'false');
+  await expect(send()).toBeDisabled();
+  await setSelection(all(), true);
   await expect(send()).toBeDisabled();
   await instruction('Yellow').fill('Explain the reasoning step by step.');
   await expect(send()).toBeDisabled();
@@ -87,24 +148,81 @@ try {
   await page.keyboard.press('Enter');
   await expect(check('n1')).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Edit note 1: Revise n1.', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'Edit note 1', exact: true })).toBeVisible();
+  const libraryCard = page.locator('.notes-panel [data-note="n1"]');
+  const libraryEditor = libraryCard.getByRole('textbox', { name: 'Edit note 1', exact: true });
+  await expect(libraryEditor).toBeFocused();
+  await expect(libraryCard.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+  await expect(libraryCard.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+  await expect(libraryCard.getByRole('button', { name: 'Add to task', exact: true })).toHaveCount(0);
   await expect(check('n1')).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await libraryEditor.fill('Edited directly in the note library.');
+  failEdit = true;
+  await libraryEditor.press('Enter');
+  await expect(libraryCard.getByRole('alert')).toHaveText('Could not save the note.');
+  await expect(libraryEditor).toHaveValue('Edited directly in the note library.');
+  assert.equal(notes[0].comment, 'Revise n1.');
+  failEdit = false;
+  await libraryEditor.press('Escape');
+  await expect(libraryEditor).toHaveCount(0);
+  await expect(libraryCard.getByRole('button', { name: 'Edit note 1: Edited directly in the note library.', exact: true })).toBeFocused();
+  assert.equal(notes[0].comment, 'Edited directly in the note library.');
+  await libraryCard.getByText('Edited directly in the note library.', { exact: true }).click();
+  await libraryEditor.fill('Revise n1.');
+  await check('n1').click();
+  await expect(libraryEditor).toHaveCount(0);
+  await expect(check('n1')).toHaveAttribute('aria-pressed', 'false');
+  assert.equal(notes[0].comment, 'Revise n1.');
+  await check('n1').click();
+  // Jumping from an edited card saves first; a failed save keeps the draft.
+  await libraryCard.getByRole('button', { name: 'Edit note 1: Revise n1.', exact: true }).click();
+  await libraryEditor.fill('Keep this note when jumping to the PDF.');
+  failEdit = true;
+  await libraryCard.getByRole('button', { name: 'Show note 1 on the page', exact: true }).click();
+  await expect(libraryEditor).toHaveValue('Keep this note when jumping to the PDF.');
+  await expect(libraryCard.getByRole('alert')).toHaveText('Could not save the note.');
+  assert.equal(notes[0].comment, 'Revise n1.');
+  failEdit = false;
+  await libraryCard.getByRole('button', { name: 'Show note 1 on the page', exact: true }).click();
+  await expect(libraryEditor).toHaveCount(0);
+  await expect(personalCard.getByText('Keep this note when jumping to the PDF.', { exact: true })).toBeVisible();
+  assert.equal(notes[0].comment, 'Keep this note when jumping to the PDF.');
+  await personalCard.getByRole('button', { name: 'Close note', exact: true }).click();
+  await notesReady();
+  await libraryCard.getByRole('button', { name: /^Edit note 1:/ }).click();
+  await libraryEditor.fill('Keep this note when closing the library.');
+  failEdit = true;
+  await page.getByRole('button', { name: 'Close notes', exact: true }).click();
+  await expect(libraryEditor).toHaveValue('Keep this note when closing the library.');
+  await expect(libraryCard.getByRole('alert')).toHaveText('Could not save the note.');
+  assert.equal(notes[0].comment, 'Keep this note when jumping to the PDF.');
+  failEdit = false;
+  await page.getByRole('button', { name: 'Close notes', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'PDF note library' })).toHaveCount(0);
+  assert.equal(notes[0].comment, 'Keep this note when closing the library.');
+  await notesReady();
+  await libraryCard.getByRole('button', { name: /^Edit note 1:/ }).click();
+  await libraryEditor.fill('Revise n1.');
+  await libraryEditor.press('Enter');
+  await expect(libraryEditor).toHaveCount(0);
+  await expect(check('n1')).toHaveAttribute('aria-pressed', 'true');
+  await page.screenshot({ path: 'test-results/note-library-shared-card.png', fullPage: true });
   await setSelection(check('n2'), false);
   await page.getByRole('button', { name: 'Show note 2 on the page', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'PDF note 2', exact: true })).toBeVisible();
+  await notesReady();
   await expect(check('n2')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('.notes-panel [data-note="n2"]')).toHaveAttribute('data-selected', 'false');
   const backgrounds = await page.locator('.notes-panel .group-location').evaluateAll(rows => rows.slice(0, 2).map(row => getComputedStyle(row).backgroundColor));
   assert.notEqual(backgrounds[0], backgrounds[1], 'Selected cards must have a distinct highlight');
   await expect(all()).toHaveAttribute('aria-pressed', 'mixed');
   await expect(group('Yellow')).toHaveAttribute('aria-pressed', 'mixed');
-  await expect(page.getByText('Notes to send: 4 / 5', { exact: true })).toBeVisible();
+  await expect(page.getByText('Added to task: 4', { exact: true })).toBeVisible();
   await page.reload(); await notesReady();
   await expect(instruction('Yellow')).toHaveValue('Explain the reasoning step by step.');
   await expect(instruction('Purple')).toHaveValue('Shorten this wording.');
   await expect(check('n2')).toHaveAttribute('aria-pressed', 'false');
-  await switchPaper('Other paper'); await expect(all()).toHaveAttribute('aria-pressed', 'true');
-  await setSelection(check('other-note'), false);
+  await switchPaper('Other paper'); await notesReady(); await expect(all()).toHaveAttribute('aria-pressed', 'false');
+  await setSelection(check('other-note'), true);
   await switchPaper('Paper'); await notesReady();
   await expect(check('n2')).toHaveAttribute('aria-pressed', 'false');
   await setSelection(group('Yellow'), true);
@@ -133,17 +251,22 @@ try {
   assert.equal(attempts[1].instructions, '');
   assert.equal(attempts[0].id, attempts[1].id, 'Retry the same task after a failure');
   const concurrent = note('n6', 6); notes.push(concurrent); release();
-  await expect(page.getByText('Notes to send: 4 / 4', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Notes in this task', exact: true })).toHaveCount(0);
   assert.deepEqual(notes, [original[1], original[3], original[4], concurrent]);
   assert.equal(sent[0].agent, 'codex');
   await page.locator(`.task-row[data-task="${sent[0].id}"] .task-link`).click();
   await expect(page.locator('.thread .group-instruction-sent')).toHaveText('Explain the reasoning step by step.');
   await page.locator('.manuscript-link').click();
   await page.reload(); await notesReady();
+  await expect(instruction('Yellow')).toHaveCount(0);
+  await expect(instruction('Purple')).toHaveCount(0);
+  await expect(all()).toHaveAttribute('aria-pressed', 'false');
+  await expect(check('n6')).toHaveAttribute('aria-pressed', 'false');
+  await switchPaper('Other paper'); await notesReady(); await expect(check('other-note')).toHaveAttribute('aria-pressed', 'true');
+  await switchPaper('Paper'); await notesReady();
+  await setSelection(check('n2'), true); await setSelection(check('n4'), true);
   await expect(instruction('Yellow')).toHaveValue('Explain the reasoning step by step.');
   await expect(instruction('Purple')).toHaveValue('Shorten this wording.');
-  await expect(all()).toHaveAttribute('aria-pressed', 'true');
-  await setSelection(all(), false); await setSelection(check('n2'), true); await setSelection(check('n4'), true);
   await page.getByRole('button', { name: 'Agent settings', exact: true }).click();
   await page.getByRole('option', { name: / · Claude$/ }).first().click();
   await page.keyboard.press('Escape');
@@ -154,21 +277,24 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   await page.setViewportSize({ width: 1440, height: 900 });
   await send().click();
-  await expect(page.getByText('Notes to send: 2 / 2', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Notes in this task', exact: true })).toHaveCount(0);
   assert.deepEqual(sent[1].annotations, ['n2', 'n4']); assert.equal(sent[1].agent, 'claude');
   assert.deepEqual(sent[1].groupInstructions, { yellow: 'Explain the reasoning step by step.', purple: 'Shorten this wording.' });
   assert.equal(sent[1].instructions, '');
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:group-instructions')), null);
   assert.deepEqual(notes, [original[4], concurrent]);
-  await setSelection(all(), false); await prompt().fill('A question without any annotations.'); await send().click();
+  await expect(all()).toHaveAttribute('aria-pressed', 'false'); await prompt().fill('A question without any annotations.'); await send().click();
   await expect.poll(() => sent.length).toBe(3);
   assert.equal(sent[2].annotations, undefined); assert.deepEqual(notes, [original[4], concurrent]);
-  await expect(all()).toHaveAttribute('aria-pressed', 'true');
+  await expect(all()).toHaveAttribute('aria-pressed', 'false');
   // The same controls remain usable without horizontal overflow on phones.
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
+  await notesReady();
+  await setSelection(check('n6'), true);
+  await page.getByRole('button', { name: 'Close notes', exact: true }).click();
   await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'New task', exact: true }).click();
-  await setSelection(check('n5'), false);
-  await expect(page.getByText('Notes to send: 1 / 2', { exact: true })).toBeVisible();
+  await expect(page.getByText('Added to task: 1', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/note-selection-mobile.png', fullPage: true, animations: 'disabled' });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   await expect(prompt()).toHaveValue('');
@@ -178,5 +304,5 @@ try {
   assert.equal(sent[3].instructions, ''); assert.equal(sent[3].groupInstructions, undefined);
   assert.deepEqual(notes, [original[4]]);
   assert.deepEqual(errors, []);
-  console.log('PASS: card selection, direct note sends, inline color-group instructions, persistence, failure/retry, partial sends to different agents, retained group drafts, grouped history, plain questions, and mobile controls.');
+  console.log('PASS: notes default to saved only, explicit selection, direct note sends, inline color-group instructions, persistence, failure/retry, partial sends to different agents, retained group drafts, grouped history, plain questions, and mobile controls.');
 } finally { release?.(); await browser.close(); await server.close(); }

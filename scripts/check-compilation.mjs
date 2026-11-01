@@ -125,7 +125,7 @@ try {
   await check(compile, green);
 
   // A new PDF keeps confirmed highlights and keeps unresolved notes in the
-  // composer, including color groups, without attaching them to wrong places.
+  // PDF note library, including color groups, without attaching them to wrong places.
   annotations.push(
     { id: 'kept', projectId: 'paper', key: 'pdf-next', page: 0, rect: [.1, .1, .4, .14], rects: [[.1, .1, .4, .14]], quote: 'Preserved selected text', comment: 'Keep this instruction.', source: null, createdAt: 1 },
     { id: 'uncertain', projectId: 'paper', key: 'pdf', page: 0, rect: [.1, .2, .4, .3], quote: 'Earlier figure caption', comment: 'Keep this comment even when the figure changes.', source: null, createdAt: 2 },
@@ -133,6 +133,7 @@ try {
   );
   build.key = 'pdf-next';
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.getByRole('button', { name: 'My notes', exact: true }).click();
   await page.getByText('Keep this instruction.', { exact: true }).waitFor();
   await page.getByText('Keep this comment even when the figure changes.', { exact: true }).waitFor();
   await page.getByRole('status').filter({ hasText: 'Some note positions need confirmation.' }).waitFor();

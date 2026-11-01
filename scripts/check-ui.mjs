@@ -4,7 +4,7 @@ import fs from 'node:fs';
 fs.mkdirSync('test-results', { recursive: true });
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium } from '../vendor/latex-review/node_modules/playwright/index.mjs';
+import { chromium, expect } from '../vendor/latex-review/node_modules/@playwright/test/index.mjs';
 
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
@@ -80,7 +80,7 @@ const gitCommits = [], gitActions = [], gitIgnores = [], gitMessages = [], gitSt
 const manuscriptBuild = { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true };
 let annotations = [];
 const deletedNotes = new Map();
-let failNoteEdit = false, failNoteDelete = false, failNoteRestore = false;
+let failNoteCreate = false, failNoteEdit = false, failNoteDelete = false, failNoteRestore = false;
 const noteSends = [];
 const fixturePdf = fs.readFileSync('tests/fixtures/outline.pdf');
 // The server's word places for the fixture PDF (tests/manuscript.test.ts keeps them current).
@@ -165,6 +165,7 @@ await page.route('**/api/**', async route => {
     note.comment = route.request().postDataJSON().comment; return json(note);
   }
   if (url.pathname.endsWith('/annotations')) {
+    if (failNoteCreate) return route.fulfill({ status: 503, json: { error: 'Could not save. Try again.' } });
     const body = route.request().postDataJSON();
     const note = { id: `note-${annotations.length + 1}`, projectId: task.projectId, quote: 'The marked fixture sentence.', ...body, source: { file: 'main.tex', lines: [10, 12], excerpt: 'The marked \\emph{fixture} sentence.' }, createdAt: 1 };
     annotations.push(note); return json(note);
@@ -796,7 +797,7 @@ try {
   await findBox.waitFor({ state: 'hidden' });
   // Select text, write a note, cancel it, delete one, then send another.
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
-  const notesPanel = page.getByRole('region', { name: 'PDF notes' });
+  const notesPanel = page.getByRole('dialog', { name: 'PDF note 1', exact: true });
   // Where a word is printed, in page pixels, from the server's word places.
   const printed = async text => {
     const words = fixtureWords[0], word = words.words.find(w => w[0] === text), box = await pdfPages.first().boundingBox();
@@ -821,36 +822,66 @@ try {
     await drag({ x: fixture.left + (fixture.right - fixture.left) * 0.4, y: fixture.middle }, { x: about.right - 3, y: about.middle });
     assert.doesNotMatch(await page.evaluate(() => document.getSelection().toString()), /^F/);
     await page.getByRole('button', { name: 'Add note', exact: true }).click();
-    const note = page.getByRole('textbox', { name: 'Note for the agent' });
+    const note = page.getByRole('textbox', { name: 'Edit note 1', exact: true });
     assert.equal(await note.evaluate(el => el === document.activeElement), true);
     return note;
   };
   let noteBox = await selectText();
+  const newNote = notesPanel;
+  await expect(newNote.getByRole('button', { name: 'Add note', exact: true })).toHaveCount(0);
+  await expect(newNote.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+  await expect(newNote.getByRole('button', { name: 'Delete note 1', exact: true })).toBeEnabled();
+  await expect(newNote.getByRole('button', { name: 'Include note 1 in this task', exact: true })).toBeDisabled();
+  await page.screenshot({ path: 'test-results/new-note-inline.png', fullPage: true });
   await noteBox.press('Escape');
   await noteBox.waitFor({ state: 'hidden' });
   assert.equal(annotations.length, 0);
+  noteBox = await selectText();
+  await prompt.click();
+  await expect(newNote).toHaveCount(0);
+  await expect(prompt).toBeFocused();
+  assert.equal(annotations.length, 0, 'closing an empty note does not create an annotation');
+  noteBox = await selectText();
+  await noteBox.fill('Discard this draft.');
+  await newNote.getByRole('button', { name: 'Delete note 1', exact: true }).click();
+  await expect(newNote).toHaveCount(0);
+  assert.equal(annotations.length, 0, 'the same trash action discards a new note without saving it');
   // A drag from the gap before a word to the gap after another takes just those words.
   const sentence = await printed('sentence'), about = await printed('about');
   await drag({ x: sentence.left - 2, y: sentence.middle }, { x: about.right + 1, y: about.middle });
   await page.getByRole('button', { name: 'Add note', exact: true }).click();
-  noteBox = page.getByRole('textbox', { name: 'Note for the agent' });
+  noteBox = page.getByRole('textbox', { name: 'Edit note 1', exact: true });
   await noteBox.fill('Only these words.');
-  await noteBox.press('Enter');
+  await noteBox.press('Escape');
   await page.getByRole('button', { name: 'Note 1: Only these words.', exact: true }).waitFor();
+  await expect(newNote).toHaveCount(0);
+  await expect(notesPanel).toHaveCount(0);
+  await page.getByRole('button', { name: 'Note 1: Only these words.', exact: true }).click();
   assert.equal(annotations[0].quote, 'sentence about');
-  // The pencil edits a comment; failed saves keep the text, and Cancel changes nothing.
+  await expect(notesPanel).toBeVisible();
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/personal-note-inline.png', fullPage: true });
+  // Creating and editing use the same card and actions; closing saves in place.
   const anchor = structuredClone(annotations[0]);
-  await notesPanel.getByRole('button', { name: 'Edit note 1: Only these words.' }).click();
+  await notesPanel.getByText('Only these words.', { exact: true }).click();
   const editingNote = notesPanel.getByRole('textbox', { name: 'Edit note 1', exact: true });
+  await expect(editingNote).toBeFocused();
+  await page.screenshot({ path: 'test-results/personal-note-edit.png', fullPage: true });
   await editingNote.fill('');
-  assert.equal(await notesPanel.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true);
+  await expect(notesPanel.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+  await expect(notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true })).toBeDisabled();
   assert.equal(await page.getByRole('button', { name: 'Start task', exact: true }).isDisabled(), true);
-  await editingNote.fill('Discarded edit.'); await editingNote.press('Escape');
-  assert.equal(annotations[0].comment, 'Only these words.');
-  await notesPanel.getByRole('button', { name: 'Edit note 1: Only these words.' }).click();
+  await editingNote.fill('Unfinished edit.'); await editingNote.press('Escape');
+  await expect(notesPanel).toHaveCount(0);
+  assert.equal(annotations[0].comment, 'Unfinished edit.');
+  await expect(page.getByRole('button', { name: 'Note 1: Unfinished edit.', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await notesPanel.getByText('Unfinished edit.', { exact: true }).click();
+  await expect(editingNote).toHaveValue('Unfinished edit.');
+  await expect(editingNote).toBeFocused();
   await editingNote.fill('Only these words, please.');
   failNoteEdit = true;
-  await notesPanel.getByRole('button', { name: 'Save', exact: true }).click();
+  await editingNote.press('Enter');
   await notesPanel.getByRole('alert').waitFor();
   assert.equal(await editingNote.inputValue(), 'Only these words, please.');
   failNoteEdit = false;
@@ -859,6 +890,10 @@ try {
   assert.deepEqual(annotations[0], { ...anchor, comment: 'Only these words, please.' });
   await page.reload();
   await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'My notes', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'PDF notes' })).toContainText('Only these words, please.');
+  await page.getByRole('button', { name: 'Show note 1 on the page', exact: true }).click();
+  await expect(notesPanel).toBeVisible();
   failNoteDelete = true;
   await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
   await notesPanel.getByRole('alert').waitFor(); assert.equal(annotations.length, 1);
@@ -871,7 +906,7 @@ try {
   await prompt.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
   assert.ok((await prompt.inputValue()).length < 'Undo this text'.length, 'native undo edits the text');
   assert.equal(annotations.length, 0); await prompt.fill('');
-  await notesPanel.getByRole('button', { name: 'Region note', exact: true }).focus();
+  await page.getByRole('button', { name: 'Mark region', exact: true }).focus();
   await page.keyboard.press('Meta+Shift+z');
   assert.equal(annotations.length, 0, 'redo is not interpreted as undo');
   failNoteRestore = true;
@@ -887,7 +922,7 @@ try {
   noteBox = await selectText();
   await noteBox.fill('Shorten this sentence.');
   await noteBox.press('Enter');
-  await notesPanel.getByText('Fixture sentence about', { exact: true }).waitFor();
+  await expect(notesPanel).toContainText('Shorten this sentence.');
   assert.equal(annotations[0].page, 0);
   assert.equal(annotations[0].key, 'fixture');
   assert.equal(annotations[0].quote, 'Fixture sentence about');
@@ -897,22 +932,61 @@ try {
   await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
   await page.getByRole('button', { name: 'Note 1: Shorten this sentence.', exact: true }).waitFor({ state: 'hidden' });
   assert.equal(annotations.length, 0);
+  // The arrow works immediately on a new note: save and quote in one click.
+  noteBox = await selectText();
+  await noteBox.fill('Quote this new note.');
+  await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
+  await expect(notesPanel.getByText('Quote this new note.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Notes in this task' })).toContainText('Quote this new note.');
+  assert.equal(annotations.length, 1);
+  await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  await notesPanel.getByText('Quote this new note.', { exact: true }).click();
+  await notesPanel.getByRole('textbox', { name: 'Edit note 1', exact: true }).fill('Quote the updated note.');
+  await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Notes in this task' })).toContainText('Quote the updated note.');
+  assert.equal(annotations[0].comment, 'Quote the updated note.');
+  await notesPanel.getByRole('button', { name: 'Delete note 1', exact: true }).click();
+  await expect(notesPanel).toHaveCount(0);
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  assert.equal(annotations.length, 0);
   // A region marks a figure or equation that has no text to select.
-  await notesPanel.getByRole('button', { name: 'Region note', exact: true }).click();
+  await page.getByRole('button', { name: 'Mark region', exact: true }).click();
   const firstPage = await pdfPages.first().boundingBox();
   await page.mouse.move(firstPage.x + firstPage.width * 0.2, firstPage.y + firstPage.height * 0.3);
   await page.mouse.down();
   await page.mouse.move(firstPage.x + firstPage.width * 0.7, firstPage.y + firstPage.height * 0.36, { steps: 5 });
   await page.mouse.up();
-  noteBox = page.getByRole('textbox', { name: 'Note for the agent' });
+  noteBox = page.getByRole('textbox', { name: 'Edit note 1', exact: true });
   assert.equal(await noteBox.evaluate(el => el === document.activeElement), true);
   await noteBox.fill('Define the operator here.');
-  await page.getByRole('button', { name: 'Add note', exact: true }).click();
-  await notesPanel.getByText('Page 1 · main.tex:10–12', { exact: true }).waitFor();
+  failNoteCreate = true;
+  await prompt.click();
+  await expect(newNote.getByRole('alert')).toHaveText('Could not save. Try again.');
+  await expect(noteBox).toHaveValue('Define the operator here.');
+  assert.equal(annotations.length, 0);
+  failNoteCreate = false;
+  await prompt.click();
+  await page.getByRole('button', { name: 'Note 1: Define the operator here.', exact: true }).waitFor();
+  await expect(newNote).toHaveCount(0);
+  await expect(notesPanel).toHaveCount(0);
+  await expect(prompt).toBeFocused();
+  assert.equal(annotations.length, 1);
+  await page.getByRole('button', { name: 'Note 1: Define the operator here.', exact: true }).click();
+  await expect(notesPanel).toContainText('Define the operator here.');
   assert.equal(await page.getByRole('button', { name: 'Mark region', exact: true }).getAttribute('aria-pressed'), 'false');
   assert.equal(annotations[0].rects, undefined);
   assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
-  await notesPanel.getByText('Notes to send: 1 / 1', { exact: true }).waitFor();
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  assert.equal(await page.getByRole('button', { name: 'Start task', exact: true }).isDisabled(), true);
+  await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Notes in this task' })).toContainText('Define the operator here.');
+  await page.getByRole('button', { name: 'Remove note 1 from task', exact: true }).click();
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  assert.equal(annotations.length, 1);
+  await expect(notesPanel).toHaveCount(0);
+  await page.getByRole('button', { name: 'Note 1: Define the operator here.', exact: true }).click();
+  await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
   assert.equal(await page.getByRole('tab', { name: 'Notes', exact: true }).count(), 0);
   assert.equal(await prompt.inputValue(), '');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
@@ -1378,7 +1452,7 @@ try {
   assert.deepEqual(archives.map(item => item.archived), [true, false, true, false]);
   console.log('PASS: Tasks search by title and instructions, archive without losing history, and restore from the archive');
 
-  // A finished task is archived when the author moves on from it, with an undo.
+  // Navigation only changes the view, even after a task has finished.
   archives.length = 0;
   const finishedTask = { ...task, id: 'fixture-task-0003', name: 'p-finished', title: 'Tidy the bibliography', status: 'reviewing', review: { state: 'done', round: 1, counts: { accepted: 2 }, unsent: 2, comments: 0, files: [] } };
   snapshot.tasks.push(finishedTask);
@@ -1391,26 +1465,23 @@ try {
   await finishedLink.click(); await input.waitFor();
   await input.fill('');
   await firstLink.click(); await input.waitFor();
-  const archiveNotice = page.getByRole('status').filter({ hasText: 'Archived' });
-  await archiveNotice.filter({ hasText: 'Tidy the bibliography' }).waitFor();
-  await finishedLink.waitFor({ state: 'hidden' });
-  assert.deepEqual(archives, [{ id: finishedTask.id, archived: true, finished: true }]);
-  await page.screenshot({ path: 'test-results/auto-archive-notice.png' });
-  await archiveNotice.getByRole('button', { name: 'Undo', exact: true }).click();
   await finishedLink.waitFor();
-  await archiveNotice.waitFor({ state: 'hidden' });
-  assert.match(await page.locator('.task-link.active').innerText(), /Clarify the introduction/, 'undo keeps the current task open');
+  assert.deepEqual(archives, [], 'leaving a completed task does not archive it');
   await finishedLink.click(); await input.waitFor();
+  await page.locator('.manuscript-link').click();
+  await finishedLink.waitFor();
+  assert.deepEqual(archives, [], 'opening the PDF does not archive a completed task');
+  await page.reload(); await finishedLink.waitFor();
+  assert.deepEqual(archives, [], 'reloading preserves the task list');
+  await page.screenshot({ path: 'test-results/tasks-retained-after-navigation.png' });
   await firstLink.click(); await input.waitFor();
-  assert.deepEqual(archives.map(item => item.archived), [true, false], 'a restored task stays listed');
   await page.getByRole('button', { name: /^Check the notation/ }).click(); await input.waitFor();
   await firstLink.click(); await input.waitFor();
-  assert.equal(archives.length, 2, 'an unfinished task stays listed');
+  assert.equal(archives.length, 0, 'an unfinished task also stays listed');
   snapshot.tasks.splice(snapshot.tasks.indexOf(finishedTask), 1);
   await page.clock.runFor(3000);
   await finishedLink.waitFor({ state: 'hidden' });
-  console.log('PASS: A finished task archives when the author leaves it, and Undo restores it for good');
-
+  console.log('PASS: Completed tasks remain listed after switching tasks, opening the PDF and reloading');
 
   await input.fill('Only send this once.');
   holdMessage = new Promise(resolve => { releaseMessage = resolve; });

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -266,7 +268,7 @@ test('archive API persists and restores shared tasks and rejects malformed reque
     const archive = (payload: object) => f.remote.inject({ method: 'POST', url: '/api/tasks/thesis-task/archive', headers: f.as, payload });
     for (const payload of [{}, { archived: 'true' }, { archived: null }]) assert.equal((await archive(payload)).statusCode, 400);
     assert.equal(f.store.task('thesis-task').archivedAt, undefined);
-    assert.equal((await archive({ archived: true, finished: true })).json().archivedAt, undefined, 'only a finished task archives on leaving');
+    assert.equal((await archive({ archived: true, finished: true })).json().archivedAt, undefined, 'legacy navigation does not archive tasks');
     const archived = await archive({ archived: true });
     assert.equal(archived.statusCode, 200);
     assert.ok(archived.json().archivedAt);
@@ -320,13 +322,31 @@ test('task and PDF note submissions both carry the chosen service tier', async (
     f.workspace.createTask = async input => { inputs.push(input); return { ...task(input.id, input.projectId), serviceTier: input.serviceTier }; };
     f.store.saveAnnotation({ id: 'note', projectId: 'thesis', key: 'pdf', page: 0, rect: [0, 0, 1, 1], quote: 'Text', comment: 'Shorten.', source: null, createdAt: 1 });
     const created = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'tier-task-test-01', projectId: 'thesis', title: 'Revise', instructions: 'Revise.', serviceTier: 'priority' } });
-    const notes = await f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations/send', headers: f.as, payload: { id: 'tier-task-test-02', serviceTier: 'default' } });
+    const notes = await f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations/send', headers: f.as, payload: { id: 'tier-task-test-02', annotations: ['note'], serviceTier: 'default' } });
     assert.equal(created.statusCode, 200);
     assert.equal(notes.statusCode, 200);
     assert.deepEqual(inputs.map(input => input.serviceTier), ['priority', 'default']);
     const invalid = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'tier-task-test-03', projectId: 'thesis', title: 'Revise', instructions: 'Revise.', serviceTier: true } });
     assert.equal(invalid.statusCode, 400);
     assert.equal(inputs.length, 2);
+  } finally { await f.close(); }
+});
+
+test('the note-send route requires explicit IDs and leaves reading notes alone', async () => {
+  const f = await fixture();
+  try {
+    const inputs: Parameters<Workspace['createTask']>[0][] = [];
+    f.workspace.createTask = async input => { inputs.push(input); return task(input.id, input.projectId); };
+    const note = { projectId: 'thesis', key: 'pdf', page: 0, rect: [0, 0, 1, 1] as [number, number, number, number], quote: 'Text', comment: 'A reading note.', source: null, createdAt: 1 };
+    f.store.saveAnnotation({ ...note, id: 'personal' });
+    f.store.saveAnnotation({ ...note, id: 'selected', comment: 'Clarify this.' });
+    f.store.saveAnnotation({ ...note, id: 'ignored', deletedAt: 1 });
+    const send = (annotations?: unknown) => f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations/send', headers: f.as, payload: { id: 'explicit-notes-01', ...(annotations === undefined ? {} : { annotations }) } });
+    for (const ids of [undefined, [], ['ignored'], ['missing'], [42]]) assert.equal((await send(ids)).statusCode, 400);
+    assert.equal(inputs.length, 0);
+    assert.equal((await send(['selected'])).statusCode, 200);
+    assert.deepEqual(inputs[0].annotations, ['selected']);
+    assert.equal(f.store.annotation('thesis', 'personal').taskId, undefined);
   } finally { await f.close(); }
 });
 
@@ -672,4 +692,144 @@ test('attachment uploads and downloads follow paper membership and keep unsent f
     f.accounts.share(f.ada.id, []);
     assert.equal((await f.remote.inject({ url, headers: f.as })).statusCode, 400);
   } finally { await f.close(); }
+});
+
+test('the AI review skill uses normal task submission with paper access, CSRF and a current PDF', async () => {
+  const f = await fixture();
+  try {
+    const inputs: Parameters<Workspace['createTask']>[0][] = [];
+    f.manuscripts.state = async () => ({ git: { branch: 'main', upstream: null, ahead: 0, behind: 0, files: [], head: null }, build: { key: 'pdf', status: 'ready', current: true } });
+    f.manuscripts.reviewSnapshot = async () => ({ key: 'pdf', lines: [{ id: 'p1-l1', page: 0, text: 'Claim', rect: [0, 0, 1, 1] }] });
+    f.workspace.createTask = async input => {
+      inputs.push(input);
+      return f.store.saveTask({ ...task(input.id, input.projectId), mode: 'review', aiReview: { key: input.reviewInput!.key } });
+    };
+    const payload = { id: 'ai-review-request-1', projectId: 'thesis', skill: 'ai-review', title: 'AI review', instructions: '', agent: 'codex' };
+    const send = (body = payload, headers = f.as) => f.remote.inject({ method: 'POST', url: '/api/tasks', headers, payload: body });
+    assert.equal((await send(payload, { ...f.as, 'x-papilot-token': '' })).statusCode, 403);
+    const denied = await send({ ...payload, projectId: 'grant' }), missing = await send({ ...payload, projectId: 'missing' });
+    assert.equal(denied.statusCode, 400);
+    assert.equal(denied.body, missing.body);
+    const ready = f.manuscripts.state;
+    f.manuscripts.state = async () => ({ ...(await ready('thesis', '/unused')), build: { status: 'building', current: false } });
+    assert.equal((await send()).statusCode, 400);
+    f.manuscripts.state = ready;
+    assert.equal(inputs.length, 0);
+    assert.equal((await send()).statusCode, 200);
+    assert.equal(inputs[0].author?.name, 'Ada');
+    assert.equal(inputs[0].reviewInput?.lines[0].text, 'Claim');
+    assert.equal(inputs[0].skill, 'ai-review');
+    f.manuscripts.state = async () => { throw new Error('The PDF has changed since submission.'); };
+    assert.equal((await send()).statusCode, 200, 'A retry uses the existing review even after rebuilding');
+    assert.equal(inputs.length, 1);
+  } finally { await f.close(); }
+});
+
+test('AI review findings stay in their task and copy individually, once, into the manuscript', async () => {
+  const f = await fixture();
+  try {
+    const pdf = path.resolve('tests/fixtures/outline.pdf'), originalPdf = fs.readFileSync(pdf);
+    f.store.updateTask('thesis-task', { mode: 'review', aiReview: { key: 'review-pdf' } });
+    f.store.saveReviewInput('thesis-task', { key: 'review-pdf', pdf, lines: [] });
+    const note = { id: 'finding-1', projectId: 'thesis', key: 'review-pdf', page: 0, rect: [0.1, 0.2, 0.5, 0.3] as [number, number, number, number], comment: 'Explain this claim.', quote: 'Claim', source: null, createdAt: 1, aiReview: { taskId: 'thesis-task', agent: 'codex' as const } };
+    f.store.saveAnnotation(note);
+    f.store.saveAnnotation({ ...note, id: 'finding-2', comment: 'A different suggestion.' });
+    f.store.saveAnnotation({ ...note, id: 'personal', aiReview: undefined });
+    f.store.saveAnnotation({ ...note, id: 'other-task', aiReview: { taskId: 'another-review', agent: 'claude' } });
+    f.manuscripts.state = async () => ({ git: { branch: 'main', upstream: null, ahead: 0, behind: 0, files: [], head: null }, build: { key: 'current-pdf', status: 'ready', current: true } });
+    f.manuscripts.reanchor = async (_id, _root, notes) => notes;
+    let placeFails = false;
+    f.manuscripts.placeReviewNote = async (_id, _root, selected, source) => {
+      assert.equal(source, pdf);
+      if (placeFails) throw new Error('This passage could not be located reliably.');
+      return { ...selected, key: 'current-pdf', page: 1, source: { file: 'main.tex', lines: [20, 21] } };
+    };
+    const get = (url: string) => f.remote.inject({ url, headers: f.as });
+    const post = (url: string) => f.remote.inject({ method: 'POST', url, headers: f.as, payload: {} });
+    const base = '/api/tasks/thesis-task/ai-review';
+    assert.deepEqual((await get('/api/projects/thesis/manuscript')).json().annotations.map((n: any) => n.id), ['personal']);
+    assert.deepEqual((await get(base)).json().notes.map((n: any) => n.id), ['finding-1', 'finding-2']);
+    assert.deepEqual((await get(base + '/pdf')).rawPayload, originalPdf);
+    assert.ok((await get(base + '/words?page=0')).json().words.length > 0);
+    assert.equal((await get('/api/tasks/grant-task/ai-review')).statusCode, 400);
+    assert.equal((await post(base + '/other-task/copy')).statusCode, 400);
+    assert.equal((await f.remote.inject({ method: 'POST', url: base + '/finding-1/copy', headers: { ...f.as, 'x-papilot-token': '' }, payload: {} })).statusCode, 403);
+    assert.equal((await post('/api/projects/thesis/annotations/finding-1/delete')).statusCode, 400);
+    const [first, retry] = await Promise.all([post(base + '/finding-1/copy'), post(base + '/finding-1/copy')]);
+    assert.equal(first.statusCode, 200, first.body); assert.equal(retry.statusCode, 200, retry.body);
+    const copy = first.json().copy;
+    assert.equal(copy.id, retry.json().copy.id);
+    assert.equal(f.store.task('thesis-task').aiReview?.revision, 1, 'copy changes the review revision only once, even with concurrent retries');
+    assert.equal(copy.aiReview.sourceId, 'finding-1'); assert.equal(copy.comment, note.comment);
+    assert.equal(copy.key, 'current-pdf'); assert.equal(copy.page, 1);
+    assert.deepEqual((await get('/api/projects/thesis/manuscript')).json().annotations.map((n: any) => n.id), ['personal', copy.id]);
+    assert.equal(f.store.annotation('thesis', note.id).key, 'review-pdf');
+    assert.equal(f.store.annotation('thesis', note.id).page, 0);
+    assert.equal((await get(base)).json().notes[0].aiReview.copiedTo, copy.id);
+    placeFails = true;
+    assert.equal((await post(base + '/finding-2/copy')).statusCode, 400);
+    assert.equal(f.store.task('thesis-task').aiReview?.revision, 1, 'failed copies do not announce an annotation change');
+    assert.equal(f.store.annotations('thesis').length, 5);
+    assert.equal(f.store.annotation('thesis', 'finding-2').aiReview?.copiedTo, undefined);
+    assert.equal((await post(base + '/finding-1/delete')).statusCode, 200);
+    assert.equal(f.store.task('thesis-task').aiReview?.revision, 2);
+    assert.equal((await get(base)).json().notes.length, 1);
+    assert.equal((await get('/api/projects/thesis/manuscript')).json().annotations.length, 2);
+    assert.equal((await post(base + '/finding-1/restore')).statusCode, 200);
+    assert.equal(f.store.task('thesis-task').aiReview?.revision, 3);
+    assert.deepEqual((await get(base + '/pdf')).rawPayload, originalPdf, 'review PDF never follows a main-manuscript rebuild');
+    assert.deepEqual(fs.readFileSync(pdf), originalPdf);
+    f.store.deleteTask('thesis-task');
+    assert.equal((await get('/api/projects/thesis/manuscript')).json().annotations.length, 2, 'copied notes survive task deletion');
+  } finally { await f.close(); }
+});
+
+test('changing a relocated paper path recovers its preserved review PDF without a build cache', async () => {
+  const f = await fixture(), base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-move-')));
+  const root = path.join(base, 'paper'), moved = path.join(base, 'moved-paper'), worktree = path.join(base, 'task');
+  const git = (folder: string, ...args: string[]) => execFileSync('git', ['-C', folder, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    fs.mkdirSync(root);
+    fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}Paper\\end{document}\n');
+    git(root, 'init', '-q'); git(root, 'add', '.');
+    git(root, '-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Paper');
+    git(root, 'worktree', 'add', '--detach', worktree, 'HEAD');
+    const original = fs.readFileSync('tests/fixtures/outline.pdf');
+    const pdf = await f.manuscripts.preserveReviewPdf(root, 'thesis-task', path.resolve('tests/fixtures/outline.pdf'));
+    const key = createHash('sha256').update(original).digest('hex').slice(0, 16);
+    f.store.saveProject({ ...f.store.project('thesis'), path: root });
+    f.store.updateTask('thesis-task', { mode: 'review', status: 'reviewing', worktree, aiReview: { key } });
+    f.store.saveReviewInput('thesis-task', { key, pdf, lines: [] });
+    f.store.saveAnnotation({ id: 'finding', projectId: 'thesis', key, page: 0, rect: [0.1, 0.1, 0.8, 0.2], quote: 'Claim', comment: 'Explain this claim.', source: null, createdAt: 1, aiReview: { taskId: 'thesis-task', agent: 'codex' } });
+    const reviewBase = '/api/tasks/thesis-task/ai-review';
+    const get = (suffix = '') => f.remote.inject({ url: reviewBase + suffix, headers: f.as });
+    assert.equal((await get()).statusCode, 200);
+    fs.renameSync(root, moved); git(moved, 'worktree', 'repair', worktree);
+    f.review.get = async () => ({ task: f.store.task('thesis-task').name, worktree }) as any;
+    const changed = await f.local.inject({ method: 'POST', url: '/api/projects/thesis/path', headers: { ...LOCAL, 'x-papilot-token': 'local-csrf' }, payload: { path: moved } });
+    assert.equal(changed.statusCode, 200, changed.body);
+    const relocated = path.join(moved, path.relative(root, pdf));
+    assert.equal(fs.existsSync(pdf), false);
+    assert.deepEqual(fs.readFileSync(relocated), original);
+    assert.equal(await f.manuscripts.cachedPdf(moved, key), null);
+    const recovered = await get();
+    assert.equal(recovered.statusCode, 200, recovered.body);
+    assert.equal(recovered.json().key, key);
+    assert.equal(recovered.json().notes[0].comment, 'Explain this claim.');
+    assert.equal(f.store.reviewInput('thesis-task').pdf, relocated);
+    assert.deepEqual((await get('/pdf')).rawPayload, original);
+    assert.ok((await get('/words?page=0')).json().words.length > 0);
+    assert.equal(await new Manuscripts().savedReviewPdf(moved, 'thesis-task'), relocated);
+    f.manuscripts.placeReviewNote = async (_id, target, note, source) => {
+      assert.equal(target, moved); assert.equal(source, relocated);
+      return { ...note, key: 'current-main' };
+    };
+    const copied = await f.remote.inject({ method: 'POST', url: reviewBase + '/finding/copy', headers: f.as, payload: {} });
+    assert.equal(copied.statusCode, 200, copied.body);
+    assert.equal(copied.json().copy.aiReview.sourceId, 'finding');
+    fs.unlinkSync(relocated);
+    const missing = await get();
+    assert.equal(missing.statusCode, 400);
+    assert.match(missing.json().error, /PDF copy.*unavailable/);
+  } finally { await f.close(); fs.rmSync(base, { recursive: true, force: true }); }
 });

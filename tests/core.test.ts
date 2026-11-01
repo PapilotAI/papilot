@@ -90,3 +90,24 @@ else if(m.id===999)send({method:'approved',params:m.result});
     const [event] = await notified; assert.equal(event.params.decision, 'accept');
   } finally { codex.close(); fs.rmSync(folder, { recursive: true }); }
 });
+
+test('AI review snapshots survive restart and task deletion preserves delivered PDF notes', () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-ai-store-'));
+  try {
+    const file = path.join(folder, 'state.sqlite'), store = new Store(file);
+    const task: Task = { id: 'review', projectId: 'paper', mode: 'review', aiReview: { key: 'old-pdf' }, name: 'review', title: 'Review', instructions: '', worktree: '/tmp/example', threadId: 'thread', turnId: null, model: null, status: 'building', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
+    const snapshot = { key: 'old-pdf', lines: [{ id: 'p1-l1', page: 0, text: 'Original claim', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
+    store.saveTask(task); store.saveReviewInput(task.id, snapshot);
+    store.saveAnnotation({ id: 'finding', projectId: 'paper', key: 'old-pdf', page: 0, rect: snapshot.lines[0].rect, comment: 'Clarify.', quote: 'Original claim', source: null, createdAt: 1, aiReview: { taskId: task.id, agent: 'codex' } });
+    store.close();
+    const restarted = new Store(file);
+    try {
+      restarted.recover();
+      assert.equal(restarted.task(task.id).status, 'interrupted');
+      assert.deepEqual(restarted.reviewInput(task.id), snapshot);
+      restarted.deleteTask(task.id);
+      assert.throws(() => restarted.reviewInput(task.id), /unavailable/);
+      assert.equal(restarted.annotations('paper')[0].comment, 'Clarify.');
+    } finally { restarted.close(); }
+  } finally { fs.rmSync(folder, { recursive: true }); }
+});
