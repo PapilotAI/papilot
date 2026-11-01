@@ -14,6 +14,7 @@
 .agent-effort[data-effort="ultra"]{--effort-color:#9559e4;--effort-paint:linear-gradient(105deg,#35c6d7 0%,#4388f2 23%,#7b5ceb 48%,#c65bce 72%,#efae80 100%);--effort-glow:.45}
 .effort-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--text-2)}
 .effort-head strong{font-size:14px;font-weight:600;color:var(--text)}
+.effort-description{margin:5px 0 0;font-size:13px;line-height:1.55;color:var(--text-3)}
 .effort-value{animation:effort-value-in .22s var(--ease)}
 .agent-effort:is([data-effort="xhigh"],[data-effort="max"]) .effort-value{color:var(--purple)}
 .agent-effort[data-effort="ultra"] .effort-value{color:var(--purple);background:linear-gradient(105deg,#277b99,#6655ce 40%,#b7479b 75%,#a26830);background-clip:text;-webkit-text-fill-color:transparent}
@@ -39,7 +40,8 @@
 .effort-track:has(input:active) :is(.effort-thumb,.effort-fill,.effort-aura){transition:none}
 /* Hit target is 44px high while the visible pill keeps its compact 30px size.
    Its transparent native thumb is aligned exactly with the visual thumb. */
-.effort-track input{position:absolute;z-index:1;top:-7px;left:2px;width:calc(100% - 4px);height:44px;margin:0;background:none;-webkit-appearance:none;appearance:none;cursor:pointer;outline:none}
+.agent-effort .effort-track input{position:absolute;z-index:1;top:-7px;left:2px;width:calc(100% - 4px);height:44px;margin:0;padding:0;border:0;box-shadow:none;background:none;-webkit-appearance:none;appearance:none;cursor:pointer;outline:none}
+.agent-effort .effort-track input:focus{border:0;box-shadow:none}
 .effort-track input::-webkit-slider-runnable-track{height:30px;background:none}
 .effort-track input::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:2px;border:0;border-radius:50%;background:transparent;box-shadow:none}
 .effort-track input::-moz-range-track{height:30px;background:none}

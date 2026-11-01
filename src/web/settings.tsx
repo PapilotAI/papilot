@@ -14,6 +14,7 @@ import { DiagnosticsSettings, type DiagnosticsSettingsProps } from './diagnostic
 import { UpdateSettings, versionLabel, type UpdateApi } from './update-notice.tsx';
 import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions } from './skill-library.tsx';
 
+import { ModelDefaultSettings, type ModelDefaultSettingsProps } from './model-default-settings.tsx';
 import { PeopleSettings, type PeopleSettingsProps, type PeopleSettingsControls } from './people-settings.tsx';
 
 type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'shortcuts' | 'about' | 'licenses' | 'diagnostics' | 'skills' | 'people' | 'updates';
@@ -22,7 +23,7 @@ type SettingsEntry = { page: SettingsPage; label: string; icon: string; keywords
 // Shared with the review page's bibliography checks.
 const REFERENCE_CHECKS = 'latex-review:references';
 
-export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, accountName, diagnostics, skills, updates, initialPage = 'general' }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; people?: PeopleSettingsProps; onSignOut?: () => void; accountName?: string; diagnostics?: DiagnosticsSettingsProps; skills?: SkillLibraryOptions; updates?: UpdateApi; initialPage?: 'general' | 'shortcuts' }) {
+export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, accountName, diagnostics, skills, updates, modelDefaults, initialPage = 'general' }: { theme: Theme; onTheme: (theme: Theme) => void; onClose: () => void; people?: PeopleSettingsProps; onSignOut?: () => void; accountName?: string; diagnostics?: DiagnosticsSettingsProps; skills?: SkillLibraryOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; initialPage?: 'general' | 'shortcuts' }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const peopleControls = useRef<PeopleSettingsControls>(null);
   const [peopleVisited, setPeopleVisited] = useState(false);
@@ -70,7 +71,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
   const close = () => { if (peopleControls.current?.isBusy()) return; if (page === 'skills') skillControls.current?.cancel(); else onClose(); };
   const groups: { label: string; entries: SettingsEntry[] }[] = [
     { label: t('Personal'), entries: [
-      { page: 'general', label: t('General'), icon: 'settings', keywords: t('Language') },
+      { page: 'general', label: t('General'), icon: 'settings', keywords: `${t('Language')} ${t('Default model')} ${t('Default reasoning effort')}` },
       { page: 'appearance', label: t('Appearance'), icon: 'sun', keywords: `${t('Light')} ${t('Dark')} ${t('System')}` },
       { page: 'notifications', label: t('Notifications'), icon: 'bell' },
       { page: 'review', label: t('Review preferences'), icon: 'diff', keywords: `${t('Check references online')} ${t('Expand indirect changes')}` },
@@ -120,6 +121,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
             <div className="settings-text"><span className="settings-name">{t('Language')}</span><p>{t('Language for the Papilot interface.')}</p></div>
             <ChipSelect label={t('Language')} value={choice} onChange={value => setLanguage(value as LanguageChoice)} options={[{ value: 'system', label: t('Browser default ({language})', { language: browserName }) }, ...LANGUAGES.map(item => ({ value: item.id, label: item.name }))]}/>
           </div>
+          <ModelDefaultSettings {...modelDefaults}/>
         </section>}
         {page === 'appearance' && <section className="settings-card">
           <div className="settings-row settings-choice">

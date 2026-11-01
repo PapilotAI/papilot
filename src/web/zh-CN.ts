@@ -114,6 +114,9 @@ export const zhCN: Record<string, string> = {
   'What should change in each color group?': '各颜色组需要怎样修改？',
   'Instructions for {group} notes': '{group}批注的处理要求',
   'Add instructions to the selected color groups above.': '请在上方为选中的颜色组填写处理要求。',
+  'Used for new tasks. Saved in this browser.': '用于新任务，保存在当前浏览器中。',
+  'Default reasoning effort': '默认推理强度', 'Available levels depend on the selected model.': '可选档位取决于所选模型。',
+  'This model uses its own reasoning settings.': '此模型使用自身的推理设置。',
   // Reasoning effort
   'Reasoning effort': '推理强度', 'Model default': '模型默认',
 

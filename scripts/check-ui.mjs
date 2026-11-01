@@ -1008,6 +1008,57 @@ try {
   assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:claude')]), ['codex', 'haiku']);
   await page.screenshot({ path: 'test-results/agent-settings.png', fullPage: true });
   await page.keyboard.press('Escape');
+  // Settings and the composer share reasoning levels, reset and saved choices.
+  await settingsButton.click();
+  const defaultModel = settingsDialog.getByRole('combobox', { name: 'Default model', exact: true });
+  const defaultEffort = settingsDialog.getByRole('slider', { name: 'Default reasoning effort', exact: true });
+  assert.equal(await defaultModel.inputValue(), JSON.stringify(['codex', 'deep-model']));
+  assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Xhigh');
+  await defaultModel.selectOption(JSON.stringify(['claude', 'haiku']));
+  assert.equal(await defaultEffort.getAttribute('max'), '2');
+  await defaultEffort.press('Home');
+  await defaultEffort.press('ArrowRight');
+  assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Medium');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:effort:claude')), 'medium');
+  await defaultModel.selectOption(JSON.stringify(['antigravity', '']));
+  assert.equal(await defaultEffort.count(), 0);
+  await settingsDialog.getByText('This model uses its own reasoning settings.', { exact: true }).waitFor();
+  await defaultModel.selectOption(JSON.stringify(['codex', 'deep-model']));
+  assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Xhigh');
+  // Ultra is offered only when it is in the runtime's model catalog.
+  const originalEfforts = snapshot.runtime.models[1].efforts;
+  snapshot.runtime.models[1].efforts = [...originalEfforts, 'max', 'ultra'];
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.waitForFunction(() => document.querySelector('.settings-effort input')?.max === '5');
+  await defaultEffort.press('End');
+  assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Ultra');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:effort:codex')), 'ultra');
+  await page.screenshot({ path: 'test-results/settings-effort-desktop.png', animations: 'disabled' });
+  await settingsDialog.getByRole('button', { name: 'Model default', exact: true }).click();
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:effort:codex')), '');
+  assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'High');
+  assert.equal(await settingsDialog.getByRole('button', { name: 'Model default', exact: true }).isDisabled(), true);
+  await defaultEffort.press('End');
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(await settingsDialog.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth), false);
+    await page.screenshot({ path: `test-results/settings-effort-${width}.png`, animations: 'disabled' });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  snapshot.runtime.models[1].efforts = originalEfforts;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.waitForFunction(() => document.querySelector('.settings-effort input')?.max === '3');
+  await defaultEffort.press('End');
+  await closeSettings();
+  await page.reload();
+  await settingsButton.click();
+  assert.equal(await defaultModel.inputValue(), JSON.stringify(['codex', 'deep-model']));
+  assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Xhigh');
+  await closeSettings();
+  await page.locator('.manuscript-link').click();
+  await page.getByRole('tab', { name: 'New task', exact: true }).click();
+  assert.match(await settingsTrigger.getAttribute('title'), /Codex.*Deep model.*Xhigh.*Fast/);
+  console.log('PASS: Default effort slider follows model capabilities, resets, persists, fits narrow screens and synchronizes with new tasks');
   failCreate = false;
   await page.getByRole('button', { name: 'Start task' }).click();
   await page.waitForFunction(() => document.querySelector('.new-task-panel textarea')?.value === '');
