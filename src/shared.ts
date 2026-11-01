@@ -81,6 +81,11 @@ export interface Usage { plan: string | null; windows: UsageWindow[]; credits: {
 // credentials or key); such agents are not offered. Older servers omit it.
 export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
 export interface DiagnosticCheck { id: string; ok: boolean; severity: 'error' | 'warn' | 'info'; detail: string; fix: string | null }
+export interface LatexInstallation {
+  distribution: 'MacTeX' | 'BasicTeX' | 'TeX Live' | 'MiKTeX' | null;
+  version: string | null;
+  path: string;
+}
 export interface DiagnosticReport {
   version: string; checkedAt: number; platform: string; arch: string; node: string;
   ok: boolean; checks: DiagnosticCheck[];

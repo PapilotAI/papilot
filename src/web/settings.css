@@ -213,3 +213,14 @@
 .runtime-agent-check-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px}
 .runtime-agent-check-heading h5{margin:0}
 @media(max-width:760px){.runtime-agent-overview{grid-template-columns:1fr;gap:16px}.runtime-agent-account{font-size:11px}}
+
+.latex-installation-header{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.latex-installation-header h3{flex:1;min-width:0;margin:0;font-size:17px;font-weight:500}
+.latex-installation-header>.icon-button{flex:none;color:var(--text-3)}
+.latex-installation-facts{margin:0}
+.latex-installation-facts>div{display:grid;grid-template-columns:140px minmax(0,1fr);gap:20px;padding:16px 0;border-top:1px solid var(--line)}
+.latex-installation-facts>div:last-child{padding-bottom:0}
+.latex-installation-facts dt{color:var(--text-3);font-size:12px}
+.latex-installation-facts dd{margin:0;overflow-wrap:anywhere}
+.latex-installation-facts code{font-size:12px}
+@media(max-width:480px){.latex-installation-facts>div{grid-template-columns:1fr;gap:6px}}

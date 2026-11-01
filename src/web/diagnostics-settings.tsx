@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AgentId, DiagnosticReport, Project, RuntimeStatus } from '../shared.ts';
+import type { AgentId, LatexInstallation, DiagnosticReport, Project, RuntimeStatus } from '../shared.ts';
 import { RuntimeAgents } from './runtime-agents.tsx';
 
 export interface DiagnosticsSettingsProps {
@@ -8,6 +8,7 @@ export interface DiagnosticsSettingsProps {
   project?: Pick<Project, 'id' | 'name'>;
   check: (projectId: string | undefined, signal: AbortSignal) => Promise<DiagnosticReport>;
   reconnect: () => Promise<void>;
+  latex: (signal: AbortSignal) => Promise<LatexInstallation | null>;
 }
 
 export function DiagnosticsSettings({ online, runtimes, project, check, reconnect }: DiagnosticsSettingsProps) {

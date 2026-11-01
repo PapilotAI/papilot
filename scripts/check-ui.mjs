@@ -22,6 +22,8 @@ const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.proje
 snapshot.runtimes = { codex: snapshot.runtime, claude: { connected: true, authenticated: true, account: 'Claude Max', error: null, models: [{ id: 'opus', name: 'Opus 5.5', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: null }, { id: 'haiku', name: 'Haiku 5.5', isDefault: false, efforts: ['low', 'medium', 'high'], defaultEffort: null }] }, antigravity: { connected: false, authenticated: false, account: null, error: 'spawn agy ENOENT', models: [] }, kimi: { installed: true, connected: false, authenticated: false, account: null, error: null, models: [] }, cursor: { installed: false, connected: false, authenticated: false, account: null, error: null, models: [] } };
 const messages = [];
 let diagnosticFailure = true;
+let latexInstallation = { distribution: 'MacTeX', version: '2025', path: '/usr/local/texlive/2025' };
+let latexFailure = false;
 const diagnosticRequests = [];
 const diagnosticReport = { version: '0.6.0', checkedAt: 1700000000000, platform: 'darwin', arch: 'arm64', node: '22.22.0', ok: false, checks: [
   { id: 'node', ok: true, severity: 'error', detail: 'Node.js 22.22.0', fix: null },
@@ -99,6 +101,7 @@ await page.route('**/api/**', async route => {
     return json(captured);
   }
   if (url.pathname === '/api/reconnect') { reconnects++; return reconnectFailure ? route.fulfill({ status: 503, json: { error: 'Connection failed.' } }) : json({ ok: true }); }
+  if (url.pathname === '/api/runtime/latex') return latexFailure ? route.fulfill({ status: 503, json: { error: 'Probe unavailable.' } }) : route.fulfill({ contentType: 'application/json', body: JSON.stringify(latexInstallation) });
   if (url.pathname === '/api/diagnostics') {
     diagnosticRequests.push(route.request().postDataJSON());
     return diagnosticFailure ? route.fulfill({ status: 503, json: { error: 'Probe unavailable.' } }) : json(diagnosticReport);
@@ -257,7 +260,7 @@ try {
   await settingsDialog.getByRole('searchbox', { name: 'Search settings' }).fill('');
   await page.screenshot({ path: 'test-results/settings-review-desktop.png' });
   const runtimeGroup = settingsDialog.locator('.settings-category-group').filter({ has: page.getByRole('heading', { name: 'Runtime', exact: true }) });
-  assert.deepEqual(await runtimeGroup.getByRole('button').allTextContents(), ['Agents']);
+  assert.deepEqual(await runtimeGroup.getByRole('button').allTextContents(), ['Agents', 'LaTeX']);
   await runtimeGroup.getByRole('button', { name: 'Agents', exact: true }).click();
   const diagnostics = settingsDialog;
   assert.equal(await diagnostics.locator('.runtime-advanced').count(), 0);
@@ -372,6 +375,37 @@ try {
   await agentDetail.getByRole('button', { name: 'Close agent details' }).click();
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await availability('cursor').getByText('Not detected', { exact: true }).waitFor();
+  const checksBeforeLatex = diagnosticRequests.length;
+  await diagnostics.getByRole('button', { name: 'LaTeX', exact: true }).click();
+  await diagnostics.getByRole('heading', { name: 'MacTeX', exact: true }).waitFor();
+  const installation = diagnostics.getByRole('region', { name: 'LaTeX installation' });
+  await installation.getByText('2025', { exact: true }).waitFor();
+  await installation.getByText('/usr/local/texlive/2025', { exact: true }).waitFor();
+  assert.equal(await diagnostics.locator('.runtime-advanced').count(), 0);
+  assert.equal(await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).count(), 0);
+  assert.equal(diagnosticRequests.length, checksBeforeLatex, 'LaTeX only reads installation information');
+  await diagnostics.locator('.settings-content').evaluate(el => { el.scrollTop = 0; });
+  await page.screenshot({ animations: 'disabled', path: 'test-results/settings-latex-desktop.png' });
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  assert.equal(await diagnostics.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth), false);
+  await page.screenshot({ animations: 'disabled', path: 'test-results/settings-latex-mobile.png' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await diagnostics.locator('.settings-content').evaluate(el => { el.scrollTop = 0; });
+  const installedLatex = latexInstallation;
+  latexInstallation = null;
+  await installation.getByRole('button', { name: 'Detect again' }).click();
+  await installation.getByText('No LaTeX installation was detected on this host.', { exact: true }).waitFor();
+  latexFailure = true;
+  await installation.getByRole('button', { name: 'Detect again' }).click();
+  await installation.getByRole('alert').waitFor();
+  latexFailure = false;
+  latexInstallation = { distribution: 'TeX Live', version: '2026', path: '/a/long/installation/location/texlive/2026' };
+  await installation.getByRole('button', { name: 'Detect again' }).click();
+  await installation.getByRole('heading', { name: 'TeX Live', exact: true }).waitFor();
+  latexInstallation = installedLatex;
+  await diagnostics.getByRole('button', { name: 'Agents', exact: true }).click();
   await diagnostics.getByRole('button', { name: 'General', exact: true }).click();
   assert.equal(await page.evaluate(() => document.activeElement.textContent), 'General');
   await settingsDialog.getByRole('combobox', { name: 'Language', exact: true }).selectOption('zh-CN');
@@ -401,7 +435,7 @@ try {
   await settingsDialog.getByRole('combobox', { name: '语言', exact: true }).selectOption('system');
   await closeSettings();
   await page.setViewportSize({ width: 1440, height: 900 });
-  console.log('PASS: Agent diagnostics retry, inline details, translated mobile layout, changelog and contribution links');
+  console.log('PASS: Agent diagnostics retry, LaTeX installation, translated mobile layout, changelog and contribution links');
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('Preserve this draft while changing appearance.');
   await page.emulateMedia({ colorScheme: 'dark' });
   await themeIs('dark');

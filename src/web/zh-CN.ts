@@ -1,6 +1,10 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'LaTeX installation': 'LaTeX 安装信息', 'Distribution': '发行版', 'Version': '版本', 'Installation location': '安装位置',
+  'Detect again': '重新识别', 'Detecting LaTeX installation…': '正在识别 LaTeX 安装…',
+  'Could not read the LaTeX installation. Try again.': '无法读取 LaTeX 安装信息，请重试。',
+  'No LaTeX installation was detected on this host.': '未在此主机上检测到 LaTeX 安装。',
   "Account": "账号",
   "Agents": "智能体",
   "Already set up?": "已经配置过了？",

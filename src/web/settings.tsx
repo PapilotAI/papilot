@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
+import { BrandIcon } from './brand-icon.tsx';
 import logo from './logo.svg';
 import { ChipSelect } from './chip-select.tsx';
 import { keepDialogFocus } from './focus.ts';
@@ -12,13 +13,14 @@ import { ShortcutSettings } from './shortcut-settings.tsx';
 import { AboutSettings, LicenseSettings } from './about-settings.tsx';
 import info from 'virtual:papilot-info';
 import { DiagnosticsSettings, type DiagnosticsSettingsProps } from './diagnostics-settings.tsx';
+import { LatexSettings } from './latex-settings.tsx';
 import { UpdateSettings, versionLabel, type UpdateApi } from './update-notice.tsx';
 import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions } from './skill-library.tsx';
 
 import { ModelDefaultSettings, type ModelDefaultSettingsProps } from './model-default-settings.tsx';
 import { PeopleSettings, type PeopleSettingsProps, type PeopleSettingsControls } from './people-settings.tsx';
 
-type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'shortcuts' | 'about' | 'licenses' | 'agents' | 'skills' | 'people' | 'updates';
+type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'shortcuts' | 'about' | 'licenses' | 'agents' | 'latex' | 'skills' | 'people' | 'updates';
 type SettingsEntry = { page: SettingsPage; label: string; icon: string; keywords?: string };
 
 // Shared with the review page's bibliography checks.
@@ -84,6 +86,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
     ] },
     { label: t('Runtime'), entries: diagnostics ? [
       { page: 'agents', label: t('Agents'), icon: 'terminal', keywords: `${t('Agent configuration')} ${t('Available models')} ${t('Usage & limits')}` },
+      { page: 'latex', label: 'LaTeX', icon: 'paper', keywords: 'TeX Live MacTeX BasicTeX MiKTeX' },
     ] : [] },
     { label: t('Application'), entries: [
       ...(updates ? [{ page: 'updates' as const, label: t('Updates'), icon: 'refresh' }] : []),
@@ -103,7 +106,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
           {visibleGroups.map(group => <section className="settings-category-group" key={group.label}>
             <h3>{group.label}</h3>
             {group.entries.map(entry => <button type="button" key={entry.label} className="settings-category" data-settings-page={entry.page} aria-current={entry.page === page || (page === 'licenses' && entry.page === 'about') ? 'page' : undefined} onClick={() => goTo(entry.page)}>
-              {entry.page === 'about' ? <img src={logo} width="18" height="18" alt=""/> : <Icon name={entry.icon} size={18}/>}<span>{entry.label}</span>
+              {entry.page === 'about' ? <img src={logo} width="18" height="18" alt=""/> : entry.page === 'latex' ? <BrandIcon name={entry.page} size={18}/> : <Icon name={entry.icon} size={18}/>}<span>{entry.label}</span>
             </button>)}
           </section>)}
           {!visibleGroups.length && <p className="settings-search-empty">{t('No matching settings')}</p>}
@@ -117,7 +120,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
         <header className="settings-content-header">
           <button type="button" className="settings-back settings-mobile-back" onClick={browseCategories}><Icon name="chevronLeft" size={14}/>{t('Settings')}</button>
           {page === 'licenses' && <button type="button" className="settings-back" onClick={() => goTo('about')}><Icon name="chevronLeft" size={14}/>{t('About Papilot')}</button>}
-          <h2 id="settings-title" tabIndex={-1}>{title}</h2>
+          <h2 id="settings-title" tabIndex={-1}>{(page === 'latex') && <BrandIcon name={page} size={30}/>}{title}</h2>
         </header>
         {page === 'general' && <section className="settings-card">
           <div className="settings-row settings-choice">
@@ -170,6 +173,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
         {page === 'about' && <AboutSettings onLicenses={() => goTo('licenses')}/>}
         {page === 'licenses' && <LicenseSettings/>}
         {page === 'agents' && diagnostics && <DiagnosticsSettings {...diagnostics}/>}
+        {page === 'latex' && diagnostics && <LatexSettings online={diagnostics.online} load={diagnostics.latex}/>}
         {page === 'updates' && updates && <UpdateSettings api={updates}/>}
         {peopleVisited && people && <div hidden={page !== 'people'}><PeopleSettings {...people} controls={peopleControls}/></div>}
         {page === 'skills' && skills && <SkillLibraryPanel {...skills} controls={skillControls} onClose={onClose}/>}

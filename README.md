@@ -109,7 +109,7 @@ Papilot finds the agents on your computer by itself and offers only those; Codex
 
 Papilot never stores your credentials. CLI agents use their own login, and a key you set for Claude, Cursor or GLM goes only to that service. An agent that is found but not signed in shows as unavailable.
 
-Having trouble getting started? Open **Settings → Runtime → Agents** for agent setup, or run `papilot doctor` for environment checks and fixes and `papilot doctor --repo /path/to/paper` to check a paper too. Add `--json` for a machine-readable report. Diagnostics do not install software, start the server or change your paper. See the [diagnostics guide](docs/guide.md#diagnostics) for what is checked.
+Having trouble getting started? Open **Settings → Runtime** and choose **Agents** for agent setup or **LaTeX** for the detected distribution, version, and location, or run `papilot doctor` for environment checks and fixes and `papilot doctor --repo /path/to/paper` to check a paper too. Add `--json` for a machine-readable report. Diagnostics do not install software, start the server or change your paper. See the [diagnostics guide](docs/guide.md#diagnostics) for what is checked.
 
 <details>
 <summary><b>⚙️ Options and remote access</b></summary>
