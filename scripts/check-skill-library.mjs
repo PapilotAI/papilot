@@ -57,8 +57,8 @@ try {
   await expect(dialog.locator('.skill-library-storage, .skill-library-file')).toHaveCount(0);
   await expect(dialog).not.toContainText(roots.user);
   await expect(dialog.locator('.skill-library-item')).toHaveCount(7);
-  await dialog.getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'Skills', exact: true })).toBeFocused();
+  await dialog.getByRole('button', { name: 'General', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('heading', { name: 'General', exact: true })).toBeFocused();
   await open();
   await dialog.locator('.skill-library-item').filter({ hasText: 'Polish' }).click();
   await expect(dialog.locator('.skill-library-preview')).toContainText('prose');
@@ -96,7 +96,7 @@ try {
   await open(); await dialog.locator('.skill-library-item').filter({ hasText: 'House style' }).click();
   await expect(content).toHaveValue(globalText);
   await content.fill(globalText + 'My unsaved edit.');
-  await dialog.getByRole('button', { name: 'Settings', exact: true }).click();
+  await dialog.getByRole('button', { name: 'General', exact: true }).click();
   await expect(dialog.getByText('Discard unsaved skill changes?')).toBeVisible();
   await dialog.getByRole('button', { name: 'Keep editing' }).click();
   fs.writeFileSync(globalFile, globalText + 'External edit.');

@@ -9,7 +9,7 @@ import './skill-library.css';
 
 type API = <T>(route: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
 export interface SkillLibraryOptions { project?: Project; api: API; onChanged: () => void }
-export interface SkillLibraryControls { cancel: () => void }
+export interface SkillLibraryControls { cancel: () => void; navigate: (proceed: () => void) => void }
 type Editor = { id: string; source: Skill['source']; content: string; saved?: SkillDocument };
 const key = (skill: Pick<Skill, 'source' | 'id'>) => `${skill.source}/${skill.id}`;
 const sourceName = (source: Skill['source']) => source === 'builtin' ? t('Built-in') : source === 'user' ? t('Global') : t('This paper');
@@ -28,7 +28,7 @@ function skillError(failure: unknown) {
   }
 }
 
-export function SkillLibraryPanel({ project, api, onChanged, onClose, onBack, controls }: SkillLibraryOptions & { onClose: () => void; onBack: () => void; controls: Ref<SkillLibraryControls> }) {
+export function SkillLibraryPanel({ project, api, onChanged, onClose, controls }: SkillLibraryOptions & { onClose: () => void; controls: Ref<SkillLibraryControls> }) {
   const panel = useRef<HTMLDivElement>(null), sequence = useRef(0), mounted = useRef(true), pending = useRef(false);
   const [catalog, setCatalog] = useState<SkillCatalog | null>(null), [editor, setEditor] = useState<Editor | null>(null);
   const [query, setQuery] = useState(''), [filter, setFilter] = useState<Skill['source'] | 'all'>('all');
@@ -51,7 +51,7 @@ export function SkillLibraryPanel({ project, api, onChanged, onClose, onBack, co
     return () => window.removeEventListener('beforeunload', prevent);
   }, [dirty]);
   useEffect(() => { if (leaving || confirmDelete) panel.current?.querySelector<HTMLButtonElement>('[data-keep-editing]')?.focus(); }, [leaving, confirmDelete]);
-  useImperativeHandle(controls, () => ({ cancel }));
+  useImperativeHandle(controls, () => ({ cancel, navigate }));
 
   function navigate(proceed: () => void) {
     if (busy) return;
@@ -113,7 +113,6 @@ export function SkillLibraryPanel({ project, api, onChanged, onClose, onBack, co
   const visible = (catalog?.skills || []).filter(skill => (filter === 'all' || skill.source === filter) && `${skill.id} ${skillName(skill)} ${skillDescription(skill)}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const body = editor ? instructions(editor.content) : '';
   return <div ref={panel} className={'skill-library' + (editor || loading || error ? ' has-editor' : '')} onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === 's') { event.preventDefault(); if (dirty && !readonly && body && !busy && !leaving && !confirmDelete) void save(); } }}>
-      <header className="skill-library-header"><div><button className="skill-library-settings-back" disabled={busy} onClick={() => navigate(onBack)}><Icon name="chevronLeft" size={14}/>{t('Settings')}</button><span className="skill-library-breadcrumb" aria-hidden="true">/</span><h2 id="settings-title" tabIndex={-1}>{t('Skills')}</h2></div><button className="icon-button" aria-label={t('Close')} disabled={busy} onClick={() => navigate(onClose)}><Icon name="close" size={18}/></button></header>
       <div className="skill-library-layout" inert={Boolean(leaving || confirmDelete)}>
         <aside className="skill-library-sidebar">
           <div className="skill-library-tools"><div className="skill-library-search"><Icon name="search" size={14}/><input type="search" aria-label={t('Search skills')} placeholder={t('Search skills')} value={query} onChange={event => setQuery(event.target.value)}/></div><button className="icon-button" aria-label={t('Refresh skills')} title={t('Refresh skills')} disabled={busy || loading} onClick={() => navigate(() => void reload())}><Icon name="refresh" size={14}/></button><button className="icon-button" aria-label={t('New skill')} title={t('New skill')} disabled={!catalog || busy} onClick={() => navigate(() => create())}><Icon name="plus" size={17}/></button></div>

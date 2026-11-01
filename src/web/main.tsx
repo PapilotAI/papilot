@@ -39,7 +39,6 @@ import { TaskCommitDraft } from './task-commit-draft.ts';
 import { taskSaveStatus } from './task-save-status.ts';
 import { GitCounts, GitRepository } from './git-overview.tsx';
 import { problemCount, ReferencesPanel, useBibliography } from './references-panel.tsx';
-import { PeopleDialog } from './people-dialog.tsx';
 import { Invite, SignIn } from './sign-in.tsx';
 import { forgetBrowserState, isSignedOut, setSignedOut, useSignedOut } from './session.ts';
 import { locale, t, tn, useLanguage } from './i18n.ts';
@@ -822,7 +821,7 @@ function App() {
   const [chatWidth, setChatWidth] = useState(() => Number(browserStorage.getItem('papilot:chat-width')) || 0);
   // Appearance, language and notifications live in Settings; a new language re-renders everything.
   const theme = useTheme(), { language } = useLanguage();
-  const [settings, setSettings] = useState<false | 'general' | 'shortcuts'>(false), [peopleOpen, setPeopleOpen] = useState(false);
+  const [settings, setSettings] = useState<false | 'general' | 'shortcuts'>(false);
   useEffect(() => {
     const open = () => setSettings('shortcuts');
     window.addEventListener('papilot:open-shortcuts', open);
@@ -1450,8 +1449,7 @@ function App() {
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
     {autoArchived && !error && !modal && <div role="status" className="toast archive-notice"><Icon name="archive" size={15}/><span><span>{t('Archived')}</span><span className="archive-notice-title" title={autoArchived.title}>{autoArchived.title}</span></span><button className="button secondary compact" onClick={() => keepTask(autoArchived.id)}>{t('Undo')}</button></div>}
-    {settings && <SettingsDialog updates={owner ? api : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} onPeople={owner ? () => setPeopleOpen(true) : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name} diagnostics={owner ? { online, runtimes, project, check: checkDiagnostics } : undefined} skills={owner ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
-    {peopleOpen && <PeopleDialog api={api} projects={state?.projects || []} ago={agoText} onClose={() => setPeopleOpen(false)}/>}
+    {settings && <SettingsDialog updates={owner ? api : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} people={owner ? { api, projects: state?.projects || [], ago: agoText } : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name} diagnostics={owner ? { online, runtimes, project, check: checkDiagnostics } : undefined} skills={owner ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
     {editingPaper && <PaperDialog key={editingPaper.id} paper={editingPaper} canManage={owner} onClose={() => setEditingPaper(null)} save={async form => {
       const paper = editingPaper, pathChanged = owner && form.path !== paper.path;

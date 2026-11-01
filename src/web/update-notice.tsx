@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
+import { ChipSelect } from './chip-select.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { t } from './i18n.ts';
 import type { UpdateStatus } from '../shared.ts';
@@ -99,17 +100,18 @@ export function UpdateSettings({ api }: { api: UpdateApi }) {
     catch (error) { setError(error instanceof Error ? error.message : t('Could not check for updates. Try again when connected.')); }
     finally { setSending(false); }
   }
-  if (!status) return <div role="status"><p>{t('Reading update status…')}</p><button className="button secondary" disabled={sending} onClick={() => void send('/updates/check')}>{t('Check for updates')}</button>{error && <p className="inline-error" role="alert">{error}</p>}</div>;
+  if (!status) return <div className="settings-card settings-card-body" role="status"><p>{t('Reading update status…')}</p><button className="button secondary" disabled={sending} onClick={() => void send('/updates/check')}>{t('Check for updates')}</button>{error && <p className="inline-error" role="alert">{error}</p>}</div>;
   const busy = working(status), available = status.latestVersion && status.latestVersion !== status.currentVersion && status.phase !== 'idle' && status.phase !== 'checking';
-  return <div className="update-settings">
+  return <div className="update-settings settings-page">
+    <section className="settings-card">
     <div className="settings-row"><span className="settings-name">{t('Current version')}</span><code title={status.currentVersion}>{versionLabel(status.currentVersion)}</code></div>
-    <div className="settings-row"><label className="settings-name" htmlFor="update-channel">{t('Update channel')}</label>
-      <select id="update-channel" value={status.channel || 'stable'} disabled={sending || busy} onChange={event => void send('/updates/channel', { channel: event.target.value })}>
-        <option value="stable">{t('Stable')}</option><option value="dev">{t('Dev (GitHub main)')}</option>
-      </select>
+    <div className="settings-row settings-choice">
+      <div className="settings-text"><span className="settings-name">{t('Update channel')}</span><p>{status.channel === 'dev' ? t('Try the latest changes from GitHub main. Dev versions may be less reliable; you can switch back to Stable here.') : t('Use published releases from npm.')}</p></div>
+      <ChipSelect label={t('Update channel')} value={status.channel || 'stable'} disabled={sending || busy} onChange={channel => void send('/updates/channel', { channel })} options={[{ value: 'stable', label: t('Stable') }, { value: 'dev', label: t('Dev (GitHub main)') }]}/>
     </div>
-    <p className="settings-about-intro">{status.channel === 'dev' ? t('Try the latest changes from GitHub main. Dev versions may be less reliable; you can switch back to Stable here.') : t('Use published releases from npm.')}</p>
     {status.latestVersion && <div className="settings-row"><span className="settings-name">{t('Latest version')}</span><code title={status.latestVersion}>{versionLabel(status.latestVersion)}</code></div>}
+    </section>
+    <section className="settings-card settings-card-body">
     <p role="status">{status.phase === 'installing' ? status.channel === 'dev' ? t('Downloading and building the selected GitHub commit…') : t('Downloading and checking the new version…')
       : status.phase === 'waiting' ? t('The update is ready. Waiting for tasks and PDF builds to finish before restarting.')
       : status.phase === 'restarting' ? t('Restarting Papilot. This page will reconnect automatically; your drafts are kept.')
@@ -119,9 +121,10 @@ export function UpdateSettings({ api }: { api: UpdateApi }) {
       : status.latestVersion ? t('You are using the latest version on this channel.') : t('Check for updates to see the latest version.')}</p>
     {!status.canUpdate && <p className="inline-error">{t('Papilot cannot find npm on this computer. Updates are unavailable until npm is installed.')}</p>}
     {(error || status.error) && <p className="inline-error" role="alert">{updateError(error || status.error!)}</p>}
-    <div className="update-actions">
+    <div className="settings-actions">
       <button className="button secondary" disabled={sending || busy || status.phase === 'checking'} onClick={() => void send('/updates/check')}>{t('Check for updates')}</button>
       {available && !busy && <button className="button primary" disabled={sending || !status.canUpdate} onClick={() => void send('/updates/install', { version: status.latestVersion })}>{status.phase === 'failed' ? t('Retry update') : t('Update to {version}', { version: versionLabel(status.latestVersion!) })}</button>}
     </div>
+    </section>
   </div>;
 }

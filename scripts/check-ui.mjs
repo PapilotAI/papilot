@@ -223,14 +223,30 @@ try {
 
   // Appearance changes live in both documents without losing a chat draft.
   const settingsButton = page.getByRole('button', { name: 'Settings', exact: true });
-  const settingsDialog = page.getByRole('dialog', { name: 'Settings' });
+  const settingsDialog = page.locator('dialog').filter({ has: page.locator('.settings-dialog') });
   const closeSettings = async () => { await page.keyboard.press('Escape'); await settingsDialog.waitFor({ state: 'hidden' }); };
-  const chooseTheme = async name => { await settingsButton.click(); await settingsDialog.getByRole('radio', { name, exact: true }).check(); await closeSettings(); };
+  const chooseTheme = async name => { await settingsButton.click(); await settingsDialog.getByRole('button', { name: 'Appearance', exact: true }).click(); await settingsDialog.getByRole('radio', { name, exact: true }).check(); await closeSettings(); };
   const themeIs = async value => {
     await page.waitForFunction(value => document.documentElement.dataset.theme === value, value);
     await page.frameLocator('.review-frame').locator(`html[data-theme="${value}"]`).waitFor();
   };
   await settingsButton.click();
+  await page.clock.runFor(300);
+  await page.screenshot({ path: 'test-results/settings-general-desktop.png' });
+  for (const [label, file] of [['Appearance', 'appearance'], ['Notifications', 'notifications'], ['Keyboard shortcuts', 'shortcuts'], ['About Papilot', 'about']]) {
+    await settingsDialog.getByRole('button', { name: label, exact: true }).click();
+    assert.equal(await settingsDialog.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth), false);
+    await page.screenshot({ path: `test-results/settings-${file}-desktop.png` });
+  }
+  await settingsDialog.getByRole('button', { name: 'Third-party licenses', exact: false }).click();
+  await settingsDialog.getByRole('searchbox', { name: 'Search components or licenses' }).fill('react');
+  await settingsDialog.getByText(/components$/, { exact: false }).waitFor();
+  await page.screenshot({ path: 'test-results/settings-licenses-desktop.png' });
+  await settingsDialog.getByRole('searchbox', { name: 'Search settings' }).fill('indirect');
+  await settingsDialog.getByRole('button', { name: 'Review preferences', exact: true }).click();
+  await settingsDialog.getByRole('switch', { name: 'Expand indirect changes' }).waitFor();
+  await settingsDialog.getByRole('searchbox', { name: 'Search settings' }).fill('');
+  await page.screenshot({ path: 'test-results/settings-review-desktop.png' });
   await settingsDialog.getByRole('button', { name: 'Runtime & diagnostics', exact: true }).click();
   const diagnostics = page.getByRole('dialog', { name: 'Runtime & diagnostics', exact: true });
   await diagnostics.getByRole('alert').waitFor();
@@ -254,10 +270,11 @@ try {
   assert.equal(await manualSummary.inputValue(), copiedDiagnostic);
   assert.equal(await manualSummary.evaluate(el => document.activeElement === el && el.selectionEnd === el.value.length), true);
   await page.evaluate(() => { navigator.clipboard.writeText = window.originalCopy; });
-  await diagnostics.getByRole('button', { name: 'Settings', exact: true }).click();
-  assert.equal(await page.evaluate(() => document.activeElement.dataset.settingsPage), 'diagnostics');
+  await diagnostics.getByRole('button', { name: 'General', exact: true }).click();
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'General');
   await settingsDialog.getByRole('combobox', { name: 'Language', exact: true }).selectOption('zh-CN');
-  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('radio', { name: '深色', exact: true }).check();
+  await settingsDialog.getByRole('button', { name: '外观', exact: true }).click();
+  await settingsDialog.getByRole('radio', { name: '深色', exact: true }).check();
   await page.getByRole('button', { name: '运行状态与诊断', exact: true }).click();
   await page.getByText('1 项错误 · 1 项提醒', { exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/settings-diagnostics-dark.png' });
@@ -270,8 +287,11 @@ try {
   assert.equal(await page.getByRole('link', { name: /参与贡献/ }).getAttribute('href'), 'https://github.com/cu1ch3n/papilot/blob/main/CONTRIBUTING.md');
   await page.screenshot({ path: 'test-results/settings-about-links-mobile.png' });
   await page.locator('dialog[open]').getByRole('button', { name: '设置', exact: true }).click();
-  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('radio', { name: '跟随系统', exact: true }).check();
-  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('combobox', { name: '语言', exact: true }).selectOption('system');
+  await settingsDialog.getByRole('button', { name: '外观', exact: true }).click();
+  await settingsDialog.getByRole('radio', { name: '跟随系统', exact: true }).check();
+  await settingsDialog.getByRole('button', { name: '设置', exact: true }).click();
+  await settingsDialog.getByRole('button', { name: '通用', exact: true }).click();
+  await settingsDialog.getByRole('combobox', { name: '语言', exact: true }).selectOption('system');
   await closeSettings();
   await page.setViewportSize({ width: 1440, height: 900 });
   console.log('PASS: Diagnostics retry, paper scope, redacted sharing and clipboard fallback, translated mobile layout, changelog and contribution links');
@@ -291,6 +311,7 @@ try {
   assert.equal(await page.locator('html').evaluate(el => getComputedStyle(el).colorScheme), 'dark');
   await page.reload();
   await settingsButton.click();
+  await settingsDialog.getByRole('button', { name: 'Appearance', exact: true }).click();
   assert.equal(await settingsDialog.getByRole('radio', { name: 'Dark', exact: true }).isChecked(), true);
   await closeSettings();
   assert.equal(await settingsButton.evaluate(el => document.activeElement === el), true, 'Closing Settings returns focus to its button');
@@ -329,6 +350,7 @@ try {
     window.Notification = class { static permission = 'granted'; static requestPermission = async () => 'granted'; constructor(title, options) { window.shown.push({ title, body: options.body, tag: options.tag }); } close() {} };
   });
   await settingsButton.click();
+  await settingsDialog.getByRole('button', { name: 'Notifications', exact: true }).click();
   const notifySwitch = settingsDialog.getByRole('switch', { name: 'Notifications' });
   assert.equal(await notifySwitch.isChecked(), false);
   await notifySwitch.check();

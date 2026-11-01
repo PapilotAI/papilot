@@ -54,18 +54,35 @@ try {
   await owner.getByRole('button', { name: 'People', exact: true }).click();
   const people = owner.getByRole('dialog', { name: 'People' });
   await expect(owner.locator('.sidebar-footer button')).toHaveCount(1);
-  await people.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(owner.locator('dialog[open]')).toHaveCount(1);
+  await people.getByRole('button', { name: 'General', exact: true }).click();
   const ownerSettings = owner.getByRole('dialog', { name: 'Settings', exact: true });
-  await expect(ownerSettings.getByRole('button', { name: 'People', exact: true })).toBeFocused();
+  await expect(ownerSettings.getByRole('heading', { name: 'General', exact: true })).toBeFocused();
   await ownerSettings.getByRole('button', { name: 'People', exact: true }).click();
   await expect(people.getByText('Invite only people you would trust with access to it.', { exact: false })).toBeVisible();
   await people.getByLabel('Invite someone').fill('Ada');
   await people.getByRole('group', { name: 'Papers they can open' }).getByLabel('Thesis').check();
+  await people.getByRole('button', { name: 'General', exact: true }).click();
+  await ownerSettings.getByRole('button', { name: 'People', exact: true }).click();
+  await expect(people.getByLabel('Invite someone')).toHaveValue('Ada');
+  await expect(people.getByRole('group', { name: 'Papers they can open' }).getByLabel('Thesis')).toBeChecked();
   await people.getByRole('button', { name: 'Create invite link' }).click();
   const link = await people.getByLabel('Invite link for Ada').inputValue();
   assert.match(link, new RegExp(`^${publicOrigin}/invite#[\\w-]{43}$`));
   await expect(people.getByText('Invited, not joined yet')).toBeVisible();
-  pass('The owner invites someone to one paper from People and gets a one-time link');
+  await people.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await owner.getByRole('button', { name: 'People', exact: true }).click();
+  await expect(people.getByLabel('Invite link for Ada')).toHaveValue(link);
+  await expect(owner.locator('dialog[open]')).toHaveCount(1);
+  await owner.screenshot({ path: 'test-results/settings-people-desktop.png' });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await people.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth), false);
+  await owner.screenshot({ path: 'test-results/settings-people-mobile.png' });
+  await people.getByRole('button', { name: 'Settings', exact: true }).click();
+  await owner.getByRole('button', { name: 'People', exact: true }).click();
+  await expect(people.getByLabel('Invite link for Ada')).toHaveValue(link);
+  await owner.setViewportSize({ width: 1280, height: 900 });
+  pass('People stays inside Settings; invite drafts and one-time links survive category navigation on desktop and mobile');
 
   // Ada opens the link at the public URL and creates a passkey.
   const adaContext = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 900 } });

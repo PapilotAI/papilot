@@ -48,18 +48,22 @@ export function DiagnosticsSettings({ online, runtimes, project, check }: Diagno
   const names = checkNames();
   // Agents that were not found on this host are not offered, so they are only named.
   const found = AGENT_IDS.filter(id => id === 'codex' || Boolean(runtimes[id] && runtimes[id]!.installed !== false)), missing = AGENT_IDS.filter(id => !found.includes(id) && runtimes[id]);
-  return <div className="diagnostics-settings">
-    <p className="settings-about-intro">{t('Inspect agent connections and check the environment used to build your papers.')}</p>
+  return <div className="diagnostics-settings settings-page">
+    <p className="settings-intro">{t('Inspect agent connections and check the environment used to build your papers.')}</p>
+    <section>
     <h3 className="settings-section-title">{t('Live connections')}</h3>
-    <div className="diagnostic-connections">
-      <div className="diagnostic-connection"><span>{t('Papilot server')}</span><span className={`diagnostic-state ${online ? 'ok' : 'error'}`}><i/>{online ? t('Connected') : t('Disconnected')}</span></div>
+    <div className="diagnostic-connections settings-card">
+      <div className="diagnostic-connection settings-row"><span>{t('Papilot server')}</span><span className={`diagnostic-state ${online ? 'ok' : 'error'}`}><i/>{online ? t('Connected') : t('Disconnected')}</span></div>
       {found.map(id => {
         const runtime = runtimes[id], ready = online && runtime?.connected && runtime.authenticated;
-        return <div key={id} className="diagnostic-connection"><span>{AGENT_NAMES[id]}</span><span className={`diagnostic-state ${ready ? 'ok' : 'warn'}`}><i/>{!online || !runtime ? t('Unknown') : ready ? t('Ready') : runtime.connected ? t('Sign-in required') : t('Unavailable')}</span></div>;
+        return <div key={id} className="diagnostic-connection settings-row"><span>{AGENT_NAMES[id]}</span><span className={`diagnostic-state ${ready ? 'ok' : 'warn'}`}><i/>{!online || !runtime ? t('Unknown') : ready ? t('Ready') : runtime.connected ? t('Sign-in required') : t('Unavailable')}</span></div>;
       })}
     </div>
     {online && missing.length > 0 && <p className="diagnostic-context diagnostic-missing">{t('Not found on this host: {agents}. Install or configure one and select Reconnect to offer it.', { agents: missing.map(id => AGENT_NAMES[id]).join(', ') })}</p>}
+    </section>
+    <section>
     <h3 className="settings-section-title">{t('Environment checks')}</h3>
+    <div className="settings-card settings-card-body">
     <p className="diagnostic-context">{project ? t('Includes the configuration for “{paper}”.', { paper: project.name }) : t('Open a paper to also check its repository and compiler configuration.')}</p>
     <div className="diagnostic-actions">
       <button type="button" className="button secondary compact" disabled={busy || !online} onClick={() => setAttempt(value => value + 1)}><Icon name="refresh" size={14}/>{busy ? t('Checking…') : t('Check again')}</button>
@@ -80,5 +84,7 @@ export function DiagnosticsSettings({ online, runtimes, project, check }: Diagno
       <p className="diagnostic-sharing">{t('The copied summary includes versions and check results, without account names, paths, or paper contents.')}</p>
     </>}
     {manualCopy && <label className="diagnostic-copy"><span role="status">{t('Automatic copy is unavailable. Copy the selected summary below.')}</span><textarea ref={copyArea} readOnly value={summary} aria-label={t('Diagnostic summary')}/></label>}
+    </div>
+    </section>
   </div>;
 }

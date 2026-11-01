@@ -1,25 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useState, type Ref } from 'react';
 import { Icon } from './icons.tsx';
-import { keepDialogFocus } from './focus.ts';
 import { t } from './i18n.ts';
 import type { Device, People, Person, Project } from '../shared.ts';
 
 type Api = <T = any>(route: string, body?: unknown) => Promise<T>;
+export interface PeopleSettingsProps { api: Api; projects: Project[]; ago: (timestamp: number) => string }
+export interface PeopleSettingsControls { isBusy: () => boolean }
 
 // The owner invites people, chooses which papers each can open, and removes
 // them or one of their devices. Invite links are shown once, to send yourself.
-export function PeopleDialog({ api, projects, ago, onClose }: { api: Api; projects: Project[]; ago: (timestamp: number) => string; onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+export function PeopleSettings({ api, projects, ago, controls }: PeopleSettingsProps & { controls: Ref<PeopleSettingsControls> }) {
   const [people, setPeople] = useState<People | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState('');
   const [links, setLinks] = useState<Record<string, string>>({}), [removing, setRemoving] = useState('');
   const [name, setName] = useState(''), [shared, setShared] = useState<string[]>([]);
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    const element = dialog.current!;
-    element.showModal();
-    void run('load', () => api<People>('/people'));
-    return () => { element.close(); if (opener?.isConnected && opener.getClientRects().length) opener.focus(); };
-  }, []);
+  useEffect(() => { void run('load', () => api<People>('/people')); }, []);
+  useImperativeHandle(controls, () => ({ isBusy: () => Boolean(busy && busy !== 'load') }));
   async function run(key: string, work: () => Promise<People | void>) {
     setBusy(key); setError('');
     try { const next = await work(); if (next) setPeople(next); }
@@ -41,19 +36,15 @@ export function PeopleDialog({ api, projects, ago, onClose }: { api: Api; projec
   const revoke = (person: Person, device: Device) => run('device:' + device.id, () => api<People>(`/people/${person.id}/devices/${device.id}/remove`, {}));
   const remove = (person: Person) => run('remove:' + person.id, () => api<People>(`/people/${person.id}/remove`, {}));
   const signOut = (person: Person) => run('sign-out:' + person.id, () => api<People>(`/people/${person.id}/sign-out`, {}));
-  const close = () => { if (!busy || busy === 'load') onClose(); };
   const papers = (selected: string[], toggle: (projectId: string, on: boolean) => void, disabled: boolean, label: string) => <fieldset className="people-papers" disabled={disabled}>
     <legend>{label}</legend>
     {projects.map(project => <label key={project.id} className="checkbox"><input type="checkbox" checked={selected.includes(project.id)} onChange={event => toggle(project.id, event.target.checked)}/>{project.name}</label>)}
   </fieldset>;
-  return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="people-title" onKeyDown={keepDialogFocus} onCancel={event => { event.preventDefault(); close(); }} onClick={event => { if (event.target === event.currentTarget) close(); }}>
-    <section className="modal people-dialog">
-      <button className="modal-close icon-button" aria-label={t('Close')} onClick={close}><Icon name="close"/></button>
-      <h2 id="people-title">{t('People')}</h2>
-      <p className="modal-description">{t('People you invite sign in with a passkey at the public address and can do everything you can in the papers you share with them, including approving the commands agents run on this host and pushing with its Git credentials.')}</p>
-      <p className="people-warning"><Icon name="alert" size={15}/><span>{t('Agents and builds can read any file on this host, including your other papers. Invite only people you would trust with access to it.')}</span></p>
-      {people && !people.origin && <p className="people-setup">{t('To invite people, give Papilot a public HTTPS address: set PAPILOT_ACCOUNT_ORIGIN and forward it to this host, as the Collaborators section of the guide describes.')}</p>}
-      {people?.origin && <form className="people-invite" onSubmit={event => { event.preventDefault(); if (name.trim()) void invite(); }}>
+  return <div className="people-settings settings-page">
+      <p className="settings-intro">{t('People you invite sign in with a passkey at the public address and can do everything you can in the papers you share with them, including approving the commands agents run on this host and pushing with its Git credentials.')}</p>
+      <p className="people-warning settings-notice"><Icon name="alert" size={15}/><span>{t('Agents and builds can read any file on this host, including your other papers. Invite only people you would trust with access to it.')}</span></p>
+      {people && !people.origin && <p className="people-setup settings-card settings-card-body">{t('To invite people, give Papilot a public HTTPS address: set PAPILOT_ACCOUNT_ORIGIN and forward it to this host, as the Collaborators section of the guide describes.')}</p>}
+      {people?.origin && <form className="people-invite settings-card settings-card-body" onSubmit={event => { event.preventDefault(); if (name.trim()) void invite(); }}>
         <label>{t('Invite someone')}<input value={name} maxLength={80} onChange={event => setName(event.target.value)} placeholder={t('Their name, as others will see it')} autoComplete="off"/></label>
         {papers(shared, (id, on) => setShared(current => on ? [...current, id] : current.filter(other => other !== id)), busy === 'invite', t('Papers they can open'))}
         <div className="button-row"><button className="button primary" disabled={!name.trim() || Boolean(busy)}>{busy === 'invite' ? t('Creating…') : t('Create invite link')}</button></div>
@@ -62,7 +53,7 @@ export function PeopleDialog({ api, projects, ago, onClose }: { api: Api; projec
       {!people && busy === 'load' && <p className="muted" role="status">{t('Loading people…')}</p>}
       <ul className="people-list">{people?.people.map(person => {
         const owner = person.role === 'owner', sessions = person.devices.filter(device => device.kind === 'session');
-        return <li key={person.id} className="person">
+        return <li key={person.id} className="person settings-card settings-card-body">
           <div className="person-head"><strong>{owner ? t('{name} (you)', { name: person.name }) : person.name}</strong>
             <span className="muted">{owner ? t('Owner') : !person.joined ? t('Invited, not joined yet') : person.lastSeenAt ? t('Last active {time}', { time: ago(person.lastSeenAt) }) : t('Joined')}</span></div>
           {!owner && papers(person.projects, (id, on) => void share(person, id, on), busy === 'share:' + person.id, t('Papers {name} can open', { name: person.name }))}
@@ -86,6 +77,5 @@ export function PeopleDialog({ api, projects, ago, onClose }: { api: Api; projec
           </div>}
         </li>;
       })}</ul>
-    </section>
-  </dialog>;
+  </div>;
 }

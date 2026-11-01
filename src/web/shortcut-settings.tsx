@@ -16,8 +16,9 @@ export function ShortcutSettings() {
     undo: [t('Undo review decision'), t('Undo the last review decision or revert.')],
     help: [t('Keyboard shortcuts'), t('Open these shortcut settings.')],
   };
-  return <div className="shortcut-settings">
-    <p className="shortcut-intro">{t('Review shortcuts work while the PDF review is focused. They pause while you type or select text. Changes are saved in this browser.')}</p>
+  return <div className="shortcut-settings settings-page">
+    <p className="settings-intro">{t('Review shortcuts work while the PDF review is focused. They pause while you type or select text. Changes are saved in this browser.')}</p>
+    <section className="settings-card">
     <p className="shortcut-instructions" id="shortcut-instructions">{t('Click a key to change it, then press the new shortcut. Escape cancels; Backspace clears it.')}</p>
     {error && <p className="inline-error" role="alert">{error}</p>}
     <div className="shortcut-list">{shortcutActions.map(action => <div className="shortcut-row" key={action}>
@@ -38,13 +39,15 @@ export function ShortcutSettings() {
           saveShortcuts({ ...shortcuts, [action]: clear ? [] : [binding] }); setEditing(null); setError('');
         }}><kbd>{editing === action ? t('Press a key…') : shortcuts[action].map(bindingLabel).join(' / ') || t('Not assigned')}</kbd></button>
     </div>)}</div>
-    <button type="button" className="button secondary compact" disabled={JSON.stringify(shortcuts) === JSON.stringify(defaults)} onClick={() => { saveShortcuts(resolveShortcuts({})); setEditing(null); setError(''); }}>{t('Restore default shortcuts')}</button>
-    <div className="shortcut-system"><h3>{t('Standard shortcuts')}</h3>
-      <p>{t('These keep the usual browser and text-editing behavior.')}</p>
+    <div className="settings-card-actions"><button type="button" className="button secondary compact" disabled={JSON.stringify(shortcuts) === JSON.stringify(defaults)} onClick={() => { saveShortcuts(resolveShortcuts({})); setEditing(null); setError(''); }}>{t('Restore default shortcuts')}</button></div>
+    </section>
+    <section className="shortcut-system"><h3 className="settings-section-title">{t('Standard shortcuts')}</h3>
+      <div className="settings-card settings-card-body"><p className="settings-intro">{t('These keep the usual browser and text-editing behavior.')}</p>
       <dl><dt><kbd>⌘ / Ctrl + C</kbd></dt><dd>{t('Copy selected PDF text')}</dd>
         <dt><kbd>⌘ / Ctrl + Z</kbd></dt><dd>{t('Undo typing, a deleted note, or the last review decision, depending on focus.')}</dd>
         <dt><kbd>⌘ / Ctrl + Enter</kbd></dt><dd>{t('Send the review comment being written.')}</dd>
         <dt><kbd>Esc</kbd></dt><dd>{t('Close the current editor or cancel region selection.')}</dd></dl>
-    </div>
+      </div>
+    </section>
   </div>;
 }
