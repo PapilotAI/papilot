@@ -6,6 +6,7 @@ import staticFiles from '@fastify/static';
 import { chromium, expect } from '../vendor/latex-review/node_modules/@playwright/test/index.mjs';
 import { annotateReviewState, rewriteReviewHtml } from '../src/server/review.ts';
 
+fs.mkdirSync('test-results', { recursive: true });
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
@@ -17,6 +18,7 @@ const prefix = '/review/paper';
 const task = { id: 'review-flow-fixture', projectId: 'paper', name: 'flow', title: 'Review the new wording', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { state: 'reviewing', round: 1, counts: {}, unsent: 0 } };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
 let latest = 1, serial = 0, undo = null;
+let effectFixture = true, effectRequests = 0;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
 const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [];
 let gitFiles = [];
@@ -30,12 +32,22 @@ function update() {
 }
 update();
 const image = (name, label) => ({ src: `${name}.svg`, clean: `${name}-clean.svg`, width: 600, height: 130, page: 0, label: '1', text: [{ chars: [{ text: label, rect: [60, 40, 500, 62] }] }] });
+const effectPlace = name => ({ page: '2', section: 'Contents', before: [image(`${name}-old`, 'Section 2')], after: [image(`${name}-new`, 'Section 3')] });
 function detail(round) {
   const ids = Object.keys(rounds[round]);
   const groups = round === 1 ? [['first'], ['second'], ['third', 'fourth']] : [['new']];
-  return { task: 'flow', round, before: `before-${round}`, after: `after-${round}`, warnings: [], files: `${prefix}/files/flow/${round}/`,
+  const result = { task: 'flow', round, before: `before-${round}`, after: `after-${round}`, warnings: [], files: `${prefix}/files/flow/${round}/`,
     sections: [{ node: 'intro', title: 'Introduction', number: '1', blocks: groups.map((units, i) => ({ kind: 'change', units, identical: false, before: [image(`before-${i}`, `Original paragraph ${i + 1}.`)], after: [image(`after-${i}`, `Revised paragraph ${i + 1}.`)] })) }], loose: [],
     units: ids.map((id, i) => ({ id, file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: i + 1, old_end: i + 1, new_start: i + 1, new_end: i + 1, old_text: `Original paragraph ${i + 1}`, new_text: `Revised paragraph ${i + 1}`, truncated: false })) };
+  if (effectFixture && round === 1) {
+    for (const [i, visual] of ['text', 'unmapped', 'identical'].entries()) Object.assign(result.units[i], {
+      visual, effects: { total: i === 0 ? 2 : 1, shown: [effectPlace(`effect-${i}`)] },
+    });
+    // A macro definition has no crop of its own; its uses are its preview.
+    Object.assign(result.units[1], { file: 'macros.tex', old_text: '\\newcommand{\\term}{Old}', new_text: '\\newcommand{\\term}{New}' });
+    Object.assign(result.sections[0].blocks[1], { before: [], after: [] });
+  }
+  return result;
 }
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
@@ -69,6 +81,7 @@ await page.route('**/review/**', async route => {
   if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 130"><rect width="600" height="130" fill="white"/><text x="60" y="60" font-size="20">A paragraph in the review PDF.</text></svg>' });
   const round = Number(url.searchParams.get('round') || latest);
   if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail(Number(relative.split('/').at(-1))) });
+  if (relative.endsWith('/effects/first')) { effectRequests++; return route.fulfill({ json: { places: [effectPlace('extra')] } }); }
   let restored;
   if (route.request().method() === 'POST') {
     const body = route.request().postDataJSON(); writes.push(body);
@@ -90,6 +103,49 @@ const sync = async () => page.evaluate(() => window.dispatchEvent(new Event('onl
 try {
   await page.goto(origin);
   await viewer().locator('.change.current').waitFor();
+  // Ordinary edits fold their knock-on changes; source-only and visually
+  // unchanged definitions retain the PDF evidence needed to review them.
+  const indirect = () => viewer().locator('.change[data-stop="0"] .effects');
+  const macro = () => viewer().locator('.change[data-stop="1"] .effects');
+  await expect(indirect().getByRole('button', { name: 'Affects 2 places' })).toHaveAttribute('aria-expanded', 'false');
+  await expect(indirect().locator('.place')).toHaveCount(0);
+  await expect(macro().locator('.place')).toHaveCount(1);
+  await expect(viewer().locator('.change[data-stop="2"] .effects .place')).toHaveCount(1);
+  assert.equal(effectRequests, 0);
+  await indirect().getByRole('button', { name: 'Affects 2 places' }).click();
+  await expect(indirect().locator('.place')).toHaveCount(1);
+  await indirect().getByRole('button', { name: 'Show 1 more' }).click();
+  await expect(indirect().locator('.place')).toHaveCount(2);
+  assert.equal(effectRequests, 1);
+  await indirect().getByRole('button', { name: 'Affects 2 places' }).click();
+  await expect(indirect().locator('.place')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = () => page.getByRole('dialog', { name: 'Settings', exact: true });
+  const expandEffects = () => settings().getByRole('switch', { name: 'Expand indirect changes', exact: true });
+  await expect(expandEffects()).not.toBeChecked();
+  await expandEffects().check();
+  await expect(indirect().locator('.place')).toHaveCount(2);
+  await page.screenshot({ path: 'test-results/indirect-effects-settings.png', fullPage: true });
+  await settings().getByRole('button', { name: 'Close', exact: true }).click();
+  assert.equal(writes.length, 0, 'Changing disclosure must not send review decisions');
+  await page.reload();
+  await expect(indirect().locator('.place')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(expandEffects()).toBeChecked();
+  await expandEffects().uncheck();
+  await expect(indirect().locator('.place')).toHaveCount(0);
+  await expect(macro().locator('.place')).toHaveCount(1);
+  await settings().getByRole('button', { name: 'Close', exact: true }).click();
+  await page.screenshot({ path: 'test-results/indirect-effects-review.png', fullPage: true });
+  await page.reload();
+  await expect(indirect().locator('.place')).toHaveCount(0);
+  await expect(macro().locator('.place')).toHaveCount(1);
+  assert.equal(effectRequests, 1, 'Reloading and global disclosure must not request more places');
+  effectFixture = false;
+  await page.reload();
+  await viewer().locator('.change.current').waitFor();
+  console.log('PASS: Indirect changes fold by default, macro effects remain visible, per-edit expansion is lazy, and live settings survive reload');
   // Decisions replace the iframe's scroll layers. Wheel gestures must follow
   // the pointer even if the browser retains Chat as their previous target.
   timeline = Array.from({ length: 40 }, (_, i) => ({ id: `scroll-${i}`, taskId: task.id, type: 'assistant', text: `Review feedback ${i}.`, createdAt: i + 1 }));

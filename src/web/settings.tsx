@@ -5,6 +5,7 @@ import { keepDialogFocus } from './focus.ts';
 import { LANGUAGES, browserLanguage, setLanguage, t, useLanguage, type LanguageChoice } from './i18n.ts';
 import { setNotifications, testNotification, useNotifications } from './notifications.ts';
 import { browserStorage } from './storage.ts';
+import { saveExpandedEffects, useExpandedEffects } from './effect-preferences.ts';
 import type { Theme } from './theme.tsx';
 import { ShortcutSettings } from './shortcut-settings.tsx';
 import { AboutSettings, LicenseSettings } from './about-settings.tsx';
@@ -25,6 +26,7 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
   const skillControls = useRef<SkillLibraryControls>(null);
   const { choice } = useLanguage();
   const notifications = useNotifications();
+  const expandedEffects = useExpandedEffects();
   const [page, setPage] = useState<SettingsPage>(initialPage);
   const previousPage = useRef<SettingsPage>(initialPage);
   const [asking, setAsking] = useState(false), [test, setTest] = useState<'' | 'sent' | 'failed'>('');
@@ -94,6 +96,13 @@ export function SettingsDialog({ theme, onTheme, onClose, onPeople, onSignOut, a
           <p id="settings-references-detail">{t('When a change adds or edits a bibliography entry, look up its title, authors, year and DOI in Crossref, DBLP and arXiv. Nothing else from your paper is sent.')}</p>
         </div>
         <input id="settings-references" type="checkbox" role="switch" className="switch" aria-describedby="settings-references-detail" checked={checkReferences} onChange={event => { setCheckReferences(event.target.checked); browserStorage.setItem(REFERENCE_CHECKS, event.target.checked ? 'on' : 'off'); }}/>
+      </div>
+      <div className="settings-row settings-toggle">
+        <div className="settings-text">
+          <label className="settings-name" htmlFor="settings-effects">{t('Expand indirect changes')}</label>
+          <p id="settings-effects-detail">{t('Expand changes elsewhere, such as contents and reference numbering. Off by default; edits with no visible change at their source, such as macro definitions, still show their effects.')}</p>
+        </div>
+        <input id="settings-effects" type="checkbox" role="switch" className="switch" aria-describedby="settings-effects-detail" checked={expandedEffects} onChange={event => saveExpandedEffects(event.target.checked)}/>
       </div>
       <div className="settings-navigation">
         {skills && <button type="button" className="settings-navigation-row" data-settings-page="skills" onClick={() => setPage('skills')}><Icon name="spark" size={17}/><span>{t('Skills')}</span><Icon name="chevronRight" size={15}/></button>}

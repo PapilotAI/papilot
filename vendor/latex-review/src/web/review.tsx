@@ -18,6 +18,7 @@ import type {
 } from "../types.ts";
 import { PdfStrip } from "./PdfStrip.tsx";
 import { ChangeMap } from "./ChangeMap.tsx";
+import { EFFECTS_EVENT, EFFECTS_STORAGE, readExpandedEffects } from "./effect-preferences.ts";
 import { STATUS } from "./overview.tsx";
 import { language, locale, t, tn, withLanguage } from "./i18n.ts";
 import {
@@ -166,6 +167,18 @@ export function ReviewApp({
     scrollUntil = useRef(0),
     snapshot = useRef({ state, detail, busy, composer, current });
   const [shortcuts, setShortcuts] = useState(readShortcuts);
+  const [expandedEffects, setExpandedEffects] = useState(readExpandedEffects);
+  // Per-edit disclosure is temporary and scoped to its round. Changing the
+  // global preference resets those overrides without reloading the review.
+  const [effectOverrides, setEffectOverrides] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const changed = (event: Event) => setExpandedEffects((event as CustomEvent).detail === true);
+    const stored = (event: StorageEvent) => { if (event.key === EFFECTS_STORAGE || event.key === null) setExpandedEffects(readExpandedEffects()); };
+    window.addEventListener(EFFECTS_EVENT, changed);
+    window.addEventListener('storage', stored);
+    return () => { window.removeEventListener(EFFECTS_EVENT, changed); window.removeEventListener('storage', stored); };
+  }, []);
+  useEffect(() => { setEffectOverrides({}); }, [expandedEffects]);
   useEffect(() => {
     const changed = (event: Event) => setShortcuts(resolveShortcuts((event as CustomEvent).detail));
     const stored = (event: StorageEvent) => { if (event.key === SHORTCUT_STORAGE || event.key === null) setShortcuts(readShortcuts()); };
@@ -739,7 +752,10 @@ export function ReviewApp({
     clean: boolean,
   ): ReactNode {
     const { total, shown } = unit.effects!,
-      loaded = more[`${detail!.round}:${unit.id}`],
+      key = `${detail!.round}:${unit.id}`,
+      open = effectOverrides[key] ?? (expandedEffects || unit.visual === "unmapped" || unit.visual === "identical"),
+      bodyId = `effects-${detail!.round}-${unit.id}`,
+      loaded = more[key],
       places = [...shown, ...(Array.isArray(loaded) ? loaded : [])],
       strips = (items: Strip[], side: "before" | "after") =>
         items.length > 0 && (
@@ -761,47 +777,57 @@ export function ReviewApp({
     return (
       <section className="effects" key={unit.id}>
         <p className="effects-head">
-          {tn(total, "Affects {n} place", "Affects {n} places")}
-        </p>
-        {places.map((place, i) => (
-          <div className="place" key={i}>
-            <p className="place-where">
-              {t("p. {pages}", { pages: place.page })}
-              {place.section ? ` · ${place.section}` : ""}
-              {place.with
-                ? ` · ${t("with {changes}", {
-                    changes: place.with
-                      .map((id) =>
-                        firstStop.has(id)
-                          ? t("Change {n}", { n: firstStop.get(id)! + 1 })
-                          : (units.get(id)?.file ?? id),
-                      )
-                      .join(", "),
-                  })}`
-                : ""}
-            </p>
-            {strips(place.before, "before")}
-            {strips(place.after, "after")}
-          </div>
-        ))}
-        {total > places.length && (
-          <button
-            className="link more-places"
-            disabled={loaded === "loading"}
-            onClick={() => void loadPlaces(unit.id)}
-          >
-            {loaded === "loading"
-              ? t("Loading…")
-              : tn(
-                  total - places.length,
-                  "Show {n} more",
-                  "Show {n} more",
-                )}
+          <button className="link effects-toggle" aria-expanded={open} aria-controls={bodyId}
+            onClick={() => setEffectOverrides((values) => ({ ...values, [key]: !open }))}>
+            <span aria-hidden="true">{open ? "▾" : "▸"}</span>{" "}
+            {tn(total, "Affects {n} place", "Affects {n} places")}
           </button>
-        )}
-        {loaded && typeof loaded === "object" && "error" in loaded && (
-          <p className="caption">{loaded.error}</p>
-        )}
+        </p>
+        <div id={bodyId} hidden={!open}>
+          {open && (
+            <>
+              {places.map((place, i) => (
+                <div className="place" key={i}>
+                  <p className="place-where">
+                    {t("p. {pages}", { pages: place.page })}
+                    {place.section ? ` · ${place.section}` : ""}
+                    {place.with
+                      ? ` · ${t("with {changes}", {
+                          changes: place.with
+                            .map((id) =>
+                              firstStop.has(id)
+                                ? t("Change {n}", { n: firstStop.get(id)! + 1 })
+                                : (units.get(id)?.file ?? id),
+                            )
+                            .join(", "),
+                        })}`
+                      : ""}
+                  </p>
+                  {strips(place.before, "before")}
+                  {strips(place.after, "after")}
+                </div>
+              ))}
+              {total > places.length && (
+                <button
+                  className="link more-places"
+                  disabled={loaded === "loading"}
+                  onClick={() => void loadPlaces(unit.id)}
+                >
+                  {loaded === "loading"
+                    ? t("Loading…")
+                    : tn(
+                        total - places.length,
+                        "Show {n} more",
+                        "Show {n} more",
+                      )}
+                </button>
+              )}
+              {loaded && typeof loaded === "object" && "error" in loaded && (
+                <p className="caption">{loaded.error}</p>
+              )}
+            </>
+          )}
+        </div>
       </section>
     );
   }

@@ -345,6 +345,8 @@ export const zhCN: Record<string, string> = {
   'Notifications': '通知',
   'Notify me when a task needs my reply, its review is ready, or it stops with an error, while Papilot is in the background.': 'Papilot 在后台时，如果任务需要我回复、审阅已就绪或因错误停止，就通知我。',
   'Check references online': '联网核对参考文献',
+  'Expand indirect changes': '默认展开间接影响',
+  'Expand changes elsewhere, such as contents and reference numbering. Off by default; edits with no visible change at their source, such as macro definitions, still show their effects.': '展开目录、引用编号等其他位置的连带变化。默认关闭；宏定义等在源码位置没有可见变化的修改，仍会显示其影响。',
   'When a change adds or edits a bibliography entry, look up its title, authors, year and DOI in Crossref, DBLP and arXiv. Nothing else from your paper is sent.': '改动新增或修改参考文献条目时，用它的标题、作者、年份和 DOI 在 Crossref、DBLP 和 arXiv 中核对。论文的其他内容不会发出去。',
   'Send a test notification': '发送测试通知',
   'Sent. If nothing appeared, allow notifications for this browser in your system settings.': '已发送。如果没有看到通知，请在系统设置中允许此浏览器发送通知。',

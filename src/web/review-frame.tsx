@@ -9,6 +9,7 @@ import { useNoteResults } from './note-results.tsx';
 import { ReviewNoteConnections } from './review-note-connections.tsx';
 import { SHORTCUT_EVENT, useShortcuts } from './shortcuts.ts';
 import { installReviewScroll } from './review-scroll.ts';
+import { EFFECTS_EVENT, useExpandedEffects } from './effect-preferences.ts';
 
 // The viewer reads the interface language from its address.
 export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number, change?: number) => `/review/${task.projectId}/?task=${task.name}${round ? `&round=${round}${change === undefined ? '&history=1' : `&change=${change}`}` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
@@ -228,6 +229,7 @@ function cropMargins(doc: Document) {
 // and the viewer's own waiting message shows while they are compared.
 export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNotes, onDecided }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onSendNotes?: (message: { text: string; requestKey: string; notes?: NoteSummary[] }) => Promise<void>; onDecided?: () => void }) {
   const shortcuts = useShortcuts();
+  const expandedEffects = useExpandedEffects();
   const noteLinks = useNoteResults(), linksRef = useRef(noteLinks); linksRef.current = noteLinks;
   // Current changes open in the usual review; only older results need history.
   const linkedRound = task ? noteLinks?.focus?.change.round : undefined;
@@ -252,6 +254,9 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     if (!view) return;
     view.dispatchEvent(new CustomEvent(SHORTCUT_EVENT, { detail: shortcuts }));
   }, [document, shortcuts]);
+  useEffect(() => {
+    document?.defaultView?.dispatchEvent(new CustomEvent(EFFECTS_EVENT, { detail: expandedEffects }));
+  }, [document, expandedEffects]);
   useEffect(() => {
     const view = document?.defaultView;
     if (!view) return;
