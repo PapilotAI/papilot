@@ -19,12 +19,19 @@ export interface UpdateStatus {
 // accepted changes touched since its last commit, relative to the repository root.
 export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: { phase: string; status: string; error?: string; details?: string[] } | null }
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
+export interface TaskCommitReview { token: string; files: string[]; diff: string }
+export interface TaskReconciliation {
+  id: string; round: number; files: string[];
+  sourceBase: string; sourceAccepted: string; base: string; ready: boolean;
+  intent?: { mode: 'workspace' | 'commit'; message: string };
+}
 export interface Task {
   mode?: 'edit' | 'review';
   aiReview?: { key: string; notes?: number; revision?: number };
-  // New tasks keep acceptance isolated until the author chooses a destination.
+  // Accepted changes remain isolated until the author applies them.
+  reconciliation?: TaskReconciliation | null;
   deferred?: boolean;
-  delivery?: { mode: 'workspace' | 'branch'; accepted: string; branch?: string; commit?: string; pending?: boolean } | null;
+  delivery?: { mode: 'workspace' | 'commit' | 'branch'; accepted: string; branch?: string; commit?: string; pending?: boolean } | null;
   id: string; projectId: string; name: string; title: string; instructions: string;
   titleSource?: 'prompt' | 'generated' | 'manual'; titleRevision?: number; titleGeneration?: 'pending' | 'failed' | null;
   worktree: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
@@ -38,18 +45,18 @@ export interface Task {
   // The task's last commit from its review, and the accepted text it included.
   committed?: { hash: string; accepted: string; at: number; pushed?: boolean } | null;
 }
-// A task the author is through with, which Papilot archives once they leave
-// it: every change of its last result is decided, no comment or rejection
+// A task the author is through with, so the saved result can offer archiving:
+// every change of its last result is decided, no comment or rejection
 // waits to go back to the agent, and what was accepted has left the task
 // (applied or committed; older tasks accept straight into the working
 // directory). An answer without manuscript changes is finished too.
 export function taskFinished(task: Task) {
   const review = task.review;
-  if (task.status !== 'reviewing' || !review || task.pendingReview || task.delivery?.pending || review.counts?.pending || review.state === 'build_failed') return false;
+  if (task.status !== 'reviewing' || !review || task.reconciliation || task.pendingReview || task.delivery?.pending || review.counts?.pending || review.state === 'build_failed') return false;
   const unsent = review.unsent ?? ['accepted', 'rejected', 'commented'].reduce((count, kind) => count + (review.counts?.[kind] || 0), 0);
   if ((review.comments ?? unsent) > 0 || (unsent > 0 && !review.counts?.accepted)) return false;
   if (review.round === null) return true;
-  return review.state === 'done' && (!task.deferred || review.files?.length === 0);
+  return review.state === 'done' && (!task.deferred || (review.files?.length === 0 && task.delivery?.mode !== 'branch'));
 }
 // reviewRound is 0 while awaiting a result, null when no changes were produced,
 // or the published round. Older runs omit it.

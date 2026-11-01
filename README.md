@@ -36,9 +36,9 @@ Compare the typeset pages before and after, including changes elsewhere such as 
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="docs/assets/readme-deliver.jpg"><img src="docs/assets/readme-deliver.jpg" alt="Apply accepted edits to the working directory or commit them to a branch"></a>
+<a href="docs/assets/readme-deliver.jpg"><img src="docs/assets/readme-deliver.jpg" alt="Apply accepted edits to the manuscript"></a>
 <h3>Choose where edits go</h3>
-Each new task works on its own copy of the paper. Once reviewed, apply accepted edits to your working directory or commit them to a separate <code>papilot/…</code> branch.
+Each new task works on its own copy of the paper. Review the edits, then choose **Commit to manuscript** to save this task as one commit on your current branch, or **Apply to workspace** to leave the edits uncommitted. If the same passage changed meanwhile, AI resolves the conflict automatically and asks you only when the intended content is unclear. Review the merged PDF before saving. Push from the Git panel when you are ready.
 </td>
 <td width="50%" valign="top">
 <a href="docs/assets/readme-git.jpg"><img src="docs/assets/readme-git.jpg" alt="Git panel with staged files, generated commit message, and commit graph"></a>

@@ -1033,6 +1033,7 @@ try {
   assert.match(await gitPanel.locator('.git-branch').innerText(), /↑1/);
   assert.equal(await gitPanel.locator('.git-sync').getAttribute('title'), 'Tracking origin/main');
   assert.match(gitText, /Draft the introduction\s+abc1234/);
+  await gitPanel.getByText('Git details', { exact: true }).click();
   const worktrees = gitPanel.getByRole('region', { name: 'Worktrees', exact: true });
   const proposalTree = worktrees.locator(`[data-task-id="${task.id}"]`);
   await proposalTree.getByText(task.title, { exact: true }).waitFor();
@@ -1662,6 +1663,7 @@ try {
       await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
       await page.getByRole('button', { name: 'Git, 2 changed' }).click();
       await page.getByRole('region', { name: 'Git status' }).getByText('main.tex', { exact: true }).waitFor();
+      if (!await page.locator('.git-advanced').evaluate(el => el.open)) await page.getByText('Git details', { exact: true }).click();
       await page.getByRole('region', { name: 'Worktrees', exact: true }).locator(`[data-task-id="${task.id}"]`).waitFor();
       await page.getByRole('region', { name: 'Commit graph', exact: true }).scrollIntoViewIfNeeded();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);

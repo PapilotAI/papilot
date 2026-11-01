@@ -17,13 +17,14 @@ import { VERSION } from './paths.ts';
 import { prepareRepository } from './imports.ts';
 import { findSkill, type SkillFile } from './skills.ts';
 import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
+import { reconciliationPrompt } from './reconcile.ts';
 import { commitMessageFrom } from '../commit.ts';
 import { taskCaptionFrom, taskCaptionInstructions } from '../task-caption.ts';
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
 import { AGENT_IDS, isTaskReviewNote } from '../shared.ts';
-import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation, NoteSummary } from '../shared.ts';
+import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -328,7 +329,7 @@ export class Workspace extends EventEmitter {
   // The author's message, a skill run with or without one, the review
   // feedback alone, or a build the agent broke. The chat keeps what happened;
   // the agent gets the prompt.
-  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { attachments?: string[]; skill?: SkillFile; notes?: Annotation[]; groupInstructions?: GroupInstructions; reviewNotes?: NoteSummary[]; feedback?: boolean; build?: BuildFailure; author?: Author } = {}) {
+  async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { attachments?: string[]; skill?: SkillFile; notes?: Annotation[]; groupInstructions?: GroupInstructions; reviewNotes?: NoteSummary[]; feedback?: boolean; build?: BuildFailure; author?: Author; merge?: TaskReconciliation } = {}) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     if (task.mode === 'review' && ((options.skill && options.skill.output !== 'annotations') || options.notes?.length || options.reviewNotes?.length || options.attachments?.length || options.feedback || options.build)) throw new Error('AI review accepts review instructions only. Start an editing task to send notes, skills or attachments.');
@@ -342,7 +343,7 @@ export class Workspace extends EventEmitter {
     const pauseVersion = task.pauseVersion || 0;
     if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
     const instructions = options.notes?.length ? notesInstructions(options.notes, text, options.groupInstructions) : options.reviewNotes?.length ? reviewNotesInstructions(options.reviewNotes, text) : text.trim();
-    let prompt = options.build ? buildFixPrompt(options.build) : options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, instructions) : instructions, cursor = task.feedbackCursor;
+    let prompt = options.merge ? reconciliationPrompt(options.merge) : options.build ? buildFixPrompt(options.build) : options.feedback ? reviewInstructions : options.skill ? skillPrompt(options.skill, instructions) : instructions, cursor = task.feedbackCursor;
     let summary: FeedbackSummary | undefined;
     if (task.mode === 'review') includeFeedback = false;
     if (includeFeedback) {
@@ -417,6 +418,7 @@ export class Workspace extends EventEmitter {
     return `You are ${this.agentOf(task) === 'codex' ? 'the official Codex agent' : AGENT_NAMES[this.agentOf(task)]} running inside Papilot, a paper editing and review workspace.
 Your task is already created. Your editable working directory is ${task.worktree}.
 Original task: ${task.instructions}
+Papilot offers two ways to save accepted changes: Apply to workspace leaves them uncommitted; Commit to manuscript creates one commit containing only this task on the current manuscript branch. Both update the manuscript directly, including for tasks previously saved to a task branch. Do not tell the author to export patches or run Git commands to apply a task. If application conflicts, Papilot automatically asks AI to prepare another review in this task. Ask the author only when the instructions and manuscript context cannot determine the intended content; continue after their answer.
 Only edit this isolated task worktree. Never edit the manuscript checkout, other task worktrees, or Papilot's own source/state. Never commit, push, stash, or accept/reject/undo review decisions.
 ${scope.length ? `The review covers only ${scope.join(', ')} in this worktree, and an edit to any other file stops the PDF build. Leave other files unchanged even when project instructions ask for a matching update; mention that update in your summary instead.\n` : ''}Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This application workflow replaces the standalone latex-review skill's publish-and-wait loop. End your turn after completing the requested edits, with a concise summary for the author of what you changed and why; do not describe Papilot's review workflow.
 Preserve meaning and mathematical correctness. Read relevant project instructions. Treat reviewer comments as instructions tied to their round, file and changes. Rejected edits must not be reintroduced unless explicitly requested. If there is a conflict with accepted text, explain it and propose a revision for a new review round; never overwrite the accepted manuscript.
@@ -811,9 +813,16 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
       const { unsent, comments } = await this.unsentReviewFeedback(client, this.store.task(taskId));
       const deferred = summary.deferred === true || task.deferred;
       const delivery = summary.delivery ?? task.delivery;
-      const files = await acceptedFiles(project.path, task.name, deferred ? delivery?.accepted : task.committed?.accepted);
+      const reconciliation = summary.reconciliation ?? null;
+      const files = await acceptedFiles(project.path, task.name, deferred ? reconciliation?.base ?? (delivery && delivery.mode !== 'branch' ? delivery.accepted : undefined) : task.committed?.accepted);
       const current = this.store.task(taskId);
-      if (current.status !== 'deleting') this.store.updateTask(taskId, { deferred, delivery, review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent, comments, files } });
+      if (current.status !== 'deleting') this.store.updateTask(taskId, { deferred, delivery, reconciliation, review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent, comments, files } });
+      // Recover an application interrupted after the engine prepared its
+      // proposal but before Papilot persisted the agent run.
+      if (reconciliation?.ready && (summary.round ?? 0) <= reconciliation.round && current.status === 'reviewing' && !this.committing.has(task.projectId) && !this.reviewWrites.has(taskId)
+        && !current.pendingReview && !this.store.runByKey('merge-review-' + reconciliation.id)
+        && !this.store.runs().some(run => run.taskId === taskId && run.status === 'queued'))
+        await this.queueMergeSuggestion(taskId, reconciliation);
     } catch { /* The task remains visible even if its project is temporarily unavailable. */ }
     finally { release?.(); }
   }
@@ -951,7 +960,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     try {
       const task = this.store.task(taskId), files = task.review?.files || [];
       if (task.status !== 'reviewing' || task.review?.counts?.pending || !files.length) return;
-      if (task.deferred) { await this.commitMessage(task.projectId, files, { agent: this.agentOf(task), taskId }); return; }
+      if (task.deferred) return;
       const project = this.store.project(task.projectId), git = await gitStatus(project.path);
       const paths = git.merging ? [] : files.filter(file => git.files.some(item => item.path === file));
       if (paths.length) await this.commitMessage(project.id, paths, { agent: this.agentOf(task) });
@@ -959,9 +968,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   }
   private async taskCommitChanges(task: Task) {
     const root = this.store.project(task.projectId).path;
-    const before = task.delivery?.accepted ?? `refs/latex-review/${task.name}/base`;
+    const delivered = task.reconciliation?.base ?? (task.delivery?.mode !== 'branch' ? task.delivery?.accepted : undefined);
+    const before = delivered ?? `refs/latex-review/${task.name}/base`;
     const after = `refs/latex-review/${task.name}/accepted`;
-    const paths = await acceptedFiles(root, task.name, task.delivery?.accepted);
+    const paths = await acceptedFiles(root, task.name, delivered);
     if (!paths.length) throw new Error('This task has no accepted changes left to commit.');
     const { stdout: patch } = await execute('git', ['-C', root, 'diff', '--no-ext-diff', '--no-textconv', before, after, '--'], { maxBuffer: 8 * 1024 * 1024 });
     return { files: paths.map(path => ({ path, status: 'M', from: undefined })), patch: patch.slice(0, 80000), recent: [] as string[] };
@@ -981,6 +991,38 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         return { ...delivery, git: await gitStatus(project.path) };
       } finally { await this.refresh(taskId); this.reviewWrites.delete(taskId); this.schedule(); }
     });
+  }
+  async applyTask(taskId: string, keepCurrent = false, commit?: { message: string; confirmation?: string }) {
+    const task = this.store.task(taskId), project = this.store.project(task.projectId);
+    if (task.mode === 'review') throw new Error('AI review has no manuscript changes to apply.');
+    if (!task.deferred) throw new Error('Accepted changes are already in the manuscript.');
+    if (task.status !== 'reviewing' || this.active.has(taskId) || this.publishing.has(taskId) || task.pendingReview || this.store.runs().some(run => run.taskId === taskId && run.status === 'queued'))
+      throw new Error('Wait for the task and review actions to finish before applying changes.');
+    const result = await this.exclusiveCommit(project.id, async () => {
+      this.reviewWrites.add(taskId);
+      try {
+        const client = await this.connectReview(project.path);
+        const result = await client.post<{ delivery?: NonNullable<Task['delivery']>; reconciliation?: TaskReconciliation; commitReview?: TaskCommitReview }>(`${taskRoute(task.name)}/apply`, { keepCurrent, mode: commit ? 'commit' : 'workspace', ...(commit ? { message: commit.message, confirmation: commit.confirmation } : {}) });
+        if (result.delivery) this.store.updateTask(taskId, { delivery: result.delivery, reconciliation: null });
+        if (result.reconciliation) this.store.updateTask(taskId, { reconciliation: result.reconciliation });
+        return { ...result, git: await gitStatus(project.path) };
+      } finally { await this.refresh(taskId); this.reviewWrites.delete(taskId); }
+    }).catch(async error => {
+      // A lost response is not a failed application. refresh above checks the
+      // engine's persisted result before we retry or start the suggestion.
+      const confirmed = this.store.task(taskId);
+      if (confirmed.reconciliation?.ready && confirmed.reconciliation.id !== task.reconciliation?.id)
+        return { reconciliation: confirmed.reconciliation, delivery: undefined, commitReview: undefined, git: await gitStatus(project.path) };
+      if (confirmed.delivery && confirmed.delivery.mode !== 'branch' && !confirmed.delivery.pending && (confirmed.delivery.mode !== task.delivery?.mode || confirmed.delivery.accepted !== task.delivery?.accepted))
+        return { delivery: confirmed.delivery, reconciliation: undefined, commitReview: undefined, git: await gitStatus(project.path) };
+      throw error;
+    });
+    if (result.reconciliation?.ready) await this.queueMergeSuggestion(taskId, result.reconciliation);
+    this.schedule();
+    return result;
+  }
+  private queueMergeSuggestion(taskId: string, merge: TaskReconciliation) {
+    return this.enqueue(taskId, 'The manuscript has changed in overlapping passages. Prepare a merge suggestion for me to review; keep the manuscript unchanged.', 'merge-review-' + merge.id, false, { merge });
   }
   // Resolves a merge's conflicts in the manuscript checkout itself: the agent
   // edits only the conflicted files, at the model's default reasoning, and
@@ -1006,10 +1048,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   async commitTask(taskId: string, message: string, push = false) {
     const task = this.store.task(taskId);
     if (task.deferred) {
-      if (push) throw new Error('Task branch commits are kept locally.');
-      const result = await this.deliverTask(taskId, 'branch', message);
-      if (!result.commit) throw new Error('The review engine did not confirm the commit. Retry the task commit.');
-      return { ...result, commit: result.commit, pushError: undefined as string | undefined };
+      if (push) throw new Error('Commit the task first, then push from Git.');
+      const result = await this.applyTask(taskId, false, { message });
+      return { ...result, commit: result.delivery?.commit, pushError: undefined };
     }
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     if (task.pendingReview) throw new Error('Wait for the current review action before committing.');

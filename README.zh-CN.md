@@ -36,9 +36,9 @@ Papilot 是运行在本机的 LaTeX 论文工作台。你在 PDF 上批注，智
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="docs/assets/readme-deliver.zh-CN.jpg"><img src="docs/assets/readme-deliver.zh-CN.jpg" alt="将接受的改动写回工作目录或提交到分支"></a>
+<a href="docs/assets/readme-deliver.zh-CN.jpg"><img src="docs/assets/readme-deliver.zh-CN.jpg" alt="将接受的改动应用到论文"></a>
 <h3>选择保存方式</h3>
-每个新任务在独立副本里改稿，审阅完成后再选择保存方式。接受的改动可以写回工作目录，也可以提交到独立的 <code>papilot/…</code> 分支。
+每个新任务在独立副本里改稿。审阅完成后，可以选择 **提交到论文**，将这个任务的改动保存为当前分支上的一个 commit；也可以选择 **应用到工作区**，保留为未提交改动。如果同一段落期间有了其他修改，AI 会自动处理冲突，只有无法确定内容时才询问你。审核合并后的 PDF，再确认保存。需要推送时，在 Git 面板操作。
 </td>
 <td width="50%" valign="top">
 <a href="docs/assets/readme-git.zh-CN.jpg"><img src="docs/assets/readme-git.zh-CN.jpg" alt="Git 面板：已暂存文件、自动生成的提交说明与提交关系图"></a>

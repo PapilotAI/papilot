@@ -255,8 +255,9 @@ export async function buildApp(options: AppOptions) {
     return serialGit(task.projectId, () => workspace.commitTask(task.id, string(b.message, 'Commit message', 5000), b.push === true));
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/apply', task, request => {
-    const task = store.task(request.params.id);
-    return serialGit(task.projectId, () => workspace.deliverTask(task.id, 'workspace'));
+    const task = store.task(request.params.id), b = (request.body || {}) as any;
+    if (b.mode !== undefined && b.mode !== 'workspace' && b.mode !== 'commit') throw new Error('Invalid save action.');
+    return serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined));
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit-message', task, request => {
     const task = store.task(request.params.id);
@@ -518,7 +519,6 @@ export async function buildApp(options: AppOptions) {
             if (task) {
               store.updateTask(task.id, { error: null });
               await workspace.refresh(task.id);
-              void workspace.prepareCommitMessage(task.id);
             }
           }
           return rewriteReviewJson(value, prefix);

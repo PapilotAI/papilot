@@ -9,6 +9,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 - **Grok Build CLI support.** Papilot connects through ACP with the CLI’s saved login or configured API credentials. It disables automatic approvals in new and restored sessions and supports streamed replies, tool approvals, images and model selection. Setup guidance and `papilot doctor` include Grok; use `PAPILOT_GROK_BIN` for a custom executable.
 - **GitHub Copilot CLI support.** Papilot detects `copilot` and connects through ACP using its local login or configured provider. Tasks support streamed replies, tool approvals, images and session recovery. Papilot selects Agent mode and turns off allow-all for each new or resumed session. Settings and `papilot doctor` include setup guidance; use `PAPILOT_COPILOT_BIN` for a custom CLI path.
 
+### Changed
+
+- Fix task saving: **Commit to manuscript** creates one task-only commit on the current manuscript branch; **Apply to workspace** leaves accepted edits uncommitted. Both update the manuscript, including tasks previously saved to task branches, while preserving unrelated staged and unstaged edits. Conflicts are resolved automatically by AI before PDF review, retaining the save action and commit message; AI asks the author only when the intended content is unclear. When a final passage includes earlier uncommitted edits, preview and confirm **Commit together** instead of receiving a Git error. Worktree details are collapsed under **Git details**.
+
 ## [0.8.0] - 2026-11-01 — AI Review and PDF Notes
 
 Papilot 0.8.0 adds AI reviews on task copies of your paper, with concise suggestions beside the relevant PDF passages. Keep selected suggestions on the main manuscript, write private reading notes, and decide which notes to send to an agent. This release also adds reference checks, more agents and a reorganized Settings interface.
@@ -34,7 +38,7 @@ Papilot 0.8.0 adds AI reviews on task copies of your paper, with concise suggest
 
 ### Changed
 
-- **Tasks stay available until you archive them.** Leaving a finished task or restarting Papilot keeps it in the task list, including AI reviews and conversations without manuscript edits. Completed reviews remain accessible after applying or committing their changes.
+- **Tasks stay available until you archive them.** Leaving a finished task or restarting Papilot keeps it in the task list, including AI reviews and conversations without manuscript edits. After applying or committing, the saved status offers **Archive**; it only archives when you click it, and the conversation and review remain available.
 - **Settings organized by purpose.** Appearance, notifications, sharing, updates, skills and runtime setup have dedicated pages. Agent details show availability and setup instructions, LaTeX settings show the detected installation, shortcuts have an interactive keyboard overview, and custom skills can choose their own icons.
 - **Quieter review navigation.** Indirect PDF changes start collapsed, with a preference to expand them. Scrolling and change navigation stay inside the review, and sending a task animates it into the sidebar while keeping the manuscript open.
 

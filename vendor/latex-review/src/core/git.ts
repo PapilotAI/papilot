@@ -297,6 +297,7 @@ export function merge3(
   ours: Buffer | null,
   base: Buffer | null,
   theirs: Buffer | null,
+  favorCurrent = false,
 ): [Buffer | null, boolean] {
   if (same(ours, base) || same(ours, theirs)) return [theirs, false];
   if (same(theirs, base)) return [ours, false];
@@ -312,7 +313,7 @@ export function merge3(
       path.join(folder, name),
     );
     [ours, base, theirs].forEach((data, i) => fs.writeFileSync(files[i], data));
-    const result = run(gitBinary(), ["merge-file", "-p", ...files], {
+    const result = run(gitBinary(), ["merge-file", "-p", ...(favorCurrent ? ["--ours"] : []), ...files], {
       check: false,
     });
     return [result.stdout, result.status !== 0];
