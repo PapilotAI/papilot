@@ -1,5 +1,6 @@
 // Deliberately uses only Node built-ins: diagnostics must work before npm setup.
 import fs from 'node:fs';
+import { codexExecutable } from './codex-executable.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -129,7 +130,7 @@ export async function doctor(args) {
     const candidates = configured ? [configured] : ['codex', path.join(data, 'agents/node_modules/.bin/codex')];
     let found = false;
     for (const candidate of candidates) {
-      const file = executable(candidate);
+      const file = codexExecutable(candidate);
       if (!file) continue;
       found = true;
       const result = await command(file, ['--version']);
