@@ -139,6 +139,16 @@ Messages and queued runs are saved in `papilot.sqlite` in the data folder. Closi
 
 Turn on **Settings → Notifications** for a browser notification when a task asks a question or for approval, its review is ready, or it stops with an error while Papilot is in another tab or app; clicking one opens the task. Browsers allow notifications only on HTTPS or localhost, so remotely use the Tailscale HTTPS address.
 
+## AI review
+
+In **Manuscript → New task**, select **AI review**, optionally describe a focus (for example, assumptions, argument structure, or clarity), and choose Codex, Claude, or GLM. Compile the current manuscript first. The reviewer reads the text extracted from that PDF version and produces comments anchored to its actual lines. It runs in read-only mode and cannot publish or apply manuscript edits.
+
+Open **View PDF notes** when the review finishes. Each suggestion appears as a highlight and a comment card labeled with its AI source. AI notes start unselected. You can edit or delete them, or select the ones you want addressed and start a normal **Revise** task. Reviewing alone never starts a revision. The notes are saved in Papilot and displayed over the PDF; they are not embedded in a downloaded PDF file.
+
+Follow-ups in the review conversation continue reviewing the same PDF snapshot. Start a new AI review to review a newer manuscript. If the manuscript changes while a review is running, its notes keep their original version and follow the existing note reanchoring rules; uncertain locations remain marked as needing confirmation.
+
+This version reviews selectable text, including text extracted from equations and captions; it does not inspect figure images or page appearance. A review accepts up to 180,000 extracted characters and returns at most 30 suggestions. Scanned PDFs without selectable text cannot be reviewed. An invalid model response saves no partial annotations and can be retried in the same conversation.
+
 ## Task attachments
 
 Use **＋ → Add files…** in a new task or an existing conversation, drag files onto the composer, or paste an image from the clipboard. Uploaded files appear above the message, with image thumbnails and a remove action. A failed upload offers **Retry**; sending waits until every selected file has uploaded or been removed. Uploaded attachments stay with their paper or task when you navigate away or reload. Sending review feedback separately leaves your draft attachments in place.

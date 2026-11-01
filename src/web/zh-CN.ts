@@ -1,6 +1,19 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'Ask for another review of this PDF version…': '对这个 PDF 版本补充审阅要求…',
+  'AI review': 'AI 审阅', 'Revise': '修改', 'Task type': '任务类型',
+  'Let AI review your paper': '让 AI 为论文提建议',
+  'Get suggestions highlighted on the PDF. Select any notes you want to turn into an editing task.': '审阅意见会直接标注在 PDF 上。选中想采用的意见后，可以发起修改任务。',
+  'Review focus (optional)': '审阅重点（可选）',
+  'For example: check the argument, clarity, and unsupported claims': '例如：检查论证逻辑、表达是否清晰，以及缺少依据的论点',
+  'Start AI review': '开始 AI 审阅', 'View PDF notes': '查看 PDF 批注',
+  'Compile the current PDF to start AI review.': '编译当前 PDF 后即可开始 AI 审阅。',
+  'Choose Codex, Claude or GLM for AI review.': '请选择 Codex、Claude 或 GLM 进行 AI 审阅。',
+  'AI · {agent}': 'AI · {agent}',
+  'AI added {n} PDF notes. Choose which suggestions to use.': 'AI 添加了 {n} 条 PDF 批注。你可以选择要采用的建议。',
+  'The reviewer will leave suggestions on your PDF. Your manuscript stays unchanged.': 'AI 会在 PDF 上留下建议，审阅过程不会修改原稿。',
+
   'Updates': '版本更新', 'Current version': '当前版本', 'Latest version': '最新版本', 'Update channel': '更新通道',
   'Stable': '稳定版', 'Dev (GitHub main)': 'Dev（GitHub main）',
   'Try the latest changes from GitHub main. Dev versions may be less reliable; you can switch back to Stable here.': '体验 GitHub main 的最新改动。Dev 版本可能不够稳定，你可以在这里切回稳定版。',

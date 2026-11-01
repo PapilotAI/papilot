@@ -1,3 +1,4 @@
+import type { ReviewSnapshot } from './ai-review.ts';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -501,6 +502,29 @@ export class Manuscripts extends EventEmitter {
     const build = this.builds.get(projectId);
     if (!build?.log || !fs.existsSync(build.log)) throw Object.assign(new Error('There is no compilation log yet.'), { statusCode: 404 });
     return scrubLog(fs.readFileSync(build.log, 'utf8'), build.logFolder);
+  }
+
+  async reviewSnapshot(projectId: string, key: string): Promise<ReviewSnapshot> {
+    const pdf = this.pdf(projectId, key), { PdfDocument } = await engine();
+    const document = new PdfDocument(pdf), lines: ReviewSnapshot['lines'] = [];
+    let length = 0;
+    try {
+      for (let index = 0; index < document.length; index++) {
+        const page = document.page(index), [left, top, right, bottom] = page.bounds;
+        for (const [number, line] of page.lines.entries()) {
+          const text = line.chars.map((char: { text: string }) => char.text).join('').trim();
+          if (!text) continue;
+          length += text.length;
+          if (length > 180000) throw new Error('This PDF is too long for one AI review (180,000 characters maximum).');
+          const [x0, y0, x1, y1] = line.rect;
+          const rect = [(x0 - left) / (right - left), (y0 - top) / (bottom - top), (x1 - left) / (right - left), (y1 - top) / (bottom - top)].map(value => Math.max(0, Math.min(1, value))) as Rect;
+          if (rect[2] <= rect[0] || rect[3] <= rect[1]) continue;
+          lines.push({ id: `p${index + 1}-l${number + 1}`, page: index, text, rect });
+        }
+      }
+      if (!lines.length) throw new Error('This PDF has no selectable text to review.');
+      return { key, lines };
+    } finally { document.close(); }
   }
 
   pdf(projectId: string, key: string) {

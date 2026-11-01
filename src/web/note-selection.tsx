@@ -11,19 +11,26 @@ function savedSelections(): Record<string, string[]> {
   } catch { return {}; }
 }
 
-// New notes start checked. Keep exclusions per paper across polling, builds,
+// Human notes start checked; AI suggestions require an explicit selection. Keep exclusions per paper across polling, builds,
 // navigation and reloads; a successful send starts a fresh selection.
 export function useNoteSelection(projectId: string, notes: Annotation[]) {
   const [excluded, setExcluded] = useState(savedSelections);
+  const [includedAi, setIncludedAi] = useState<string[]>(() => {
+    try { const value = JSON.parse(browserStorage.getItem('papilot:selected-ai-notes') || '[]'); return Array.isArray(value) ? value.filter(id => typeof id === 'string') : []; } catch { return []; }
+  });
+  useEffect(() => { browserStorage.setItem('papilot:selected-ai-notes', JSON.stringify(includedAi)); }, [includedAi]);
   useEffect(() => {
     if (Object.keys(excluded).length) browserStorage.setItem(storageKey, JSON.stringify(excluded));
     else browserStorage.removeItem(storageKey);
   }, [excluded]);
   const omitted = new Set(excluded[projectId] || []);
+  const aiIds = new Set(notes.filter(note => note.aiReview).map(note => note.id));
+  const has = (id: string) => !omitted.has(id) && (!aiIds.has(id) || includedAi.includes(id));
   return {
-    selected: notes.filter(note => !omitted.has(note.id)),
-    has: (id: string) => !omitted.has(id),
+    selected: notes.filter(note => has(note.id)),
+    has,
     set(ids: string[], checked: boolean) {
+      setIncludedAi(current => checked ? [...new Set([...current, ...ids.filter(id => aiIds.has(id))])] : current.filter(id => !ids.includes(id)));
       setExcluded(current => {
         const next = new Set(current[projectId] || []);
         for (const id of ids) { if (checked) next.delete(id); else next.add(id); }

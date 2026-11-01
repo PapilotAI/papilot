@@ -1003,3 +1003,11 @@ body.resizing iframe{pointer-events:none}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important;transition:none!important}}
 .task-delivery{flex-wrap:wrap;gap:8px}
 .task-delivery .commit-state{flex-basis:100%;color:var(--text-3);font-size:13px}
+
+.task-mode-picker { display: flex; gap: 4px; padding: 4px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 10px; }
+.task-mode-picker button { flex: 1; padding: 9px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font: inherit; cursor: pointer; }
+.task-mode-picker button[aria-pressed="true"] { background: var(--bg-muted); color: var(--text); box-shadow: 0 1px 4px #0002; }
+.ai-review-start h2 { font-size: 18px; margin: 4px 0 8px; }
+.ai-review-start > p, .ai-review-result p { color: var(--text-2); line-height: 1.6; }
+.ai-review-start > p { margin-bottom: 18px; }
+.ai-note-label { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; font-size: 10px; color: var(--text); }

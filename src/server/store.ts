@@ -1,3 +1,4 @@
+import type { ReviewSnapshot } from './ai-review.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
@@ -16,6 +17,7 @@ export class Store extends EventEmitter {
       CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, task_id TEXT NOT NULL, request_key TEXT UNIQUE NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, task_id TEXT NOT NULL, created INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS deleted_tasks(id TEXT PRIMARY KEY, deleted INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS ai_review_inputs(task_id TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS annotations(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, data TEXT NOT NULL);
@@ -40,7 +42,7 @@ export class Store extends EventEmitter {
     this.transaction(() => {
       // Only Papilot records are removed. Never finish review tasks or touch their files.
       this.db.prepare('INSERT OR IGNORE INTO deleted_tasks SELECT id, ? FROM tasks WHERE project_id=?').run(Date.now(), id);
-      for (const table of ['items', 'runs']) this.db.prepare(`DELETE FROM ${table} WHERE task_id IN (SELECT id FROM tasks WHERE project_id=?)`).run(id);
+      for (const table of ['items', 'runs', 'ai_review_inputs']) this.db.prepare(`DELETE FROM ${table} WHERE task_id IN (SELECT id FROM tasks WHERE project_id=?)`).run(id);
       for (const table of ['tasks', 'annotations', 'members']) this.db.prepare(`DELETE FROM ${table} WHERE project_id=?`).run(id);
       this.db.prepare('DELETE FROM projects WHERE id=?').run(id);
     });
@@ -52,6 +54,12 @@ export class Store extends EventEmitter {
   runByKey(key: string) { const row = this.db.prepare('SELECT data FROM runs WHERE request_key=?').get(key) as { data: string } | undefined; return row ? JSON.parse(row.data) as Run : undefined; }
   items(taskId: string) { return (this.db.prepare('SELECT data FROM items WHERE task_id=? ORDER BY created,rowid').all(taskId) as { data: string }[]).map(r => JSON.parse(r.data) as TimelineItem); }
   saveItem(item: TimelineItem) { this.db.prepare('INSERT INTO items VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(item.id, item.taskId, item.createdAt, JSON.stringify(item)); this.emit('change'); }
+  saveReviewInput(taskId: string, snapshot: ReviewSnapshot) { this.db.prepare('INSERT INTO ai_review_inputs VALUES(?,?) ON CONFLICT(task_id) DO UPDATE SET data=excluded.data').run(taskId, JSON.stringify(snapshot)); }
+  reviewInput(taskId: string): ReviewSnapshot {
+    const row = this.db.prepare('SELECT data FROM ai_review_inputs WHERE task_id=?').get(taskId) as { data: string } | undefined;
+    if (!row) throw new Error('The PDF snapshot for this review is unavailable. Start a new AI review.');
+    return JSON.parse(row.data);
+  }
   annotations(projectId: string) { return (this.db.prepare('SELECT data FROM annotations WHERE project_id=? ORDER BY rowid').all(projectId) as { data: string }[]).map(r => JSON.parse(r.data) as Annotation).filter(note => note.deletedAt === undefined); }
   annotation(projectId: string, id: string) {
     const row = this.db.prepare('SELECT data FROM annotations WHERE id=? AND project_id=?').get(id, projectId) as { data: string } | undefined;
@@ -70,6 +78,7 @@ export class Store extends EventEmitter {
       this.db.prepare('INSERT INTO deleted_tasks VALUES(?,?) ON CONFLICT(id) DO NOTHING').run(id, Date.now());
       this.db.prepare('DELETE FROM items WHERE task_id=?').run(id);
       this.db.prepare('DELETE FROM runs WHERE task_id=?').run(id);
+      this.db.prepare('DELETE FROM ai_review_inputs WHERE task_id=?').run(id);
       this.db.prepare('DELETE FROM tasks WHERE id=?').run(id);
     });
     this.emit('change');
@@ -89,7 +98,7 @@ export class Store extends EventEmitter {
       for (const t of this.tasks().filter(t => t.status === 'deleting')) this.updateTask(t.id, { error: 'The server restarted during deletion. Retry deletion to confirm cleanup.' });
       for (const t of this.tasks().filter(t => t.pendingReview)) this.updateTask(t.id, { status: 'uncertain', error: 'The server restarted before a review action was confirmed. Select Check status before continuing.' });
       for (const r of this.runs().filter(r => r.status === 'running')) this.saveRun({ ...r, status: 'interrupted', finishedAt: Date.now() });
-      for (const t of this.tasks().filter(t => ['running', 'waiting_input'].includes(t.status))) this.updateTask(t.id, { status: 'interrupted', turnId: null, error: 'The server restarted and interrupted the previous turn. Continue in the same conversation.' });
+      for (const t of this.tasks().filter(t => ['running', 'waiting_input'].includes(t.status) || (t.mode === 'review' && t.status === 'building'))) this.updateTask(t.id, { status: 'interrupted', turnId: null, error: 'The server restarted and interrupted the previous turn. Continue in the same conversation.' });
     });
   }
   close() { this.db.close(); }

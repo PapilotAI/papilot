@@ -458,3 +458,39 @@ test('Claude Code that is not signed in says how to sign in, and pausing stops c
     assert.equal(fake.launches[0].child.killed, 'SIGINT');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('read-only Claude reviews disable tools and project settings, including on resume', async () => {
+  const fake = fakeClaude(async function* (options) {
+    assert.deepEqual(options.tools, []);
+    assert.deepEqual(options.settingSources, []);
+    yield { type: 'result', subtype: 'success', result: '{"summary":"Looks clear.","notes":[]}', session_id: options.sessionId || options.resume };
+  });
+  const agent = new ClaudeAgent(fake.load, () => null);
+  await agent.start();
+  const seen = events(agent);
+  const { thread } = await agent.request('thread/start', { cwd: '/work', sandbox: 'read-only', developerInstructions: 'Review only.' });
+  await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Review this text.' }] });
+  assert.equal((await completed(seen)).status, 'completed');
+  await agent.request('thread/resume', { threadId: thread.id, cwd: '/work', sandbox: 'read-only', developerInstructions: 'Review only.' });
+  const resumed = events(agent);
+  await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Check assumptions too.' }] });
+  assert.equal((await completed(resumed)).status, 'completed');
+  agent.close();
+});
+
+test('read-only Claude CLI reviews disable tool access and project settings', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-cli-'));
+  try {
+    const fake = fakeClaudeCli(dir, { loggedIn: true, authMethod: 'claude.ai' }, [[{ type: 'result', subtype: 'success', is_error: false, result: '{"summary":"Clear.","notes":[]}' }]]);
+    const agent = new ClaudeAgent(async () => { throw new Error('No SDK needed'); }, () => fake.bin, fake.launch as any);
+    await agent.start();
+    const seen = events(agent);
+    const { thread } = await agent.request('thread/start', { cwd: '/work', sandbox: 'read-only', developerInstructions: 'Review only.' });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Review the supplied text.' }] });
+    assert.equal((await completed(seen)).status, 'completed');
+    const args = fake.launches[0].args;
+    assert.equal(args[args.indexOf('--tools') + 1], '');
+    assert.equal(args[args.indexOf('--setting-sources') + 1], '');
+    agent.close();
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

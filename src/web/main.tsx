@@ -318,7 +318,7 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); } }}><div className="thread">
       {loading && <p className="muted" role="status">{t('Loading conversation…')}</p>}
       {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary compact" onClick={retry}>{t('Retry conversation')}</button></div>}
-      {timelineEntries(items).map(entry => entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agentName(task)} root={task.worktree}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agentName(task)} root={task.worktree}/>)}
+      {timelineEntries(items.filter(item => item.type !== 'reviewOutput')).map(entry => entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agentName(task)} root={task.worktree}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agentName(task)} root={task.worktree}/>)}
       {requests.map(r => <RequestCard key={r.id} request={r} agent={agentName(task)} answerDrafts={answerDrafts} onDone={refresh}/>)}
       {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>{t('{agent} is working on this task', { agent: agentName(task) })}</div>}
       {task.status === 'queued' && <p className="muted">{t('Task saved. Waiting for an available {agent} session.', { agent: agentName(task) })}</p>}
@@ -328,8 +328,8 @@ function Activity({ task, models, skills, composer, answerDrafts, items, loading
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
     <div className="composer-wrap">
       {connection}
-      <Composer attachments={files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={active ? t('Queue instructions for the next turn…') : t('Ask a question or request changes…')} skills={skills} skill={skill} onSkill={setSkill}
-        footer={attach => <div className="composer-options"><SkillPicker onAttach={attach} skills={skills} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/><span className="composer-model" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}><ModelLabel model={modelName} effort={task.effort || model?.defaultEffort} fast={Boolean(task.serviceTier && task.serviceTier !== 'default')}/></span></div>}
+      <Composer attachments={task.mode === 'review' ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : t('Ask a question or request changes…')} skills={task.mode === 'review' ? [] : skills} skill={skill} onSkill={setSkill}
+        footer={attach => <div className="composer-options">{task.mode !== 'review' && <SkillPicker onAttach={attach} skills={skills} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/>}<span className="composer-model" title={`${agentName(task)} · ${task.model ? modelName : model ? t('the default model on this host ({model})', { model: model.name }) : t('the default model on this host')}`}><ModelLabel model={modelName} effort={task.effort || model?.defaultEffort} fast={Boolean(task.serviceTier && task.serviceTier !== 'default')}/></span></div>}
         action={<div className="composer-actions">
           {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
           {(!active || draft.trim() || skill || files.entries.length || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={(!draft.trim() && !skill && !files.files.length) || files.blocked || sending || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
@@ -592,7 +592,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
     </GroupCard>; })}
     {notes.some(note => !note.group) && <ol className="note-list">{notes.map((note, index) => !note.group && <li key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} className={'note-card ' + (active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')} onClick={event => cardClick(event, note)}>
       {selectCard(note, index)}
-      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button note-edit-trigger" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={selectionLocked} onClick={() => { setError(''); setEditing({ id: note.id, comment: note.comment }); }}><Icon name="pencil" size={13}/></button><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); })}><Icon name="close" size={14}/></button></div>
+      <div className="note-head"><button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.aiReview && <span className="ai-note-label">{t('AI · {agent}', { agent: AGENT_LABELS[note.aiReview.agent] })}</span>}{note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span><button type="button" className="icon-button note-edit-trigger" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={selectionLocked} onClick={() => { setError(''); setEditing({ id: note.id, comment: note.comment }); }}><Icon name="pencil" size={13}/></button><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={locked || Boolean(editing)} onClick={() => void change(async () => { await actions.remove(note); })}><Icon name="close" size={14}/></button></div>
       <NoteQuote text={note.quote}/>
       <NoteBody>
       {editing?.id === note.id ? <form className="note-edit" onSubmit={e => { e.preventDefault(); save(note); }}>
@@ -761,6 +761,9 @@ function App() {
   const formTaskId = useRef<string>(uuid());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
+  const [newTaskMode, setNewTaskMode] = useState<'edit' | 'review'>('edit');
+  const [reviewFocus, setReviewFocus] = useState(() => browserStorage.getItem('papilot:review-focus') || '');
+  useEffect(() => { browserStorage.setItem('papilot:review-focus', reviewFocus); }, [reviewFocus]);
   const [newSkill, setNewSkill] = useState<Skill | null>(null);
   const [skills, setSkills] = useState<{ projectId: string; list: Skill[] }>({ projectId: '', list: [] });
   const [skillsRevision, setSkillsRevision] = useState(0);
@@ -1003,6 +1006,28 @@ function App() {
   const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
     agents={offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] }))}
     reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onSelect={chooseModel} onChange={remember}/>;
+  async function createAiReview() {
+    if (!project || creating || !['codex', 'claude', 'glm'].includes(agentChoice) || !manuscriptData.data?.build.current || !manuscriptData.data.build.key) return;
+    setCreating(true); setCreateError('');
+    try {
+      const body = { projectId: project.id, key: manuscriptData.data.build.key, title: reviewFocus.trim() ? `${t('AI review')}: ${reviewFocus.trim()}`.slice(0, 120) : t('AI review'), instructions: reviewFocus.trim(), ...agent };
+      const signature = JSON.stringify(body);
+      let previous: { signature?: string; id?: string } = {};
+      try { previous = JSON.parse(browserStorage.getItem('papilot:ai-review-request') || '{}'); } catch { /* Invalid saved request. */ }
+      const id = previous?.signature === signature && previous.id ? previous.id : uuid();
+      browserStorage.setItem('papilot:ai-review-request', JSON.stringify({ signature, id }));
+      const created = await api<Task>('/ai-reviews', { ...body, id });
+      browserStorage.removeItem('papilot:ai-review-request'); setReviewFocus(''); setCreateError(''); setNewTaskMode('edit');
+      snapshotRequest.cancel();
+      if (snapshotRef.current) {
+        const next = { ...snapshotRef.current, tasks: [...snapshotRef.current.tasks.filter(task => task.id !== created.id), created] };
+        snapshotRef.current = next; setState(next);
+      }
+      setSelected(created.id); setSidebar(false); setTaskSearch(''); setShowArchived(false);
+      await refresh(true);
+    } catch (e) { setCreateError(e instanceof Error ? e.message : String(e)); }
+    finally { setCreating(false); }
+  }
   async function createTask() {
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
     const attached = noteSelection.selected, files = newFiles.draft.getSnapshot().files;
@@ -1249,7 +1274,7 @@ function App() {
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
   const active = Boolean(task && ACTIVE.includes(task.status));
-  const answerOnly = Boolean(task && (noManuscriptChanges(task) || (active && task.review?.round === null)));
+  const answerOnly = Boolean(task && (task.mode === 'review' || noManuscriptChanges(task) || (active && task.review?.round === null)));
   // Do not save this as the author's layout preference: switching back to a
   // task with manuscript changes should restore their chosen review layout.
   const taskLayout = answerOnly ? 'conversation' : layout, taskTab = answerOnly ? 'conversation' : mobileTab;
@@ -1284,7 +1309,7 @@ function App() {
     : !saved ? null
     : task.deferred && task.delivery ? <span className="commit-state">{task.delivery.mode === 'workspace' ? t('Applied to working directory') : t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' })}</span>
     : task.committed ? <span className="commit-state">{saved === 'pushed' ? t('Committed {hash} and pushed.', { hash: task.committed.hash }) : t('Committed {hash}.', { hash: task.committed.hash })}</span> : null);
-  const reviewFeedback = (card: boolean) => task && <ReviewFeedback key={'review-feedback:' + task.id} card={card} task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError}
+  const reviewFeedback = (card: boolean) => task?.mode === 'review' ? <div className="review-feedback card ai-review-result"><strong>{t('AI review')}</strong><p>{task.aiReview?.notes !== undefined ? t('AI added {n} PDF notes. Choose which suggestions to use.', { n: task.aiReview.notes }) : t('The reviewer will leave suggestions on your PDF. Your manuscript stays unchanged.')}</p><button className="button secondary compact" onClick={() => { setSelected(''); setPage('manuscript'); setManuscriptView('task'); setNewTaskMode('edit'); void loadManuscript(task.projectId); }}>{t('View PDF notes')}</button></div> : task && <ReviewFeedback key={'review-feedback:' + task.id} card={card} task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError}
     onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>;
   const sidebarToggle = (narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/>{addedTask && !sidebarShown && <span key={addedTask.id} className="task-added-dot" aria-hidden="true"/>}</button>;
   function selectLayout(next: typeof layout) {
@@ -1355,6 +1380,19 @@ function App() {
   </>;
   const newTaskPanel = (attachments: React.ReactNode) => <section className={'new-task-panel' + (notes.length ? ' has-notes' : '')} aria-label={t('New task')}>
     <div className="new-task-start">
+    <div className="task-mode-picker" role="group" aria-label={t('Task type')}>
+      <button type="button" aria-pressed={newTaskMode === 'edit'} disabled={creating} onClick={() => { setNewTaskMode('edit'); setCreateError(''); }}>{t('Revise')}</button>
+      <button type="button" aria-pressed={newTaskMode === 'review'} disabled={creating} onClick={() => { setNewTaskMode('review'); setCreateError(''); }}>{t('AI review')}</button>
+    </div>
+    {newTaskMode === 'review' ? <div className="ai-review-start">
+      <h2>{t('Let AI review your paper')}</h2>
+      <p>{t('Get suggestions highlighted on the PDF. Select any notes you want to turn into an editing task.')}</p>
+      <Composer label={t('Review focus (optional)')} value={reviewFocus} onChange={setReviewFocus} readOnly={creating} onSubmit={() => void createAiReview()} placeholder={t('For example: check the argument, clarity, and unsupported claims')}
+        footer={() => <div className="composer-options">{agentOptions(creating)}</div>}
+        action={<button className="send-button" type="submit" aria-label={t('Start AI review')} title={t('Start AI review')} disabled={creating || !manuscriptData.data?.build.current || !['codex', 'claude', 'glm'].includes(agentChoice)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+      {!manuscriptData.data?.build.current && <p className="muted" role="status">{t('Compile the current PDF to start AI review.')}</p>}
+      {!['codex', 'claude', 'glm'].includes(agentChoice) && <p className="muted" role="status">{t('Choose Codex, Claude or GLM for AI review.')}</p>}
+    </div> : <>
     {!notes.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
     {attachments}
     <Composer attachments={newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
@@ -1364,6 +1402,7 @@ function App() {
         {agentOptions(creating)}
       </div>}
       action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || newFiles.blocked || marking > 0 || noteEditing || missingGroupDirections || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(note => note.comment.trim()) && !Object.keys(groupDirections).length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+    </>}
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
     </div>

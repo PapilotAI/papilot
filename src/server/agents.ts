@@ -52,7 +52,7 @@ export function findExecutable(command: string, env: NodeJS.ProcessEnv = process
   return null;
 }
 
-export interface Thread { cwd: string; instructions: string; model: string | null; started: boolean }
+export interface Thread { readOnly?: boolean; cwd: string; instructions: string; model: string | null; started: boolean }
 export interface Turn { id: string; threadId: string; clientId?: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; stop: () => void }
 export interface Item { id: string; type: string; [key: string]: unknown }
 
@@ -73,7 +73,7 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
     if (method === 'thread/start' || method === 'thread/resume') {
       const id = method === 'thread/start' ? randomUUID() : String(params.threadId);
       const known = this.threads.get(id);
-      this.threads.set(id, { cwd: params.cwd, instructions: params.developerInstructions || '', model: params.model || known?.model || null, started: method === 'thread/resume' || Boolean(known?.started) });
+      this.threads.set(id, { readOnly: params.sandbox === 'read-only', cwd: params.cwd, instructions: params.developerInstructions || '', model: params.model || known?.model || null, started: method === 'thread/resume' || Boolean(known?.started) });
       return { thread: { id }, model: params.model || null };
     }
     if (method === 'turn/start') {
@@ -288,7 +288,8 @@ export class ClaudeAgent extends Adapter {
         content.push({ type: 'image', source: { type: 'base64', media_type: mime, data: bytes.toString('base64') } });
       }
       const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-        '--permission-mode', 'acceptEdits', '--permission-prompts', 'none', '--setting-sources', 'project',
+        ...(thread.readOnly ? ['--tools', ''] : []),
+        '--permission-mode', 'acceptEdits', '--permission-prompts', 'none', '--setting-sources', thread.readOnly ? '' : 'project',
         '--settings', JSON.stringify({ sandbox: { enabled: true, autoAllowBashIfSandboxed: true } }),
         // A question cannot be answered in -p; Claude asks in its reply instead.
         '--disallowedTools', 'AskUserQuestion', ...(thread.instructions ? ['--append-system-prompt', thread.instructions] : []),
@@ -330,7 +331,7 @@ export class ClaudeAgent extends Adapter {
         // The thread ID is the Claude session ID, so a later turn resumes it.
         ...(thread.started ? { resume: turn.threadId } : { sessionId: turn.threadId }),
         systemPrompt: { type: 'preset', preset: 'claude_code', append: thread.instructions },
-        settingSources: ['project'], permissionMode: 'acceptEdits',
+        settingSources: thread.readOnly ? [] : ['project'], permissionMode: 'acceptEdits', ...(thread.readOnly ? { tools: [] } : {}),
         sandbox: { enabled: true, autoAllowBashIfSandboxed: true },
         canUseTool: (name, input, { signal, title, decisionReason }) => new Promise<PermissionResult>(resolve => {
           const id = randomUUID(), question = name === 'AskUserQuestion' && Array.isArray(input.questions);

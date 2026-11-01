@@ -661,3 +661,30 @@ test('attachment uploads and downloads follow paper membership and keep unsent f
     assert.equal((await f.remote.inject({ url, headers: f.as })).statusCode, 400);
   } finally { await f.close(); }
 });
+
+test('AI review requires paper access, CSRF and a current PDF; retries reuse the saved task', async () => {
+  const f = await fixture();
+  try {
+    const inputs: Parameters<Workspace['createTask']>[0][] = [];
+    f.manuscripts.state = async () => ({ git: { branch: 'main', upstream: null, ahead: 0, behind: 0, files: [], head: null }, build: { key: 'pdf', status: 'ready', current: true } });
+    f.manuscripts.reviewSnapshot = async () => ({ key: 'pdf', lines: [{ id: 'p1-l1', page: 0, text: 'Claim', rect: [0, 0, 1, 1] }] });
+    f.workspace.createTask = async input => {
+      inputs.push(input);
+      return f.store.saveTask({ ...task(input.id, input.projectId), mode: 'review', aiReview: { key: input.reviewInput!.key } });
+    };
+    const payload = { id: 'ai-review-request-1', projectId: 'thesis', key: 'pdf', title: 'AI review', instructions: '', agent: 'codex' };
+    const send = (body = payload, headers = f.as) => f.remote.inject({ method: 'POST', url: '/api/ai-reviews', headers, payload: body });
+    assert.equal((await send(payload, { ...f.as, 'x-papilot-token': '' })).statusCode, 403);
+    const denied = await send({ ...payload, projectId: 'grant' }), missing = await send({ ...payload, projectId: 'missing' });
+    assert.equal(denied.statusCode, 400);
+    assert.equal(denied.body, missing.body);
+    assert.equal((await send({ ...payload, key: 'old' })).statusCode, 400);
+    assert.equal(inputs.length, 0);
+    assert.equal((await send()).statusCode, 200);
+    assert.equal(inputs[0].author?.name, 'Ada');
+    assert.equal(inputs[0].reviewInput?.lines[0].text, 'Claim');
+    f.manuscripts.state = async () => { throw new Error('The PDF has changed since submission.'); };
+    assert.equal((await send()).statusCode, 200, 'A retry uses the existing review even after rebuilding');
+    assert.equal(inputs.length, 1);
+  } finally { await f.close(); }
+});
