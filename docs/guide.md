@@ -155,6 +155,8 @@ A skill is a named set of instructions for a common revision, so you do not have
 
 The owner can open **Settings → Skills** to search, preview, create, edit and delete skills. New skills default to **Global** (`~/.papilot/skills/<id>/SKILL.md`); choose **This paper** to save in `<paper>/.papilot/skills/<id>/SKILL.md` instead. Global skills belong to the user and stay in the home folder even when `--data` or `PAPILOT_DATA` points the workspace database elsewhere. Saving updates the composer immediately. Built-in skills are read-only: use **Copy and edit** to customize one. The Markdown editor preserves front matter and supporting files. If a file changed elsewhere, reload it before saving. Deleting removes only the skill's Markdown file and leaves supporting files intact; a same-ID skill from a lower-priority scope becomes available again.
 
+The editor has fields for the name and description, a Markdown instruction area, and an icon button beside the skill's title. Click the icon to choose from 16 matching line icons; the choice appears in the library, composer and new chat messages. **Preview** renders the instructions; **Source** edits the complete file, including fields such as `hint` and `order`. Editing the form preserves other front-matter fields. Copying a skill also keeps its icon.
+
 Papilot includes these skills:
 
 | Skill | What it does |
@@ -173,11 +175,14 @@ Add your own as Markdown files: in `~/.papilot/skills/` for every paper, or in t
 ---
 name: Venue style
 description: Follow the venue's style guide
+icon: book
 hint: Which section?
 order: 10
 ---
 Follow the style guide in style.md: …
 ```
+
+The optional `icon` field accepts `spark`, `pen`, `spellcheck`, `compress`, `sigma`, `checklist`, `notes`, `book`, `search`, `code`, `tool`, `chart`, `globe`, `lightbulb`, `link` or `branch`. Omit it to use the default icon; unknown values also fall back to the default.
 
 Papilot reads the skills again when you return to its window, so a new skill file appears without a restart.
 

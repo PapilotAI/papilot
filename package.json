@@ -36,6 +36,8 @@
     "bin",
     "src/server",
     "src/shared.ts",
+    "src/skill-icons.ts",
+    "src/skill-metadata.ts",
     "src/notes.ts",
     "src/note-groups.ts",
     "src/conversation.ts",

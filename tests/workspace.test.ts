@@ -1074,6 +1074,17 @@ test('a skill runs as its instructions while the chat keeps the author\'s words'
   } finally { f.close(); }
 });
 
+test('a sent skill keeps its chosen icon in the stored conversation', async () => {
+  const f = fixture();
+  try {
+    const skill = { ...findSkill('/unused', 'proofread'), icon: 'book' as const };
+    const run = await f.workspace.enqueue(f.task.id, 'Only the abstract.', 'skill-icon-run', false, { skill });
+    const item = f.store.items(f.task.id).find(entry => entry.id === run.id)!;
+    assert.deepEqual(item.meta?.skill, { id: 'proofread', name: 'Proofread', icon: 'book' });
+    assert.doesNotMatch(run.prompt, /icon: book/);
+  } finally { f.close(); }
+});
+
 test('a failed task keeps its notes, and concurrent submissions cannot send the same note twice', async () => {
   const gate = deferred<any>();
   let fail = true;

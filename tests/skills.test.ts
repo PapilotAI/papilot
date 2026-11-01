@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { findSkill, listedSkill, loadSkills, parseSkill } from '../src/server/skills.ts';
+import { resolveSkillIcon } from '../src/skill-icons.ts';
 
 test('Papilot ships paper skills with names, descriptions and hints, in order', () => {
   const skills = loadSkills(undefined, { builtin: path.resolve('skills'), user: path.join(os.tmpdir(), 'papilot-no-user-skills-' + process.pid) });
@@ -45,4 +46,18 @@ test('skill files may start with a byte-order mark and be ordered first with 0',
   assert.equal(skill?.name, 'First');
   assert.equal(skill?.order, 0);
   assert.equal(skill?.body, 'Do it.');
+});
+
+test('explicit icons reach the catalog while legacy and invalid icons keep sensible defaults', () => {
+  const skill = parseSkill('---\nname: Custom polish\nicon: book\n---\nRevise it.', 'polish', 'user')!;
+  assert.equal(listedSkill(skill).icon, 'book');
+  assert.equal(resolveSkillIcon(skill), 'book');
+  assert.equal(resolveSkillIcon({ id: 'check-math' }), 'sigma');
+  assert.equal(resolveSkillIcon({ id: 'custom' }), 'spark');
+  assert.equal(resolveSkillIcon({ id: 'constructor' }), 'spark');
+  for (const icon of ['missing', '<svg/>', 'https://example.com/icon.svg', '__proto__']) {
+    const invalid = parseSkill(`---\nicon: ${icon}\n---\nRevise it.`, 'polish', 'user')!;
+    assert.equal(listedSkill(invalid).icon, undefined);
+    assert.equal(resolveSkillIcon(invalid), 'spark');
+  }
 });

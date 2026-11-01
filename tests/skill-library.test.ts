@@ -23,11 +23,15 @@ test('global skills live in the user home independently of the workspace data di
 test('skills saved from the library are available to composers with paper > global > built-in priority', () => {
   const f = fixture();
   try {
-    const content = '---\nname: 我的润色\ndescription: 保留数学术语\ncustom-field: keep this\n---\n\nImprove the prose.\n';
+    const content = '---\nname: 我的润色\ndescription: 保留数学术语\nicon: book\ncustom-field: keep this\n---\n\nImprove the prose.\n';
     const global = f.library.save('user', 'polish', content, undefined, f.paper);
     assert.equal(global.location, path.join(f.roots.user, 'polish', 'SKILL.md'));
     assert.equal(fs.readFileSync(global.location, 'utf8'), content);
     assert.equal(global.content, content);
+    assert.equal(global.icon, 'book');
+    assert.equal(f.library.read('user', 'polish').icon, 'book');
+    assert.equal(f.library.list().skills.find(skill => skill.source === 'user')?.icon, 'book');
+    assert.equal(loadSkills(f.paper, f.roots)[0].icon, 'book');
     assert.equal(loadSkills(f.paper, f.roots)[0].source, 'user');
     const paper = f.library.save('paper', 'polish', 'Paper-specific instructions.', undefined, f.paper);
     const listed = f.library.list(f.paper);

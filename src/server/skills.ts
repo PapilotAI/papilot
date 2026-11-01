@@ -3,6 +3,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { ROOT } from './paths.ts';
 import type { Skill } from '../shared.ts';
+import { isSkillIcon } from '../skill-icons.ts';
+import { skillMetadata, skillInstructions } from '../skill-metadata.ts';
 
 // Skills are Markdown instructions an author runs with "/" in the composer.
 // Papilot ships some in skills/; ~/.papilot/skills/ adds the author's
@@ -33,14 +35,9 @@ export function skillFiles(dir: string): { id: string; file: string; folder?: st
 
 export function parseSkill(text: string, id: string, source: Skill['source'], folder?: string): SkillFile | null {
   text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-  const header = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(text), fields: Record<string, string> = {};
-  for (const line of header?.[1].split('\n') || []) {
-    const field = /^([A-Za-z-]+):\s*(.*)$/.exec(line);
-    if (field) fields[field[1].toLowerCase()] = field[2].trim().replace(/^(['"])(.*)\1$/, '$2');
-  }
-  const body = text.slice(header ? header[0].length : 0).trim().slice(0, 20000);
+  const fields = skillMetadata(text), body = skillInstructions(text).trim().slice(0, 20000);
   if (!body) return null;
-  return { id, name: (fields.name || id).slice(0, 60), description: (fields.description || '').slice(0, 300), hint: (fields.hint || '').slice(0, 200), source, body, ...(folder ? { folder } : {}), order: fields.order && Number.isFinite(Number(fields.order)) ? Number(fields.order) : 1000 };
+  return { id, name: (fields.name || id).slice(0, 60), description: (fields.description || '').slice(0, 300), hint: (fields.hint || '').slice(0, 200), ...(isSkillIcon(fields.icon) ? { icon: fields.icon } : {}), source, body, ...(folder ? { folder } : {}), order: fields.order && Number.isFinite(Number(fields.order)) ? Number(fields.order) : 1000 };
 }
 
 function read(dir: string, source: Skill['source']): SkillFile[] {
@@ -67,4 +64,4 @@ export function findSkill(paper: string, id: string) {
   return skill;
 }
 
-export const listedSkill = ({ id, name, description, hint, source }: SkillFile): Skill => ({ id, name, description, hint, source });
+export const listedSkill = ({ id, name, description, hint, source, icon }: SkillFile): Skill => ({ id, name, description, hint, source, ...(icon ? { icon } : {}) });

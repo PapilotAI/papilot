@@ -21,6 +21,18 @@
 .settings-footer a{display:inline-flex;padding:4px;text-decoration:none;border-radius:5px}
 .settings-footer a:hover{background:var(--bg-hover);color:var(--text)}
 .settings-content{min-width:0;min-height:0;padding:36px 48px 40px;overflow:auto;overscroll-behavior:contain}
+/* Keep the right pane's scroll affordance quiet and clear of the rounded edges. */
+:is(.settings-content,.skill-library-browse,.skill-library-detail,.skill-library-editor-body,.skill-library-preview,.skill-library-content){--settings-scroll-color:var(--scroll-thumb)}
+:is(.settings-content,.skill-library-browse,.skill-library-detail,.skill-library-editor-body,.skill-library-preview,.skill-library-content)::-webkit-scrollbar{width:8px;height:8px}
+:is(.settings-content,.skill-library-browse,.skill-library-detail,.skill-library-editor-body,.skill-library-preview,.skill-library-content)::-webkit-scrollbar-track{margin-block:10px;background:transparent}
+:is(.settings-content,.skill-library-browse,.skill-library-detail,.skill-library-editor-body,.skill-library-preview,.skill-library-content)::-webkit-scrollbar-thumb{border:2px solid transparent;background-color:var(--settings-scroll-color);background-clip:padding-box}
+:is(.settings-content,.skill-library-browse,.skill-library-detail,.skill-library-editor-body,.skill-library-preview,.skill-library-content)::-webkit-scrollbar-thumb:hover{background-color:var(--scroll-active)}
+@media(hover:hover) and (forced-colors:none){
+  :is(.settings-content,.skill-library-browse,.skill-library-detail,.skill-library-editor-body,.skill-library-preview,.skill-library-content):not(:hover):not(:focus-within){--settings-scroll-color:transparent}
+}
+@supports not selector(::-webkit-scrollbar){
+  :is(.settings-content,.skill-library-browse,.skill-library-detail,.skill-library-editor-body,.skill-library-preview,.skill-library-content){scrollbar-width:thin;scrollbar-color:var(--settings-scroll-color) transparent}
+}
 .settings-content .settings-content-header{margin-bottom:42px}
 .settings-content-header #settings-title{font:600 26px/1.3 var(--sans);margin:0 28px 0 0;letter-spacing:-.5px;outline:none}
 .settings-content-header .settings-mobile-back{display:none}
@@ -46,13 +58,11 @@
 .settings-card .segmented,.settings-card .chip-select{flex:none}
 .settings-card .settings-test{margin:0 0 20px;padding:0}
 .settings-content-skills{display:flex;flex-direction:column;overflow:hidden}
-.settings-content-skills .settings-content-header{flex:none}
-.settings-content-skills .skill-library{border:1px solid var(--line);border-radius:var(--settings-card-radius);overflow:hidden}
+.settings-content-skills .settings-content-header{flex:none;margin-bottom:12px}
 @media(min-width:761px) and (max-width:1000px){
   .modal.settings-dialog{grid-template-columns:210px minmax(0,1fr);--settings-card-padding:18px}
   .settings-content{padding:32px 28px}
   .settings-card .settings-row{gap:16px}
-  .settings-content-skills .skill-library-layout{grid-template-columns:200px minmax(0,1fr)}
 }
 @media(max-width:760px){
   .modal.settings-dialog{--settings-card-padding:16px;--settings-card-radius:12px;display:block;width:100%;height:92dvh;padding:0}
@@ -63,6 +73,7 @@
   .settings-category{min-height:46px;font-size:14px}
   .settings-content{height:100%;padding:24px 20px 28px}
   .settings-content .settings-content-header{margin-bottom:28px}
+  .settings-content-skills .settings-content-header{margin-bottom:12px}
   .settings-content-header #settings-title{font-size:23px}
   .settings-content-header .settings-mobile-back{display:flex;margin-bottom:16px}
   .settings-card .settings-row{padding:18px 0;gap:16px}
