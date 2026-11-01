@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { findSkill, listedSkill, loadSkills, parseSkill } from '../src/server/skills.ts';
+import { resolveSkillIcon } from '../src/skill-icons.ts';
 
 test('Papilot ships paper skills with names, descriptions and hints, in order', () => {
   const skills = loadSkills(undefined, { builtin: path.resolve('skills'), user: path.join(os.tmpdir(), 'papilot-no-user-skills-' + process.pid) });
@@ -54,4 +55,18 @@ test('the AI review skill requests annotation output and explicitly leaves the m
   assert.equal(listedSkill(skill).output, 'annotations');
   assert.match(skill.body, /do not edit, rewrite, commit, or apply changes/i);
   assert.match(skill.body, /relevant passage in the supplied PDF/);
+});
+
+test('explicit icons reach the catalog while legacy and invalid icons keep sensible defaults', () => {
+  const skill = parseSkill('---\nname: Custom polish\nicon: book\n---\nRevise it.', 'polish', 'user')!;
+  assert.equal(listedSkill(skill).icon, 'book');
+  assert.equal(resolveSkillIcon(skill), 'book');
+  assert.equal(resolveSkillIcon({ id: 'check-math' }), 'sigma');
+  assert.equal(resolveSkillIcon({ id: 'custom' }), 'spark');
+  assert.equal(resolveSkillIcon({ id: 'constructor' }), 'spark');
+  for (const icon of ['missing', '<svg/>', 'https://example.com/icon.svg', '__proto__']) {
+    const invalid = parseSkill(`---\nicon: ${icon}\n---\nRevise it.`, 'polish', 'user')!;
+    assert.equal(listedSkill(invalid).icon, undefined);
+    assert.equal(resolveSkillIcon(invalid), 'spark');
+  }
 });

@@ -45,7 +45,7 @@ Papilot uses the `codex` on your `PATH` when it is version 0.164.0 or newer; oth
 
 ### Agents
 
-Each task runs on one agent and model, chosen from the model menu below the prompt. The menu lists every available agent's models, grouped by agent with your recent choices first; type to search all of them, or use the arrow keys and Enter. Reasoning effort and fast mode for the chosen model sit below the list. Papilot remembers the agent, and each agent's model and reasoning effort, for the next task. Papilot looks for every agent when it starts and whenever you select **Reconnect**, and offers only the ones it finds on this host: an installed CLI, or the API key an SDK-based agent needs. Codex is always offered, because Papilot installs it. An agent that is found but not signed in is listed as unavailable and says why. **Settings → Runtime & diagnostics** names the agents that were not found.
+Each task runs on one agent and model, chosen from the model menu below the prompt. The menu lists every available agent's models, grouped by agent with your recent choices first; type to search all of them, or use the arrow keys and Enter. Reasoning effort and fast mode for the chosen model sit below the list. Papilot remembers the agent, and each agent's model and reasoning effort, for the next task. Papilot looks for every agent when it starts and whenever you select **Reconnect**, and offers only the ones it finds on this host: an installed CLI, or the API key an SDK-based agent needs. Codex is always offered, because Papilot installs it. An agent that is found but not signed in is listed as unavailable and says why. **Settings → Runtime → Agents** shows every supported agent and its live availability, including agents that are not set up. Select an agent card to see its account, model names, setup instructions, installation checks, and usage limits when the agent reports them. Model names appear as compact labels, with the default marked and longer catalogs expandable. When setup is not detected, the card explains the server-side detection result, offers steps for that adapter, and provides Reconnect to refresh availability. Changes to environment variables require restarting Papilot; a different terminal or desktop-app login may not configure the running server. Details open within Settings; quotas are hidden while the connection is unavailable. The **LaTeX** page automatically identifies the active distribution (such as MacTeX, TeX Live, or MiKTeX), version, and installation location on the host.
 
 CLI agents, including Claude when Claude Code is installed, use their own login and configuration on this host. The SDK-based agents (Cursor, GLM, and Claude without Claude Code) take their key from Papilot's environment and receive it only for their own service. Papilot never stores a credential. Every agent edits only the task's worktree and leaves compiling and publishing the review to Papilot.
 
@@ -137,7 +137,7 @@ If a Codex start request or a review write has an uncertain outcome, the task di
 
 Messages and queued runs are saved in `papilot.sqlite` in the data folder. Closing the browser does not stop a run. After a process restart, confirmed in-flight turns are marked interrupted and can be continued; already queued follow-up messages are retained. Uncertain operations remain reserved until their outcome is checked. Reconnecting after an uncertain request does not promise exactly-once execution of arbitrary Codex commands.
 
-Turn on **Settings → Notifications** for a browser notification when a task asks a question or for approval, its review is ready, or it stops with an error while Papilot is in another tab or app; clicking one opens the task. Browsers allow notifications only on HTTPS or localhost, so remotely use the Tailscale HTTPS address.
+Turn on **Settings → Notifications** to receive browser notifications while Papilot is in another tab or app. Under **Notify me about**, choose **Push** or **Off** separately for questions, approval requests, reviews ready, tasks finished without changes to review, and task errors. Choices are saved in this browser and kept when the main switch is turned off. Clicking a notification opens the task. Browsers allow notifications only on HTTPS or localhost, so remotely use the Tailscale HTTPS address.
 
 ## AI review
 
@@ -167,6 +167,8 @@ A skill is a named set of instructions for a common revision, so you do not have
 
 The owner can open **Settings → Skills** to search, preview, create, edit and delete skills. New skills default to **Global** (`~/.papilot/skills/<id>/SKILL.md`); choose **This paper** to save in `<paper>/.papilot/skills/<id>/SKILL.md` instead. Global skills belong to the user and stay in the home folder even when `--data` or `PAPILOT_DATA` points the workspace database elsewhere. Saving updates the composer immediately. Built-in skills are read-only: use **Copy and edit** to customize one. The Markdown editor preserves front matter and supporting files. If a file changed elsewhere, reload it before saving. Deleting removes only the skill's Markdown file and leaves supporting files intact; a same-ID skill from a lower-priority scope becomes available again.
 
+The editor has fields for the name and description, a Markdown instruction area, and an icon button beside the skill's title. Click the icon to choose from 16 matching line icons; the choice appears in the library, composer and new chat messages. **Preview** renders the instructions; **Source** edits the complete file, including fields such as `hint` and `order`. Editing the form preserves other front-matter fields. Copying a skill also keeps its icon.
+
 Papilot includes these skills:
 
 | Skill | What it does |
@@ -185,11 +187,14 @@ Add your own as Markdown files: in `~/.papilot/skills/` for every paper, or in t
 ---
 name: Venue style
 description: Follow the venue's style guide
+icon: book
 hint: Which section?
 order: 10
 ---
 Follow the style guide in style.md: …
 ```
+
+The optional `icon` field accepts `spark`, `pen`, `spellcheck`, `compress`, `sigma`, `checklist`, `notes`, `book`, `search`, `code`, `tool`, `chart`, `globe`, `lightbulb`, `link` or `branch`. Omit it to use the default icon; unknown values also fall back to the default.
 
 Papilot reads the skills again when you return to its window, so a new skill file appears without a restart.
 
@@ -251,7 +256,7 @@ tailscale funnel --bg --https=10000 http://127.0.0.1:7275
 
 A reverse proxy works too: forward the HTTPS origin to `127.0.0.1:7275` (`PAPILOT_ACCOUNT_PORT`). Papilot refuses to start if the account address equals `PAPILOT_PUBLIC_ORIGIN`, if both use the same port, or if it is not HTTPS (plain `http://localhost` is allowed for testing). Every request on the account port is treated as coming from the internet: it needs a signed-in session, POST requests need a matching `Origin`, and Tailscale identity headers are ignored there.
 
-Open **People** in the sidebar to manage access:
+Open **Settings → Sharing** to manage access:
 
 - **Invite someone** takes their name and the papers they can open, and gives you a link to send them yourself. It works once, within 7 days. Opening it asks them to create a passkey, after which they are signed in. The link's secret is in the part after `#`, which browsers never send to a server.
 - Tick or untick a person's papers at any time. The change applies to their next request, and their open tabs update at once.

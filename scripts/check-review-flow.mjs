@@ -121,7 +121,8 @@ try {
   await expect(indirect().locator('.place')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = () => page.getByRole('dialog', { name: 'Settings', exact: true });
+  const settings = () => page.locator('dialog').filter({ has: page.locator('.settings-dialog') });
+  await settings().getByRole('button', { name: 'Review preferences', exact: true }).click();
   const expandEffects = () => settings().getByRole('switch', { name: 'Expand indirect changes', exact: true });
   await expect(expandEffects()).not.toBeChecked();
   await expandEffects().check();
@@ -132,6 +133,7 @@ try {
   await page.reload();
   await expect(indirect().locator('.place')).toHaveCount(1);
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings().getByRole('button', { name: 'Review preferences', exact: true }).click();
   await expect(expandEffects()).toBeChecked();
   await expandEffects().uncheck();
   await expect(indirect().locator('.place')).toHaveCount(0);
@@ -222,6 +224,29 @@ try {
   await acceptKey.press('Meta+w');
   await expect(shortcuts.getByRole('alert')).toContainText('reserved');
   await acceptKey.press('b');
+  await expect(acceptKey).toHaveText('B');
+  const acceptToggle = shortcuts.getByRole('switch', { name: 'Enable shortcut: Accept change', exact: true });
+  await acceptToggle.uncheck();
+  await expect(acceptKey).toHaveText('B');
+  await shortcuts.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(viewer().locator('.change.current button.accept')).toHaveAttribute('aria-keyshortcuts', '');
+  await viewer().locator('.change.current .change-number').click();
+  const beforeDisabledKey = writes.length;
+  await page.keyboard.press('b');
+  assert.equal(writes.length, beforeDisabledKey, 'disabled shortcuts do not change the review');
+  await page.reload();
+  await expect(viewer().locator('.change.current button.accept')).toHaveAttribute('aria-keyshortcuts', '');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'Keyboard shortcuts', exact: true }).click();
+  await expect(acceptToggle).not.toBeChecked();
+  await expect(acceptKey).toHaveText('B');
+  const rejectKey = shortcuts.getByRole('button', { name: 'Change shortcut: Reject change', exact: true });
+  await rejectKey.click(); await rejectKey.press('b');
+  await acceptToggle.click();
+  await expect(acceptToggle).not.toBeChecked();
+  await expect(shortcuts.getByRole('alert')).toContainText('Already used for Reject change');
+  await rejectKey.click(); await rejectKey.press('r');
+  await acceptToggle.check();
   await expect(acceptKey).toHaveText('B');
   await shortcuts.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(viewer().locator('.change.current button.accept')).toHaveAttribute('aria-keyshortcuts', 'b');

@@ -1,4 +1,5 @@
 import type { GroupInstructions, NoteGroup } from './note-groups.ts';
+import type { SkillIcon } from './skill-icons.ts';
 export type TaskStatus = 'idle' | 'queued' | 'running' | 'waiting_input' | 'building' | 'reviewing' | 'interrupted' | 'failed' | 'uncertain' | 'deleting';
 export interface Project { id: string; name: string; path: string; createdAt: number }
 export const MAX_ATTACHMENTS = 10;
@@ -61,13 +62,13 @@ export interface NoteAnchor { sources: { file: string; lines: [number, number] }
 export interface NoteSummary { group?: NoteGroup; where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor }
 export interface NoteChange { round: number; stop: number; units: string[]; state: 'pending' | 'accepted' | 'rejected' | 'commented' | 'mixed'; match: 'source' | 'quote' }
 export interface NoteResult { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
-export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string }; notes?: NoteSummary[]; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
+export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
 // Who wrote a message or note; none means the owner.
 export interface Author { id: string; name: string }
 // A failed review build as the engine reports it; log is the compiler log's path.
 export interface BuildFailure { error: string; details: string[]; log?: string }
 export interface FeedbackSummary { round: number | null; accepted: number; rejected: number; undone: number; comments: { where: string; text: string }[]; buildError?: boolean }
-export interface Skill { output?: 'annotations'; id: string; name: string; description: string; hint: string; source: 'builtin' | 'user' | 'paper' }
+export interface Skill { output?: 'annotations'; id: string; name: string; description: string; hint: string; icon?: SkillIcon; source: 'builtin' | 'user' | 'paper' }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
 export type AgentId = 'codex' | 'claude' | 'antigravity' | 'kimi' | 'cursor' | 'opencode' | 'qwen' | 'glm' | 'deepseek';
 // Every agent Papilot can drive, in menu order. Only the ones found on the host are offered.
@@ -82,6 +83,11 @@ export interface Usage { plan: string | null; windows: UsageWindow[]; credits: {
 // credentials or key); such agents are not offered. Older servers omit it.
 export interface RuntimeStatus { connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
 export interface DiagnosticCheck { id: string; ok: boolean; severity: 'error' | 'warn' | 'info'; detail: string; fix: string | null }
+export interface LatexInstallation {
+  distribution: 'MacTeX' | 'BasicTeX' | 'TeX Live' | 'MiKTeX' | null;
+  version: string | null;
+  path: string;
+}
 export interface DiagnosticReport {
   version: string; checkedAt: number; platform: string; arch: string; node: string;
   ok: boolean; checks: DiagnosticCheck[];

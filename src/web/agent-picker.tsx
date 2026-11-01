@@ -1,21 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import type { AgentId, AgentModel, RuntimeStatus } from '../shared.ts';
+import type { AgentId, RuntimeStatus } from '../shared.ts';
 import { Icon } from './icons.tsx';
+import { BrandIcon } from './brand-icon.tsx';
 import { t } from './i18n.ts';
 import { browserStorage } from './storage.ts';
-
-// Without an effort of its own choosing, a task reasons at high effort where
-// its model offers it: a catalog's default can be as low as "low", too little
-// for revising a paper. An explicit "Model default" ('') is kept.
-const DEFAULT_EFFORT = 'high';
-export function taskEffort(choice: string | null, model?: AgentModel) {
-  if (choice === '') return '';
-  if (choice && (!model || model.efforts.includes(choice))) return choice;
-  return model?.efforts.includes(DEFAULT_EFFORT) ? DEFAULT_EFFORT : '';
-}
-
-// Keep provider names, capitalizing only their first letter for display.
-const effortName = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
+import { EffortSlider, effortName } from './effort-slider.tsx';
 
 // The picker and an existing conversation use the same compact model label.
 export function ModelLabel({ model, effort, fast }: { model: string; effort?: string | null; fast?: boolean }) {
@@ -32,25 +21,6 @@ export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect
     <div className="agent-connection-message" role="status"><Icon name="alert" size={15}/><span>{message}</span></div>
     {error && error !== message && <details><summary>{t('Connection details')}</summary><p>{error}</p></details>}
     <button type="button" disabled={reconnecting} onClick={onReconnect}><Icon name="refresh" size={12}/>{reconnecting ? t('Connecting…') : t('Reconnect')}</button>
-  </div>;
-}
-
-// Keep the stepped slider in the shared settings menu, including an explicit
-// way to hand effort back to the model's default.
-function EffortSlider({ efforts, value, fallback, onChange }: { efforts: string[]; value: string; fallback: string | null; onChange: (value: string) => void }) {
-  const current = efforts.find(item => item === value) || efforts.find(item => item === fallback);
-  const index = current ? efforts.indexOf(current) : Math.floor((efforts.length - 1) / 2), share = efforts.length > 1 ? index / (efforts.length - 1) : 1;
-  const label = current ? effortName(current) : t('Model default');
-  const centre = (step: number) => `calc(15px + ${efforts.length > 1 ? step / (efforts.length - 1) : 1} * (100% - 30px))`;
-  return <div className="agent-effort">
-    <div className="effort-head"><span>{t('Reasoning effort')}</span><strong>{label}</strong></div>
-    <div className={'effort-track' + (current ? '' : ' unset')}>
-      <span className="effort-fill" style={{ width: `calc(30px + ${share} * (100% - 30px))` }}/>
-      {efforts.map((item, step) => step !== index && <span key={item} className={'effort-stop' + (current && step < index ? ' on' : '')} style={{ left: centre(step) }}/>)}
-      <input type="range" min={0} max={efforts.length - 1} step={1} value={index} aria-label={t('Reasoning effort')} aria-valuetext={label} disabled={efforts.length < 2}
-        onChange={event => onChange(efforts[Number(event.target.value)])}/>
-    </div>
-    <div className="effort-scale"><span>{effortName(efforts[0])}</span><button type="button" onClick={() => onChange('')} disabled={!value}>{t('Model default')}</button><span>{effortName(efforts[efforts.length - 1])}</span></div>
   </div>;
 }
 
@@ -154,7 +124,7 @@ export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, 
     const chosen = isSelected(choice), state = agentState(choice.agent.runtime);
     return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={`${choice.name} · ${choice.agent.label}`}
       className={'model-option' + (choice.key === active ? ' active' : '')} onPointerMove={() => setActive(choice.key)} onClick={() => choose(choice)}>
-      <span className="model-option-name">{choice.name}</span>
+      {choice.recent && <BrandIcon name={choice.agent.value} size={15}/>}<span className="model-option-name">{choice.name}</span>
       {choice.isDefault && !choice.recent && <small className="model-option-tag">{t('Default')}</small>}
       {(choice.recent || state) && <small className={'model-option-agent' + (state ? ' warn' : '')}>{choice.recent ? choice.agent.label : state}</small>}
       {chosen && <Icon name="check" size={14}/>}
@@ -165,7 +135,7 @@ export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, 
     <button ref={trigger} type="button" className="agent-picker-trigger" aria-label={t('Agent settings')} title={summary + (disconnected ? ` · ${t('{agent} is unavailable', { agent: agentName })}` : '')} aria-haspopup="dialog" aria-expanded={open} aria-controls={id} disabled={disabled}
       onClick={() => panel.current?.matches(':popover-open') ? panel.current.hidePopover() : show()}
       onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); show(); } }}>
-      {modelName !== agentName && <span className="agent-picker-agent">{agentName}</span>}<ModelLabel model={modelName} effort={currentEffort} fast={Boolean(fastMode && fast)}/><Icon name="chevronDown" size={13}/>{disconnected && <span className="agent-status-mark"><Icon name="alert" size={13}/></span>}
+      <BrandIcon name={agent} size={15}/>{modelName !== agentName && <span className="agent-picker-agent">{agentName}</span>}<ModelLabel model={modelName} effort={currentEffort} fast={Boolean(fastMode && fast)}/><Icon name="chevronDown" size={13}/>{disconnected && <span className="agent-status-mark"><Icon name="alert" size={13}/></span>}
     </button>
     <div ref={panel} id={id} popover="auto" role="dialog" aria-label={t('Agent settings')} className="agent-picker-panel" onToggle={event => {
       const shown = (event.nativeEvent as ToggleEvent).newState === 'open'; setOpen(shown);
@@ -183,7 +153,7 @@ export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, 
       <div ref={list} id={`${id}-list`} role="listbox" aria-label={t('Models')} className="model-list">
         {recentItems.length > 0 && <div role="group" aria-label={t('Recent')} className="model-group"><div className="model-group-head" aria-hidden="true">{t('Recent')}</div>{recentItems.map(renderChoice)}</div>}
         {groups.map(group => <div key={group.option.value} role="group" aria-label={group.option.label} className="model-group">
-          <div className="model-group-head" aria-hidden="true">{group.option.label}</div>
+          <div className="model-group-head" aria-hidden="true"><BrandIcon name={group.option.value} size={15}/>{group.option.label}</div>
           {group.items.map(renderChoice)}
         </div>)}
         {!visible.length && <p className="model-empty">{t('No models match “{query}”', { query: query.trim() })}</p>}

@@ -1,0 +1,9 @@
+.brand-icon{display:inline-block;flex:none;vertical-align:middle;background:currentColor;mask:var(--brand-image) center/contain no-repeat;color:var(--brand-color,currentColor)}
+.brand-icon[data-brand=claude]{--brand-color:#d97757}
+.brand-icon[data-brand=antigravity]{--brand-color:#4285f4}
+.brand-icon[data-brand=kimi]{--brand-color:#6366f1}
+.brand-icon[data-brand=glm]{--brand-color:#5d78e5}
+.brand-icon[data-brand=deepseek]{--brand-color:#4d6bfe}
+.brand-icon[data-brand=qwen]{--brand-color:#8b5cf6}
+.brand-icon[data-brand=git]{--brand-color:#f05032}
+.brand-icon[data-brand=latex]{--brand-color:var(--text-2)}

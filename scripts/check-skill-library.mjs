@@ -48,6 +48,8 @@ const open = async () => {
 };
 const dialog = page.getByRole('dialog', { name: 'Skills', exact: true });
 const content = dialog.getByRole('textbox', { name: 'Skill content (Markdown)', exact: true });
+const instructions = dialog.getByRole('textbox', { name: 'Instructions', exact: true });
+const picker = page.getByRole('dialog', { name: 'Choose an icon', exact: true });
 const close = () => dialog.getByRole('button', { name: 'Close', exact: true }).click();
 const globalFile = path.join(roots.user, 'house-style', 'SKILL.md');
 try {
@@ -57,6 +59,20 @@ try {
   await expect(dialog.locator('.skill-library-storage, .skill-library-file')).toHaveCount(0);
   await expect(dialog).not.toContainText(roots.user);
   await expect(dialog.locator('.skill-library-item')).toHaveCount(7);
+  await expect(dialog.locator('.skill-library-browse')).toBeVisible();
+  await expect(dialog.locator('.skill-library-detail')).toBeHidden();
+  await page.screenshot({ path: '/tmp/papilot-skills-list-desktop.png' });
+  // Opening a skill keeps the settings navigation, and returning preserves the search and focus.
+  await dialog.getByRole('searchbox', { name: 'Search skills' }).fill('math');
+  await expect(dialog.locator('.skill-library-item')).toHaveCount(1);
+  await dialog.locator('.skill-library-item').click();
+  await expect(dialog.getByRole('heading', { name: 'Check math', exact: true })).toBeFocused();
+  await expect(dialog.locator('.settings-sidebar')).toBeVisible();
+  await page.screenshot({ path: '/tmp/papilot-skills-detail-desktop.png' });
+  await dialog.getByRole('button', { name: 'All skills', exact: true }).click();
+  await expect(dialog.locator('.skill-library-item')).toBeFocused();
+  await expect(dialog.getByRole('searchbox', { name: 'Search skills' })).toHaveValue('math');
+  await dialog.getByRole('searchbox', { name: 'Search skills' }).fill('');
   await dialog.getByRole('button', { name: 'General', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('heading', { name: 'General', exact: true })).toBeFocused();
   await open();
@@ -66,8 +82,33 @@ try {
   await dialog.getByRole('button', { name: 'Copy and edit' }).click();
   await expect(dialog.getByLabel('Save to')).toHaveValue('user');
   await dialog.getByLabel('Skill ID').fill('house-style');
-  const globalText = '---\nname: House style\ndescription: Keep terminology consistent\ncustom-field: preserve me\n---\n\nUse short sentences.\n';
-  await content.fill(globalText);
+  await dialog.getByRole('button', { name: 'Source', exact: true }).click();
+  await content.fill('---\nname: Draft\ndescription: Draft description\ncustom-field: preserve me\n---\n\nUse short sentences.\n');
+  await dialog.getByRole('button', { name: 'Edit', exact: true }).click();
+  await dialog.getByLabel('Skill name', { exact: true }).fill('House style');
+  await dialog.getByLabel('Description', { exact: true }).fill('Keep terminology consistent');
+  await dialog.getByRole('button', { name: 'Choose an icon', exact: true }).click();
+  await expect(picker.getByRole('radio')).toHaveCount(16);
+  await expect(picker.getByRole('radio', { name: 'Sparkles', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(picker.getByRole('radio', { name: 'Pen', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(picker).toBeHidden();
+  await dialog.getByRole('button', { name: 'Choose an icon', exact: true }).click();
+  await expect(picker.getByRole('radio', { name: 'Pen', exact: true })).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Choose an icon', exact: true })).toBeFocused();
+  await dialog.getByRole('button', { name: 'Choose an icon', exact: true }).click();
+  await page.screenshot({ path: '/tmp/papilot-skill-icon-picker-desktop.png' });
+  await picker.getByRole('radio', { name: 'Book', exact: true }).click();
+  await instructions.fill('Use short sentences.\n');
+  const globalText = '---\nname: "House style"\ndescription: "Keep terminology consistent"\ncustom-field: preserve me\nicon: book\n---\nUse short sentences.\n';
+  await dialog.getByRole('button', { name: 'Source', exact: true }).click();
+  await expect(content).toHaveValue(globalText);
+  await dialog.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(dialog.locator('.skill-library-preview')).toHaveText('Use short sentences.');
+  await dialog.getByRole('button', { name: 'Edit', exact: true }).click();
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog.getByText('Saved', { exact: true })).toBeVisible();
   assert.equal(fs.readFileSync(globalFile, 'utf8'), globalText);
@@ -75,15 +116,20 @@ try {
   await close();
   const composer = page.getByRole('textbox', { name: 'Describe the revision', exact: true });
   await composer.fill('/house');
+  await expect(page.getByRole('option').filter({ hasText: 'House style' }).locator('.skill-name')).toHaveAttribute('data-skill-icon', 'book');
   await page.getByRole('option').filter({ hasText: 'House style' }).click();
   await expect(page.locator('.new-task-panel .skill-chip')).toContainText('House style');
+  await expect(page.locator('.new-task-panel .skill-chip')).toHaveAttribute('data-skill-icon', 'book');
 
   // A paper-specific copy takes priority without losing the global one.
   await open();
   await dialog.getByRole('button', { name: 'New skill', exact: true }).click();
   await dialog.getByLabel('Skill ID').fill('house-style');
   await dialog.getByLabel('Save to').selectOption('paper');
-  await content.fill('---\nname: Paper style\n---\nKeep this paper concise.');
+  await dialog.getByLabel('Skill name', { exact: true }).fill('Paper style');
+  await instructions.fill('Keep this paper concise.');
+  await dialog.getByRole('button', { name: 'Choose an icon', exact: true }).click();
+  await picker.getByRole('radio', { name: 'Chart', exact: true }).click();
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog.getByText('Saved', { exact: true })).toBeVisible();
   assert.ok(fs.existsSync(path.join(project.path, '.papilot/skills/house-style/SKILL.md')));
@@ -91,9 +137,14 @@ try {
   await page.screenshot({ path: '/tmp/papilot-skills-desktop.png' });
   await close();
   await expect(page.locator('.new-task-panel .skill-chip')).toContainText('Paper style');
+  await expect(page.locator('.new-task-panel .skill-chip')).toHaveAttribute('data-skill-icon', 'chart');
 
   // External edits are protected, and leaving a dirty editor requires a choice.
   await open(); await dialog.locator('.skill-library-item').filter({ hasText: 'House style' }).click();
+  await dialog.getByRole('button', { name: 'Choose an icon', exact: true }).click();
+  await expect(picker.getByRole('radio', { name: 'Book', exact: true })).toBeChecked();
+  await page.keyboard.press('Escape');
+  await dialog.getByRole('button', { name: 'Source', exact: true }).click();
   await expect(content).toHaveValue(globalText);
   await content.fill(globalText + 'My unsaved edit.');
   await dialog.getByRole('button', { name: 'General', exact: true }).click();
@@ -120,20 +171,29 @@ try {
   // Mobile starts with a compact list; details and back navigation fit the viewport.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Show task list', exact: true }).click();
-  await open(); await expect(dialog.locator('.skill-library-sidebar')).toBeVisible();
+  await open(); await expect(dialog.locator('.skill-library-browse')).toBeVisible();
+  await page.screenshot({ path: '/tmp/papilot-skills-list-mobile.png' });
   await dialog.locator('.skill-library-item').filter({ hasText: 'House style' }).click();
-  await expect(content).toBeVisible();
+  await expect(instructions).toBeVisible();
+  await dialog.getByRole('button', { name: 'Choose an icon', exact: true }).click();
+  await expect(picker).toBeInViewport();
+  await page.screenshot({ path: '/tmp/papilot-skill-icon-picker-mobile.png' });
+  await page.keyboard.press('Escape');
   await page.screenshot({ path: '/tmp/papilot-skills-mobile.png' });
   const bounds = await dialog.locator('.skill-library').boundingBox(); assert.ok(bounds.width <= 390);
   await expect(dialog.locator('.skill-library-editor-actions')).toBeInViewport();
   await dialog.getByRole('button', { name: 'All skills', exact: true }).click();
-  await expect(dialog.locator('.skill-library-sidebar')).toBeVisible();
+  await expect(dialog.locator('.skill-library-browse')).toBeVisible();
   await dialog.getByRole('button', { name: 'New skill', exact: true }).click();
   await dialog.getByLabel('Skill ID').fill('unsaved');
-  await content.fill('Keep this draft.');
+  await instructions.fill('Keep this draft.');
+  await dialog.getByRole('button', { name: 'All skills', exact: true }).click();
+  await expect(dialog.getByText('Discard unsaved skill changes?')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(instructions).toHaveValue('Keep this draft.');
   await page.keyboard.press('Escape');
   await dialog.getByRole('button', { name: 'Keep editing' }).click();
-  await expect(content).toHaveValue('Keep this draft.');
+  await expect(instructions).toHaveValue('Keep this draft.');
   await page.keyboard.press('Escape'); await dialog.getByRole('button', { name: 'Discard changes' }).click();
 
   // Chinese labels and the empty-workspace global library work without a paper.
@@ -143,9 +203,24 @@ try {
   await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: '技能', exact: true }).click();
   const chinese = page.getByRole('dialog', { name: '技能', exact: true });
   await expect(chinese).toBeVisible();
+  await expect(chinese.getByRole('group', { name: '技能范围' }).getByRole('button', { name: '本论文', exact: true })).toHaveCount(0);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.screenshot({ path: '/tmp/papilot-skills-list-dark-chinese.png', animations: 'disabled' });
+  for (const width of [820, 700, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const overflow = await chinese.locator('.skill-library').evaluate(element => element.scrollWidth > element.clientWidth);
+    assert.equal(overflow, false, `Skills fit at ${width}px`);
+    await expect(chinese.getByRole('button', { name: '新建技能', exact: true })).toBeInViewport();
+  }
   await chinese.getByRole('button', { name: '新建技能', exact: true }).click();
   await expect(chinese.getByLabel('保存到')).toHaveValue('user');
   await expect(chinese.getByLabel('保存到').locator('option')).toHaveCount(1);
+  await chinese.getByRole('button', { name: '选择图标', exact: true }).click();
+  const chinesePicker = page.getByRole('dialog', { name: '选择图标', exact: true });
+  await expect(chinesePicker.getByRole('radio', { name: '书籍', exact: true })).toBeVisible();
+  await page.screenshot({ path: '/tmp/papilot-skill-icon-picker-dark.png', animations: 'disabled' });
+  await page.keyboard.press('Escape');
   await chinese.getByRole('button', { name: '关闭', exact: true }).click();
   await chinese.getByRole('button', { name: '放弃修改', exact: true }).click();
   assert.deepEqual(errors, []);

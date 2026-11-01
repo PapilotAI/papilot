@@ -28,6 +28,7 @@ import { MAX_ATTACHMENT_BYTES } from '../shared.ts';
 import { PaperImports } from './imports.ts';
 import { DATA } from './paths.ts';
 import { registerAiReviewRoutes } from './ai-review-routes.ts';
+import { detectLatex } from './latex-installation.ts';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
 
@@ -48,6 +49,7 @@ export interface AppOptions {
   connectReview?: typeof reviewClient;
   updates?: Updates; updateInstance?: string;
   diagnostics?: Diagnostics;
+  latexInstallation?: typeof detectLatex;
 }
 
 // One Fastify instance per listener: the local one for this host and Tailscale,
@@ -123,6 +125,7 @@ export async function buildApp(options: AppOptions) {
 
   app.get('/api/health', { config: { access: 'public' } }, () => listener.kind === 'local' ? { ok: true, name: 'Papilot', version: options.version, ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) } : { ok: true });
   // Environment reports include host paths, so they are available only to the owner.
+  app.get('/api/runtime/latex', owner, () => (options.latexInstallation || detectLatex)());
   app.post('/api/diagnostics', owner, request => {
     const projectId = (request.body as { projectId?: unknown } | null)?.projectId;
     if (projectId !== undefined && (typeof projectId !== 'string' || !projectId || projectId.length > 64)) throw new Error('Select a valid paper to check.');

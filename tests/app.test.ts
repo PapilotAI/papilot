@@ -45,7 +45,7 @@ async function fixture() {
   const updates = new Updates({ root: process.cwd(), data: dist, version: '9.9.9', port: 7274, supported: true, busy: () => true, shutdown() {}, latest: async () => '10.0.0', install: async () => '/fixture-update' });
   const diagnosticRequests: { repo?: string; port?: number }[] = [];
   const diagnostics = new Diagnostics(async (repo, port) => { diagnosticRequests.push({ repo, port }); return { version: '9.9.9', ok: false, checks: [{ id: 'latexmk', ok: false, severity: 'error', detail: 'Not installed.', fix: 'Install TeX Live.' }] }; });
-  const shared = { store, workspace, accounts, updates, diagnostics, manuscripts: new Manuscripts(), csrf: 'local-csrf', serialGit: gitQueue(), dist, version: '9.9.9', connectReview: async () => review };
+  const shared = { store, workspace, accounts, updates, diagnostics, latexInstallation: async () => ({ distribution: 'MacTeX' as const, version: '2025', path: '/usr/local/texlive/2025' }), manuscripts: new Manuscripts(), csrf: 'local-csrf', serialGit: gitQueue(), dist, version: '9.9.9', connectReview: async () => review };
   const local = await buildApp({ ...shared, listener: { kind: 'local', port: 7274, publicOrigin: PUBLIC, owner: 'owner@example' } });
   const remote = await buildApp({ ...shared, listener: { kind: 'account', origin: ORIGIN, hsts: true } });
   // Ada is invited to the thesis only and signs in at the public URL.
@@ -113,6 +113,18 @@ test('paper path and removal require the owner, CSRF and an idle paper', async (
     assert.deepEqual(snapshot.projects.map((p: any) => p.id), ['grant']);
     assert.deepEqual(snapshot.tasks.map((t: any) => t.id), ['grant-task']);
     assert.equal((await f.remote.inject({ url: '/api/projects/thesis/git', headers: f.as })).statusCode, 400);
+  } finally { await f.close(); }
+});
+
+test('LaTeX installation information is read-only and owner-only', async () => {
+  const f = await fixture();
+  try {
+    const url = '/api/runtime/latex';
+    assert.equal((await f.remote.inject({ url, headers: f.as })).statusCode, 403);
+    const result = await f.local.inject({ url, headers: LOCAL });
+    assert.equal(result.statusCode, 200);
+    assert.deepEqual(result.json(), { distribution: 'MacTeX', version: '2025', path: '/usr/local/texlive/2025' });
+    assert.equal(f.diagnosticRequests.length, 0, 'Reading the installation does not run repository or agent diagnostics');
   } finally { await f.close(); }
 });
 

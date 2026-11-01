@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { taskEffort } from '../src/web/agent-picker.tsx';
+import { taskEffort } from '../src/web/task-effort.ts';
 
 const model = (efforts: string[]) => ({ id: 'm', name: 'M', isDefault: true, efforts, defaultEffort: 'low' });
 

@@ -220,6 +220,7 @@ test('doctor checks Kimi ACP availability without login, prompts or reading cred
     assert.equal(fs.existsSync(f.data), false);
     const missing = await f.run(['--json'], { PAPILOT_KIMI_BIN: path.join(f.dir, 'absent') });
     assert.equal(item(missing.report, 'agent.kimi').ok, false);
+    assert.match(item(missing.report, 'agent.kimi').detail, /PAPILOT_KIMI_BIN.*runnable executable/);
     assert.match(item(missing.report, 'agent.kimi').fix!, /kimi login/);
   } finally { f.cleanup(); }
 });

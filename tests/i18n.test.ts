@@ -5,11 +5,13 @@ import { parseSkill } from '../src/server/skills.ts';
 import { browserLanguage, t, tn } from '../src/web/i18n.ts';
 import { zhCN } from '../src/web/zh-CN.ts';
 import { GROUP_NAMES } from '../src/note-groups.ts';
+import { SKILL_ICONS } from '../src/skill-icons.ts';
 
 // Every message the workspace shows: t('…') and both forms of tn(n, '…', '…').
 function messages() {
   const found = new Set<string>();
   for (const name of Object.values(GROUP_NAMES)) found.add(name);
+  for (const icon of SKILL_ICONS) found.add(icon.label);
   const pattern = /\bt\(\s*'((?:[^'\\]|\\.)*)'|\btn\([^,]+,\s*'((?:[^'\\]|\\.)*)'\s*,\s*'((?:[^'\\]|\\.)*)'/g;
   for (const file of fs.readdirSync('src/web')) {
     if (!/\.tsx?$/.test(file) || file === 'i18n.ts' || file === 'zh-CN.ts') continue;

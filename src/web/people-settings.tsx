@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useState, type Ref } from 'react';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
+import info from 'virtual:papilot-info';
 import type { Device, People, Person, Project } from '../shared.ts';
 
 type Api = <T = any>(route: string, body?: unknown) => Promise<T>;
@@ -41,21 +42,43 @@ export function PeopleSettings({ api, projects, ago, controls }: PeopleSettingsP
     {projects.map(project => <label key={project.id} className="checkbox"><input type="checkbox" checked={selected.includes(project.id)} onChange={event => toggle(project.id, event.target.checked)}/>{project.name}</label>)}
   </fieldset>;
   return <div className="people-settings settings-page">
-      <p className="settings-intro">{t('People you invite sign in with a passkey at the public address and can do everything you can in the papers you share with them, including approving the commands agents run on this host and pushing with its Git credentials.')}</p>
-      <p className="people-warning settings-notice"><Icon name="alert" size={15}/><span>{t('Agents and builds can read any file on this host, including your other papers. Invite only people you would trust with access to it.')}</span></p>
-      {people && !people.origin && <p className="people-setup settings-card settings-card-body">{t('To invite people, give Papilot a public HTTPS address: set PAPILOT_ACCOUNT_ORIGIN and forward it to this host, as the Collaborators section of the guide describes.')}</p>}
+      <p className="settings-intro">{t('Share your papers and manage the people you work with.')}</p>
+      <aside className="people-warning" aria-labelledby="people-warning-title">
+        <Icon name="alert" size={20}/>
+        <div><h3 id="people-warning-title">{t('Sharing is not sandboxed')}</h3>
+          <p>{t('Invited people can access all files readable by Papilot, including credentials and unshared papers.')}</p>
+          <p>{t('Run Papilot and its agents in an isolated container such as Docker to limit access; mounted files remain accessible.')}</p>
+          <details className="people-access-details"><summary>{t('What can invited people do?')}<Icon name="chevronDown" size={13}/></summary>
+            <p>{t('People you invite sign in with a passkey at the public address and can do everything you can in the papers you share with them, including approving the commands agents run on this host and pushing with its Git credentials.')}</p>
+          </details>
+        </div>
+      </aside>
+      {people && !people.origin && <section className="people-setup settings-card settings-card-body" aria-labelledby="people-setup-title">
+        <div className="people-setup-heading"><span className="people-setup-icon"><Icon name="people" size={23}/></span><span className="people-badge">{t('Setup required')}</span></div>
+        <h3 id="people-setup-title">{t('Bring your collaborators in')}</h3>
+        <p>{t('Connect a public HTTPS address to invite people to your papers. They can sign in securely with a passkey.')}</p>
+        <a className="button secondary" href={`${info.repository}/blob/main/docs/guide.md#collaborators`} target="_blank" rel="noopener noreferrer">{t('Set up sharing')}<Icon name="external" size={14}/><span className="sr-only">{t('Opens in a new tab')}</span></a>
+      </section>}
       {people?.origin && <form className="people-invite settings-card settings-card-body" onSubmit={event => { event.preventDefault(); if (name.trim()) void invite(); }}>
-        <label>{t('Invite someone')}<input value={name} maxLength={80} onChange={event => setName(event.target.value)} placeholder={t('Their name, as others will see it')} autoComplete="off"/></label>
+        <div className="people-invite-heading"><Icon name="people" size={18}/><h3>{t('Invite someone')}</h3></div>
+        <p className="people-invite-description">{t('Choose the papers to share, then send a personal invite link.')}</p>
+        <label><span>{t('Name')}</span><input aria-label={t('Invite someone')} value={name} maxLength={80} onChange={event => setName(event.target.value)} placeholder={t('Their name, as others will see it')} autoComplete="off"/></label>
         {papers(shared, (id, on) => setShared(current => on ? [...current, id] : current.filter(other => other !== id)), busy === 'invite', t('Papers they can open'))}
         <div className="button-row"><button className="button primary" disabled={!name.trim() || Boolean(busy)}>{busy === 'invite' ? t('Creating…') : t('Create invite link')}</button></div>
       </form>}
       {error && <p className="inline-error" role="alert">{error}</p>}
       {!people && busy === 'load' && <p className="muted" role="status">{t('Loading people…')}</p>}
-      <ul className="people-list">{people?.people.map(person => {
+      {people && <section className="people-members" aria-labelledby="people-members-title">
+      <div className="people-section-heading"><h3 id="people-members-title">{t('Members')}</h3><span className="people-count">{people.people.length}</span></div>
+      <ul className="people-list settings-card">{people.people.map(person => {
         const owner = person.role === 'owner', sessions = person.devices.filter(device => device.kind === 'session');
-        return <li key={person.id} className="person settings-card settings-card-body">
-          <div className="person-head"><strong>{owner ? t('{name} (you)', { name: person.name }) : person.name}</strong>
-            <span className="muted">{owner ? t('Owner') : !person.joined ? t('Invited, not joined yet') : person.lastSeenAt ? t('Last active {time}', { time: ago(person.lastSeenAt) }) : t('Joined')}</span></div>
+        return <li key={person.id} className="person">
+          <div className="person-head">
+            <span className="person-avatar" aria-hidden="true">{Array.from(person.name.trim())[0]?.toLocaleUpperCase() || '?'}</span>
+            <div className="person-identity"><strong>{owner ? t('{name} (you)', { name: person.name }) : person.name}</strong>
+              <span>{owner ? t('Access to all papers') : !person.joined ? t('Invited, not joined yet') : person.lastSeenAt ? t('Last active {time}', { time: ago(person.lastSeenAt) }) : t('Joined')}</span></div>
+            {owner && <span className="people-badge">{t('Owner')}</span>}
+          </div>
           {!owner && papers(person.projects, (id, on) => void share(person, id, on), busy === 'share:' + person.id, t('Papers {name} can open', { name: person.name }))}
           {links[person.id] && <div className="invite-link">
             <input readOnly aria-label={t('Invite link for {name}', { name: person.name })} value={links[person.id]} onFocus={event => event.currentTarget.select()}/>
@@ -77,5 +100,6 @@ export function PeopleSettings({ api, projects, ago, controls }: PeopleSettingsP
           </div>}
         </li>;
       })}</ul>
+      </section>}
   </div>;
 }

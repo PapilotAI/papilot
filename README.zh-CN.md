@@ -109,7 +109,7 @@ Papilot 会自动找出电脑上已有的智能体，只列出这些；Codex 始
 
 Papilot 从不保存你的凭据。CLI 智能体使用各自的登录；为 Claude、Cursor 或 GLM 设置的密钥只会交给对应的服务。已找到但没有登录的智能体会显示为不可用。
 
-启动遇到问题？打开 **设置 → 运行状态与诊断**，或运行 `papilot doctor` 检查环境并查看修复建议，用 `papilot doctor --repo /path/to/paper` 一并检查论文。加上 `--json` 可输出机器可读的报告。诊断不会安装软件、启动服务或修改论文。检查范围见[诊断指南](docs/guide.md#diagnostics)。
+启动遇到问题？打开 **设置 → 运行环境**，在**智能体**中查看智能体配置，或在 **LaTeX** 中查看识别到的发行版、版本和位置，或运行 `papilot doctor` 检查环境并查看修复建议，用 `papilot doctor --repo /path/to/paper` 一并检查论文。加上 `--json` 可输出机器可读的报告。诊断不会安装软件、启动服务或修改论文。检查范围见[诊断指南](docs/guide.md#diagnostics)。
 
 <details>
 <summary><b>⚙️ 选项与远程访问</b></summary>
@@ -127,7 +127,7 @@ npm uninstall -g papilot       # 卸载；状态仍保留在 ~/.papilot，可自
 
 Papilot 只监听 `127.0.0.1`。若要从其他设备访问，用 Tailscale Serve 把它发布到你的 tailnet，并设置 `PAPILOT_PUBLIC_ORIGIN` 和 `PAPILOT_TAILSCALE_LOGIN`；Papilot 会校验每个请求的主机、浏览器来源和 Tailscale 身份。具体步骤见[指南](docs/guide.md#remote-access-with-tailscale)。
 
-要邀请导师或合作者，用 `PAPILOT_ACCOUNT_ORIGIN` 给 Papilot 一个公开的 HTTPS 地址，然后打开 **成员**：每个人用通行密钥登录，只能看到你共享的论文。只邀请你愿意让其访问运行 Papilot 的这台电脑的人，详见[协作者](docs/guide.md#collaborators)。
+要邀请导师或合作者，用 `PAPILOT_ACCOUNT_ORIGIN` 给 Papilot 一个公开的 HTTPS 地址，然后打开 **设置 → 共享**：每个人用通行密钥登录，只能看到你共享的论文。只邀请你愿意让其访问运行 Papilot 的这台电脑的人，详见[协作者](docs/guide.md#collaborators)。
 
 </details>
 

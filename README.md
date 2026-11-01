@@ -109,7 +109,7 @@ Papilot finds the agents on your computer by itself and offers only those; Codex
 
 Papilot never stores your credentials. CLI agents use their own login, and a key you set for Claude, Cursor or GLM goes only to that service. An agent that is found but not signed in shows as unavailable.
 
-Having trouble getting started? Open **Settings → Runtime & diagnostics**, or run `papilot doctor` for environment checks and fixes and `papilot doctor --repo /path/to/paper` to check a paper too. Add `--json` for a machine-readable report. Diagnostics do not install software, start the server or change your paper. See the [diagnostics guide](docs/guide.md#diagnostics) for what is checked.
+Having trouble getting started? Open **Settings → Runtime** and choose **Agents** for agent setup or **LaTeX** for the detected distribution, version, and location, or run `papilot doctor` for environment checks and fixes and `papilot doctor --repo /path/to/paper` to check a paper too. Add `--json` for a machine-readable report. Diagnostics do not install software, start the server or change your paper. See the [diagnostics guide](docs/guide.md#diagnostics) for what is checked.
 
 <details>
 <summary><b>⚙️ Options and remote access</b></summary>
@@ -127,7 +127,7 @@ When a release is available, **New version** appears next to **Settings**. Click
 
 Papilot listens only on `127.0.0.1`. To use it from another device, publish it on your tailnet with Tailscale Serve and set `PAPILOT_PUBLIC_ORIGIN` and `PAPILOT_TAILSCALE_LOGIN`. Papilot then checks the host, the browser origin and the Tailscale identity of every request. The [guide](docs/guide.md#remote-access-with-tailscale) has the steps.
 
-To invite an advisor or co-authors, give Papilot a public HTTPS address with `PAPILOT_ACCOUNT_ORIGIN` and open **People**: each person signs in with a passkey and sees only the papers you share. Invite only people you would trust with access to the computer Papilot runs on; see [Collaborators](docs/guide.md#collaborators).
+To invite an advisor or co-authors, give Papilot a public HTTPS address with `PAPILOT_ACCOUNT_ORIGIN` and open **Settings → Sharing**: each person signs in with a passkey and sees only the papers you share. Invite only people you would trust with access to the computer Papilot runs on; see [Collaborators](docs/guide.md#collaborators).
 
 </details>
 

@@ -38,14 +38,21 @@ function Limit({ window, reached }: { window: UsageWindow; reached: boolean }) {
 }
 
 // The agent account's included usage, as the agent reports it for this host.
-export function UsageSummary({ usage, agent = 'Codex' }: { usage: Usage; agent?: string }) {
+export function UsageSummary({ usage, agent = 'Codex', expanded = false }: { usage: Usage; agent?: string; expanded?: boolean }) {
   const credits = usage.credits;
   const primary = usage.windows.reduce<UsageWindow | undefined>((highest, window) => !highest || window.usedPercent > highest.usedPercent ? window : highest, undefined);
   const used = primary ? Math.round(primary.usedPercent) : 0;
   const tone = usage.reached || used >= 90 ? 'critical' : used >= 75 ? 'warning' : '';
   const balance = credits ? credits.unlimited ? t('Unlimited credits') : credits.balance !== null ? t('{n} credits', { n: Math.floor(credits.balance).toLocaleString(locale()) }) : t('Credits available') : '';
+  const details = <div className="usage-details">
+    {usage.windows.map((window, index) => <Limit key={index} window={window} reached={usage.reached}/>)}
+    {credits && <span className="usage-credits">{balance}</span>}
+  </div>;
   return <section className="usage" aria-label={t('{agent} usage', { agent })}>
-    <details key={agent}>
+    {expanded ? <>
+      <div className={'usage-expanded-head ' + tone}>{usage.plan && <span className="usage-plan">{plans[usage.plan] || usage.plan}</span>}{usage.reached && <span className="usage-value">{t('Limit reached')}</span>}</div>
+      {details}
+    </> : <details key={agent}>
       <summary className={tone} aria-label={t('{agent} usage details', { agent })}>
         <span className="usage-account">{agent}{usage.plan && <span className="usage-plan">{plans[usage.plan] || usage.plan}</span>}</span>
         <span className="usage-overview" title={primary ? windowName(primary.minutes) : undefined}>
@@ -54,10 +61,7 @@ export function UsageSummary({ usage, agent = 'Codex' }: { usage: Usage; agent?:
         </span>
         <Icon name="chevronDown" size={13}/>
       </summary>
-      <div className="usage-details">
-        {usage.windows.map((window, index) => <Limit key={index} window={window} reached={usage.reached}/>)}
-        {credits && <span className="usage-credits">{balance}</span>}
-      </div>
-    </details>
+      {details}
+    </details>}
   </section>;
 }

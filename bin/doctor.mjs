@@ -165,7 +165,7 @@ export async function doctor(args) {
   }
   async function agyCheck() {
     const file = agentExecutable(process.env.PAPILOT_AGY_BIN || 'agy');
-    if (!file) { check('agent.antigravity', false, 'info', 'Antigravity CLI is not installed or PAPILOT_AGY_BIN is invalid, so Papilot does not offer it.', 'Install Antigravity and sign in to agy, or choose another agent.'); return false; }
+    if (!file) { check('agent.antigravity', false, 'info', missingAgent('agy', 'PAPILOT_AGY_BIN'), 'Install Antigravity and sign in to agy on this host. If already installed, correct PAPILOT_AGY_BIN or the server PATH, then restart Papilot.'); return false; }
     const proxy = process.env.PAPILOT_AGY_PROXY;
     const env = proxy ? { ...process.env, HTTPS_PROXY: proxy, HTTP_PROXY: proxy, https_proxy: proxy, http_proxy: proxy, NO_PROXY: '127.0.0.1,localhost' } : process.env;
     const result = await command(file, ['models'], { env });
@@ -174,9 +174,13 @@ export async function doctor(args) {
     return ready;
   }
   // ACP agents: the CLI must offer its ACP mode. Login is not checked, so no credential is read.
+  function missingAgent(command, variable) {
+    return process.env[variable] ? `${variable} does not resolve to a runnable executable in Papilot's environment.`
+      : `${command} was not found on the PATH or in the standard agent folders available to Papilot. It may be installed for a different user or shell.`;
+  }
   async function acpCheck(id, name, bin, help, install, update) {
     const file = agentExecutable(process.env[bin.env] || bin.name);
-    if (!file) { check(`agent.${id}`, false, 'info', `${name} is not installed or ${bin.env} is invalid, so Papilot does not offer it.`, `${install}, or choose another agent.`); return false; }
+    if (!file) { check(`agent.${id}`, false, 'info', missingAgent(bin.name, bin.env), `${install}. If already installed, correct ${bin.env} or the server PATH, then restart Papilot.`); return false; }
     const result = await command(file, help);
     const ready = result.ok && /\bACP\b|Agent Client Protocol/i.test(result.stdout + '\n' + result.stderr);
     check(`agent.${id}`, ready, 'warn', `${file}: ${ready ? 'ACP command available; login and generation were not tested' : result.reason || 'ACP command unavailable'}.`, `${update} Set ${bin.env} if needed.`);
@@ -190,7 +194,7 @@ export async function doctor(args) {
   async function cursorCheck() {
     const configured = Boolean(process.env.CURSOR_API_KEY) || fs.existsSync(path.join(os.homedir(), '.cursor/sdk/auth.json'));
     const sdk = installedModule('@cursor/sdk') || installedModule('@cursor/sdk', path.join(data, 'agents'));
-    check('agent.cursor', Boolean(configured && sdk), configured ? 'warn' : 'info', !configured ? 'CURSOR_API_KEY is not set, so Papilot does not offer Cursor.' : sdk ? 'Cursor SDK installed; API key configured (not validated).' : 'Cursor API key configured; the Cursor SDK is installed on first use.', !configured ? 'Start Papilot with CURSOR_API_KEY set to a key from the Cursor dashboard. The Cursor app and CLI login are not used.' : 'Start papilot and choose Cursor once to install the SDK.');
+    check('agent.cursor', Boolean(configured && sdk), configured ? 'warn' : 'info', !configured ? 'Neither CURSOR_API_KEY nor a saved Cursor SDK login was found for the user running Papilot.' : sdk ? 'Cursor SDK installed; SDK credentials detected (not validated).' : 'Cursor SDK credentials detected; the SDK is installed on first use.', !configured ? 'Start Papilot with CURSOR_API_KEY set to a key from the Cursor dashboard, or configure the Cursor SDK login. The Cursor app and CLI login are not used. Restart Papilot after changing its environment.' : 'Start papilot and choose Cursor once to install the SDK.');
     return configured;
   }
   async function glmCheck() {

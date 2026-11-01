@@ -17,14 +17,14 @@ const errors = []; page.on('pageerror', error => errors.push(error.message));
 const skills = [
   { id: 'polish', name: 'Polish', description: 'Improve clarity and flow, keeping the meaning', hint: 'Which part?', source: 'builtin' },
   { id: 'proofread', name: 'Proofread', description: 'Fix typos, grammar and punctuation without rewording', hint: 'Which part? Leave empty for the whole paper', source: 'builtin' },
-  { id: 'venue', name: 'Venue style', description: 'Follow the venue style guide', hint: '', source: 'paper' },
+  { id: 'venue', name: 'Venue style', description: 'Follow the venue style guide', hint: '', icon: 'book', source: 'paper' },
 ];
 const task = { id: 'skill-fixture-0001', projectId: 'paper', name: 'p-skill', title: 'Polish: the introduction', instructions: 'x', worktree: '/tmp/paper-tasks/p-skill', threadId: 't', turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null,
   review: { state: 'done', round: 2, counts: { pending: 0, accepted: 2, rejected: 1, commented: 0 }, unsent: 3, comments: 0, files: ['sections/intro.tex'] } };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [] } };
 const git = { remote: true, branch: 'main', upstream: 'origin/main', ahead: 0, behind: 0, head: { hash: 'abc1234', subject: 'Draft', date: 1 }, files: [{ path: 'sections/intro.tex', status: 'M', staged: false, lines: [3, 2] }] };
 const items = [
-  { id: 'u1', taskId: task.id, type: 'user', text: 'the introduction', meta: { skill: { id: 'polish', name: 'Polish' } }, createdAt: 1 },
+  { id: 'u1', taskId: task.id, type: 'user', text: 'the introduction', meta: { skill: { id: 'polish', name: 'Polish', icon: 'pen' } }, createdAt: 1 },
   { id: 'a1', taskId: task.id, type: 'assistant', text: 'Rewrote the opening so that $f(x) = \\sum_i x_i$ is defined first.', createdAt: 2 },
   { id: 'u2', taskId: task.id, type: 'user', text: '', meta: { sendsFeedback: true, feedback: { round: 1, accepted: 2, rejected: 1, undone: 0, comments: [{ where: 'sections/intro.tex:12', text: 'Keep the citation here.' }] } }, createdAt: 3 },
   { id: 'u3', taskId: task.id, type: 'user', text: 'Address the comments from this review round. Preserve accepted changes and do not reintroduce rejected edits.', createdAt: 4 },
@@ -63,6 +63,11 @@ await page.route('**/api/**', async route => {
     snapshot.tasks.push(created); return json(created);
   }
   if (url.pathname.endsWith('/messages')) { messages.push(route.request().postDataJSON()); return json({ ok: true }); }
+  if (url.pathname.endsWith('/archive')) {
+    const target = snapshot.tasks.find(item => item.id === url.pathname.split('/')[3]);
+    target.archivedAt = route.request().postDataJSON().archived ? Date.now() : null;
+    return json(target);
+  }
   throw new Error(`Unexpected app request ${url.pathname}`);
 });
 await page.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: '<html lang="en"><head></head><body><div class="bar">Review round 2</div><main id="paper"><p>PDF review fixture</p></main></body></html>' }));
@@ -72,6 +77,7 @@ try {
   // The chat shows the skill, typeset mathematics and feedback, never the prompts.
   const chat = page.locator('.thread');
   await expect(chat.locator('.message.user').first().locator('.skill-chip')).toHaveText('Polish');
+  await expect(chat.locator('.message.user').first().locator('.skill-chip')).toHaveAttribute('data-skill-icon', 'pen');
   await expect(chat.locator('.katex').first()).toBeVisible();
   await expect(chat.getByText('Review feedback', { exact: true }).first()).toBeVisible();
   await expect(chat.locator('.feedback-counts').first()).toHaveText('2 accepted1 rejected1 comment');
@@ -113,10 +119,12 @@ try {
   await expect(page.locator('.composer-skill')).toHaveCount(0);
   await followUp.fill('/ven');
   await expect(page.getByRole('option')).toHaveText([/Venue style.*This paper/]);
+  await expect(page.getByRole('option').locator('.skill-name')).toHaveAttribute('data-skill-icon', 'book');
   await followUp.press('Escape');
   await expect(page.getByRole('listbox')).toHaveCount(0);
   await followUp.fill('/venue');
   await followUp.press('Tab');
+  await expect(page.locator('.composer-skill .skill-chip')).toHaveAttribute('data-skill-icon', 'book');
   await page.getByRole('button', { name: 'Send instructions' }).click();
   await expect.poll(() => messages.length).toBe(2);
   assert.equal(messages[1].skill, 'venue'); assert.equal(messages[1].text, '');

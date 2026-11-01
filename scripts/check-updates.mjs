@@ -86,7 +86,7 @@ try {
   await channel.selectOption('dev');
   await expect(settingsDialog.getByText('0.7.0-dev.aaaaaaa', { exact: true })).toBeVisible();
   assert.equal(installs.length, 2, 'changing channels only checks; it never installs automatically');
-  await settingsDialog.getByRole('button', { name: '更新到 0.7.0-dev.aaaaaaa', exact: true }).click();
+  await settingsDialog.getByRole('button', { name: '立即更新', exact: true }).click();
   assert.deepEqual(installs.at(-1), { version: devVersion });
   await expect(channel).toBeDisabled();
   await expect(settingsDialog.getByText('正在下载并构建选定的 GitHub 提交…', { exact: true })).toBeVisible();
@@ -104,7 +104,7 @@ try {
   await page.getByRole('button', { name: '版本更新', exact: true }).click();
   await expect(channel).toHaveValue('dev');
   await channel.selectOption('stable');
-  await settingsDialog.getByRole('button', { name: '更新到 0.7.0', exact: true }).click();
+  await settingsDialog.getByRole('button', { name: '立即更新', exact: true }).click();
   assert.deepEqual(installs.at(-1), { version: '0.7.0' }, 'returning to stable is available from a dev build');
   assert.deepEqual(channels, ['dev', 'stable']);
   await settingsDialog.getByRole('button', { name: '关闭', exact: true }).click();
