@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { NoteSummary, Task } from '../shared.ts';
 import { ReviewNotes } from './review-notes.tsx';
+import { Icon } from './icons.tsx';
 import themeStyles from './theme.css?inline';
 import { syncAppearance } from './appearance.ts';
 import { language, t, useLanguage } from './i18n.ts';
@@ -360,6 +361,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
   }, [document]);
   const ready = phase === 'ready';
   const [slot, setSlot] = useState<Element | null>(null);
+  const [completionOffscreen, setCompletionOffscreen] = useState(false);
   useEffect(() => {
     if (!document || !ready) { setSlot(null); return; }
     const find = () => setSlot(document.querySelector('.review-complete-actions'));
@@ -368,6 +370,23 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     watch.observe(document.body, { childList: true, subtree: true });
     return () => watch.disconnect();
   }, [document, ready]);
+  useEffect(() => {
+    setCompletionOffscreen(false);
+    const card = slot?.closest<HTMLElement>('.review-complete');
+    const paper = document?.getElementById('paper');
+    if (!card || !paper || !completion) return;
+    const visibility = new IntersectionObserver(([entry]) => setCompletionOffscreen(!entry.isIntersecting), { root: paper });
+    visibility.observe(card);
+    return () => visibility.disconnect();
+  }, [document, slot, Boolean(completion)]);
+  function returnToCompletion() {
+    const card = slot?.closest<HTMLElement>('.review-complete');
+    const paper = document?.getElementById('paper');
+    if (!card || !paper) return;
+    // Scroll only the review pane; focusing must not move the chat or iframe.
+    card.focus({ preventScroll: true });
+    paper.scrollTo({ top: Math.max(0, paper.scrollTop + card.getBoundingClientRect().top - paper.getBoundingClientRect().top - 14), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  }
   return <div className={'review-viewport' + (ready ? '' : ' review-pending')} aria-busy={!ready}>
     <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}:${focusSequence || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound, linkedChange) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
@@ -376,6 +395,10 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
       <div ref={toolbar} className="review-tools">{task && onSendNotes && <ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>}{tools}</div>
     </div>
     {slot && completion ? createPortal(completion, slot) : null}
+    {document && slot && completion && completionOffscreen ? createPortal(<div className="review-complete-jump">
+      <span><Icon name="check" size={15}/>{t('Review complete')}</span>
+      <button type="button" onClick={returnToCompletion}>{t('Back to summary')}<Icon name="arrowUp" size={14}/></button>
+    </div>, document.body) : null}
     {!ready && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}
   </div>;
 }

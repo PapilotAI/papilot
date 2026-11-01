@@ -391,6 +391,31 @@ try {
   await message().fill('');
   await expect(card.getByRole('button', { name: 'Commit', exact: true })).toBeDisabled();
   await message().fill('Explain the method');
+  // A long finished review keeps the full form at the top and offers a
+  // compact return path without pulling the author away from the PDF.
+  assert.equal(await card.evaluate(el => el.parentElement.firstElementChild === el), true);
+  await viewer().locator('.document').evaluate(el => { el.style.minHeight = '1800px'; });
+  const summaryLink = () => viewer().getByRole('button', { name: 'Back to summary', exact: true });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width === 390) await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
+    await expect(message()).toBeVisible();
+    await viewer().locator('#paper').hover();
+    await page.mouse.wheel(0, 1800);
+    await expect(summaryLink()).toBeInViewport();
+    assert.ok(await viewer().locator('#paper').evaluate(el => el.scrollTop > 500), 'The summary does not automatically scroll the review');
+    assert.equal(await viewer().locator('.review-complete-jump').evaluate(el => el.getBoundingClientRect().right <= document.documentElement.clientWidth), true);
+    await page.screenshot({ path: `test-results/review-summary-jump-${width}.png`, animations: 'disabled' });
+    await summaryLink().click();
+    await expect.poll(() => viewer().locator('#paper').evaluate(el => el.scrollTop)).toBeLessThan(2);
+    await expect(summaryLink()).toHaveCount(0);
+    await expect(card).toBeFocused();
+    await expect(message()).toHaveValue('Explain the method');
+    assert.deepEqual(await viewer().locator('#root').evaluate(el => [el.scrollTop, document.documentElement.scrollTop]), [0, 0]);
+  }
+  await viewer().locator('.document').evaluate(el => { el.style.minHeight = ''; });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  assert.equal(commitRequests.length, 0, 'Returning to the summary never commits automatically');
   fs.mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/review-completed.png', fullPage: true, animations: 'disabled' });
   await card.getByRole('button', { name: 'Commit and push', exact: true }).click();

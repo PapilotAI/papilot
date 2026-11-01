@@ -1326,6 +1326,68 @@ export function ReviewApp({
       )}
       <div className="review-body">
         <main id="paper" ref={paper} tabIndex={-1} onScroll={onScroll}>
+          {changes && detail && !count.pending && (count.accepted > 0 || !stops.length) && (
+            <div className="review-complete" role="status" tabIndex={-1}>
+              <strong>
+                {count.accepted
+                  ? t("All changes are staged")
+                  : t("No uncommitted changes")}
+              </strong>
+              <span>
+                {count.accepted
+                  ? t("Commit them when you are ready.")
+                  : t("The PDF matches the last commit.")}
+              </span>
+              <div className="review-complete-actions" />
+            </div>
+          )}
+          {!changes && detail && !history && !count.pending && (
+            <div className="review-complete" role="status" tabIndex={-1}>
+              <strong>
+                {t(
+                  state?.workspace?.status === "waiting_input"
+                    ? "Agent needs your input"
+                    : state?.workspace?.status === "queued"
+                      ? "Feedback queued"
+                      : state?.workspace?.status === "running"
+                        ? "Feedback sent · Agent is working"
+                        : state?.workspace?.status === "building" ||
+                            state?.state === "building"
+                          ? "Preparing the next review…"
+                          : "All changes reviewed",
+                )}
+              </strong>
+              <span>
+                {t(
+                  state?.workspace?.status === "waiting_input"
+                    ? "Open Chat to answer the agent's question."
+                    : ["running", "queued", "building"].includes(
+                          state?.workspace?.status || "",
+                        ) || state?.state === "building"
+                      ? "New changes will appear here when ready."
+                      : state?.workspace?.comments
+                        ? "Your comments are saved. Send feedback so the agent can revise."
+                        : state?.workspace?.deferred
+                          ? state.workspace.accepted
+                            ? "Accepted changes are saved in this task. Choose where to save them below."
+                            : state.workspace.destination === "branch"
+                              ? "Accepted changes are committed to the task branch."
+                              : state.workspace.destination === "workspace"
+                                ? "Accepted changes are in your manuscript."
+                                : "There are no accepted changes to save."
+                        : state?.workspace?.accepted
+                          ? "Accepted changes are in your manuscript."
+                          : state?.workspace?.unsent && !count.accepted
+                            ? "Your decisions are saved. Send them to the agent to continue."
+                            : count.commented && !state?.workspace
+                              ? "Your comments are saved for the agent."
+                              : "There are no new changes to review. Previous decisions are available in History.",
+                )}
+              </span>
+              {/* A host such as Papilot puts its next step here, for example a commit. */}
+              <div className="review-complete-actions" />
+            </div>
+          )}
           {(state?.commentLock || state?.decisionLock) && (
             <div className="banner" id="review-lock" role="status">
               {t((state.commentLock || state.decisionLock)!)}
@@ -1397,68 +1459,6 @@ export function ReviewApp({
                 onRetry={references.retry}
               />
             )}
-          {changes && detail && !count.pending && (count.accepted > 0 || !stops.length) && (
-            <div className="review-complete" role="status">
-              <strong>
-                {count.accepted
-                  ? t("All changes are staged")
-                  : t("No uncommitted changes")}
-              </strong>
-              <span>
-                {count.accepted
-                  ? t("Commit them when you are ready.")
-                  : t("The PDF matches the last commit.")}
-              </span>
-              <div className="review-complete-actions" />
-            </div>
-          )}
-          {!changes && detail && !history && !count.pending && (
-            <div className="review-complete" role="status">
-              <strong>
-                {t(
-                  state?.workspace?.status === "waiting_input"
-                    ? "Agent needs your input"
-                    : state?.workspace?.status === "queued"
-                      ? "Feedback queued"
-                      : state?.workspace?.status === "running"
-                        ? "Feedback sent · Agent is working"
-                        : state?.workspace?.status === "building" ||
-                            state?.state === "building"
-                          ? "Preparing the next review…"
-                          : "All changes reviewed",
-                )}
-              </strong>
-              <span>
-                {t(
-                  state?.workspace?.status === "waiting_input"
-                    ? "Open Chat to answer the agent's question."
-                    : ["running", "queued", "building"].includes(
-                          state?.workspace?.status || "",
-                        ) || state?.state === "building"
-                      ? "New changes will appear here when ready."
-                      : state?.workspace?.comments
-                        ? "Your comments are saved. Send feedback so the agent can revise."
-                        : state?.workspace?.deferred
-                          ? state.workspace.accepted
-                            ? "Accepted changes are saved in this task. Choose where to save them below."
-                            : state.workspace.destination === "branch"
-                              ? "Accepted changes are committed to the task branch."
-                              : state.workspace.destination === "workspace"
-                                ? "Accepted changes are in your manuscript."
-                                : "There are no accepted changes to save."
-                        : state?.workspace?.accepted
-                          ? "Accepted changes are in your manuscript."
-                          : state?.workspace?.unsent && !count.accepted
-                            ? "Your decisions are saved. Send them to the agent to continue."
-                            : count.commented && !state?.workspace
-                              ? "Your comments are saved for the agent."
-                              : "There are no new changes to review. Previous decisions are available in History.",
-                )}
-              </span>
-              {/* A host such as Papilot puts its next step here, for example a commit. */}
-              <div className="review-complete-actions" />
-            </div>
-          )}
           <div className="document">
             {detail ? (
               <>

@@ -26,6 +26,7 @@ export const zhCN: Record<string, string> = {
   'Could not check for updates. Try again when connected.': '无法检查更新，请连接网络后重试。',
   'The dev build needs at least 2 GB of free disk space. Free some space and retry.': '构建 Dev 版本至少需要 2 GB 可用磁盘空间，请释放空间后重试。',
   'Save accepted changes': '保存已接受的改动',
+  'Back to summary': '返回提交区',
   'Commit to task branch': '提交到 task 分支',
   'Built-in': '内置', 'Global': '全局', 'Search skills': '搜索技能', 'Refresh skills': '刷新技能',
   'Skill scope': '技能范围', 'All skills': '全部技能', 'New skill': '新建技能', 'Overridden': '已被覆盖',
