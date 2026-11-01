@@ -127,7 +127,7 @@ npm uninstall -g papilot       # 卸载；状态仍保留在 ~/.papilot，可自
 
 Papilot 只监听 `127.0.0.1`。若要从其他设备访问，用 Tailscale Serve 把它发布到你的 tailnet，并设置 `PAPILOT_PUBLIC_ORIGIN` 和 `PAPILOT_TAILSCALE_LOGIN`；Papilot 会校验每个请求的主机、浏览器来源和 Tailscale 身份。具体步骤见[指南](docs/guide.md#remote-access-with-tailscale)。
 
-要邀请导师或合作者，用 `PAPILOT_ACCOUNT_ORIGIN` 给 Papilot 一个公开的 HTTPS 地址，然后打开 **成员**：每个人用通行密钥登录，只能看到你共享的论文。只邀请你愿意让其访问运行 Papilot 的这台电脑的人，详见[协作者](docs/guide.md#collaborators)。
+要邀请导师或合作者，用 `PAPILOT_ACCOUNT_ORIGIN` 给 Papilot 一个公开的 HTTPS 地址，然后打开 **设置 → 共享**：每个人用通行密钥登录，只能看到你共享的论文。只邀请你愿意让其访问运行 Papilot 的这台电脑的人，详见[协作者](docs/guide.md#collaborators)。
 
 </details>
 

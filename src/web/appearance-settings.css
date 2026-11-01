@@ -1,0 +1,54 @@
+.appearance-settings{gap:26px}
+.appearance-settings .settings-section-title{font-size:15px;margin-bottom:18px}
+.appearance-mode-card{margin-bottom:18px}
+.settings-content .appearance-settings .settings-card .settings-row{flex-direction:row;align-items:center;gap:16px}
+.appearance-modes{display:flex;gap:16px}
+.appearance-mode{position:relative;display:flex;flex-direction:column;gap:10px;align-items:center;cursor:pointer;min-width:0}
+.settings-dialog .appearance-mode>input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:1}
+.appearance-preview{position:relative;display:block;width:120px;height:84px;padding:9px;border:1px solid var(--line-strong);border-radius:10px;background:#e9e9e9;overflow:hidden;box-shadow:inset 0 0 0 2px rgb(0 0 0/.025);transition:box-shadow .15s,border-color .15s}
+.appearance-preview-dark{background:#333438;border-color:#45464b}
+.appearance-preview-system{background:linear-gradient(to right,#e9e9e9 50%,#333438 50%)}
+.appearance-mode:has(input:checked) .appearance-preview{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+.appearance-mode:has(input:focus-visible) .appearance-preview{outline:3px solid var(--accent);outline-offset:4px}
+.appearance-mode:hover .appearance-preview{box-shadow:0 2px 8px rgb(0 0 0/.12)}
+.appearance-mode-label{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-3);line-height:1.4}
+.appearance-mode:has(input:checked) .appearance-mode-label{color:var(--text);font-weight:500}
+.appearance-preview-half{position:absolute;inset:0;clip-path:inset(0 0 0 50%);padding:9px}
+.appearance-mini{display:flex;width:100%;height:100%;border:1px solid var(--line-strong);border-radius:5px;background:var(--bg);box-shadow:0 2px 4px rgb(0 0 0/.06);overflow:hidden;color:var(--text-3)}
+.appearance-mini-sidebar{display:flex;flex-direction:column;gap:4px;width:17px;flex:none;padding:5px 3px;background:var(--sidebar);border-right:1px solid var(--line)}
+.appearance-mini-sidebar svg{margin-bottom:3px}
+.appearance-mini i,.appearance-mini b,.appearance-mini em{display:block;height:2px;border-radius:2px;background:var(--line-strong)}
+.appearance-mini-sidebar i:last-child{width:65%}
+.appearance-mini-page{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px;padding:10px 5px;background:var(--bg-subtle)}
+.appearance-mini-page b{width:70%;height:3px;background:var(--text-2);margin-bottom:4px}
+.appearance-mini-page i:nth-child(4){width:70%}
+.appearance-mini-page em{margin:2px 0;background:var(--accent);opacity:.6}
+.appearance-mini-chat{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px;padding:8px 4px;border-left:1px solid var(--line)}
+.appearance-mini-chat b,.appearance-mini-chat em{width:80%;margin:1px 0 3px auto;background:var(--accent)}
+.appearance-mini-chat i:nth-child(3){width:65%}
+.appearance-mini-chat>span{height:8px;border:1px solid var(--line-strong);border-radius:6px;margin-top:auto}
+.settings-content .appearance-settings .appearance-colors-card .settings-row{padding:14px 0;min-height:65px}
+.appearance-theme-controls{display:flex;align-items:center;gap:12px;min-width:0}
+.appearance-customized{font-size:11px;color:var(--text-3)}
+.appearance-theme-picker,.appearance-accent-picker{position:relative;display:inline-flex;flex:none;max-width:100%}
+.appearance-settings .appearance-theme-picker .chip-select{min-width:174px;height:38px;border-radius:22px;font-size:14px}
+.appearance-accent-picker .chip-select{min-width:118px;padding-left:33px;border-radius:20px}
+.appearance-accent-dot{position:absolute;z-index:1;left:10px;top:9px;width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 1px rgb(0 0 0/.1);pointer-events:none}
+.appearance-color-field{display:flex;flex-direction:column;align-items:flex-end;min-width:0}
+.appearance-color-chip{display:flex;align-items:center;gap:9px;padding:5px 10px 5px 8px;border:1px solid var(--line-strong);border-radius:20px;height:34px;background:var(--bg)}
+.appearance-swatch{position:relative;display:block;width:19px;height:19px;flex:none;border-radius:50%;box-shadow:inset 0 0 0 1px rgb(128 128 128/.25);overflow:hidden;cursor:pointer}
+.settings-dialog .appearance-swatch input{position:absolute;inset:0;opacity:0;width:100%;height:100%;padding:0;margin:0;cursor:pointer}
+.appearance-swatch:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.settings-dialog input.appearance-hex{width:76px;height:24px;margin:0;padding:0;border:0;border-radius:3px;background:transparent;box-shadow:none;font:13px/1.5 var(--mono);color:var(--text)}
+.appearance-color-chip:focus-within{border-color:var(--accent);box-shadow:var(--ring)}
+.appearance-color-chip:has([aria-invalid=true]){border-color:var(--red)}
+.appearance-color-error{max-width:180px;color:var(--red);font-size:11px;text-align:right;margin-top:5px}
+.appearance-hint{margin:12px 2px 0;color:var(--text-3);font-size:12px}
+.appearance-advanced summary{display:flex;align-items:center;gap:7px;width:fit-content;cursor:pointer;color:var(--text-2);font-size:14px;list-style:none;border-radius:4px}
+.appearance-advanced summary::-webkit-details-marker{display:none}
+.appearance-advanced[open] summary{margin-bottom:16px}
+.appearance-advanced[open] summary svg{transform:rotate(90deg)}
+.appearance-reset{display:flex;align-items:center;gap:7px;justify-self:start;min-height:32px;font-size:12px;color:var(--text-3);border-radius:4px}
+.appearance-reset:hover{color:var(--text)}
+@media(max-width:1000px){.appearance-modes{gap:12px}.appearance-preview{width:100px;height:74px;padding:7px}.appearance-preview-half{padding:7px}}
+@media(max-width:540px){.settings-content .appearance-settings .appearance-mode-card .settings-row{flex-direction:column;align-items:stretch;gap:18px}.appearance-modes{justify-content:space-between;gap:12px}.appearance-mode{flex:1}.appearance-preview{width:100%;max-width:132px;height:78px}.appearance-customized{display:none}.appearance-settings .appearance-theme-picker .chip-select{min-width:150px}.appearance-colors-card .settings-name{font-size:13px}.settings-content .appearance-settings .settings-card .settings-choice{align-items:flex-start;flex-direction:column}.appearance-hint{font-size:11px}}

@@ -127,7 +127,7 @@ When a release is available, **New version** appears next to **Settings**. Click
 
 Papilot listens only on `127.0.0.1`. To use it from another device, publish it on your tailnet with Tailscale Serve and set `PAPILOT_PUBLIC_ORIGIN` and `PAPILOT_TAILSCALE_LOGIN`. Papilot then checks the host, the browser origin and the Tailscale identity of every request. The [guide](docs/guide.md#remote-access-with-tailscale) has the steps.
 
-To invite an advisor or co-authors, give Papilot a public HTTPS address with `PAPILOT_ACCOUNT_ORIGIN` and open **People**: each person signs in with a passkey and sees only the papers you share. Invite only people you would trust with access to the computer Papilot runs on; see [Collaborators](docs/guide.md#collaborators).
+To invite an advisor or co-authors, give Papilot a public HTTPS address with `PAPILOT_ACCOUNT_ORIGIN` and open **Settings → Sharing**: each person signs in with a passkey and sees only the papers you share. Invite only people you would trust with access to the computer Papilot runs on; see [Collaborators](docs/guide.md#collaborators).
 
 </details>
 

@@ -484,7 +484,7 @@ try {
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('');
   console.log('PASS: Live interface language, saved choice, translated review address and draft preservation');
 
-  // Notifications: off until turned on, then a background tab announces a ready review.
+  // Notifications: each scenario can be muted, independently of the master switch.
   await context.grantPermissions(['notifications'], { origin });
   await page.evaluate(() => {
     window.shown = [];
@@ -494,6 +494,11 @@ try {
   await settingsDialog.getByRole('button', { name: 'Notifications', exact: true }).click();
   const notifySwitch = settingsDialog.getByRole('switch', { name: 'Notifications' });
   assert.equal(await notifySwitch.isChecked(), false);
+  for (const name of ['Input needed', 'Approval requests', 'Review ready', 'Task finished', 'Task errors']) {
+    assert.equal(await settingsDialog.getByRole('combobox', { name, exact: true }).inputValue(), 'push');
+  }
+  const reviewNotifications = settingsDialog.getByRole('combobox', { name: 'Review ready', exact: true });
+  await reviewNotifications.selectOption('off');
   await notifySwitch.check();
   await settingsDialog.getByRole('button', { name: 'Send a test notification' }).click();
   await settingsDialog.getByText(/^Sent\./).waitFor();
@@ -505,12 +510,53 @@ try {
   await page.getByRole('button', { name: /^Clarify the introduction/ }).getByText('Preparing task results').waitFor();
   fixtureTask.status = 'reviewing';
   await page.clock.runFor(3000);
+  assert.equal(await page.evaluate(() => window.shown.length), 1, 'A muted review does not notify');
+  fixtureTask.status = 'failed';
+  await page.clock.runFor(3000);
   await page.waitForFunction(() => window.shown.length === 2);
-  assert.deepEqual((await page.evaluate(() => window.shown))[1], { title: 'Review ready · 3 changes to decide', body: 'Clarify the introduction', tag: 'papilot:fixture-task-0001' });
-  await page.evaluate(() => { delete document.hasFocus; localStorage.removeItem('papilot:notifications'); });
+  assert.equal((await page.evaluate(() => window.shown))[1].title, 'A task needs attention', 'Other scenarios still notify');
+  await page.evaluate(() => { delete document.hasFocus; });
+  await settingsButton.click();
+  await settingsDialog.getByRole('button', { name: 'Notifications', exact: true }).click();
+  await notifySwitch.uncheck();
+  await notifySwitch.check();
+  assert.equal(await reviewNotifications.inputValue(), 'off', 'The master switch preserves scenario choices');
+  await reviewNotifications.selectOption('push');
+  await closeSettings();
+  await page.evaluate(() => { document.hasFocus = () => false; });
+  fixtureTask.status = 'building';
+  await page.clock.runFor(3000);
+  await page.getByRole('button', { name: /^Clarify the introduction/ }).getByText('Preparing task results').waitFor();
+  fixtureTask.status = 'reviewing';
+  await page.clock.runFor(3000);
+  await page.waitForFunction(() => window.shown.length === 3);
+  assert.deepEqual((await page.evaluate(() => window.shown))[2], { title: 'Review ready · 3 changes to decide', body: 'Clarify the introduction', tag: 'papilot:fixture-task-0001' });
+  await page.evaluate(() => { delete document.hasFocus; });
+  await settingsButton.click();
+  await settingsDialog.getByRole('button', { name: 'Notifications', exact: true }).click();
+  await reviewNotifications.selectOption('off');
+  await page.reload();
+  await settingsButton.click();
+  await settingsDialog.getByRole('button', { name: 'Notifications', exact: true }).click();
+  assert.equal(await notifySwitch.isChecked(), true);
+  assert.equal(await reviewNotifications.inputValue(), 'off', 'Scenario choices survive reloads');
+  // A change from another tab is reflected without reloading this one.
+  const preferencesTab = await context.newPage();
+  await preferencesTab.goto(`${origin}/favicon.png`);
+  await preferencesTab.evaluate(() => localStorage.removeItem('papilot:notifications:review'));
+  await page.waitForFunction(() => document.querySelector('select[aria-label="Review ready"]').value === 'push');
+  await preferencesTab.close();
+  await page.screenshot({ path: 'test-results/settings-notifications-enabled-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await settingsDialog.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth), false);
+  assert.equal(await settingsDialog.locator('.settings-notification-event').first().evaluate(el => getComputedStyle(el).flexDirection), 'row');
+  await page.screenshot({ path: 'test-results/settings-notifications-mobile.png' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await notifySwitch.uncheck();
+  await closeSettings();
   await page.reload();
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
-  console.log('PASS: Notifications switch, test notification and background review alert');
+  console.log('PASS: Notification scenarios, background filtering, master switch, persistence and cross-tab sync');
 
   const switcher = page.getByRole('button', { name: 'Paper: Example paper', exact: true });
   await switcher.click();
@@ -1106,8 +1152,9 @@ try {
   await agentSettings.getByRole('status').getByText('spawn agy ENOENT', { exact: true }).waitFor();
   assert.equal(await page.locator('.runtime-banner').count(), 0);
   assert.equal(await page.locator('.new-task-panel > .inline-error[role=status]').count(), 0);
+  const reconnectsBeforePicker = reconnects;
   await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/state')), agentSettings.getByRole('button', { name: 'Reconnect', exact: true }).click()]);
-  assert.equal(reconnects, 1);
+  assert.equal(reconnects, reconnectsBeforePicker + 1);
   assert.equal(await agentSettings.isVisible(), true);
   await page.keyboard.press('Escape');
   await agentSettings.waitFor({ state: 'hidden' });

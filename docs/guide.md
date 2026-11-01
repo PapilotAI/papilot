@@ -137,7 +137,7 @@ If a Codex start request or a review write has an uncertain outcome, the task di
 
 Messages and queued runs are saved in `papilot.sqlite` in the data folder. Closing the browser does not stop a run. After a process restart, confirmed in-flight turns are marked interrupted and can be continued; already queued follow-up messages are retained. Uncertain operations remain reserved until their outcome is checked. Reconnecting after an uncertain request does not promise exactly-once execution of arbitrary Codex commands.
 
-Turn on **Settings → Notifications** for a browser notification when a task asks a question or for approval, its review is ready, or it stops with an error while Papilot is in another tab or app; clicking one opens the task. Browsers allow notifications only on HTTPS or localhost, so remotely use the Tailscale HTTPS address.
+Turn on **Settings → Notifications** to receive browser notifications while Papilot is in another tab or app. Under **Notify me about**, choose **Push** or **Off** separately for questions, approval requests, reviews ready, tasks finished without changes to review, and task errors. Choices are saved in this browser and kept when the main switch is turned off. Clicking a notification opens the task. Browsers allow notifications only on HTTPS or localhost, so remotely use the Tailscale HTTPS address.
 
 ## Task attachments
 
@@ -244,7 +244,7 @@ tailscale funnel --bg --https=10000 http://127.0.0.1:7275
 
 A reverse proxy works too: forward the HTTPS origin to `127.0.0.1:7275` (`PAPILOT_ACCOUNT_PORT`). Papilot refuses to start if the account address equals `PAPILOT_PUBLIC_ORIGIN`, if both use the same port, or if it is not HTTPS (plain `http://localhost` is allowed for testing). Every request on the account port is treated as coming from the internet: it needs a signed-in session, POST requests need a matching `Origin`, and Tailscale identity headers are ignored there.
 
-Open **People** in the sidebar to manage access:
+Open **Settings → Sharing** to manage access:
 
 - **Invite someone** takes their name and the papers they can open, and gives you a link to send them yourself. It works once, within 7 days. Opening it asks them to create a passkey, after which they are signed in. The link's secret is in the part after `#`, which browsers never send to a server.
 - Tick or untick a person's papers at any time. The change applies to their next request, and their open tabs update at once.

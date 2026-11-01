@@ -42,7 +42,7 @@ import { problemCount, ReferencesPanel, useBibliography } from './references-pan
 import { Invite, SignIn } from './sign-in.tsx';
 import { forgetBrowserState, isSignedOut, setSignedOut, useSignedOut } from './session.ts';
 import { locale, t, tn, useLanguage } from './i18n.ts';
-import { notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
+import { notificationState, notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
 import { Markdown } from './markdown.tsx';
 import logo from './logo.svg';
 import { AgentConnectionNotice, AgentPicker, ModelLabel, taskEffort } from './agent-picker.tsx';
@@ -877,7 +877,7 @@ function App() {
         if (removed) setProjectId(removed.projectId);
         token = next.csrf; snapshotRef.current = next; setState(next); setOnline(true); setConnectionError('');
         // Tell the author what changed while they were in another tab or app.
-        if (previous && notifying() && (document.hidden || !document.hasFocus())) for (const alert of taskAlerts(previous, next)) notify(alert, id => { setSelected(id); setSidebar(false); });
+        if (previous && notifying() && (document.hidden || !document.hasFocus())) for (const alert of taskAlerts(previous, next, notificationState().events)) notify(alert, id => { setSelected(id); setSidebar(false); });
         for (const id of composers.current.keys()) if (!next.tasks.some(t => t.id === id)) { composers.current.delete(id); timelineCache.current.delete(id); browserStorage.removeItem('papilot:draft:' + id); }
         setDeleteTarget(current => current && !next.tasks.some(t => t.id === current.id) ? null : current);
         setEditingPaper(current => current && !next.projects.some(p => p.id === current.id) ? null : current);
@@ -1450,7 +1450,7 @@ function App() {
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
     {autoArchived && !error && !modal && <div role="status" className="toast archive-notice"><Icon name="archive" size={15}/><span><span>{t('Archived')}</span><span className="archive-notice-title" title={autoArchived.title}>{autoArchived.title}</span></span><button className="button secondary compact" onClick={() => keepTask(autoArchived.id)}>{t('Undo')}</button></div>}
-    {settings && <SettingsDialog modelDefaults={{ agents: offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] })), agent: agentChoice, model: agent.model, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }) }} updates={owner ? api : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} onClose={() => setSettings(false)} people={owner ? { api, projects: state?.projects || [], ago: agoText } : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name} diagnostics={owner ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, reconnect: async () => { await api('/reconnect', {}); await refresh(true); } } : undefined} skills={owner ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
+    {settings && <SettingsDialog modelDefaults={{ agents: offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] })), agent: agentChoice, model: agent.model, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }) }} updates={owner ? api : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} people={owner ? { api, projects: state?.projects || [], ago: agoText } : undefined} onSignOut={viewer?.listener === 'account' ? () => { setSettings(false); void signOut(); } : undefined} accountName={viewer?.name} diagnostics={owner ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, reconnect: async () => { await api('/reconnect', {}); await refresh(true); } } : undefined} skills={owner ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
     {editingPaper && <PaperDialog key={editingPaper.id} paper={editingPaper} canManage={owner} onClose={() => setEditingPaper(null)} save={async form => {
       const paper = editingPaper, pathChanged = owner && form.path !== paper.path;

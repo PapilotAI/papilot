@@ -153,8 +153,9 @@ try {
   await page.getByRole('button', { name: /^Review/ }).first().click();
   await selectText('.context .pdf-glyph');
   await page.getByRole('button', { name: 'Show task list', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = page.locator('dialog').filter({ has: page.locator('.settings-dialog') });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
   await settings.getByRole('radio', { name: 'Light', exact: true }).check();
   await frame().locator('html[data-theme="light"]').waitFor();
   await settings.getByRole('radio', { name: 'Dark', exact: true }).check();

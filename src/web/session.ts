@@ -17,10 +17,10 @@ export function useSignedOut() {
 }
 // Signing out leaves nothing of this person's work in the browser: drafts,
 // layout and remembered choices (papilot:) and the review page's comment
-// drafts (latex-review:). Theme and language stay with the browser.
+// drafts (latex-review:). Appearance and language stay with the browser.
 export function forgetBrowserState() {
   forgetAttachmentDrafts();
   try {
-    for (const key of Object.keys(localStorage)) if ((key.startsWith('papilot:') || key.startsWith('latex-review:')) && key !== 'papilot:theme' && key !== 'papilot:language') browserStorage.removeItem(key);
+    for (const key of Object.keys(localStorage)) if ((key.startsWith('papilot:') || key.startsWith('latex-review:')) && key !== 'papilot:theme' && key !== 'papilot:appearance' && key !== 'papilot:language') browserStorage.removeItem(key);
   } catch { /* Storage may be unavailable; nothing was kept there then. */ }
 }

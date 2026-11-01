@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import type { NoteSummary, Task } from '../shared.ts';
 import { ReviewNotes } from './review-notes.tsx';
 import themeStyles from './theme.css?inline';
+import { syncAppearance } from './appearance.ts';
 import { language, t, useLanguage } from './i18n.ts';
 import { useNoteResults } from './note-results.tsx';
 import { ReviewNoteConnections } from './review-note-connections.tsx';
@@ -198,7 +199,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     @container review-bar (max-width:340px){.bar .batch-label{display:none}.bar .accept-all,.bar .reject-all{padding:0 8px}.bar .bar-end{gap:4px}}
     :root{--icon-history:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12a9 9 0 1 0 2.6-6.4L3 8'/><path d='M3 3v5h5M12 7v5l3 2'/></svg>")}
   `;
-  doc.documentElement.dataset.theme = window.document.documentElement.dataset.theme;
+  syncAppearance(window.document.documentElement, doc.documentElement);
   style.textContent += taskCommitStyles;
   doc.head.append(style);
 }
@@ -338,10 +339,10 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
   useEffect(() => {
     if (!document) return;
     const root = window.document.documentElement;
-    const sync = () => { document.documentElement.dataset.theme = root.dataset.theme; };
+    const sync = () => syncAppearance(root, document.documentElement);
     sync();
     const themeObserver = new MutationObserver(sync);
-    themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+    themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme', 'style'] });
     return () => themeObserver.disconnect();
   }, [document]);
   // The viewer's cards for writing stay above the keyboard. The workspace fits

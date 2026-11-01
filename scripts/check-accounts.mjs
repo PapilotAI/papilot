@@ -38,7 +38,7 @@ const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHA
 const errors = [];
 const pass = label => console.log('PASS: ' + label);
 try {
-  // The owner, on the host, adds both papers and opens People.
+  // The owner, on the host, adds both papers and opens Sharing.
   const ownerContext = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 900 } });
   const owner = await ownerContext.newPage(); owner.on('pageerror', e => errors.push('owner: ' + e.message));
   await owner.goto(local);
@@ -51,19 +51,19 @@ try {
   }
   await owner.reload();
   await owner.getByRole('button', { name: 'Settings', exact: true }).click();
-  await owner.getByRole('button', { name: 'People', exact: true }).click();
-  const people = owner.getByRole('dialog', { name: 'People' });
+  await owner.getByRole('button', { name: 'Sharing', exact: true }).click();
+  const people = owner.getByRole('dialog', { name: 'Sharing' });
   await expect(owner.locator('.sidebar-footer button')).toHaveCount(1);
   await expect(owner.locator('dialog[open]')).toHaveCount(1);
   await people.getByRole('button', { name: 'General', exact: true }).click();
   const ownerSettings = owner.getByRole('dialog', { name: 'Settings', exact: true });
   await expect(ownerSettings.getByRole('heading', { name: 'General', exact: true })).toBeFocused();
-  await ownerSettings.getByRole('button', { name: 'People', exact: true }).click();
-  await expect(people.getByText('Invite only people you would trust with access to it.', { exact: false })).toBeVisible();
+  await ownerSettings.getByRole('button', { name: 'Sharing', exact: true }).click();
+  await expect(people.getByRole('heading', { name: 'Sharing is not sandboxed', exact: true })).toBeVisible();
   await people.getByLabel('Invite someone').fill('Ada');
   await people.getByRole('group', { name: 'Papers they can open' }).getByLabel('Thesis').check();
   await people.getByRole('button', { name: 'General', exact: true }).click();
-  await ownerSettings.getByRole('button', { name: 'People', exact: true }).click();
+  await ownerSettings.getByRole('button', { name: 'Sharing', exact: true }).click();
   await expect(people.getByLabel('Invite someone')).toHaveValue('Ada');
   await expect(people.getByRole('group', { name: 'Papers they can open' }).getByLabel('Thesis')).toBeChecked();
   await people.getByRole('button', { name: 'Create invite link' }).click();
@@ -71,7 +71,7 @@ try {
   assert.match(link, new RegExp(`^${publicOrigin}/invite#[\\w-]{43}$`));
   await expect(people.getByText('Invited, not joined yet')).toBeVisible();
   await people.getByRole('button', { name: 'Appearance', exact: true }).click();
-  await owner.getByRole('button', { name: 'People', exact: true }).click();
+  await owner.getByRole('button', { name: 'Sharing', exact: true }).click();
   await expect(people.getByLabel('Invite link for Ada')).toHaveValue(link);
   await expect(owner.locator('dialog[open]')).toHaveCount(1);
   await owner.screenshot({ path: 'test-results/settings-people-desktop.png' });
@@ -79,10 +79,10 @@ try {
   assert.equal(await people.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth), false);
   await owner.screenshot({ path: 'test-results/settings-people-mobile.png' });
   await people.getByRole('button', { name: 'Settings', exact: true }).click();
-  await owner.getByRole('button', { name: 'People', exact: true }).click();
+  await owner.getByRole('button', { name: 'Sharing', exact: true }).click();
   await expect(people.getByLabel('Invite link for Ada')).toHaveValue(link);
   await owner.setViewportSize({ width: 1280, height: 900 });
-  pass('People stays inside Settings; invite drafts and one-time links survive category navigation on desktop and mobile');
+  pass('Sharing stays inside Settings; invite drafts and one-time links survive category navigation on desktop and mobile');
 
   // Ada opens the link at the public URL and creates a passkey.
   const adaContext = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 900 } });
@@ -110,7 +110,7 @@ try {
   await ada.keyboard.press('Escape');
   await expect(ada.locator('.sidebar-footer button')).toHaveCount(1);
   await ada.getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(ada.getByRole('button', { name: 'People' })).toHaveCount(0);
+  await expect(ada.getByRole('button', { name: 'Sharing' })).toHaveCount(0);
   await ada.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
   const hidden = await ada.evaluate(async id => (await fetch(`/api/projects/${id}/git`)).status, ids[1]);
   assert.equal(hidden, 400, 'another paper answers like a missing one');
@@ -141,7 +141,7 @@ try {
 
   // The owner unshares Thesis; Ada's open tab follows, then removal signs her out.
   await owner.getByRole('button', { name: 'Settings', exact: true }).click();
-  await owner.getByRole('button', { name: 'People', exact: true }).click();
+  await owner.getByRole('button', { name: 'Sharing', exact: true }).click();
   await people.getByRole('group', { name: 'Papers Ada can open' }).getByLabel('Thesis').uncheck();
   await expect(ada.getByRole('heading', { name: 'No papers yet' })).toBeVisible({ timeout: 15000 });
   await people.getByRole('button', { name: 'Remove…' }).click();
