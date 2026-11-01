@@ -96,6 +96,16 @@ try {
   await expect(suggestions.getByText(note.comment, { exact: true })).toBeVisible();
   await expect(suggestions.getByRole('button', { name: /^Edit note/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Note 1:/ })).toHaveCount(0, 'personal notes do not leak into the task copy');
+  // Another device changes findings without changing the task's timestamp.
+  // The annotation revision must refresh both the markers and open popover.
+  reviewNotes = [second]; state.tasks[0].aiReview.revision = 1;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.locator('.note-tag[data-note="ai-finding-1"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'AI suggestions', exact: true })).toHaveText('1');
+  reviewNotes = [note, second]; state.tasks[0].aiReview.revision = 2;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(suggestions).toBeVisible();
+  await expect(page.getByRole('button', { name: 'AI suggestions', exact: true })).toHaveText('2');
   await page.screenshot({ path: 'test-results/ai-review-task-copy.png', fullPage: true });
   await suggestions.screenshot({ path: 'test-results/ai-review-bookmark.png' });
   const fits = async () => {

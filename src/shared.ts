@@ -21,7 +21,7 @@ export interface ReviewSummary { state: string; round: number | null; counts: Re
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface Task {
   mode?: 'edit' | 'review';
-  aiReview?: { key: string; notes?: number };
+  aiReview?: { key: string; notes?: number; revision?: number };
   // New tasks keep acceptance isolated until the author chooses a destination.
   deferred?: boolean;
   delivery?: { mode: 'workspace' | 'branch'; accepted: string; branch?: string; commit?: string; pending?: boolean } | null;

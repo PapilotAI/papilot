@@ -757,6 +757,7 @@ test('AI review findings stay in their task and copy individually, once, into th
     assert.equal(first.statusCode, 200, first.body); assert.equal(retry.statusCode, 200, retry.body);
     const copy = first.json().copy;
     assert.equal(copy.id, retry.json().copy.id);
+    assert.equal(f.store.task('thesis-task').aiReview?.revision, 1, 'copy changes the review revision only once, even with concurrent retries');
     assert.equal(copy.aiReview.sourceId, 'finding-1'); assert.equal(copy.comment, note.comment);
     assert.equal(copy.key, 'current-pdf'); assert.equal(copy.page, 1);
     assert.deepEqual((await get('/api/projects/thesis/manuscript')).json().annotations.map((n: any) => n.id), ['personal', copy.id]);
@@ -765,12 +766,15 @@ test('AI review findings stay in their task and copy individually, once, into th
     assert.equal((await get(base)).json().notes[0].aiReview.copiedTo, copy.id);
     placeFails = true;
     assert.equal((await post(base + '/finding-2/copy')).statusCode, 400);
+    assert.equal(f.store.task('thesis-task').aiReview?.revision, 1, 'failed copies do not announce an annotation change');
     assert.equal(f.store.annotations('thesis').length, 5);
     assert.equal(f.store.annotation('thesis', 'finding-2').aiReview?.copiedTo, undefined);
     assert.equal((await post(base + '/finding-1/delete')).statusCode, 200);
+    assert.equal(f.store.task('thesis-task').aiReview?.revision, 2);
     assert.equal((await get(base)).json().notes.length, 1);
     assert.equal((await get('/api/projects/thesis/manuscript')).json().annotations.length, 2);
     assert.equal((await post(base + '/finding-1/restore')).statusCode, 200);
+    assert.equal(f.store.task('thesis-task').aiReview?.revision, 3);
     assert.deepEqual((await get(base + '/pdf')).rawPayload, originalPdf, 'review PDF never follows a main-manuscript rebuild');
     assert.deepEqual(fs.readFileSync(pdf), originalPdf);
     f.store.deleteTask('thesis-task');

@@ -4,7 +4,7 @@ import { useNoteSelection } from './note-selection.tsx';
 import { useGroupInstructions } from './group-instructions.ts';
 import { NoteQuote } from './note-content.tsx';
 import { NoteAttachButton, PdfNoteCard } from './pdf-suggestion.tsx';
-import { StrictMode, Suspense, createContext, lazy, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { StrictMode, Suspense, createContext, lazy, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
@@ -543,26 +543,47 @@ interface NoteActions {
   sending: boolean;
 }
 
-function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void; onAnnotate: (region: boolean) => void }) {
+interface NotesHandle { save: () => Promise<boolean> }
+function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate, controller }: { notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void; onAnnotate: (region: boolean) => void; controller: React.Ref<NotesHandle> }) {
   const list = useRef<HTMLElement>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draftValues = useRef(drafts);
   const [dismissed, setDismissed] = useState<Annotation | null>(null);
-  const pending = useRef(new Set<string>());
+  const pending = useRef(new Map<string, Promise<boolean>>());
   const [busyIds, setBusyIds] = useState<string[]>([]), [errors, setErrors] = useState<Record<string, string>>({});
   const editing = Object.keys(drafts).length > 0, busy = busyIds.length > 0, locked = busy || actions.sending;
   const onEditing = actions.onEditing;
   useEffect(() => { onEditing(editing || busy); return () => onEditing(false); }, [editing, busy, onEditing]);
   useEffect(() => { if (active) list.current?.querySelector(`[data-note="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active]);
   useEffect(() => { if (dismissed && notes.some(note => note.id === dismissed.id)) setDismissed(null); }, [notes, dismissed]);
-  useEffect(() => { setDrafts(current => Object.keys(current).some(id => !notes.some(note => note.id === id)) ? Object.fromEntries(Object.entries(current).filter(([id]) => notes.some(note => note.id === id))) : current); }, [notes]);
+  useEffect(() => { for (const id of Object.keys(draftValues.current)) if (!notes.some(note => note.id === id)) draft(id, null); }, [notes]);
   const clearError = (id: string) => setErrors(current => { const next = { ...current }; delete next[id]; return next; });
-  const draft = (id: string, value: string | null) => setDrafts(current => { const next = { ...current }; if (value === null) delete next[id]; else next[id] = value; return next; });
-  async function change(id: string, work: () => Promise<void>) {
-    if (pending.current.has(id) || actions.sending) return false;
-    pending.current.add(id); setBusyIds([...pending.current]); clearError(id);
-    try { await work(); return true; } catch (e) { setErrors(current => ({ ...current, [id]: e instanceof Error ? e.message : String(e) })); return false; }
-    finally { pending.current.delete(id); setBusyIds([...pending.current]); }
+  function draft(id: string, value: string | null) {
+    const next = { ...draftValues.current };
+    if (value === null) delete next[id]; else next[id] = value;
+    draftValues.current = next; setDrafts(next);
   }
+  function change(id: string, work: () => Promise<void>): Promise<boolean> {
+    if (pending.current.has(id) || actions.sending) return Promise.resolve(false);
+    clearError(id);
+    const operation = Promise.resolve().then(work).then(() => true, e => { setErrors(current => ({ ...current, [id]: e instanceof Error ? e.message : String(e) })); return false; })
+      .finally(() => { pending.current.delete(id); setBusyIds([...pending.current.keys()]); });
+    pending.current.set(id, operation); setBusyIds([...pending.current.keys()]);
+    return operation;
+  }
+  const saveNote = (note: Annotation, comment: string, quote = false) => change(note.id, async () => {
+    await actions.edit(note, comment); draft(note.id, null);
+    if (quote) toggle(note);
+  });
+  useImperativeHandle(controller, () => ({ save: async () => {
+    if (actions.sending || (await Promise.all([...pending.current.values()])).some(saved => !saved)) return false;
+    for (const [id, value] of Object.entries(draftValues.current)) {
+      const note = notes.find(note => note.id === id), comment = value.trim();
+      if (note && comment && comment !== note.comment) { if (!await saveNote(note, comment)) return false; }
+      else draft(id, null);
+    }
+    return true;
+  } }));
   const selectionLocked = locked || editing;
   const toggle = (note: Annotation) => actions.selection.set([note.id], !actions.selection.has(note.id));
   const selectCard = (note: Annotation, index: number) => <NoteAttachButton number={index + 1} ai={Boolean(note.aiReview)} selected={actions.selection.has(note.id)} disabled={selectionLocked} onClick={() => toggle(note)}/>;
@@ -573,7 +594,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
       draft={drafts[note.id] ?? null} onDraftChange={value => { draft(note.id, value); if (value !== null && drafts[note.id] === undefined) clearError(note.id); }}
       header={<div className="note-card-context"><div className="note-head"><button type="button" className="note-number" aria-label={note.aiReview ? t('Show suggestion {n} on the page', { n: index + 1 }) : t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.aiReview ? ' · ' + AGENT_LABELS[note.aiReview.agent] : note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span></div><NoteQuote text={note.quote}/></div>}
       onToggle={() => toggle(note)} onDismiss={() => void change(note.id, async () => { await actions.remove(note); draft(note.id, null); if (note.aiReview) setDismissed(note); })}
-      onSave={(comment, action) => change(note.id, async () => { await actions.edit(note, comment); if (action === 'quote') toggle(note); })}>
+      onSave={(comment, action) => saveNote(note, comment, action === 'quote')}>
       {note.key !== currentKey && <NotePlacementWarning/>}
     </PdfNoteCard>
   </li>;
@@ -666,6 +687,11 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
   const build = data?.build, notes = data?.annotations || [], git = data?.git;
   const pdf = useRef<PdfHandle>(null);
   const [readingNotes, setReadingNotes] = useState(false);
+  const notesPanel = useRef<NotesHandle>(null);
+  async function closeReadingNotes() {
+    if (readingNotes && notesPanel.current && !await notesPanel.current.save()) return false;
+    setReadingNotes(false); return true;
+  }
   const [collapsed, setCollapsed] = useState(() => browserStorage.getItem('papilot:manuscript-panel') === 'hidden');
   const canCollapse = useMedia('(min-width: 681px)'), hidden = canCollapse && collapsed;
   const sideBySide = useMedia('(min-width: 901px)');
@@ -684,8 +710,8 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
     load={() => api<ManuscriptProblems>(`/projects/${project.id}/manuscript/problems`, undefined, undefined, 60000)}
     onJump={problem => { if (problem.page === undefined || !problem.rect) return; if (phone()) setView('pdf'); const { page, rect } = problem; requestAnimationFrame(() => pdf.current?.showPlace(page, rect)); }}
     onFix={onFixProblems && (list => { onFixProblems(fixRequest(list)); setView('task'); setCollapsed(false); })}/>;
-  const pdfTools = <>{tools}{problemsButton}<button type="button" className={'icon-button' + (readingNotes ? ' active' : '')} aria-label={t('My notes')} title={t('My notes')} aria-pressed={readingNotes} onClick={() => { setActive(''); setReadingNotes(value => !value); }}><Icon name="notes" size={16}/></button>{hidden && togglePanel}{(hidden || !sideBySide) && openPdf}</>;
-  const switcher = <>{navigation}<ModeSwitch mode={mode} onMode={setMode}/></>;
+  const pdfTools = <>{tools}{problemsButton}<button type="button" className={'icon-button' + (readingNotes ? ' active' : '')} aria-label={t('My notes')} title={t('My notes')} aria-pressed={readingNotes} onClick={() => { if (readingNotes) void closeReadingNotes(); else { setActive(''); setReadingNotes(true); } }}><Icon name="notes" size={16}/></button>{hidden && togglePanel}{(hidden || !sideBySide) && openPdf}</>;
+  const switcher = <>{navigation}<ModeSwitch mode={mode} onMode={async value => { if (await closeReadingNotes()) setMode(value); }}/></>;
   const staged = Array.isArray(git?.files) && !git.merging ? git.files.filter(file => file.staged).map(file => file.path) : [];
   const reloadGit = () => void api<GitStatus>(`/projects/${project.id}/git`).then(onGit, () => undefined);
   const commitButton = (inFrame: boolean) => staged.length > 0 && (inFrame
@@ -699,15 +725,16 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
     if (phone()) setView('pdf');
     requestAnimationFrame(() => pdf.current?.goTo(item));
   }
-  function show(note: Annotation) {
-    if (note.key !== build?.key) return;
-    setMode('pdf'); setReadingNotes(false);
+  async function show(note: Annotation) {
+    if (note.key !== build?.key || !await closeReadingNotes()) return;
+    setMode('pdf');
     setActive(note.id);
     if (phone()) setView('pdf');
     requestAnimationFrame(() => pdf.current?.goToNote(note));
   }
-  function annotate(region: boolean) {
-    setMode('pdf'); setRegion(region); setReadingNotes(false); setActive('');
+  async function annotate(region: boolean) {
+    if (!await closeReadingNotes()) return;
+    setMode('pdf'); setRegion(region); setActive('');
     if (phone()) setView('pdf');
     if (!phone() && mode === 'pdf') pdf.current?.focus();
     else requestAnimationFrame(() => pdf.current?.focus());
@@ -725,9 +752,9 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
         : <div className="manuscript-note error" role="alert"><strong>{t('The manuscript did not compile.')}</strong><pre>{build.error}</pre></div>)}
       {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion} group={actions.group} onGroupChange={actions.setGroup} markingDisabled={actions.sending}
           noteActions={{ has: actions.selection.has, toggle: note => actions.selection.set([note.id], !actions.selection.has(note.id)), remove: actions.remove, restore: actions.restore, edit: actions.edit, onEditing: actions.onEditing, onBusy: actions.onReviewBusy, disabled: actions.sending }} onDeselect={() => setActive('')}
-          onCreate={actions.add} onSelect={note => { setActive(note.id); setReadingNotes(false); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={pdfTools}/></Suspense>
+          onCreate={actions.add} onSelect={async note => { if (await closeReadingNotes()) setActive(note.id); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={pdfTools}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
-      {readingNotes && <aside className="pdf-reading-notes" aria-label={t('PDF note library')}><div className="pdf-reading-notes-head"><strong>{t('My notes')}</strong><button type="button" className="icon-button" aria-label={t('Close notes')} onClick={() => setReadingNotes(false)}><Icon name="close" size={16}/></button></div><NotesPanel key={project.id} notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/></aside>}
+      {readingNotes && <aside className="pdf-reading-notes" aria-label={t('PDF note library')}><div className="pdf-reading-notes-head"><strong>{t('My notes')}</strong><button type="button" className="icon-button" aria-label={t('Close notes')} onClick={() => void closeReadingNotes()}><Icon name="close" size={16}/></button></div><NotesPanel key={project.id} controller={notesPanel} notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/></aside>}
     </section>}
     <aside id={panelId} className="manuscript-side" aria-label={t('Manuscript panels')} hidden={hidden}>
       <div className="manuscript-side-header">

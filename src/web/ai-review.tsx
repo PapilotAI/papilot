@@ -17,7 +17,7 @@ export function AiReviewView({ task, api, lead, tools, onCopied }: { task: Task;
     const controller = new AbortController();
     void api<ReviewCopy>(base, undefined, controller.signal).then(value => { setData(value); setError(''); }, error => { if (!controller.signal.aborted) setError(error.message); });
     return () => controller.abort();
-  }, [base, task.updatedAt, attempt, api]);
+  }, [base, task.updatedAt, task.aiReview?.revision, attempt, api]);
   const update = (note: Annotation) => setData(current => current && ({ ...current, notes: current.notes.map(item => item.id === note.id ? note : item) }));
   const onSelect = (note: Annotation) => { setActive(note.id); pdf.current?.goToNote(note); };
   return <div className="ai-review-view">

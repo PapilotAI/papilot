@@ -791,7 +791,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         });
         this.store.saveRun({ ...run, status: 'completed', finishedAt: Date.now(), reviewRound: null });
         if (reply) this.store.saveItem({ ...reply, type: 'assistant', text: result.summary });
-        this.store.updateTask(task.id, { status: this.store.runs().some(r => r.taskId === task.id && r.status === 'queued') ? 'queued' : 'reviewing', error: null, aiReview: { key: snapshot.key, notes: (task.aiReview?.notes || 0) + result.notes.length }, review: { state: 'done', round: null, counts: {}, unsent: 0, comments: 0, files: [] } });
+        const review = this.store.task(task.id).aiReview;
+        this.store.updateTask(task.id, { status: this.store.runs().some(r => r.taskId === task.id && r.status === 'queued') ? 'queued' : 'reviewing', error: null, aiReview: { ...review, key: snapshot.key, notes: (review?.notes || 0) + result.notes.length }, review: { state: 'done', round: null, counts: {}, unsent: 0, comments: 0, files: [] } });
       });
     } catch (error) {
       this.store.updateTask(task.id, { status: 'failed', error: errorText(error) });

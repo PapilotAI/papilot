@@ -17,6 +17,10 @@ export function registerAiReviewRoutes(app: FastifyInstance, store: Store, manus
     if (!isTaskReviewNote(note) || note.aiReview!.taskId !== id || note.taskId) throw new Error('This suggestion does not belong to this review task.');
     return note;
   }
+  function changed(id: string) {
+    const task = review(id);
+    store.updateTask(id, { aiReview: { key: store.reviewInput(id).key, ...task.aiReview, revision: (task.aiReview?.revision || 0) + 1 } });
+  }
   async function pdf(id: string) {
     const task = review(id), snapshot = store.reviewInput(id);
     if (snapshot.pdf && fs.existsSync(snapshot.pdf)) return snapshot.pdf;
@@ -48,15 +52,17 @@ export function registerAiReviewRoutes(app: FastifyInstance, store: Store, manus
       const copyId = 'adopt-' + createHash('sha256').update(`${id}:${noteId}`).digest('hex').slice(0, 40);
       const copy = store.saveAnnotation({ ...placed, id: copyId, createdAt: Date.now(), aiReview: { taskId: id, agent: current.aiReview!.agent, sourceId: noteId } });
       const note = store.saveAnnotation({ ...current, aiReview: { ...current.aiReview!, copiedTo: copyId } });
+      changed(id);
       return { note, copy };
     });
   });
   app.post<{ Params: { id: string; note: string } }>('/api/tasks/:id/ai-review/:note/delete', access, request => {
     const note = finding(request.params.id, request.params.note);
-    store.deleteAnnotation(note.projectId, note.id); return { ok: true };
+    store.transaction(() => { store.deleteAnnotation(note.projectId, note.id); changed(request.params.id); });
+    return { ok: true };
   });
   app.post<{ Params: { id: string; note: string } }>('/api/tasks/:id/ai-review/:note/restore', access, request => {
     const { deletedAt: _, ...note } = finding(request.params.id, request.params.note);
-    return store.saveAnnotation(note);
+    return store.transaction(() => { const saved = store.saveAnnotation(note); changed(request.params.id); return saved; });
   });
 }
