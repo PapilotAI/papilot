@@ -3,7 +3,11 @@ import { t } from './i18n.ts';
 
 declare global {
   interface Window {
-    papilotDesktop?: { platform: string; minimize(): void; maximize(): void; close(): void };
+    papilotDesktop?: {
+      platform: string; minimize(): void; maximize(): void; close(): void;
+      chooseDirectory?(): Promise<string | null>;
+      pathForFile?(file: File): string;
+    };
   }
 }
 export const desktopWindow = Boolean(window.papilotDesktop);

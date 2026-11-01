@@ -77,6 +77,44 @@ try {
     return { sandbox: preferences.sandbox, nodeIntegration: preferences.nodeIntegration, contextIsolation: preferences.contextIsolation };
   });
   assert.deepEqual(windowOptions, { sandbox: true, nodeIntegration: false, contextIsolation: true });
+  // Native folder selection and OS directory drops send paths without reading
+  // or uploading contents, including folders larger than the upload limit.
+  const localPaper = path.join(data, 'local-paper'); fs.mkdirSync(localPaper);
+  fs.writeFileSync(path.join(localPaper, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nLocal paper.\n\\end{document}\n');
+  const largeAsset = path.join(localPaper, 'large.dat'); fs.writeFileSync(largeAsset, ''); fs.truncateSync(largeAsset, 65 * 1024 * 1024);
+  const importRequests = [];
+  page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.startsWith('/api/imports')) importRequests.push({ route: new URL(request.url()).pathname, body: request.postDataJSON() }); });
+  await page.getByRole('button', { name: /^Paper:|^论文：/ }).click();
+  await page.getByRole('menuitem', { name: /^(Add paper…|添加论文…)$/ }).click();
+  const importDialog = page.getByRole('dialog', { name: /^(Add a paper|添加论文)$/ });
+  await expect(importDialog).toBeVisible();
+  await expect(importDialog.getByRole('textbox', { name: /^(Folder path|文件夹路径)$/ })).toBeHidden();
+  await application.evaluate(({ dialog }) => {
+    globalThis.originalOpenDialog = dialog.showOpenDialog;
+    dialog.showOpenDialog = async (_window, options) => {
+      if (JSON.stringify(options.properties) !== '["openDirectory"]') throw new Error('Expected a native folder chooser');
+      return { canceled: true, filePaths: [] };
+    };
+  });
+  await importDialog.getByRole('button', { name: /^(Choose folder|选择文件夹)$/ }).click();
+  await expect(importDialog.getByRole('button', { name: /^(Choose folder|选择文件夹)$/ })).toBeEnabled();
+  assert.equal(importRequests.length, 0, 'Canceling the picker does not start an import');
+  await application.evaluate(({ dialog }, folder) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] }); }, localPaper);
+  await importDialog.getByRole('button', { name: /^(Choose folder|选择文件夹)$/ }).click();
+  await expect(importDialog.getByRole('combobox', { name: /^(Main TeX file|TeX 主文件)$/ })).toHaveValue('main.tex');
+  assert.deepEqual(importRequests, [{ route: '/api/imports', body: { path: localPaper } }]);
+  assert.deepEqual(fs.readdirSync(localPaper).sort(), ['large.dat', 'main.tex'], 'Selecting a folder does not configure, initialize Git, or compile it');
+  await application.evaluate(({ dialog }) => { dialog.showOpenDialog = globalThis.originalOpenDialog; delete globalThis.originalOpenDialog; });
+  await importDialog.getByRole('button', { name: /^(Choose different files|重新选择文件)$/ }).click();
+  await importDialog.screenshot({ path: 'test-results/desktop-import.png' });
+  const dropBox = await page.locator('.import-drop').boundingBox(), cdp = await page.context().newCDPSession(page);
+  for (const type of ['dragEnter', 'dragOver', 'drop']) await cdp.send('Input.dispatchDragEvent', { type, x: dropBox.x + 20, y: dropBox.y + 20, data: { items: [], files: [localPaper], dragOperationsMask: 1 } });
+  await expect(importDialog.getByRole('combobox', { name: /^(Main TeX file|TeX 主文件)$/ })).toHaveValue('main.tex');
+  assert.deepEqual(importRequests.at(-1), { route: '/api/imports', body: { path: localPaper } });
+  assert.equal(importRequests.length, 2, 'A native folder drop does not auto-compile or upload');
+  assert.deepEqual(fs.readdirSync(localPaper).sort(), ['large.dat', 'main.tex']);
+  await cdp.detach();
+  await importDialog.getByRole('button', { name: /^(Continue later|稍后继续)$/ }).click();
   const settings = page.getByRole('button', { name: /^(Settings|设置)$/ });
   await settings.click();
   await page.getByRole('button', { name: /^(Updates|版本更新)$/ }).click();

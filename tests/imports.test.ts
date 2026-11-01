@@ -93,8 +93,9 @@ test('local folders can exceed upload limits and inspection leaves their files u
     assert.equal(fs.readFileSync(path.join(f.root, 'main.tex'), 'utf8'), source);
     assert.equal(fs.statSync(large).size, 65 * 1024 * 1024);
     // Compilation validates the same folder without reintroducing the scan cap.
+    // Its first commit holds 5,001 files, which takes longer on a busy machine.
     f.ready(); await f.imports.build(value.id, {});
-    assert.equal((await settled(f.imports, value.id)).phase, 'ready');
+    assert.equal((await settled(f.imports, value.id, 30000)).phase, 'ready');
   } finally { f.close(); }
 });
 
@@ -108,6 +109,61 @@ test('main files deeper than twenty folders are discoverable without following s
     fs.symlinkSync(path.join(f.root, main), path.join(f.root, 'linked.tex'));
     assert.deepEqual(texFiles(f.root), [main]);
     assert.equal((await f.imports.create({ path: f.root })).main, main);
+  } finally { f.close(); }
+});
+
+test('configured and nearby main files open without scanning unrelated subtrees', async t => {
+  const f = fixture();
+  try {
+    const main = 'main/Thesis.tex'; fs.mkdirSync(path.join(f.root, 'main'));
+    fs.writeFileSync(path.join(f.root, main), '% !TEX program = xelatex\n' + source);
+    const unrelated = path.join(f.root, 'materials/archive'); fs.mkdirSync(unrelated, { recursive: true });
+    fs.writeFileSync(path.join(unrelated, 'other.tex'), source);
+    const readdir = fs.readdirSync;
+    const reads: string[] = [];
+    t.mock.method(fs, 'readdirSync', (folder: any, ...args: any[]) => {
+      reads.push(String(folder));
+      assert.notEqual(String(folder), unrelated, 'Detection must not walk unrelated material');
+      return (readdir as any)(folder, ...args);
+    });
+    const detected = await inspectPaper(f.root);
+    assert.equal(detected.main, main); assert.equal(detected.engine, 'xelatex'); assert.deepEqual(detected.candidates, [main]);
+    fs.writeFileSync(path.join(f.root, '.latex-review.json'), JSON.stringify({ main, engine: 'lualatex' }));
+    reads.length = 0;
+    const configured = await inspectPaper(f.root);
+    assert.equal(configured.main, main); assert.equal(configured.engine, 'lualatex'); assert.deepEqual(reads, []);
+  } finally { t.mock.restoreAll(); f.close(); }
+});
+
+test('an alternative main file can be chosen without scanning or following links outside the paper', async () => {
+  const f = fixture();
+  try {
+    fs.writeFileSync(path.join(f.root, 'main.tex'), source);
+    fs.mkdirSync(path.join(f.root, 'supplement'));
+    fs.writeFileSync(path.join(f.root, 'supplement/appendix.tex'), source);
+    const value = await f.imports.create({ path: f.root });
+    assert.deepEqual(value.candidates, ['main.tex']);
+    const outside = path.join(f.directory, 'outside'); fs.mkdirSync(outside); fs.writeFileSync(path.join(outside, 'main.tex'), source);
+    fs.symlinkSync(outside, path.join(f.root, 'linked'), 'dir');
+    for (const main of ['../outside/main.tex', 'linked/main.tex', path.join(outside, 'main.tex')]) await assert.rejects(f.imports.build(value.id, { main }), /existing TeX/);
+    f.ready(); await f.imports.build(value.id, { main: 'supplement/appendix.tex' });
+    const result = await settled(f.imports, value.id);
+    assert.equal(result.phase, 'ready'); assert.equal(result.main, 'supplement/appendix.tex');
+  } finally { f.close(); }
+});
+
+test('an existing configuration stays byte-for-byte unchanged, keeps its source folder, and is updated only for a new main file', async () => {
+  const f = fixture();
+  try {
+    fs.mkdirSync(path.join(f.root, 'paper')); fs.writeFileSync(path.join(f.root, 'paper/main.tex'), source); fs.writeFileSync(path.join(f.root, 'other.tex'), source);
+    // The author's own formatting and key order, as committed in their repository.
+    const original = '{\n  "main": "paper/main.tex",\n  "engine": "pdflatex",\n  "source_dir": "paper"\n}\n';
+    fs.writeFileSync(path.join(f.root, '.latex-review.json'), original);
+    let value = await f.imports.create({ path: f.root }); f.ready(); await f.imports.build(value.id, {}); await settled(f.imports, value.id);
+    assert.equal(fs.readFileSync(path.join(f.root, '.latex-review.json'), 'utf8'), original);
+    // A main file outside the configured source folder compiles from the whole folder.
+    value = await f.imports.create({ path: f.root }); await f.imports.build(value.id, { main: 'other.tex' }); await settled(f.imports, value.id);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.root, '.latex-review.json'), 'utf8')), { main: 'other.tex', engine: 'pdflatex', source_dir: '' });
   } finally { f.close(); }
 });
 
@@ -158,5 +214,11 @@ test('a real imported paper compiles with the manuscript builder', { timeout: 60
     // A real TeX build can exceed the mock tests' six-second wait on busy CI
     // or while packaging the desktop app. Do not remove its files mid-build.
     await imports.build(value.id, {}); const ready = await settled(imports, value.id, 45000); assert.equal(ready.phase, 'ready', ready.error);
+    // Opening the paper reuses the import's PDF instead of compiling it again.
+    const builds = path.join(ready.path, '.git/latex-review/cache/builds'), count = () => fs.readdirSync(builds).filter(name => /^[0-9a-f]{32}$/.test(name)).length;
+    const before = count(), opened = new Manuscripts();
+    let state = await opened.state('paper', ready.path);
+    for (let attempt = 0; state.build.status === 'building' && attempt < 400; attempt++) { await new Promise(resolve => setTimeout(resolve, 25)); state = await opened.state('paper', ready.path); }
+    assert.equal(state.build.status, 'ready', state.build.error); assert.equal(count(), before);
   } finally { f.close(); }
 });

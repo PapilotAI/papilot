@@ -4,6 +4,12 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Changed
+
+- **Open local paper folders in place.** In the desktop app, choose or drag in a folder and only its path is used: there are no upload size or file count limits, and existing configuration and main files are detected without scanning caches or reference material. Importing keeps the author's `.latex-review.json` unchanged unless the main file or engine changes. ZIP imports still create a separate copy.
+- **Compilation as fast as latexmk in the paper's folder.** Each build continues from the previous one: unchanged files are cloned, latexmk keeps its auxiliary state and decides what to rerun, and a change to a file TeX does not read finishes in about two seconds without running TeX. On a 240 MB thesis, an edit now takes one XeLaTeX pass instead of a five-pass clean build, and opening or importing a paper continues from the author's own latexmk output when present. Working-tree snapshots rehash only changed files, large figures stream to disk, and opening a newly imported paper no longer compiles it again. **Recompile PDF** starts clean, and a build broken by leftover auxiliary files retries clean automatically. See [Compilation performance](docs/performance.md).
+- Collapsing the manuscript panel puts its expand button at the far right of the PDF toolbar and hides **Open PDF** until the panel returns.
+
 ## [0.8.1] - 2026-11-01 — Desktop Apps and Agent Support
 
 Papilot 0.8.1 adds desktop apps for macOS and Linux, an editable demo paper, and support for Copilot and Grok. It also fixes saving accepted changes to the manuscript while preserving other work in progress.

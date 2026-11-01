@@ -45,6 +45,12 @@ else {
     void backend.stop().finally(() => { stopped = true; app.quit(); });
   });
   void app.whenReady().then(async () => {
+    ipcMain.handle('papilot:choose-directory', async event => {
+      if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return null;
+      if (!event.senderFrame || new URL(event.senderFrame.url).origin !== origin) return null;
+      const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] });
+      return result.canceled ? null : result.filePaths[0] || null;
+    });
     ipcMain.on('papilot:window', (event, action: unknown) => {
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;
       if (!event.senderFrame || new URL(event.senderFrame.url).origin !== origin) return;
