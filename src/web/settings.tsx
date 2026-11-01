@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
+import logo from './logo.svg';
 import { ChipSelect } from './chip-select.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { LANGUAGES, browserLanguage, setLanguage, t, useLanguage, type LanguageChoice } from './i18n.ts';
@@ -100,7 +101,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
           {visibleGroups.map(group => <section className="settings-category-group" key={group.label}>
             <h3>{group.label}</h3>
             {group.entries.map(entry => <button type="button" key={entry.label} className="settings-category" data-settings-page={entry.page} aria-current={entry.page === page || (page === 'licenses' && entry.page === 'about') ? 'page' : undefined} onClick={() => goTo(entry.page)}>
-              <Icon name={entry.icon} size={18}/><span>{entry.label}</span>
+              {entry.page === 'about' ? <img src={logo} width="18" height="18" alt=""/> : <Icon name={entry.icon} size={18}/>}<span>{entry.label}</span>
             </button>)}
           </section>)}
           {!visibleGroups.length && <p className="settings-search-empty">{t('No matching settings')}</p>}
