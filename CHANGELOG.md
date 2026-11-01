@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-01 — Desktop Apps and Agent Support
+
+Papilot 0.8.1 adds desktop apps for macOS and Linux, an editable demo paper, and support for Copilot and Grok. It also fixes saving accepted changes to the manuscript while preserving other work in progress.
+
 ### Added
 
 - **macOS and Linux desktop apps.** Electron reuses Papilot's React interface and local server, bundling Node, npm, Codex and the review engine. Window controls blend into the sidebar without a separate title bar, and first launch includes an editable example paper with a prebuilt PDF. Native CI builds and tests Apple Silicon/Intel DMG/ZIP and Linux x64 AppImage/deb packages, attaching them to each version release. Branch builds provide downloadable installers and screenshots. Desktop data and updates are separate from the CLI installation.
