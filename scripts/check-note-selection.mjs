@@ -61,6 +61,7 @@ async function setSelection(control, selected) {
   await expect(control).toHaveAttribute('aria-pressed', String(selected));
 }
 async function notesReady() {
+  if (!await page.getByRole('complementary', { name: 'PDF note library' }).isVisible()) await page.getByRole('button', { name: 'My notes', exact: true }).click();
   await expect(all()).toBeVisible();
 }
 async function switchPaper(name) {
@@ -69,8 +70,29 @@ async function switchPaper(name) {
 }
 try {
   await page.goto(origin);
-  await expect(all()).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Note 1: Revise n1.', exact: true }).click();
+  const personalCard = page.getByRole('dialog', { name: 'PDF note 1', exact: true });
+  await expect(personalCard).toBeVisible();
+  await personalCard.locator('.pdf-suggestion-body p').evaluate(element => {
+    const range = document.createRange(); range.selectNodeContents(element);
+    const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+  });
+  await page.waitForTimeout(250);
+  await expect(page.getByRole('button', { name: 'Add note', exact: true })).toHaveCount(0);
+  await page.evaluate(() => document.getSelection().removeAllRanges());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(personalCard).toBeVisible();
+  await expect(page.locator('.new-task-panel')).not.toBeVisible();
+  const cardBox = await personalCard.boundingBox(), pdfBox = await page.locator('.pdf-container').boundingBox();
+  assert.ok(cardBox.x >= pdfBox.x && cardBox.x + cardBox.width <= pdfBox.x + pdfBox.width + 1);
+  await page.screenshot({ path: 'test-results/personal-note-mobile.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await personalCard.getByRole('button', { name: 'Close note', exact: true }).click();
   await notesReady();
+  await expect(all()).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('.notes-panel input[type="checkbox"]')).toHaveCount(0);
   for (const item of notes) await expect(check(item.id)).toHaveAttribute('aria-pressed', 'false');
   await page.locator('.notes-panel [data-note="n1"] .note-quote-text').click();
@@ -94,6 +116,8 @@ try {
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await setSelection(check('n2'), false);
   await page.getByRole('button', { name: 'Show note 2 on the page', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'PDF note 2', exact: true })).toBeVisible();
+  await notesReady();
   await expect(check('n2')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('.notes-panel [data-note="n2"]')).toHaveAttribute('data-selected', 'false');
   const backgrounds = await page.locator('.notes-panel .group-location').evaluateAll(rows => rows.slice(0, 2).map(row => getComputedStyle(row).backgroundColor));
@@ -105,7 +129,7 @@ try {
   await expect(instruction('Yellow')).toHaveValue('Explain the reasoning step by step.');
   await expect(instruction('Purple')).toHaveValue('Shorten this wording.');
   await expect(check('n2')).toHaveAttribute('aria-pressed', 'false');
-  await switchPaper('Other paper'); await expect(all()).toHaveAttribute('aria-pressed', 'false');
+  await switchPaper('Other paper'); await notesReady(); await expect(all()).toHaveAttribute('aria-pressed', 'false');
   await setSelection(check('other-note'), true);
   await switchPaper('Paper'); await notesReady();
   await expect(check('n2')).toHaveAttribute('aria-pressed', 'false');
@@ -135,20 +159,22 @@ try {
   assert.equal(attempts[1].instructions, '');
   assert.equal(attempts[0].id, attempts[1].id, 'Retry the same task after a failure');
   const concurrent = note('n6', 6); notes.push(concurrent); release();
-  await expect(page.getByText('Added to task: 0', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Notes in this task', exact: true })).toHaveCount(0);
   assert.deepEqual(notes, [original[1], original[3], original[4], concurrent]);
   assert.equal(sent[0].agent, 'codex');
   await page.locator(`.task-row[data-task="${sent[0].id}"] .task-link`).click();
   await expect(page.locator('.thread .group-instruction-sent')).toHaveText('Explain the reasoning step by step.');
   await page.locator('.manuscript-link').click();
   await page.reload(); await notesReady();
-  await expect(instruction('Yellow')).toHaveValue('Explain the reasoning step by step.');
-  await expect(instruction('Purple')).toHaveValue('Shorten this wording.');
+  await expect(instruction('Yellow')).toHaveCount(0);
+  await expect(instruction('Purple')).toHaveCount(0);
   await expect(all()).toHaveAttribute('aria-pressed', 'false');
   await expect(check('n6')).toHaveAttribute('aria-pressed', 'false');
-  await switchPaper('Other paper'); await expect(check('other-note')).toHaveAttribute('aria-pressed', 'true');
+  await switchPaper('Other paper'); await notesReady(); await expect(check('other-note')).toHaveAttribute('aria-pressed', 'true');
   await switchPaper('Paper'); await notesReady();
   await setSelection(check('n2'), true); await setSelection(check('n4'), true);
+  await expect(instruction('Yellow')).toHaveValue('Explain the reasoning step by step.');
+  await expect(instruction('Purple')).toHaveValue('Shorten this wording.');
   await page.getByRole('button', { name: 'Agent settings', exact: true }).click();
   await page.getByRole('option', { name: / · Claude$/ }).first().click();
   await page.keyboard.press('Escape');
@@ -159,7 +185,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   await page.setViewportSize({ width: 1440, height: 900 });
   await send().click();
-  await expect(page.getByText('Added to task: 0', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Notes in this task', exact: true })).toHaveCount(0);
   assert.deepEqual(sent[1].annotations, ['n2', 'n4']); assert.equal(sent[1].agent, 'claude');
   assert.deepEqual(sent[1].groupInstructions, { yellow: 'Explain the reasoning step by step.', purple: 'Shorten this wording.' });
   assert.equal(sent[1].instructions, '');
@@ -171,8 +197,11 @@ try {
   await expect(all()).toHaveAttribute('aria-pressed', 'false');
   // The same controls remain usable without horizontal overflow on phones.
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'New task', exact: true }).click();
+  await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
+  await notesReady();
   await setSelection(check('n6'), true);
+  await page.getByRole('button', { name: 'Close notes', exact: true }).click();
+  await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'New task', exact: true }).click();
   await expect(page.getByText('Added to task: 1', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/note-selection-mobile.png', fullPage: true, animations: 'disabled' });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);

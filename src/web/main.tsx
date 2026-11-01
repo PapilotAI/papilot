@@ -561,12 +561,10 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
     if (!editing?.comment.trim()) return;
     void change(async () => { await actions.edit(note, editing.comment.trim()); finish(note.id); });
   }
-  const selectedCount = actions.selection.selected.length;
   const selectionLocked = locked || Boolean(editing);
   const toggle = (note: Annotation) => { if (!selectionLocked) actions.selection.set([note.id], !actions.selection.has(note.id)); };
   const selectCard = (note: Annotation, index: number, compact = false) => <button type="button" className={'note-card-select' + (compact ? ' compact' : '')} aria-label={note.aiReview ? t('Include suggestion {n} in this task', { n: index + 1 }) : t('Include note {n} in this task', { n: index + 1 })} title={actions.selection.has(note.id) ? t('Remove from task') : t('Add to task')} aria-pressed={actions.selection.has(note.id)} disabled={selectionLocked} onClick={() => toggle(note)}><Icon name={actions.selection.has(note.id) ? 'check' : 'plus'} size={13}/>{!compact && <span>{actions.selection.has(note.id) ? t('Added to task') : t('Add to task')}</span>}</button>;
   const ownNotes = notes.filter(note => !note.aiReview), ownSelected = ownNotes.filter(note => actions.selection.has(note.id)).length;
-  const selectedSuggestions = notes.filter(note => note.aiReview && note.key === currentKey && actions.selection.has(note.id));
   const unplacedSuggestions = notes.filter(note => note.aiReview && note.key !== currentKey);
   const renderNote = (note: Annotation, index: number) => <li key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} className={'note-card ' + (note.aiReview ? 'review-suggestion ' : '') + (active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
     <div className="note-head"><button type="button" className="note-number" aria-label={note.aiReview ? t('Show suggestion {n} on the page', { n: index + 1 }) : t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.aiReview ? ' · ' + AGENT_LABELS[note.aiReview.agent] : note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span>{!note.aiReview && <><button type="button" className="icon-button note-edit-trigger" aria-label={t('Edit note {n}: {comment}', { n: index + 1, comment: note.comment })} title={t('Edit note')} disabled={selectionLocked} onClick={() => { setError(''); setEditing({ id: note.id, comment: note.comment }); }}><Icon name="pencil" size={13}/></button><button type="button" className="icon-button" aria-label={t('Delete note {n}', { n: index + 1 })} title={t('Delete note')} disabled={selectionLocked} onClick={() => void change(() => actions.remove(note))}><Icon name="close" size={14}/></button></>}</div>
@@ -586,7 +584,7 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
   </li>;
   return <section ref={list} className="notes-panel" aria-label={t('PDF notes')}>
     <div className="draft-notes-head">
-      {notes.length > 0 && <div className="note-selection-head"><span>{t('Added to task: {n}', { n: selectedCount })}</span>{ownNotes.length > 0 && <button type="button" className="note-select-all" aria-label={t('Select all notes for this task')} aria-pressed={ownSelected === ownNotes.length ? true : ownSelected ? 'mixed' : false} disabled={selectionLocked} onClick={() => actions.selection.set(ownNotes.map(note => note.id), ownSelected !== ownNotes.length)}>{ownSelected === ownNotes.length ? t('Clear selection') : t('Add all to task')}</button>}</div>}
+      {ownNotes.length > 0 && <div className="note-selection-head"><button type="button" className="note-select-all" aria-label={t('Select all notes for this task')} aria-pressed={ownSelected === ownNotes.length ? true : ownSelected ? 'mixed' : false} disabled={selectionLocked} onClick={() => actions.selection.set(ownNotes.map(note => note.id), ownSelected !== ownNotes.length)}>{ownSelected === ownNotes.length ? t('Clear selection') : t('Add all to task')}</button></div>}
       <div className="note-entry-actions">
         <button type="button" className="button ghost compact" disabled={!currentKey || locked || Boolean(editing)} onClick={() => onAnnotate(true)}><Icon name="region" size={14}/>{t('Region note')}</button>
         <span className="note-entry-hint">{t('or select text to annotate')}</span>
@@ -594,11 +592,10 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
     </div>
     <p className="note-selection-hint">{t('Notes stay here unless you add them to a task.')}</p>
     {currentKey && notes.some(note => note.key !== currentKey) && <p className="note-placement-summary" role="status">{t('Some note positions need confirmation. Their original text and comments are kept.')}</p>}
-    {ownNotes.length > 0 && <section className="note-section" aria-label={t('My notes')}><h3>{t('My notes')} <span>{ownNotes.length}</span></h3>
+    {ownNotes.length > 0 && <section className="note-section" aria-label={t('My notes')}>
     {noteGroups(notes).map(({ group, entries }) => {
       const count = entries.filter(({ note }) => actions.selection.has(note.id)).length;
       return <GroupCard key={group} group={group} count={entries.length} active={actions.group === group || entries.some(({ note }) => note.id === active)} selection={{ count, disabled: selectionLocked, toggle: () => actions.selection.set(entries.map(({ note }) => note.id), count !== entries.length) }}>
-      <GroupInstruction group={group} value={actions.instructions.get(group)} disabled={locked} onChange={value => actions.instructions.set(group, value)}/>
       <div className="group-references">{entries.map(({ note, index }) => <div className={'group-location note-card' + (note.id === active ? ' active' : '')} key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)}>
         <button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button>
         <div className="group-location-target"><blockquote>{note.quote || t('Marked region')}</blockquote><span>{noteWhere(note)}</span>{note.key !== currentKey && <NotePlacementWarning/>}</div>
@@ -608,10 +605,30 @@ function NotesPanel({ notes, currentKey, active, actions, onShow, onAnnotate }: 
     </GroupCard>; })}
     <ol className="note-list">{notes.map((note, index) => !note.aiReview && !note.group && renderNote(note, index))}</ol>
     </section>}
-    {selectedSuggestions.length > 0 && <section className="note-section" aria-label={t('Suggestions in this task')}><h3>{t('Suggestions in this task')} <span>{selectedSuggestions.length}</span></h3><ul className="selected-suggestions">{selectedSuggestions.map(note => <li key={note.id}><button type="button" className="selected-suggestion-link" aria-label={t('Show suggestion {n} on the page', { n: notes.indexOf(note) + 1 })} onClick={() => onShow(note)}>{note.comment}</button><button type="button" className="icon-button" aria-label={t('Remove suggestion {n} from task', { n: notes.indexOf(note) + 1 })} disabled={selectionLocked} onClick={() => actions.selection.set([note.id], false)}><Icon name="close" size={13}/></button></li>)}</ul></section>}
     {unplacedSuggestions.length > 0 && <section className="note-section" aria-label={t('Unplaced suggestions')}><h3>{t('Unplaced suggestions')}</h3><ol className="note-list">{notes.map((note, index) => note.aiReview && note.key !== currentKey && renderNote(note, index))}</ol></section>}
     {dismissed && <div className="note-dismissed" role="status">{t('Suggestion ignored.')} <button type="button" disabled={selectionLocked} onClick={() => void change(async () => { await actions.restore(dismissed); setDismissed(null); })}>{t('Undo')}</button></div>}
     {error && <p className="inline-error" role="alert">{error}</p>}
+  </section>;
+}
+
+// The composer receives only attachments the author explicitly chose in the PDF.
+function TaskNotes({ notes, currentKey, actions, onShow }: { notes: Annotation[]; currentKey?: string; actions: NoteActions; onShow: (note: Annotation) => void }) {
+  const chosen = notes.filter(note => actions.selection.has(note.id));
+  if (!chosen.length) return null;
+  const reference = (note: Annotation, index: number) => <li key={note.id} data-note={note.id} className="task-note-reference">
+    <div className="note-head"><button type="button" className="note-number" aria-label={note.aiReview ? t('Show suggestion {n} on the page', { n: index + 1 }) : t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}</span><button type="button" className="icon-button" aria-label={note.aiReview ? t('Remove suggestion {n} from task', { n: index + 1 }) : t('Remove note {n} from task', { n: index + 1 })} disabled={actions.sending} onClick={() => actions.selection.set([note.id], false)}><Icon name="close" size={13}/></button></div>
+    <NoteQuote text={note.quote}/>{note.comment && <p className="task-note-comment">{note.comment}</p>}{note.key !== currentKey && <NotePlacementWarning/>}
+  </li>;
+  return <section className="task-notes-panel" aria-label={t('Notes in this task')}>
+    <div className="note-selection-head"><span>{t('Added to task: {n}', { n: chosen.length })}</span><button type="button" className="note-select-all" disabled={actions.sending} onClick={() => actions.selection.set(chosen.map(note => note.id), false)}>{t('Clear selection')}</button></div>
+    {noteGroups(notes).map(({ group, entries }) => {
+      const selected = entries.filter(({ note }) => actions.selection.has(note.id));
+      return selected.length > 0 && <GroupCard key={group} group={group} count={selected.length}>
+        <GroupInstruction group={group} value={actions.instructions.get(group)} disabled={actions.sending} onChange={value => actions.instructions.set(group, value)}/>
+        <ol className="task-note-list">{selected.map(({ note, index }) => reference(note, index))}</ol>
+      </GroupCard>;
+    })}
+    <ol className="task-note-list">{notes.map((note, index) => !note.group && actions.selection.has(note.id) && reference(note, index))}</ol>
   </section>;
 }
 
@@ -653,6 +670,7 @@ type ManuscriptPanel = 'pdf' | 'task' | 'contents' | 'git';
 function ManuscriptView({ project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, openPdf, navigation, onGit, writer, reportError, tasks, onOpenTask, onFixProblems }: { onFixProblems?: (request: string) => void; tasks: Task[]; onOpenTask: (id: string) => void; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; openPdf?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
   const build = data?.build, notes = data?.annotations || [], git = data?.git;
   const pdf = useRef<PdfHandle>(null);
+  const [readingNotes, setReadingNotes] = useState(false);
   const [collapsed, setCollapsed] = useState(() => browserStorage.getItem('papilot:manuscript-panel') === 'hidden');
   const canCollapse = useMedia('(min-width: 681px)'), hidden = canCollapse && collapsed;
   const sideBySide = useMedia('(min-width: 901px)');
@@ -671,7 +689,7 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
     load={() => api<ManuscriptProblems>(`/projects/${project.id}/manuscript/problems`, undefined, undefined, 60000)}
     onJump={problem => { if (problem.page === undefined || !problem.rect) return; if (phone()) setView('pdf'); const { page, rect } = problem; requestAnimationFrame(() => pdf.current?.showPlace(page, rect)); }}
     onFix={onFixProblems && (list => { onFixProblems(fixRequest(list)); setView('task'); setCollapsed(false); })}/>;
-  const pdfTools = <>{tools}{problemsButton}{hidden && togglePanel}{(hidden || !sideBySide) && openPdf}</>;
+  const pdfTools = <>{tools}{problemsButton}<button type="button" className={'icon-button' + (readingNotes ? ' active' : '')} aria-label={t('My notes')} title={t('My notes')} aria-pressed={readingNotes} onClick={() => { setActive(''); setReadingNotes(value => !value); }}><Icon name="notes" size={16}/></button>{hidden && togglePanel}{(hidden || !sideBySide) && openPdf}</>;
   const switcher = <>{navigation}<ModeSwitch mode={mode} onMode={setMode}/></>;
   const staged = Array.isArray(git?.files) && !git.merging ? git.files.filter(file => file.staged).map(file => file.path) : [];
   const reloadGit = () => void api<GitStatus>(`/projects/${project.id}/git`).then(onGit, () => undefined);
@@ -688,13 +706,13 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
   }
   function show(note: Annotation) {
     if (note.key !== build?.key) return;
-    setMode('pdf');
+    setMode('pdf'); setReadingNotes(false);
     setActive(note.id);
     if (phone()) setView('pdf');
     requestAnimationFrame(() => pdf.current?.goToNote(note));
   }
   function annotate(region: boolean) {
-    setMode('pdf'); setRegion(region);
+    setMode('pdf'); setRegion(region); setReadingNotes(false); setActive('');
     if (phone()) setView('pdf');
     if (!phone() && mode === 'pdf') pdf.current?.focus();
     else requestAnimationFrame(() => pdf.current?.focus());
@@ -711,9 +729,10 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
         ? <div className="manuscript-note error brief" role="alert"><span>{t('The latest changes did not compile. This is the last PDF that did.')}</span><button type="button" className="note-link" onClick={() => problems.current?.open()}>{t('Show problems')}</button></div>
         : <div className="manuscript-note error" role="alert"><strong>{t('The manuscript did not compile.')}</strong><pre>{build.error}</pre></div>)}
       {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView ref={pdf} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion} group={actions.group} onGroupChange={actions.setGroup} markingDisabled={actions.sending}
-          suggestions={{ has: actions.selection.has, toggle: note => actions.selection.set([note.id], !actions.selection.has(note.id)), remove: actions.remove, restore: actions.restore, onBusy: actions.onReviewBusy, disabled: actions.sending }} onDeselect={() => setActive('')}
-          onCreate={actions.add} onSelect={note => { setActive(note.id); if (!note.aiReview && !phone()) { setView('task'); setCollapsed(false); pdf.current?.fitWidth(); } }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={pdfTools}/></Suspense>
+          noteActions={{ has: actions.selection.has, toggle: note => actions.selection.set([note.id], !actions.selection.has(note.id)), remove: actions.remove, restore: actions.restore, edit: actions.edit, onEditing: actions.onEditing, onBusy: actions.onReviewBusy, disabled: actions.sending }} onDeselect={() => setActive('')}
+          onCreate={actions.add} onSelect={note => { setActive(note.id); setReadingNotes(false); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={pdfTools}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
+      {readingNotes && <aside className="pdf-reading-notes" aria-label={t('PDF note library')}><div className="pdf-reading-notes-head"><strong>{t('My notes')}</strong><button type="button" className="icon-button" aria-label={t('Close notes')} onClick={() => setReadingNotes(false)}><Icon name="close" size={16}/></button></div><NotesPanel key={project.id} notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/></aside>}
     </section>}
     <aside id={panelId} className="manuscript-side" aria-label={t('Manuscript panels')} hidden={hidden}>
       <div className="manuscript-side-header">
@@ -725,7 +744,7 @@ function ManuscriptView({ project, data, error, view, setView, region, setRegion
         </div>
         {!hidden && sideBySide && openPdf}
       </div>
-      {side === 'task' ? newTask(<NotesPanel key={project.id} notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/>) : side === 'contents' ? <nav className="contents-panel" aria-label={t('PDF contents')}>
+      {side === 'task' ? newTask(<TaskNotes notes={notes} currentKey={build?.key} actions={actions} onShow={show}/>) : side === 'contents' ? <nav className="contents-panel" aria-label={t('PDF contents')}>
         {outline.length ? <ol>{outline.map((item, index) => <li key={index}>
           <button type="button" aria-current={index === section ? 'location' : undefined} style={{ paddingLeft: 12 + Math.min(item.level, 4) * 14 }} onClick={() => goTo(item)}>
             <span>{item.title}</span><span className="contents-page">{item.page}</span>
@@ -1189,9 +1208,9 @@ function App() {
       setMarking(value => value + 1);
       try {
         const note = await api<Annotation>(`/projects/${project.id}/annotations`, { key: manuscriptData.data.build.key, page, rect, ...(rects.length ? { rects, quote } : {}), comment, ...(group ? { group } : {}) });
-        withNotes(list => [...list, note]); setActiveNote(note.id);
+        withNotes(list => [...list, note]); setActiveNote(group ? '' : note.id);
         if (group) annotationUndo.current.push({ kind: 'add', note });
-        else { setRegion(false); if (!mobile) setManuscriptView('task'); }
+        else setRegion(false);
       } finally { setMarking(value => value - 1); }
     },
     async edit(note, comment) {
@@ -1344,9 +1363,9 @@ function App() {
         </div>
     {manuscriptOpenPdf}
   </>;
-  const newTaskPanel = (attachments: React.ReactNode) => <section className={'new-task-panel' + (notes.length ? ' has-notes' : '')} aria-label={t('New task')}>
+  const newTaskPanel = (attachments: React.ReactNode) => <section className={'new-task-panel' + (noteSelection.selected.length ? ' has-notes' : '')} aria-label={t('New task')}>
     <div className="new-task-start">
-    {!notes.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
+    {!noteSelection.selected.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
     {newSkill?.output !== 'annotations' && attachments}
     <Composer attachments={newSkill?.output === 'annotations' ? undefined : newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
       skills={projectSkills} skill={newSkill} onSkill={setNewSkill}

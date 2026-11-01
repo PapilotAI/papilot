@@ -1,25 +1,34 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AGENT_NAMES, type Annotation } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
 import './pdf-suggestion.css';
+import { groupName } from './note-groups.tsx';
+import { sendsMessage } from './composer.ts';
 
-export interface PdfSuggestionActions {
+export interface PdfNoteActions {
   has: (id: string) => boolean;
   toggle: (note: Annotation) => void;
   remove: (note: Annotation) => Promise<void>;
   restore: (note: Annotation) => Promise<void>;
+  edit: (note: Annotation, comment: string) => Promise<void>;
+  onEditing: (editing: boolean) => void;
   onBusy: (busy: boolean) => void;
   disabled: boolean;
 }
 
 // The card lives in the PDF's annotation layer. Reposition it around its text
 // anchor on zoom/scroll, keeping it inside both the page and visible PDF area.
-export function PdfSuggestion({ note, number, index, total, selected, busy, error, onToggle, onDismiss, onClose, onPrevious, onNext }: {
+export function PdfNoteCard({ note, number, index, total, selected, busy, error, onToggle, onDismiss, onClose, onPrevious, onNext, onSave, onEditing }: {
   note: Annotation; number: number; index: number; total: number; selected: boolean; busy: boolean; error: string;
   onToggle: () => void; onDismiss: () => void; onClose: () => void; onPrevious: () => void; onNext: () => void;
+  onSave: (comment: string) => Promise<boolean>; onEditing: (editing: boolean) => void;
 }) {
   const card = useRef<HTMLElement>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const editing = draft !== null, ai = Boolean(note.aiReview);
+  useEffect(() => { onEditing(editing); return () => onEditing(false); }, [editing, onEditing]);
+  async function save() { if (!busy && draft?.trim() && await onSave(draft.trim())) setDraft(null); }
   useLayoutEffect(() => {
     const element = card.current!, layer = element.closest<HTMLElement>('.note-layer')!, viewport = element.closest<HTMLElement>('.pdf-container')!;
     let frame = 0;
@@ -52,16 +61,20 @@ export function PdfSuggestion({ note, number, index, total, selected, busy, erro
     return () => { observer.disconnect(); cancelAnimationFrame(frame); viewport.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule); };
   }, [note.id, note.rect[0], note.rect[1], note.rect[2], note.rect[3]]);
 
-  return <section ref={card} className="pdf-suggestion" role="dialog" aria-modal="false" aria-label={t('AI suggestion {n}', { n: number })} tabIndex={-1} onKeyDown={event => {
-    if (event.key === 'Escape' && !busy) { event.preventDefault(); event.stopPropagation(); onClose(); }
+  return <section ref={card} className={'pdf-note-card ' + (ai ? 'pdf-suggestion' : 'pdf-personal-note')} role="dialog" aria-modal="false" aria-label={ai ? t('AI suggestion {n}', { n: number }) : t('PDF note {n}', { n: number })} tabIndex={-1} onKeyDown={event => {
+    if (event.key === 'Escape' && !busy) { event.preventDefault(); event.stopPropagation(); if (editing) setDraft(null); else onClose(); }
   }}>
-    <div className="pdf-suggestion-head"><Icon name="spark" size={14}/><strong>{t('AI suggestion')}</strong><span>{AGENT_NAMES[note.aiReview!.agent]}</span><button type="button" className="icon-button" aria-label={t('Close suggestion')} disabled={busy} onClick={onClose}><Icon name="close" size={14}/></button></div>
-    <div className="pdf-suggestion-body"><p>{note.comment}</p></div>
+    <div className="pdf-suggestion-head"><Icon name={ai ? 'spark' : 'notes'} size={14}/><strong>{ai ? t('AI suggestion') : t('Your note')}</strong><span>{note.aiReview ? AGENT_NAMES[note.aiReview.agent] : note.group ? groupName(note.group) : ''}</span><button type="button" className="icon-button" aria-label={ai ? t('Close suggestion') : t('Close note')} disabled={busy} onClick={onClose}><Icon name="close" size={14}/></button></div>
+    <div className="pdf-suggestion-body">{editing ? <form className="note-edit" onSubmit={event => { event.preventDefault(); void save(); }}>
+      <textarea autoFocus aria-label={t('Edit note {n}', { n: number })} value={draft} rows={4} maxLength={4000} disabled={busy} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { event.preventDefault(); void save(); } }}/>
+      <div className="button-row"><button type="button" className="button ghost compact" disabled={busy} onClick={() => setDraft(null)}>{t('Cancel')}</button><button className="button primary compact" disabled={busy || !draft.trim()}>{busy ? t('Saving…') : t('Save')}</button></div>
+    </form> : <p>{note.comment || (note.group ? t('Highlighted in {group}', { group: groupName(note.group) }) : '')}</p>}</div>
+    {!ai && !editing && <div className="pdf-note-edit-actions"><button type="button" className="note-edit-trigger" aria-label={t('Edit note {n}: {comment}', { n: number, comment: note.comment })} disabled={busy} onClick={() => setDraft(note.comment)}><Icon name="pencil" size={13}/>{t('Edit note')}</button><button type="button" aria-label={t('Delete note {n}', { n: number })} disabled={busy} onClick={onDismiss}>{t('Delete note')}</button></div>}
     {error && <p className="inline-error" role="alert">{error}</p>}
-    <div className="pdf-suggestion-actions">
-      <button type="button" className="note-card-select" aria-label={t('Include suggestion {n} in this task', { n: number })} aria-pressed={selected} title={selected ? t('Remove from task') : t('Add to task')} disabled={busy} onClick={onToggle}><Icon name={selected ? 'check' : 'plus'} size={13}/>{selected ? t('Added to task') : t('Add to task')}</button>
-      <button type="button" className="note-dismiss" aria-label={t('Ignore suggestion {n}', { n: number })} disabled={busy} onClick={onDismiss}>{t('Ignore')}</button>
-    </div>
-    {total > 1 && <div className="pdf-suggestion-navigation"><button type="button" className="icon-button" aria-label={t('Previous suggestion')} disabled={busy || index <= 0} onClick={onPrevious}><Icon name="chevronLeft" size={14}/></button><span>{t('{current} of {total}', { current: index + 1, total })}</span><button type="button" className="icon-button" aria-label={t('Next suggestion')} disabled={busy || index >= total - 1} onClick={onNext}><Icon name="chevronRight" size={14}/></button></div>}
+    {!editing && <div className="pdf-suggestion-actions">
+      <button type="button" className="note-card-select" aria-label={ai ? t('Include suggestion {n} in this task', { n: number }) : t('Include note {n} in this task', { n: number })} aria-pressed={selected} title={selected ? t('Remove from task') : t('Add to task')} disabled={busy} onClick={onToggle}><Icon name={selected ? 'check' : 'plus'} size={13}/>{selected ? t('Added to task') : t('Add to task')}</button>
+      {ai && <button type="button" className="note-dismiss" aria-label={t('Ignore suggestion {n}', { n: number })} disabled={busy} onClick={onDismiss}>{t('Ignore')}</button>}
+    </div>}
+    {total > 1 && !editing && <div className="pdf-suggestion-navigation"><button type="button" className="icon-button" aria-label={ai ? t('Previous suggestion') : t('Previous note')} disabled={busy || index <= 0} onClick={onPrevious}><Icon name="chevronLeft" size={14}/></button><span>{t('{current} of {total}', { current: index + 1, total })}</span><button type="button" className="icon-button" aria-label={ai ? t('Next suggestion') : t('Next note')} disabled={busy || index >= total - 1} onClick={onNext}><Icon name="chevronRight" size={14}/></button></div>}
   </section>;
 }

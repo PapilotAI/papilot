@@ -4,7 +4,7 @@ import fs from 'node:fs';
 fs.mkdirSync('test-results', { recursive: true });
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium } from '../vendor/latex-review/node_modules/playwright/index.mjs';
+import { chromium, expect } from '../vendor/latex-review/node_modules/@playwright/test/index.mjs';
 
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
@@ -609,7 +609,7 @@ try {
   await findBox.waitFor({ state: 'hidden' });
   // Select text, write a note, cancel it, delete one, then send another.
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
-  const notesPanel = page.getByRole('region', { name: 'PDF notes' });
+  const notesPanel = page.getByRole('dialog', { name: 'PDF note 1', exact: true });
   // Where a word is printed, in page pixels, from the server's word places.
   const printed = async text => {
     const words = fixtureWords[0], word = words.words.find(w => w[0] === text), box = await pdfPages.first().boundingBox();
@@ -651,6 +651,9 @@ try {
   await noteBox.press('Enter');
   await page.getByRole('button', { name: 'Note 1: Only these words.', exact: true }).waitFor();
   assert.equal(annotations[0].quote, 'sentence about');
+  await expect(notesPanel).toBeVisible();
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/personal-note-inline.png', fullPage: true });
   // The pencil edits a comment; failed saves keep the text, and Cancel changes nothing.
   const anchor = structuredClone(annotations[0]);
   await notesPanel.getByRole('button', { name: 'Edit note 1: Only these words.' }).click();
@@ -672,6 +675,10 @@ try {
   assert.deepEqual(annotations[0], { ...anchor, comment: 'Only these words, please.' });
   await page.reload();
   await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'My notes', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'PDF notes' })).toContainText('Only these words, please.');
+  await page.getByRole('button', { name: 'Show note 1 on the page', exact: true }).click();
+  await expect(notesPanel).toBeVisible();
   failNoteDelete = true;
   await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
   await notesPanel.getByRole('alert').waitFor(); assert.equal(annotations.length, 1);
@@ -684,7 +691,7 @@ try {
   await prompt.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
   assert.ok((await prompt.inputValue()).length < 'Undo this text'.length, 'native undo edits the text');
   assert.equal(annotations.length, 0); await prompt.fill('');
-  await notesPanel.getByRole('button', { name: 'Region note', exact: true }).focus();
+  await page.getByRole('button', { name: 'Mark region', exact: true }).focus();
   await page.keyboard.press('Meta+Shift+z');
   assert.equal(annotations.length, 0, 'redo is not interpreted as undo');
   failNoteRestore = true;
@@ -700,7 +707,7 @@ try {
   noteBox = await selectText();
   await noteBox.fill('Shorten this sentence.');
   await noteBox.press('Enter');
-  await notesPanel.getByText('Fixture sentence about', { exact: true }).waitFor();
+  await expect(notesPanel).toContainText('Shorten this sentence.');
   assert.equal(annotations[0].page, 0);
   assert.equal(annotations[0].key, 'fixture');
   assert.equal(annotations[0].quote, 'Fixture sentence about');
@@ -711,7 +718,7 @@ try {
   await page.getByRole('button', { name: 'Note 1: Shorten this sentence.', exact: true }).waitFor({ state: 'hidden' });
   assert.equal(annotations.length, 0);
   // A region marks a figure or equation that has no text to select.
-  await notesPanel.getByRole('button', { name: 'Region note', exact: true }).click();
+  await page.getByRole('button', { name: 'Mark region', exact: true }).click();
   const firstPage = await pdfPages.first().boundingBox();
   await page.mouse.move(firstPage.x + firstPage.width * 0.2, firstPage.y + firstPage.height * 0.3);
   await page.mouse.down();
@@ -721,12 +728,17 @@ try {
   assert.equal(await noteBox.evaluate(el => el === document.activeElement), true);
   await noteBox.fill('Define the operator here.');
   await page.getByRole('button', { name: 'Add note', exact: true }).click();
-  await notesPanel.getByText('Page 1 · main.tex:10–12', { exact: true }).waitFor();
+  await expect(notesPanel).toContainText('Define the operator here.');
   assert.equal(await page.getByRole('button', { name: 'Mark region', exact: true }).getAttribute('aria-pressed'), 'false');
   assert.equal(annotations[0].rects, undefined);
   assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
-  await notesPanel.getByText('Added to task: 0', { exact: true }).waitFor();
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
   assert.equal(await page.getByRole('button', { name: 'Start task', exact: true }).isDisabled(), true);
+  await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Notes in this task' })).toContainText('Define the operator here.');
+  await page.getByRole('button', { name: 'Remove note 1 from task', exact: true }).click();
+  await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  assert.equal(annotations.length, 1);
   await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
   assert.equal(await page.getByRole('tab', { name: 'Notes', exact: true }).count(), 0);
   assert.equal(await prompt.inputValue(), '');
