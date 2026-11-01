@@ -2,10 +2,9 @@
 
 <h1>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-    <img src="docs/assets/logo.svg" width="48" height="48" align="absmiddle" alt="Papilot logo">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wordmark-dark.svg">
+    <img src="docs/assets/wordmark.svg" width="304" height="92" alt="Papilot">
   </picture>
-  Papilot
 </h1>
 
 <p><b>A Cursor-like workspace for your papers: annotate and review PDFs directly without ever touching LaTeX.</b></p>

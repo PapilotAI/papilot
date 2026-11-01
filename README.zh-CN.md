@@ -2,10 +2,9 @@
 
 <h1>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-    <img src="docs/assets/logo.svg" width="48" height="48" align="absmiddle" alt="Papilot 标志">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wordmark-dark.svg">
+    <img src="docs/assets/wordmark.svg" width="304" height="92" alt="Papilot">
   </picture>
-  Papilot
 </h1>
 
 <p><b>像 Cursor 一样改论文：直接在 PDF 上批注和审阅，完全不用碰 LaTeX。</b></p>
