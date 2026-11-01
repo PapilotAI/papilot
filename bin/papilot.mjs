@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { codexExecutable } from './codex-executable.mjs';
 import { activeInstallation } from './installation.mjs';
 
 const usage = `Usage: papilot [doctor | demo | codex <args> | service install | service stop] [--port <number>] [--data <folder>]
@@ -87,17 +88,19 @@ async function main() {
   // as the tested version is used as it is; otherwise that version is installed
   // once into the data folder.
   function findCodex() {
-    if (process.env.PAPILOT_CODEX_BIN) return process.env.PAPILOT_CODEX_BIN;
+    if (process.env.PAPILOT_CODEX_BIN) return codexExecutable(process.env.PAPILOT_CODEX_BIN) || process.env.PAPILOT_CODEX_BIN;
     const tested = pkg.devDependencies['@openai/codex'];
     const version = file => (spawnSync(file, ['--version'], { encoding: 'utf8' }).stdout || '').match(/\d+\.\d+\.\d+/)?.[0] || '0.0.0';
     const recent = file => { const [a, b] = [parse(version(file)), parse(tested)]; return (a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) >= 0; };
-    const onPath = (process.env.PATH || '').split(path.delimiter).map(dir => path.join(dir, 'codex')).find(file => existsSync(file));
+    const onPath = codexExecutable();
     if (onPath && recent(onPath)) return onPath;
-    const prefix = path.join(process.env.PAPILOT_DATA, 'agents'), installed = path.join(prefix, 'node_modules/.bin/codex');
-    if (existsSync(installed) && recent(installed)) return installed;
+    const prefix = path.join(process.env.PAPILOT_DATA, 'agents'), installed = codexExecutable(path.join(prefix, 'node_modules/.bin/codex'));
+    if (installed && recent(installed)) return installed;
     console.log(`Installing Codex ${tested} for Papilot (first run only)...`);
-    const result = spawnSync('npm', ['install', '--prefix', prefix, `@openai/codex@${tested}`, '--no-audit', '--no-fund', '--loglevel=error'], { stdio: 'inherit' });
-    if (result.status === 0 && existsSync(installed)) return installed;
+    const npm = process.platform === 'win32' ? path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js') : 'npm';
+    const result = spawnSync(process.platform === 'win32' ? process.execPath : npm, [...(process.platform === 'win32' ? [npm] : []), 'install', '--prefix', prefix, `@openai/codex@${tested}`, '--no-audit', '--no-fund', '--loglevel=error'], { stdio: 'inherit' });
+    const downloaded = codexExecutable(path.join(prefix, 'node_modules/.bin/codex'));
+    if (result.status === 0 && downloaded && recent(downloaded)) return downloaded;
     console.warn('Codex could not be installed, so Codex tasks are unavailable. Install it with npm install -g @openai/codex and run papilot again.');
     return '';
   }

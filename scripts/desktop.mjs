@@ -7,7 +7,7 @@ import { spawnSync, spawn } from 'node:child_process';
 const root = fileURLToPath(new URL('..', import.meta.url));
 process.chdir(root);
 const require = createRequire(import.meta.url), pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-const npm = fs.realpathSync(process.env.npm_execpath || path.join(path.dirname(process.execPath), 'npm'));
+const npm = fs.realpathSync(process.env.npm_execpath || path.join(path.dirname(process.execPath), process.platform === 'win32' ? 'node_modules/npm/bin/npm-cli.js' : 'npm'));
 const run = (command, args, cwd = root) => {
   const result = spawnSync(command, args, { cwd, stdio: 'inherit' });
   if (result.error) throw result.error;
@@ -27,7 +27,7 @@ if (process.argv[2] === 'dev') {
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));
   child.on('exit', code => process.exit(code ?? 1));
 } else if (process.argv[2] === 'package') {
-  if (!['darwin', 'linux'].includes(process.platform)) throw new Error('Desktop packaging currently supports macOS and Linux. Build on the target OS and CPU architecture.');
+  if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw new Error('Desktop packaging currently supports macOS and Linux. Build on the target OS and CPU architecture.');
   // Absent Actions secrets arrive as empty strings. electron-builder treats an
   // empty CSC_LINK as a certificate path, so omit unset signing credentials.
   for (const key of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'CSC_NAME', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']) {
@@ -39,12 +39,12 @@ if (process.argv[2] === 'dev') {
   fs.mkdirSync('.desktop/runtime/bin', { recursive: true });
   fs.mkdirSync('.desktop/runtime/lib/node_modules', { recursive: true });
   const node = fs.realpathSync(process.execPath);
-  fs.copyFileSync(node, '.desktop/runtime/bin/node');
-  fs.chmodSync('.desktop/runtime/bin/node', 0o755);
+  fs.copyFileSync(node, process.platform === 'win32' ? '.desktop/runtime/bin/node.exe' : '.desktop/runtime/bin/node');
+  if (process.platform !== 'win32') fs.chmodSync('.desktop/runtime/bin/node', 0o755);
   fs.cpSync(path.dirname(path.dirname(npm)), '.desktop/runtime/lib/node_modules/npm', { recursive: true,
     filter: source => path.basename(source) !== '__pycache__' });
-  for (const name of ['npm', 'npx']) fs.symlinkSync(`../lib/node_modules/npm/bin/${name}-cli.js`, `.desktop/runtime/bin/${name}`);
-  const license = [path.resolve(path.dirname(node), '../LICENSE'), path.resolve(path.dirname(node), '../share/doc/node/LICENSE'),
+  if (process.platform !== 'win32') for (const name of ['npm', 'npx']) fs.symlinkSync(`../lib/node_modules/npm/bin/${name}-cli.js`, `.desktop/runtime/bin/${name}`);
+  const license = [path.join(path.dirname(node), 'LICENSE'), process.env.PAPILOT_NODE_LICENSE || '', path.resolve(path.dirname(node), '../LICENSE'), path.resolve(path.dirname(node), '../share/doc/node/LICENSE'),
     path.resolve(path.dirname(node), '../share/doc/node/LICENSE.md')].find(file => fs.existsSync(file));
   if (!license) throw new Error('Use an official Node.js distribution with its LICENSE file to build the app.');
   fs.copyFileSync(license, '.desktop/runtime/LICENSE');
@@ -66,5 +66,5 @@ if (process.argv[2] === 'dev') {
   runNpm(['install', '--omit=dev', '--no-audit', '--no-fund'], path.join(root, '.desktop/server'));
   runNpm(['ci', '--omit=dev', '--no-audit', '--no-fund'], path.join(root, '.desktop/server/vendor/latex-review'));
   run(process.execPath, [require.resolve('electron-builder/cli.js'), '--config', 'desktop/builder.cjs',
-    process.platform === 'darwin' ? '--mac' : '--linux', `--${process.arch}`, '--publish', 'never', ...process.argv.slice(3)]);
+    process.platform === 'darwin' ? '--mac' : process.platform === 'win32' ? '--win' : '--linux', `--${process.arch}`, '--publish', 'never', ...process.argv.slice(3)]);
 } else throw new Error('Expected dev or package.');
