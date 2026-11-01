@@ -144,7 +144,7 @@ try {
   const firstCreated = page.locator(`[data-task="${creates[0].id}"]`);
   await expect(firstCreated).toBeVisible();
   await expect(firstCreated).toHaveClass(/task-added/);
-  assert.match(await firstCreated.evaluate(el => getComputedStyle(el).animationName), /task-arrive/);
+  assert.match(await firstCreated.evaluate(el => getComputedStyle(el).animationName), /task-land/);
   await expect(page.getByRole('heading', { name: 'Manuscript', exact: true })).toHaveCount(1);
   await expect(page.locator('.task-link.active')).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'Describe the revision', exact: true })).toHaveValue('');

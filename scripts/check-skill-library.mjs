@@ -124,6 +124,7 @@ try {
   // A paper-specific copy takes priority without losing the global one.
   await open();
   await dialog.getByRole('button', { name: 'New skill', exact: true }).click();
+  await expect(dialog.getByLabel('Skill ID')).toBeFocused();
   await dialog.getByLabel('Skill ID').fill('house-style');
   await dialog.getByLabel('Save to').selectOption('paper');
   await dialog.getByLabel('Skill name', { exact: true }).fill('Paper style');
@@ -185,6 +186,7 @@ try {
   await dialog.getByRole('button', { name: 'All skills', exact: true }).click();
   await expect(dialog.locator('.skill-library-browse')).toBeVisible();
   await dialog.getByRole('button', { name: 'New skill', exact: true }).click();
+  await expect(dialog.getByLabel('Skill ID')).toBeFocused();
   await dialog.getByLabel('Skill ID').fill('unsaved');
   await instructions.fill('Keep this draft.');
   await dialog.getByRole('button', { name: 'All skills', exact: true }).click();

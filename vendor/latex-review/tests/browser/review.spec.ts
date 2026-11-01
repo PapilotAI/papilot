@@ -421,7 +421,7 @@ test("change map navigates with pointer and keyboard and follows review layout c
     });
   });
   await expect(
-    page.getByText(/The agent is publishing a new round/),
+    page.getByText("Updating changes…", { exact: true }),
   ).toBeVisible();
   await expectMapAligned(page);
 });
