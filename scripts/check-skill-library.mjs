@@ -58,7 +58,7 @@ try {
   await expect(page.locator('dialog[open]')).toHaveCount(1);
   await expect(dialog.locator('.skill-library-storage, .skill-library-file')).toHaveCount(0);
   await expect(dialog).not.toContainText(roots.user);
-  await expect(dialog.locator('.skill-library-item')).toHaveCount(7);
+  await expect(dialog.locator('.skill-library-item')).toHaveCount(8);
   await expect(dialog.locator('.skill-library-browse')).toBeVisible();
   await expect(dialog.locator('.skill-library-detail')).toBeHidden();
   await page.screenshot({ path: '/tmp/papilot-skills-list-desktop.png' });
@@ -112,7 +112,7 @@ try {
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog.getByText('Saved', { exact: true })).toBeVisible();
   assert.equal(fs.readFileSync(globalFile, 'utf8'), globalText);
-  await expect(dialog.locator('.skill-library-item')).toHaveCount(8);
+  await expect(dialog.locator('.skill-library-item')).toHaveCount(9);
   await close();
   const composer = page.getByRole('textbox', { name: 'Describe the revision', exact: true });
   await composer.fill('/house');
