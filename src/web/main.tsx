@@ -47,6 +47,7 @@ import { Markdown } from './markdown.tsx';
 import logo from './logo.svg';
 import { AgentConnectionNotice, AgentPicker, ModelLabel } from './agent-picker.tsx';
 import { taskEffort } from './task-effort.ts';
+import { TaskFlight, type TaskFlightData } from './task-flight.tsx';
 import { UsageSummary } from './usage.tsx';
 import { useNoteUndo } from './use-note-undo.ts';
 import { NoteResultsProvider, NoteResultLinks, useNoteResults } from './note-results.tsx';
@@ -777,9 +778,13 @@ function App() {
   }])) as Record<AgentId, { model: string; effort: string | null; fast: boolean }>);
   const [creating, setCreating] = useState(false), [createError, setCreateError] = useState('');
   const [addedTask, setAddedTask] = useState<Pick<Task, 'id' | 'title'> | null>(null);
+  const [flyingTask, setFlyingTask] = useState<TaskFlightData | null>(null);
+  const taskArrived = useCallback((task: TaskFlightData) => {
+    setFlyingTask(null); setAddedTask({ id: task.id, title: task.title });
+  }, []);
   useEffect(() => {
     if (!addedTask) return;
-    const timer = setTimeout(() => setAddedTask(null), 2600);
+    const timer = setTimeout(() => setAddedTask(null), 3600);
     return () => clearTimeout(timer);
   }, [addedTask]);
   const [sidebar, setSidebar] = useState(false);
@@ -1023,6 +1028,7 @@ function App() {
       formTaskId.current = previous?.signature === signature && previous.id ? previous.id : uuid();
       browserStorage.setItem('papilot:new-task-request', JSON.stringify({ signature, id: formTaskId.current }));
       const created = await api<Task>('/tasks', { ...body, id: formTaskId.current });
+      const source = input?.getBoundingClientRect();
       browserStorage.removeItem('papilot:new-task-request');
       newFiles.draft.clear(files); formTaskId.current = uuid(); setNewDraft(''); setNewSkill(null); setTaskSearch(''); setShowArchived(false);
       // Add the confirmed task without moving the author away from their draft.
@@ -1032,7 +1038,9 @@ function App() {
         const next = { ...snapshotRef.current, tasks: [...snapshotRef.current.tasks.filter(task => task.id !== created.id), created] };
         snapshotRef.current = next; setState(next);
       }
-      setAddedTask({ id: created.id, title: created.title });
+      setAddedTask(null);
+      if (source?.width) setFlyingTask({ id: created.id, title: created.title, source });
+      else setAddedTask({ id: created.id, title: created.title });
       ++manuscriptRequest.current;
       setManuscript(current => current.projectId === target && current.data ? { ...current, data: { ...current.data, annotations: (current.data.annotations || []).filter(note => !submittedNotes.has(note.id)) } } : current);
       noteSelection.reset(target);
@@ -1393,7 +1401,7 @@ function App() {
         <div className="task-search"><Icon name="search" size={14}/><input type="search" aria-label={t('Search tasks')} placeholder={showArchived ? t('Search archived tasks…') : t('Search tasks…')} title={t('Search task titles and instructions')} value={taskSearch} onChange={event => setTaskSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Escape' && taskSearch) { event.preventDefault(); event.stopPropagation(); setTaskSearch(''); } }}/>{taskSearch && <button type="button" className="icon-button" aria-label={t('Clear task search')} onClick={() => { setTaskSearch(''); document.querySelector<HTMLInputElement>('.task-search input')?.focus(); }}><Icon name="close" size={13}/></button>}</div>
         <button type="button" className="icon-button archive-toggle" aria-pressed={showArchived} aria-label={showArchived ? t('Show current tasks') : t('Show archived tasks')} title={showArchived ? t('Show current tasks') : t('Show archived tasks')} onClick={() => setShowArchived(value => !value)}><Icon name="archive" size={15}/></button>
       </div>
-      <nav className="task-list" aria-label={t('Task list')}>{visibleTasks.length ? [...visibleTasks].reverse().map(row => <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '') + (row.id === addedTask?.id ? ' task-added' : '')}>
+      <nav className="task-list" aria-label={t('Task list')}>{visibleTasks.length ? [...visibleTasks].reverse().map(row => <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '') + (row.id === flyingTask?.id ? ' task-arriving' : '') + (row.id === addedTask?.id ? ' task-added' : '')}>
         {renaming === row.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); refocus.current = row.id; e.currentTarget.querySelector('input')?.blur(); }}>
           <input name="title" aria-label={t('Rename {name}', { name: row.title })} defaultValue={row.title} maxLength={120} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void rename(row, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocus.current = row.id; e.currentTarget.value = row.title; e.currentTarget.blur(); } }}/>
         </form>
@@ -1427,6 +1435,7 @@ function App() {
     {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label={t('Close task list')} onClick={() => setSidebar(false)}/>}
     <main className="main" inert={narrow && sidebar}>
       <h1 className="sr-only">{task ? task.title : manuscriptOpen ? t('Manuscript') : referencesOpen ? t('Reference check') : 'Papilot'}</h1>
+      {flyingTask && <TaskFlight task={flyingTask} sidebarShown={sidebarShown} onArrive={taskArrived}/>}
       <span className="sr-only" role="status" aria-atomic="true">{addedTask ? t('Task added: {title}', { title: addedTask.title }) : ''}</span>
       {(mobile || (!task && !manuscriptOpen)) && (sidebarToggle || task || manuscriptOpen) && <div className="workspace-navigation">
         {sidebarToggle}{taskControls}{manuscriptNavigation}{reviewOpen}
