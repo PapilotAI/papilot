@@ -1,20 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import type { AgentId, AgentModel, RuntimeStatus } from '../shared.ts';
+import type { AgentId, RuntimeStatus } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
 import { t } from './i18n.ts';
 import { browserStorage } from './storage.ts';
 import { EffortSlider, effortName } from './effort-slider.tsx';
-
-// Without an effort of its own choosing, a task reasons at high effort where
-// its model offers it: a catalog's default can be as low as "low", too little
-// for revising a paper. An explicit "Model default" ('') is kept.
-const DEFAULT_EFFORT = 'high';
-export function taskEffort(choice: string | null, model?: AgentModel) {
-  if (choice === '') return '';
-  if (choice && (!model || model.efforts.includes(choice))) return choice;
-  return model?.efforts.includes(DEFAULT_EFFORT) ? DEFAULT_EFFORT : '';
-}
 
 // The picker and an existing conversation use the same compact model label.
 export function ModelLabel({ model, effort, fast }: { model: string; effort?: string | null; fast?: boolean }) {
