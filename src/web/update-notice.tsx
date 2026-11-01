@@ -55,10 +55,12 @@ export function UpdateNotice({ api, version }: { api: UpdateApi; version: string
     element.showModal();
     return () => { element.close(); if (opener?.isConnected) opener.focus(); };
   }, [open]);
-  if (!status) return null;
+  const currentVersion = <span className="brand-version" title={t('Papilot {version}', { version })}>v{versionLabel(version)}</span>;
+  if (!status) return currentVersion;
   const busy = working(status), available = status.latestVersion && status.latestVersion !== status.currentVersion;
-  if (!open && !busy && status.phase !== 'failed' && (!available || status.phase === 'idle')) return null;
+  if (!open && !busy && status.phase !== 'failed' && (!available || status.phase === 'idle')) return currentVersion;
   const label = status.phase === 'installing' ? t('Updating…') : status.phase === 'waiting' ? t('Update ready') : status.phase === 'restarting' ? t('Restarting…') : status.phase === 'failed' ? t('Update failed') : t('New version');
+  const description = `${t('Papilot {version}', { version: versionLabel(version) })} · ${label}${status.latestVersion ? ` · v${versionLabel(status.latestVersion)}` : ''}`;
   async function install() {
     if (!status || sending) return;
     setSending(true); setError('');
@@ -67,8 +69,9 @@ export function UpdateNotice({ api, version }: { api: UpdateApi; version: string
     finally { setSending(false); }
   }
   return <>
-    <button type="button" className={'update-badge' + (status.phase === 'failed' ? ' failed' : '')} aria-haspopup="dialog" title={t('Papilot {version}', { version: versionLabel(status.latestVersion || status.currentVersion) })} onClick={() => setOpen(true)}>
-      {busy ? <span className="spinner"/> : <Icon name={status.phase === 'failed' ? 'alert' : 'arrowUp'} size={13}/>}<span>{label}</span>
+    <button type="button" className={'brand-version update-badge' + (status.phase === 'failed' ? ' failed' : '')} aria-label={description} aria-haspopup="dialog" aria-expanded={open} aria-busy={busy || undefined} title={description} onClick={() => setOpen(true)}>
+      v{versionLabel(version)}
+      <span className="update-dot" aria-hidden="true"/>
     </button>
     {open && <dialog ref={dialog} className="update-dialog" aria-labelledby="update-title" onCancel={event => { event.preventDefault(); setOpen(false); }} onKeyDown={keepDialogFocus} onClick={event => { if (event.target === event.currentTarget) setOpen(false); }}>
       <div className="update-heading"><h2 id="update-title">{t('Update Papilot')}</h2><button className="icon-button" aria-label={t('Close')} onClick={() => setOpen(false)}><Icon name="close" size={16}/></button></div>

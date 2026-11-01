@@ -79,8 +79,9 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .sidebar-header>.add-project{flex:1;min-width:0;margin-bottom:0}
 .sidebar-header>.icon-button{margin-left:auto}
 .brand{display:flex;align-items:center;gap:7px;min-width:0;min-height:36px;color:var(--text-2);text-decoration:none;font:500 13px/1 var(--sans)}
+.brand-home{display:flex;align-items:center;gap:7px;flex-shrink:0;color:inherit;text-decoration:none}
 .brand-mark{width:18px;height:18px;display:block;flex-shrink:0}
-.brand-version{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:400;color:var(--text-3)}
+.brand-version{min-width:0;font-size:11.5px;font-weight:400;color:var(--text-3);overflow-wrap:anywhere}
 .count{font-size:11.5px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--text-3)}
 .sidebar-actions{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
 .sidebar-actions:empty{display:none}
@@ -137,10 +138,9 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .task-search .icon-button{width:24px;height:24px;flex-shrink:0}
 .task-rename{flex:1;min-width:0;padding:5px 4px 5px 6px}
 .task-rename input{width:100%;height:34px;padding:0 9px;border:1px solid var(--accent);border-radius:var(--r);background:var(--bg);font-size:14px;box-shadow:var(--ring);outline:none}
-.sidebar-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 12px;min-height:36px;flex-shrink:0;padding:0 4px 0 10px;margin-top:8px}
+.sidebar-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 8px;min-height:36px;flex-shrink:0;padding:0 4px 0 10px;margin-top:8px}
 .sidebar-status{grid-column:1/-1;display:flex;align-items:center;gap:12px;min-width:0;padding-right:6px}
 .sidebar-status:empty{display:none}
-.sidebar-status>.update-badge{margin-left:auto}
 .host-status{display:flex;align-items:center;gap:6px;min-width:0;font-size:11.5px;color:var(--text-3)}
 .host-status.reconnecting{color:var(--amber-text)}
 .connection-dot{width:6px;height:6px;flex-shrink:0;border-radius:50%;background:currentColor}
@@ -962,6 +962,7 @@ body.resizing iframe{pointer-events:none}
   .add-note{height:40px;font-size:14px}
   .sidebar-header{min-height:56px}
   .sidebar-footer .brand{min-height:44px}
+  .sidebar-footer .update-badge{min-height:44px}
   .sidebar .icon-button{width:44px;height:44px}
   .task-list-tools{padding-right:0}
   .project-switcher{min-height:44px}
