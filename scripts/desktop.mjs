@@ -28,6 +28,11 @@ if (process.argv[2] === 'dev') {
   child.on('exit', code => process.exit(code ?? 1));
 } else if (process.argv[2] === 'package') {
   if (!['darwin', 'linux'].includes(process.platform)) throw new Error('Desktop packaging currently supports macOS and Linux. Build on the target OS and CPU architecture.');
+  // Absent Actions secrets arrive as empty strings. electron-builder treats an
+  // empty CSC_LINK as a certificate path, so omit unset signing credentials.
+  for (const key of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'CSC_NAME', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']) {
+    if (process.env[key]?.trim() === '') delete process.env[key];
+  }
   // A native Node runtime keeps node:sqlite, agent CLIs and review subprocesses
   // independent of Electron's Node ABI and ELECTRON_RUN_AS_NODE behavior.
   fs.rmSync('.desktop/runtime', { recursive: true, force: true });

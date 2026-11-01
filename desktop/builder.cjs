@@ -26,5 +26,5 @@ module.exports = {
     icon: 'desktop/assets/icon.png', maintainer: 'Cui Chen <i@cuichen.cc>', syncDesktopName: true,
     synopsis: 'A workspace for your papers',
   },
-  deb: { depends: ['libgtk-3-0', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6', 'xdg-utils', 'libatspi2.0-0', 'libuuid1', 'libsecret-1-0', 'libasound2', 'git'] },
+  deb: { depends: ['libgtk-3-0', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6', 'xdg-utils', 'libatspi2.0-0', 'libuuid1', 'libsecret-1-0', 'libasound2', 'libgbm1', 'git'] },
 };
