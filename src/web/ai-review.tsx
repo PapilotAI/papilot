@@ -30,7 +30,7 @@ export function AiReviewView({ task, api, lead, tools, onCopied }: { task: Task;
           edit: async () => {},
           copy: async note => { const result = await api<{ note: Annotation }>(`${base}/${note.id}/copy`, {}); update(result.note); onCopied(); },
           remove: async note => { await api(`${base}/${note.id}/delete`, {}); setData(current => current && ({ ...current, notes: current.notes.filter(item => item.id !== note.id) })); },
-          restore: async note => { const restored = await api<Annotation>(`${base}/${note.id}/restore`, {}); setData(current => current && ({ ...current, notes: [...current.notes, restored].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)) })); setActive(restored.id); },
+          restore: async note => { const restored = await api<Annotation>(`${base}/${note.id}/restore`, {}); setData(current => current && ({ ...current, notes: [...current.notes.filter(item => item.id !== restored.id), restored].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)) })); setActive(restored.id); },
         }}/>
     </Suspense> : !error && <div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}
   </div>;

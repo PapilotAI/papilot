@@ -500,11 +500,19 @@ export class Manuscripts extends EventEmitter {
     return { ...await this.snapshotPdf(pdf, key), pdf };
   }
 
-  async preserveReviewPdf(root: string, taskId: string, source: string) {
+  private async reviewPdfPath(root: string, taskId: string) {
     const { loadProject } = await engine();
-    const folder = path.join(loadProject(root).state, 'ai-reviews', createHash('sha256').update(taskId).digest('hex'));
+    return path.join(loadProject(root).state, 'ai-reviews', createHash('sha256').update(taskId).digest('hex'), 'review.pdf');
+  }
+
+  async savedReviewPdf(root: string, taskId: string): Promise<string | null> {
+    const pdf = await this.reviewPdfPath(root, taskId);
+    return fs.existsSync(pdf) ? pdf : null;
+  }
+
+  async preserveReviewPdf(root: string, taskId: string, source: string) {
+    const pdf = await this.reviewPdfPath(root, taskId), folder = path.dirname(pdf);
     fs.mkdirSync(folder, { recursive: true });
-    const pdf = path.join(folder, 'review.pdf');
     // A retry always uses the original task copy, even after its build cache is pruned.
     if (!fs.existsSync(pdf)) { const temporary = path.join(folder, 'review.tmp'); fs.copyFileSync(source, temporary); fs.renameSync(temporary, pdf); }
     return pdf;

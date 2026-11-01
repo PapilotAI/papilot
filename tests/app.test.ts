@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -780,4 +782,54 @@ test('AI review findings stay in their task and copy individually, once, into th
     f.store.deleteTask('thesis-task');
     assert.equal((await get('/api/projects/thesis/manuscript')).json().annotations.length, 2, 'copied notes survive task deletion');
   } finally { await f.close(); }
+});
+
+test('changing a relocated paper path recovers its preserved review PDF without a build cache', async () => {
+  const f = await fixture(), base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-move-')));
+  const root = path.join(base, 'paper'), moved = path.join(base, 'moved-paper'), worktree = path.join(base, 'task');
+  const git = (folder: string, ...args: string[]) => execFileSync('git', ['-C', folder, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    fs.mkdirSync(root);
+    fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}Paper\\end{document}\n');
+    git(root, 'init', '-q'); git(root, 'add', '.');
+    git(root, '-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Paper');
+    git(root, 'worktree', 'add', '--detach', worktree, 'HEAD');
+    const original = fs.readFileSync('tests/fixtures/outline.pdf');
+    const pdf = await f.manuscripts.preserveReviewPdf(root, 'thesis-task', path.resolve('tests/fixtures/outline.pdf'));
+    const key = createHash('sha256').update(original).digest('hex').slice(0, 16);
+    f.store.saveProject({ ...f.store.project('thesis'), path: root });
+    f.store.updateTask('thesis-task', { mode: 'review', status: 'reviewing', worktree, aiReview: { key } });
+    f.store.saveReviewInput('thesis-task', { key, pdf, lines: [] });
+    f.store.saveAnnotation({ id: 'finding', projectId: 'thesis', key, page: 0, rect: [0.1, 0.1, 0.8, 0.2], quote: 'Claim', comment: 'Explain this claim.', source: null, createdAt: 1, aiReview: { taskId: 'thesis-task', agent: 'codex' } });
+    const reviewBase = '/api/tasks/thesis-task/ai-review';
+    const get = (suffix = '') => f.remote.inject({ url: reviewBase + suffix, headers: f.as });
+    assert.equal((await get()).statusCode, 200);
+    fs.renameSync(root, moved); git(moved, 'worktree', 'repair', worktree);
+    f.review.get = async () => ({ task: f.store.task('thesis-task').name, worktree }) as any;
+    const changed = await f.local.inject({ method: 'POST', url: '/api/projects/thesis/path', headers: { ...LOCAL, 'x-papilot-token': 'local-csrf' }, payload: { path: moved } });
+    assert.equal(changed.statusCode, 200, changed.body);
+    const relocated = path.join(moved, path.relative(root, pdf));
+    assert.equal(fs.existsSync(pdf), false);
+    assert.deepEqual(fs.readFileSync(relocated), original);
+    assert.equal(await f.manuscripts.cachedPdf(moved, key), null);
+    const recovered = await get();
+    assert.equal(recovered.statusCode, 200, recovered.body);
+    assert.equal(recovered.json().key, key);
+    assert.equal(recovered.json().notes[0].comment, 'Explain this claim.');
+    assert.equal(f.store.reviewInput('thesis-task').pdf, relocated);
+    assert.deepEqual((await get('/pdf')).rawPayload, original);
+    assert.ok((await get('/words?page=0')).json().words.length > 0);
+    assert.equal(await new Manuscripts().savedReviewPdf(moved, 'thesis-task'), relocated);
+    f.manuscripts.placeReviewNote = async (_id, target, note, source) => {
+      assert.equal(target, moved); assert.equal(source, relocated);
+      return { ...note, key: 'current-main' };
+    };
+    const copied = await f.remote.inject({ method: 'POST', url: reviewBase + '/finding/copy', headers: f.as, payload: {} });
+    assert.equal(copied.statusCode, 200, copied.body);
+    assert.equal(copied.json().copy.aiReview.sourceId, 'finding');
+    fs.unlinkSync(relocated);
+    const missing = await get();
+    assert.equal(missing.statusCode, 400);
+    assert.match(missing.json().error, /PDF copy.*unavailable/);
+  } finally { await f.close(); fs.rmSync(base, { recursive: true, force: true }); }
 });

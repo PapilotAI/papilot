@@ -22,8 +22,10 @@ const nextText = words[1].words.at(-1), nextRect = [nextText[1] / 612, (nextText
 const second = { ...note, id: 'ai-finding-2', page: 1, rect: nextRect, rects: [nextRect], quote: nextText[0], comment: 'Explain how this conclusion follows from the evidence. ' + 'Specify the assumptions and distinguish the observed result from the broader claim. '.repeat(18) };
 const personal = { ...note, id: 'personal-note', comment: 'My reading thought.', aiReview: undefined };
 let notes = [personal], reviewNotes = [], attempts = [], edits = [], copies = [], fail = true, failDelete = true, failCopy = true;
+let releaseRestore, restoreCommitted = false;
+const restoreGate = new Promise(resolve => { releaseRestore = resolve; });
 const fixturePdf = fs.readFileSync('tests/fixtures/outline.pdf');
-await page.route('**/api/**', route => {
+await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/state') return json(state);
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: false });
@@ -48,7 +50,10 @@ await page.route('**/api/**', route => {
     if (failDelete) { failDelete = false; return route.fulfill({ status: 503, json: { error: 'Could not ignore. Try again.' } }); }
     reviewNotes = reviewNotes.filter(item => item.id !== note.id); return json({ ok: true });
   }
-  if (url.pathname.endsWith('/ai-review/ai-finding-1/restore')) { reviewNotes = [note, ...reviewNotes]; return json(note); }
+  if (url.pathname.endsWith('/ai-review/ai-finding-1/restore')) {
+    reviewNotes = [note, ...reviewNotes]; state.tasks[0].aiReview.revision++;
+    restoreCommitted = true; await restoreGate; return json(note);
+  }
   if (url.pathname.endsWith('/archive')) { archives.push(route.request().postDataJSON()); return json(state.tasks[0]); }
   if (url.pathname === '/api/tasks' && route.request().postDataJSON().skill === 'ai-review') {
     const body = route.request().postDataJSON(); attempts.push(body);
@@ -180,7 +185,14 @@ try {
   await expect(suggestions).toHaveCount(0);
   assert.equal(notes.length, 2, 'ignoring a task finding leaves its manuscript copy intact');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  // Polling can see the restored note before the slower POST reply arrives.
+  await expect.poll(() => restoreCommitted).toBe(true);
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.locator('.note-tag[data-note="ai-finding-1"]')).toHaveCount(1);
+  releaseRestore();
   await expect(suggestions.getByRole('button', { name: 'Kept on manuscript', exact: true })).toBeDisabled();
+  await expect(page.locator('.note-tag[data-note="ai-finding-1"]')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'AI suggestions', exact: true })).toHaveText('2');
   await page.reload();
   await page.getByRole('button', { name: 'AI suggestions', exact: true }).click();
   await expect(suggestions.getByRole('button', { name: 'Kept on manuscript', exact: true })).toBeDisabled();
@@ -205,4 +217,4 @@ try {
   assert.equal(reviewNotes.length, 2, 'sending the copy does not consume the original task findings');
   assert.deepEqual(archives, []); assert.deepEqual(errors, []);
   console.log('PASS: AI review task PDF, isolated findings, bookmark/retry/idempotence, keyboard navigation and input guards, ignore/undo, reload, mobile layout and explicit manuscript handoff.');
-} finally { await browser.close(); await server.close(); }
+} finally { releaseRestore(); await browser.close(); await server.close(); }

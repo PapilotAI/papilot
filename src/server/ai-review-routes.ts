@@ -24,8 +24,12 @@ export function registerAiReviewRoutes(app: FastifyInstance, store: Store, manus
   async function pdf(id: string) {
     const task = review(id), snapshot = store.reviewInput(id);
     if (snapshot.pdf && fs.existsSync(snapshot.pdf)) return snapshot.pdf;
-    // Older reviews retained geometry but not a PDF. Recover only that exact build.
     const root = store.project(task.projectId).path;
+    // A repository move leaves the old absolute path stale, but the task's
+    // preserved PDF moves with its repository state. Reuse those exact bytes.
+    const relocated = await manuscripts.savedReviewPdf(root, id);
+    if (relocated) { store.saveReviewInput(id, { ...snapshot, pdf: relocated }); return relocated; }
+    // Older reviews retained geometry but not a PDF. Recover only that exact build.
     const original = await manuscripts.cachedPdf(root, snapshot.key);
     if (!original) throw new Error('The PDF copy for this review is unavailable. Start a new AI review.');
     const saved = await manuscripts.preserveReviewPdf(root, id, original);
