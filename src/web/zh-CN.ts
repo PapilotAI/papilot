@@ -1,6 +1,11 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'Close window': '关闭窗口',
+  'Minimize window': '最小化窗口',
+  'Maximize or restore window': '最大化或还原窗口',
+  'Download desktop updates': '下载桌面版更新',
+  'Download the latest desktop app for your system from GitHub Releases. Your papers and settings stay in place.': '从 GitHub Releases 下载适合当前系统的最新桌面版。论文和设置会保留。',
   'Review copy': '审阅副本',
   'Suggestions stay in this task until you copy them to the manuscript': '建议保留在当前任务中，只有选中复制后才会出现在主论文上',
   'Keep on manuscript': '保留到主论文',

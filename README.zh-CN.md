@@ -19,6 +19,8 @@
 
 Papilot 是运行在本机的 LaTeX 论文工作台。你在 PDF 上批注，智能体在独立副本中修改源码；改好后先看排版对比，再决定接受哪些改动、保存到哪里。
 
+macOS、Linux 桌面版与本地构建方法见 [Papilot Desktop](desktop/README.md)。桌面 CI 构建 Apple Silicon、Intel Mac 安装包，以及 Linux x64 的 AppImage、deb 安装包。
+
 ## 功能
 
 <table>

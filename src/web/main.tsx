@@ -27,6 +27,7 @@ import { DeleteTaskDialog } from './task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { UpdateNotice, versionLabel } from './update-notice.tsx';
+import { DesktopWindowChrome } from './desktop-chrome.tsx';
 import { PaperDialog } from './paper-dialog.tsx';
 import { ImportDialog } from './import-dialog.tsx';
 import { CompileButton } from './compile-button.tsx';
@@ -1407,6 +1408,7 @@ function App() {
   </section>;
 
   return <ViewerContext.Provider value={viewer || null}><NoteResultsProvider task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} openReview={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} openChat={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
+    <DesktopWindowChrome/>
     <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal || editingPaper) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label={t('Papers and tasks')}>
       <div className="sidebar-header">
         {state?.projects.length && project ? <ActionMenu label={t('Paper: {name}', { name: project.name })} className="project-switcher" menuClassName="paper-menu" align="start" actions={[

@@ -6,6 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
+- **macOS and Linux desktop apps.** Electron reuses Papilot's React interface and local server, bundling Node, npm, Codex and the review engine. Window controls blend into the sidebar without a separate title bar, and first launch includes an editable example paper with a prebuilt PDF. Native CI builds and tests Apple Silicon/Intel DMG/ZIP and Linux x64 AppImage/deb packages, attaching them to each version release. Branch builds provide downloadable installers and screenshots. Desktop data and updates are separate from the CLI installation.
 - **Grok Build CLI support.** Papilot connects through ACP with the CLI’s saved login or configured API credentials. It disables automatic approvals in new and restored sessions and supports streamed replies, tool approvals, images and model selection. Setup guidance and `papilot doctor` include Grok; use `PAPILOT_GROK_BIN` for a custom executable.
 - **GitHub Copilot CLI support.** Papilot detects `copilot` and connects through ACP using its local login or configured provider. Tasks support streamed replies, tool approvals, images and session recovery. Papilot selects Agent mode and turns off allow-all for each new or resumed session. Settings and `papilot doctor` include setup guidance; use `PAPILOT_COPILOT_BIN` for a custom CLI path.
 
