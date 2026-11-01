@@ -112,3 +112,47 @@ process.exit(result.status ?? 1);
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('AI review freezes the task copy and repositions only a surviving passage when copied to the manuscript', { skip: !latexmk && 'needs latexmk and pdflatex', timeout: 60000 }, async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-copy-')), root = path.join(base, 'paper'), worktree = path.join(base, 'task');
+  fs.mkdirSync(root);
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  const manuscript = new Manuscripts();
+  const tex = (body: string) => `\\documentclass{article}\n\\begin{document}\n${body}\n\\end{document}\n`;
+  async function ready() {
+    for (let attempt = 0; attempt < 400; attempt++) {
+      const { build } = await manuscript.state('paper', root);
+      if (build.status !== 'building') { assert.equal(build.status, 'ready', build.error); return build; }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Compilation did not finish');
+  }
+  try {
+    const passage = 'The task copy keeps its original claim.';
+    fs.writeFileSync(path.join(root, 'main.tex'), tex(passage));
+    git('init', '-q'); git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Initial');
+    git('worktree', 'add', '--detach', worktree, 'HEAD');
+    const changed = tex('New introductory material.\\newpage\n' + passage);
+    fs.writeFileSync(path.join(root, 'main.tex'), changed);
+    const captured = await manuscript.captureReview(root, worktree, 'review-copy');
+    assert.ok(captured.pdf && fs.existsSync(captured.pdf));
+    const originalPdf = fs.readFileSync(captured.pdf!);
+    assert.ok(captured.lines.some(line => line.text === passage));
+    assert.ok(!captured.lines.some(line => line.text.includes('New introductory')));
+    const line = captured.lines.find(line => line.text === passage)!;
+    const note: Annotation = { id: 'finding', projectId: 'paper', key: captured.key, page: line.page, rect: line.rect, rects: [line.rect], quote: passage, comment: 'Qualify this claim.', source: null, createdAt: 1 };
+    await ready();
+    const placed = await manuscript.placeReviewNote('paper', root, note, captured.pdf!);
+    assert.equal(placed.page, 1);
+    assert.equal(placed.comment, note.comment);
+    assert.equal(fs.readFileSync(path.join(root, 'main.tex'), 'utf8'), changed);
+    assert.equal(fs.readFileSync(path.join(worktree, 'main.tex'), 'utf8'), tex(passage));
+    assert.equal(git('diff', '--cached', '--name-only'), '');
+    fs.writeFileSync(path.join(root, 'main.tex'), tex('An entirely different paper without the reviewed passage.'));
+    await ready();
+    await assert.rejects(manuscript.placeReviewNote('paper', root, note, captured.pdf!), /could not be located reliably/);
+    assert.deepEqual(fs.readFileSync(captured.pdf!), originalPdf);
+    const preserved = await new Manuscripts().preserveReviewPdf(root, 'review-copy', manuscript.pdf('paper', (await ready()).key!));
+    assert.deepEqual(fs.readFileSync(preserved), originalPdf, 'a restarted server retains the original task PDF');
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});

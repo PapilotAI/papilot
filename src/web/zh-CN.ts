@@ -1,12 +1,18 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'Review copy': '审阅副本',
+  'Suggestions stay in this task until you copy them to the manuscript': '建议保留在当前任务中，只有选中复制后才会出现在主论文上',
+  'Keep on manuscript': '保留到主论文',
+  'Kept on manuscript': '已保留到主论文',
+
   'Ask for another review of this PDF version…': '对这个 PDF 版本补充审阅要求…',
   'AI review': 'AI 审阅',
   'Read the paper and leave PDF comments without editing the manuscript': '只读论文并留下 PDF 批注，不修改原稿',
 
   'AI suggestion': 'AI 审阅建议', 'AI suggestion {n}': 'AI 审阅建议 {n}',
   'Close suggestion': '关闭建议', 'Previous suggestion': '上一条建议', 'Next suggestion': '下一条建议',
+  'Previous suggestion (←)': '上一条建议 (←)', 'Next suggestion (→)': '下一条建议 (→)',
   'Unplaced suggestions': '位置待确认的建议',
   'Remove suggestion {n} from task': '从任务中移除建议 {n}',
   'PDF note {n}': 'PDF 批注 {n}', 'Close note': '关闭批注', 'Note deleted.': '已删除批注。',
@@ -15,7 +21,6 @@ export const zhCN: Record<string, string> = {
   'PDF note library': 'PDF 批注列表', 'Close notes': '关闭批注列表',
   'My notes': '我的批注', 'AI suggestions': 'AI 审阅建议',
   'Write a note…': '写下你的想法…',
-  'Add to task': '加入任务', 'Added to task': '已加入任务', 'Remove from task': '从任务中移除',
   'Quote in chat': '引用到对话', 'Remove from draft': '从草稿移除',
   'Added to task: {n}': '已加入任务：{n} 条', 'Add all to task': '全部加入任务',
   'Notes stay here unless you add them to a task.': '批注默认仅保存，加入任务后才会发给 agent。',

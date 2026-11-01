@@ -592,29 +592,16 @@ body.resizing iframe{pointer-events:none}
 .notes-panel .note-card{position:relative;isolation:isolate;transition:background-color .15s,border-color .15s}
 .notes-panel .note-card[data-selected=true]{background:color-mix(in srgb,var(--note-color,var(--accent)) 11%,var(--bg));border-color:color-mix(in srgb,var(--note-color,var(--accent)) 55%,var(--line))}
 .notes-panel .note-card.active{box-shadow:inset 3px 0 0 var(--note-color,var(--accent))}
-.note-card-select{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:3px 6px;border:1px solid var(--line);border-radius:var(--r-sm);font:12px/1.5 var(--sans);color:var(--text-2);background:var(--bg)}
-.note-card-select[aria-pressed=true]{color:var(--accent);border-color:var(--accent-line);background:var(--accent-soft)}
-.note-card-select:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
-.note-card-select.compact{flex:none;justify-content:center;width:28px;padding:3px}
-.note-task-actions{display:flex;align-items:center;gap:8px;margin-top:8px}
-.note-dismiss{margin-left:auto;padding:4px;font-size:12px;color:var(--text-3)}
-.note-dismiss:hover:not(:disabled){color:var(--text)}
 .note-section{flex:none;margin-top:8px}
 .note-section h3{display:flex;align-items:center;gap:7px;margin:0 0 8px;font-size:12px;font-weight:600;color:var(--text-2)}
 .note-section h3 span{font-size:11px;font-weight:400;color:var(--text-3)}
 .note-dismissed{padding:8px 0;font-size:12px;color:var(--text-2)}
 .note-dismissed button{color:var(--accent);text-decoration:underline;margin-left:6px}
-@media(pointer:coarse){.note-card-select,.note-card-select.compact,.note-dismiss{min-height:36px}.note-card-select.compact{width:36px}}
-.note-card-select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.note-card .note-comment-text{padding:2px 0}
 .note-entry-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px}
 .note-entry-hint{font-size:12px;white-space:nowrap}
 .note-list{flex:1;min-height:0;overflow:auto;list-style:none;margin:2px 0 0;padding:0}
 .notes-panel .note-list{flex:none;overflow:visible}
-.note-list li{padding:6px 10px;margin-bottom:6px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg);transition:border-color .15s}
-.note-list li:hover{border-color:var(--line-strong)}
-.note-list li.active{border-color:var(--accent-line)}
-.note-list li.stale{background:var(--bg-subtle)}
+.note-list>li{margin-bottom:6px}
 .notes-panel .note-placement-warning{display:flex;align-items:center;gap:4px;margin-top:4px;color:var(--amber-text);font:12px/1.5 var(--sans)}
 .note-placement-summary{margin:0 0 10px;color:var(--text-2);font-size:12px;line-height:1.5}
 .group-location>button[aria-disabled="true"]{cursor:default}
@@ -622,11 +609,6 @@ body.resizing iframe{pointer-events:none}
 .note-number{min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:500;line-height:20px;text-align:center}
 .note-where{flex:1;min-width:0;font:12px/1.5 var(--sans);color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .note-head .icon-button{width:26px;height:26px;border-radius:var(--r-sm)}
-.note-list p{margin:0;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
-.note-edit textarea{display:block;width:100%;min-height:80px;resize:vertical;padding:8px;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
-.note-edit textarea:focus{outline:2px solid var(--accent-line);border-color:var(--primary)}
-.note-edit .button-row{justify-content:flex-end;margin-top:8px}
-@media(pointer:coarse){.note-edit textarea{font-size:16px}}
 .note-entry-actions .button{gap:5px;font-size:12px;padding:0 6px}
 .note-entry-actions .button svg{color:var(--text-2)}
 .skills-picker-menu>button>svg{flex-shrink:0}
@@ -680,11 +662,6 @@ body.resizing iframe{pointer-events:none}
 .add-note.touch{transform:translate(-100%,22px);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 .region-capture{position:absolute;inset:0;pointer-events:auto;cursor:crosshair;touch-action:none}
 .menu-hint{flex-shrink:0;margin-left:12px;font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums}
-.note-editor{position:absolute;pointer-events:auto;z-index:3;width:min(340px,100%);padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--float);cursor:default;animation:menu-in .14s var(--ease)}
-.note-editor textarea{background:var(--bg);display:block;width:100%;resize:none;border:1px solid var(--line-strong);border-radius:var(--r);padding:8px 10px;font-size:14px;line-height:1.5;outline:none}
-.note-editor textarea:focus{border-color:var(--accent);box-shadow:var(--ring)}
-.note-editor .inline-error{margin:6px 0 0}
-.note-editor .button-row{margin-top:8px}
 .panel-label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--text-3);margin:0 0 10px}
 .git-branch{display:flex;align-items:center;gap:8px;padding:14px 20px 2px;font-size:14px}
 .git-branch>svg,.git-commit>svg{color:var(--text-3);flex-shrink:0}
@@ -949,8 +926,6 @@ body.resizing iframe{pointer-events:none}
   .manuscript-side-header{display:none}
   .manuscript.show-pdf .manuscript-side,.manuscript.show-task .manuscript-pages,.manuscript.show-contents .manuscript-pages,.manuscript.show-git .manuscript-pages{display:none}
   .contents-panel button{min-height:44px;font-size:15px}
-  .note-editor textarea{font-size:16px}
-  .note-editor .button{min-height:40px}
   .note-entry-actions .button{min-height:40px}
   .manuscript-pages{flex:1;display:flex;flex-direction:column}
   .pdf-toolbar{gap:2px;padding:0 4px}
@@ -1025,3 +1000,7 @@ body.resizing iframe{pointer-events:none}
 .task-note-reference{padding:8px;margin:6px 0;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .task-note-comment{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 var(--sans);color:var(--text)}
 .task-notes-panel .note-placement-warning{font-size:12px;color:var(--amber-text)}
+
+.ai-review-view{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0}
+.review-copy-label{font-size:11px;white-space:nowrap;color:var(--text-3);padding:0 5px}
+@media(max-width:520px){.review-copy-label{display:none}}

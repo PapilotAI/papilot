@@ -437,21 +437,7 @@ export class Manuscripts extends EventEmitter {
         if (!this.placements.has(cacheKey)) {
           let placement: Pick<Annotation, 'key' | 'page' | 'rect' | 'rects' | 'source'> | null = null;
           try {
-            const lookup = `${root}:${note.key}`;
-            if (!this.oldPdfs.has(lookup)) {
-              const cache = path.join(loadProject(root).state, 'cache/builds');
-              let found: string | null = null;
-              for (const entry of fs.readdirSync(cache, { withFileTypes: true })) {
-                if (!entry.isDirectory() || entry.name.endsWith('.lock')) continue;
-                try {
-                  const folder = path.join(cache, entry.name), saved = JSON.parse(fs.readFileSync(path.join(folder, 'result.json'), 'utf8'));
-                  if (typeof saved.pdf !== 'string' || !path.resolve(saved.pdf).startsWith(path.resolve(folder) + path.sep)) continue;
-                  if (createHash('sha256').update(saved.key + saved.pdf).digest('hex').slice(0, 16) === note.key && fs.existsSync(saved.pdf)) { found = saved.pdf; break; }
-                } catch { /* An incomplete or pruned build cannot locate a note. */ }
-              }
-              this.oldPdfs.set(lookup, found);
-            }
-            const pdf = this.oldPdfs.get(lookup);
+            const pdf = await this.cachedPdf(root, note.key);
             if (pdf) {
               if (!old.has(pdf)) { const document = new PdfDocument(pdf); old.set(pdf, { document, pages: new AnnotationPages(document) }); }
               const match = placeAnnotation(note, old.get(pdf)!.pages, target);
@@ -504,8 +490,64 @@ export class Manuscripts extends EventEmitter {
     return scrubLog(fs.readFileSync(build.log, 'utf8'), build.logFolder);
   }
 
+  // Compile the task's frozen source tree, then retain its PDF outside the build cache.
+  async captureReview(root: string, worktree: string, taskId: string): Promise<ReviewSnapshot> {
+    const { Builder, Repo, loadProject } = await engine();
+    const tree = await workingTree(worktree);
+    const result = await new Builder(loadProject(root), new Repo(root)).build(tree, ['full']);
+    const pdf = await this.preserveReviewPdf(root, taskId, result.pdf);
+    const key = createHash('sha256').update(fs.readFileSync(pdf)).digest('hex').slice(0, 16);
+    return { ...await this.snapshotPdf(pdf, key), pdf };
+  }
+
+  async preserveReviewPdf(root: string, taskId: string, source: string) {
+    const { loadProject } = await engine();
+    const folder = path.join(loadProject(root).state, 'ai-reviews', createHash('sha256').update(taskId).digest('hex'));
+    fs.mkdirSync(folder, { recursive: true });
+    const pdf = path.join(folder, 'review.pdf');
+    // A retry always uses the original task copy, even after its build cache is pruned.
+    if (!fs.existsSync(pdf)) { const temporary = path.join(folder, 'review.tmp'); fs.copyFileSync(source, temporary); fs.renameSync(temporary, pdf); }
+    return pdf;
+  }
+
+  async cachedPdf(root: string, key: string): Promise<string | null> {
+    const lookup = `${root}:${key}`;
+    if (this.oldPdfs.has(lookup)) return this.oldPdfs.get(lookup)!;
+    const { loadProject } = await engine();
+    const cache = path.join(loadProject(root).state, 'cache/builds');
+    let found: string | null = null;
+    if (fs.existsSync(cache)) for (const entry of fs.readdirSync(cache, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.endsWith('.lock')) continue;
+      try {
+        const folder = path.join(cache, entry.name), saved = JSON.parse(fs.readFileSync(path.join(folder, 'result.json'), 'utf8'));
+        if (typeof saved.pdf !== 'string' || !path.resolve(saved.pdf).startsWith(path.resolve(folder) + path.sep)) continue;
+        if (createHash('sha256').update(saved.key + saved.pdf).digest('hex').slice(0, 16) === key && fs.existsSync(saved.pdf)) { found = saved.pdf; break; }
+      } catch { /* Incomplete builds have no usable PDF. */ }
+    }
+    this.oldPdfs.set(lookup, found); return found;
+  }
+
+  async placeReviewNote(projectId: string, root: string, note: Annotation, pdf: string): Promise<Annotation> {
+    const state = await this.state(projectId, root);
+    if (!state.build.current || !state.build.key) throw new Error('Wait for the current manuscript PDF to finish compiling, then copy the suggestion again.');
+    const key = state.build.key, { PdfDocument } = await engine();
+    const original = new PdfDocument(pdf), current = new PdfDocument(this.pdf(projectId, key));
+    try {
+      const match = placeAnnotation(note, new AnnotationPages(original), new AnnotationPages(current));
+      if (!match) throw new Error('This passage could not be located reliably in the current manuscript. The suggestion remains in the review task.');
+      const { source } = await this.locate(projectId, key, match.page, match.rect, match.rects, note.quote);
+      const latest = await this.state(projectId, root);
+      if (!latest.build.current || latest.build.key !== key) throw new Error('The manuscript changed while copying this suggestion. Try again.');
+      return { ...note, ...match, key, source };
+    } finally { original.close(); current.close(); }
+  }
+
   async reviewSnapshot(projectId: string, key: string): Promise<ReviewSnapshot> {
-    const pdf = this.pdf(projectId, key), { PdfDocument } = await engine();
+    return this.snapshotPdf(this.pdf(projectId, key), key);
+  }
+
+  private async snapshotPdf(pdf: string, key: string): Promise<ReviewSnapshot> {
+    const { PdfDocument } = await engine();
     const document = new PdfDocument(pdf), lines: ReviewSnapshot['lines'] = [];
     let length = 0;
     try {

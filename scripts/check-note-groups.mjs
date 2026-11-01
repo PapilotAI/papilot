@@ -85,7 +85,7 @@ try {
   await chooseGroup('Yellow');
   await selectText(0); await expect.poll(() => notes.length).toBe(1);
   await selectText(1); await expect.poll(() => notes.length).toBe(2);
-  await expect(page.getByRole('textbox', { name: 'Your note' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: /^Edit note / })).toHaveCount(0);
   await page.getByRole('button', { name: 'My notes', exact: true }).click();
   await expect(page.locator('.annotation-group')).toHaveCount(1);
   await expect(page.locator('.annotation-group .group-header')).toContainText('2 locations');
@@ -102,7 +102,7 @@ try {
   await expect.poll(() => notes.length).toBe(3);
   assert.equal(notes.at(-1).group, 'yellow');
   assert.equal(notes.at(-1).rects, undefined);
-  await expect(page.getByRole('textbox', { name: 'Your note' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: /^Edit note / })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await chooseGroup('Yellow');
   await clickMark(notes[0]);
@@ -128,8 +128,7 @@ try {
   await clickMark(notes[0]);
   await clickMark(notes[2]);
   await expect(page.getByRole('tab', { name: 'Contents', exact: true })).toHaveAttribute('aria-selected', 'true');
-  // Start on an existing highlight and drag across its text. The old note
-  // remains selected and the normal text annotation action is still offered.
+  // Dragging outside the card closes it while keeping normal PDF text selection.
   const dragMark = page.locator(`.note-mark[data-note="${notes[0].id}"]`).first();
   const dragBox = await dragMark.boundingBox();
   await page.mouse.move(dragBox.x + 1, dragBox.y + dragBox.height / 2);
@@ -138,14 +137,14 @@ try {
   await page.mouse.up();
   await expect.poll(() => page.evaluate(() => document.getSelection()?.toString().trim())).not.toBe('');
   await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeVisible();
-  await expect(page.locator('.note-tag.active')).toHaveAttribute('data-note', notes[2].id);
+  await expect(page.locator('.note-tag.active')).toHaveCount(0);
   assert.equal(notes.length, 3);
   const paper = await page.locator('.page[data-page-number="1"]').boundingBox();
   await page.mouse.click(paper.x + 20, paper.y + 20);
   await expect(page.getByRole('button', { name: 'Add note', exact: true })).toHaveCount(0);
   await clickMark(notes[1]);
   // Real touch events: a tap selects a note, whereas a long press still
-  // selects text and must not change the active annotation.
+  // selects text and dismisses the card without changing any saved annotation.
   const mobile = await browser.newPage({ locale: 'en-US', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   mobile.on('pageerror', error => errors.push(error.message));
   await mobile.route('**/api/**', routeApi);
@@ -158,7 +157,7 @@ try {
   await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [hold] });
   await expect(mobile.locator('.select-handle')).toHaveCount(2);
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await expect(mobile.locator('.note-tag.active')).toHaveAttribute('data-note', notes[2].id);
+  await expect(mobile.locator('.note-tag.active')).toHaveCount(0);
   await mobile.touchscreen.tap(tap.x, tap.y);
   await expect(mobile.locator('.select-handle')).toHaveCount(0);
   await mobile.touchscreen.tap(hold.x, hold.y);
@@ -187,7 +186,7 @@ try {
   await selectText(0, false);
   await page.getByRole('button', { name: 'Add to Yellow', exact: true }).click();
   await expect.poll(() => notes.length).toBe(1);
-  await expect(page.getByRole('textbox', { name: 'Your note' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: /^Edit note / })).toHaveCount(0);
   await chooseGroup('Individual notes');
   await page.getByRole('button', { name: 'My notes', exact: true }).click();
   await expect(page.locator('.annotation-group')).toBeVisible();

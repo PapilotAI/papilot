@@ -710,3 +710,58 @@ test('the AI review skill uses normal task submission with paper access, CSRF an
     assert.equal(inputs.length, 1);
   } finally { await f.close(); }
 });
+
+test('AI review findings stay in their task and copy individually, once, into the manuscript', async () => {
+  const f = await fixture();
+  try {
+    const pdf = path.resolve('tests/fixtures/outline.pdf'), originalPdf = fs.readFileSync(pdf);
+    f.store.updateTask('thesis-task', { mode: 'review', aiReview: { key: 'review-pdf' } });
+    f.store.saveReviewInput('thesis-task', { key: 'review-pdf', pdf, lines: [] });
+    const note = { id: 'finding-1', projectId: 'thesis', key: 'review-pdf', page: 0, rect: [0.1, 0.2, 0.5, 0.3] as [number, number, number, number], comment: 'Explain this claim.', quote: 'Claim', source: null, createdAt: 1, aiReview: { taskId: 'thesis-task', agent: 'codex' as const } };
+    f.store.saveAnnotation(note);
+    f.store.saveAnnotation({ ...note, id: 'finding-2', comment: 'A different suggestion.' });
+    f.store.saveAnnotation({ ...note, id: 'personal', aiReview: undefined });
+    f.store.saveAnnotation({ ...note, id: 'other-task', aiReview: { taskId: 'another-review', agent: 'claude' } });
+    f.manuscripts.state = async () => ({ git: { branch: 'main', upstream: null, ahead: 0, behind: 0, files: [], head: null }, build: { key: 'current-pdf', status: 'ready', current: true } });
+    f.manuscripts.reanchor = async (_id, _root, notes) => notes;
+    let placeFails = false;
+    f.manuscripts.placeReviewNote = async (_id, _root, selected, source) => {
+      assert.equal(source, pdf);
+      if (placeFails) throw new Error('This passage could not be located reliably.');
+      return { ...selected, key: 'current-pdf', page: 1, source: { file: 'main.tex', lines: [20, 21] } };
+    };
+    const get = (url: string) => f.remote.inject({ url, headers: f.as });
+    const post = (url: string) => f.remote.inject({ method: 'POST', url, headers: f.as, payload: {} });
+    const base = '/api/tasks/thesis-task/ai-review';
+    assert.deepEqual((await get('/api/projects/thesis/manuscript')).json().annotations.map((n: any) => n.id), ['personal']);
+    assert.deepEqual((await get(base)).json().notes.map((n: any) => n.id), ['finding-1', 'finding-2']);
+    assert.deepEqual((await get(base + '/pdf')).rawPayload, originalPdf);
+    assert.ok((await get(base + '/words?page=0')).json().words.length > 0);
+    assert.equal((await get('/api/tasks/grant-task/ai-review')).statusCode, 400);
+    assert.equal((await post(base + '/other-task/copy')).statusCode, 400);
+    assert.equal((await f.remote.inject({ method: 'POST', url: base + '/finding-1/copy', headers: { ...f.as, 'x-papilot-token': '' }, payload: {} })).statusCode, 403);
+    assert.equal((await post('/api/projects/thesis/annotations/finding-1/delete')).statusCode, 400);
+    const [first, retry] = await Promise.all([post(base + '/finding-1/copy'), post(base + '/finding-1/copy')]);
+    assert.equal(first.statusCode, 200, first.body); assert.equal(retry.statusCode, 200, retry.body);
+    const copy = first.json().copy;
+    assert.equal(copy.id, retry.json().copy.id);
+    assert.equal(copy.aiReview.sourceId, 'finding-1'); assert.equal(copy.comment, note.comment);
+    assert.equal(copy.key, 'current-pdf'); assert.equal(copy.page, 1);
+    assert.deepEqual((await get('/api/projects/thesis/manuscript')).json().annotations.map((n: any) => n.id), ['personal', copy.id]);
+    assert.equal(f.store.annotation('thesis', note.id).key, 'review-pdf');
+    assert.equal(f.store.annotation('thesis', note.id).page, 0);
+    assert.equal((await get(base)).json().notes[0].aiReview.copiedTo, copy.id);
+    placeFails = true;
+    assert.equal((await post(base + '/finding-2/copy')).statusCode, 400);
+    assert.equal(f.store.annotations('thesis').length, 5);
+    assert.equal(f.store.annotation('thesis', 'finding-2').aiReview?.copiedTo, undefined);
+    assert.equal((await post(base + '/finding-1/delete')).statusCode, 200);
+    assert.equal((await get(base)).json().notes.length, 1);
+    assert.equal((await get('/api/projects/thesis/manuscript')).json().annotations.length, 2);
+    assert.equal((await post(base + '/finding-1/restore')).statusCode, 200);
+    assert.deepEqual((await get(base + '/pdf')).rawPayload, originalPdf, 'review PDF never follows a main-manuscript rebuild');
+    assert.deepEqual(fs.readFileSync(pdf), originalPdf);
+    f.store.deleteTask('thesis-task');
+    assert.equal((await get('/api/projects/thesis/manuscript')).json().annotations.length, 2, 'copied notes survive task deletion');
+  } finally { await f.close(); }
+});

@@ -22,7 +22,7 @@ import { taskCaptionFrom, taskCaptionInstructions } from '../task-caption.ts';
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
-import { AGENT_IDS } from '../shared.ts';
+import { AGENT_IDS, isTaskReviewNote } from '../shared.ts';
 import type { Task, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Author, Annotation, NoteSummary } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -270,7 +270,7 @@ export class Workspace extends EventEmitter {
   }
   // A task combines the author's words, an optional skill and selected PDF notes.
   annotationSending(id: string) { return this.preparingNotes.has(id); }
-  async createTask(input: { reviewInput?: ReviewSnapshot; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
+  async createTask(input: { reviewInput?: ReviewSnapshot; prepareReview?: (worktree: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     // A retried request returns its task; an ID from another paper is refused.
@@ -293,7 +293,7 @@ export class Workspace extends EventEmitter {
       if (skill?.output === 'annotations' && !input.reviewInput) throw new Error('Start a new task to run the AI review skill on the current PDF.');
       const files = this.attachments.resolve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
       releaseAttachments = this.attachments.reserve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
-      const available = new Map(this.store.annotations(project.id).filter(note => !note.taskId).map(note => [note.id, note]));
+      const available = new Map(this.store.annotations(project.id).filter(note => !note.taskId && !isTaskReviewNote(note)).map(note => [note.id, note]));
       notes = [...new Set(input.annotations || [])].map(id => {
         const note = available.get(id);
         if (!note) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
@@ -310,12 +310,13 @@ export class Workspace extends EventEmitter {
       const client = await this.connectReview(project.path);
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
       const info = await client.post('/api/tasks', { name, title: input.title, deferred: true });
-      const task: Task = { ...(input.reviewInput ? { mode: 'review' as const, aiReview: { key: input.reviewInput.key } } : {}), id: input.id, projectId: project.id, name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
+      const reviewInput = input.reviewInput && (input.prepareReview ? await input.prepareReview(info.worktree) : input.reviewInput);
+      const task: Task = { ...(reviewInput ? { mode: 'review' as const, aiReview: { key: reviewInput.key } } : {}), id: input.id, projectId: project.id, name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
         worktree: info.worktree, deferred: info.deferred === true, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
       this.store.transaction(() => {
         this.store.saveTask(task);
-        if (input.reviewInput) this.store.saveReviewInput(task.id, input.reviewInput);
+        if (reviewInput) this.store.saveReviewInput(task.id, reviewInput);
       });
       await this.enqueue(task.id, input.instructions || (input.reviewInput && !skill ? 'Review this manuscript and suggest improvements.' : ''), 'initial-' + task.id, false, { skill, notes, groupInstructions, attachments: files.map(file => file.id), author: input.author });
       // Naming is independent of the editing turn. An unavailable helper must

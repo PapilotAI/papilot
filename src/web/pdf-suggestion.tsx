@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
 import { AGENT_NAMES, type Annotation } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
@@ -15,43 +15,23 @@ export interface PdfNoteActions {
   onEditing: (editing: boolean) => void;
   onBusy: (busy: boolean) => void;
   disabled: boolean;
+  copy?: (note: Annotation) => Promise<void>;
 }
 
-// The card lives in the PDF's annotation layer. Reposition it around its text
-// anchor on zoom/scroll, keeping it inside both the page and visible PDF area.
-export function PdfNoteCard({ note, number, index, total, selected, busy, error, onToggle, onDismiss, onClose, onPrevious, onNext, onSave, onEditing }: {
-  note: Annotation; number: number; index: number; total: number; selected: boolean; busy: boolean; error: string;
-  onToggle: () => void; onDismiss: () => void; onClose: () => void; onPrevious: () => void; onNext: () => void;
-  onSave: (comment: string) => Promise<boolean>; onEditing: (editing: boolean) => void;
-}) {
-  const card = useRef<HTMLElement>(null);
-  const text = useRef<HTMLParagraphElement>(null), input = useRef<HTMLTextAreaElement>(null);
-  const [draft, setDraft] = useState<string | null>(null);
-  const editing = draft !== null, ai = Boolean(note.aiReview);
-  useEffect(() => { onEditing(editing); return () => onEditing(false); }, [editing, onEditing]);
-  function finish() { setDraft(null); requestAnimationFrame(() => text.current?.focus({ preventScroll: true })); }
-  function edit() { if (!busy) setDraft(note.comment); }
-  async function save() { if (!busy && draft?.trim() && await onSave(draft.trim())) finish(); }
+function usePdfNotePosition(card: RefObject<HTMLElement | null>, rect: Annotation['rect'], preferredWidth = 280, enabled = true) {
   useLayoutEffect(() => {
-    const element = input.current;
-    if (element) { element.focus({ preventScroll: true }); element.setSelectionRange(element.value.length, element.value.length); }
-  }, [editing]);
-  useLayoutEffect(() => {
-    const element = input.current;
-    if (element) { element.style.height = '0'; element.style.height = `${element.scrollHeight}px`; }
-  }, [draft]);
-  useLayoutEffect(() => {
+    if (!enabled) return;
     const element = card.current!, layer = element.closest<HTMLElement>('.note-layer')!, viewport = element.closest<HTMLElement>('.pdf-container')!;
     let frame = 0;
     const place = () => {
       const page = layer.getBoundingClientRect(), view = viewport.getBoundingClientRect();
       const left = Math.max(page.left, view.left) + 8, right = Math.min(page.right, view.right) - 8;
       const top = Math.max(page.top, view.top) + 8, bottom = Math.min(page.bottom, view.bottom) - 8;
-      const anchor = { left: page.left + note.rect[0] * page.width, right: page.left + note.rect[2] * page.width, top: page.top + note.rect[1] * page.height, bottom: page.top + note.rect[3] * page.height };
+      const anchor = { left: page.left + rect[0] * page.width, right: page.left + rect[2] * page.width, top: page.top + rect[1] * page.height, bottom: page.top + rect[3] * page.height };
       const visible = right > left && bottom > top && anchor.bottom >= top && anchor.top <= bottom && anchor.right >= left && anchor.left <= right;
       element.style.visibility = visible ? 'visible' : 'hidden';
       if (!visible) return;
-      const width = Math.min(note.aiReview ? 330 : 280, right - left);
+      const width = Math.min(preferredWidth, right - left);
       element.style.width = `${width}px`;
       element.style.maxHeight = `${bottom - top}px`;
       const height = element.getBoundingClientRect().height;
@@ -68,29 +48,100 @@ export function PdfNoteCard({ note, number, index, total, selected, busy, error,
     const observer = new ResizeObserver(schedule);
     observer.observe(layer); observer.observe(viewport); observer.observe(element);
     viewport.addEventListener('scroll', schedule); window.addEventListener('resize', schedule);
-    place(); element.focus({ preventScroll: true });
+    place();
     return () => { observer.disconnect(); cancelAnimationFrame(frame); viewport.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule); };
-  }, [note.id, note.rect[0], note.rect[1], note.rect[2], note.rect[3]]);
+  }, [card, enabled, preferredWidth, rect[0], rect[1], rect[2], rect[3]]);
+}
 
-  return <section ref={card} className={'pdf-note-card ' + (ai ? 'pdf-suggestion' : 'pdf-personal-note')} role="dialog" aria-modal="false" aria-label={ai ? t('AI suggestion {n}', { n: number }) : t('PDF note {n}', { n: number })} tabIndex={-1} onKeyDown={event => {
-    if (event.key === 'Escape' && !busy && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); if (editing) finish(); else onClose(); }
-  }}>
+export function NoteAttachButton({ number, ai = false, selected, disabled, destination, onClick }: {
+  number: number; ai?: boolean; selected: boolean; disabled?: boolean; destination?: 'manuscript'; onClick: () => void;
+}) {
+  const label = destination ? selected ? t('Kept on manuscript') : t('Keep on manuscript') : ai ? t('Include suggestion {n} in this task', { n: number }) : t('Include note {n} in this task', { n: number });
+  return <button type="button" className="icon-button pdf-note-attach" aria-label={label} aria-pressed={destination ? undefined : selected} title={destination ? label : selected ? t('Remove from draft') : t('Quote in chat')} disabled={disabled || Boolean(destination && selected)} onClick={onClick}><Icon name={destination ? selected ? 'bookmarkFilled' : 'bookmark' : 'arrowRightSolid'} size={destination ? 16 : 18}/></button>;
+}
+
+// The PDF popover and reading list share the editor and actions. Floating cards
+// also follow their text anchor and close when the reader clicks elsewhere.
+export function PdfNoteCard({ note, number, index, total, selected, busy, error, draft, onDraftChange, onToggle, onDismiss, onClose, onPrevious, onNext, onSave, onEditing, destination, inline = false, header, children }: {
+  destination?: 'manuscript'; inline?: boolean; header?: ReactNode; children?: ReactNode;
+  note: Pick<Annotation, 'rect' | 'comment' | 'group' | 'aiReview'> & { id?: string }; number: number; index: number; total: number; selected: boolean; busy: boolean; error: string;
+  draft: string | null; onDraftChange: (draft: string | null) => void;
+  onToggle?: () => void; onDismiss: () => void; onClose?: (restoreFocus?: boolean) => void; onPrevious?: () => void; onNext?: () => void;
+  onSave: (comment: string, action: 'keep' | 'close' | 'quote') => Promise<boolean>; onEditing?: (editing: boolean) => void;
+}) {
+  const card = useRef<HTMLElement>(null), saving = useRef(false);
+  const text = useRef<HTMLParagraphElement>(null), input = useRef<HTMLTextAreaElement>(null);
+  const editing = draft !== null, ai = Boolean(note.aiReview);
+  useEffect(() => { onEditing?.(editing); return () => onEditing?.(false); }, [editing, onEditing]);
+  function finish() { onDraftChange(null); requestAnimationFrame(() => text.current?.focus({ preventScroll: true })); }
+  function edit() { if (!busy) onDraftChange(note.comment); }
+  function close(restoreFocus = true) {
+    if (inline) { onDraftChange(null); if (restoreFocus) requestAnimationFrame(() => text.current?.focus({ preventScroll: true })); }
+    else onClose?.(restoreFocus);
+  }
+  async function save(action: 'keep' | 'close' | 'quote' = 'keep', restoreFocus = true) {
+    if (busy || saving.current) return;
+    const comment = draft?.trim();
+    if (editing && !comment) { if (action === 'close') close(restoreFocus); return; }
+    if (editing && comment !== note.comment) {
+      saving.current = true;
+      try { if (!await onSave(comment!, action)) return; }
+      finally { saving.current = false; }
+    } else if (action === 'quote') onToggle?.();
+    if (action === 'close') { onDraftChange(null); close(restoreFocus); }
+    else if (editing) finish();
+  }
+  useEffect(() => {
+    if (inline && !editing) return;
+    const element = card.current!;
+    const outside = (event: PointerEvent) => {
+      if (event.button === 0 && !event.composedPath().includes(element)) void save('close', false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (inline && !element.contains(document.activeElement)) return;
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      const dialog = event.target instanceof Element ? event.target.closest('dialog,[role="dialog"],[role="menu"],[role="listbox"]') : null;
+      if (dialog && dialog !== element) return;
+      event.preventDefault(); event.stopPropagation();
+      void save('close', element.contains(document.activeElement));
+    };
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', escape, true);
+    return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape, true); };
+  }, [inline, editing, draft, busy, note.comment, onClose, onSave, onToggle, onDraftChange]);
+  useLayoutEffect(() => {
+    const element = input.current;
+    if (element) { element.focus({ preventScroll: true }); element.setSelectionRange(element.value.length, element.value.length); }
+  }, [editing]);
+  useLayoutEffect(() => {
+    const element = input.current;
+    if (element) { element.style.height = '0'; element.style.height = `${element.scrollHeight}px`; }
+  }, [draft]);
+  usePdfNotePosition(card, note.rect, note.aiReview ? 330 : 280, !inline);
+  useLayoutEffect(() => { if (!inline && (!input.current || input.current.disabled)) card.current?.focus({ preventScroll: true }); }, [inline, note.id]);
+
+  return <section ref={card} className={'pdf-note-card ' + (ai ? 'pdf-suggestion' : 'pdf-personal-note') + (inline ? ' pdf-note-inline' : '')} role={inline ? 'group' : 'dialog'} aria-modal={inline ? undefined : false} aria-label={ai ? t('AI suggestion {n}', { n: number }) : t('PDF note {n}', { n: number })} tabIndex={inline ? undefined : -1}>
+    {header}
     <div className="pdf-note-content"><div className="pdf-suggestion-body">{editing ?
-      <textarea ref={input} className="pdf-note-input" aria-label={t('Edit note {n}', { n: number })} value={draft} rows={1} maxLength={4000} disabled={busy} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { event.preventDefault(); void save(); } }}/>
+      <textarea ref={input} className="pdf-note-input" aria-label={t('Edit note {n}', { n: number })} placeholder={t('Write a note…')} value={draft} rows={1} maxLength={4000} readOnly={busy} onChange={event => onDraftChange(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { event.preventDefault(); void save(); } }}/>
       : ai ? <p>{note.comment}</p> : <p ref={text} className="pdf-note-text note-edit-trigger" role="button" tabIndex={busy ? -1 : 0} aria-disabled={busy} aria-label={t('Edit note {n}: {comment}', { n: number, comment: note.comment })} title={t('Edit note')} onClick={() => {
         const selection = window.getSelection();
         if (selection && !selection.isCollapsed && text.current?.contains(selection.anchorNode)) return;
         edit();
       }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); edit(); } }}>{note.comment || (note.group ? t('Highlighted in {group}', { group: groupName(note.group) }) : '')}</p>}
-    </div><button type="button" className="icon-button pdf-note-close" aria-label={editing ? t('Cancel') : ai ? t('Close suggestion') : t('Close note')} title={editing ? t('Cancel') : ai ? t('Close suggestion') : t('Close note')} disabled={busy} onClick={editing ? finish : onClose}><Icon name="close" size={14}/></button></div>
+    </div>{!inline && <button type="button" className="icon-button pdf-note-close" aria-label={ai ? t('Close suggestion') : t('Close note')} title={ai ? t('Close suggestion') : t('Close note')} disabled={busy} onClick={() => void save('close')}>{busy ? <span className="spinner"/> : <Icon name="close" size={14}/>}</button>}</div>
+    {children}
     {error && <p className="inline-error" role="alert">{error}</p>}
-    {editing && <div className="pdf-note-tools"><span className="pdf-note-tools-space"/><button type="button" className="icon-button pdf-note-save" aria-label={busy ? t('Saving…') : t('Save')} title={busy ? t('Saving…') : t('Save')} disabled={busy || !draft.trim()} onClick={() => void save()}>{busy ? <span className="spinner"/> : <Icon name="check" size={16}/>}</button></div>}
-    {!editing && <div className="pdf-note-tools">
-      {note.aiReview && <span className="pdf-note-origin" title={t('AI suggestion')}>{AGENT_NAMES[note.aiReview.agent]}</span>}
+    <div className="pdf-note-tools">
+      {note.aiReview && !destination && <span className="pdf-note-origin" title={t('AI suggestion')}>{AGENT_NAMES[note.aiReview.agent]}</span>}
       <button type="button" className="icon-button pdf-note-delete" aria-label={ai ? t('Ignore suggestion {n}', { n: number }) : t('Delete note {n}', { n: number })} title={ai ? t('Ignore') : t('Delete note')} disabled={busy} onClick={onDismiss}><Icon name="trash" size={14}/></button>
       <span className="pdf-note-tools-space"/>
-      {ai && total > 1 && <div className="pdf-suggestion-navigation"><button type="button" className="icon-button" aria-label={t('Previous suggestion')} title={t('Previous suggestion')} disabled={busy || index <= 0} onClick={onPrevious}><Icon name="chevronLeft" size={14}/></button><span aria-label={t('{current} of {total}', { current: index + 1, total })}>{index + 1}/{total}</span><button type="button" className="icon-button" aria-label={t('Next suggestion')} title={t('Next suggestion')} disabled={busy || index >= total - 1} onClick={onNext}><Icon name="chevronRight" size={14}/></button></div>}
-      <button type="button" className="icon-button pdf-note-attach" aria-label={ai ? t('Include suggestion {n} in this task', { n: number }) : t('Include note {n} in this task', { n: number })} aria-pressed={selected} title={selected ? t('Remove from draft') : t('Quote in chat')} disabled={busy} onClick={onToggle}><Icon name="spark" size={15}/><Icon name={selected ? 'check' : 'arrowRight'} size={14}/></button>
-    </div>}
+      {ai && total > 1 && <div className="pdf-suggestion-navigation"><button type="button" className="icon-button" aria-label={t('Previous suggestion')} title={t('Previous suggestion (←)')} aria-keyshortcuts="ArrowLeft" disabled={busy || index <= 0} onClick={onPrevious}><Icon name="chevronLeft" size={14}/></button><span aria-label={t('{current} of {total}', { current: index + 1, total })}>{index + 1}/{total}</span><button type="button" className="icon-button" aria-label={t('Next suggestion')} title={t('Next suggestion (→)')} aria-keyshortcuts="ArrowRight" disabled={busy || index >= total - 1} onClick={onNext}><Icon name="chevronRight" size={14}/></button></div>}
+      <NoteAttachButton number={number} ai={ai} selected={selected} disabled={busy || (editing && !draft.trim())} destination={destination} onClick={() => {
+        // Keep keyboard navigation available while this button becomes disabled.
+        if (destination && !inline) card.current?.focus({ preventScroll: true });
+        void save('quote');
+      }}/>
+    </div>
   </section>;
 }

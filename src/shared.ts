@@ -131,7 +131,9 @@ export function countProblems(problems: Pick<BuildProblem, 'severity' | 'kind' |
 }
 // `key` names the PDF whose pages the locations refer to.
 export interface ManuscriptProblems { status: ManuscriptBuild['status']; key?: string; problems: BuildProblem[]; log: boolean }
-export interface Annotation { aiReview?: { taskId: string; agent: AgentId }; group?: NoteGroup; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
+export interface Annotation { aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
+// Review findings stay with their task; only explicit copies belong to the manuscript.
+export const isTaskReviewNote = (note: Annotation) => Boolean(note.aiReview && !note.aiReview.sourceId);
 export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }
 export interface PaperImport {
   id: string; path: string; name: string; copied: boolean; candidates: string[]; main: string; engine: string;

@@ -1649,3 +1649,20 @@ test('creating an AI review skill task persists its snapshot and queues review-o
     await assert.rejects(f.workspace.createTask({ ...input, id: 'ai-review-task-0002', agent: 'cursor' }), /Choose Codex, Claude or GLM/);
   } finally { f.close(); }
 });
+
+test('AI review captures the task worktree before enqueueing and retries keep that snapshot', async () => {
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : {});
+  try {
+    const requested = { key: 'main-pdf', lines: [] };
+    const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The task copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
+    let calls = 0;
+    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', reviewInput: requested, prepareReview: async (worktree: string) => { calls++; assert.equal(worktree, '/task-copy'); return captured; } };
+    const created = await f.workspace.createTask(input);
+    assert.equal(created.aiReview?.key, 'task-pdf');
+    assert.deepEqual(f.store.reviewInput(created.id), captured);
+    assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /The task copy/);
+    await f.workspace.createTask(input); assert.equal(calls, 1);
+    f.store.saveAnnotation({ id: 'private-finding', projectId: f.task.projectId, key: 'task-pdf', page: 0, rect: [0, 0, 1, 1], comment: 'Clarify.', quote: 'Claim', source: null, createdAt: 1, aiReview: { taskId: created.id, agent: 'codex' } });
+    await assert.rejects(f.workspace.createTask({ id: 'send-private-finding', projectId: f.task.projectId, title: 'Edit', instructions: '', annotations: ['private-finding'] }), /no longer available/);
+  } finally { f.close(); }
+});
