@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { AccountInfo, ModelInfo, Options, PermissionResult, Query, SDKMessage, SDKRateLimitInfo, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { AccountInfo, ModelInfo, Options, PermissionResult, SDKMessage, SDKRateLimitInfo, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { AGENT_NAMES } from '../shared.ts';
 import { DATA, ROOT } from './paths.ts';
 import { imageType } from './attachments.ts';

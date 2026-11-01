@@ -586,7 +586,8 @@ try {
   await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Add a paper' });
   await dialog.waitFor();
-  await expect(dialog.getByRole('textbox', { name: 'Folder path', exact: true })).toBeFocused();
+  // The folder chooser leads; typing a path is a collapsed fallback.
+  await expect(dialog.getByRole('button', { name: 'Choose folder', exact: true })).toBeFocused();
   for (let i = 0; i < 9; i++) {
     await page.keyboard.press(i < 5 ? 'Tab' : 'Shift+Tab');
     assert.equal(await dialog.evaluate(el => el.contains(document.activeElement)), true);
@@ -753,6 +754,9 @@ try {
   assert.ok((await page.locator('.manuscript-pages').boundingBox()).width > beforeCollapseWidth + 250);
   await page.waitForFunction(() => document.activeElement === document.querySelector('.pdf-toolbar .manuscript-panel-toggle'));
   assert.equal(await expandPanel.getAttribute('aria-expanded'), 'false');
+  // Collapsed, the toggle is the last toolbar control and the PDF link leaves with the panel.
+  assert.equal(await page.locator('.manuscript-pages .pdf-toolbar > :last-child').first().getAttribute('aria-label'), 'Expand manuscript panel');
+  assert.equal(await page.locator('.pdf-toolbar').getByRole('link', { name: 'Open PDF', exact: true }).count(), 0);
   await page.screenshot({ path: 'test-results/manuscript-panel-collapsed.png', fullPage: true });
   await expandPanel.press('Enter');
   await manuscriptSide.waitFor();
@@ -1643,7 +1647,7 @@ try {
     await drawer.getByRole('button', { name: 'Paper: Example paper', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
     await page.getByRole('dialog', { name: 'Add a paper' }).waitFor();
-    await expect(page.getByRole('dialog', { name: 'Add a paper' }).getByRole('textbox', { name: 'Folder path', exact: true })).toBeFocused();
+    await expect(page.getByRole('dialog', { name: 'Add a paper' }).getByRole('button', { name: 'Choose folder', exact: true })).toBeFocused();
     await page.keyboard.press('Escape');
     if (width === 390) {
       await page.locator('.manuscript-link').click();

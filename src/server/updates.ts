@@ -43,7 +43,6 @@ interface Options {
 export class Updates {
   private state: UpdateStatus;
   private checking: Promise<UpdateStatus> | null = null;
-  private operation: Promise<void> | null = null;
   private prepared = '';
   private inFlight = 0;
   private timer?: NodeJS.Timeout;
@@ -123,11 +122,11 @@ export class Updates {
     if (previous) fs.rmSync(this.lock);
     const fd = fs.openSync(this.lock, 'wx', 0o600); fs.writeFileSync(fd, JSON.stringify({ pid: process.pid })); fs.closeSync(fd);
     this.change({ phase: 'installing', error: null });
-    this.operation = (this.options.install || installRelease)(this.options.data, version).then(root => {
+    void (this.options.install || installRelease)(this.options.data, version).then(root => {
       if (this.closed) return;
       this.prepared = root; this.change({ phase: 'waiting' });
       return this.activate();
-    }).catch(error => { this.change({ phase: 'failed', error: error instanceof Error ? error.message : 'The update failed.' }); this.release(); }).finally(() => { this.operation = null; });
+    }).catch(error => { this.change({ phase: 'failed', error: error instanceof Error ? error.message : 'The update failed.' }); this.release(); });
     return this.snapshot();
   }
   // Public for deterministic tests; the periodic tick calls this in production.
