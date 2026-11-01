@@ -331,7 +331,7 @@ export async function buildApp(options: AppOptions) {
     return serialGit(project.id, async () => { await gitRemote(project.path, action); return { git: await gitStatus(project.path) }; });
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), request => manuscript(request.params.id, true));
-  // Notes marked on the manuscript PDF become one agent task when sent.
+  // Notes are saved for reading; only explicitly attached IDs reach an agent task.
   app.post<{ Params: { id: string } }>('/api/projects/:id/annotations', project(), async request => {
     const project = store.project(request.params.id), b = request.body as any;
     const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] > value[0] && value[3] > value[1];
@@ -370,8 +370,9 @@ export async function buildApp(options: AppOptions) {
     // A retried send returns its task; an ID from another paper is refused.
     const existing = store.tasks().find(task => task.id === id);
     if (existing) { if (existing.projectId !== project.id) throw new Error('Invalid task ID.'); return existing; }
-    const notes = store.annotations(project.id).filter(note => !note.taskId);
-    if (!notes.length) throw new Error('Mark a region on the PDF and add a note first.');
+    if (!Array.isArray(b.annotations) || !b.annotations.length || b.annotations.length > 500 || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64)) throw new Error('Select valid PDF notes for this task.');
+    const notes = [...new Set<string>(b.annotations)].map(id => store.annotation(project.id, id));
+    if (notes.some(note => note.taskId || note.deletedAt !== undefined)) throw new Error('Select unsent PDF notes for this task.');
     const { title } = annotationTask(notes);
     return workspace.createTask({ id, projectId: project.id, title, instructions: '', annotations: notes.map(note => note.id), agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64), author: author(request.viewer) });
   });

@@ -41,17 +41,17 @@
 @media(pointer:coarse){.group-instruction-input textarea{font-size:16px}.group-disclosure{width:44px;height:44px}.group-selection-toggle{min-height:44px}}
 .group-location{display:flex;gap:6px;align-items:center;border-top:1px solid var(--line);padding:4px 0 1px;font:12px/1.5 var(--sans)}
 .notes-panel .group-location{border:1px solid var(--line);border-radius:6px;margin:4px 0;padding:6px 8px}
-.notes-panel>.annotation-group{flex:none}
+.notes-panel .annotation-group{flex:none}
 .notes-panel .group-locations{max-height:none;overflow:visible}
-.group-location-target{flex:1;min-width:0;text-align:left;color:var(--text-2);background:none;border:0;cursor:pointer}
+.group-location-target{flex:1;min-width:0;text-align:left;color:var(--text-2);background:none;border:0;cursor:default}
 .group-location-target>span{font-size:11px;color:var(--text-3)}
 .group-location blockquote{margin:1px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 .notes-panel .group-location blockquote{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;white-space:normal;overflow-wrap:anywhere}
 .group-locations .sent-notes{padding:0;margin:0}
 .group-locations .sent-notes>li{list-style:none}
 /* The editor has its own surface; color belongs to the selected references. */
-.notes-panel>.annotation-group[data-selected]{margin:5px 0;border:1px solid var(--line);border-radius:14px;background:var(--bg-subtle);box-shadow:var(--shadow-xs)}
-.notes-panel>.annotation-group[data-selected=true]{border-color:color-mix(in srgb,var(--note-color) 25%,var(--line))}
+.notes-panel .annotation-group[data-selected]{margin:5px 0;border:1px solid var(--line);border-radius:14px;background:var(--bg-subtle);box-shadow:var(--shadow-xs)}
+.notes-panel .annotation-group[data-selected=true]{border-color:color-mix(in srgb,var(--note-color) 25%,var(--line))}
 .notes-panel .group-header{padding:4px 8px 4px 3px;color:var(--text-2)}
 .notes-panel .group-header strong,.notes-panel .group-selection-toggle[aria-pressed=true]>strong{font-weight:500;color:var(--text-2);font-size:12px}
 .notes-panel .group-header .group-dot{width:8px;height:8px;box-shadow:0 0 0 3px color-mix(in srgb,var(--note-color) 12%,transparent)}

@@ -17,7 +17,8 @@ const state = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name
 const words = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 const text = words[0].words[1], rect = [text[1] / 612, (text[2] - text[3]) / 792, (text[1] + text[4]) / 612, text[2] / 792];
 const note = { id: 'ai-finding-1', projectId: 'paper', key: 'pdf', page: 0, rect, rects: [rect], quote: text[0], comment: 'State the assumptions under which this claim holds.', source: null, createdAt: Date.now(), aiReview: { taskId: 'review', agent: 'codex' } };
-let notes = [], attempts = [], edits = [], fail = true;
+const personal = { ...note, id: 'personal-note', comment: 'My reading thought.', aiReview: undefined };
+let notes = [personal], attempts = [], edits = [], fail = true;
 await page.route('**/api/**', route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/state') return json(state);
@@ -30,18 +31,20 @@ await page.route('**/api/**', route => {
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
   if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'answer', taskId: state.tasks[0]?.id, type: 'assistant', text: 'Clarify the assumptions behind the main claim.', createdAt: 1 }] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
+  if (url.pathname.endsWith('/annotations/ai-finding-1/delete')) { notes = notes.filter(item => item.id !== note.id); return json({ ok: true }); }
+  if (url.pathname.endsWith('/annotations/ai-finding-1/restore')) { notes = [note, ...notes]; return json({ annotations: notes }); }
   if (url.pathname.endsWith('/archive')) return json(state.tasks[0]);
   if (url.pathname === '/api/tasks' && route.request().postDataJSON().skill === 'ai-review') {
     const body = route.request().postDataJSON(); attempts.push(body);
     if (fail) { fail = false; return route.fulfill({ status: 503, json: { error: 'Temporary failure. Try again.' } }); }
     const task = { ...body, name: body.id, mode: 'review', status: 'reviewing', aiReview: { key: 'pdf', notes: 1 }, createdAt: 1, updatedAt: 1, review: { state: 'done', round: null, counts: {}, files: [], unsent: 0, comments: 0 } };
-    state.tasks.push(task); notes = [note];
+    state.tasks.push(task); notes = [note, personal];
     return json(task);
   }
   if (url.pathname === '/api/tasks') {
     const body = route.request().postDataJSON(); edits.push(body);
     const task = { ...body, name: body.id, status: 'queued', createdAt: 2, updatedAt: 2, review: null };
-    state.tasks.push(task); notes = []; return json(task);
+    state.tasks.push(task); notes = notes.filter(item => !body.annotations?.includes(item.id)); return json(task);
   }
   throw Error(`Unexpected request ${url.pathname}`);
 });
@@ -64,21 +67,35 @@ try {
   await expect(page.getByRole('textbox', { name: 'Describe the revision' })).toHaveValue('Check assumptions and clarity.');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await page.locator('.task-link').first().click();
-  await page.getByRole('button', { name: 'View 1 PDF note', exact: true }).click();
+  await page.getByRole('button', { name: 'View 1 review suggestion', exact: true }).click();
   assert.equal(attempts.length, 2);
   assert.equal(attempts[0].id, attempts[1].id);
   assert.equal(attempts[0].instructions, 'Check assumptions and clarity.');
   assert.equal(attempts[0].skill, 'ai-review');
   assert.equal(attempts[0].mode, undefined);
   assert.equal(edits.length, 0);
-  const selected = page.getByRole('button', { name: 'Include note 1 in this task', exact: true });
+  const selected = page.getByRole('button', { name: 'Include suggestion 1 in this task', exact: true });
   await expect(selected).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.getByText('AI · Codex', { exact: true })).toBeVisible();
+  const own = page.getByRole('region', { name: 'My notes', exact: true });
+  const suggestions = page.getByRole('region', { name: 'AI suggestions', exact: true });
+  await expect(own.getByText(personal.comment, { exact: true })).toBeVisible();
+  await expect(suggestions.getByText(note.comment, { exact: true })).toBeVisible();
+  await expect(suggestions.getByRole('button', { name: /^Edit note/ })).toHaveCount(0);
+  await expect(own.getByRole('button', { name: 'Include note 2 in this task' })).toHaveAttribute('aria-pressed', 'false');
+  await suggestions.locator('.note-comment-text').click();
+  await expect(selected).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', { name: 'Start task', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Show note 1 on the page', exact: true }).click();
+  await page.getByRole('button', { name: 'Show suggestion 1 on the page', exact: true }).click();
   await expect(page.locator('.note-mark[data-note="ai-finding-1"]')).toBeVisible();
   await expect(page.locator('.pdfViewer canvas').first()).toBeVisible();
+  await expect(page.locator('.note-mark[data-note="ai-finding-1"]')).toHaveAttribute('data-review', 'true');
   await page.screenshot({ path: 'test-results/ai-review-notes.png', fullPage: true });
+  await selected.click();
+  await suggestions.getByRole('button', { name: 'Ignore suggestion 1', exact: true }).click();
+  await expect(suggestions).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start task', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(selected).toHaveAttribute('aria-pressed', 'false');
   await selected.focus(); await page.keyboard.press('Space');
   await expect(selected).toHaveAttribute('aria-pressed', 'true');
   await page.reload();
@@ -86,6 +103,8 @@ try {
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await expect.poll(() => edits.length).toBe(1);
   assert.deepEqual(edits[0].annotations, [note.id]);
+  await expect(page.getByRole('button', { name: 'Include note 1 in this task', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  assert.deepEqual(notes.map(item => item.id), [personal.id]);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('textbox', { name: 'Describe the revision' }).fill('/ai-review');
   await page.getByRole('option', { name: 'AI review', exact: true }).click();

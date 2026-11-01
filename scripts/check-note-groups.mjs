@@ -83,7 +83,7 @@ try {
   await chooseGroup('Yellow');
   await selectText(0); await expect.poll(() => notes.length).toBe(1);
   await selectText(1); await expect.poll(() => notes.length).toBe(2);
-  await expect(page.getByRole('textbox', { name: 'Note for the agent' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Your note' })).toHaveCount(0);
   await expect(page.locator('.annotation-group')).toHaveCount(1);
   await expect(page.locator('.annotation-group .group-header')).toContainText('2 locations');
   assert.deepEqual(notes.map(note => [note.group, note.comment]), [['yellow', ''], ['yellow', '']]);
@@ -98,7 +98,7 @@ try {
   await expect.poll(() => notes.length).toBe(3);
   assert.equal(notes.at(-1).group, 'yellow');
   assert.equal(notes.at(-1).rects, undefined);
-  await expect(page.getByRole('textbox', { name: 'Note for the agent' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Your note' })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await chooseGroup('Yellow');
   await clickMark(notes[0]);
@@ -157,6 +157,7 @@ try {
   await expect(mobile.locator('.note-tag.active')).toHaveAttribute('data-note', notes[0].id);
   assert.equal(notes.length, 3);
   await mobile.close();
+  await page.getByRole('button', { name: 'Select all notes for this task', exact: true }).click();
   await page.getByRole('textbox', { name: 'Describe the revision' }).fill('Explain yellow selections. Shorten purple selections.');
   await page.screenshot({ path: 'test-results/note-groups-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
@@ -175,7 +176,7 @@ try {
   await selectText(0, false);
   await page.getByRole('button', { name: 'Add to Yellow', exact: true }).click();
   await expect.poll(() => notes.length).toBe(1);
-  await expect(page.getByRole('textbox', { name: 'Note for the agent' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Your note' })).toHaveCount(0);
   await chooseGroup('Individual notes');
   await page.getByRole('button', { name: 'New task', exact: true }).click();
   await expect(page.locator('.annotation-group')).toBeVisible();

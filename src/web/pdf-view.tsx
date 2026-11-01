@@ -130,7 +130,7 @@ export function NoteEditor({ rect, onSave, onCancel }: { rect: Rect; onSave: (co
   // Open below the marked text, or above it when it ends near the bottom of the page.
   const below = rect[3] < 0.75;
   return <form className="note-editor" style={{ left: `min(${rect[0] * 100}%, calc(100% - min(340px, 100%)))`, ...(below ? { top: `calc(${rect[3] * 100}% + 8px)` } : { bottom: `calc(${(1 - rect[1]) * 100}% + 8px)` }) }} onPointerDown={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); void save(); }}>
-    <textarea autoFocus aria-label={t('Note for the agent')} placeholder={t('What should change here?')} rows={3} value={text} readOnly={busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel(); } else if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); void save(); } }}/>
+    <textarea autoFocus aria-label={t('Your note')} placeholder={t('Write a note…')} rows={3} value={text} readOnly={busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel(); } else if (sendsMessage(e.nativeEvent, touch())) { e.preventDefault(); void save(); } }}/>
     {error && <p className="inline-error" role="alert">{error}</p>}
     <div className="button-row"><button type="button" className="button secondary compact" disabled={busy} onClick={onCancel}>{t('Cancel')}</button><button className="button primary compact" disabled={busy || !text.trim()}>{busy ? t('Adding…') : t('Add note')}</button></div>
   </form>;
@@ -509,8 +509,8 @@ export const PdfView = forwardRef<PdfHandle, {
       {(() => {
         const notes = props.notes.filter(({ note }) => note.page === number - 1), spots = tagSpots(notes.map(({ note }) => (note.rects?.length ? note.rects : [note.rect])[0]));
         return notes.map(({ note, number: label }, index) => <Fragment key={note.id}>
-          {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} style={{ ...percent(rect), ...groupStyle(note.group) }}/>) }
-          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={t('Note {n}: {comment}', { n: label, comment: note.group ? groupName(note.group) : note.comment })} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}</button>
+          {(note.rects?.length ? note.rects : [note.rect]).map((rect, part) => <div key={part} className={(note.rects?.length ? 'note-mark' : 'note-box') + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} data-review={note.aiReview ? true : undefined} style={{ ...percent(rect), ...groupStyle(note.group) }}/>) }
+          <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} data-review={note.aiReview ? true : undefined} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={note.aiReview ? t('Suggestion {n}: {comment}', { n: label, comment: note.comment }) : t('Note {n}: {comment}', { n: label, comment: note.group ? groupName(note.group) : note.comment })} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}</button>
         </Fragment>);
       })()}
       {props.region && <div className="region-capture"

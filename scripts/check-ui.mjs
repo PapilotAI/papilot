@@ -634,7 +634,7 @@ try {
     await drag({ x: fixture.left + (fixture.right - fixture.left) * 0.4, y: fixture.middle }, { x: about.right - 3, y: about.middle });
     assert.doesNotMatch(await page.evaluate(() => document.getSelection().toString()), /^F/);
     await page.getByRole('button', { name: 'Add note', exact: true }).click();
-    const note = page.getByRole('textbox', { name: 'Note for the agent' });
+    const note = page.getByRole('textbox', { name: 'Your note' });
     assert.equal(await note.evaluate(el => el === document.activeElement), true);
     return note;
   };
@@ -646,7 +646,7 @@ try {
   const sentence = await printed('sentence'), about = await printed('about');
   await drag({ x: sentence.left - 2, y: sentence.middle }, { x: about.right + 1, y: about.middle });
   await page.getByRole('button', { name: 'Add note', exact: true }).click();
-  noteBox = page.getByRole('textbox', { name: 'Note for the agent' });
+  noteBox = page.getByRole('textbox', { name: 'Your note' });
   await noteBox.fill('Only these words.');
   await noteBox.press('Enter');
   await page.getByRole('button', { name: 'Note 1: Only these words.', exact: true }).waitFor();
@@ -717,7 +717,7 @@ try {
   await page.mouse.down();
   await page.mouse.move(firstPage.x + firstPage.width * 0.7, firstPage.y + firstPage.height * 0.36, { steps: 5 });
   await page.mouse.up();
-  noteBox = page.getByRole('textbox', { name: 'Note for the agent' });
+  noteBox = page.getByRole('textbox', { name: 'Your note' });
   assert.equal(await noteBox.evaluate(el => el === document.activeElement), true);
   await noteBox.fill('Define the operator here.');
   await page.getByRole('button', { name: 'Add note', exact: true }).click();
@@ -725,7 +725,9 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Mark region', exact: true }).getAttribute('aria-pressed'), 'false');
   assert.equal(annotations[0].rects, undefined);
   assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
-  await notesPanel.getByText('Notes to send: 1 / 1', { exact: true }).waitFor();
+  await notesPanel.getByText('Added to task: 0', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Start task', exact: true }).isDisabled(), true);
+  await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
   assert.equal(await page.getByRole('tab', { name: 'Notes', exact: true }).count(), 0);
   assert.equal(await prompt.inputValue(), '');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
