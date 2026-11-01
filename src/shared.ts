@@ -9,6 +9,7 @@ export const MAX_ATTACHMENT_TOTAL = 100 * 1024 * 1024;
 export interface Attachment { id: string; projectId: string; name: string; size: number; mime: string }
 export type UpdateChannel = 'stable' | 'dev';
 export interface UpdateStatus {
+  downloadUrl?: string;
   channel?: UpdateChannel;
   currentVersion: string; latestVersion: string | null;
   phase: 'idle' | 'checking' | 'available' | 'installing' | 'waiting' | 'restarting' | 'updated' | 'failed';

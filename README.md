@@ -53,6 +53,8 @@ Stage and commit files, pull, and push from the workspace. An agent can draft co
 
 ## Quick start
 
+For the macOS and Linux desktop apps and local build instructions, see [Papilot Desktop](desktop/README.md). Desktop CI builds Apple Silicon and Intel Mac installers, plus Linux x64 AppImage and deb packages.
+
 Papilot requires **Node.js 22.22+**, **Git**, and a full **TeX** distribution with `latexmk` and `synctex` ([MacTeX](https://www.tug.org/mactex/) or [TeX Live](https://www.tug.org/texlive/)). Revising a paper also requires at least one configured [agent](#agents).
 
 ```sh

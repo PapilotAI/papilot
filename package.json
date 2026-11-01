@@ -61,7 +61,7 @@
     "dev": "tsx watch src/server/main.ts",
     "start": "tsx src/server/main.ts",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p desktop/tsconfig.json --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "setup:review": "npm --prefix vendor/latex-review ci && npm --prefix vendor/latex-review run build",
     "demo": "tsx scripts/demo.ts",
@@ -71,7 +71,11 @@
     "test:ui": "npm run build && node scripts/check-ui.mjs && node scripts/check-appearance.mjs && node scripts/check-updates.mjs && node scripts/check-papers.mjs && node scripts/check-imports.mjs && node scripts/check-compilation.mjs && node scripts/check-build-problems.mjs && node scripts/check-review-notes.mjs && node --import tsx scripts/check-note-groups.mjs && node scripts/check-note-selection.mjs && node scripts/check-ai-review.mjs && node --import tsx scripts/check-note-results.mjs && node --import tsx scripts/check-review-flow.mjs && node scripts/check-skills.mjs && node --import tsx scripts/check-skill-library.mjs && node scripts/check-attachments.mjs && node --import tsx scripts/check-accounts.mjs",
     "site": "node scripts/build-site.mjs",
     "test:site": "npm run site && node scripts/check-site.mjs",
-    "prepack": "npm run build && npm run setup:review"
+    "prepack": "npm run build && npm run setup:review",
+    "desktop:compile": "tsc -p desktop/tsconfig.json",
+    "desktop": "npm run setup:review && npm run build && npm run desktop:compile && node scripts/desktop.mjs dev",
+    "desktop:build": "npm run setup:review && npm run build && npm run desktop:compile && node scripts/desktop.mjs package",
+    "test:desktop": "node scripts/check-desktop.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^9.2.2",
@@ -94,6 +98,8 @@
     "@types/react-dom": "^19.3.0",
     "@types/yauzl": "^3.4.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0",
     "katex": "^0.16.47",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.3.1",

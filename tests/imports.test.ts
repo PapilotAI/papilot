@@ -17,8 +17,9 @@ function fixture() {
   const imports = new PaperImports(manuscripts, path.join(directory, 'data'));
   return { directory, root, imports, manuscripts, calls: () => calls, ready: () => { result = 'ready'; }, close: () => fs.rmSync(directory, { recursive: true, force: true }) };
 }
-async function settled(imports: PaperImports, id: string) {
-  for (let n = 0; n < 300; n++) { const value = imports.get(id); if (!['building', 'repairing'].includes(value.phase)) return value; await new Promise(resolve => setTimeout(resolve, 20)); }
+async function settled(imports: PaperImports, id: string, timeout = 6000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) { const value = imports.get(id); if (!['building', 'repairing'].includes(value.phase)) return value; await new Promise(resolve => setTimeout(resolve, 20)); }
   throw new Error('Import did not settle');
 }
 // Construct a stored ZIP so malicious names can be tested without trusting an archiver.
@@ -121,6 +122,8 @@ test('a real imported paper compiles with the manuscript builder', { timeout: 60
   try {
     const imports = new PaperImports(new Manuscripts(), path.join(f.directory, 'real'));
     const value = await imports.create({ zip: archive('main.tex').toString('base64') });
-    await imports.build(value.id, {}); const ready = await settled(imports, value.id); assert.equal(ready.phase, 'ready', ready.error);
+    // A real TeX build can exceed the mock tests' six-second wait on busy CI
+    // or while packaging the desktop app. Do not remove its files mid-build.
+    await imports.build(value.id, {}); const ready = await settled(imports, value.id, 45000); assert.equal(ready.phase, 'ready', ready.error);
   } finally { f.close(); }
 });

@@ -361,6 +361,24 @@ export class Manuscripts extends EventEmitter {
   busyForProject(id: string) { return this.builds.get(id)?.status === 'building'; }
   forgetProject(id: string) { this.builds.delete(id); }
 
+  // The caller verifies the example's source tree. An edit or explicit rebuild
+  // uses Builder; the original PDF can be read before TeX is installed.
+  async seedPreview(projectId: string, root: string, tree: string, pdf: string) {
+    const { mupdf } = await engine(), bytes = fs.readFileSync(pdf);
+    const document = mupdf.Document.openDocument(bytes, 'application/pdf');
+    const pages: [number, number][] = [];
+    try {
+      for (let i = 0; i < document.countPages(); i++) {
+        const page = document.loadPage(i);
+        try { const [x0, y0, x1, y1] = page.getBounds(); pages.push([Math.round(x1 - x0), Math.round(y1 - y0)]); }
+        finally { page.destroy(); }
+      }
+    } finally { document.destroy(); }
+    const key = createHash('sha256').update(tree).update(bytes).digest('hex').slice(0, 16);
+    this.builds.set(projectId, { tree, status: 'ready', key, pdf, root, sourceDir: '', pages,
+      builtAt: fs.statSync(pdf).mtimeMs, problems: [], problemsKey: key });
+  }
+
   async state(projectId: string, root: string, rebuild = false): Promise<{ git: GitStatus; build: ManuscriptBuild }> {
     const [status, tree] = await Promise.all([gitStatus(root), workingTree(root)]);
     let build = this.builds.get(projectId);
