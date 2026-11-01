@@ -13,6 +13,7 @@
 .pdf-note-tools{display:flex;align-items:center;gap:2px;flex:none;color:var(--text-3)}
 .pdf-note-tools-space{flex:1}
 .pdf-note-origin{margin-left:3px;font-size:10px;color:var(--text-3)}
+.pdf-note-card .pdf-note-attach{width:44px;gap:4px;margin-left:4px}
 .pdf-note-card .pdf-note-attach[aria-pressed=true]{color:var(--accent);background:var(--accent-soft)}
 .pdf-note-card .pdf-note-delete:hover{color:var(--danger)}
 .pdf-note-card .pdf-note-save{color:var(--accent)}
@@ -22,4 +23,4 @@
 .pdf-suggestion-trigger:hover,.pdf-suggestion-trigger[aria-pressed=true]{background:var(--bg-hover)}
 .pdf-suggestion-undo{position:absolute;z-index:15;bottom:12px;left:50%;transform:translateX(-50%);max-width:calc(100% - 24px);padding:8px 12px;border:1px solid var(--line);border-radius:8px;box-shadow:var(--float);background:var(--bg);color:var(--text);font-size:12px}
 .pdf-suggestion-undo button{color:var(--accent);text-decoration:underline;margin-left:8px}
-@media(pointer:coarse){.pdf-note-card .icon-button{width:36px;height:36px}.pdf-suggestion-navigation{gap:0;margin-left:0}.pdf-suggestion-navigation .icon-button{width:32px}.pdf-suggestion-navigation>span{min-width:24px}.pdf-personal-note .pdf-note-text,.pdf-note-input{font-size:16px}}
+@media(pointer:coarse){.pdf-note-card .icon-button{width:36px;height:36px}.pdf-note-card .pdf-note-attach{width:48px}.pdf-suggestion-navigation{gap:0;margin-left:0}.pdf-suggestion-navigation .icon-button{width:32px}.pdf-suggestion-navigation>span{min-width:24px}.pdf-personal-note .pdf-note-text,.pdf-note-input{font-size:16px}}

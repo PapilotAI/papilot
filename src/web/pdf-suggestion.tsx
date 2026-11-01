@@ -86,11 +86,11 @@ export function PdfNoteCard({ note, number, index, total, selected, busy, error,
     {error && <p className="inline-error" role="alert">{error}</p>}
     {editing && <div className="pdf-note-tools"><span className="pdf-note-tools-space"/><button type="button" className="icon-button pdf-note-save" aria-label={busy ? t('Saving…') : t('Save')} title={busy ? t('Saving…') : t('Save')} disabled={busy || !draft.trim()} onClick={() => void save()}>{busy ? <span className="spinner"/> : <Icon name="check" size={16}/>}</button></div>}
     {!editing && <div className="pdf-note-tools">
-      <button type="button" className="icon-button pdf-note-attach" aria-label={ai ? t('Include suggestion {n} in this task', { n: number }) : t('Include note {n} in this task', { n: number })} aria-pressed={selected} title={selected ? t('Remove from draft') : t('Quote in chat')} disabled={busy} onClick={onToggle}><Icon name="spark" size={15}/></button>
       {note.aiReview && <span className="pdf-note-origin" title={t('AI suggestion')}>{AGENT_NAMES[note.aiReview.agent]}</span>}
-      <span className="pdf-note-tools-space"/>
       <button type="button" className="icon-button pdf-note-delete" aria-label={ai ? t('Ignore suggestion {n}', { n: number }) : t('Delete note {n}', { n: number })} title={ai ? t('Ignore') : t('Delete note')} disabled={busy} onClick={onDismiss}><Icon name="trash" size={14}/></button>
+      <span className="pdf-note-tools-space"/>
       {ai && total > 1 && <div className="pdf-suggestion-navigation"><button type="button" className="icon-button" aria-label={t('Previous suggestion')} title={t('Previous suggestion')} disabled={busy || index <= 0} onClick={onPrevious}><Icon name="chevronLeft" size={14}/></button><span aria-label={t('{current} of {total}', { current: index + 1, total })}>{index + 1}/{total}</span><button type="button" className="icon-button" aria-label={t('Next suggestion')} title={t('Next suggestion')} disabled={busy || index >= total - 1} onClick={onNext}><Icon name="chevronRight" size={14}/></button></div>}
+      <button type="button" className="icon-button pdf-note-attach" aria-label={ai ? t('Include suggestion {n} in this task', { n: number }) : t('Include note {n} in this task', { n: number })} aria-pressed={selected} title={selected ? t('Remove from draft') : t('Quote in chat')} disabled={busy} onClick={onToggle}><Icon name="spark" size={15}/><Icon name={selected ? 'check' : 'arrowRight'} size={14}/></button>
     </div>}
   </section>;
 }
