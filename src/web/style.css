@@ -1,4 +1,5 @@
 @import "./theme.css";
+@import "./effort-slider.css";
 
 /* A modern workspace with a manuscript voice: system sans for the interface,
    TeX Gyre Pagella only for paper and page headings, and
@@ -478,26 +479,6 @@ body.resizing iframe{pointer-events:none}
 .agent-connection>button:hover:not(:disabled){background:var(--bg-hover)}
 .agent-connection>button:disabled{opacity:.6;cursor:wait}
 .composer-wrap>.agent-connection{max-width:760px;margin:0 auto 8px}
-.agent-effort{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
-.effort-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--text-2)}
-.effort-head strong{font-size:14px;font-weight:600;color:var(--text)}
-.effort-track{position:relative;height:30px;margin-top:12px;border-radius:999px;background:var(--bg-active);transition:box-shadow .15s}
-.effort-fill{position:absolute;top:0;bottom:0;left:0;border-radius:999px;background:var(--accent);pointer-events:none}
-.effort-track.unset .effort-fill{display:none}
-.effort-track:has(input:focus-visible){box-shadow:0 0 0 3px rgb(37 99 235/.22)}
-.effort-stop{position:absolute;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:var(--scroll-hover);pointer-events:none}
-.effort-stop.on{background:rgb(255 255 255/.6)}
-.effort-track input{position:absolute;top:0;bottom:0;left:2px;right:2px;width:calc(100% - 4px);height:100%;margin:0;background:none;-webkit-appearance:none;appearance:none;cursor:pointer;outline:none}
-.effort-track input::-webkit-slider-runnable-track{height:30px;background:none}
-.effort-track input::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:2px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.18),0 2px 6px rgb(0 0 0/.12);transition:transform .12s var(--ease)}
-.effort-track input:active::-webkit-slider-thumb{transform:scale(.94)}
-.effort-track input::-moz-range-track{height:30px;background:none}
-.effort-track input::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.18),0 2px 6px rgb(0 0 0/.12)}
-.effort-track input:disabled{cursor:default}
-.effort-scale{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px;font-size:10px;color:var(--text-3)}
-.effort-scale button{padding:3px 6px;border-radius:5px;font-size:10px;color:var(--text-2)}
-.effort-scale button:hover:not(:disabled){background:var(--bg-hover);color:var(--text)}
-.effort-scale button:disabled{color:var(--text-3);cursor:default}
 .agent-fast{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding-top:14px;border-top:1px solid var(--line);cursor:pointer}
 .agent-fast>span{display:flex;flex-direction:column;gap:3px;min-width:0}
 .agent-fast strong{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:500}

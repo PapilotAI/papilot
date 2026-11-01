@@ -1,0 +1,80 @@
+/* A steady accent at lower levels, then blue/violet energy and an aurora at
+   Ultra. Motion lives on decorative layers; the native range owns all input. */
+.agent-effort{
+  --effort-color:var(--primary);
+  --effort-paint:linear-gradient(90deg,var(--effort-color),var(--effort-color));
+  --effort-glow:0;
+  margin-top:16px;padding-top:14px;border-top:1px solid var(--line);
+}
+.agent-effort[data-effort="minimal"]{--effort-color:color-mix(in srgb,var(--primary) 45%,#94a3b8)}
+.agent-effort[data-effort="low"]{--effort-color:color-mix(in srgb,var(--primary) 68%,#94a3b8)}
+.agent-effort[data-effort="high"]{--effort-paint:linear-gradient(100deg,var(--primary),#4387f5)}
+.agent-effort[data-effort="xhigh"]{--effort-color:#635bde;--effort-paint:linear-gradient(100deg,var(--primary),#6258e8);--effort-glow:.16}
+.agent-effort[data-effort="max"]{--effort-color:#8054d9;--effort-paint:linear-gradient(100deg,#356deb,#7453e5 58%,#b65bda);--effort-glow:.28}
+.agent-effort[data-effort="ultra"]{--effort-color:#9559e4;--effort-paint:linear-gradient(105deg,#35c6d7 0%,#4388f2 23%,#7b5ceb 48%,#c65bce 72%,#efae80 100%);--effort-glow:.45}
+.effort-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--text-2)}
+.effort-head strong{font-size:14px;font-weight:600;color:var(--text)}
+.effort-value{animation:effort-value-in .22s var(--ease)}
+.agent-effort:is([data-effort="xhigh"],[data-effort="max"]) .effort-value{color:var(--purple)}
+.agent-effort[data-effort="ultra"] .effort-value{color:var(--purple);background:linear-gradient(105deg,#277b99,#6655ce 40%,#b7479b 75%,#a26830);background-clip:text;-webkit-text-fill-color:transparent}
+:root[data-theme="dark"] .agent-effort[data-effort="ultra"] .effort-value{background-image:linear-gradient(105deg,#77d9e9,#b5a4ff 40%,#f09cde 75%,#ffd0a0)}
+.effort-track{position:relative;isolation:isolate;height:30px;margin-top:12px;border-radius:999px;background:var(--bg-active)}
+.effort-aura,.effort-fill{position:absolute;inset:0 auto 0 0;width:var(--effort-fill-width);border-radius:inherit;pointer-events:none;transition:width .24s var(--ease),opacity .3s}
+.effort-aura{z-index:-1;background:var(--effort-paint);filter:blur(9px);opacity:var(--effort-glow);transform:translateY(3px)}
+.effort-fill{overflow:hidden;background:var(--effort-paint);box-shadow:inset 0 1px 0 rgb(255 255 255/.12)}
+.effort-flow{position:absolute;inset:-100% -50%;opacity:0;background:linear-gradient(110deg,transparent 30%,rgb(255 255 255/.3) 46%,transparent 62%);transform:translateX(-25%);pointer-events:none}
+.agent-effort[data-effort="xhigh"] .effort-flow{opacity:.35;animation:effort-flow 7s ease-in-out infinite alternate}
+.agent-effort[data-effort="max"] .effort-flow{opacity:.55;animation:effort-flow 5s ease-in-out infinite alternate}
+.agent-effort[data-effort="ultra"] .effort-flow{opacity:.85;background:radial-gradient(ellipse at 35% 50%,rgb(130 255 235/.7),transparent 35%),radial-gradient(ellipse at 70% 50%,rgb(249 169 255/.8),transparent 35%);mix-blend-mode:soft-light;animation:effort-flow 4s ease-in-out infinite alternate}
+.agent-effort[data-effort="ultra"] .effort-aura{animation:effort-breathe 3.6s ease-in-out infinite alternate}
+.effort-track.unset :is(.effort-fill,.effort-aura){opacity:0}
+.effort-track:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:4px}
+.effort-stop{position:absolute;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:var(--scroll-hover);pointer-events:none}
+.effort-stop.on{background:rgb(255 255 255/.6)}
+.effort-thumb{position:absolute;top:2px;left:var(--effort-position);display:grid;place-items:center;width:26px;height:26px;margin-left:-13px;border-radius:50%;background:#fff;color:#9559e4;box-shadow:0 1px 2px rgb(0 0 0/.18),0 2px 6px rgb(0 0 0/.12);pointer-events:none;transition:left .24s var(--ease),transform .16s var(--ease),box-shadow .25s}
+.agent-effort[data-effort="max"] .effort-thumb{box-shadow:0 1px 3px rgb(48 27 104/.2),0 0 0 1px rgb(255 255 255/.3),0 0 10px rgb(210 181 255/.45)}
+.agent-effort[data-effort="ultra"] .effort-thumb{box-shadow:0 1px 3px rgb(48 27 104/.2),0 0 0 1px rgb(255 255 255/.5),0 0 14px rgb(255 235 255/.75)}
+.effort-thumb svg{animation:effort-star-in .45s var(--ease)}
+.effort-track:has(input:active) .effort-thumb{transform:scale(.93)}
+.effort-track:has(input:active) :is(.effort-thumb,.effort-fill,.effort-aura){transition:none}
+/* Hit target is 44px high while the visible pill keeps its compact 30px size.
+   Its transparent native thumb is aligned exactly with the visual thumb. */
+.effort-track input{position:absolute;z-index:1;top:-7px;left:2px;width:calc(100% - 4px);height:44px;margin:0;background:none;-webkit-appearance:none;appearance:none;cursor:pointer;outline:none}
+.effort-track input::-webkit-slider-runnable-track{height:30px;background:none}
+.effort-track input::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:2px;border:0;border-radius:50%;background:transparent;box-shadow:none}
+.effort-track input::-moz-range-track{height:30px;background:none}
+.effort-track input::-moz-range-progress{background:none}
+.effort-track input::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:50%;background:transparent;box-shadow:none}
+.effort-track input:disabled{cursor:default}
+.effort-scale{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;font-size:10px;color:var(--text-3)}
+.effort-scale button{padding:3px 6px;border-radius:5px;font-size:10px;color:var(--text-2)}
+.effort-scale button:hover:not(:disabled){background:var(--bg-hover);color:var(--text)}
+.effort-scale button:disabled{color:var(--text-3);cursor:default}
+/* Small, slow stars stay inside the pill, away from text and pointer input. */
+.effort-stars{position:absolute;inset:0;pointer-events:none}
+.effort-stars i{position:absolute;width:5px;height:5px;background:#fff;clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%);animation:effort-twinkle 3.6s ease-in-out infinite alternate}
+.effort-stars i:nth-child(1){left:9%;top:22%;animation-delay:-.5s}
+.effort-stars i:nth-child(2){left:26%;top:66%;width:3px;height:3px;animation-delay:-2.1s}
+.effort-stars i:nth-child(3){left:43%;top:18%;width:4px;height:4px;animation-delay:-1.3s}
+.effort-stars i:nth-child(4){left:59%;top:69%;animation-delay:-2.8s}
+.effort-stars i:nth-child(5){left:74%;top:27%;width:3px;height:3px;animation-delay:-.9s}
+.effort-stars i:nth-child(6){left:86%;top:62%;width:4px;height:4px;animation-delay:-1.9s}
+@keyframes effort-flow{from{transform:translateX(-25%)}to{transform:translateX(25%)}}
+@keyframes effort-breathe{from{opacity:.32}to{opacity:.58}}
+@keyframes effort-twinkle{from{opacity:.25;transform:scale(.7)}to{opacity:.9;transform:scale(1.15)}}
+@keyframes effort-star-in{from{opacity:0;transform:rotate(-70deg) scale(.5)}to{opacity:1;transform:rotate(0) scale(1)}}
+@keyframes effort-value-in{from{opacity:.5;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){
+  .agent-effort *{animation:none!important;transition:none!important}
+  .effort-flow{display:none}
+  .effort-stars i{opacity:.65}
+}
+@media(forced-colors:active){
+  .effort-track{background:Canvas;border:1px solid ButtonText}
+  .effort-fill{background:Highlight;box-shadow:none}
+  .effort-aura,.effort-flow,.effort-stars{display:none}
+  .effort-thumb{background:ButtonFace;border:2px solid ButtonText;box-shadow:none!important;color:ButtonText}
+  .effort-stop{background:ButtonText}
+  .effort-stop.on{background:HighlightText}
+  .agent-effort .effort-value{background:none!important;-webkit-text-fill-color:currentColor!important;color:CanvasText!important}
+}

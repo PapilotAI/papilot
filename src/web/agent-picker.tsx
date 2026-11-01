@@ -3,6 +3,7 @@ import type { AgentId, AgentModel, RuntimeStatus } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
 import { browserStorage } from './storage.ts';
+import { EffortSlider, effortName } from './effort-slider.tsx';
 
 // Without an effort of its own choosing, a task reasons at high effort where
 // its model offers it: a catalog's default can be as low as "low", too little
@@ -13,9 +14,6 @@ export function taskEffort(choice: string | null, model?: AgentModel) {
   if (choice && (!model || model.efforts.includes(choice))) return choice;
   return model?.efforts.includes(DEFAULT_EFFORT) ? DEFAULT_EFFORT : '';
 }
-
-// Keep provider names, capitalizing only their first letter for display.
-const effortName = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
 
 // The picker and an existing conversation use the same compact model label.
 export function ModelLabel({ model, effort, fast }: { model: string; effort?: string | null; fast?: boolean }) {
@@ -32,25 +30,6 @@ export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect
     <div className="agent-connection-message" role="status"><Icon name="alert" size={15}/><span>{message}</span></div>
     {error && error !== message && <details><summary>{t('Connection details')}</summary><p>{error}</p></details>}
     <button type="button" disabled={reconnecting} onClick={onReconnect}><Icon name="refresh" size={12}/>{reconnecting ? t('Connecting…') : t('Reconnect')}</button>
-  </div>;
-}
-
-// Keep the stepped slider in the shared settings menu, including an explicit
-// way to hand effort back to the model's default.
-function EffortSlider({ efforts, value, fallback, onChange }: { efforts: string[]; value: string; fallback: string | null; onChange: (value: string) => void }) {
-  const current = efforts.find(item => item === value) || efforts.find(item => item === fallback);
-  const index = current ? efforts.indexOf(current) : Math.floor((efforts.length - 1) / 2), share = efforts.length > 1 ? index / (efforts.length - 1) : 1;
-  const label = current ? effortName(current) : t('Model default');
-  const centre = (step: number) => `calc(15px + ${efforts.length > 1 ? step / (efforts.length - 1) : 1} * (100% - 30px))`;
-  return <div className="agent-effort">
-    <div className="effort-head"><span>{t('Reasoning effort')}</span><strong>{label}</strong></div>
-    <div className={'effort-track' + (current ? '' : ' unset')}>
-      <span className="effort-fill" style={{ width: `calc(30px + ${share} * (100% - 30px))` }}/>
-      {efforts.map((item, step) => step !== index && <span key={item} className={'effort-stop' + (current && step < index ? ' on' : '')} style={{ left: centre(step) }}/>)}
-      <input type="range" min={0} max={efforts.length - 1} step={1} value={index} aria-label={t('Reasoning effort')} aria-valuetext={label} disabled={efforts.length < 2}
-        onChange={event => onChange(efforts[Number(event.target.value)])}/>
-    </div>
-    <div className="effort-scale"><span>{effortName(efforts[0])}</span><button type="button" onClick={() => onChange('')} disabled={!value}>{t('Model default')}</button><span>{effortName(efforts[efforts.length - 1])}</span></div>
   </div>;
 }
 
