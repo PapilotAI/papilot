@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { PaperImports, inspectPaper, prepareRepository } from '../src/server/imports.ts';
+import { PaperImports, inspectPaper, prepareRepository, texFiles } from '../src/server/imports.ts';
 import { Manuscripts } from '../src/server/manuscript.ts';
 
 const source = '\\documentclass{article}\n\\begin{document}\nHello paper.\n\\end{document}\n';
@@ -75,6 +75,39 @@ test('ambiguous mains need a choice; engine hints and existing configuration are
     await assert.rejects(f.imports.build(imported.id, { main: '../outside.tex' }), /existing/);
     await f.imports.build(imported.id, {}); await settled(f.imports, imported.id);
     assert.equal(JSON.parse(fs.readFileSync(path.join(f.root, '.latex-review.json'), 'utf8')).partial_builds, false);
+  } finally { f.close(); }
+});
+
+test('local folders can exceed upload limits and inspection leaves their files untouched', async () => {
+  const f = fixture();
+  try {
+    fs.writeFileSync(path.join(f.root, 'main.tex'), source);
+    const assets = path.join(f.root, 'assets'); fs.mkdirSync(assets);
+    for (let index = 0; index < 5001; index++) fs.writeFileSync(path.join(assets, `${index}.dat`), '');
+    // A large sparse asset must not be read into an upload buffer.
+    const large = path.join(assets, 'large.dat'); fs.writeFileSync(large, ''); fs.truncateSync(large, 65 * 1024 * 1024);
+    const value = await f.imports.create({ path: f.root });
+    assert.equal(value.path, f.root); assert.equal(value.copied, false); assert.equal(value.main, 'main.tex');
+    assert.equal(value.phase, 'choose'); assert.equal(value.error, undefined); assert.equal(f.calls(), 0);
+    assert.deepEqual(fs.readdirSync(f.root).sort(), ['assets', 'main.tex']);
+    assert.equal(fs.readFileSync(path.join(f.root, 'main.tex'), 'utf8'), source);
+    assert.equal(fs.statSync(large).size, 65 * 1024 * 1024);
+    // Compilation validates the same folder without reintroducing the scan cap.
+    f.ready(); await f.imports.build(value.id, {});
+    assert.equal((await settled(f.imports, value.id)).phase, 'ready');
+  } finally { f.close(); }
+});
+
+test('main files deeper than twenty folders are discoverable without following symlinks', async () => {
+  const f = fixture();
+  try {
+    const main = [...Array(22).fill('chapter'), 'main.tex'].join('/');
+    fs.mkdirSync(path.dirname(path.join(f.root, main)), { recursive: true });
+    fs.writeFileSync(path.join(f.root, main), source);
+    fs.symlinkSync(f.root, path.join(f.root, 'loop'), 'dir');
+    fs.symlinkSync(path.join(f.root, main), path.join(f.root, 'linked.tex'));
+    assert.deepEqual(texFiles(f.root), [main]);
+    assert.equal((await f.imports.create({ path: f.root })).main, main);
   } finally { f.close(); }
 });
 

@@ -3,8 +3,8 @@
 .import-drop.dragging { background: var(--accent-soft); border-color: var(--accent); }
 .import-drop > span, .import-location, .import-path p { font-size: 12px; color: var(--text-3); }
 .import-drop .button-row { margin-top: 4px; justify-content: center; }
-.import-path { margin-top: 20px; }
-.import-path summary, .import-problem summary { cursor: pointer; }
+.import-path { margin: 20px 0; }
+.import-problem summary { cursor: pointer; }
 .import-path form { margin-top: 12px; }
 .import-steps { display: flex; list-style: none; gap: 12px; padding: 0; margin: 20px 0; font-size: 12px; color: var(--text-3); }
 .import-steps li { border-bottom: 2px solid var(--line); padding-bottom: 8px; flex: 1; }

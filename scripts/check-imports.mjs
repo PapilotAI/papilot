@@ -34,6 +34,7 @@ try {
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
   await page.getByRole('button', { name: 'Add paper', exact: true }).first().click();
   let dialog = page.getByRole('dialog', { name: 'Add a paper' }); await dialog.waitFor();
+  assert.equal(await page.getByLabel('Folder path', { exact: true }).isVisible(), true);
   await dialog.screenshot({ animations: 'disabled', path: 'test-results/import-start.png' });
   const transfer = await page.evaluateHandle(() => { const transfer = new DataTransfer(); transfer.items.add(new File(['fixture zip bytes'], 'paper.zip', { type: 'application/zip' })); return transfer; });
   await page.locator('.import-drop').dispatchEvent('drop', { dataTransfer: transfer });
@@ -64,6 +65,12 @@ try {
     const uploaded = requests.filter(request => request.route === '/api/imports').at(-1).body.files;
     assert.ok(uploaded.some(file => file.path.endsWith('/main.tex'))); assert.ok(uploaded.some(file => file.data === Buffer.from([0, 255, 32]).toString('base64')));
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+  await page.getByText('Your paper compiled successfully. It is ready for editing.').waitFor();
+  await page.getByRole('button', { name: 'Choose different files', exact: true }).click();
+  await page.getByLabel('Folder path', { exact: true }).fill('/papers/large-local-paper');
+  await page.getByRole('button', { name: 'Read folder', exact: true }).click();
+  await page.getByLabel('Main TeX file', { exact: true }).waitFor();
+  assert.deepEqual(requests.filter(request => request.route === '/api/imports').at(-1).body, { path: '/papers/large-local-paper' });
   assert.deepEqual(errors, []);
-  console.log('PASS: ZIP drop, folder upload, main selection, failed compile, resume, assistant repair, mobile layout and opening paper');
+  console.log('PASS: local folder path, ZIP drop, folder upload, main selection, failed compile, resume, assistant repair, mobile layout and opening paper');
 } finally { await browser.close(); await server.close(); }

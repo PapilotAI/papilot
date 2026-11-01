@@ -20,7 +20,7 @@ export function ImportDialog({ api, agent, canRepair, onDone, onClose }: { api: 
   function receive(value: PaperImport) { setDraft(value); setForm(current => ({ ...current, name: value.name, main: value.main, engine: value.engine })); browserStorage.setItem(memoryKey, value.id); }
   useEffect(() => {
     const element = dialog.current!, opener = document.activeElement as HTMLElement | null;
-    element.showModal(); folder.current?.setAttribute('webkitdirectory', ''); element.querySelector<HTMLButtonElement>('[data-choose-folder]')?.focus();
+    element.showModal(); folder.current?.setAttribute('webkitdirectory', ''); element.querySelector<HTMLInputElement>('[data-folder-path]')?.focus();
     const saved = browserStorage.getItem(memoryKey);
     let live = true;
     if (saved) { setBusy(true); api<PaperImport>('/imports/' + saved).then(value => { if (live) receive(value); }, () => browserStorage.removeItem(memoryKey)).finally(() => { if (live) setBusy(false); }); }
@@ -69,6 +69,10 @@ export function ImportDialog({ api, agent, canRepair, onDone, onClose }: { api: 
       <h2 id="import-title">{t('Add a paper')}</h2>
       <p className="modal-description">{t('Bring your LaTeX files. Papilot prepares version history and checks compilation.')}</p>
       {!draft ? <>
+        <div className="import-path"><strong>{t('Use a folder on this computer')}</strong><p>{t('Open a local folder directly, with no upload size or file count limit.')}</p><form onSubmit={event => { event.preventDefault(); void run(async () => start(await api<PaperImport>('/imports', { path: form.path }))); }}>
+          <label>{t('Folder path')}<input data-folder-path value={form.path} required disabled={locked} maxLength={4000} onChange={event => setForm({ ...form, path: event.target.value })} placeholder={t('/Users/you/papers/my-paper')} spellCheck={false}/></label>
+          <button className="button secondary" disabled={locked}>{t('Read folder')}</button>
+        </form></div>
         <div className={'import-drop' + (dragging ? ' dragging' : '')} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); if (!locked) void upload(Array.from(event.dataTransfer.files), true); }}>
           <Icon name="file" size={28}/><strong>{t('Drop a LaTeX ZIP here')}</strong>
           <span>{t('Up to 64 MB · Folders and ZIPs are copied into Papilot')}</span>
@@ -76,10 +80,6 @@ export function ImportDialog({ api, agent, canRepair, onDone, onClose }: { api: 
         </div>
         <input hidden {...{ webkitdirectory: '' }} ref={folder} type="file" multiple aria-label={t('Choose folder')} onChange={event => { void upload(Array.from(event.target.files || []), false); event.target.value = ''; }}/>
         <input hidden ref={zip} type="file" accept=".zip,application/zip" aria-label={t('Choose ZIP')} onChange={event => { void upload(Array.from(event.target.files || []), true); event.target.value = ''; }}/>
-        <details className="import-path"><summary>{t('Use a folder on this computer')}</summary><p>{t('Use the original files on the computer running Papilot.')}</p><form onSubmit={event => { event.preventDefault(); void run(async () => start(await api<PaperImport>('/imports', { path: form.path }))); }}>
-          <label>{t('Folder path')}<input value={form.path} required disabled={locked} maxLength={4000} onChange={event => setForm({ ...form, path: event.target.value })} placeholder={t('/Users/you/papers/my-paper')} spellCheck={false}/></label>
-          <button className="button secondary" disabled={locked}>{t('Read folder')}</button>
-        </form></details>
         {busy && <p role="status">{t('Reading paper files…')}</p>}
       </> : <>
         <ol className="import-steps" aria-label={t('Import progress')}><li className="done">{t('Files received')}</li><li className={draft.versioned ? 'done' : ''}>{t('Version history')}</li><li className={draft.phase === 'ready' ? 'done' : ''}>{t('PDF compilation')}</li></ol>

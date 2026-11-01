@@ -136,6 +136,7 @@ export const zhCN: Record<string, string> = {
   "Choose ZIP": "选择 ZIP",
   "Use a folder on this computer": "使用本机文件夹",
   "Use the original files on the computer running Papilot.": "直接使用运行 Papilot 的电脑上的原始文件。",
+  "Open a local folder directly, with no upload size or file count limit.": "直接打开运行 Papilot 的电脑上的文件夹，不受上传大小或文件数量限制。",
   "Folder path": "文件夹路径",
   "Read folder": "读取文件夹",
   "Reading paper files…": "正在读取论文文件…",

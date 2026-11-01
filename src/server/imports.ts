@@ -12,6 +12,7 @@ import type { PaperImport, Project } from '../shared.ts';
 import type { Manuscripts } from './manuscript.ts';
 
 const execute = promisify(execFile);
+// These limits apply to uploads, not folders already on this computer.
 const MAX_BYTES = 64 * 1024 * 1024, MAX_FILES = 5000;
 const CONFIG = '.latex-review.json';
 const skip = (name: string) => ['.git', '__macosx', '.ds_store', 'node_modules', '.papilot'].includes(name.toLowerCase()) || name.startsWith('._');
@@ -33,18 +34,17 @@ function config(root: string): Record<string, unknown> {
   return data;
 }
 export function texFiles(root: string) {
-  const files: string[] = []; let count = 0;
-  function walk(folder: string, depth: number) {
-    if (depth > 20) return;
+  const files: string[] = [], folders = [''];
+  while (folders.length) {
+    const folder = folders.pop()!;
     for (const item of fs.readdirSync(path.join(root, folder), { withFileTypes: true })) {
-      if (++count > MAX_FILES) throw new Error('This folder has too many files. Select the folder containing just the paper.');
       if (skip(item.name) || ['build', 'out', 'output'].includes(item.name)) continue;
       const file = path.posix.join(folder, item.name);
-      if (item.isDirectory()) walk(file, depth + 1);
+      if (item.isDirectory()) folders.push(file);
       else if (item.isFile() && /\.tex$/i.test(file)) files.push(file);
     }
   }
-  walk('', 0); return files.sort();
+  return files.sort();
 }
 export async function inspectPaper(root: string) {
   const files = texFiles(root), roots = files.filter(file => {
