@@ -64,7 +64,7 @@ try {
   await expect(page.getByRole('textbox', { name: 'Describe the revision' })).toHaveValue('Check assumptions and clarity.');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await page.locator('.task-link').first().click();
-  await page.getByRole('button', { name: 'View PDF notes', exact: true }).click();
+  await page.getByRole('button', { name: 'View 1 PDF note', exact: true }).click();
   assert.equal(attempts.length, 2);
   assert.equal(attempts[0].id, attempts[1].id);
   assert.equal(attempts[0].instructions, 'Check assumptions and clarity.');

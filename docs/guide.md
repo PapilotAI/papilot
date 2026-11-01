@@ -143,7 +143,7 @@ Turn on **Settings → Notifications** for a browser notification when a task as
 
 In **Manuscript → New task**, choose the **AI review** skill from the composer’s **+** menu, or type `/ai-review`. Optionally describe a focus (for example, assumptions, argument structure, or clarity), choose Codex, Claude, or GLM, and send it like any other skill. Compile the current manuscript first. The reviewer reads the text extracted from that PDF version and produces comments anchored to its actual lines. It runs in read-only mode and cannot publish or apply manuscript edits.
 
-Open **View PDF notes** when the review finishes. Each suggestion appears as a highlight and a comment card labeled with its AI source. AI notes start unselected. You can edit or delete them, or select the ones you want addressed and start a normal editing task. Reviewing alone never starts a revision. The notes are saved in Papilot and displayed over the PDF; they are not embedded in a downloaded PDF file.
+When the review produces suggestions, open **View N PDF notes** below the response. Each suggestion appears as a highlight and a comment card labeled with its AI source. AI notes start unselected. You can edit or delete them, or select the ones you want addressed and start a normal editing task. Reviewing alone never starts a revision. The notes are saved in Papilot and displayed over the PDF; they are not embedded in a downloaded PDF file.
 
 Follow-ups in the review conversation continue reviewing the same PDF snapshot. Start a new AI review to review a newer manuscript. If the manuscript changes while a review is running, its notes keep their original version and follow the existing note reanchoring rules; uncertain locations remain marked as needing confirmation.
 

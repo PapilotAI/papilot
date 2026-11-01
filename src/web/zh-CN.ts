@@ -4,10 +4,9 @@ export const zhCN: Record<string, string> = {
   'Ask for another review of this PDF version…': '对这个 PDF 版本补充审阅要求…',
   'AI review': 'AI 审阅',
   'Read the paper and leave PDF comments without editing the manuscript': '只读论文并留下 PDF 批注，不修改原稿',
-  'View PDF notes': '查看 PDF 批注',
+  'View {n} PDF note': '查看 {n} 条 PDF 批注',
+  'View {n} PDF notes': '查看 {n} 条 PDF 批注',
   'AI · {agent}': 'AI · {agent}',
-  'AI added {n} PDF notes. Choose which suggestions to use.': 'AI 添加了 {n} 条 PDF 批注。你可以选择要采用的建议。',
-  'The reviewer will leave suggestions on your PDF. Your manuscript stays unchanged.': 'AI 会在 PDF 上留下建议，审阅过程不会修改原稿。',
 
   'Updates': '版本更新', 'Current version': '当前版本', 'Latest version': '最新版本', 'Update channel': '更新通道',
   'Stable': '稳定版', 'Dev (GitHub main)': 'Dev（GitHub main）',

@@ -1004,6 +1004,7 @@ body.resizing iframe{pointer-events:none}
 .task-delivery{flex-wrap:wrap;gap:8px}
 .task-delivery .commit-state{flex-basis:100%;color:var(--text-3);font-size:13px}
 
-.ai-review-result p { color: var(--text-2); line-height: 1.6; }
+.ai-review-link { display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; min-height: 32px; margin: 0 0 14px; color: var(--accent); font-size: 13px; }
+.ai-review-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .ai-note-label { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; font-size: 10px; color: var(--text); }
