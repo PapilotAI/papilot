@@ -18,13 +18,13 @@
     "academic",
     "manuscript"
   ],
-  "homepage": "https://github.com/cu1ch3n/papilot#readme",
+  "homepage": "https://papilot.ai",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cu1ch3n/papilot.git"
+    "url": "git+https://github.com/PapilotAI/papilot.git"
   },
   "bugs": {
-    "url": "https://github.com/cu1ch3n/papilot/issues"
+    "url": "https://github.com/PapilotAI/papilot/issues"
   },
   "license": "MIT",
   "author": "Cui Chen",

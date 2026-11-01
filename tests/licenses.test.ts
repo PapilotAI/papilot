@@ -7,7 +7,7 @@ test('the About page uses the release metadata and the unabridged project licens
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
   const info = appInfo();
   assert.equal(info.version, pkg.version);
-  assert.equal(info.repository, 'https://github.com/cu1ch3n/papilot');
+  assert.equal(info.repository, 'https://github.com/PapilotAI/papilot');
   assert.equal(info.issues, pkg.bugs.url);
   assert.equal(info.licenseText, fs.readFileSync('LICENSE', 'utf8').trim());
 });
