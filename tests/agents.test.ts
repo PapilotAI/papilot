@@ -161,9 +161,9 @@ test('Claude turns use the local Claude Code login, resume their session, and re
   assert.equal((await agent.request('model/list')).data[0].defaultReasoningEffort, 'xhigh');
   // The next turn resumes the same Claude session.
   const next = events(agent);
-  await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Again.' }], cwd: '/work' });
+  await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Again.' }], cwd: '/work', model: 'haiku', effort: 'low' });
   await completed(next);
-  assert.deepEqual([fake.calls[2].options.resume, fake.calls[2].options.sessionId, fake.calls[2].options.effort], [thread.id, undefined, undefined]);
+  assert.deepEqual([fake.calls[2].options.resume, fake.calls[2].options.sessionId, fake.calls[2].options.model, fake.calls[2].options.effort], [thread.id, undefined, 'haiku', 'low']);
 });
 
 test('pausing a Claude turn aborts it and declines its pending approval', async () => {

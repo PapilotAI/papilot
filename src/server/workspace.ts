@@ -451,13 +451,21 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         }
       }
       if (this.active.get(task.id)?.id !== run.id) return;
-      task = this.store.updateTask(task.id, { threadId: result.thread.id, model: result.model || task.model, ...(task.threadId ? {} : { viewPdf }) });
+      // Settings can change while the agent loads. Keep this turn's snapshot,
+      // and never overwrite a newer choice with the thread's resolved model.
+      const current = this.store.task(task.id);
+      this.store.updateTask(task.id, { threadId: result.thread.id, ...(current.model === task.model ? { model: result.model || task.model } : {}), ...(task.threadId ? {} : { viewPdf }) });
+      task = { ...task, threadId: result.thread.id, model: result.model || task.model };
       this.loaded.add(result.thread.id);
     }
     this.store.updateTask(task.id, { pendingRunId: run.id });
     const input = [{ type: 'text', text: run.prompt }, ...(run.attachments || []).filter(file => file.mime.startsWith('image/')).map(file => ({ type: 'localImage', path: this.attachments.path(file) }))];
     let result: any;
-    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, clientUserMessageId: run.id, ...(task.effort ? { effort: task.effort } : {}), ...(this.agentOf(task) === 'codex' && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
+    const models = this.runtimes[this.agentOf(task)].models;
+    const model = task.model ? models.find(model => model.id === task.model) : models.find(model => model.isDefault);
+    // Explicit defaults replace a previous turn's reasoning override.
+    const effort = task.effort || (this.agentOf(task) === 'codex' ? model?.defaultEffort : undefined);
+    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, clientUserMessageId: run.id, ...(task.model ? { model: task.model } : {}), ...(effort ? { effort } : {}), ...(this.agentOf(task) === 'codex' && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
     catch (error) {
       if (this.active.get(task.id)?.id !== run.id) return;
       if (error instanceof RpcResponseError) throw error;
@@ -1080,6 +1088,20 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     if ([...this.reviewWrites].some(id => this.store.task(id).projectId === projectId)) throw new Error('Wait for the current review action before committing.');
     this.committing.add(projectId);
     try { return await work(); } finally { this.committing.delete(projectId); }
+  }
+  updateTaskModel(taskId: string, change: { model?: string; effort?: string; serviceTier?: string }) {
+    const task = this.store.task(taskId), agent = this.agentOf(task);
+    if (task.status === 'deleting') throw new Error('This task is being deleted.');
+    const models = this.runtimes[agent].models;
+    const id = change.model ?? task.model;
+    const model = id ? models.find(model => model.id === id) : models.find(model => model.isDefault);
+    if (change.model && change.model !== task.model && !model) throw new Error('Choose an available model for this agent.');
+    const effort = change.effort ?? (change.model !== undefined && model && !model.efforts.includes(task.effort || '') ? '' : task.effort);
+    if (change.effort && model && !model.efforts.includes(change.effort)) throw new Error('This model does not support that reasoning effort.');
+    const serviceTier = change.serviceTier ?? (change.model !== undefined && task.serviceTier !== model?.fastMode?.serviceTier ? 'default' : task.serviceTier);
+    if (change.serviceTier !== undefined && agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
+    if (serviceTier && serviceTier !== 'default' && serviceTier !== model?.fastMode?.serviceTier) throw new Error('Fast mode is not available for this model.');
+    return this.store.updateTask(taskId, { model: id || null, effort: effort || null, ...(serviceTier ? { serviceTier } : {}) });
   }
   renameTask(taskId: string, title: string) {
     const task = this.store.task(taskId);

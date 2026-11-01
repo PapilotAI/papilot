@@ -586,7 +586,7 @@ try {
   await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Add a paper' });
   await dialog.waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Choose folder', exact: true }).evaluate(el => el === document.activeElement), true);
+  await expect(dialog.getByRole('textbox', { name: 'Folder path', exact: true })).toBeFocused();
   for (let i = 0; i < 9; i++) {
     await page.keyboard.press(i < 5 ? 'Tab' : 'Shift+Tab');
     assert.equal(await dialog.evaluate(el => el.contains(document.activeElement)), true);
@@ -1643,7 +1643,7 @@ try {
     await drawer.getByRole('button', { name: 'Paper: Example paper', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
     await page.getByRole('dialog', { name: 'Add a paper' }).waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Choose folder', exact: true }).evaluate(el => el === document.activeElement), true);
+    await expect(page.getByRole('dialog', { name: 'Add a paper' }).getByRole('textbox', { name: 'Folder path', exact: true })).toBeFocused();
     await page.keyboard.press('Escape');
     if (width === 390) {
       await page.locator('.manuscript-link').click();
@@ -1770,8 +1770,8 @@ try {
   assert.deepEqual(await work.locator('.tool-label').allInnerTexts(), ['cat main.tex', 'git status --short', 'Edited main.tex']);
   assert.equal(await page.locator('.thread > .tool-item .tool-label').innerText(), 'latexmk -pdf main.tex');
   // A task on the host's default model names that model.
-  assert.equal(await page.locator('.composer-model .agent-model-name').innerText(), 'Fast model');
-  assert.equal(await page.locator('.composer-model .agent-model-label small').innerText(), 'Medium');
+  assert.equal(await page.locator('.activity-panel .agent-picker .agent-model-name').innerText(), 'Fast model');
+  assert.equal(await page.locator('.activity-panel .agent-picker .agent-model-label small').innerText(), 'Medium');
   console.log('PASS: Notes sent from the PDF read as notes, and consecutive commands fold into one line with task paths');
 
   history = Array.from({ length: 120 }, (_, i) => ({ id: `history-${i}`, taskId: task.id, type: 'assistant', text: `Message ${i}: A detailed review of the argument.`, createdAt: i + 1 }));

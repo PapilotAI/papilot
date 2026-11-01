@@ -79,13 +79,15 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
     if (method === 'turn/start') {
       const thread = this.threads.get(String(params.threadId));
       if (!thread) throw new Error('Start or resume the thread before starting a turn.');
+      if (params.model !== undefined) thread.model = params.model || null;
       const text = (params.input || []).filter((part: { text?: unknown }) => typeof part.text === 'string').map((part: { text: string }) => part.text).join('\n');
       const images = (params.input || []).filter((part: { type?: string; path?: string }) => part.type === 'localImage' && typeof part.path === 'string').map((part: { path: string }) => part.path);
       const turn: Turn = { id: randomUUID(), threadId: String(params.threadId), clientId: params.clientUserMessageId, status: 'inProgress', stop: () => {} };
       turn.stop = () => this.finish(turn, 'interrupted');
       this.turns.set(turn.id, turn);
       // Papilot records the turn ID before the first event arrives.
-      setImmediate(() => { if (turn.status === 'inProgress') this.run(turn, { ...thread, cwd: params.cwd || thread.cwd }, text, params.effort || null, images); });
+      const settings = { ...thread, cwd: params.cwd || thread.cwd };
+      setImmediate(() => { if (turn.status === 'inProgress') this.run(turn, settings, text, params.effort || null, images); });
       return { turn: { id: turn.id } };
     }
     if (method === 'turn/interrupt') { this.turns.get(String(params.turnId))?.stop(); return {}; }

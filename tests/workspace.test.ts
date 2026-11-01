@@ -69,6 +69,65 @@ function identifiedTurn(run: Run, status = 'inProgress') {
   return { id: 'turn-confirmed', status, items: [{ type: 'userMessage', clientId: run.id }] };
 }
 
+const taskModels = [
+  { id: 'deep', name: 'Deep', isDefault: true, efforts: ['low', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: '' } },
+  { id: 'small', name: 'Small', isDefault: false, efforts: ['low', 'high'], defaultEffort: 'low' },
+];
+
+test('task model settings persist, validate capabilities and clear incompatible options', () => {
+  const f = fixture();
+  try {
+    f.workspace.runtime.models = taskModels;
+    f.store.updateTask(f.task.id, { model: 'deep', effort: 'xhigh', serviceTier: 'priority', status: 'running', turnId: 'live-turn' });
+    const changed = f.workspace.updateTaskModel(f.task.id, { model: 'small' });
+    assert.deepEqual([changed.model, changed.effort, changed.serviceTier, changed.status, changed.threadId, changed.turnId], ['small', null, 'default', 'running', 'thread', 'live-turn']);
+    assert.equal(f.codex.calls.length, 0, 'changing settings does not interrupt an active turn');
+    assert.throws(() => f.workspace.updateTaskModel(f.task.id, { model: 'other-agent-model' }), /available model/);
+    assert.throws(() => f.workspace.updateTaskModel(f.task.id, { effort: 'xhigh' }), /reasoning effort/);
+    assert.throws(() => f.workspace.updateTaskModel(f.task.id, { serviceTier: 'priority' }), /Fast mode/);
+    f.workspace.updateTaskModel(f.task.id, { effort: 'high' });
+    assert.equal(f.workspace.updateTaskModel(f.task.id, { effort: '' }).effort, null);
+    f.store.updateTask(f.task.id, { status: 'deleting' });
+    assert.throws(() => f.workspace.updateTaskModel(f.task.id, { effort: 'low' }), /deleted/);
+  } finally { f.close(); }
+});
+
+test('a loaded task uses its changed model and the selected model default effort', async () => {
+  const f = fixture();
+  try {
+    f.workspace.runtime.models = taskModels;
+    f.store.updateTask(f.task.id, { model: 'deep', effort: 'xhigh' });
+    await f.workspace.enqueue(f.task.id, 'Continue.', 'model-change', false);
+    f.workspace.updateTaskModel(f.task.id, { model: 'small', effort: '' });
+    f.codex.ready = true;
+    await tick();
+    const call = f.codex.calls.find(call => call.method === 'turn/start');
+    assert.equal(call?.params.model, 'small'); assert.equal(call?.params.effort, 'low');
+    assert.equal(call?.params.threadId, 'thread');
+    assert.ok(!f.codex.calls.some(call => call.method === 'thread/start' || call.method === 'thread/resume'));
+  } finally { f.close(); }
+});
+
+test('changing settings during thread resume preserves the next turn choice', async () => {
+  const f = fixture(), gate = deferred<any>();
+  try {
+    f.workspace.runtime.models = taskModels;
+    f.store.updateTask(f.task.id, { model: 'deep', effort: 'xhigh' });
+    (f.workspace as any).loaded.clear();
+    f.codex.handler = async method => method === 'thread/resume' ? gate.promise : { turn: { id: 'turn-new' } };
+    f.codex.ready = true;
+    await f.workspace.enqueue(f.task.id, 'Continue.', 'resume-model-change', false);
+    await tick();
+    assert.ok(f.codex.calls.some(call => call.method === 'thread/resume'));
+    f.workspace.updateTaskModel(f.task.id, { model: 'small', effort: 'low' });
+    gate.resolve({ thread: { id: 'thread' }, model: 'deep' });
+    await tick();
+    assert.deepEqual([f.store.task(f.task.id).model, f.store.task(f.task.id).effort], ['small', 'low']);
+    const turn = f.codex.calls.find(call => call.method === 'turn/start');
+    assert.deepEqual([turn?.params.model, turn?.params.effort], ['deep', 'xhigh']);
+  } finally { gate.resolve({ thread: { id: 'thread' } }); f.close(); }
+});
+
 const pendingReview: PendingReview = { route: '/api/tasks/p-task/decide', body: { id: 'decision-123', action: 'accept', round: 1, changes: ['change-1'] }, previousStatus: 'reviewing' };
 const pageState = { csrf: 'test', task: 'p-task', title: 'Task', closed: false, state: 'reviewing', latest: 1, round: 1, revision: 'revision', decisions: { 'change-1': 'accepted' }, comments: {}, undo: null, job: null };
 
