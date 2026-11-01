@@ -2,9 +2,13 @@
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
   'Updates': '版本更新', 'Current version': '当前版本', 'Latest version': '最新版本', 'Update channel': '更新通道',
+  'Update available': '有可用更新', 'Up to date': '已是最新版本', 'Update now': '立即更新',
   'Stable': '稳定版', 'Dev (GitHub main)': 'Dev（GitHub main）',
-  'Try the latest changes from GitHub main. Dev versions may be less reliable; you can switch back to Stable here.': '体验 GitHub main 的最新改动。Dev 版本可能不够稳定，你可以在这里切回稳定版。',
-  'Use published releases from npm.': '使用 npm 上发布的稳定版本。',
+  'Early updates from GitHub main. May be less stable.': '提前体验 GitHub main 的最新改动，稳定性可能较低。',
+  'Published releases, recommended for everyday use.': '正式发布的稳定版本，推荐日常使用。',
+  'Could not check for updates': '暂时无法检查更新',
+  'Check your connection and try again.': '请检查网络连接后重试。',
+  'Ready to check for updates': '随时获取最新版本',
   'Reading update status…': '正在读取更新状态…', 'Check for updates': '检查更新', 'Checking for updates…': '正在检查更新…',
   'Downloading and building the selected GitHub commit…': '正在下载并构建选定的 GitHub 提交…',
   'You are using the latest version on this channel.': '你已在使用此通道的最新版本。',

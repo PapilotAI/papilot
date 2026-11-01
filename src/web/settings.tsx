@@ -83,7 +83,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
     ] },
     { label: t('Application'), entries: [
       ...(diagnostics ? [{ page: 'diagnostics' as const, label: t('Runtime & diagnostics'), icon: 'monitor' }] : []),
-      ...(updates ? [{ page: 'updates' as const, label: t('Updates'), icon: 'arrowUp' }] : []),
+      ...(updates ? [{ page: 'updates' as const, label: t('Updates'), icon: 'refresh' }] : []),
       { page: 'about', label: t('About Papilot'), icon: 'info', keywords: t('Third-party licenses') },
     ] },
   ];
@@ -110,7 +110,7 @@ export function SettingsDialog({ theme, onTheme, onClose, people, onSignOut, acc
           <footer className="settings-footer"><span>Papilot · v{versionLabel(info.version)}</span><a href={info.repository} target="_blank" rel="noopener noreferrer" aria-label={`GitHub · ${t('Opens in a new tab')}`}><Icon name="github" size={16}/></a></footer>
         </div>
       </aside>
-      <div className={'settings-content' + (page === 'skills' ? ' settings-content-skills' : '')}>
+      <div className={`settings-content settings-content-${page}`}>
         <header className="settings-content-header">
           <button type="button" className="settings-back settings-mobile-back" onClick={browseCategories}><Icon name="chevronLeft" size={14}/>{t('Settings')}</button>
           {page === 'licenses' && <button type="button" className="settings-back" onClick={() => goTo('about')}><Icon name="chevronLeft" size={14}/>{t('About Papilot')}</button>}
