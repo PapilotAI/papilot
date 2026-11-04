@@ -12,11 +12,16 @@ import { ReviewNoteConnections } from './review-note-connections.tsx';
 import { SHORTCUT_EVENT, useShortcuts } from './shortcuts.ts';
 import { installReviewScroll } from './review-scroll.ts';
 import { EFFECTS_EVENT, useExpandedEffects } from './effect-preferences.ts';
+import { useDefaultReviewView, VIEW_EVENT, type ReviewView } from './review-view.ts';
+import { ModeSwitch } from './mode-switch.tsx';
+import { readPlace, savePlace } from './places.ts';
 
 // The viewer reads the interface language from its address.
 export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number, change?: number) => `/review/${task.projectId}/?task=${task.name}${round ? `&round=${round}${change === undefined ? '&history=1' : `&change=${change}`}` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
 // The same viewer shows a paper's uncommitted changes against its last commit.
-export const changesUrl = (projectId: string) => `/review/${projectId}/?changes=1${language() === 'en' ? '' : `&lang=${language()}`}`;
+// The manuscript's own PDF / Changes switch chooses its PDF; its review of the
+// changes shows them alone.
+export const changesUrl = (projectId: string) => `/review/${projectId}/?changes=1&view=changes${language() === 'en' ? '' : `&lang=${language()}`}`;
 
 // The embedded viewer shares our origin. Keep its decision controls, but remove
 // navigation and the task title that the workspace already provides. Its bar
@@ -30,8 +35,12 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
   style.textContent = themeStyles + `
     :root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Noto Sans SC",system-ui,sans-serif;--comment:var(--accent);--accept:var(--green);--reject:var(--red);--frame:var(--canvas);--bar:var(--bg);--muted:var(--text-3);--ink:var(--text);--head:var(--bg-subtle);font-size:14px}
     .banner{border-radius:10px}
-    .source,.source-code,.composer textarea,.composer button,.unit-actions button,.toast,.change-map-tooltip,.review-mode,.review-mode select,.review-complete,.change.standalone{background:var(--bg);color:var(--text)}
+    .source,.source-code,.unit-actions button,.toast,.change-map-tooltip,.review-mode,.review-mode select,.review-complete,.change.standalone{background:var(--bg);color:var(--text)}
     .banner{background:var(--accent-soft);border-color:var(--accent-line)}.banner .details{background:var(--bg-subtle)}
+    .composer{border-color:color-mix(in srgb,var(--line-strong) 65%,transparent);box-shadow:var(--float)}
+    .composer-close:hover{background:var(--bg-hover);color:var(--text)}
+    .composer-send{background:var(--primary)}.composer-send:hover:not(:disabled){background:var(--primary-hover)}.composer-send:disabled{background:var(--bg-active);color:var(--text-3)}
+    .composer-send:focus-visible,.composer-close:focus-visible{outline:none;box-shadow:var(--ring)}
     .source-title{color:var(--text-2)}
     .source-code del{background:var(--red-soft);color:var(--red)}
     .source-code ins{background:var(--green-soft);color:var(--green)}
@@ -51,7 +60,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .review-complete-actions .commit-button{height:auto;min-height:30px;padding:5px 12px;white-space:nowrap}
     .review-complete-actions .commit-button:disabled{opacity:.5;cursor:default}
     :root[data-papilot-phone] .review-complete-actions{justify-content:flex-start;margin-left:0}
-    :root[data-papilot-phone] .review-complete-actions .commit-state{flex-basis:100%}
+    :root[data-papilot-phone] .review-complete-actions .commit-state:not(.task-save-result){flex-basis:100%}
     :root[data-papilot-phone] .review-complete-actions .commit-button{min-height:40px}
     /* Page images follow the theme like the manuscript's PDF. They are
        transparent: the sheet is the paper, and the before/after rows tint it. */
@@ -181,12 +190,14 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       }
       .composer{left:0!important;right:0!important;width:auto!important;max-width:none;top:var(--papilot-review-bar-height,48px);bottom:auto;transform:none;max-height:calc(100% - var(--papilot-review-bar-height,48px) - var(--keyboard,0px));overflow:auto;border-width:0 0 1px;border-radius:0 0 16px 16px}
       #root:has(>.composer) .change-head .dock{display:none}
-      .composer textarea{font-size:16px;min-height:76px;max-height:min(140px,30vh);resize:none}.composer button{min-height:44px}
-      .composer-row{justify-content:flex-end;gap:8px}.composer-row .muted{display:none}
+      .composer textarea{font-size:16px;min-height:76px;max-height:min(140px,30vh)}.composer-head{padding:10px 10px 0 16px}.composer-close{width:40px;height:40px}.composer-send{width:44px;height:44px}
+      .composer-row{justify-content:flex-end;padding:4px 12px 12px 16px}.composer-row .muted{display:none}
       .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-crop-scale,1));margin-left:calc(-100% * var(--pdf-crop-scale,1) * var(--pdf-crop-shift,0))}
       .side,.context{overflow-x:clip}
     }
     /* History shares the PDF tools' size. Shortcut settings live in Papilot. */
+    /* Papilot shows the full paper switch with its own controls. */
+    .view-switch{display:none}
     .bar .ghost.history{display:inline-flex;align-items:center;justify-content:center;width:var(--papilot-button-size,30px);height:var(--papilot-button-size,30px);min-height:0;padding:0;font-size:0}
     .bar .history::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-history) center/contain no-repeat;mask:var(--icon-history) center/contain no-repeat}
     /* Reserve the outer tools' row when there is too little room. Keep
@@ -232,6 +243,18 @@ function cropMargins(doc: Document) {
 export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNotes, onDecided }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onSendNotes?: (message: { text: string; requestKey: string; notes?: NoteSummary[] }) => Promise<void>; onDecided?: () => void }) {
   const shortcuts = useShortcuts();
   const expandedEffects = useExpandedEffects();
+  // A review opens on the default from Settings, or on the view the author
+  // last chose for this task, and follows the default when it changes.
+  const viewPlace = task ? 'review-view:' + task.id : '';
+  const defaultView = useDefaultReviewView(), [view, setView] = useState<ReviewView>(() => (viewPlace && readPlace<ReviewView>(viewPlace)) || defaultView), [fullPaper, setFullPaper] = useState(false);
+  const followed = useRef(defaultView);
+  useEffect(() => {
+    if (followed.current === defaultView) return;
+    followed.current = defaultView; setView(defaultView); if (viewPlace) savePlace(viewPlace, undefined);
+  }, [defaultView, viewPlace]);
+  const chooseView = (value: ReviewView) => { setView(value); if (viewPlace) savePlace(viewPlace, value); };
+  // A task's review offers the whole paper as PDF, where the manuscript has its PDF.
+  const modes = task && fullPaper ? <ModeSwitch mode={view === 'paper' ? 'pdf' : 'changes'} onMode={mode => chooseView(mode === 'pdf' ? 'paper' : 'changes')} changesTitle={t('Changes')}/> : null;
   const noteLinks = useNoteResults(), linksRef = useRef(noteLinks); linksRef.current = noteLinks;
   // Current changes open in the usual review; only older results need history.
   const linkedRound = task ? noteLinks?.focus?.change.round : undefined;
@@ -260,6 +283,18 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     document?.defaultView?.dispatchEvent(new CustomEvent(EFFECTS_EVENT, { detail: expandedEffects }));
   }, [document, expandedEffects]);
   useEffect(() => {
+    document?.defaultView?.dispatchEvent(new CustomEvent(VIEW_EVENT, { detail: view }));
+  }, [document, view]);
+  // The review marks when its round can be shown in the whole paper.
+  useEffect(() => {
+    if (!document) { setFullPaper(false); return; }
+    const root = document.documentElement, update = () => setFullPaper(root.dataset.fullPaper === 'available');
+    update();
+    const watcher = new MutationObserver(update);
+    watcher.observe(root, { attributes: true, attributeFilter: ['data-full-paper'] });
+    return () => watcher.disconnect();
+  }, [document]);
+  useEffect(() => {
     const view = document?.defaultView;
     if (!view) return;
     const open = (event: Event) => { event.preventDefault(); window.dispatchEvent(new Event('papilot:open-shortcuts')); };
@@ -280,7 +315,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     const element = leading.current; if (!element) { setLeadWidth(0); return; }
     const observer = new ResizeObserver(() => setLeadWidth(Math.ceil(element.offsetWidth)));
     observer.observe(element); return () => observer.disconnect();
-  }, [Boolean(lead)]);
+  }, [Boolean(lead || modes)]);
   useEffect(() => {
     if (!document || !frame.current || !hostBar.current) return;
     const root = document.documentElement, bar = document.querySelector<HTMLElement>('.bar');
@@ -361,7 +396,6 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
   }, [document]);
   const ready = phase === 'ready';
   const [slot, setSlot] = useState<Element | null>(null);
-  const [completionOffscreen, setCompletionOffscreen] = useState(false);
   useEffect(() => {
     if (!document || !ready) { setSlot(null); return; }
     const find = () => setSlot(document.querySelector('.review-complete-actions'));
@@ -370,35 +404,23 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     watch.observe(document.body, { childList: true, subtree: true });
     return () => watch.disconnect();
   }, [document, ready]);
+  // The card with Papilot's next step stays at the top of the review while the
+  // author reads on, and lifts with a shadow once the paper scrolls under it.
   useEffect(() => {
-    setCompletionOffscreen(false);
-    const card = slot?.closest<HTMLElement>('.review-complete');
-    const paper = document?.getElementById('paper');
-    if (!card || !paper || !completion) return;
-    const visibility = new IntersectionObserver(([entry]) => setCompletionOffscreen(!entry.isIntersecting), { root: paper });
-    visibility.observe(card);
-    return () => visibility.disconnect();
-  }, [document, slot, Boolean(completion)]);
-  function returnToCompletion() {
-    const card = slot?.closest<HTMLElement>('.review-complete');
-    const paper = document?.getElementById('paper');
-    if (!card || !paper) return;
-    // Scroll only the review pane; focusing must not move the chat or iframe.
-    card.focus({ preventScroll: true });
-    paper.scrollTo({ top: Math.max(0, paper.scrollTop + card.getBoundingClientRect().top - paper.getBoundingClientRect().top - 14), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
-  }
+    const paper = document?.getElementById('paper'), root = document?.documentElement;
+    if (!paper || !root || !slot) return;
+    const sync = () => root.toggleAttribute('data-papilot-scrolled', paper.scrollTop > 0);
+    sync(); paper.addEventListener('scroll', sync, { passive: true });
+    return () => { paper.removeEventListener('scroll', sync); root.removeAttribute('data-papilot-scrolled'); };
+  }, [document, slot]);
   return <div className={'review-viewport' + (ready ? '' : ' review-pending')} aria-busy={!ready}>
     <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}:${focusSequence || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound, linkedChange) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
     <div ref={hostBar} className="review-host-bar">
-      {lead && <div ref={leading} className="review-lead">{lead}</div>}
+      {(lead || modes) && <div ref={leading} className="review-lead">{lead}{modes}</div>}
       <div ref={toolbar} className="review-tools">{task && onSendNotes && <ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>}{tools}</div>
     </div>
     {slot && completion ? createPortal(completion, slot) : null}
-    {document && slot && completion && completionOffscreen ? createPortal(<div className="review-complete-jump">
-      <span><Icon name="check" size={15}/>{t('Review complete')}</span>
-      <button type="button" onClick={returnToCompletion}>{t('Back to summary')}<Icon name="arrowUp" size={14}/></button>
-    </div>, document.body) : null}
     {!ready && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}
   </div>;
 }

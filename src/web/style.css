@@ -121,6 +121,15 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .sidebar-toggle{position:relative}
 .sidebar-toggle:has(.task-added-dot){color:var(--accent);background:var(--accent-soft);animation:task-toggle-notify .8s ease-out 2}
 .task-added-dot{position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--bg);animation:task-notify .8s ease-out 2}
+/* A flying copy keeps its card's classes; those placing the card in a list
+   (My notes sets position, layer and shadow) must not place the copy. */
+.note-flight{position:fixed!important;top:0;left:0;z-index:60!important;box-sizing:border-box;margin:0!important;overflow:hidden;list-style:none;border-color:var(--accent);background:var(--bg);color:var(--text-2);font-size:12px;box-shadow:0 14px 36px rgb(0 0 0/.18),0 0 0 3px var(--accent-soft)!important;transform-origin:top left;pointer-events:none;will-change:transform,opacity}
+[data-notes-home]{position:relative}
+/* A note that just joined the task lights up where it landed. */
+.task-note-reference.note-arrived{animation:note-arrived 1.3s ease-out}
+[data-task-home].task-received{animation:task-received .45s cubic-bezier(.3,1.5,.5,1)}
+[data-notes-home].notes-received{z-index:1;color:var(--accent);background:var(--accent-soft);animation:notes-received .45s cubic-bezier(.3,1.5,.5,1)}
+.notes-received::after{content:attr(data-received);position:absolute;top:-4px;right:-5px;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:999px;background:var(--primary);color:#fff;box-shadow:0 0 0 2px var(--bg);font:600 10px/16px var(--sans);font-variant-numeric:tabular-nums;text-align:center;pointer-events:none;animation:notes-received-count 1.6s ease-out both}
 .task-link{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;text-align:left;padding:8px 4px 8px 10px;border-radius:var(--r-md)}
 .task-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:14px;line-height:1.35;color:var(--text);overflow:hidden;overflow-wrap:anywhere;white-space:normal}
 .task-row.active .task-title{font-weight:500}
@@ -192,6 +201,7 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .connection-banner>button{font-size:13px;font-weight:500;padding:4px 8px;border-radius:var(--r-sm);white-space:nowrap;color:var(--accent)}
 .connection-banner>button:hover{background:var(--bg-hover)}
 .toast{position:fixed;z-index:40;left:50%;top:68px;transform:translateX(-50%);display:flex;align-items:flex-start;gap:10px;width:max-content;max-width:min(540px,calc(100vw - 24px));padding:10px 8px 10px 14px;border:1px solid var(--red-line);border-radius:var(--r-lg);background:var(--bg);box-shadow:var(--float);color:var(--red);font-size:13.5px;line-height:1.5;animation:toast-in .2s var(--ease)}
+.toast.toast-status{align-items:center;padding-right:14px;border-color:var(--line);color:var(--text-2)}
 .toast>svg{margin-top:2px}
 .toast>span{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--text)}
 .toast>.icon-button{width:24px;height:24px;margin-top:-1px}
@@ -224,8 +234,7 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .review-tools .icon-button{width:30px;height:30px}
 .review-tools [aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
 .review-tools .commit-staged{height:28px;padding:0 9px;font-size:13px;border-radius:7px;gap:6px}
-/* The PDF page leads its toolbar with PDF or Changes: in the PDF view before
-   the section title, in the changes review over the start of its bar. */
+/* The PDF / Changes switch leads both the PDF toolbar and the changes bar. */
 .pdf-modes{display:inline-grid;grid-template-columns:repeat(2,1fr);gap:2px;padding:2px;border:1px solid var(--line-strong);border-radius:9px;background:var(--bg-active);flex-shrink:0}
 .pdf-modes>button{display:flex;align-items:center;justify-content:center;gap:5px;height:26px;padding:0 9px;border-radius:6px;font-size:13px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background-color .15s,color .15s,box-shadow .15s}
 .pdf-modes>button:hover{color:var(--text);background:var(--bg-hover)}
@@ -233,9 +242,10 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .pdf-modes>button[aria-pressed=true]>svg{color:var(--accent)}
 .pdf-modes>button:focus-visible{position:relative;outline-offset:1px}
 @container (max-width:620px){.pdf-modes>button{width:32px;padding:0}.pdf-modes>button>span{display:none}}
+.pdf-modes.labeled>button{width:auto;padding:0 10px}.pdf-modes.labeled>button>span{display:inline}
 .review-lead{min-height:44px;display:flex;align-items:center;gap:4px;padding-left:8px;flex-shrink:0}
 /* Before the first PDF exists, use the same toolbar sizing and responsive
-   modes as the viewer. Only the section spacer grows, never the icon gaps. */
+   modes as the viewer. Only the toolbar spacer grows, never the icon gaps. */
 .manuscript-lead{container-type:inline-size}
 .review-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:24px;text-align:center;color:var(--text-2);font-size:14px;line-height:1.6;overflow:auto;background:var(--canvas)}
 .review-loading p{max-width:340px}
@@ -432,13 +442,17 @@ body.resizing iframe{pointer-events:none}
 .composer.large .composer-footer{padding:6px 10px 10px 14px}
 .composer.large .send-button{width:36px;height:36px}
 .composer-options{display:flex;align-items:center;gap:6px;min-width:0;flex:1;flex-wrap:nowrap}
-.chip-select{position:relative;display:inline-flex;align-items:center;gap:6px;height:30px;max-width:240px;min-width:0;padding:0 26px 0 11px;border:1px solid var(--line);border-radius:999px;font-size:13px;font-weight:500;color:var(--text);background:var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8a8a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center;cursor:pointer;transition:border-color .15s,background-color .15s}
-.chip-select:hover{border-color:var(--line-strong);background-color:var(--bg-subtle)}
-.chip-select:focus-within{border-color:var(--accent);box-shadow:var(--ring)}
-.chip-select>svg{color:var(--text-3)}
+.chip-select{position:relative;display:inline-flex;align-items:center;gap:6px;height:30px;max-width:240px;min-width:0;padding:0 9px 0 11px;border:1px solid var(--line);border-radius:999px;font-size:13px;font-weight:500;text-align:left;color:var(--text);background:var(--bg);cursor:pointer;transition:border-color .15s,background-color .15s}
+.chip-select:hover:not(:disabled),.chip-select[aria-expanded=true]{border-color:var(--line-strong);background-color:var(--bg-subtle)}
+.chip-select:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
+.chip-select>svg{flex:none;color:var(--text-3)}
+.chip-select>svg:last-child{margin-left:auto;transition:transform .15s var(--ease)}
+.chip-select[aria-expanded=true]>svg:last-child{transform:rotate(180deg)}
 .chip-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chip-select select{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;appearance:none;-webkit-appearance:none;font-size:16px;cursor:pointer}
-.chip-select:has(select:disabled){opacity:.6;cursor:default}
+.chip-select:disabled{opacity:.6}
+/* Fields in dialogs: a full-width row that opens the same list. */
+.chip-select.field-select{display:flex;width:100%;max-width:none;height:38px;margin-top:6px;padding:0 11px;border-color:var(--line-strong);border-radius:var(--r);font-size:14px;font-weight:400}
+.select-anchor{display:contents}
 /* One unobtrusive control for the agent, model, reasoning and speed. */
 .agent-picker{min-width:0;display:inline-flex;flex:1}
 .agent-picker-trigger{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;height:28px;padding:0 6px;border-radius:var(--r);font-size:12px;color:var(--text-2)}
@@ -515,7 +529,7 @@ body.resizing iframe{pointer-events:none}
 .usage .critical .usage-value{color:var(--red)}
 .usage-value{font-variant-numeric:tabular-nums;color:var(--text-2)}
 .usage-credits{font-variant-numeric:tabular-nums}
-.chip-select.zoom-chip{height:28px;padding:0 24px 0 10px;border-radius:7px;border-color:var(--line-strong);font-size:13px;color:var(--text-2);box-shadow:var(--shadow-xs);background-position:right 7px center}
+.chip-select.zoom-chip{height:28px;padding:0 7px 0 10px;border-radius:7px;border-color:var(--line-strong);font-size:13px;color:var(--text-2);box-shadow:var(--shadow-xs)}
 
 /* Home */
 .home{flex:1;min-height:0;overflow:auto;display:flex;padding:24px;background:radial-gradient(120% 70% at 50% 0%,var(--bg) 40%,var(--bg-subtle) 100%)}
@@ -573,11 +587,13 @@ body.resizing iframe{pointer-events:none}
 .contents-page{flex-shrink:0;color:var(--text-3);font-variant-numeric:tabular-nums}
 .git-panel{flex:1;min-height:0;overflow:auto;padding:4px 0 24px}
 .notes-panel{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
-.draft-notes-head{flex:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px;padding-bottom:6px;font-size:12px;color:var(--text-3)}
+.draft-notes-head{flex:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:2px 8px;font-size:12px;color:var(--text-3)}
 .note-selection-head{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%}
-.note-select-all{padding:4px 0;color:var(--text-2);font:inherit}
+.note-select-all{padding:4px 0;color:var(--text-2);font:inherit;white-space:nowrap}
+.draft-notes-head .note-select-all{margin-left:auto}
 .note-select-all:hover:not(:disabled){color:var(--accent)}
 .note-selection-hint{margin:0 0 6px;font-size:12px;color:var(--text-3)}
+.notes-panel>.note-section:first-of-type{margin-top:0}
 .notes-panel .note-card{position:relative;isolation:isolate;transition:background-color .15s,border-color .15s}
 .notes-panel .note-card[data-selected=true]{background:color-mix(in srgb,var(--note-color,var(--accent)) 11%,var(--bg));border-color:color-mix(in srgb,var(--note-color,var(--accent)) 55%,var(--line))}
 .notes-panel .note-card.active{box-shadow:inset 3px 0 0 var(--note-color,var(--accent))}
@@ -604,8 +620,7 @@ body.resizing iframe{pointer-events:none}
 /* pdf.js viewer: toolbar, find bar, pages and the note layer above each page */
 .pdf-view{flex:1;min-height:0;display:flex;flex-direction:column;container-type:inline-size}
 .pdf-toolbar{display:flex;align-items:center;gap:6px;height:46px;padding:0 8px;border-bottom:1px solid var(--line);background:var(--bg);flex-shrink:0}
-.pdf-section{flex:1;display:flex;align-items:center;min-width:0;height:32px;padding:0 10px;color:var(--text);text-align:left}
-.pdf-section-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:400 15px/1.3 var(--serif)}
+.pdf-toolbar-spacer{flex:1;min-width:0}
 .pdf-pager,.pdf-zoom{display:flex;align-items:center;gap:2px;flex-shrink:0}
 .pdf-pager{font-size:13px;color:var(--text-2)}
 .pdf-pager input{width:44px;height:28px;padding:0 4px;text-align:center;border:1px solid var(--line-strong);border-radius:7px;font-size:13px;font-variant-numeric:tabular-nums;outline:none}
@@ -614,7 +629,7 @@ body.resizing iframe{pointer-events:none}
 .pdf-zoom{padding:0 4px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
 .pdf-toolbar .icon-button{width:30px;height:30px}
 .pdf-toolbar .icon-button.active,.pdf-find .icon-button.active{background:var(--accent-soft);color:var(--accent)}
-@container (max-width:760px){.pdf-toolbar .pdf-zoom{display:none}.pdf-toolbar .pdf-section{padding:0}}
+@container (max-width:760px){.pdf-toolbar .pdf-zoom{display:none}}
 @container (max-width:620px){.pdf-pager>.icon-button{display:none}}
 @container (max-width:400px){.pdf-toolbar .pdf-modes>button{padding:0 6px}.pdf-pages{min-width:24px;padding-left:2px}}
 .pdf-find{display:flex;align-items:center;gap:6px;height:44px;padding:0 8px 0 14px;border-bottom:1px solid var(--line);background:var(--bg-subtle);flex-shrink:0}
@@ -652,54 +667,52 @@ body.resizing iframe{pointer-events:none}
 .region-capture{position:absolute;inset:0;pointer-events:auto;cursor:crosshair;touch-action:none}
 .menu-hint{flex-shrink:0;margin-left:12px;font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums}
 .panel-label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--text-3);margin:0 0 10px}
-.git-branch{display:flex;align-items:center;gap:8px;padding:14px 20px 2px;font-size:14px}
-.git-branch>svg,.git-commit>svg{color:var(--text-3);flex-shrink:0}
-.git-branch code{font-size:14px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.git-sync{display:flex;gap:8px;padding:2px 8px;border-radius:999px;background:var(--bg-muted);font-size:12px;font-weight:500;color:var(--text-2);white-space:nowrap}
-.git-upstream{margin:0;padding:0 20px 0 44px;font-size:12.5px;color:var(--text-3)}
-.git-upstream code{font-size:12.5px}
-.git-commit{display:flex;gap:8px;margin:12px 12px 4px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg-subtle)}
-.git-commit>div{min-width:0}
-.git-commit p{margin:0;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
-.git-commit small{display:block;margin-top:2px;font-size:12px;color:var(--text-3)}
-.git-commit code{font-size:12px}
-.git-section{display:flex;align-items:center;gap:8px;margin:0;padding:16px 20px 6px;font-size:12px;font-weight:600;color:var(--text-3)}
-.git-total{margin-left:auto;font:12px/1 var(--mono)}
-.git-remote{display:flex;align-items:center;gap:4px;margin-left:auto}
-.git-remote .button.compact{height:28px;padding:0 10px}
-.git-remote .icon-button{width:28px;height:28px}
-.git-panel input[type=checkbox]{flex:none;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
-.git-message{margin:10px 20px 0;font-size:13px}
+/* The Git panel, after Cursor's source control: views with a header,
+   the commit box, and staged and unstaged lists whose actions show on hover. */
+.git-message{margin:0 12px 6px;font-size:12px}
 .git-notice{display:flex;align-items:center;gap:6px;color:var(--green)}
-.git-commit-form{display:flex;flex-direction:column;gap:8px;padding:2px 20px 10px}
-.git-commit-form textarea{display:block;width:100%;min-height:58px;resize:vertical;padding:8px 10px;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--bg);font:inherit;font-size:13.5px;line-height:1.45;color:var(--text);outline:none}
-.git-commit-form textarea:focus{border-color:var(--accent);box-shadow:var(--ring)}
-.git-commit-form .button{width:100%}
 .git-message-box{position:relative}
-.git-commit-form .git-message-box textarea{padding-right:40px}
 .git-generate{position:absolute;top:5px;right:5px;width:28px;height:28px;color:var(--accent)}
-.git-ignore{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 20px 8px;padding:5px 5px 5px 10px;border:1px solid var(--amber-line);border-radius:var(--r);background:var(--amber-soft);font-size:13px;color:var(--amber-text)}
-.git-ignore .button{flex-shrink:0;color:var(--amber-text)}
-.git-merge{margin:0 20px 12px;padding:10px 12px;border:1px solid var(--red-line);border-radius:var(--r);background:var(--red-soft);font-size:13.5px}
+.git-commit-form{display:flex;flex-direction:column;gap:6px;padding:2px 12px 8px}
+.git-commit-form textarea{display:block;width:100%;min-height:32px;max-height:180px;field-sizing:content;resize:none;padding:6px 36px 6px 9px;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--bg);font:inherit;font-size:12.5px;line-height:18px;color:var(--text);outline:none}
+.git-commit-form textarea:focus{border-color:var(--accent);box-shadow:var(--ring)}
+.git-commit-form .git-generate{top:2px;right:3px}
+.git-commit-split{display:flex}
+.git-commit-button{flex:1;height:28px;gap:6px;font-size:12.5px}
+.git-commit-split.has-menu .git-commit-button{border-top-right-radius:0;border-bottom-right-radius:0}
+.git-commit-more{flex:none;width:28px;height:28px;padding:0;border-top-left-radius:0;border-bottom-left-radius:0;box-shadow:inset 1px 0 0 rgb(255 255 255/.3)}
+.git-group-header,.git-row{display:flex;align-items:center;gap:4px;min-height:24px}
+.git-group-header{padding:0 8px}
+.git-group-toggle{display:flex;align-items:center;gap:4px;flex:1;min-width:0;min-height:24px;padding:0;font-size:12.5px;color:var(--text-2);text-align:left}
+.git-group-toggle>svg{flex:none;color:var(--text-3)}
+.git-count{flex:none;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bg-active);font:600 11px/18px var(--sans);color:var(--text-2);text-align:center}
+.git-files{list-style:none;margin:0;padding:0}
+.git-row{padding:0 8px 0 24px}
+.git-row:hover,.git-group-header:hover,.git-files li.open>.git-row{background:var(--bg-hover)}
+.git-file{flex:1;min-width:0;display:flex;align-items:center;gap:6px;min-height:24px;padding:0;border:0;background:none;font:inherit;text-align:left;color:inherit;cursor:pointer}
+.git-file>svg{flex:none;color:var(--text-3)}
+.git-name{flex-shrink:0;max-width:100%;font-size:12.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.git-dir{min-width:0;font-size:11.5px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.git-row-actions{display:flex;flex:none;gap:1px}
+.git-row-actions .icon-button{width:22px;height:22px;color:var(--text-2)}
+@media(hover:hover){.git-row-actions{opacity:0}.git-row:hover .git-row-actions,.git-row:focus-within .git-row-actions,.git-group-header:hover .git-row-actions,.git-group-header:focus-within .git-row-actions{opacity:1}}
+.git-code{flex:none;width:14px;font:600 12px/24px var(--mono);text-align:center;color:var(--text-3)}
+.git-code.s-m{color:var(--amber-text)}.git-code.s-a,.git-code.s-u{color:var(--green)}.git-code.s-d,.git-code.s-conflict{color:var(--red)}.git-code.s-r,.git-code.s-c{color:var(--accent)}
+.git-clean{display:flex;align-items:center;gap:8px;margin:0;padding:2px 12px 8px 24px;font-size:12px;color:var(--text-3)}
+.git-panel .git-diff-wrap{margin:2px 8px 8px 24px}
+.git-merge{margin:0 12px 8px;padding:10px 12px;border:1px solid var(--red-line);border-radius:var(--r);background:var(--red-soft);font-size:13px}
 .git-merge.resolved{border-color:var(--accent-line);background:var(--accent-soft)}
 .git-merge>p{display:flex;flex-direction:column;gap:2px;margin:0 0 10px}
 .git-merge>p span{font-size:12.5px;color:var(--text-2);overflow-wrap:anywhere}
 .git-merge .button-row{justify-content:flex-start;flex-wrap:wrap}
 .git-merge .button-row .button{gap:6px}
 .git-merge-summary{max-height:240px;overflow:auto;margin:0 0 10px;padding:8px 10px;border-radius:var(--r);background:var(--bg);font-size:13px}
-.git-code.s-conflict{color:var(--red);background:var(--red-soft)}
 .commit-dialog .commit-files{display:flex;flex-direction:column;gap:3px;margin:-12px 0 16px;padding:0;list-style:none;font-size:13px}
 .commit-dialog .commit-files code{font:12.5px var(--mono);color:var(--text-2);overflow-wrap:anywhere}
 .commit-dialog textarea{height:auto;min-height:84px;padding:8px 42px 8px 11px;resize:vertical;line-height:1.45;font-family:inherit}
 .commit-dialog .git-generate{top:11px}
 .commit-dialog .inline-error{margin-top:10px}
-.git-files{list-style:none;margin:0;padding:0 8px}
-.git-files li{border-radius:var(--r)}
-.git-row{display:flex;align-items:center;gap:10px;min-height:34px;padding:4px 12px;border-radius:var(--r)}
-.git-row:hover,.git-files li.open .git-row{background:var(--bg-hover)}
-.git-file{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden;padding:0;border:0;background:none;font:inherit;text-align:left;color:inherit;cursor:pointer}
 .git-diff-wrap{max-height:420px;margin:4px 4px 10px 37px;overflow:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
-/* LaTeX paragraphs are long lines, so diff lines wrap with a hanging indent. */
 .git-diff{margin:0;padding:6px 0;font:12px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text-2)}
 .git-diff span{display:block;padding:0 12px 0 24px;text-indent:-12px}
 .git-diff .add{background:var(--green-soft);color:var(--green)}
@@ -708,16 +721,6 @@ body.resizing iframe{pointer-events:none}
 .git-diff .note{color:var(--text-3)}
 .git-diff-wrap .inline-error{margin:8px 10px}
 .git-diff-note{margin:0;padding:8px 12px;font-size:12.5px;color:var(--text-3)}
-.git-name{flex-shrink:0;max-width:100%;font-size:13.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.git-dir{min-width:0;font-size:12.5px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.git-lines,.git-total{white-space:nowrap}
-.git-lines{flex-shrink:0;font:12px/1 var(--mono)}
-.git-lines ins,.git-total ins{text-decoration:none;color:var(--green)}
-.git-lines del,.git-total del{text-decoration:none;color:var(--red)}
-.git-code{flex-shrink:0;width:18px;height:18px;border-radius:5px;font:700 11px/18px var(--mono);text-align:center;color:var(--text-3);background:var(--bg-muted)}
-.git-code.s-m{color:var(--accent);background:var(--accent-soft)}.git-code.s-a{color:var(--green);background:var(--green-soft)}.git-code.s-d{color:var(--red);background:var(--red-soft)}.git-code.s-r{color:var(--purple);background:var(--purple-soft)}
-.git-clean{display:flex;align-items:center;gap:8px;margin:0;padding:8px 20px;font-size:13.5px;color:var(--text-3)}
-.git-clean>svg{color:var(--green)}
 
 /* Menus */
 .action-menu{position:fixed;inset:auto;margin:0;padding:5px;min-width:210px;max-width:min(380px,calc(100vw - 16px));border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg);color:var(--text);box-shadow:var(--float);font-size:14px}
@@ -731,6 +734,21 @@ body.resizing iframe{pointer-events:none}
 .menu-label{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
 .menu-label,.menu-detail{white-space:nowrap;text-overflow:ellipsis}
 .menu-detail{overflow:hidden;font:12px/1.4 var(--mono);color:var(--text-3)}
+/* A select's list: the menu surface, with the chosen option checked and the
+   keyboard's or pointer's option highlighted while focus stays on the chip. */
+.select-list{min-width:160px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.select-group{display:flex;flex-direction:column;gap:1px}
+.select-group+.select-group{margin-top:4px;padding-top:4px;border-top:1px solid var(--line)}
+.select-group-label{padding:6px 10px 3px 36px;font-size:11.5px;font-weight:600;letter-spacing:.02em;color:var(--text-3)}
+.select-option{display:flex;align-items:center;gap:10px;min-height:34px;padding:5px 10px;border-radius:var(--r);cursor:pointer;user-select:none}
+.select-option.active{background:var(--bg-hover)}
+.select-option[aria-selected=true] .menu-label{font-weight:500}
+.select-option[aria-disabled]{opacity:.45;cursor:default}
+.select-option .menu-label{white-space:nowrap}
+.select-detail{overflow:hidden;font-size:12px;font-weight:400;color:var(--text-3);text-overflow:ellipsis;white-space:nowrap}
+/* The ring follows the text color, so a dark swatch stays visible in dark mode. */
+.select-swatch{flex:none;width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 18%,transparent)}
+.chip-select>.select-swatch{width:14px;height:14px}
 .paper-menu [role=menuitemradio] .menu-label{font:400 15.5px/1.35 var(--serif)}
 .paper-menu{min-width:280px}
 .menu-item-row{display:flex;align-items:center;gap:2px}
@@ -742,6 +760,14 @@ body.resizing iframe{pointer-events:none}
 .paper-dialog-name{overflow-wrap:anywhere;font-weight:500;margin-bottom:10px}
 .paper-dialog p{font-size:13px;line-height:1.6;margin-bottom:12px}
 .paper-dialog-actions{flex-wrap:wrap}
+.paper-dialog h2+form{margin-top:20px}
+.modal-field{font-size:13.5px;font-weight:500;color:var(--text);margin-bottom:16px}
+.paper-location{display:flex;align-items:center;gap:8px;height:38px;margin-top:6px;padding:0 4px 0 11px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-subtle);font-size:14px;font-weight:400}
+.paper-location>svg{flex:none;color:var(--text-3)}
+.paper-location-path{display:flex;flex:1;min-width:0;white-space:nowrap}
+.paper-location-parent{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text-3)}
+.paper-location-name{flex:0 0 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.paper-location .button{flex:none}
 .paper-dialog-actions .paper-remove{margin-right:auto;padding-left:0;color:var(--red)}
 @media(max-width:680px){.menu-item-row>button{min-height:50px;padding:5px 12px}.menu-item-row .paper-actions{flex-basis:40px;min-height:40px;width:40px;height:40px}.paper-dialog-actions{gap:6px}.paper-dialog-actions .button{padding-inline:10px;font-size:13px}.paper-dialog-actions .paper-remove{padding-inline:0;gap:4px}}
 .menu-separator{height:1px;background:var(--line);margin:4px 6px}
@@ -774,8 +800,6 @@ body.resizing iframe{pointer-events:none}
 .settings-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-top:1px solid var(--line)}
 .settings-row:first-of-type{border-top:0}
 .settings-name{font-size:14px;font-weight:500;color:var(--text)}
-/* The chip's own select is an invisible overlay; the dialog's field style must not reach it. */
-.modal .chip-select select{display:block;width:100%;height:100%;margin:0;padding:0;border:0;box-shadow:none}
 .segmented{display:inline-flex;gap:2px;padding:3px;border-radius:var(--r-md);background:var(--bg-muted)}
 .segmented label{position:relative;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:7px;font-size:13px;color:var(--text-2);cursor:pointer;transition:background-color .12s,color .12s}
 .segmented label:hover{color:var(--text)}
@@ -914,6 +938,8 @@ body.resizing iframe{pointer-events:none}
   .action-menu::backdrop{background:rgb(0 0 0/.3)}
   .action-menu::before{content:attr(aria-label);padding:8px 12px 6px;font-size:13px;font-weight:500;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .action-menu>button,.action-menu>a{min-height:50px;font-size:16px;padding:4px 12px;gap:12px;border-radius:var(--r-md)}
+  .select-list{max-height:min(70vh,520px)!important}
+  .select-option{min-height:50px;font-size:16px;padding:4px 12px;gap:12px;border-radius:var(--r-md)}
   .review-tools{min-height:48px;padding-right:4px}
   .review-lead{min-height:48px}
   .chip-select.zoom-chip{height:36px}
@@ -932,8 +958,6 @@ body.resizing iframe{pointer-events:none}
   .manuscript-pages{flex:1;display:flex;flex-direction:column}
   .pdf-toolbar{gap:2px;padding:0 4px}
   .pdf-zoom{display:none}
-  /* The PDF / Changes switch takes the section title's place. */
-  .pdf-modes~.pdf-section{flex:1;padding:0;visibility:hidden}
   .pdf-modes>button{width:36px;height:32px;padding:0}
   .pdf-modes>button>span{display:none}
   .pdf-toolbar .icon-button{width:40px;height:40px}
@@ -965,6 +989,8 @@ body.resizing iframe{pointer-events:none}
   .modal-close{width:44px;height:44px;right:6px;top:6px}
   .toast{top:60px}
 }
+/* The paper's four views and its share button fit a large phone when only the open view keeps its label. */
+@media(max-width:520px){.manuscript-view-selector>button:not([aria-pressed=true])>span{display:none}}
 @media(max-width:400px){.view-selector>button>span{display:none}.view-selector>button{padding:0 11px}.task-state-actions .button-label{display:none}}
 
 @keyframes pulse{50%{opacity:.35}}
@@ -977,6 +1003,10 @@ body.resizing iframe{pointer-events:none}
 @keyframes task-land{0%{transform:scale(.96)}55%{transform:scale(1.02)}100%{transform:none}}
 @keyframes task-added{0%,18%,38%{background:color-mix(in srgb,var(--accent) 20%,var(--sidebar));box-shadow:inset 3px 0 var(--accent),inset 0 0 0 1px var(--accent-line)}28%,55%{background:var(--accent-soft);box-shadow:inset 3px 0 var(--accent),inset 0 0 0 1px transparent}100%{background:var(--task-row-background,transparent);box-shadow:inset 3px 0 transparent,inset 0 0 0 1px transparent}}
 @keyframes task-notify{0%{transform:scale(.7);box-shadow:0 0 0 2px var(--bg),0 0 0 0 var(--accent-line)}45%{transform:scale(1.3)}100%{transform:scale(1);box-shadow:0 0 0 2px var(--bg),0 0 0 9px transparent}}
+@keyframes notes-received{40%{transform:scale(1.2)}100%{transform:none}}
+@keyframes note-arrived{0%,30%{border-color:var(--accent);background:var(--accent-soft)}}
+@keyframes task-received{40%{transform:scale(1.12);color:var(--accent)}}
+@keyframes notes-received-count{0%{opacity:0;transform:scale(.4)}15%{opacity:1;transform:scale(1.15)}25%,80%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-3px)}}
 @keyframes task-toggle-notify{0%,100%{transform:none}30%{transform:translateX(-3px)}60%{transform:translateX(2px)}}
 @keyframes sheet-in{from{opacity:0;transform:translateY(16px)}}
 /* Touch screens have no hover, so pressed states confirm each tap. */
@@ -995,13 +1025,15 @@ body.resizing iframe{pointer-events:none}
 .note-mark[data-review].active{background:rgb(217 119 6/.3)}
 .note-tag[data-review]{background:#92400e}
 
-.pdf-reading-notes{position:absolute;z-index:30;top:52px;right:8px;bottom:8px;width:min(360px,calc(100% - 16px));display:flex;flex-direction:column;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);box-shadow:var(--float)}
-.pdf-reading-notes-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px;font-size:13px;color:var(--text-2);flex:none}
+.pdf-reading-notes{position:absolute;z-index:30;top:52px;right:8px;bottom:8px;width:min(360px,calc(100% - 16px));display:flex;flex-direction:column;padding:8px 10px 10px;border:1px solid var(--line);border-radius:12px;background:var(--bg);box-shadow:var(--float)}
+.pdf-reading-notes-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:2px;font-size:13px;color:var(--text-2);flex:none}
+@media(pointer:fine){.pdf-reading-notes-head .icon-button{width:28px;height:28px;margin-right:-4px}}
 .pdf-reading-notes .notes-panel{overflow:auto}
 .task-notes-panel{flex:1;min-height:0;overflow:auto;font-size:12px;color:var(--text-2)}
 .task-note-list{list-style:none;margin:0;padding:0}
 .task-note-reference{padding:8px;margin:6px 0;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
-.task-note-comment{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 var(--sans);color:var(--text)}
+.task-note-comment{display:flow-root;margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 var(--sans);color:var(--text)}
+.task-note-comment>.note-send{float:right;margin-left:8px}
 .task-notes-panel .note-placement-warning{font-size:12px;color:var(--amber-text)}
 
 .ai-review-view{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0}

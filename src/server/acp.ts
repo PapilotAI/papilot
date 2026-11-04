@@ -218,7 +218,8 @@ export class AcpAgent extends Adapter {
       const previous = this.catalog.find(entry => entry.model === option.value);
       const entry = { model: option.value, displayName: option.name, isDefault: option.value === this.defaultModel,
         supportedReasoningEfforts: option.value === current ? levels.map(choice => ({ reasoningEffort: choice.value })) : previous?.supportedReasoningEfforts || [],
-        defaultReasoningEffort: option.value === current ? level : previous?.defaultReasoningEffort || null };
+        // A turn's explicit effort must not become the catalog's default.
+        defaultReasoningEffort: previous?.supportedReasoningEfforts.length ? previous.defaultReasoningEffort : option.value === current ? level : null };
       if (previous) Object.assign(previous, entry); else this.catalog.push(entry);
     }
   }
@@ -239,10 +240,13 @@ export class AcpAgent extends Adapter {
     };
     try {
       const session = await this.session(turn.threadId, thread.cwd, thread.model);
-      if (effort) {
-        const option = session.configOptions?.find(option => option.category === 'thought_level' || option.id === 'thinking');
-        if (!option || !choices(option).some(choice => choice.value === effort)) throw new Error(`${this.name} does not support reasoning effort ${effort} for this model.`);
-        await this.rpc('session/set_config_option', { sessionId: turn.threadId, configId: option.id, value: effort });
+      const option = session.configOptions?.find(option => option.category === 'thought_level' || option.id === 'thinking');
+      const defaultEffort = choices(option).some(choice => choice.value === 'default') ? 'default' : this.catalog.find(model => model.model === thread.model)?.defaultReasoningEffort;
+      const chosenEffort = effort || defaultEffort;
+      if (chosenEffort) {
+        if (!option || !choices(option).some(choice => choice.value === chosenEffort)) throw new Error(`${this.name} does not support reasoning effort ${chosenEffort} for this model.`);
+        const result = await this.rpc('session/set_config_option', { sessionId: turn.threadId, configId: option.id, value: chosenEffort });
+        if (result?.configOptions) session.configOptions = result.configOptions;
       }
       const prompt: any[] = [{ type: 'text', text: thread.started ? text : `${thread.instructions}\n\n---\n\n${text}` }];
       if (images.length && !this.capabilities.promptCapabilities?.image) throw new Error(`This ${this.name} version does not support image input. Update it, or send the images to another agent.`);

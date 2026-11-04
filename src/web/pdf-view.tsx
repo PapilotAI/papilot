@@ -11,12 +11,15 @@ import type { Annotation } from '../shared.ts';
 import { ChipSelect } from './chip-select.tsx';
 import { Icon } from './icons.tsx';
 import { browserStorage } from './storage.ts';
+import { readPlace, savePlace } from './places.ts';
 import { mergeLines } from './note-geometry.ts';
 import { touchSelection } from './touch-select.ts';
 import { t } from './i18n.ts';
 import { PdfNoteCard, type PdfNoteActions } from './pdf-suggestion.tsx';
+import { cMapData } from '../../engine/src/web/pdf-cmaps.ts';
 
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
+const CMapData = cMapData(import.meta.glob<string>('../../node_modules/pdfjs-dist/cmaps/*.bcmap', { eager: true, import: 'default', query: '?url&no-inline' }));
 
 // The pdf.js stylesheet also styles pdf.js's own app (.sidebar, .dialog) and
 // sets a dark color scheme on :root; keep all of it inside the viewer.
@@ -30,7 +33,6 @@ export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note:
 // A touch selection also has its ends: the edge of its first and last word, with that line's top and bottom.
 interface Selection { page: number; rects: Rect[]; quote: string; handles?: { from: [number, number, number]; to: [number, number, number] } }
 
-const touch = () => window.matchMedia('(pointer: coarse)').matches;
 const unit = (value: number) => Math.min(1, Math.max(0, value));
 const percent = ([x0, y0, x1, y1]: Rect): React.CSSProperties => ({ left: `${x0 * 100}%`, top: `${y0 * 100}%`, width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%` });
 const bounds = (rects: Rect[]): Rect => [Math.min(...rects.map(r => r[0])), Math.min(...rects.map(r => r[1])), Math.max(...rects.map(r => r[2])), Math.max(...rects.map(r => r[3]))];
@@ -68,11 +70,27 @@ function exactText(document: PDFDocumentProxy, source: string) {
   document.getPage = (number: number) => {
     if (!pages.has(number)) pages.set(number, getPage(number).then(page => {
       if (page.rotate % 360 !== 0) return page;
-      const own = page.getTextContent.bind(page);
+      const own = page.streamTextContent.bind(page);
       let exact: Promise<ReturnType<typeof textContent> | null> | null = null;
       const content = () => exact ??= fetch(`${source}&page=${number - 1}`).then(response => response.ok ? response.json() : null).then((data: Words | null) => data ? textContent(data, page.view) : null, () => null);
-      page.getTextContent = (async (params?: Parameters<PDFPageProxy['getTextContent']>[0]) => (await content()) || own(params)) as PDFPageProxy['getTextContent'];
-      page.streamTextContent = ((params?: Parameters<PDFPageProxy['getTextContent']>[0]) => new ReadableStream({ async start(controller) { controller.enqueue((await content()) || await own(params)); controller.close(); } })) as PDFPageProxy['streamTextContent'];
+      // pdf.js's getTextContent reads this stream, so it gets the word places
+      // too. Without them the stream falls back to pdf.js's own stream: its
+      // getTextContent would read this one again, forever, and freeze the tab.
+      page.streamTextContent = ((params?: Parameters<PDFPageProxy['streamTextContent']>[0]) => {
+        let fallback: ReadableStreamDefaultReader | null = null;
+        return new ReadableStream({
+          async pull(controller) {
+            if (!fallback) {
+              const words = await content();
+              if (words) { controller.enqueue(words); controller.close(); return; }
+              fallback = own(params).getReader();
+            }
+            const chunk = await fallback.read();
+            if (chunk.done) controller.close(); else controller.enqueue(chunk.value);
+          },
+          cancel: reason => fallback?.cancel(reason),
+        });
+      }) as PDFPageProxy['streamTextContent'];
       return page;
     }));
     return pages.get(number)!;
@@ -134,6 +152,8 @@ export const PdfView = forwardRef<PdfHandle, {
   onOutline: (items: OutlineItem[]) => void; onSection: (index: number) => void;
   lead?: ReactNode;
   tools?: ReactNode;
+  /** Remembers the page and position under this name, and opens there next time. */
+  place?: string;
 }>(function PdfView(props, ref) {
   const latest = useRef(props); latest.current = props;
   const container = useRef<HTMLDivElement>(null), inner = useRef<HTMLDivElement>(null), findInput = useRef<HTMLInputElement>(null);
@@ -279,10 +299,20 @@ export const PdfView = forwardRef<PdfHandle, {
       if (layer.parentElement !== div) div.append(layer);
     };
     bus.on('pagerendered', attach); bus.on('textlayerrendered', attach); bus.on('annotationlayerrendered', attach);
+    // Coming back to this PDF opens it where the author left it, as soon as
+    // its pages have a size (a hidden panel has none yet).
+    const place = latest.current.place;
+    let returning = place ? readPlace<{ page: number; left: number; top: number }>(place) : undefined;
+    const goBack = () => {
+      if (!returning || !box.clientHeight || !viewer.pagesCount) return;
+      const { page, left, top } = returning; returning = undefined;
+      if (page >= 1 && page <= viewer.pagesCount) viewer.scrollPageIntoView({ pageNumber: page, destArray: [null, { name: 'XYZ' }, left, top, null], allowNegativeOffset: true });
+    };
     bus.on('pagesinit', () => {
       const keep = restore.current; restore.current = null;
       viewer.currentScaleValue = keep?.scale || browserStorage.getItem('papilot:pdf-zoom') || 'page-width';
-      if (keep) { box.scrollTop = keep.top; box.scrollLeft = keep.left; }
+      if (keep) { returning = undefined; box.scrollTop = keep.top; box.scrollLeft = keep.left; }
+      else goBack();
     });
     bus.on('pagechanging', ({ pageNumber }: { pageNumber: number }) => { setPage(pageNumber); setPageInput(String(pageNumber)); });
     bus.on('scalechanging', ({ scale, presetValue }: { scale: number; presetValue?: string }) => {
@@ -298,14 +328,15 @@ export const PdfView = forwardRef<PdfHandle, {
         if (!viewer.pagesCount || !box.clientWidth || !box.clientHeight) return;
         const scale = viewer.currentScaleValue;
         if (scale === 'page-width' || scale === 'page-fit' || scale === 'page-height' || scale === 'auto') viewer.currentScaleValue = scale;
-        viewer.update();
+        viewer.update(); goBack();
       });
     });
     resize.observe(box);
     // The current section is the last bookmark above a line 40% down the view
     // (PDF units grow upwards); at the end of the document it is the last one.
-    bus.on('updateviewarea', ({ location }: { location?: { pageNumber: number; top: number; scale: number } }) => {
+    bus.on('updateviewarea', ({ location }: { location?: { pageNumber: number; top: number; left: number; scale: number } }) => {
       if (!location) return;
+      if (place && !returning) savePlace(place, { page: location.pageNumber, left: location.left, top: location.top });
       const items = latest.current.outline, reading = location.top - box.clientHeight * 0.4 / (viewer.currentScale * 96 / 72);
       let current = -1;
       items.forEach((item, index) => { if (item.page < location.pageNumber || (item.page === location.pageNumber && (item.top === null || item.top >= reading))) current = index; });
@@ -444,7 +475,7 @@ export const PdfView = forwardRef<PdfHandle, {
     let cancelled = false, settled = false;
     if (loaded.current) restore.current = { scale: current.viewer.currentScaleValue, top: box.scrollTop, left: box.scrollLeft };
     setLoading(!loaded.current); setError('');
-    const task = pdfjs.getDocument({ url: props.url, enableXfa: false });
+    const task = pdfjs.getDocument({ url: props.url, enableXfa: false, BinaryDataFactory: CMapData });
     task.promise.then(async document => {
       settled = true;
       if (cancelled) { void document.loadingTask.destroy(); return; }
@@ -526,12 +557,11 @@ export const PdfView = forwardRef<PdfHandle, {
     if (!editing) return false;
     setNoteBusy(true); setNoteError('');
     try {
-      await latest.current.onCreate(editing.page, editing.rect, editing.rects, editing.quote, comment, undefined, { reveal: action !== 'close', quote: action === 'quote' });
+      await latest.current.onCreate(editing.page, editing.rect, editing.rects, editing.quote, comment, undefined, { reveal: action === 'keep', quote: action === 'quote' });
       setEditing(null); latest.current.setRegion(false); return true;
     } catch (error) { setNoteError(error instanceof Error ? error.message : String(error)); return false; }
     finally { setNoteBusy(false); }
   }
-  const section = props.outline[props.section];
   const presets = zooms(), zoomLabel = presets.find(option => option.value === zoom.value) ? zoom.value : String(Math.round(zoom.scale * 100) / 100);
   const zoomOptions = presets.some(option => option.value === zoomLabel) ? presets : [...presets, { value: zoomLabel, label: `${Math.round(zoom.scale * 100)}%` }];
 
@@ -548,7 +578,7 @@ export const PdfView = forwardRef<PdfHandle, {
   }}>
     <div className="pdf-toolbar" role="toolbar" aria-label={t('PDF controls')}>
       {props.lead}
-      <div className="pdf-section" title={section?.title}>{section?.title && <span className="pdf-section-title">{section.title}</span>}</div>
+      <div className="pdf-toolbar-spacer"/>
       <div className="pdf-pager">
         <button type="button" className="icon-button" aria-label={t('Previous page')} disabled={page <= 1} onClick={() => tools.current?.viewer.previousPage()}><Icon name="chevronUp" size={16}/></button>
         <input aria-label={t('Page number')} inputMode="numeric" value={pageInput} onChange={e => setPageInput(e.target.value.replace(/\D/g, ''))} onFocus={e => e.currentTarget.select()} onBlur={() => setPageInput(String(page))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); goToPage(); e.currentTarget.blur(); } }}/>

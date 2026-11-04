@@ -21,10 +21,15 @@ const accounts = new Accounts(store, ACCOUNT_ORIGIN || null);
 const manuscripts = new Manuscripts(), changes = new Changes();
 const desktop = process.env.PAPILOT_DESKTOP === '1';
 if (desktop) await desktopDemo(ROOT, DATA, store, workspace, manuscripts).catch(error => console.error('Could not prepare the demo paper:', error));
-const updates = new Updates({ root: ROOT, data: DATA, version: VERSION, port: PORT,
-  ...(desktop ? { supported: false, downloadUrl: 'https://github.com/PapilotAI/papilot/releases/latest' } : {}),
+// A packaged desktop app downloads only Papilot's own code built for its
+// installer (see desktop/runtime.ts) and asks the app to switch to it. npm
+// updates belong to the web server.
+const bundleRoot = desktop && process.send ? process.env.PAPILOT_DESKTOP_BUNDLE : undefined, fingerprint = process.env.PAPILOT_DESKTOP_FINGERPRINT || '';
+const bundle = bundleRoot && fingerprint ? { root: bundleRoot, version: readJson(path.join(bundleRoot, 'package.json'))?.version || '', fingerprint } : undefined;
+const updates = new Updates({ root: ROOT, data: DATA, version: VERSION, port: PORT, desktop, bundle,
+  ...(bundle ? { restart: async (root: string, version: string) => { process.send!({ type: 'papilot:activate', root, version }); } } : {}),
   busy: () => workspace.busyForUpdate || manuscripts.busyForUpdate || changes.busyForUpdate, shutdown: () => shutdown() });
-const activation = readJson(path.join(DATA, 'updates/active.json'));
+const activation = desktop ? null : readJson(path.join(DATA, 'updates/active.json'));
 const updateInstance = typeof activation?.root === 'string' && fs.existsSync(activation.root) && fs.realpathSync(activation.root) === fs.realpathSync(ROOT) ? activation.id : undefined;
 const shared = {
   store, workspace, accounts, manuscripts, changes, updates, updateInstance, csrf: randomBytes(32).toString('base64url'), serialGit: gitQueue(),
@@ -34,6 +39,9 @@ const localListener = { kind: 'local' as const, port: PORT, publicOrigin: PUBLIC
 const apps = [await buildApp({ ...shared, listener: localListener })];
 if (ACCOUNT_ORIGIN) apps.push(await buildApp({ ...shared, listener: { kind: 'account', origin: ACCOUNT_ORIGIN, hsts: accountHsts(ACCOUNT_ORIGIN, PUBLIC_ORIGIN) } }));
 
+// Agent SDKs and the PDF engine load before the first request, not in the
+// middle of one.
+if (!process.env.PAPILOT_UPDATE_PROBE) await Promise.race([Promise.all([workspace.preload(), manuscripts.warm()]), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
 const localUrl = await apps[0].listen({ host: '127.0.0.1', port: PORT }).catch(error => {
   if (!desktop || error.code !== 'EADDRINUSE') throw error;
   return apps[0].listen({ host: '127.0.0.1', port: 0 });
@@ -46,7 +54,9 @@ console.log(`Papilot is running at ${localUrl}${PUBLIC_ORIGIN ? `\nRemote: ${PUB
 if (!process.env.PAPILOT_UPDATE_PROBE) { void workspace.connect(); updates.start(); }
 // Recompute cached feedback counts, including decisions from before this restart.
 for (const task of store.tasks()) {
-  if (task.status === 'building') {
+  if (task.pendingBuild || (task.review?.job?.id && (task.status === 'building' || (task.status === 'failed' && task.error === 'fetch failed')))) {
+    void workspace.resumeBuild(task.id);
+  } else if (task.status === 'building') {
     store.updateTask(task.id, { status: 'interrupted', error: 'The server restarted during the PDF build. Check the review and rebuild it if needed.' });
     void workspace.refresh(task.id);
   } else if (task.review?.round && task.status !== 'deleting') void workspace.refresh(task.id);
@@ -55,7 +65,7 @@ for (const task of store.tasks()) {
 setInterval(() => accounts.purge(), 3600000).unref();
 let shuttingDown = false;
 function shutdown() {
-  if (shuttingDown) return; shuttingDown = true; updates.close(); workspace.close();
+  if (shuttingDown) return; shuttingDown = true; updates.close(); workspace.close(); void manuscripts.stop().catch(() => undefined);
   void Promise.all(apps.map(app => app.close())).finally(() => { store.close(); process.exit(0); });
   setTimeout(() => process.exit(0), 2500).unref();
 }

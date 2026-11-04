@@ -5,8 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Changes, stageLines, stagedLines, unstageLines } from '../src/server/changes.ts';
-import { gitCommit, gitStage, gitStatus } from '../src/server/manuscript.ts';
-import { opcodes } from '../vendor/latex-review/src/core/diff.ts';
+import { gitCommit, gitDiscard, gitStage, gitStatus } from '../src/server/manuscript.ts';
+import { opcodes } from '../engine/src/core/diff.ts';
 
 const lines = (...items: string[]) => items.map(item => item + '\n');
 const hasTeX = (() => { try { execFileSync('latexmk', ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } })();
@@ -55,16 +55,34 @@ test('the Git panel stages whole files and commits only what is staged', async (
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('discarding a file keeps its staged part and deletes only untracked files', async () => {
+  const { root, git, commit } = repository();
+  try {
+    fs.writeFileSync(path.join(root, 'main.tex'), 'One.\n'); fs.writeFileSync(path.join(root, 'refs.bib'), '% refs\n');
+    git('add', '.'); commit('Initial');
+    fs.writeFileSync(path.join(root, 'main.tex'), 'One, staged.\n'); await gitStage(root, ['main.tex'], true);
+    fs.writeFileSync(path.join(root, 'main.tex'), 'One, staged, then edited.\n');
+    fs.writeFileSync(path.join(root, 'refs.bib'), '% refs, edited\n'); fs.writeFileSync(path.join(root, 'draft.tex'), 'Scratch.\n');
+    await assert.rejects(gitDiscard(root, ['missing.tex']), /Select at least one changed file/);
+    const status = await gitDiscard(root, ['main.tex', 'refs.bib', 'draft.tex']);
+    assert.equal(fs.readFileSync(path.join(root, 'main.tex'), 'utf8'), 'One, staged.\n', 'The staged version stays');
+    assert.equal(fs.readFileSync(path.join(root, 'refs.bib'), 'utf8'), '% refs\n');
+    assert.equal(fs.existsSync(path.join(root, 'draft.tex')), false);
+    assert.deepEqual(status.files.map(file => [file.path, file.staged, file.unstaged]), [['main.tex', true, false]]);
+    await assert.rejects(gitDiscard(root, ['main.tex']), /Select at least one changed file/, 'Only unstaged changes can be discarded');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('the PDF comparison stages, reverts and restores single changes', { skip: !hasTeX && 'needs latexmk' }, async () => {
   const { root, git, commit } = repository();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-changes-state-'));
+  const changes = new Changes(state);
   const paragraphs = (edits: Record<number, string>) => `\\documentclass{article}\n\\begin{document}\n${Array.from({ length: 24 }, (_, i) => `${edits[i] ?? `Paragraph ${i} of the paper.`}\n\n`).join('')}\\end{document}\n`;
   try {
     fs.writeFileSync(path.join(root, 'main.tex'), paragraphs({}));
     git('add', '.'); commit('Initial');
     fs.writeFileSync(path.join(root, 'main.tex'), paragraphs({ 2: 'Paragraph 2, now longer.', 20: 'A new paragraph 20.' }));
     fs.writeFileSync(path.join(root, 'main.aux'), 'build output');
-    const changes = new Changes(state);
     let page: any;
     for (let tries = 0; tries < 240; tries++) {
       page = await changes.state('p', root, 'token');
@@ -92,5 +110,11 @@ test('the PDF comparison stages, reverts and restores single changes', { skip: !
 
     page = await changes.act('p', root, 'token', 'unstage', page.latest, [late.id]);
     assert.equal(git('diff', '--cached'), '');
-  } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(state, { recursive: true, force: true }); }
+  } finally {
+    // Revert/undo can schedule another comparison. Let its build release the
+    // repository lock before deleting the fixture, or it retries a missing path.
+    for (let tries = 0; changes.busyForUpdate && tries < 240; tries++) await new Promise(resolve => setTimeout(resolve, 500));
+    assert.equal(changes.busyForUpdate, false, 'Background comparisons must finish before removing the paper');
+    fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(state, { recursive: true, force: true });
+  }
 });

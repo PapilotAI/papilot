@@ -12,7 +12,7 @@ import { Codex, RpcResponseError } from './codex.ts';
 import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, GlmAgent, type AgentRuntime } from './agents.ts';
 import { ACP_PROFILES, AcpAgent } from './acp.ts';
 import { CursorAgent } from './cursor.ts';
-import { reviewClient, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
+import { reviewClient, reviewConnectionError, taskRoute, confirmedReviewResponse, type ReviewClient } from './review.ts';
 import { VERSION } from './paths.ts';
 import { prepareRepository } from './imports.ts';
 import { findSkill, type SkillFile } from './skills.ts';
@@ -130,7 +130,7 @@ export class Workspace extends EventEmitter {
       || this.store.tasks().some(task => ['queued', 'running', 'waiting_input', 'building', 'uncertain', 'deleting'].includes(task.status) || task.pendingReview));
   }
   readonly attachments: Attachments;
-  constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
+  constructor(public store: Store, public codex: AgentRuntime = new Codex(), private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.attachments = new Attachments(store);
     this.agents = { codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), copilot: others.copilot || new AcpAgent(ACP_PROFILES.copilot), grok: others.grok || new AcpAgent(ACP_PROFILES.grok), antigravity: others.antigravity || new AntigravityAgent(),
@@ -161,6 +161,16 @@ export class Workspace extends EventEmitter {
     this.emit('change');
   }
   snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), tasks: this.store.tasks(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
+  /** Loads the SDKs of the agents this host has before the server answers
+   *  requests. Evaluating one blocks for up to a few hundred milliseconds,
+   *  which would otherwise hold up whatever the app asked for while the
+   *  agents connect. SDKs not installed yet are fetched when first used. */
+  async preload() {
+    await Promise.all(AGENTS.map(async id => {
+      const agent = this.agents[id];
+      try { if (agent.preload && (!agent.detect || agent.detect())) await agent.preload(); } catch { /* Connecting reports it. */ }
+    }));
+  }
   async connect() {
     if (this.connecting) return this.connecting;
     this.connecting = Promise.all(AGENTS.map(id => this.connectAgent(id))).then(() => { this.emit('change'); this.schedule(); }).finally(() => { this.connecting = null; });
@@ -271,14 +281,15 @@ export class Workspace extends EventEmitter {
   }
   // A task combines the author's words, an optional skill and selected PDF notes.
   annotationSending(id: string) { return this.preparingNotes.has(id); }
-  async createTask(input: { reviewInput?: ReviewSnapshot; prepareReview?: (worktree: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
+  // An AI review passes prepareReview, which reads the PDF of the new task's manuscript copy.
+  async createTask(input: { prepareReview?: (worktree: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     // A retried request returns its task; an ID from another paper is refused.
     const existing = this.store.tasks().find(t => t.id === input.id);
-    if (existing) { if (existing.projectId !== input.projectId || (existing.mode === 'review') !== Boolean(input.reviewInput)) throw new Error('Invalid task ID.'); return existing; }
-    if (input.reviewInput && !REVIEW_AGENTS.includes(input.agent || 'codex')) throw new Error('Choose Codex, Claude or GLM for AI review.');
-    if (input.reviewInput && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
+    if (existing) { if (existing.projectId !== input.projectId || (existing.mode === 'review') !== Boolean(input.prepareReview)) throw new Error('Invalid task ID.'); return existing; }
+    if (input.prepareReview && !REVIEW_AGENTS.includes(input.agent || 'codex')) throw new Error('Choose Codex, Claude or GLM for AI review.');
+    if (input.prepareReview && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
     if (input.serviceTier !== undefined) {
       if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
       const models = this.runtimes.codex.models;
@@ -291,7 +302,7 @@ export class Workspace extends EventEmitter {
     let releaseAttachments = () => {};
     try {
       const project = this.store.project(input.projectId), skill = input.skill ? findSkill(project.path, input.skill) : undefined;
-      if (skill?.output === 'annotations' && !input.reviewInput) throw new Error('Start a new task to run the AI review skill on the current PDF.');
+      if (skill?.output === 'annotations' && !input.prepareReview) throw new Error('Start a new task to run the AI review skill on the current PDF.');
       const files = this.attachments.resolve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
       releaseAttachments = this.attachments.reserve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
       const available = new Map(this.store.annotations(project.id).filter(note => !note.taskId && !isTaskReviewNote(note)).map(note => [note.id, note]));
@@ -306,12 +317,17 @@ export class Workspace extends EventEmitter {
       if (Object.keys(groupInstructions).some(group => !selectedGroups.has(group as keyof GroupInstructions))) throw new Error('Group instructions must refer to selected PDF notes.');
       if (groupsWithoutInstructions(notes, groupInstructions).length && !input.instructions.trim() && !skill) throw new Error('Describe what to do with each selected color group.');
       claimed = notes.map(note => note.id); claimed.forEach(id => this.preparingNotes.add(id));
-      if (!input.reviewInput && !skill && !notes.length && !files.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
+      if (!input.prepareReview && !skill && !notes.length && !files.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
       const instructions = notes.length ? notesInstructions(notes, input.instructions, groupInstructions) : input.instructions;
       const client = await this.connectReview(project.path);
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
       const info = await client.post('/api/tasks', { name, title: input.title, deferred: true });
-      const reviewInput = input.reviewInput && (input.prepareReview ? await input.prepareReview(info.worktree) : input.reviewInput);
+      let reviewInput: ReviewSnapshot | undefined;
+      if (input.prepareReview) try { reviewInput = await input.prepareReview(info.worktree); } catch (error) {
+        // Discard the copy, so a retry copies the manuscript again with the author's fixes.
+        await client.post(`${taskRoute(name)}/finish`, { force: true }).catch(() => undefined);
+        throw error;
+      }
       const task: Task = { ...(reviewInput ? { mode: 'review' as const, aiReview: { key: reviewInput.key } } : {}), id: input.id, projectId: project.id, name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
         worktree: info.worktree, deferred: info.deferred === true, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
@@ -319,7 +335,7 @@ export class Workspace extends EventEmitter {
         this.store.saveTask(task);
         if (reviewInput) this.store.saveReviewInput(task.id, reviewInput);
       });
-      await this.enqueue(task.id, input.instructions || (input.reviewInput && !skill ? 'Review this manuscript and suggest improvements.' : ''), 'initial-' + task.id, false, { skill, notes, groupInstructions, attachments: files.map(file => file.id), author: input.author });
+      await this.enqueue(task.id, input.instructions || (input.prepareReview && !skill ? 'Review this manuscript and suggest improvements.' : ''), 'initial-' + task.id, false, { skill, notes, groupInstructions, attachments: files.map(file => file.id), author: input.author });
       // Naming is independent of the editing turn. An unavailable helper must
       // not fail creation or prevent the queued task from running.
       try { this.requestTaskTitle(task.id); } catch { /* Keep the prompt-derived title. */ }
@@ -397,7 +413,6 @@ export class Workspace extends EventEmitter {
   private async drain() {
     if (this.closing) return;
     for (const run of this.store.runs().filter(r => r.status === 'queued')) {
-      if (this.active.size >= this.concurrency) break;
       const agent = this.agentOf(this.store.task(run.taskId));
       if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) continue;
       if (this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status)) continue;
@@ -451,13 +466,21 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         }
       }
       if (this.active.get(task.id)?.id !== run.id) return;
-      task = this.store.updateTask(task.id, { threadId: result.thread.id, model: result.model || task.model, ...(task.threadId ? {} : { viewPdf }) });
+      // Settings can change while the agent loads. Keep this turn's snapshot,
+      // and never overwrite a newer choice with the thread's resolved model.
+      const current = this.store.task(task.id);
+      this.store.updateTask(task.id, { threadId: result.thread.id, ...(current.model === task.model ? { model: result.model || task.model } : {}), ...(task.threadId ? {} : { viewPdf }) });
+      task = { ...task, threadId: result.thread.id, model: result.model || task.model };
       this.loaded.add(result.thread.id);
     }
     this.store.updateTask(task.id, { pendingRunId: run.id });
     const input = [{ type: 'text', text: run.prompt }, ...(run.attachments || []).filter(file => file.mime.startsWith('image/')).map(file => ({ type: 'localImage', path: this.attachments.path(file) }))];
     let result: any;
-    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, clientUserMessageId: run.id, ...(task.effort ? { effort: task.effort } : {}), ...(this.agentOf(task) === 'codex' && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
+    const models = this.runtimes[this.agentOf(task)].models;
+    const model = task.model ? models.find(model => model.id === task.model) : models.find(model => model.isDefault);
+    // Explicit defaults replace a previous turn's reasoning override.
+    const effort = task.effort || (this.agentOf(task) === 'codex' ? model?.defaultEffort : undefined);
+    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, clientUserMessageId: run.id, ...(task.model ? { model: task.model } : {}), ...(effort ? { effort } : {}), ...(this.agentOf(task) === 'codex' && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
     catch (error) {
       if (this.active.get(task.id)?.id !== run.id) return;
       if (error instanceof RpcResponseError) throw error;
@@ -660,6 +683,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
   async reconcile(taskId: string) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('Retry deletion to confirm this task was removed.');
+    if (task.pendingBuild && !task.pendingReview) { void this.resumeBuild(taskId); return this.store.task(taskId); }
     if (task.status !== 'uncertain') return task;
     if (task.pendingReview) return this.reconcileReview(task);
     const run = this.active.get(taskId) || this.store.runs().find(r => r.id === task.pendingRunId && r.taskId === taskId);
@@ -744,40 +768,108 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     if (this.reviewWrites.has(taskId)) throw new Error('Wait for the current review action before building a review.');
     if (this.publishing.has(taskId) || (!automatic && (BUSY.has(task.status) || task.status === 'queued'))) throw new Error('This task is busy. Wait for it to finish or pause it first.');
     this.publishing.add(taskId);
-    this.store.updateTask(taskId, { status: 'building', error: null });
-    return this.buildReview(task, Boolean(after && !after.requestKey.startsWith(BUILD_FIX)), after?.id).finally(() => { this.publishing.delete(taskId); this.schedule(); });
+    const runs = this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && (run.reviewRound === 0 || (run.reviewRound === undefined && run.id === after?.id))).map(run => run.id);
+    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), runs, sendBack: Boolean(after && !after.requestKey.startsWith(BUILD_FIX)), restarts: 0 } });
+    return this.buildReview(task).finally(() => { this.publishing.delete(taskId); this.schedule(); });
   }
-  private async buildReview(task: Task, sendBack: boolean, after?: string) {
+  // Resume a persisted job, including jobs saved by versions before pendingBuild.
+  async resumeBuild(taskId: string) {
+    const task = this.store.task(taskId);
+    if (this.closing || this.publishing.has(taskId) || task.mode === 'review' || task.pendingReview || this.active.has(taskId)
+      || !['building', 'failed', 'interrupted', 'uncertain'].includes(task.status)) return false;
+    let pending = task.pendingBuild;
+    if (!pending) {
+      const job = task.review?.job;
+      if (!job?.id || !['running', 'queued'].includes(job.status)
+        || (task.status !== 'building' && !/fetch failed|server restarted during the PDF build/i.test(task.error || ''))) return false;
+      pending = { requestId: randomUUID(), job: job.id, runs: this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && run.reviewRound === 0).map(run => run.id), sendBack: false, restarts: 0 };
+    }
+    this.publishing.add(taskId);
+    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: pending });
+    try { await this.buildReview(task, true); }
+    finally { this.publishing.delete(taskId); this.schedule(); }
+    return true;
+  }
+  private async buildReview(task: Task, resume = false) {
     const taskId = task.id;
-    const unlinked = this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && (run.reviewRound === 0 || (run.reviewRound === undefined && run.id === after))).map(run => run.id);
+    let pending = this.store.task(taskId).pendingBuild!;
+    let client: ReviewClient | undefined;
+    let reuse = resume;
+    let compiling: string | undefined;
+    // Only connection failures are retried. Every submission has a persisted key,
+    // so losing its response cannot submit a second build.
+    const request = async <T>(work: (client: ReviewClient) => Promise<T>, submitting = false): Promise<T> => {
+      for (let attempt = 0; ; attempt++) {
+        if (this.closing) throw new Error();
+        try {
+          client ??= await this.connectReview(this.store.project(task.projectId).path, reuse);
+          const value = await work(client);
+          if (this.closing) throw new Error();
+          return value;
+        } catch (error) {
+          if (this.closing || !reviewConnectionError(error) || attempt >= 3) throw error;
+          console.warn('PDF comparison connection interrupted:', task.name, pending.job || pending.requestId, error);
+          client = undefined; reuse = !submitting;
+          await delay(1500 * 2 ** attempt);
+        }
+      }
+    };
     try {
-      const client = await this.connectReview(this.store.project(task.projectId).path);
-      const job = await client.post(`${taskRoute(task.name)}/publish`, {});
       for (;;) {
         if (this.closing) return;
-        const current = await client.get(`/api/jobs/${job.job}`);
-        const summary = await client.get(taskRoute(task.name));
-        this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, job: current } });
+        if (!pending.job) {
+          // New writes require our engine version, which understands request IDs.
+          // Read-only recovery may have connected to an older installed engine.
+          client = undefined; reuse = false;
+          const job = await request(client => client.post<{ job: string }>(`${taskRoute(task.name)}/publish`, { requestId: pending.requestId }), true);
+          pending = { ...pending, job: job.job };
+          this.store.updateTask(taskId, { pendingBuild: pending });
+        }
+        const current = await request(client => client.get(`/api/jobs/${pending.job}`));
+        // The round's new version exists; it compiles only some chapters here.
+        if (typeof current.revision === 'string' && current.revision !== compiling) {
+          compiling = current.revision;
+          this.emit('publishing', taskId, compiling);
+        }
+        const summary = await request(client => client.get(taskRoute(task.name)));
+        this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, job: { ...current, id: pending.job } } });
         if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') {
           // Freeze the result round for these instructions. Later follow-ups
           // have their own results and cannot silently replace these links.
-          for (const run of this.store.runs().filter(run => unlinked.includes(run.id))) this.store.saveRun({ ...run, reviewRound: current.outcome === 'empty' || current.outcome === 'unchanged' ? null : current.round ?? summary.round ?? null });
+          this.store.transaction(() => {
+            for (const run of this.store.runs().filter(run => pending.runs.includes(run.id))) this.store.saveRun({ ...run, reviewRound: current.outcome === 'empty' || current.outcome === 'unchanged' ? null : current.round ?? summary.round ?? null });
+            this.store.updateTask(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null, pendingBuild: null });
+          });
           break;
         }
         if (current.status === 'failed') {
+          if (current.error === 'The review server restarted during the build.' && pending.restarts < 1) {
+            pending = { ...pending, job: undefined, requestId: randomUUID(), restarts: pending.restarts + 1 };
+            this.store.updateTask(taskId, { pendingBuild: pending });
+            continue;
+          }
           const failure: BuildFailure = { error: current.error || 'PDF build failed.', details: current.details || [], ...(current.log ? { log: current.log } : {}) };
           // Instructions the author queued meanwhile go first; the build after them sends any error that remains.
-          if (sendBack && FIXABLE.test(failure.error) && await this.enqueue(taskId, '', BUILD_FIX + job.job, false, { build: failure }).then(() => true, () => false)) {
-            this.store.updateTask(taskId, { status: 'queued', error: null });
+          if (pending.sendBack && FIXABLE.test(failure.error) && await this.enqueue(taskId, '', BUILD_FIX + pending.job, false, { build: failure }).then(() => true, () => false)) {
+            this.store.updateTask(taskId, { status: 'queued', error: null, pendingBuild: null });
             return;
           }
           throw new Error([failure.error, ...failure.details].join('\n'));
         }
         await delay(1500);
       }
-      this.store.updateTask(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null });
       await this.refresh(taskId);
-    } catch (e) { this.store.updateTask(taskId, { status: 'failed', error: errorText(e) }); }
+      // What applying the new round will write can now be compiled ahead.
+      this.emit('reviewed', taskId);
+    } catch (e) {
+      if (this.closing) return;
+      if (reviewConnectionError(e)) {
+        console.warn('PDF comparison recovery pending:', task.name, pending.job || pending.requestId, e);
+        this.store.updateTask(taskId, { status: 'uncertain', pendingBuild: pending,
+          error: 'The PDF comparison service could not be reached. Your edits are saved. Select Check status to recover the existing build.' });
+      }
+      else this.store.updateTask(taskId, { status: 'failed', pendingBuild: null, error: errorText(e) });
+    }
   }
   private finishAiReview(task: Task, run: Run, turnId: string) {
     try {
@@ -1080,6 +1172,20 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     if ([...this.reviewWrites].some(id => this.store.task(id).projectId === projectId)) throw new Error('Wait for the current review action before committing.');
     this.committing.add(projectId);
     try { return await work(); } finally { this.committing.delete(projectId); }
+  }
+  updateTaskModel(taskId: string, change: { model?: string; effort?: string; serviceTier?: string }) {
+    const task = this.store.task(taskId), agent = this.agentOf(task);
+    if (task.status === 'deleting') throw new Error('This task is being deleted.');
+    const models = this.runtimes[agent].models;
+    const id = change.model ?? task.model;
+    const model = id ? models.find(model => model.id === id) : models.find(model => model.isDefault);
+    if (change.model && change.model !== task.model && !model) throw new Error('Choose an available model for this agent.');
+    const effort = change.effort ?? (change.model !== undefined && model && !model.efforts.includes(task.effort || '') ? '' : task.effort);
+    if (change.effort && model && !model.efforts.includes(change.effort)) throw new Error('This model does not support that reasoning effort.');
+    const serviceTier = change.serviceTier ?? (change.model !== undefined && task.serviceTier !== model?.fastMode?.serviceTier ? 'default' : task.serviceTier);
+    if (change.serviceTier !== undefined && agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
+    if (serviceTier && serviceTier !== 'default' && serviceTier !== model?.fastMode?.serviceTier) throw new Error('Fast mode is not available for this model.');
+    return this.store.updateTask(taskId, { model: id || null, effort: effort || null, ...(serviceTier ? { serviceTier } : {}) });
   }
   renameTask(taskId: string, title: string) {
     const task = this.store.task(taskId);

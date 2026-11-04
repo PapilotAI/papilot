@@ -17,7 +17,7 @@ type Op = ['equal' | 'replace' | 'insert' | 'delete', number, number, number, nu
 export interface Unit { id: string; file: string; status: 'added' | 'deleted' | 'modified'; kind: string; whole_file: boolean; ops: Op[]; old_start: number; old_end: number; new_start: number; new_end: number; old_text: string; new_text: string; truncated: boolean }
 type Decision = 'pending' | 'accepted' | 'rejected' | 'commented';
 export type ChangeAction = 'stage' | 'unstage' | 'revert';
-interface Round { number: number; before: string; after: string; units: Unit[]; folder: string; warnings: string[]; decisions: Record<string, Decision> }
+interface Round { number: number; before: string; after: string; units: Unit[]; folder: string; warnings: string[]; decisions: Record<string, Decision>; pdf?: string }
 interface Job { key: string; phase: 'build' | 'render'; status: 'running' | 'failed'; created: number; error?: string; details?: string[]; log?: string }
 interface Snapshot { before: string | null; after: string }
 interface Entry { mode: string; sha: string }
@@ -28,11 +28,12 @@ const conflict = (message: string) => Object.assign(new Error(message), { status
 
 async function engine() {
   const load = (file: string) => import(pathToFileURL(path.join(ENGINE, file)).href);
-  const [{ Builder, BuildError }, { Repo }, { loadProject, isFigure }, { diffUnits, revertUnits, withUnits, splitLines, textOf }, { opcodes }, { render, more }] = await Promise.all(
+  const [{ Builder, BuildError }, { Repo }, { loadProject, isFigure }, { diffUnits, diffUnitsAsync, revertUnits, withUnits, splitLines, textOf }, { opcodes }, { render, more }] = await Promise.all(
     ['src/core/build.ts', 'src/core/git.ts', 'src/core/config.ts', 'src/core/changes.ts', 'src/core/diff.ts', 'src/core/publish.ts'].map(load));
-  return { Builder, BuildError, Repo, loadProject, isFigure, diffUnits, revertUnits, withUnits, splitLines, textOf, opcodes, render, more } as {
+  return { Builder, BuildError, Repo, loadProject, isFigure, diffUnits, diffUnitsAsync, revertUnits, withUnits, splitLines, textOf, opcodes, render, more } as {
     Builder: any; BuildError: any; Repo: any; loadProject: (root: string) => any; isFigure: (project: any, file: string) => boolean;
     diffUnits: (repo: any, before: string, after: string, isFigure: (file: string) => boolean) => Unit[];
+    diffUnitsAsync: (repo: any, before: string, after: string, isFigure: (file: string) => boolean) => Promise<Unit[]>;
     revertUnits: (old: Buffer | null, next: Buffer | null, units: Unit[]) => Buffer | null;
     withUnits: (repo: any, before: string, after: string, units: Unit[]) => string;
     splitLines: (text: string) => string[]; textOf: (data: Buffer | null) => string | null;
@@ -96,7 +97,8 @@ export class Changes {
     if (!fresh && comparison.snapshot && Date.now() - comparison.snapshot.at < 1000) return comparison.snapshot.value;
     const value = (async () => {
       const { Repo } = await engine(), repo = new Repo(root);
-      return { before: repo.hasHead() ? repo.treeId('HEAD') : null, after: await workingTree(root) };
+      const [head, after] = await Promise.all([repo.textAsync(['rev-parse', '--verify', '--quiet', 'HEAD^{tree}'], { check: false }), workingTree(root)]);
+      return { before: head || null, after };
     })();
     comparison.snapshot = { at: Date.now(), value };
     value.catch(() => { if (comparison.snapshot?.value === value) comparison.snapshot = undefined; });
@@ -108,8 +110,8 @@ export class Changes {
   private async units(projectId: string, root: string, snapshot: Snapshot) {
     const comparison = this.comparison(projectId), key = `${snapshot.before}:${snapshot.after}`;
     if (comparison.current?.key === key) return comparison.current.units;
-    const { Repo, loadProject, isFigure, diffUnits } = await engine(), project = loadProject(root);
-    const units = diffUnits(new Repo(root), snapshot.before!, snapshot.after, file => isFigure(project, file)).filter(unit => !(unit.status === 'added' && ignorePattern(unit.file)));
+    const { Repo, loadProject, isFigure, diffUnitsAsync } = await engine(), project = loadProject(root);
+    const units = (await diffUnitsAsync(new Repo(root), snapshot.before!, snapshot.after, file => isFigure(project, file))).filter(unit => !(unit.status === 'added' && ignorePattern(unit.file)));
     comparison.current = { key, units };
     return units;
   }
@@ -118,7 +120,7 @@ export class Changes {
   private async staged(root: string, snapshot: Snapshot, units: Unit[]) {
     const { Repo, splitLines, textOf, opcodes } = await engine(), repo = new Repo(root);
     const files = [...new Set(units.map(unit => unit.file))];
-    const work = repo.blobs(snapshot.after, files), index = repo.blobs('', files);
+    const [work, index] = await Promise.all([repo.blobsAsync(snapshot.after, files), repo.blobsAsync('', files)]);
     const staged = new Set<string>();
     for (const unit of units) {
       const ready = unit.whole_file ? same(index[unit.file], work[unit.file])
@@ -139,7 +141,7 @@ export class Changes {
       const { Builder, BuildError, Repo, loadProject, withUnits, render } = await engine();
       const project = loadProject(root), repo = new Repo(root), number = comparison.next++;
       const units = await this.units(projectId, root, snapshot), folder = path.join(this.dir, projectId, String(number));
-      let warnings: string[] = [];
+      let warnings: string[] = [], pdf: string | undefined;
       fs.rmSync(folder, { recursive: true, force: true }); fs.mkdirSync(folder, { recursive: true });
       if (units.length) {
         const builder = new Builder(project, repo);
@@ -147,15 +149,19 @@ export class Changes {
           try { return await builder.build(tree, ['full']); }
           catch (error) { throw error instanceof BuildError ? Object.assign(new Error(what), { details: (error as any).details, log: (error as any).log }) : error; }
         };
-        const old = await build(snapshot.before!, 'The last commit could not be compiled.'), next = await build(snapshot.after, 'The working tree could not be compiled.');
+        // The two versions compile at once; a failure is reported once both settle.
+        const builds = [build(snapshot.before!, 'The last commit could not be compiled.'), build(snapshot.after, 'The working tree could not be compiled.')];
+        await Promise.allSettled(builds);
+        const old = await builds[0], next = await builds[1];
         job.phase = 'render';
         // The engine compiles the commit with some of the changes when it must
         // tell which of them changes the PDF elsewhere, such as a macro's uses.
         await render(folder, { main: project.main, source_dir: project.source_dir, figures: project.figures, old, new: next, units },
           (subset: Unit[]) => builder.build(withUnits(repo, snapshot.before!, snapshot.after, subset), ['full']));
         warnings = next.warnings.filter((warning: string) => !old.warnings.includes(warning));
+        pdf = next.pdf;
       } else fs.writeFileSync(path.join(folder, 'round.json'), JSON.stringify({ units: {}, sections: [], loose: [] }));
-      comparison.rounds.push({ number, before: snapshot.before!, after: snapshot.after, units, folder, warnings, decisions: {} });
+      comparison.rounds.push({ number, before: snapshot.before!, after: snapshot.after, units, folder, warnings, decisions: {}, pdf });
       // The viewer may still show the round before; older ones go.
       for (const old of comparison.rounds.splice(0, Math.max(0, comparison.rounds.length - 3))) fs.rmSync(old.folder, { recursive: true, force: true });
       if (comparison.job === job) comparison.job = null;
@@ -203,6 +209,8 @@ export class Changes {
       task: 'changes', round: round.number, before: round.before, after: round.after,
       units: round.units.map(unit => ({ ...unit, ...render.units[unit.id] })), sections: render.sections, loose: render.loose,
       warnings: round.warnings, files: `/review/${projectId}/changes/files/${round.number}/`,
+      // The working tree compiles in full, so its PDF shows the whole paper.
+      ...(round.pdf ? { pdf: `/review/${projectId}/changes/pdf/${round.number}` } : {}),
       ...(render.references ? { references: render.references } : {}),
     };
   }
@@ -236,6 +244,12 @@ export class Changes {
     if (!round || !/^c\d+$/.test(unit)) throw Object.assign(new Error('This comparison is out of date. Refresh the page.'), { statusCode: 404 });
     const { more } = await engine();
     return { places: await more(round.folder, unit) };
+  }
+
+  pdf(projectId: string, number: number) {
+    const file = this.comparison(projectId).rounds.find(item => item.number === number)?.pdf;
+    if (!file || !fs.existsSync(file)) throw Object.assign(new Error('This comparison is out of date. Refresh the page.'), { statusCode: 404 });
+    return file;
   }
 
   file(projectId: string, number: number, name: string) {

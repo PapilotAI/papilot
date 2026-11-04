@@ -3,16 +3,31 @@
 .import-drop.dragging { background: var(--accent-soft); border-color: var(--accent); }
 .import-drop > span, .import-location, .import-path p { font-size: 12px; color: var(--text-3); }
 .import-drop .button-row { margin-top: 4px; justify-content: center; }
+.import-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; width: 100%; }
+.import-option { display: flex; align-items: center; flex-direction: column; gap: 12px; }
+.import-option p { font-size: 12px; color: var(--text-3); line-height: 1.6; margin: 0; flex: 1; }
+.import-option .button { width: 100%; }
 .import-path { margin: 20px 0; }
-.import-problem summary { cursor: pointer; }
+.import-path summary, .import-problem summary { cursor: pointer; }
+.import-path summary { font-size: 12px; color: var(--text-3); }
 .import-path form { margin-top: 12px; }
 .import-steps { display: flex; list-style: none; gap: 12px; padding: 0; margin: 20px 0; font-size: 12px; color: var(--text-3); }
 .import-steps li { border-bottom: 2px solid var(--line); padding-bottom: 8px; flex: 1; }
 .import-steps li.done { border-color: var(--accent); color: var(--text); }
 .import-location { overflow-wrap: anywhere; line-height: 1.6; }
 .import-settings { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; }
-.import-settings select { width: 100%; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 9px; font: inherit; }
-.import-status { display: flex; align-items: center; gap: 10px; }
+.import-settings .field-select { border-color: var(--line); border-radius: 7px; }
+.import-status { display: flex; align-items: flex-start; gap: 10px; margin: 16px 0; }
+.import-status > .spinner { margin-top: 3px; }
+.import-status-body { flex: 1; min-width: 0; display: grid; gap: 8px; }
+.import-status-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.import-elapsed, .import-pages { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.import-progress { display: flex; align-items: center; gap: 10px; }
+.import-progress-track { flex: 1; height: 4px; border-radius: 2px; background: var(--bg-active); overflow: hidden; }
+.import-progress-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .4s ease; }
+.import-progress-track > span.indeterminate { width: 30%; animation: import-pages 1.4s ease-in-out infinite; }
+@keyframes import-pages { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .import-progress-track > span { transition: none; } .import-progress-track > span.indeterminate { animation: none; width: 100%; opacity: .4; } }
 .import-problem, .import-summary { padding: 14px; border: 1px solid var(--line); border-radius: 8px; margin: 12px 0; font-size: 13px; }
 .import-problem pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow-y: auto; font-size: 11px; }
 .import-summary p { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -20,5 +35,6 @@
 .import-actions, .import-footer { flex-wrap: wrap; }
 .import-footer { border-top: 1px solid var(--line); padding-top: 14px; }
 @media (max-width: 480px) { .import-settings { grid-template-columns: minmax(0, 1fr); gap: 0; } .modal.import-dialog { padding: 22px 16px; } .import-actions .button { flex: 1 1 100%; } }
+@media (max-width: 380px) { .import-options { gap: 14px; } }
 
 .import-dialog input[hidden] { display: none; }

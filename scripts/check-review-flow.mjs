@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../vendor/latex-review/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
 import { annotateReviewState, rewriteReviewHtml } from '../src/server/review.ts';
 
 fs.mkdirSync('test-results', { recursive: true });
@@ -20,7 +20,7 @@ const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', n
 let latest = 1, serial = 0, undo = null;
 let effectFixture = true, effectRequests = 0;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
-const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [], archiveRequests = [];
+const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [], archiveRequests = [], deleteRequests = [];
 let gitFiles = [];
 let pushError, conflictOnApply = false, combinedOnCommit = false;
 let timeline = [];
@@ -56,6 +56,11 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: timeline } });
+  if (url.pathname.endsWith('/delete')) {
+    deleteRequests.push(route.request().postDataJSON());
+    snapshot.tasks = snapshot.tasks.filter(item => item.id !== task.id);
+    return route.fulfill({ json: { ok: true } });
+  }
   if (url.pathname.endsWith('/archive')) {
     const body = route.request().postDataJSON(); archiveRequests.push(body);
     task.archivedAt = body.archived ? Date.now() : null;
@@ -92,8 +97,8 @@ await page.route('**/api/**', async route => {
 });
 await page.route('**/review/**', async route => {
   const url = new URL(route.request().url()), relative = url.pathname.slice(prefix.length);
-  if (relative === '/') return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(fs.readFileSync('vendor/latex-review/dist/web/index.html', 'utf8'), prefix) });
-  if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('vendor/latex-review/dist/web' + relative), contentType: relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'font/otf' });
+  if (relative === '/') return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(fs.readFileSync('engine/dist/web/index.html', 'utf8'), prefix) });
+  if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('engine/dist/web' + relative), contentType: relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'font/otf' });
   if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 130"><rect width="600" height="130" fill="white"/><text x="60" y="60" font-size="20">A paragraph in the review PDF.</text></svg>' });
   const round = Number(url.searchParams.get('round') || latest);
   if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail(Number(relative.split('/').at(-1))) });
@@ -140,6 +145,15 @@ try {
   const settings = () => page.locator('dialog').filter({ has: page.locator('.settings-dialog') });
   await settings().getByRole('button', { name: 'Review preferences', exact: true }).click();
   const expandEffects = () => settings().getByRole('switch', { name: 'Expand indirect changes', exact: true });
+  // Reviews open on the changed sections unless the whole paper is chosen here.
+  const openOn = settings().getByRole('group', { name: 'Open reviews on', exact: true });
+  await expect(openOn.getByRole('button', { name: 'Changes', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await openOn.getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(openOn.getByRole('button', { name: 'PDF', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  assert.equal(await page.evaluate(() => localStorage.getItem('latex-review:default-view')), 'paper');
+  await openOn.screenshot({ path: 'test-results/review-default-view-setting.png' });
+  await openOn.getByRole('button', { name: 'Changes', exact: true }).click();
+  assert.equal(await page.evaluate(() => localStorage.getItem('latex-review:default-view')), 'changes');
   await expect(expandEffects()).not.toBeChecked();
   await expandEffects().check();
   await expect(indirect().locator('.place')).toHaveCount(2);
@@ -412,22 +426,23 @@ try {
   assert.equal(messageRequests.length, messageBefore, 'Applying needs no agent-written commit message');
   assert.equal(await card.evaluate(el => el.parentElement.firstElementChild === el), true);
   await viewer().locator('.document').evaluate(el => { el.style.minHeight = '1800px'; });
-  const summaryLink = () => viewer().getByRole('button', { name: 'Back to summary', exact: true });
+  // The commit step floats at the top of the review instead of a jump back to it.
+  const lifted = () => card.evaluate(el => getComputedStyle(el).boxShadow !== 'none');
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     if (width === 390) await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
     await expect(applyButton()).toBeVisible();
     await viewer().locator('#paper').hover();
     await page.mouse.wheel(0, 1800);
-    await expect(summaryLink()).toBeInViewport();
-    assert.ok(await viewer().locator('#paper').evaluate(el => el.scrollTop > 500));
-    assert.equal(await viewer().locator('.review-complete-jump').evaluate(el => el.getBoundingClientRect().right <= document.documentElement.clientWidth), true);
-    await page.screenshot({ path: `test-results/review-summary-jump-${width}.png`, animations: 'disabled' });
-    await summaryLink().click();
-    await expect.poll(() => viewer().locator('#paper').evaluate(el => el.scrollTop)).toBeLessThan(2);
-    await expect(summaryLink()).toHaveCount(0);
-    await expect(card).toBeFocused();
-    await expect(applyButton()).toBeVisible();
+    await expect.poll(() => viewer().locator('#paper').evaluate(el => el.scrollTop)).toBeGreaterThan(500);
+    await expect(applyButton()).toBeInViewport();
+    await expect(commitButton()).toBeInViewport();
+    await expect.poll(lifted).toBe(true);
+    assert.ok(await card.evaluate(el => Math.abs(el.getBoundingClientRect().top - document.getElementById('paper').getBoundingClientRect().top) < 30), 'The card stays at the top of the review');
+    assert.equal(await viewer().locator('.review-complete-jump').count(), 0);
+    await page.screenshot({ path: `test-results/review-commit-floating-${width}.png`, animations: 'disabled' });
+    await viewer().locator('#paper').evaluate(el => el.scrollTo(0, 0));
+    await expect.poll(lifted).toBe(false);
     assert.deepEqual(await viewer().locator('#root').evaluate(el => [el.scrollTop, document.documentElement.scrollTop]), [0, 0]);
   }
   await viewer().locator('.document').evaluate(el => { el.style.minHeight = ''; });
@@ -438,8 +453,10 @@ try {
   await expect(taskStatus).toHaveText('Applied to manuscript');
   task.review.comments = 1; await sync();
   await expect(card.getByRole('button', { name: 'Archive task', exact: true })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Delete task', exact: true })).toHaveCount(0);
   task.review.comments = 0; await sync();
   await expect(card.getByRole('button', { name: 'Archive task', exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Delete task', exact: true })).toBeVisible();
   await page.reload();
   await expect(taskStatus).toHaveText('Applied to manuscript');
   assert.equal(archiveRequests.length, 0, 'saving and reloading never archives without a click');
@@ -551,6 +568,16 @@ try {
   await page.getByRole('button', { name: `Task actions for ${task.title}`, exact: true }).click();
   await page.getByRole('menuitem', { name: 'Restore task', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Archive task', exact: true })).toBeVisible();
+  // A task whose result is in the manuscript is deleted at once, without a dialog.
+  await card.getByRole('button', { name: 'Delete task', exact: true }).click();
+  await expect(page.locator(`[data-task="${task.id}"]`)).toHaveCount(0);
+  await expect(page.locator('.review-frame')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  assert.deepEqual(deleteRequests, [{ confirm: true }]);
+  // The fixture's task comes back for the rest of the flow.
+  snapshot.tasks.unshift(task); await sync();
+  await page.locator(`[data-task="${task.id}"] .task-link`).click();
+  await expect(card.getByText('Applied to manuscript', { exact: true })).toBeVisible();
   task.deferred = false; task.delivery = null;
   await page.setViewportSize({ width: 1440, height: 1000 }); await sync();
   console.log('PASS: Both save choices, shared message, legacy branch migration, automatic AI conflict resolution, combined commit confirmation, intent recovery, desktop and mobile');

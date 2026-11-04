@@ -46,27 +46,66 @@ export function texFiles(root: string) {
   }
   return files.sort();
 }
-export async function inspectPaper(root: string) {
-  const files = texFiles(root), roots = files.filter(file => {
-    const text = fs.readFileSync(path.join(root, file), 'utf8').slice(0, 300000).replace(/(?<!\\)%[^\n]*/g, '');
-    return /\\documentclass\b/.test(text) && /\\begin\s*\{document\}/.test(text);
-  });
-  let main = roots.length === 1 ? roots[0] : '', engine = '', error: string | undefined;
+function existingTex(root: string, file: unknown): file is string {
+  if (typeof file !== 'string' || !/\.tex$/i.test(file)) return false;
   try {
-    const settings = config(root);
-    if (typeof settings.main === 'string' && files.includes(settings.main)) main = settings.main;
-    const module = await import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href);
-    if (!main) { try { main = module.detectMain(root); } catch { /* The author chooses among all TeX files. */ } }
-    // Engine detection also works before Git initialization by reading the source hints.
-    if (main) {
-      const text = fs.readFileSync(path.join(root, main), 'utf8');
-      engine = typeof settings.engine === 'string' ? settings.engine : '';
-      const rc = [path.join(path.dirname(main), '.latexmkrc'), path.join(path.dirname(main), 'latexmkrc'), '.latexmkrc', 'latexmkrc'].find(file => fs.existsSync(path.join(root, file)));
-      const mode = rc ? fs.readFileSync(path.join(root, rc), 'utf8').match(/^\s*\$pdf_mode\s*=\s*(\d)/m)?.[1] : undefined;
-      if (!engine) engine = text.match(/^%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex|lualatex)/im)?.[1].toLowerCase() || ({ '1': 'pdflatex', '4': 'lualatex', '5': 'xelatex' } as Record<string, string>)[mode || ''] || (/\\(?:usepackage(?:\[[^\]]*\])?\{[^}]*\b(?:fontspec|xeCJK|unicode-math|polyglossia)\b|documentclass(?:\[[^\]]*\])?\{ctex)/.test(text) ? 'xelatex' : 'pdflatex');
+    safeName(file);
+    let current = root;
+    for (const part of file.split('/')) {
+      current = path.join(current, part);
+      if (fs.lstatSync(current).isSymbolicLink()) return false;
     }
-  } catch (failure) { error = (failure as Error).message; }
-  return { candidates: [...roots, ...files.filter(file => !roots.includes(file))], main, engine: engine || 'pdflatex', error };
+    return fs.statSync(current).isFile();
+  } catch { return false; }
+}
+function sourceHead(file: string) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buffer = Buffer.alloc(300000);
+    return buffer.subarray(0, fs.readSync(fd, buffer, 0, buffer.length, 0)).toString('utf8');
+  } finally { fs.closeSync(fd); }
+}
+export async function inspectPaper(root: string) {
+  let settings: Record<string, unknown> = {}, error: string | undefined;
+  try { settings = config(root); } catch (failure) { error = (failure as Error).message; }
+  let main = existingTex(root, settings.main) ? settings.main : '', engine = '';
+  // Most papers already declare their main file or keep it near the root.
+  // Do not enumerate caches, assets and supporting papers just to open them.
+  if (!main) {
+    try {
+      const module = await import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href);
+      const detected = module.detectMain(root);
+      if (existingTex(root, detected)) main = detected;
+    } catch { /* Unusual layouts fall back to a deeper search. */ }
+  }
+  let candidates = main ? [main] : [];
+  if (!main) {
+    const files = texFiles(root), roots = files.filter(file => {
+      const text = sourceHead(path.join(root, file)).replace(/(?<!\\)%[^\n]*/g, '');
+      return /\\documentclass\b/.test(text) && /\\begin\s*\{document\}/.test(text);
+    });
+    main = roots.length === 1 ? roots[0] : '';
+    const found = new Set(roots);
+    candidates = [...roots, ...files.filter(file => !found.has(file))];
+  }
+  try { if (main) engine = engineFor(root, main, settings); } catch (failure) { error = (failure as Error).message; }
+  return { candidates, main, engine: engine || 'pdflatex', error };
+}
+// Engine detection also works before Git initialization by reading the source hints.
+function engineFor(root: string, main: string, settings: Record<string, unknown>) {
+  if (typeof settings.engine === 'string' && settings.engine) return settings.engine;
+  const text = sourceHead(path.join(root, main));
+  const rc = [path.join(path.dirname(main), '.latexmkrc'), path.join(path.dirname(main), 'latexmkrc'), '.latexmkrc', 'latexmkrc'].find(file => fs.existsSync(path.join(root, file)));
+  const mode = rc ? fs.readFileSync(path.join(root, rc), 'utf8').match(/^\s*\$pdf_mode\s*=\s*(\d)/m)?.[1] : undefined;
+  return text.match(/^%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex|lualatex)/im)?.[1].toLowerCase() || ({ '1': 'pdflatex', '4': 'lualatex', '5': 'xelatex' } as Record<string, string>)[mode || ''] || (/\\(?:usepackage(?:\[[^\]]*\])?\{[^}]*\b(?:fontspec|xeCJK|unicode-math|polyglossia)\b|documentclass(?:\[[^\]]*\])?\{ctex)/.test(text) ? 'xelatex' : 'pdflatex');
+}
+// Keep the author's settings, including a source folder that still contains
+// the main file; without one, the whole folder compiles.
+function rememberMain(root: string, main: string, engine: string) {
+  const settings = config(root), folder = typeof settings.source_dir === 'string' ? settings.source_dir.replace(/\/+$/, '') : null;
+  const contains = folder === '' || (folder !== null && main.startsWith(folder + '/'));
+  const next = { ...settings, main, engine, ...(contains ? {} : { source_dir: '' }) };
+  if (JSON.stringify(next) !== JSON.stringify(settings)) fs.writeFileSync(path.join(root, CONFIG), JSON.stringify(next, null, 2) + '\n');
 }
 async function repositoryRoot(root: string) {
   let top: string | undefined;
@@ -82,6 +121,28 @@ export async function prepareRepository(root: string) {
   if (!fs.existsSync(path.join(root, '.gitignore'))) fs.writeFileSync(path.join(root, '.gitignore'), '*.aux\n*.log\n*.fls\n*.fdb_latexmk\n*.synctex.gz\n*.toc\n*.out\n.DS_Store\n');
   await git(root, 'add', '--all');
   await git(root, '-c', 'user.name=Papilot', '-c', 'user.email=papilot@localhost', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Import paper into Papilot');
+}
+// The desktop app opens a folder the way an editor does. A paper already in
+// Papilot opens again; any other folder with a clear main file is added as it
+// is and compiles in its own view. Only a folder with several possible main
+// files returns them, so the author can pick one.
+export async function openFolder(input: { path?: unknown; main?: unknown }, known: (root: string) => Project | undefined, register: (root: string, name: string) => Promise<Project>): Promise<{ project: Project } | { name: string; candidates: string[] }> {
+  if (typeof input.path !== 'string' || !input.path.trim()) throw new Error('Enter a folder path.');
+  const root = fs.realpathSync(input.path);
+  if (!fs.statSync(root).isDirectory()) throw new Error('Select a folder containing the paper.');
+  const project = known(root);
+  if (project) return { project };
+  await repositoryRoot(root);
+  const detected = await inspectPaper(root);
+  if (detected.error) throw new Error(detected.error);
+  if (input.main === undefined && !detected.main) {
+    if (!detected.candidates.length) throw new Error('Select a folder containing the paper.');
+    return { name: path.basename(root), candidates: detected.candidates };
+  }
+  const main = input.main ?? detected.main;
+  if (!existingTex(root, main)) throw new Error('Choose an existing TeX main file.');
+  rememberMain(root, main, engineFor(root, main, config(root)));
+  return { project: await register(root, path.basename(root)) };
 }
 export async function extractZip(buffer: Buffer, root: string) {
   if (buffer.length > MAX_BYTES) throw new Error('Choose a ZIP smaller than 64 MB.');
@@ -117,7 +178,9 @@ export class PaperImports {
   private save(value: PaperImport) {
     fs.mkdirSync(path.join(this.directory, 'imports'), { recursive: true, mode: 0o700 });
     const file = path.join(this.directory, 'imports', value.id + '.json');
-    fs.writeFileSync(file + '.tmp', JSON.stringify(value), { mode: 0o600 }); fs.renameSync(file + '.tmp', file);
+    // Progress is live state; a restarted server fails a running import anyway.
+    const { progress: _progress, ...stored } = value;
+    fs.writeFileSync(file + '.tmp', JSON.stringify(stored), { mode: 0o600 }); fs.renameSync(file + '.tmp', file);
     this.sessions.set(value.id, value); return { ...value };
   }
   get(id: string) {
@@ -170,28 +233,31 @@ export class PaperImports {
     if (this.active.has(id)) return value;
     if (this.registered(value.path)) throw new Error('This paper is already added. Open it from the paper list.');
     const main = input.main ?? value.main, engine = input.engine ?? value.engine;
-    if (typeof main !== 'string' || !texFiles(value.path).includes(main)) throw new Error('Choose an existing TeX main file.');
+    if (!existingTex(value.path, main)) throw new Error('Choose an existing TeX main file.');
     if (!['pdflatex', 'xelatex', 'lualatex'].includes(engine as string)) throw new Error('Choose a supported LaTeX engine.');
     if (input.name !== undefined && (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 120)) throw new Error('Enter a paper name under 120 characters.');
     this.active.add(id);
     const previousError = value.error || '';
-    Object.assign(value, { main, engine, ...(input.name ? { name: input.name } : {}), phase: repair ? 'repairing' : 'building', error: undefined });
+    Object.assign(value, { main, engine, ...(input.name ? { name: input.name } : {}), phase: repair ? 'repairing' : 'building', error: undefined, startedAt: Date.now(), progress: undefined });
     this.save(value);
     void (async () => {
       try {
         await repositoryRoot(value.path);
-        if (!repair) {
-          const settings = config(value.path);
-          fs.writeFileSync(path.join(value.path, CONFIG), JSON.stringify({ ...settings, main, engine, source_dir: '' }, null, 2) + '\n');
-        }
+        if (!repair) rememberMain(value.path, main as string, engine as string);
         await prepareRepository(value.path); value.versioned = true;
         if (repair) { value.summary = await repair(value.path, previousError); Object.assign(value, await inspectPaper(value.path)); }
         value.phase = 'building'; this.save(value);
-        let result = await this.manuscripts.state('import-' + id, value.path, true);
-        while (result.build.status === 'building') { await new Promise(resolve => setTimeout(resolve, 400)); result = await this.manuscripts.state('import-' + id, value.path); }
+        // A retry starts a new build without forcing a clean one, so the
+        // opened paper finds this PDF in the cache instead of compiling again.
+        this.manuscripts.forgetProject('import-' + id);
+        let result = await this.manuscripts.state('import-' + id, value.path);
+        while (result.build.status === 'building') {
+          value.progress = result.build.progress;
+          await new Promise(resolve => setTimeout(resolve, 400)); result = await this.manuscripts.state('import-' + id, value.path);
+        }
         value.phase = result.build.status === 'ready' ? 'ready' : 'failed'; value.error = result.build.error;
       } catch (error) { value.phase = 'failed'; value.error = (error as Error).message; }
-      finally { this.active.delete(id); this.save(value); }
+      finally { this.active.delete(id); value.progress = undefined; this.save(value); }
     })();
     return this.get(id);
   }

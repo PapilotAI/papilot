@@ -4,6 +4,126 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.8.9] - 2026-11-04
+
+Papilot 0.8.9 displays CJK text from PDFs whose fonts lack Unicode maps and removes the global two-task concurrency limit.
+
+### Fixed
+
+- **Tasks no longer wait for a global slot.** Papilot ran at most two tasks at a time, counted across all agents and papers, so a third task stayed queued with "Waiting for an available Codex session" even when that agent was idle. Connected, signed-in agents can now start every eligible queued task. Each task still waits for its own active turn, build, review work or delivery, and PDF builds retain their worker limit.
+- **Chinese, Japanese and Korean text shows in the PDF view.** Text in fonts that a PDF embeds without a Unicode map, such as the Fandol fonts xeCJK uses by default, was blank in the manuscript and in a review's full paper, while the changes view showed it. Papilot now ships the character maps that pdf.js needs to read these fonts and loads only the one a PDF uses.
+
+## [0.8.8] - 2026-11-04
+
+Papilot 0.8.8 keeps conversations responsive, brings consistent choice lists and comment cards to the workspace, starts AI reviews without waiting for the manuscript preview, and introduces a redesigned website with interactive demos.
+
+### Changed
+
+- **Choices open Papilot's own list.** Theme, accent, language, notifications, update channel, PDF appearance and zoom, the default model, and the LaTeX engine, main file and skill location fields no longer open the system's picker. The list matches Papilot's menus in light and dark mode, marks the current choice, shows theme and accent colours beside their names, groups models by agent, and becomes a sheet on a phone. Arrow keys, Home, End, typed letters, Enter and Escape work as in a system list.
+- **Conversations do less work while you type and wait.** Typing no longer renders the conversation again, unchanged replies keep their rendered Markdown, and a running task fetches only new or changed timeline items. Polls that find no changes leave the workspace alone, and the manuscript reuses its Git status while its files and Git state stay unchanged.
+- **Review comments match the chat composer.** The comment card has a compact heading, a close button, a field that grows with its text and a round send button. It follows the workspace's light and dark themes and keeps touch-sized controls on a phone.
+- **Try the review workflow on the website.** The redesigned landing page opens with an interactive review and shows three animated feature windows, with dark mode and eleven languages. Demo annotations stay aligned while you scroll or resize, and note cards and translated content fit inside the paper view on desktop and mobile.
+
+### Fixed
+
+- **Start an AI review while the preview is compiling.** AI review compiles and reads its own copy of the manuscript, so a stale, running or failed preview no longer prevents it from starting. If that copy cannot compile or be read, it is discarded so retrying after a fix uses the corrected manuscript. The request also allows time for a full compilation.
+
+## [0.8.7] - 2026-11-03
+
+Papilot 0.8.7 prepares the manuscript's PDF while you review, keeps long builds responsive, exports PDFs with notes and makes adding notes to a task feel like sending a message.
+
+### Added
+
+- **Export the PDF, with or without your notes.** The paper's Open PDF button is now a Share menu: open the PDF, export it, or export it with your notes. With notes, every highlight and marked region keeps its colour, and each comment sits in a numbered card in a margin beside the page, joined to its mark. Chinese, Japanese and Korean comments are included. The paper's text, links and bookmarks still work. When a page has more comments than its margin can hold, the cut-off ones are printed in full at the end of the PDF and linked to and from their cards.
+- **Delete a finished task in one click.** Once a task's changes are in your manuscript, applied or committed, its review offers Delete beside Archive. It removes the task with its conversation and worktree right away, without asking first; the changes stay in your manuscript. On a narrow phone the two buttons move below the result instead of squeezing it.
+
+### Changed
+
+- **The manuscript's PDF is ready when you commit a task.** A reviewed task changes the manuscript only when you commit or apply it, and its PDF then compiled only once the manuscript was opened: one to four TeX passes, which on a 324-page paper took one and a half to three minutes. Papilot now compiles what committing the task will produce in the background, as soon as its round is ready and again after each decision, so the PDF is usually there the moment you commit: on that paper, 0.8 s after the commit instead of 94 s. Committing, applying a task, a Git action or a review decision starts the build right away, also when the manuscript is not open, and the PDF view updates as soon as a build starts or ends.
+- **An edit shows after one TeX pass.** When an edit moves page numbers, references or the bibliography, LaTeX needs several passes. The manuscript now shows the pages of each pass as soon as the next one starts, so the edit appears after the first pass while the numbers settle, at the same place and zoom.
+- **The PDF you are waiting for compiles first.** A compilation made ahead of time pauses while the manuscript you look at compiles, and on macOS drops to background priority while other TeX runs, so it takes little from your PDF or a review. When you start waiting for it, it gets full priority, and you see its passes. A build also continues from whichever recent build has the most similar sources, not only the newest one, so it keeps LaTeX's state from the closest version.
+- **Papilot keeps responding while it compiles.** Neither Papilot nor the review engine waits for Git, the disk or a compiler while it compiles, so the task list, review page and PDF view stay responsive. After each build, moving your notes from the previous PDF searched every page's text in one go, which on a 324-page paper froze Papilot for about a second; it now lets other requests through between pages. On a 324-page paper the review engine stopped answering for over two seconds whenever a round was published, because each snapshot of the task rehashed all of its files twice, and for up to four seconds whenever a task was created, while its worktree was checked out; accepting a change, committing a task and removing a task also held it, for up to a quarter of a second. It now answers within a few tens of milliseconds throughout, and so does Papilot: from publishing a round to the committed manuscript's PDF, its event loop never waited more than 80 ms.
+- **Review rounds are ready sooner.** A round compiles the text before and after the change at the same time, and so does the comparison of uncommitted changes.
+- **The whole paper in a review shows at once.** A review shown in the whole paper waited, with only a timer on screen, until the complete new version had compiled, which on a 324-page paper took one to two and a half minutes after the round was ready. That build now starts as soon as the round starts compiling, not after it, and the review shows the round's own chapters with the changes in place right away, then each TeX pass of the whole paper, then the complete PDF, keeping the change you are looking at in place. On that paper the changes appeared 1.2–2.5 s after opening the review.
+- **Adding a PDF note to a task works like sending a chat message.** A new note is one line that grows as you type, with a blue send arrow beside it like the chat box's; Enter sends it too. The note flies into the **New task** panel, or onto the **New task** tab when another panel is open, and its popover closes. A note already in the task shows **Included ×** at the bottom right, wherever it appears: in its popover, in **My notes** and in the **New task** panel. Clicking it takes the note back out, and the note flies back. **Clear selection** is now **Remove all from task**. Your own notes no longer show a separate close button; Escape or a click elsewhere closes them, and a new note shows its delete button once it has text.
+
+### Fixed
+
+- **A decided change no longer offers Accept, Reject and Comment.** In a task's review, a change that was already accepted or rejected, also after the task was applied, still showed buttons that did nothing. It now shows the way to the next undecided change, or that the review is complete; Undo changes a decision back.
+- **Quitting the desktop app leaves nothing running.** After ⌘Q, the review server of each paper you had worked on kept running for up to 12 hours, so macOS listed Papilot under background activity. The desktop app now owns the review servers it starts, and they stop with it, even if it crashes. A PDF build that was still running is retried when you next open Papilot. In `ps` it is now called "Papilot review server" instead of `node`. Closing the window still keeps the app open, as on any Mac app.
+
+## [0.8.6] - 2026-11-02
+
+Papilot 0.8.6 compiles review builds of a chapter incrementally, so a commit no longer leaves several clean compilations running beside the manuscript's.
+
+### Fixed
+
+- **Review builds no longer recompile chapters from scratch.** A review compiles the changed chapters on their own (`\includeonly`), before and after the change. Those builds started clean every time: about three TeX passes and two BibTeX runs each, which on a thesis kept several compilations running for minutes after a commit and slowed the manuscript's own build. Now each set of chapters continues from its previous build, as full builds already did, and usually needs one pass. The other chapters' cross-references still come from the latest full build.
+
+## [0.8.5] - 2026-11-02
+
+Papilot 0.8.5 brings the Dev channel to the desktop app with small in-place updates, returns you to where you left off, recovers PDF comparisons after a lost connection and lays out the Git panel like Cursor's.
+
+### Added
+
+- **Dev channel and small in-place updates in the desktop app.** Settings → Updates in the desktop app now offers **Stable** and **Dev (GitHub main)**, like the web server. When a new version was built for the installer you have, **Update now** downloads only Papilot's own code, about 5 MB instead of a 330 MB installer, checks that it starts, and restarts when tasks and PDF builds are idle; if it does not start, the previous version and database are restored. A version that needs a newer Electron, Node, Codex or dependencies links to its installer. A nightly build of main is published to the `desktop-dev` prerelease when main has changed, with new installers only when the app shell changed.
+
+### Fixed
+
+- **A PDF whose word positions fail to load no longer freezes the tab.** Papilot falls back to the PDF's own text once instead of retrying forever, which also blocked reloading while a manuscript or review PDF was still opening.
+- **Come back to where you left off.** Returning to the manuscript from a task, or to a task from anywhere, opens it where you were instead of at the top: the PDF on the same page and spot, the **PDF / Changes** choice, a task's chat scrolled back through its history, the review within its current change and its PDF / Changes view, an AI review's PDF and the reference check. A chat that was following the latest messages keeps following them. Places survive a reload.
+- **Sandboxed Cursor tasks run again.** When Papilot had fetched the Cursor SDK on first use, every sandboxed Cursor run failed with "sandboxing is not supported in this environment", because the SDK could not find its sandbox helper. It finds it now, and the sandbox stays on.
+- **Recover PDF comparisons after a lost connection.** Papilot retries brief connection failures, resumes saved builds after a restart, and offers **Check status** when the service remains unavailable. Completed comparisons are recovered without rerunning the agent. Build submissions are deduplicated across retries; a build interrupted by a review-service restart is retried once.
+
+### Changed
+
+- **A Git panel like Cursor's.** The panel now has three views that fold away. **Changes** starts with the commit message and **✓ Commit**, whose arrow also offers **Commit and push**, and lists **Staged changes** and **Changes** with each file's status letter. Hovering over a file shows **+** to stage, **−** to unstage, and an undo arrow that discards its unstaged changes after asking. **Commit graph** shows the history in single rows with branch, remote and tag badges and HEAD as an open circle; its header names the branch, how far it is ahead or behind, and fetch, pull and push. **Worktrees** lists the tasks' checkouts. The tick boxes, the build-output banner (now in the **⋯** menu) and the **Git details** section are gone.
+- **Enter sends a PDF note to the chat.** In the note popover, Enter now saves the note and quotes it in the chat, as the arrow does. A note already in the chat just saves, and the note library keeps Enter for saving edits.
+- **Notes fly back to My notes.** Clearing the selection or removing a note in the new-task panel sends the cards along an arc into **My notes**, which shows +N for a moment; on a phone they land on the PDF view button, and reduced motion skips the flight. The note library is tighter: the region note and **Add all to task** share a row, and each card's buttons sit beside its location.
+
+## [0.8.4] - 2026-11-02
+
+Papilot 0.8.4 opens folders in the desktop app the way an editor does, starts reviews on the changed sections and keeps the commit step in view.
+
+### Changed
+
+- **The desktop app opens folders like an editor.** **Open a folder** in the paper menu, or **File › Open Folder…** (⌘O), goes straight to the system folder picker, and the chosen folder opens as a paper. There is no import window to fill in: Papilot detects the main file and engine, prepares Git history when needed, and compiles the PDF in the paper's own view. Only a folder with several possible main files asks which one to compile, and a folder that is already a paper opens again. The desktop app no longer offers ZIP imports or typed folder paths, and **Edit paper** shows the paper's folder, with **Change…** to pick another.
+- **Reviews open on the changed sections.** The whole paper takes longer to show, so reviews now start on **Changes**. **Settings → Review preferences → Open reviews on** chooses **PDF** instead, and the switch in the review toolbar changes only the review in front of you.
+- **The commit step stays in view.** Once every change is decided, the card with Papilot's next step, such as the commit message and **Commit**, floats at the top of the review while you scroll, instead of a bar that only jumped back to it.
+- **A calmer Updates page in the desktop app.** **Download desktop updates** appears only when a newer desktop release exists, as the main action beside its version. An up-to-date app shows just its status; **Papilot › Download Updates…** in the app menu still opens the releases page.
+
+## [0.8.3] - 2026-11-02
+
+### Added
+
+- **Review changes in the whole paper.** The review opens on the full paper: the new PDF's pages, with each change shown in place as before, old lines above new, and accepted, rejected or commented on with the same controls. **Changes only** in the review toolbar switches back to the changed sections. Pages are drawn only near where you read, so a 300-page thesis scrolls like a short paper. Reviews rendered by earlier releases open in the whole paper too.
+- **Compilation progress while adding a paper.** The import window shows LaTeX's current pass, the pages typeset so far against the paper's page count, and the elapsed time, so a long first compile no longer looks stuck.
+
+### Changed
+
+- **PDF comparisons of long papers in seconds.** Placing each change in the PDF used to parse the paper's whole SyncTeX file once per source line, which on a 324-page thesis meant 2,910 parses and six and a half minutes. The file is now read once per build and every lookup answered from its index, so the same comparison takes about 11 seconds, with identical results.
+- **A tidier repository.** Translated READMEs live in `docs/readme/`, community policies in `.github/`, and requirements in `docs/`. Documentation links, the website and translation generators follow the new locations.
+
+### Fixed
+
+- **Separate desktop and web updates.** Desktop checks only published GitHub releases with an uploaded installer for the current OS and CPU, and links to that exact release. It always runs its bundled server, ignores legacy npm activation records, and keeps its update status separate from the web server. Existing desktop installers are directed to a new installer instead of installing future web packages. The web server retains its npm Stable and GitHub Dev channels, startup checks, idle restart and rollback.
+
+## [0.8.2] - 2026-11-02
+
+Papilot 0.8.2 opens local paper folders in place, compiles as fast as latexmk, updates the desktop app in place and speaks eleven languages.
+
+### Added
+
+- **Desktop updates in place.** Like Obsidian, the desktop app now installs newer Papilot releases itself instead of sending you to GitHub Releases. It downloads the release, checks that it starts, and restarts on it when tasks and PDF builds are idle; if it does not start, the previous version and database are restored. A new installer is needed only when a release changes what the app itself provides, and the update notice says so. Settings → Updates shows the installer version next to the running version.
+- **Eleven interface languages.** The workspace, the review viewer and error messages read in English, Simplified Chinese, Traditional Chinese, Japanese, Korean, German, French, Spanish, Portuguese, Italian and Swedish. Papilot follows the browser's first supported language until you choose one in **Settings → Language**, and dates and numbers follow it. The website and README are available in the same languages. Prompts and note locations sent to agents stay in English.
+- **Change the model during a task.** The model, reasoning effort and fast mode can be changed between turns of a task. Changes apply to the next turn; a turn already running keeps its settings.
+
+### Changed
+
+- **Open local paper folders in place.** In the desktop app, choose or drag in a folder and only its path is used: there are no upload size or file count limits, and existing configuration and main files are detected without scanning caches or reference material. Importing keeps the author's `.latex-review.json` unchanged unless the main file or engine changes. ZIP imports still create a separate copy.
+- **Compilation as fast as latexmk in the paper's folder.** Each build continues from the previous one: unchanged files are cloned, latexmk keeps its auxiliary state and decides what to rerun, and a change to a file TeX does not read finishes in about two seconds without running TeX. On a 240 MB thesis, an edit now takes one XeLaTeX pass instead of a five-pass clean build, and opening or importing a paper continues from the author's own latexmk output when present. Working-tree snapshots rehash only changed files, large figures stream to disk, and opening a newly imported paper no longer compiles it again. **Recompile PDF** starts clean, and a build broken by leftover auxiliary files retries clean automatically. See [Compilation performance](docs/performance.md).
+- Collapsing the manuscript panel puts its expand button at the far right of the PDF toolbar and hides **Open PDF** until the panel returns.
+
 ## [0.8.1] - 2026-11-01 — Desktop Apps and Agent Support
 
 Papilot 0.8.1 adds desktop apps for macOS and Linux, an editable demo paper, and support for Copilot and Grok. It also fixes saving accepted changes to the manuscript while preserving other work in progress.
@@ -190,7 +310,17 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/cu1ch3n/papilot/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.8.9...HEAD
+[0.8.9]: https://github.com/PapilotAI/papilot/compare/v0.8.8...v0.8.9
+[0.8.8]: https://github.com/PapilotAI/papilot/compare/v0.8.7...v0.8.8
+[0.8.7]: https://github.com/PapilotAI/papilot/compare/v0.8.6...v0.8.7
+[0.8.6]: https://github.com/PapilotAI/papilot/compare/v0.8.5...v0.8.6
+[0.8.5]: https://github.com/PapilotAI/papilot/compare/v0.8.4...v0.8.5
+[0.8.4]: https://github.com/PapilotAI/papilot/compare/v0.8.3...v0.8.4
+[0.8.3]: https://github.com/PapilotAI/papilot/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/PapilotAI/papilot/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/PapilotAI/papilot/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/PapilotAI/papilot/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/cu1ch3n/papilot/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/cu1ch3n/papilot/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/cu1ch3n/papilot/compare/v0.4.0...v0.5.0

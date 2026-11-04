@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../vendor/latex-review/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
 
 fs.mkdirSync('test-results', { recursive: true });
 const server = Fastify();
@@ -121,13 +121,23 @@ try {
   await expect(mobileEditor).toHaveValue('A temporary reading thought.');
   await mobileEditor.fill('Revise n1.');
   await mobileEditor.press('ControlOrMeta+Enter');
+  // Sending saves the edit, adds the note to the task and closes the popover.
+  await expect(personalCard).toHaveCount(0);
+  assert.equal(notes[0].comment, 'Revise n1.');
+  await marker.click();
   await expect(personalCard.getByText('Revise n1.', { exact: true })).toBeVisible();
+  const quoteMobile = personalCard.getByRole('button', { name: 'Include note 1 in this task', exact: true });
+  await expect(quoteMobile).toHaveAttribute('aria-pressed', 'true');
+  await quoteMobile.click();
+  await expect(quoteMobile).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
   const cardBox = await personalCard.boundingBox(), pdfBox = await page.locator('.pdf-container').boundingBox();
   assert.ok(cardBox.x >= pdfBox.x && cardBox.x + cardBox.width <= pdfBox.x + pdfBox.width + 1);
   await page.screenshot({ path: 'test-results/personal-note-mobile.png', fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await personalCard.getByRole('button', { name: 'Close note', exact: true }).click();
+  await expect(personalCard.getByRole('button', { name: 'Close note', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(personalCard).toHaveCount(0);
   await notesReady();
   await expect(all()).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('.notes-panel input[type="checkbox"]')).toHaveCount(0);
@@ -186,7 +196,8 @@ try {
   await expect(libraryEditor).toHaveCount(0);
   await expect(personalCard.getByText('Keep this note when jumping to the PDF.', { exact: true })).toBeVisible();
   assert.equal(notes[0].comment, 'Keep this note when jumping to the PDF.');
-  await personalCard.getByRole('button', { name: 'Close note', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(personalCard).toHaveCount(0);
   await notesReady();
   await libraryCard.getByRole('button', { name: /^Edit note 1:/ }).click();
   await libraryEditor.fill('Keep this note when closing the library.');

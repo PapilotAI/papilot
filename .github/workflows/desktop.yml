@@ -1,48 +1,44 @@
 name: Desktop
 
+# Builds the desktop app on native runners and launches it to check that it
+# works. It never publishes: CI, Desktop Dev and Release call it. Run workflow
+# builds every installer for any branch; the quick option instead checks only
+# the unpacked app on Apple silicon and Linux, like most pull requests.
 on:
   workflow_dispatch:
+    inputs:
+      quick:
+        description: Check only the unpacked app on Apple silicon and Linux
+        type: boolean
+        default: false
   workflow_call:
     inputs:
-      release_tag:
-        type: string
-        default: ''
-  push:
-    branches: [main, codex/electron-desktop]
-    paths: ['desktop/**', 'scripts/*desktop*', 'src/**', 'vendor/**', 'examples/**', 'package*.json', '.github/workflows/desktop.yml']
-  pull_request:
-    paths: ['desktop/**', 'scripts/*desktop*', 'src/**', 'vendor/**', 'examples/**', 'package*.json', '.github/workflows/desktop.yml']
+      quick:
+        description: Check only the unpacked app on Apple silicon and Linux
+        type: boolean
+        default: false
+      dev:
+        description: Report VERSION-dev.COMMIT, for the Dev channel
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-concurrency:
-  group: desktop-${{ github.ref }}-${{ inputs.release_tag || 'check' }}
-  cancel-in-progress: ${{ !inputs.release_tag }}
-
 jobs:
   build:
-    name: ${{ matrix.platform }} ${{ matrix.arch }}
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.target }}
+    runs-on: ${{ fromJSON('{"mac-arm64":"macos-15","mac-x64":"macos-15-intel","linux-x64":"ubuntu-22.04"}')[matrix.target] }}
     timeout-minutes: 45
-    permissions:
-      contents: write
+    env:
+      # Dev builds: their server and update layer report the commit.
+      PAPILOT_DESKTOP_REVISION: ${{ inputs.dev && github.sha || '' }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-15
-            platform: mac
-            arch: arm64
-            executable: mac-arm64/Papilot.app/Contents/MacOS/Papilot
-          - os: macos-15-intel
-            platform: mac
-            arch: x64
-            executable: mac/Papilot.app/Contents/MacOS/Papilot
-          - os: ubuntu-22.04
-            platform: linux
-            arch: x64
-            executable: linux-unpacked/papilot
+        # Intel Macs run the same code on the slowest runner, so quick checks
+        # leave them to full builds.
+        target: ${{ fromJSON(inputs.quick && '["mac-arm64","linux-x64"]' || '["mac-arm64","mac-x64","linux-x64"]') }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -51,33 +47,43 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            vendor/latex-review/package-lock.json
+            engine/package-lock.json
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y libgtk-3-0 libnss3 libxss1 libxtst6 libasound2 libgbm1 libnotify4 libsecret-1-0 libfuse2 xvfb xauth openbox
       - run: npm ci
-      - name: Build the app and installers
+      # Making the installers takes most of a full build. The smoke tests
+      # launch the unpacked app, which --dir builds by itself.
+      - name: Build the app${{ !inputs.quick && ' and installers' || '' }}
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run desktop:build
+        run: npm run desktop:build${{ inputs.quick && ' -- --dir' || '' }}
+      # Papilot's own code for in-place updates of installers with the same
+      # shell. The smoke test builds its own copy.
+      - name: Build the update layer
+        if: ${{ !inputs.quick }}
+        run: node scripts/desktop.mjs layer
       - name: Launch the packaged app and check its backend
         if: runner.os == 'macOS'
+        timeout-minutes: 10
         env:
-          PAPILOT_DESKTOP_EXECUTABLE: ${{ github.workspace }}/release/desktop/${{ matrix.executable }}
+          PAPILOT_DESKTOP_EXECUTABLE: ${{ github.workspace }}/release/desktop/${{ matrix.target == 'mac-x64' && 'mac' || 'mac-arm64' }}/Papilot.app/Contents/MacOS/Papilot
         run: npm run test:desktop
-      - name: Test the Linux directory, AppImage and installed deb
+      - name: Test the Linux directory${{ !inputs.quick && ', AppImage and installed deb' || '' }}
         if: runner.os == 'Linux'
-        run: xvfb-run -a -s '-screen 0 1600x1000x24' bash scripts/check-desktop-linux.sh
+        timeout-minutes: 15
+        run: xvfb-run -a -s '-screen 0 1600x1000x24' bash scripts/check-desktop-linux.sh${{ inputs.quick && ' --dir' || '' }}
       - name: Save installers
+        if: ${{ !inputs.quick }}
         uses: actions/upload-artifact@v4
         with:
-          name: Papilot-${{ matrix.platform }}-${{ matrix.arch }}
+          name: Papilot-${{ matrix.target }}
           path: |
             release/desktop/*.dmg
             release/desktop/*.zip
@@ -85,20 +91,21 @@ jobs:
             release/desktop/*.deb
           if-no-files-found: error
           retention-days: 7
+      - name: Save the update layer
+        if: ${{ !inputs.quick && matrix.target == 'linux-x64' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Papilot-app
+          path: |
+            release/desktop/papilot-app-*.tgz
+            release/desktop/desktop.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Save desktop screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-check-${{ matrix.platform }}-${{ matrix.arch }}
+          name: desktop-check-${{ matrix.target }}
           path: test-results/desktop*.png
           if-no-files-found: ignore
           retention-days: 7
-      - name: Attach installers to the version release
-        if: inputs.release_tag != '' && inputs.release_tag != null
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-        shell: bash
-        run: |
-          shopt -s nullglob
-          gh release upload "$RELEASE_TAG" release/desktop/*.dmg release/desktop/*.zip release/desktop/*.AppImage release/desktop/*.deb --clobber

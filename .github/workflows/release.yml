@@ -15,7 +15,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # CI's checks on both supported Node versions; a tag pushed without a pull
+  # request gets them here.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  desktop:
+    uses: ./.github/workflows/desktop.yml
+    secrets: inherit
+
   release:
+    # Publish only after CI and every native installer have passed.
+    needs: [ci, desktop]
     runs-on: ubuntu-latest
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
@@ -31,7 +42,7 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            vendor/latex-review/package-lock.json
+            engine/package-lock.json
       - name: Check the tag against package.json and the CHANGELOG
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -49,8 +60,20 @@ jobs:
           printf '```sh\nnpm install -g papilot@latest\n```\n' >> "$RUNNER_TEMP/notes.md"
       - run: npm ci
       - run: npm run setup:review
-      - run: npm run typecheck
-      - run: npm test
+      - name: Download tested desktop installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Papilot-*
+          merge-multiple: true
+          path: release/desktop
+      - name: Require every tested desktop installer and the update layer
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for suffix in mac-arm64.dmg mac-arm64.zip mac-x64.dmg mac-x64.zip linux-x86_64.AppImage linux-amd64.deb; do
+            test -s "release/desktop/Papilot-$version-$suffix"
+          done
+          test -s "release/desktop/papilot-app-$version.tgz"
+          test "$(node -p 'require("./release/desktop/desktop.json").version')" = "$version"
       # Trusted publishing needs npm 11.5.1 or later.
       - run: npm install -g npm@11
       # A rerun after a later step failed finds the version already published.
@@ -71,11 +94,13 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --title "$(cat "$RUNNER_TEMP/title.txt")" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag --latest
           fi
 
-  desktop:
-    needs: release
-    permissions:
-      contents: write
-    uses: ./.github/workflows/desktop.yml
-    with:
-      release_tag: ${{ github.ref_name }}
-    secrets: inherit
+      - name: Attach tested desktop installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          # Apps discover a release by its desktop.json, so it goes last: by
+          # then the installers and the update layer it names are uploaded.
+          gh release upload "$GITHUB_REF_NAME" release/desktop/*.dmg release/desktop/*.zip release/desktop/*.AppImage release/desktop/*.deb release/desktop/papilot-app-*.tgz --clobber
+          gh release upload "$GITHUB_REF_NAME" release/desktop/desktop.json --clobber

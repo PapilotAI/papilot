@@ -125,6 +125,23 @@ test('Kimi resumes persisted IDs after restart and ignores replayed history', { 
   } finally { f.agent.close(); }
 });
 
+test('Kimi changes model and effort on the same session for the next turn', { timeout: 5000 }, async () => {
+  const f = fixture();
+  try {
+    await f.agent.start(); const id = await thread(f.agent);
+    await run(f.agent, id, { effort: 'high' });
+    await run(f.agent, id, { effort: 'low' });
+    await run(f.agent, id);
+    assert.equal(f.calls.filter(call => call.method === 'session/set_config_option' && call.params.configId === 'thinking').at(-1).params.value, 'high', 'model default clears the previous low override');
+    const before = f.calls.length;
+    assert.equal((await run(f.agent, id, { model: 'kimi/k2', effort: 'low' })).status, 'completed');
+    const calls = f.calls.slice(before);
+    assert.deepEqual(calls.filter(call => call.method === 'session/set_config_option').map(call => [call.params.sessionId, call.params.configId, call.params.value]), [[id, 'model', 'kimi/k2'], [id, 'thinking', 'low']]);
+    assert.equal(calls.find(call => call.method === 'session/prompt').params.prompt[0].text, 'Fix it.');
+    assert.ok(!calls.some(call => ['session/new', 'session/load'].includes(call.method)));
+  } finally { f.agent.close(); }
+});
+
 test('Kimi forwards approvals and only selects one-time grants or denials', { timeout: 5000 }, async () => {
   for (const decision of ['accept', 'decline', 'cancel']) {
     const f = fixture((m, rpc) => {

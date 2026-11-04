@@ -1,0 +1,432 @@
+{
+  "1 file staged": {
+    "revision": "05af87f404a38c9e1894d7a6322520f01fd8b66bce394e2d1978936b94f7e253",
+    "textHash": "0e4b662c437dcdfa309ac2d9a0ea8baa42b0d47d9a611536f8bb903c71f35b7a",
+    "model": "gemini-4-argon-high"
+  },
+  "1 review update not sent yet": {
+    "revision": "c04469d1dc2a2b6c2271bf11d2233f860a73667a05cfdaa86efee600f8a9e4e8",
+    "textHash": "4aecd9f0b6eb99fa33dea5779b569a0f6af20db4291a63cdc88457c3711f609a",
+    "model": "gemini-4-argon-high"
+  },
+  "2 notes on the PDF": {
+    "revision": "6356ae6b4f1445ef77e8f7b8a340ce16b3a15df1fa89b0efbef2c8aaaddccf78",
+    "textHash": "c0a02ba1d194a449d1d0461f6d9f3f29b1eeabba5d747b799938ffa9769a22c2",
+    "model": "gemini-4-argon-high"
+  },
+  "<del>The type of <span class=\"math\">λ<i>x</i>. <i>e</i></span> is determined by the types of <i>x</i> and its body <i>e</i>.</del>": {
+    "revision": "07605d6016e7dfd11fca5b56b060142ad2e10b97dfda1bbdcf0ee69771b79ba8",
+    "textHash": "11ecb145582b161c3df325e8f790c14be6a52387adc03be67527ef94fd2a0ed7",
+    "model": "gemini-4-argon-high"
+  },
+  "<ins>If <i>e</i> has type <i>τ</i>₂ in the context Γ,&nbsp;<i>x</i>&nbsp;:&nbsp;<i>τ</i>₁, then <span class=\"math\">λ<i>x</i>. <i>e</i></span> has type <span class=\"math\"><i>τ</i>₁ → <i>τ</i>₂</span>.</ins>": {
+    "revision": "04af9ef0addfc3ace62681cf69a82387ad763add6153e05b57f2455ed3c828f2",
+    "textHash": "2d18920dd628b16a3e58c4fbb5605ba2839f2093bb526988660080d1a91db201",
+    "model": "gemini-4-argon-high"
+  },
+  "A Modern <ins>Agentic</ins> <span class=\"latex\">L<sup>a</sup>T<sub>e</sub>X</span> Editor": {
+    "revision": "1c9ca087b45f55528d814ec5c179b4646d6d79c0da174cfe212afbb2b426dad9",
+    "textHash": "f14e0c3bf5f1d9ff0e84ed8d0516d69b5c7aa784b50283627f354e138e6f604a",
+    "model": "gemini-4-argon-high"
+  },
+  "A comment on a change goes back to the agent, which rewrites it as the T-Abs typing rule before it is accepted": {
+    "revision": "cd1e299f03c77a8687830325c2cfeb9186fa97436c34b74fb2df6c2afc607029",
+    "textHash": "f0a3952334d12429d94965b01ad3dc0aff640cfd3bb07aa11e64dd3abee72e90",
+    "model": "gemini-4-argon-high"
+  },
+  "A paper is written to be read, so every change has to be right. However many there are, each one is shown typeset, and nothing that hasn't been accepted reaches the paper. If one isn't right yet, comment on it and the agent revises it.": {
+    "revision": "93dd7c695217825e69025214fd9627ef55ccedac3ddbc3777d1cf20cf73084f0",
+    "textHash": "73723ec967d8149a5e96b1d4737ff220b984b834c9966b1fe8c0ccee03992f41",
+    "model": "gemini-4-argon-high"
+  },
+  "A sentence and a figure boxed on the PDF, each with a note, sent to the agent together": {
+    "revision": "d23ced3df96dd4c666ed973c56dd7eeebe1197178a3b75a06f01f2294bbc4420",
+    "textHash": "efef33222bbd33f6e006630fc76db8d2fb5d4a4a1ad5f4b8a2b2a72d6b10cb38",
+    "model": "gemini-4-argon-high"
+  },
+  "AI added to the editor": {
+    "revision": "e8fbd3401a886a852124a9f2fe124381df3d3a969315ba9e5432b26fa454f88a",
+    "textHash": "c9cb3919cd9bf522be12983d77130683c650040079882dbd4f0674acb2003d00",
+    "model": "gemini-4-argon-high"
+  },
+  "Accept": {
+    "revision": "d977a5d83dc478281ac83c7edf7326d31b9993ddba1461fc55c87042beb75085",
+    "textHash": "3d9ac3f1c8e75b995827fa6655b492a948977b5b7491d238b18901d73a27d1e9",
+    "model": "gemini-4-argon-high"
+  },
+  "After": {
+    "revision": "c7831490ff2a7271698250be4d429d268606ea24cde318b8e3bde9bfe34bb068",
+    "textHash": "8a28e290218847dff31dd6576e0da78456f2f73bb1a505757d9fbf2084315d5d",
+    "model": "gemini-4-argon-high"
+  },
+  "Agents": {
+    "revision": "5457ac094e6926c911d3bc82af92af89d98d309df6584cf787313d5e1fdd64e6",
+    "textHash": "4af222d7363d5fe6d06e0270824614ca86de384f2c59066087fae35186c96a98",
+    "model": "gemini-4-argon-high"
+  },
+  "All downloads": {
+    "revision": "6c24a51d7653bdeb45ff0a852f2ce3d4b6d69f78a802bc79d7785669dedc9b87",
+    "textHash": "47ab5efe451f062912dca95236b9f56a3ba0bca59f1f8715be5d4c5e615088d1",
+    "model": "gemini-4-argon-high"
+  },
+  "Annotate": {
+    "revision": "bcfe9399f7b0da9716429d44eb507d5b8303dabb0934cf511c5dbac95c98636c",
+    "textHash": "b6a8227ffa857c53a305d4456a2f41747bbae50683eb7e004333f440618afd6d",
+    "model": "gemini-4-argon-high"
+  },
+  "Apple Silicon": {
+    "revision": "8bf5ca8ca9916f26fd6e2b3f9612bd1281dd53fa1192786081e150320a85d5cf",
+    "textHash": "6ad30660ad546afa36a33bec62ae86fa4478e352200d25b7f138bf831b54953e",
+    "model": "gemini-4-argon-high"
+  },
+  "Approach": {
+    "revision": "1422fe09c4fcf09d99d5a96d003d9ee1979d2a50459378dcde6e1b3044e4a07f",
+    "textHash": "47b66f76553d1939a1c3b443d6b957c12752199c5a6c9011e2eda12807b3c866",
+    "model": "gemini-4-argon-high"
+  },
+  "Before": {
+    "revision": "7dcb0e109d7a4b2ee3b344887162b2711401a8d3d10b535d1beb8f2e0242746d",
+    "textHash": "c8727e2064b7a72d336681d1b650872937079aa4dfec6fc1ddb2a14332561ece",
+    "model": "gemini-4-argon-high"
+  },
+  "Before AI": {
+    "revision": "1e4031539f9044d23e9bdb9835d6f089a0d9424d5f3f6803df91738975a69adb",
+    "textHash": "61f285e006e0ccce43622cf936de3d48b6ae0c98debebbfc3a0699728b3cc899",
+    "model": "gemini-4-argon-high"
+  },
+  "Change 1": {
+    "revision": "e24ec9ed9e30820159416973bade46ecf69662f6674aea038ca84af2f63acb12",
+    "textHash": "e602a683041ec5550639608f08499cc2153b0ad360fe9963063fcca643fe1fe4",
+    "model": "gemini-4-argon-high"
+  },
+  "Changelog": {
+    "revision": "bef07677b6ad4d2f63b6b81de2a24d5fc751890b9ed4cab0e43bfd88891cfa4e",
+    "textHash": "0a6853a4fb95affe768f9c00a0ae9a842627ff58bd9096c60a15aa8ac80f9b05",
+    "model": "gemini-4-argon-high"
+  },
+  "Checking <span class=\"latex\">L<sup>a</sup>T<sub>e</sub>X</span> Diffs": {
+    "revision": "1225c5607d546173168331f5ae57c4d7e7f7e3f62c5fa3419cf33bd245a0cc29",
+    "textHash": "411a96864ebb8cc9043341ba301aeb13cb5cd0c05f4c082b82556ded7b83b54c",
+    "model": "gemini-4-argon-high"
+  },
+  "Comment": {
+    "revision": "ae5897fb9988ef8bc33ec89e50c63843cd018c93087218b4a7f6562494f77d6f",
+    "textHash": "90284889d358c1797a584e696a3c9f3be799968cca3aebc4e611f678c7b86957",
+    "model": "gemini-4-argon-high"
+  },
+  "Commit": {
+    "revision": "5889218f1111836b4809b7da674f1ecf1e9340f6e320f726528832ef1523b699",
+    "textHash": "fba6d5e8de709e852b82dcef0131b2db516c2abf6ef3d2d72c29b30adff139c2",
+    "model": "gemini-4-argon-high"
+  },
+  "Commit 1 file": {
+    "revision": "abcb18b23e0d694bc3c79396664be0adc0b308fa5c6a30a30c69c055723ab4e0",
+    "textHash": "9c1fe97f4665bc784be775ec18cfe5689ab615166c39c15ac2e02abf299e017a",
+    "model": "gemini-4-argon-high"
+  },
+  "Commit message": {
+    "revision": "f4adefa6eca7f3d0f8eb147fcc6e20d52b34200d7fa3f6121b6cdc857841f506",
+    "textHash": "9e0fccb5a6831e47dd47e48bc6d44b3f9098378815f74a13795fc7add18da945",
+    "model": "gemini-4-argon-high"
+  },
+  "Copy the commands": {
+    "revision": "7d3197b80ed98f859cb45af1e73d71001a96a2c6ce7b49f2c67dc162d24018b3",
+    "textHash": "be0a124751159dc100b606d2a685ccbcfc9b07222f42e1c601b99c74b318e363",
+    "model": "gemini-4-argon-high"
+  },
+  "Copy the install command": {
+    "revision": "a59249ec6620d5cb18b71d79bc2442cf444a29db846181f9a2255093734c4a79",
+    "textHash": "abaa645fef9b3fc45658841c8d17daa348c62102351bff3d032ca7e79742a645",
+    "model": "gemini-4-argon-high"
+  },
+  "Dark mode": {
+    "revision": "99ca5d121598a36260a9e790fcae3868fdde39f8897b88d2ae380d451e04b3fa",
+    "textHash": "bea18798bd094fb6adf51b47ad2ef939b08d926b539e27ab4a7690df5d24a844",
+    "model": "gemini-4-argon-high"
+  },
+  "Discuss Papilot on GitHub": {
+    "revision": "022de3655ecc2eb5d91af3456fbccfedb03b3d0179b72d16d162d8c370676083",
+    "textHash": "18cc1c6ad5aeb0180fec706479ce65482b60807f5aef04753904e59480c6a95c",
+    "model": "gemini-4-argon-high"
+  },
+  "Download": {
+    "revision": "2e99fdac6f9b3c19cd6433e3cf2af1be0e469f5f81b4934fc8961266b29c4be1",
+    "textHash": "d6eafe82359100423c93c5ce53c352c1b51ca1e699215fcec3f5c5dd9bf12d24",
+    "model": "gemini-4-argon-high"
+  },
+  "Download for Linux": {
+    "revision": "7796b32cc3a00ab31263b1cab3fe2e786601300c0ea1ada087a98f1722c8b502",
+    "textHash": "de6adccf608a1d061f3dadb568a1e5c945d26e700282b3c8bc505dacef7c55ef",
+    "model": "gemini-4-argon-high"
+  },
+  "Download for Mac": {
+    "revision": "d3c63614df28a33232f3cc3cc8b8e4c4f9039a6461f7533a3b48304dfcaf673e",
+    "textHash": "7adec025c154d0d87689e3cefb65e9294f07e32974ca56f01a24c65832058363",
+    "model": "gemini-4-argon-high"
+  },
+  "Downloads": {
+    "revision": "49cc6b443d324320eb3e2e3a147704eb887ae10cc97fff31866fcaafb0cd681a",
+    "textHash": "d5fdc1af021e2d360ff80496c4c5d698e77fc3015a157ea08e8e60cf81690a46",
+    "model": "gemini-4-argon-high"
+  },
+  "Each task runs in its own Git worktree, and committing and pushing accepted changes is a separate step. Every change to the paper stays in its Git history.": {
+    "revision": "4b35de7ac56cb3575946bf9a4d30e1445632ffb579109bd839710a42b65128dc",
+    "textHash": "2e3271a60fe7b797db979e54425f24fa9b5a8b6df32e927af282b3726c2b0b25",
+    "model": "gemini-4-argon-high"
+  },
+  "Every Change on the Record": {
+    "revision": "8c053c5124c21ee469a815b0a283652e41efe00f20547ba533aaf68315fcceda",
+    "textHash": "34f15803ba4e88a4f02bc4524c686be7886ecf3233c1960dff2b7f9558a6672a",
+    "model": "gemini-4-argon-high"
+  },
+  "Every Change, Decided One by One": {
+    "revision": "d4712e575aff2cd73620bbb1483c24a2835909db10aaf3d4d187482ec4ac3f94",
+    "textHash": "f4a761a144fc9d6e273ce74121ff0801e9e556eb181981f55332057b70916256",
+    "model": "gemini-4-argon-high"
+  },
+  "Features": {
+    "revision": "76cf06a2098a3e6c9b8e514b711ceaf3400bc28b8fb94e91c00d9fe1e986ad03",
+    "textHash": "d23a4f609c9ee624af11f53504401e68c97b052849d72187ec158a61cbdb8822",
+    "model": "gemini-4-argon-high"
+  },
+  "Get Papilot": {
+    "revision": "868a5ba17a8bd27cdf87606b0b77c6722927938daefe006799e6ae0bc60d72e8",
+    "textHash": "4dd4b1cad7be69887691edfbb85f3d83902ac36761deadfafb95b757b6d447e9",
+    "model": "gemini-4-argon-high"
+  },
+  "Guide": {
+    "revision": "be328af6418daeaf8b3900117d990dd08a146138e79c914d6ddf8a10fd43b7b8",
+    "textHash": "efbd1c4defe41e98f00198f173e60da388844c9d799a08b78f51ac94d47b77fa",
+    "model": "gemini-4-argon-high"
+  },
+  "Intel": {
+    "revision": "8b42919df2dfd95687f29a7aa7e3d7f10d0dce020a7f8b956feeee84c2c25c46",
+    "textHash": "9dbe1a97a6b445eaf33dad0eaefd2f5fcf997b64feda47d28f6b7352fd028171",
+    "model": "gemini-4-argon-high"
+  },
+  "Language": {
+    "revision": "d67bcaf8583c157b7607995ea4f0434ecf6809748d32027d1c4d3956c4da8360",
+    "textHash": "f2a1cc71fa59a04b38c226ecc20d57747090ba3b6d6c11d349f5e052cd87aa5a",
+    "model": "gemini-4-argon-high"
+  },
+  "Links": {
+    "revision": "0185d385f352f59e232d2fe21870ad4b5f597ab4de547d17a3562959e60613b1",
+    "textHash": "9024c197d84940e47ff6aa631b7711c4cbff4e7fb2fe1a574a3592b662983a0d",
+    "model": "gemini-4-argon-high"
+  },
+  "Make it more modern": {
+    "revision": "7bdf229e4f1d04e0d702d91a098f67fef9300dd91ec7f2369d9c836693323c07",
+    "textHash": "b5a42fa6fbc944e9fc055e57b6ad62be17f6a8c54b058189806441b8ec81c4b8",
+    "model": "gemini-4-argon-high"
+  },
+  "Mark up the compiled PDF and the coding agent you choose edits the LaTeX source. Each change comes back as a typeset before-and-after for you to accept or reject.": {
+    "revision": "b4c428d286d921a63c3317b8dd1fa45f576c3a84416213927131f5dbda987814",
+    "textHash": "cc3fbc4d316c30ff70b4d6c7f83b526c5789a062a6376a79e4f97b2e05e7990c",
+    "model": "gemini-4-argon-high"
+  },
+  "Mark up the compiled PDF, and review every LaTeX change as a typeset before-and-after.": {
+    "revision": "a881a2cc432df50c1427942aa03f79230b45aa8999292e8ecfdff7993089a99d",
+    "textHash": "6a4d1b33810bbe6a270056aeded9987a468e3d884716f73e62b69b3697300abf",
+    "model": "gemini-4-argon-high"
+  },
+  "Marked region": {
+    "revision": "93d6f5fd41fbefcf0ba9a5a466536038d6d6604b84c36578d25beb636271312f",
+    "textHash": "9cfd2a5367c39bbeaaa6dd5f523026646aa1667d8e45160485eb6e78ac956d74",
+    "model": "gemini-4-argon-high"
+  },
+  "Move the legend to the top right": {
+    "revision": "3b1f80f9b235d5e03ddf95a778d6eb049d19c17584db125f92d3b1a5304a0980",
+    "textHash": "fe853cd86f507b80e25f7be9b29faa14456a2662d29426fe97ab1c12d74d3a47",
+    "model": "gemini-4-argon-high"
+  },
+  "Note on the PDF": {
+    "revision": "c167e3641d3b38c9da751a83697ec07d3093420f406b252f9f923e1fa98520c6",
+    "textHash": "b89b7767d6fc7809c1bc2b8f4574926aeb327a91a4e8bd1ad6dddcde36a9f9b0",
+    "model": "gemini-4-argon-high"
+  },
+  "Page 2 · main.tex:24": {
+    "revision": "50d932b1d822bc66f3a53887d1788bab734c7491ba820d2c464679436147bab0",
+    "textHash": "495cddcb2af5c4731e20b76efebfe03a4d87d6280991438fbf1070769d3e4d19",
+    "model": "gemini-4-argon-high"
+  },
+  "Page 2 · main.tex:31": {
+    "revision": "0925a21577f4d07754caa3c3c1bce6c23936881427153bcb7fbbe76b22ea71f5",
+    "textHash": "4157b4f2c48178f8d1f7ff1797a77c85b83623c8228f90439d469570650bb54a",
+    "model": "gemini-4-argon-high"
+  },
+  "Papilot · A Modern Agentic LaTeX Editor": {
+    "revision": "d72ef8aaa4c268948a4b899a1b7baab528fc5e6f76b46353e637f7af13f5e8cc",
+    "textHash": "7e4168948e0434f3fdc8c596591d127b017adf5e0597ce6beb619a8f70ba6824",
+    "model": "gemini-4-argon-high"
+  },
+  "Point at What Should Change": {
+    "revision": "2109c05dc94e4b76656cc731972fb0abcefe0b6d0b20c4dd49b755d84431e1d0",
+    "textHash": "f0fba982f028f55033b48c5e7780025a26525a872fd725814cc8570b324f9098",
+    "model": "gemini-4-argon-high"
+  },
+  "Push": {
+    "revision": "2582a21d12262baabe8518a152438f94526a204b062ddc4e42d72227a344df80",
+    "textHash": "b85f264ccf90fa09925047ed6cdf805b9f997dc57aa44f738ad78f9851063112",
+    "model": "gemini-4-argon-high"
+  },
+  "Pushed to the remote.": {
+    "revision": "b585d0e1805279d4a6acc2b381c63e5934e63be5d89440ff380e5642482431ee",
+    "textHash": "6a57c69e749e9178d710726ff792d979886e230dc2c6ddd4712f2c2734f76600",
+    "model": "gemini-4-argon-high"
+  },
+  "Reject": {
+    "revision": "32130463c6c17557ec7c8a664c0636109c5f48610d32f29c507468ae7fc14e18",
+    "textHash": "7be75ced7162010929e317d93b3fcbcfe987b9e4eb86f12aa330a965d3e3ec01",
+    "model": "gemini-4-argon-high"
+  },
+  "Review": {
+    "revision": "1a48eb9d5491675efc256968f50d58fbcf822e64aa53095776e81c061608b989",
+    "textHash": "9c0f1e228bffd7b7ff25836ea571f1f1a71ecd0aa6cf02cf521e0e8fc33fd003",
+    "model": "gemini-4-argon-high"
+  },
+  "Review feedback · 1 comment": {
+    "revision": "55f786b481b995d2d4f43c038dd2df84d2097f92eb210d822728e5018ce71ff6",
+    "textHash": "bd85943092e41593061bc5af24086335b1610ae81aac59d92b66811b3547ef72",
+    "model": "gemini-4-argon-high"
+  },
+  "Reviewing the PDF": {
+    "revision": "7f34e07597336e8695f06933ae3ecbed3ae5304348e26084a6c920c628b7d60a",
+    "textHash": "945dca6522dc95c4497f1a835b168f54c8178228bbd4f6d29a90e3264eaa4b42",
+    "model": "gemini-4-argon-high"
+  },
+  "Rewording and layout shouldn't take attention away from them.": {
+    "revision": "2f63c1fbd87294a5ace4d8bb155e7149711970fb6c42282b2bfdc3c7c40d1f2e",
+    "textHash": "4f9b7af068b19057d77a1b2e50492da38eeb537320223edb15b0972a3e69d37d",
+    "model": "gemini-4-argon-high"
+  },
+  "Say it more plainly": {
+    "revision": "29c8841650e8eeaed7f954acd721223886d863c311a732ab12874fa7e1f97612",
+    "textHash": "90296f8c290e0a805fec40752f2453cc8c91ff5fd07460cc9187af9fa212daaa",
+    "model": "gemini-4-argon-high"
+  },
+  "Scroll down": {
+    "revision": "d668c627511dc8bce28aa049178dd46e1b759beb0cb058a72767c3a7aad98457",
+    "textHash": "0551ec647868ffce7c0003b1c173229cb6f2f733dfa79b633e796074f34084e6",
+    "model": "gemini-4-argon-high"
+  },
+  "Sections": {
+    "revision": "786d02f12f85e296cfd0aa86276e209c660db1855cec304993d4aab3dfb7c9cb",
+    "textHash": "bca771c5f430fee7e283e2794fe643c69e05494bc23edc6a5ee085e2fb3a9678",
+    "model": "gemini-4-argon-high"
+  },
+  "Select a sentence, or box an equation or a figure, and write what should change. The agent gets the exact source lines, with no need to know which file they are in.": {
+    "revision": "4c79a2585d880344820f8f10a37254e07d9aa7077854238eb122de714d2b94c0",
+    "textHash": "de87f6a47a3634fc1865106b1f44c8dd236e93a7534888390138afffe80ded34",
+    "model": "gemini-4-argon-high"
+  },
+  "Send feedback": {
+    "revision": "1f44735116ed16ebe275880a57bd95021191cc7afd99a0b2d66c5693422771fe",
+    "textHash": "738b8c7ce6f6449ac791e35f2266e11d10a4d981be2ec39c277eb3c810130a99",
+    "model": "gemini-4-argon-high"
+  },
+  "Setting up an agent": {
+    "revision": "b6280fb59f5d71edf142d7ceba323ca9027ab0324e1488f858054765af0cbed6",
+    "textHash": "5bd056f71c62d00f570ce2f453061b8413d8ccfa959fded6ac0b3af7d8185ef1",
+    "model": "gemini-4-argon-high"
+  },
+  "Show LaTeX source": {
+    "revision": "b9d372d194a23da0fa40a6155637e7dcbacb4d332ceffe706a34a5a19c10bd98",
+    "textHash": "5fca9b3b999fe23cc4bae748afdd5af05be15a9a4587b22e80e1d0f8aac2c70e",
+    "model": "gemini-4-argon-high"
+  },
+  "Source on the left, preview on the right, every line typed by hand.": {
+    "revision": "57f1e352bdd4d230841daebee1b22f628325959d9ec2878bdad458cab9a34aaa",
+    "textHash": "412ff233a4533b17a8b30a885bfb095911caac503fdb2d75986623ea8f94a95d",
+    "model": "gemini-4-argon-high"
+  },
+  "Supported Coding Agents": {
+    "revision": "70cc9ad0819d3f16b8952cccfcdc5ab7a1b277f30fab33329021cd26529416d7",
+    "textHash": "99838a22fe38230265c0d9684b1667dd4ffc1c0d4342dd6723ad8c35f6712509",
+    "model": "gemini-4-argon-high"
+  },
+  "Terminal": {
+    "revision": "93fc01e36c56e6a70b392bc4c955f7f30a2de2edffe00ec14a58a2f67b667385",
+    "textHash": "e0926fdac700b09497b5f0218ea3dd54fa13c0bdeaee6caa7b85e50b852aa05f",
+    "model": "gemini-4-argon-high"
+  },
+  "The AI edits the source, and each change is reviewed on the typeset page.": {
+    "revision": "da7317f392705370024ce82f4ca921578060f30f559da3d7c8371d609754cd0b",
+    "textHash": "cb2b96012ff54c3be7bf4ce3ca36101bbca7f6402be0d986f2d4d3e50f563e01",
+    "model": "gemini-4-argon-high"
+  },
+  "The AI edits the source. Once the diffs pile up, they go unread and the AI decides.": {
+    "revision": "1d376d30417732de0cd317764d7cad85967ff963301e7db9de764c466ac88e8b",
+    "textHash": "1206db5dbe98c47814fcdad3a27b4771ac34b7b841ae44c178d39535235f0c88",
+    "model": "gemini-4-argon-high"
+  },
+  "The accepted rule, with a commit message written by the agent, committed and pushed": {
+    "revision": "f73bc9c016103a1c7e4f8f01e6a39d5fe6f3a440078a89ca5e04b49b03610403",
+    "textHash": "28abb626ded531f006e87afd631de27ae21fbf69c2b933c30db15fe062ecf2f0",
+    "model": "gemini-4-argon-high"
+  },
+  "The desktop app runs on macOS and Linux, and the command-line version installs from npm (Node.js 22.22+). Both use Git and your own TeX distribution (<a href=\"https://www.tug.org/mactex/\">MacTeX</a> or <a href=\"https://www.tug.org/texlive/\">TeX Live</a>). Papilot is free and open source under the <a href=\"https://github.com/PapilotAI/papilot/blob/main/LICENSE\">MIT License</a>.": {
+    "revision": "89e68ec557e220ab2aa27ac19bc570346280a528d9edfadd9f4d8ac138728c32",
+    "textHash": "ebd941b67ad0146a268638d3472599539d65f988a0831b9c4ac0372327bfc411",
+    "model": "gemini-4-argon-high"
+  },
+  "The type system markedly increases the expressiveness of the language while keeping type checking decidable.": {
+    "revision": "c08a5e8cf1b1c4c7cf317c67e0585391743ae79f9f689a30c6471340ca0fdd00",
+    "textHash": "273472391a5a9a9772b80df5ba82884d9b359c78da42ba19f1efdc53d6605962",
+    "model": "gemini-4-argon-high"
+  },
+  "Version {{version}} · Free and open source · <a href=\"https://github.com/PapilotAI/papilot/blob/main/LICENSE\">MIT License</a>": {
+    "revision": "6b492df619eba86e34c50e597355eda6591fab9fbaed756d8006dfd2381f2bd2",
+    "textHash": "df03a9bd6a06da728eebdcdc569781e3318a1d0bc9b246c6a440782208084ca2",
+    "model": "gemini-4-argon-high"
+  },
+  "What Matters in a Paper Is the Idea and the Story": {
+    "revision": "fdff36e56f59f6b5dfa382c29a7d541570b541c71e8977631a6f8b2608793412",
+    "textHash": "c093e972f5ecd9c01a33df4fbadc7151c8230f902aef4da22c349c34361a056f",
+    "model": "gemini-4-argon-high"
+  },
+  "What should change here?": {
+    "revision": "7f67b737dac2a6af8c4ea1f7fe46ba08ce3e5c3f5b8310c174dd25ef75595fe7",
+    "textHash": "c0d2cd45b80fad19bc3bef5be0d58ef8ff008cdd35d79a4108634338dde51d74",
+    "model": "gemini-4-argon-high"
+  },
+  "What should the agent change here?": {
+    "revision": "984704b9f5b056d4bd3c5b7ab0c6e42291e1503e4ea4596ca57de2275f3b073f",
+    "textHash": "776b9e5cdae75e1dc035127e9b24b2cbdaddc24602c31e4003f07d65d3b34f59",
+    "model": "gemini-4-argon-high"
+  },
+  "Write T-Abs as a rule": {
+    "revision": "87d8b2b5a881d8a2c1e8fc4208d0d0d4d3422677c4a7c7604c26b81efb623d23",
+    "textHash": "9c2bac35f7ed25186dcf2aa92fcb54bfc00a0d8748f3ae35e460498a8f31dd7a",
+    "model": "gemini-4-argon-high"
+  },
+  "Write this as an inference rule": {
+    "revision": "5bf5d27949c8d1b28becd07080d320b17e601a52efe0806360fe2c46529084d0",
+    "textHash": "aa42244bc739d4a2d873be3bd60d25bec6da0407488654e82b0ceefdeb06404b",
+    "model": "gemini-4-argon-high"
+  },
+  "Writing <span class=\"latex\">L<sup>a</sup>T<sub>e</sub>X</span> by Hand": {
+    "revision": "f8198f8815046eadd6c6b478c07c0b5a35ebdf28a952442afd75112df2acb943",
+    "textHash": "f6ff96f4543a46d365408f46d6f39740c1a2c4e9bfa13a22e198983bab73bae1",
+    "model": "gemini-4-argon-high"
+  },
+  "Writing <span class=\"latex\">L<sup>a</sup>T<sub>e</sub>X</span>, <del>I</del> read <span class=\"latex\">L<sup>a</sup>T<sub>e</sub>X</span> source<del>, then hunt in</del> the PDF<del> 😭</del>": {
+    "revision": "088bda993ecd6e70c20f01cea2e42e848762067ffbb04d40a13fca87b10f6742",
+    "textHash": "fd74f5344e6b18d0e6887f1856725abd884c57068d6f997d9c47f559af606462",
+    "model": "gemini-4-argon-high"
+  },
+  "Writing <span class=\"latex\">L<sup>a</sup>T<sub>e</sub>X</span>, <ins>why</ins> read <span class=\"latex\">L<sup>a</sup>T<sub>e</sub>X</span> source<ins>? I just read</ins> the PDF<ins>! 😎</ins>": {
+    "revision": "68e89109107c7dcd3b05fe4f2e6e24c28b3ab660d457c35ba33f4276aa814f6a",
+    "textHash": "9f0c6ddae81e673e41617f5493ca2376e6e68495edd82aad0bd2cdbf6f30a73b",
+    "model": "gemini-4-argon-high"
+  },
+  "Writing \\LaTeX{}, <del>I</del><ins>why</ins> read \\LaTeX{} source<del>, then hunt in</del><ins>? I just read</ins> the PDF<del> 😭</del><ins>! 😎</ins>": {
+    "revision": "ce396d6ddb2b7dab7128074bf4ebf98aecd4a9d4122921bf72bceb6905b1d331",
+    "textHash": "a85c71f02267f64d09ad8c682c4d452ac21fb4a5b46c48c053aa8e8b0006e908",
+    "model": "gemini-4-argon-high"
+  },
+  "line 6": {
+    "revision": "0b65e60935ad20ec35b8c5cfd37cce854621f320d1333f4e56d02ecf17321b02",
+    "textHash": "0c0a580e78e392dd1d7a1333407f15d3af79a47c4a146c2acc8fb12bfef18aae",
+    "model": "gemini-4-argon-high"
+  }
+}

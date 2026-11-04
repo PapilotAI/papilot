@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { AccountInfo, ModelInfo, Options, PermissionResult, Query, SDKMessage, SDKRateLimitInfo, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { AccountInfo, ModelInfo, Options, PermissionResult, SDKMessage, SDKRateLimitInfo, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { AGENT_NAMES } from '../shared.ts';
 import { DATA, ROOT } from './paths.ts';
 import { imageType } from './attachments.ts';
@@ -25,6 +25,8 @@ export interface AgentRuntime extends EventEmitter {
   // Whether the agent is present on this host (its CLI, SDK credentials or
   // key), checked without starting it. Agents that are not found are hidden.
   detect?(): boolean;
+  /** Loads an SDK this host already has, without starting the agent. */
+  preload?(): Promise<void>;
   start(): Promise<void>;
   request(method: string, params: any, timeout?: number): Promise<any>;
   respond(id: string | number, result: unknown): void;
@@ -80,13 +82,15 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
     if (method === 'turn/start') {
       const thread = this.threads.get(String(params.threadId));
       if (!thread) throw new Error('Start or resume the thread before starting a turn.');
+      if (params.model !== undefined) thread.model = params.model || null;
       const text = (params.input || []).filter((part: { text?: unknown }) => typeof part.text === 'string').map((part: { text: string }) => part.text).join('\n');
       const images = (params.input || []).filter((part: { type?: string; path?: string }) => part.type === 'localImage' && typeof part.path === 'string').map((part: { path: string }) => part.path);
       const turn: Turn = { id: randomUUID(), threadId: String(params.threadId), clientId: params.clientUserMessageId, status: 'inProgress', stop: () => {} };
       turn.stop = () => this.finish(turn, 'interrupted');
       this.turns.set(turn.id, turn);
       // Papilot records the turn ID before the first event arrives.
-      setImmediate(() => { if (turn.status === 'inProgress') this.run(turn, { ...thread, cwd: params.cwd || thread.cwd }, text, params.effort || null, images); });
+      const settings = { ...thread, cwd: params.cwd || thread.cwd };
+      setImmediate(() => { if (turn.status === 'inProgress') this.run(turn, settings, text, params.effort || null, images); });
       return { turn: { id: turn.id } };
     }
     if (method === 'turn/interrupt') { this.turns.get(String(params.turnId))?.stop(); return {}; }
@@ -125,10 +129,11 @@ export function claudeConfigured(env: NodeJS.ProcessEnv = process.env) {
 // Agent SDKs carry large native parts, so an installed Papilot fetches one
 // into the data folder the first time its agent can be used. ready() runs
 // before the download and throws when the agent is not configured.
+const PACKAGES = path.join(DATA, 'agents');
 export async function loadPackage(name: string, version: string, label: string, ready: () => void = () => {}): Promise<any> {
   try { return await import(name); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw error; }
-  const prefix = path.join(DATA, 'agents'), resolve = () => createRequire(path.join(prefix, 'package.json')).resolve(name);
+  const prefix = PACKAGES, resolve = () => createRequire(path.join(prefix, 'package.json')).resolve(name);
   let entry: string;
   try { entry = resolve(); } catch {
     ready();
@@ -138,6 +143,14 @@ export async function loadPackage(name: string, version: string, label: string, 
     entry = resolve();
   }
   return import(pathToFileURL(entry).href);
+}
+// The file a package loaded from: Papilot's own dependencies, or the copy
+// fetched on first use.
+export function packageFile(name: string) {
+  for (const from of [import.meta.url, path.join(PACKAGES, 'package.json')]) {
+    try { return createRequire(from).resolve(name); } catch { /* Not installed there. */ }
+  }
+  return null;
 }
 
 let claude: Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> | null = null;
@@ -183,6 +196,7 @@ export class ClaudeAgent extends Adapter {
     private findCli: () => string | null = () => findExecutable(process.env.PAPILOT_CLAUDE_BIN || 'claude'),
     private launch: Launch = (command, args, options) => spawn(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'] })) { super(); }
   detect() { return Boolean(this.findCli()) || claudeConfigured(); }
+  async preload() { if (packageFile('@anthropic-ai/claude-agent-sdk')) await this.load(); }
   // The environment Claude Code runs with; undefined keeps Papilot's own.
   protected environment(): Record<string, string> | undefined { return undefined; }
   async start() {

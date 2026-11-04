@@ -6,32 +6,199 @@ import os from 'node:os';
 import net from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
 import { activeInstallation, devRevision, newerVersion, readJson, releaseVersion, stableVersion, writeJson } from '../bin/installation.mjs';
-import { latestRelease, Updates } from '../src/server/updates.ts';
-import { DEV_REPOSITORY, health, loaderFor, npmCli, prepareDev, probeInstallation, sleep } from '../src/server/update-install.ts';
+import { DESKTOP_DEV_TAG, DESKTOP_RELEASES, latestDesktopRelease, latestRelease, Updates } from '../src/server/updates.ts';
+import { DEV_REPOSITORY, download, health, installLayer, installRelease, loaderFor, npmCli, prepareDev, probeInstallation, sleep } from '../src/server/update-install.ts';
+import { createHash } from 'node:crypto';
 import { restartRelease } from '../src/server/update-worker.ts';
 
 const temporary = () => fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-update-test-'));
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 const revision = 'a'.repeat(40), devVersion = `0.7.0-dev.${revision}`;
 function fixture(overrides: Record<string, any> = {}) {
-  const data = temporary();
+  const data = overrides.data || temporary();
   const updates = new Updates({ root: process.cwd(), data, version: '0.6.0', port: 1, supported: true, latest: async () => '0.7.0', busy: () => false, shutdown() {}, ...overrides });
   return { data, updates, close() { updates.close(); fs.rmSync(data, { recursive: true, force: true }); } };
 }
-test('desktop updates cannot install npm releases or switch to a dev checkout', async () => {
-  let checked = false, installed = false;
-  const downloadUrl = 'https://github.com/PapilotAI/papilot/releases/latest';
-  const f = fixture({ downloadUrl, latest: async () => { checked = true; return '0.7.0'; }, install: async () => { installed = true; return '/tmp/unwanted'; } });
+test('the development desktop app checks its own source and only links to installers', async () => {
+  const data = temporary(), downloadUrl = `${DESKTOP_RELEASES}/tag/v0.7.0`;
+  const saved = { currentVersion: devVersion, latestVersion: devVersion, phase: 'restarting', pid: process.pid };
+  writeJson(path.join(data, 'updates/status.json'), saved);
+  writeJson(path.join(data, 'updates/channel.json'), { channel: 'dev' });
+  writeJson(path.join(data, 'updates/install.lock'), { pid: process.pid });
+  let failure = false, found: { version: string; downloadUrl: string } | null = { version: '0.7.0', downloadUrl };
+  const f = fixture({ data, desktop: true, latest: async () => { throw new Error('must not check npm'); },
+    latestDesktop: async () => { if (failure) throw new Error('offline'); return found; },
+    install: async () => { assert.fail('must not install'); } });
   try {
-    f.updates.start();
-    const status = await f.updates.check();
-    assert.equal(status.downloadUrl, downloadUrl);
-    assert.equal(status.canUpdate, false);
-    assert.equal(status.phase, 'idle');
+    assert.equal(f.updates.snapshot().phase, 'idle');
+    let status = await f.updates.check();
+    assert.equal(status.downloadUrl, downloadUrl); assert.equal(status.phase, 'available');
+    assert.equal(status.canUpdate, false); assert.equal(status.channel, undefined);
     assert.throws(() => f.updates.setChannel('dev'), /desktop updates/);
     assert.throws(() => f.updates.install('0.7.0'), /desktop updates/);
-    assert.equal(checked, false); assert.equal(installed, false);
+    assert.throws(() => f.updates.install(devVersion), /desktop updates/);
+    assert.deepEqual(readJson(path.join(data, 'updates/status.json')), saved);
+    assert.equal(readJson(path.join(data, 'updates/channel.json')).channel, 'dev');
+    assert.equal(readJson(path.join(data, 'updates/install.lock')).pid, process.pid);
+    failure = true; status = await f.updates.check();
+    assert.match(status.error!, /Could not check/); assert.equal(status.downloadUrl, downloadUrl);
+    failure = false; found = { version: '0.6.0', downloadUrl }; status = await f.updates.check();
+    assert.equal(status.phase, 'idle'); assert.equal(status.error, null);
+    found = { version: '0.5.0', downloadUrl }; status = await f.updates.check();
+    assert.equal(status.phase, 'idle', 'Never offer a desktop downgrade');
+    found = null; status = await f.updates.check();
+    assert.equal(status.latestVersion, null); assert.equal(status.downloadUrl, DESKTOP_RELEASES);
+  } finally { f.close(); fs.rmSync(data, { recursive: true, force: true }); }
+});
+const fingerprint = 'f'.repeat(64), sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+// Release downloads redirect from github.com to GitHub's download host; the
+// REST API, with its per-IP limit, is never used.
+function githubFixture(files: Record<string, Buffer | string>) {
+  const requests: string[] = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = String(input); requests.push(url);
+    assert.equal(init?.redirect, 'manual'); assert.ok(!url.startsWith('https://api.github.com'));
+    const latest = /^https:\/\/github\.com\/PapilotAI\/papilot\/releases\/latest\/download\/(.+)$/.exec(url);
+    const stable = Object.keys(files).filter(name => /^v[\d.]+\//.test(name)).sort().pop()?.split('/')[0];
+    if (latest) return stable ? new Response(null, { status: 302, headers: { Location: `https://github.com/PapilotAI/papilot/releases/download/${stable}/${latest[1]}` } }) : new Response('Not Found', { status: 404 });
+    const download = /^https:\/\/github\.com\/PapilotAI\/papilot\/releases\/download\/(.+)$/.exec(url);
+    if (download) return download[1] in files ? new Response(null, { status: 302, headers: { Location: `https://release-assets.githubusercontent.com/${download[1]}` } }) : new Response('Not Found', { status: 404 });
+    const file = /^https:\/\/release-assets\.githubusercontent\.com\/(.+)$/.exec(url)?.[1];
+    if (file && file in files) { const body = files[file]; return new Response(typeof body === 'string' ? body : new Uint8Array(body)); }
+    return new Response('missing', { status: 404 });
+  };
+  return { fetcher, requests };
+}
+function desktopRelease(tag: string, version: string, manifest: Record<string, any> = {}) {
+  const layer = Buffer.from(`layer ${version}`), name = `papilot-app-${version}.tgz`;
+  const written = { format: 1, version, fingerprint, layer: { name, size: layer.length, sha256: sha256(layer) }, ...manifest };
+  return { files: { [`${tag}/desktop.json`]: JSON.stringify(written), [`${tag}/${name}`]: layer },
+    layer: { url: `https://github.com/PapilotAI/papilot/releases/download/${tag}/${name}`, size: layer.length, sha256: sha256(layer) } };
+}
+test('desktop discovery reads release downloads and offers the update layer only to the shell it was built for', async () => {
+  const stable = desktopRelease('v1.1.0', '1.1.0'), dev = desktopRelease(DESKTOP_DEV_TAG, devVersion);
+  const github = githubFixture({ ...stable.files, ...dev.files });
+  assert.deepEqual(await latestDesktopRelease(github.fetcher, 'stable', fingerprint), { version: '1.1.0', downloadUrl: `${DESKTOP_RELEASES}/tag/v1.1.0`, layer: stable.layer });
+  assert.deepEqual(await latestDesktopRelease(github.fetcher, 'stable', 'e'.repeat(64)), { version: '1.1.0', downloadUrl: `${DESKTOP_RELEASES}/tag/v1.1.0` }, 'Another shell needs the installer');
+  assert.deepEqual(await latestDesktopRelease(github.fetcher), { version: '1.1.0', downloadUrl: `${DESKTOP_RELEASES}/tag/v1.1.0` }, 'The development app gets no layer');
+  assert.deepEqual(await latestDesktopRelease(github.fetcher, 'dev', fingerprint), { version: devVersion, downloadUrl: `${DESKTOP_RELEASES}/tag/${DESKTOP_DEV_TAG}`, layer: dev.layer });
+  assert.deepEqual(await latestDesktopRelease(github.fetcher, 'dev', 'e'.repeat(64)), { version: devVersion, downloadUrl: `${DESKTOP_RELEASES}/tag/${DESKTOP_DEV_TAG}` });
+  assert.ok(github.requests.includes('https://github.com/PapilotAI/papilot/releases/latest/download/desktop.json'));
+  // A release without a manifest yet (or before the first nightly build) offers nothing.
+  assert.equal(await latestDesktopRelease(githubFixture(stable.files).fetcher, 'dev', fingerprint), null);
+  assert.equal(await latestDesktopRelease(githubFixture({}).fetcher, 'stable', fingerprint), null);
+  // A layer that does not describe a safe, complete file is ignored.
+  for (const manifest of [{ fingerprint: 'e'.repeat(64) }, { layer: { name: '../papilot-app-1.1.0.tgz', size: 13, sha256: 'a'.repeat(64) } }, { layer: { name: 'papilot-app-1.1.0.tgz', size: 0, sha256: 'a'.repeat(64) } }, { layer: { name: 'papilot-app-1.1.0.tgz', size: 13, sha256: 'xyz' } }]) {
+    assert.equal((await latestDesktopRelease(githubFixture(desktopRelease('v1.1.0', '1.1.0', manifest).files).fetcher, 'stable', fingerprint))?.layer, undefined, JSON.stringify(manifest));
+  }
+  for (const [tag, version, channel] of [['v1.1.0', devVersion, 'stable'], [DESKTOP_DEV_TAG, '1.2.0', 'dev']] as const) {
+    await assert.rejects(latestDesktopRelease(githubFixture(desktopRelease(tag, version).files).fetcher, channel, fingerprint), /Invalid release/);
+  }
+  await assert.rejects(latestDesktopRelease(githubFixture(desktopRelease('v1.1.0', '1.1.0', { format: 2 }).files).fetcher, 'stable', fingerprint), /Invalid release/, 'A newer manifest format needs a newer app');
+  await assert.rejects(latestDesktopRelease(async () => new Response('', { status: 503 }), 'stable', fingerprint), /Could not check/);
+  await assert.rejects(latestDesktopRelease(async () => { throw new TypeError('fetch failed'); }, 'dev', fingerprint), /Could not check/);
+  // Downloads follow redirects only over HTTPS to GitHub's hosts.
+  const redirect = (location: string): typeof fetch => async () => new Response(null, { status: 302, headers: { Location: location } });
+  for (const location of ['http://release-assets.githubusercontent.com/x', 'https://example.com/x', 'https://githubusercontent.com.example.com/x']) {
+    await assert.rejects(download('https://github.com/PapilotAI/papilot/releases/download/v1.1.0/desktop.json', redirect(location), 1024), /could not be installed/);
+  }
+  await assert.rejects(download('https://github.com/x', async () => new Response('x'.repeat(2048)), 1024), /could not be installed/);
+});
+test('a packaged desktop app updates in place with layers and links to installers for other shells', async () => {
+  const data = temporary(), bundle = { root: '/app/server', version: '0.6.0', fingerprint };
+  const layer = { url: 'https://github.com/x/layer.tgz', size: 10, sha256: 'a'.repeat(64) };
+  writeJson(path.join(data, 'updates/channel.json'), { channel: 'dev' });
+  let found: any = { version: '0.7.0', downloadUrl: `${DESKTOP_RELEASES}/tag/v0.7.0`, layer };
+  const channels: string[] = [], installed: unknown[][] = [], restarts: string[][] = [];
+  const f = fixture({ data, desktop: true, bundle, latest: async () => { throw new Error('must not check npm'); },
+    latestDesktop: async (channel: string) => { channels.push(channel); return found; },
+    install: async () => { assert.fail('must not install npm releases'); },
+    installLayer: async (...args: unknown[]) => { installed.push(args); return '/data/layer'; },
+    restart: async (root: string, version: string) => { restarts.push([root, version]); } });
+  try {
+    let status = await f.updates.check();
+    assert.deepEqual(channels, ['stable'], 'The web server channel preference is separate');
+    assert.equal(status.channel, 'stable'); assert.equal(status.canUpdate, true); assert.equal(status.phase, 'available'); assert.equal(status.downloadUrl, undefined);
+    status = f.updates.install('0.7.0'); await tick(); await tick();
+    assert.deepEqual(installed, [[data, '0.7.0', layer, bundle]]);
+    assert.deepEqual(restarts, [['/data/layer', '0.7.0']]);
+    assert.equal(f.updates.snapshot().phase, 'restarting');
+    assert.equal(readJson(path.join(data, 'updates/desktop/status.json')).phase, 'restarting');
+    assert.equal(readJson(path.join(data, 'updates/status.json')), null, 'Web update state is untouched');
   } finally { f.close(); }
+  // A main build for another shell needs a new installer.
+  const second = temporary();
+  found = { version: devVersion, downloadUrl: `${DESKTOP_RELEASES}/tag/${DESKTOP_DEV_TAG}` };
+  const g = fixture({ data: second, desktop: true, bundle, latestDesktop: async (channel: string) => { channels.push(channel); return found; },
+    installLayer: async () => { assert.fail('must not install'); } });
+  try {
+    let status = await g.updates.setChannel('dev');
+    assert.equal(readJson(path.join(second, 'updates/desktop/channel.json')).channel, 'dev');
+    assert.equal(status.channel, 'dev'); assert.equal(status.phase, 'available'); assert.equal(status.downloadUrl, `${DESKTOP_RELEASES}/tag/${DESKTOP_DEV_TAG}`);
+    assert.throws(() => g.updates.install(devVersion), /desktop updates/);
+    found = { ...found, layer }; status = await g.updates.check();
+    assert.equal(status.downloadUrl, undefined); assert.equal(status.phase, 'available');
+    found = { version: '0.6.0', downloadUrl: `${DESKTOP_RELEASES}/tag/v0.6.0` }; status = await g.updates.setChannel('stable');
+    assert.equal(status.phase, 'idle', 'The bundled version is current');
+  } finally { g.close(); }
+  // Leaving the dev channel returns to the installer's own version without a download.
+  const third = temporary(), restarted: string[][] = [];
+  found = { version: '0.6.0', downloadUrl: `${DESKTOP_RELEASES}/tag/v0.6.0` };
+  const h = fixture({ data: third, desktop: true, bundle, version: devVersion, latestDesktop: async () => found,
+    installLayer: async () => { assert.fail('must not download the bundled version'); }, restart: async (root: string, version: string) => { restarted.push([root, version]); } });
+  try {
+    assert.equal(h.updates.snapshot().channel, 'dev', 'A dev build starts on the dev channel');
+    const status = await h.updates.setChannel('stable');
+    assert.equal(status.phase, 'available'); assert.equal(status.downloadUrl, undefined);
+    h.updates.install('0.6.0'); await tick(); await tick();
+    assert.deepEqual(restarted, [['/app/server', '0.6.0']]);
+  } finally { h.close(); }
+  // After a layer failed at launch, Retry finds the release again in the new process.
+  const fourth = temporary(), retried: unknown[][] = [];
+  writeJson(path.join(fourth, 'updates/desktop/status.json'), { currentVersion: '0.6.0', latestVersion: '0.7.0', phase: 'failed', error: 'did not start', pid: 1 });
+  found = { version: '0.7.0', downloadUrl: `${DESKTOP_RELEASES}/tag/v0.7.0`, layer };
+  const k = fixture({ data: fourth, desktop: true, bundle, latestDesktop: async () => found,
+    installLayer: async (...args: unknown[]) => { retried.push(args); return '/data/layer'; }, restart: async () => {} });
+  try {
+    assert.equal(k.updates.snapshot().phase, 'failed'); assert.equal(k.updates.snapshot().latestVersion, '0.7.0');
+    k.updates.install('0.7.0'); for (let i = 0; i < 5; i++) await tick();
+    assert.deepEqual(retried, [[fourth, '0.7.0', layer, bundle]]);
+  } finally { k.close(); }
+});
+test('installing a layer verifies the download, links the installer dependencies and checks that it starts', async () => {
+  const data = temporary(), source = temporary(), version = '0.7.0';
+  const root = path.join(source, 'package');
+  const files: Record<string, string> = {
+    'package.json': JSON.stringify({ name: 'papilot', version, type: 'module' }), 'desktop-layer.json': JSON.stringify({ format: 1, version, fingerprint }),
+    'dist/index.html': '', 'engine/package.json': '{}', 'src/server/start.ts': '',
+    'src/server/main.ts': `import http from 'node:http';\nimport { fileURLToPath } from 'node:url';\nimport fs from 'node:fs';\nhttp.createServer((_, res) => res.end(JSON.stringify({ name: 'Papilot', version: '${version}', linked: fs.existsSync(fileURLToPath(new URL('../../node_modules/tsx', import.meta.url))) }))).listen(Number(process.env.PAPILOT_PORT), '127.0.0.1');\n`,
+  };
+  for (const [name, content] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true }); fs.writeFileSync(path.join(root, name), content); }
+  const archive = path.join(source, 'layer.tgz');
+  execFileSync('tar', ['-czf', archive, '-C', source, 'package'], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
+  const bytes = fs.readFileSync(archive), layer = { url: 'https://github.com/x/layer.tgz', size: bytes.length, sha256: sha256(bytes) };
+  const fetcher = (body: Buffer): typeof fetch => async () => new Response(new Uint8Array(body));
+  const bundle = { root: process.cwd(), fingerprint };
+  try {
+    const installed = await installLayer(data, version, layer, bundle, fetcher(bytes));
+    assert.ok(installed.startsWith(path.join(data, 'updates/desktop/layers') + path.sep));
+    assert.equal(readJson(path.join(installed, 'package.json')).version, version);
+    assert.equal(fs.readlinkSync(path.join(installed, 'node_modules')), path.join(process.cwd(), 'node_modules'));
+    assert.equal(fs.readlinkSync(path.join(installed, 'engine/node_modules')), path.join(process.cwd(), 'engine/node_modules'));
+    assert.equal(fs.existsSync(path.join(path.dirname(installed), 'layer.tgz')), false, 'The archive is not kept');
+    const damaged = Buffer.from(bytes); damaged[damaged.length - 1] ^= 1;
+    await assert.rejects(installLayer(data, version, layer, bundle, fetcher(damaged)), /could not be installed/);
+    await assert.rejects(installLayer(data, version, layer, { ...bundle, fingerprint: 'e'.repeat(64) }, fetcher(bytes)), /desktop updates/);
+    await assert.rejects(installLayer(data, '0.7.1', layer, bundle, fetcher(bytes)), /does not match/);
+    assert.deepEqual(fs.readdirSync(path.join(data, 'updates/desktop/layers')), [path.basename(path.dirname(installed))], 'Failed downloads leave nothing behind');
+  } finally { fs.rmSync(data, { recursive: true, force: true }); fs.rmSync(source, { recursive: true, force: true }); }
+});
+test('the installer rejects desktop calls before installing either stable or dev packages', async () => {
+  const previous = process.env.PAPILOT_DESKTOP;
+  process.env.PAPILOT_DESKTOP = '1';
+  try {
+    for (const version of ['0.7.0', devVersion]) await assert.rejects(installRelease('/unused', version), /desktop updates/);
+  } finally { if (previous === undefined) delete process.env.PAPILOT_DESKTOP; else process.env.PAPILOT_DESKTOP = previous; }
 });
 test('release comparisons reject unsafe targets and never downgrade', () => {
   for (const version of ['latest', '../1.0.0', '1.2.3;whoami', '1.2.3-beta.1', '01.2.3', '1.2']) assert.equal(stableVersion(version), false, version);
@@ -89,7 +256,7 @@ test('dev preparation builds the advertised commit, independently of a newer mai
     fs.mkdirSync(source); fs.mkdirSync(root);
     git(source, ['init', '-q']); git(source, ['config', 'user.name', 'Test']); git(source, ['config', 'user.email', 'test@localhost']);
     writeJson(path.join(source, 'package.json'), { name: 'papilot', version: '0.7.0' });
-    writeJson(path.join(source, 'vendor/latex-review/package.json'), { name: 'review' });
+    writeJson(path.join(source, 'engine/package.json'), { name: 'review' });
     git(source, ['add', '.']); git(source, ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Selected']);
     const sha = git(source, ['rev-parse', 'HEAD']);
     fs.writeFileSync(path.join(source, 'newer.txt'), 'Not selected'); git(source, ['add', '.']);
@@ -104,7 +271,7 @@ test('dev preparation builds the advertised commit, independently of a newer mai
     assert.equal(readJson(path.join(root, 'package.json')).version, version);
     assert.equal(readJson(path.join(source, 'package.json')).version, '0.7.0');
     assert.deepEqual(calls.map(call => call.args[0]), ['ci', 'ci', 'run', 'run', 'prune', 'prune']);
-    assert.deepEqual(calls.filter(call => call.args[0] === 'run').map(call => call.cwd), [path.join(root, 'vendor/latex-review'), root]);
+    assert.deepEqual(calls.filter(call => call.args[0] === 'run').map(call => call.cwd), [path.join(root, 'engine'), root]);
     await assert.rejects(prepareDev(root, '0.7.0-dev.bad', 1), /Invalid development version/);
   } finally { fs.rmSync(data, { recursive: true, force: true }); }
 });
@@ -118,7 +285,7 @@ test('dev builds tolerate test-only engine restrictions but reject incompatible 
     writeJson(path.join(dependency, 'package.json'), { name: 'fixture-incompatible', version: '1.0.0', engines: { node: '<0' } });
     npm(dependency, ['pack', '--pack-destination', source]);
     const build = `node -e "const fs = require('node:fs'); fs.accessSync('node_modules/fixture-incompatible/package.json'); fs.writeFileSync('build-ok', 'yes')"`;
-    const engine = path.join(source, 'vendor/latex-review');
+    const engine = path.join(source, 'engine');
     git(source, ['init', '-q']); git(source, ['config', 'user.name', 'Test']); git(source, ['config', 'user.email', 'test@localhost']);
     for (const [name, appKind, reviewKind] of [
       ['dev-only', 'devDependencies', 'devDependencies'],
@@ -126,7 +293,7 @@ test('dev builds tolerate test-only engine restrictions but reject incompatible 
       ['review-runtime', 'devDependencies', 'dependencies'],
     ]) {
       writeJson(path.join(source, 'package.json'), { name: 'papilot', version: '0.7.0', scripts: { build }, [appKind]: { 'fixture-incompatible': 'file:./fixture-incompatible-1.0.0.tgz' } });
-      writeJson(path.join(engine, 'package.json'), { name: 'review', version: '1.0.0', scripts: { build }, [reviewKind]: { 'fixture-incompatible': 'file:../../fixture-incompatible-1.0.0.tgz' } });
+      writeJson(path.join(engine, 'package.json'), { name: 'review', version: '1.0.0', scripts: { build }, [reviewKind]: { 'fixture-incompatible': 'file:../fixture-incompatible-1.0.0.tgz' } });
       npm(source, ['install', '--package-lock-only']);
       npm(engine, ['install', '--package-lock-only']);
       git(source, ['add', '.']); git(source, ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', name]);
@@ -136,14 +303,14 @@ test('dev builds tolerate test-only engine restrictions but reject incompatible 
       else {
         await preparing;
         assert.equal(fs.readFileSync(path.join(root, 'build-ok'), 'utf8'), 'yes');
-        assert.equal(fs.readFileSync(path.join(root, 'vendor/latex-review/build-ok'), 'utf8'), 'yes');
+        assert.equal(fs.readFileSync(path.join(root, 'engine/build-ok'), 'utf8'), 'yes');
         assert.equal(fs.existsSync(path.join(root, 'node_modules/fixture-incompatible')), false);
-        assert.equal(fs.existsSync(path.join(root, 'vendor/latex-review/node_modules/fixture-incompatible')), false);
+        assert.equal(fs.existsSync(path.join(root, 'engine/node_modules/fixture-incompatible')), false);
         // The launcher reads tested agent versions from the retained devDependencies.
-        const app = readJson(path.join(root, 'package.json')), review = readJson(path.join(root, 'vendor/latex-review/package.json'));
+        const app = readJson(path.join(root, 'package.json')), review = readJson(path.join(root, 'engine/package.json'));
         assert.equal(app.version, `0.7.0-dev.${revision}`);
         assert.deepEqual(app.devDependencies, { 'fixture-incompatible': 'file:./fixture-incompatible-1.0.0.tgz' });
-        assert.deepEqual(review.devDependencies, { 'fixture-incompatible': 'file:../../fixture-incompatible-1.0.0.tgz' });
+        assert.deepEqual(review.devDependencies, { 'fixture-incompatible': 'file:../fixture-incompatible-1.0.0.tgz' });
       }
     }
   } catch (error) { t.diagnostic(fs.readFileSync(path.join(data, 'install.log'), 'utf8')); throw error; }
@@ -287,7 +454,7 @@ for (const version of ['0.7.0', devVersion]) test(`a browser install of ${versio
     fs.cpSync(path.join(process.cwd(), 'bin'), path.join(root, 'bin'), { recursive: true });
     writeJson(path.join(root, 'package.json'), { ...readJson(path.join(process.cwd(), 'package.json')), version });
     fs.symlinkSync(path.join(process.cwd(), 'node_modules'), path.join(root, 'node_modules'), 'dir');
-    fs.symlinkSync(path.join(process.cwd(), 'vendor'), path.join(root, 'vendor'), 'dir');
+    fs.symlinkSync(path.join(process.cwd(), 'engine'), path.join(root, 'engine'), 'dir');
     const start = path.join(root, 'src/server/start.ts');
     fs.appendFileSync(start, "\nfs.writeFileSync(path.join(DATA, 'test-server.pid'), String(process.pid));\n");
   };

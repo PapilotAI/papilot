@@ -2,14 +2,14 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'elect
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { backendEnvironment, startBackend } from './runtime.js';
+import { backendEnvironment, startBackend, startServer, switchServer, type Bundle } from './runtime.js';
 
-const releases = 'https://github.com/PapilotAI/papilot/releases/latest';
+const releases = 'https://github.com/PapilotAI/papilot/releases';
 app.setName('Papilot');
 if (process.env.PAPILOT_DESKTOP_DATA) app.setPath('userData', path.resolve(process.env.PAPILOT_DESKTOP_DATA));
 let window: BrowserWindow | null = null;
 let backend: ReturnType<typeof startBackend> | undefined;
-let quitting = false, stopped = false, origin = '';
+let quitting = false, stopped = false, switching = false, origin = '';
 function external(url: string) {
   try { if (['https:', 'http:'].includes(new URL(url).protocol)) void shell.openExternal(url); } catch { /* invalid link */ }
 }
@@ -45,6 +45,23 @@ else {
     void backend.stop().finally(() => { stopped = true; app.quit(); });
   });
   void app.whenReady().then(async () => {
+    const chooseDirectory = async (parent: BrowserWindow) => {
+      const result = await dialog.showOpenDialog(parent, { properties: ['openDirectory'] });
+      return result.canceled ? null : result.filePaths[0] || null;
+    };
+    ipcMain.handle('papilot:choose-directory', async event => {
+      if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return null;
+      if (!event.senderFrame || new URL(event.senderFrame.url).origin !== origin) return null;
+      return chooseDirectory(window);
+    });
+    // Like an editor's File › Open Folder…: the chosen folder opens as a paper.
+    const openFolder = async () => {
+      showWindow();
+      const target = window;
+      if (!target || !target.webContents.getURL().startsWith(origin + '/')) return;
+      const folder = await chooseDirectory(target);
+      if (folder && window === target) target.webContents.send('papilot:open-folder', folder);
+    };
     ipcMain.on('papilot:window', (event, action: unknown) => {
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;
       if (!event.senderFrame || new URL(event.senderFrame.url).origin !== origin) return;
@@ -56,36 +73,65 @@ else {
     const node = app.isPackaged ? path.join(process.resourcesPath, process.platform === 'win32' ? 'runtime/bin/node.exe' : 'runtime/bin/node') : process.env.PAPILOT_DESKTOP_NODE;
     if (!node) throw new Error('Use npm run desktop to start the development app.');
     const data = app.getPath('userData'), log = path.join(app.getPath('logs'), 'backend.log');
-    const env: NodeJS.ProcessEnv = backendEnvironment(node, root, data);
+    const read = (file: string) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
+    // Only packaged apps know their shell and install update layers.
+    const bundle: Bundle = { root, version: read(path.join(root, 'package.json'))?.version || '',
+      fingerprint: app.isPackaged ? String(read(path.join(app.getAppPath(), 'package.json'))?.desktopFingerprint || '') : '' };
     // A stable localhost origin preserves renderer drafts and preferences.
     const portFile = path.join(data, 'desktop-port.json');
+    let port = 0;
     try {
-      const port = JSON.parse(fs.readFileSync(portFile, 'utf8'));
-      if (Number.isInteger(port) && port > 0 && port < 65536) env.PAPILOT_PORT = String(port);
+      const saved = JSON.parse(fs.readFileSync(portFile, 'utf8'));
+      if (Number.isInteger(saved) && saved > 0 && saved < 65536) port = saved;
     } catch { /* first launch */ }
     // Finder-launched apps do not inherit a terminal's proxy variables.
-    if (!env.HTTPS_PROXY && !env.https_proxy && !env.HTTP_PROXY && !env.http_proxy && !env.ALL_PROXY && !env.all_proxy) {
-      const proxy = await session.defaultSession.resolveProxy('https://api.openai.com').catch(() => 'DIRECT');
-      const address = /^PROXY ([^; ]+)/.exec(proxy)?.[1];
-      if (address) env.HTTPS_PROXY = env.HTTP_PROXY = `http://${address}`;
+    let proxy = '';
+    if (!process.env.HTTPS_PROXY && !process.env.https_proxy && !process.env.HTTP_PROXY && !process.env.http_proxy && !process.env.ALL_PROXY && !process.env.all_proxy) {
+      const resolved = await session.defaultSession.resolveProxy('https://api.openai.com').catch(() => 'DIRECT');
+      const address = /^PROXY ([^; ]+)/.exec(resolved)?.[1];
+      if (address) proxy = `http://${address}`;
     }
-    env.NO_PROXY = [env.NO_PROXY || env.no_proxy, 'localhost', '127.0.0.1', '::1'].filter(Boolean).join(',');
-    // Node's fetch and SDK HTTP clients can use the system proxy as well.
-    env.NODE_USE_ENV_PROXY = '1';
+    const environment = (server: string) => {
+      const env: NodeJS.ProcessEnv = backendEnvironment(node, server, data);
+      if (port) env.PAPILOT_PORT = String(port);
+      if (proxy) env.HTTPS_PROXY = env.HTTP_PROXY = proxy;
+      env.NO_PROXY = [env.NO_PROXY || env.no_proxy, 'localhost', '127.0.0.1', '::1'].filter(Boolean).join(',');
+      // Node's fetch and SDK HTTP clients can use the system proxy as well.
+      env.NODE_USE_ENV_PROXY = '1';
+      if (bundle.fingerprint) { env.PAPILOT_DESKTOP_BUNDLE = root; env.PAPILOT_DESKTOP_FINGERPRINT = bundle.fingerprint; }
+      return env;
+    };
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: 'Papilot', submenu: [{ role: 'about' }, { label: 'Download Updates…', click: () => external(releases) }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+      { label: 'File', submenu: [{ id: 'open-folder', label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: () => void openFolder() }, { type: 'separator' }, process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' }] },
       { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
       { role: 'help', submenu: [{ label: 'Papilot Guide', click: () => external('https://github.com/PapilotAI/papilot#readme') }, { label: 'Show Logs', click: () => shell.showItemInFolder(log) }] },
     ]));
-    backend = startBackend({ node, root, data, log, env });
-    origin = await backend.ready;
-    fs.writeFileSync(portFile, JSON.stringify(Number(new URL(origin).port)), { mode: 0o600 });
-    backend.child.once('exit', () => {
-      if (quitting) return;
-      dialog.showErrorBox('Papilot stopped', `The local server stopped unexpectedly. Reopen Papilot to continue.\n\nLog: ${log}`);
-      app.quit();
-    });
+    let server = root;
+    const fatal = (message: string) => { dialog.showErrorBox('Papilot stopped', `${message}\n\nLog: ${log}`); app.quit(); };
+    // Starts a backend and resolves once it serves requests. The window follows
+    // it if an occupied port moved it to a new origin.
+    const launch = async (folder: string) => {
+      const next = startBackend({ node, root: folder, data, log, env: environment(folder) });
+      backend = next;
+      let url: string;
+      try { url = await next.ready; } catch (error) { await next.stop(); throw error; }
+      next.child.once('exit', () => { if (!quitting && !switching && backend === next) fatal('The local server stopped unexpectedly. Reopen Papilot to continue.'); });
+      // The backend asks for the switch once its update is ready and idle.
+      next.child.on('message', message => {
+        if (backend !== next || switching || quitting || (message as { type?: unknown } | null)?.type !== 'papilot:activate') return;
+        switching = true;
+        void switchServer(data, bundle, message, server, () => next.stop(), launch).then(running => { server = running; })
+          .catch(error => fatal(`Papilot could not restart after the update: ${error instanceof Error ? error.message : error}`))
+          .finally(() => { switching = false; });
+      });
+      port = Number(new URL(url).port);
+      fs.writeFileSync(portFile, JSON.stringify(port), { mode: 0o600 });
+      if (url !== origin) { const moved = Boolean(origin); origin = url; if (moved) void window?.loadURL(origin); }
+    };
+    // Legacy npm activations (updates/active.json) are never used.
+    server = await startServer(data, bundle, launch);
     showWindow();
   }).catch(error => {
     dialog.showErrorBox('Could not start Papilot', `${error instanceof Error ? error.message : error}\n\nSee backend.log in ${app.getPath('logs')}.`);

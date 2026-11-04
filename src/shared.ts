@@ -9,6 +9,7 @@ export const MAX_ATTACHMENT_TOTAL = 100 * 1024 * 1024;
 export interface Attachment { id: string; projectId: string; name: string; size: number; mime: string }
 export type UpdateChannel = 'stable' | 'dev';
 export interface UpdateStatus {
+  // Present when the update must be downloaded as a new desktop app.
   downloadUrl?: string;
   channel?: UpdateChannel;
   currentVersion: string; latestVersion: string | null;
@@ -18,7 +19,8 @@ export interface UpdateStatus {
 // unsent counts review updates the agent has not received; comments are the
 // ones that ask for a revision. files are the manuscript files this task's
 // accepted changes touched since its last commit, relative to the repository root.
-export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: { phase: string; status: string; error?: string; details?: string[] } | null }
+export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: { id?: string; phase: string; status: string; error?: string; details?: string[] } | null }
+export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface TaskCommitReview { token: string; files: string[]; diff: string }
 export interface TaskReconciliation {
@@ -43,6 +45,8 @@ export interface Task {
   error: string | null; review: ReviewSummary | null;
   pauseVersion?: number; pendingRunId?: string | null;
   pendingReview?: PendingReview | null;
+  // Persist before submission so reconnects resume the same build and run links.
+  pendingBuild?: PendingBuild | null;
   // The task's last commit from its review, and the accepted text it included.
   committed?: { hash: string; accepted: string; at: number; pushed?: boolean } | null;
 }
@@ -112,7 +116,8 @@ export interface Person { id: string; name: string; role: 'owner' | 'member'; jo
 export interface Device { id: string; kind: 'passkey' | 'session'; label: string; createdAt: number; lastUsedAt: number | null }
 export interface People { origin: string | null; people: Person[] }
 // staged: the index has changes to this file; unstaged: the working tree has more.
-export interface GitFile { path: string; status: string; staged: boolean; unstaged: boolean; lines?: [number, number]; from?: string }
+// index is the staged status where it differs from status, which is the working tree's when it has changes.
+export interface GitFile { path: string; status: string; staged: boolean; unstaged: boolean; lines?: [number, number]; from?: string; index?: string }
 // merging is a merge in progress, with the files whose conflict markers remain.
 export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null; remote?: boolean; merging?: { message: string; conflicts: string[] } | null }
 export interface GitDiff { path: string; diff: string; truncated: boolean }
@@ -121,9 +126,13 @@ export interface GitWorktree {
   locked?: string; prunable?: string; status: GitStatus | null; error?: string;
   taskId?: string;
 }
-export interface GitGraphCommit { hash: string; parents: string[]; subject: string; author: string; date: number; refs: string[] }
+// refs are local branches; remote branches and tags are listed apart, as an editor's graph shows them.
+export interface GitGraphCommit { hash: string; parents: string[]; subject: string; author: string; date: number; refs: string[]; remotes?: string[]; tags?: string[] }
 export interface GitOverview { worktrees: GitWorktree[]; commits: GitGraphCommit[]; truncated: boolean }
-export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean; problems?: BuildProblemCounts }
+// A running compilation, from latexmk's output: its step, the TeX pass, and
+// the pages typeset in that pass against the last known page count.
+export interface BuildProgress { step: 'tex' | 'bibliography' | 'pdf'; pass: number; pages: number; total: number | null; startedAt: number }
+export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean; problems?: BuildProblemCounts; progress?: BuildProgress }
 // What the last finished build reported. Errors stop the build; warnings are
 // mistakes in the PDF (?? and missing citations); minor problems are
 // typesetting (overfull lines) and package remarks, listed but never counted.
@@ -153,6 +162,8 @@ export interface PaperImport {
   id: string; path: string; name: string; copied: boolean; candidates: string[]; main: string; engine: string;
   phase: 'choose' | 'building' | 'failed' | 'ready' | 'repairing';
   error?: string; summary?: string; versioned?: boolean;
+  // While building: when it started, and the compilation's progress.
+  startedAt?: number; progress?: BuildProgress;
 }
 // The paper's bibliography as the References panel reads it: the review
 // engine's report of every entry, with online checks and the entries the
