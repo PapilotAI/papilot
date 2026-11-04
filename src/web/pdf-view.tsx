@@ -16,8 +16,10 @@ import { mergeLines } from './note-geometry.ts';
 import { touchSelection } from './touch-select.ts';
 import { t } from './i18n.ts';
 import { PdfNoteCard, type PdfNoteActions } from './pdf-suggestion.tsx';
+import { cMapData } from '../../engine/src/web/pdf-cmaps.ts';
 
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
+const CMapData = cMapData(import.meta.glob<string>('../../node_modules/pdfjs-dist/cmaps/*.bcmap', { eager: true, import: 'default', query: '?url&no-inline' }));
 
 // The pdf.js stylesheet also styles pdf.js's own app (.sidebar, .dialog) and
 // sets a dark color scheme on :root; keep all of it inside the viewer.
@@ -473,7 +475,7 @@ export const PdfView = forwardRef<PdfHandle, {
     let cancelled = false, settled = false;
     if (loaded.current) restore.current = { scale: current.viewer.currentScaleValue, top: box.scrollTop, left: box.scrollLeft };
     setLoading(!loaded.current); setError('');
-    const task = pdfjs.getDocument({ url: props.url, enableXfa: false });
+    const task = pdfjs.getDocument({ url: props.url, enableXfa: false, BinaryDataFactory: CMapData });
     task.promise.then(async document => {
       settled = true;
       if (cancelled) { void document.loadingTask.destroy(); return; }
@@ -555,7 +557,7 @@ export const PdfView = forwardRef<PdfHandle, {
     if (!editing) return false;
     setNoteBusy(true); setNoteError('');
     try {
-      await latest.current.onCreate(editing.page, editing.rect, editing.rects, editing.quote, comment, undefined, { reveal: action !== 'close', quote: action === 'quote' });
+      await latest.current.onCreate(editing.page, editing.rect, editing.rects, editing.quote, comment, undefined, { reveal: action === 'keep', quote: action === 'quote' });
       setEditing(null); latest.current.setRegion(false); return true;
     } catch (error) { setNoteError(error instanceof Error ? error.message : String(error)); return false; }
     finally { setNoteBusy(false); }

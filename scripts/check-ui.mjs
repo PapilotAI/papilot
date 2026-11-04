@@ -5,6 +5,7 @@ fs.mkdirSync('test-results', { recursive: true });
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
 import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { selectOption, selectedValue } from './select.mjs';
 
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
@@ -434,7 +435,7 @@ try {
   await diagnostics.getByRole('button', { name: 'Agents', exact: true }).click();
   await diagnostics.getByRole('button', { name: 'General', exact: true }).click();
   assert.equal(await page.evaluate(() => document.activeElement.textContent), 'General');
-  await settingsDialog.getByRole('combobox', { name: 'Language', exact: true }).selectOption('zh-Hans');
+  await selectOption(settingsDialog.getByRole('combobox', { name: 'Language', exact: true }), 'zh-Hans');
   await settingsDialog.getByRole('button', { name: '外观', exact: true }).click();
   await settingsDialog.getByRole('radio', { name: '深色', exact: true }).check();
   await page.getByRole('button', { name: '智能体', exact: true }).click();
@@ -458,7 +459,7 @@ try {
   await settingsDialog.getByRole('radio', { name: '跟随系统', exact: true }).check();
   await settingsDialog.getByRole('button', { name: '设置', exact: true }).click();
   await settingsDialog.getByRole('button', { name: '通用', exact: true }).click();
-  await settingsDialog.getByRole('combobox', { name: '语言', exact: true }).selectOption('system');
+  await selectOption(settingsDialog.getByRole('combobox', { name: '语言', exact: true }), 'system');
   await closeSettings();
   await page.setViewportSize({ width: 1440, height: 900 });
   console.log('PASS: Agent diagnostics retry, LaTeX installation, translated mobile layout, changelog and contribution links');
@@ -492,7 +493,7 @@ try {
   // The interface language switches live, reloads the review in it, and keeps the draft.
   await page.getByRole('textbox', { name: 'Instructions for Codex' }).fill('Keep this draft across languages.');
   await settingsButton.click();
-  await settingsDialog.getByRole('combobox', { name: 'Language' }).selectOption('zh-Hans');
+  await selectOption(settingsDialog.getByRole('combobox', { name: 'Language' }), 'zh-Hans');
   await page.getByRole('dialog', { name: '设置' }).getByText('外观', { exact: true }).waitFor();
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('html').getAttribute('lang'), 'zh-Hans');
@@ -502,7 +503,7 @@ try {
   assert.match(await page.getByRole('link', { name: '在新标签页中打开审阅' }).getAttribute('href'), /&lang=zh-Hans$/);
   await page.reload();
   await page.getByRole('button', { name: '设置', exact: true }).click();
-  await page.getByRole('dialog', { name: '设置' }).getByRole('combobox', { name: '语言' }).selectOption('zh-Hant');
+  await selectOption(page.getByRole('dialog', { name: '设置' }).getByRole('combobox', { name: '语言' }), 'zh-Hant');
   const hant = JSON.parse(fs.readFileSync('src/web/locales/zh-Hant.json', 'utf8'));
   await page.getByRole('dialog', { name: hant.Settings }).getByRole('combobox', { name: hant.Language }).waitFor();
   assert.equal(await page.locator('html').getAttribute('lang'), 'zh-Hant');
@@ -512,7 +513,7 @@ try {
   await page.screenshot({ path: 'test-results/i18n-workspace-zh-Hant.png', fullPage: true });
   await page.reload();
   await page.getByRole('button', { name: hant.Settings, exact: true }).click();
-  await page.getByRole('dialog', { name: hant.Settings }).getByRole('combobox', { name: hant.Language }).selectOption('system');
+  await selectOption(page.getByRole('dialog', { name: hant.Settings }).getByRole('combobox', { name: hant.Language }), 'system');
   await settingsDialog.waitFor();
   await closeSettings();
   assert.equal(await page.locator('html').getAttribute('lang'), 'en');
@@ -531,10 +532,10 @@ try {
   const notifySwitch = settingsDialog.getByRole('switch', { name: 'Notifications' });
   assert.equal(await notifySwitch.isChecked(), false);
   for (const name of ['Input needed', 'Approval requests', 'Review ready', 'Task finished', 'Task errors']) {
-    assert.equal(await settingsDialog.getByRole('combobox', { name, exact: true }).inputValue(), 'push');
+    assert.equal(await selectedValue(settingsDialog.getByRole('combobox', { name, exact: true })), 'push');
   }
   const reviewNotifications = settingsDialog.getByRole('combobox', { name: 'Review ready', exact: true });
-  await reviewNotifications.selectOption('off');
+  await selectOption(reviewNotifications, 'off');
   await notifySwitch.check();
   await settingsDialog.getByRole('button', { name: 'Send a test notification' }).click();
   await settingsDialog.getByText(/^Sent\./).waitFor();
@@ -556,8 +557,8 @@ try {
   await settingsDialog.getByRole('button', { name: 'Notifications', exact: true }).click();
   await notifySwitch.uncheck();
   await notifySwitch.check();
-  assert.equal(await reviewNotifications.inputValue(), 'off', 'The master switch preserves scenario choices');
-  await reviewNotifications.selectOption('push');
+  assert.equal(await selectedValue(reviewNotifications), 'off', 'The master switch preserves scenario choices');
+  await selectOption(reviewNotifications, 'push');
   await closeSettings();
   await page.evaluate(() => { document.hasFocus = () => false; });
   fixtureTask.status = 'building';
@@ -570,17 +571,17 @@ try {
   await page.evaluate(() => { delete document.hasFocus; });
   await settingsButton.click();
   await settingsDialog.getByRole('button', { name: 'Notifications', exact: true }).click();
-  await reviewNotifications.selectOption('off');
+  await selectOption(reviewNotifications, 'off');
   await page.reload();
   await settingsButton.click();
   await settingsDialog.getByRole('button', { name: 'Notifications', exact: true }).click();
   assert.equal(await notifySwitch.isChecked(), true);
-  assert.equal(await reviewNotifications.inputValue(), 'off', 'Scenario choices survive reloads');
+  assert.equal(await selectedValue(reviewNotifications), 'off', 'Scenario choices survive reloads');
   // A change from another tab is reflected without reloading this one.
   const preferencesTab = await context.newPage();
   await preferencesTab.goto(`${origin}/favicon.png`);
   await preferencesTab.evaluate(() => localStorage.removeItem('papilot:notifications:review'));
-  await page.waitForFunction(() => document.querySelector('select[aria-label="Review ready"]').value === 'push');
+  await page.waitForFunction(() => document.querySelector('[role="combobox"][aria-label="Review ready"]').dataset.value === 'push');
   await preferencesTab.close();
   await page.screenshot({ path: 'test-results/settings-notifications-enabled-desktop.png' });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -710,12 +711,12 @@ try {
   const manuscriptDivider = page.getByRole('separator', { name: 'Resize manuscript panel' });
   const manuscriptSide = page.locator('.manuscript-side');
   const originalSideWidth = Math.round((await manuscriptSide.boundingBox()).width);
-  assert.equal(await page.getByRole('combobox', { name: 'Zoom', exact: true }).inputValue(), '0.95');
+  assert.equal(await selectedValue(page.getByRole('combobox', { name: 'Zoom', exact: true })), '0.95');
   const originalPdfWidth = await page.locator('.pdf-container').evaluate(box => box.clientWidth);
   await manuscriptDivider.focus(); await page.keyboard.press('ArrowLeft');
   await page.waitForFunction(width => Math.round(document.querySelector('.manuscript-side').getBoundingClientRect().width) === width, originalSideWidth + 24);
   await page.waitForFunction(width => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().width - (width - 24)) < 2, originalPdfWidth);
-  await page.getByRole('combobox', { name: 'Zoom', exact: true }).selectOption('1');
+  await selectOption(page.getByRole('combobox', { name: 'Zoom', exact: true }), '1');
   const manuscriptHandle = await manuscriptDivider.boundingBox();
   await page.mouse.move(manuscriptHandle.x + 4, manuscriptHandle.y + 300); await page.mouse.down();
   await page.mouse.move(manuscriptHandle.x - 116, manuscriptHandle.y + 300, { steps: 5 }); await page.mouse.up();
@@ -796,31 +797,31 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '1');
   // Zoom steps away from fit width and returns to it; the choice is remembered.
   const zoom = page.getByRole('combobox', { name: 'Zoom', exact: true });
-  assert.equal(await zoom.inputValue(), 'page-width');
+  assert.equal(await selectedValue(zoom), 'page-width');
   const width = (await pdfPages.first().boundingBox()).width;
   await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
-  await page.waitForFunction(() => /^[\d.]+$/.test(document.querySelector('select[aria-label="Zoom"]').value));
+  await page.waitForFunction(() => /^[\d.]+$/.test(document.querySelector('[role="combobox"][aria-label="Zoom"]').dataset.value));
   assert.ok((await pdfPages.first().boundingBox()).width > width);
-  await zoom.selectOption('page-width');
-  await page.waitForFunction(() => document.querySelector('select[aria-label="Zoom"]').value === 'page-width');
+  await selectOption(zoom, 'page-width');
+  await page.waitForFunction(() => document.querySelector('[role="combobox"][aria-label="Zoom"]').dataset.value === 'page-width');
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:pdf-zoom')), 'page-width');
   // Window resizing preserves manual zoom; dragging the divider restores fit width.
-  await zoom.selectOption('1');
+  await selectOption(zoom, '1');
   const fixedWidth = (await pdfPages.first().boundingBox()).width;
   await page.setViewportSize({ width: 1440, height: 700 });
   await page.clock.runFor(100);
   assert.equal((await pdfPages.first().boundingBox()).width, fixedWidth);
-  assert.equal(await zoom.inputValue(), '1');
+  assert.equal(await selectedValue(zoom), '1');
   await page.setViewportSize({ width: 1440, height: 900 });
   await manuscriptDivider.dblclick();
-  await zoom.selectOption('page-fit');
+  await selectOption(zoom, 'page-fit');
   const fitHeight = (await pdfPages.first().boundingBox()).height;
   await page.setViewportSize({ width: 1440, height: 700 });
   await page.waitForFunction(height => document.querySelector('.pdfViewer .page').getBoundingClientRect().height < height - 100, fitHeight);
-  assert.equal(await zoom.inputValue(), 'page-fit');
+  assert.equal(await selectedValue(zoom), 'page-fit');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForFunction(height => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().height - height) < 2, fitHeight);
-  await zoom.selectOption('page-width');
+  await selectOption(zoom, 'page-width');
   console.log('PASS: Dragging restores fit width from saved percentages; viewport resize preserves the chosen zoom mode');
   // Find runs across every page.
   await page.locator('.pdf-container').focus();
@@ -869,7 +870,9 @@ try {
   const newNote = notesPanel;
   await expect(newNote.getByRole('button', { name: 'Add note', exact: true })).toHaveCount(0);
   await expect(newNote.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
-  await expect(newNote.getByRole('button', { name: 'Delete note 1', exact: true })).toBeEnabled();
+  // An empty new note has nothing to discard; Escape or a click elsewhere closes it.
+  await expect(newNote.getByRole('button', { name: 'Delete note 1', exact: true })).toHaveCount(0);
+  await expect(newNote.getByRole('button', { name: 'Close note', exact: true })).toHaveCount(0);
   await expect(newNote.getByRole('button', { name: 'Include note 1 in this task', exact: true })).toBeDisabled();
   await page.screenshot({ path: 'test-results/new-note-inline.png', fullPage: true });
   await noteBox.press('Escape');
@@ -882,6 +885,7 @@ try {
   assert.equal(annotations.length, 0, 'closing an empty note does not create an annotation');
   noteBox = await selectText();
   await noteBox.fill('Discard this draft.');
+  await expect(newNote.getByRole('button', { name: 'Delete note 1', exact: true })).toBeEnabled();
   await newNote.getByRole('button', { name: 'Delete note 1', exact: true }).click();
   await expect(newNote).toHaveCount(0);
   assert.equal(annotations.length, 0, 'the same trash action discards a new note without saving it');
@@ -924,12 +928,15 @@ try {
   await notesPanel.getByRole('alert').waitFor();
   assert.equal(await editingNote.inputValue(), 'Only these words, please.');
   failNoteEdit = false;
-  // Enter sends, like the arrow: the edit is saved and quoted in the chat.
+  // Enter sends, like the arrow: the edit is saved, quoted in the chat, and the popover closes.
   await editingNote.press('Enter');
   await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor();
   assert.deepEqual(annotations[0], { ...anchor, comment: 'Only these words, please.' });
   await expect(page.getByRole('region', { name: 'Notes in this task' })).toContainText('Only these words, please.');
+  await expect(notesPanel).toHaveCount(0);
+  await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).click();
   await expect(notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true })).toHaveText('Included');
   // Editing a note that is already in the chat saves it and keeps it there.
   await notesPanel.getByText('Only these words, please.', { exact: true }).click();
   await editingNote.press('Enter');
@@ -971,7 +978,7 @@ try {
   noteBox = await selectText();
   await noteBox.fill('Shorten this sentence.');
   await noteBox.press('Enter');
-  await expect(notesPanel).toContainText('Shorten this sentence.');
+  await expect(notesPanel).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Notes in this task' })).toContainText('Shorten this sentence.');
   assert.equal(annotations[0].page, 0);
   assert.equal(annotations[0].key, 'fixture');
@@ -979,6 +986,7 @@ try {
   assert.ok(annotations[0].rects.length >= 1 && annotations[0].rects.every(([x0, y0, x1, y1]) => x0 < x1 && y0 < y1 && y1 < 0.5));
   await page.getByRole('button', { name: 'Note 1: Shorten this sentence.', exact: true }).waitFor();
   assert.ok(await page.locator('.note-mark').count() >= 1);
+  await page.getByRole('button', { name: 'Note 1: Shorten this sentence.', exact: true }).click();
   await notesPanel.getByRole('button', { name: 'Delete note 1' }).click();
   await page.getByRole('button', { name: 'Note 1: Shorten this sentence.', exact: true }).waitFor({ state: 'hidden' });
   assert.equal(annotations.length, 0);
@@ -987,16 +995,20 @@ try {
   noteBox = await selectText();
   await noteBox.fill('Quote this new note.');
   await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
-  await expect(notesPanel.getByText('Quote this new note.', { exact: true })).toBeVisible();
+  await expect(notesPanel).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Notes in this task' })).toContainText('Quote this new note.');
   assert.equal(annotations.length, 1);
+  // Taking a note back out keeps its popover open.
+  await page.getByRole('button', { name: 'Note 1: Quote this new note.', exact: true }).click();
   await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
   await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
+  await expect(notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await notesPanel.getByText('Quote this new note.', { exact: true }).click();
   await notesPanel.getByRole('textbox', { name: 'Edit note 1', exact: true }).fill('Quote the updated note.');
   await notesPanel.getByRole('button', { name: 'Include note 1 in this task', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Notes in this task' })).toContainText('Quote the updated note.');
   assert.equal(annotations[0].comment, 'Quote the updated note.');
+  await page.getByRole('button', { name: 'Note 1: Quote the updated note.', exact: true }).click();
   await notesPanel.getByRole('button', { name: 'Delete note 1', exact: true }).click();
   await expect(notesPanel).toHaveCount(0);
   await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
@@ -1199,7 +1211,10 @@ try {
   assert.deepEqual(gitActions.filter(action => typeof action === 'string'), ['push', 'fetch', 'merge', 'finish']);
   Object.assign(gitState, structuredClone(originalGit));
   const pdfToolbar = page.getByRole('toolbar', { name: 'PDF controls' });
-  assert.equal(await page.locator('.manuscript-side-header').getByRole('link', { name: 'Open PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
+  await page.locator('.manuscript-side-header').getByRole('button', { name: 'Share', exact: true }).click();
+  assert.equal(await page.getByRole('menuitem', { name: 'Open PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
+  assert.equal(await page.getByRole('menuitem', { name: 'Export PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture&download=1');
+  await page.keyboard.press('Escape');
   await pdfToolbar.getByRole('button', { name: 'Recompile PDF', exact: true }).waitFor();
   assert.equal(await page.title(), 'Example paper · Papilot');
   await worktrees.getByRole('button', { name: `Open task: ${task.title}`, exact: true }).click();
@@ -1375,18 +1390,18 @@ try {
   await settingsButton.click();
   const defaultModel = settingsDialog.getByRole('combobox', { name: 'Default model', exact: true });
   const defaultEffort = settingsDialog.getByRole('slider', { name: 'Default reasoning effort', exact: true });
-  assert.equal(await defaultModel.inputValue(), JSON.stringify(['codex', 'deep-model']));
+  assert.equal(await selectedValue(defaultModel), JSON.stringify(['codex', 'deep-model']));
   assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Xhigh');
-  await defaultModel.selectOption(JSON.stringify(['claude', 'haiku']));
+  await selectOption(defaultModel, JSON.stringify(['claude', 'haiku']));
   assert.equal(await defaultEffort.getAttribute('max'), '2');
   await defaultEffort.press('Home');
   await defaultEffort.press('ArrowRight');
   assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Medium');
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:effort:claude')), 'medium');
-  await defaultModel.selectOption(JSON.stringify(['antigravity', '']));
+  await selectOption(defaultModel, JSON.stringify(['antigravity', '']));
   assert.equal(await defaultEffort.count(), 0);
   await settingsDialog.getByText('This model uses its own reasoning settings.', { exact: true }).waitFor();
-  await defaultModel.selectOption(JSON.stringify(['codex', 'deep-model']));
+  await selectOption(defaultModel, JSON.stringify(['codex', 'deep-model']));
   assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Xhigh');
   // Ultra is offered only when it is in the runtime's model catalog.
   const originalEfforts = snapshot.runtime.models[1].efforts;
@@ -1415,7 +1430,7 @@ try {
   await closeSettings();
   await page.reload();
   await settingsButton.click();
-  assert.equal(await defaultModel.inputValue(), JSON.stringify(['codex', 'deep-model']));
+  assert.equal(await selectedValue(defaultModel), JSON.stringify(['codex', 'deep-model']));
   assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Xhigh');
   await closeSettings();
   await page.locator('.manuscript-link').click();

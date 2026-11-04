@@ -48,7 +48,7 @@ function fixture(reviewHandler?: (method: string, route: string, body?: unknown)
     return summary;
   };
   const review: ReviewClient = { url: options.reviewUrl || 'http://unused', token: 'test', get: route => invoke('GET', route), post: (route, body) => invoke('POST', route, body) };
-  const workspace = new Workspace(store, codex as unknown as Codex, 2, async () => review, options.claude ? { claude: options.claude as unknown as Codex } : {});
+  const workspace = new Workspace(store, codex as unknown as Codex, async () => review, options.claude ? { claude: options.claude as unknown as Codex } : {});
   const task: Task = { id: 'task-id', projectId: 'paper', name: 'p-task', title: 'Task', instructions: 'Edit the introduction.', worktree: '/unused', threadId: 'thread', turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
   store.saveProject({ id: task.projectId, name: 'Paper', path: '/unused', createdAt: 1 });
   store.saveTask(task);
@@ -230,6 +230,20 @@ test('publication reserves the worktree and rejects duplicate builds and review 
   } finally { gate.resolve({ status: 'done' }); f.close(); }
 });
 
+test('while a round compiles its changed chapters, its new version is announced once, so the whole paper compiles meanwhile', async () => {
+  let polls = 0;
+  const f = fixture(async (_method, route) => route.includes('/jobs/')
+    ? ++polls < 3 ? { status: 'running', phase: 'build', revision: 'a1b2c3' } : { status: 'done', outcome: 'published', round: 1 }
+    : route.endsWith('/publish') ? { job: 'job' } : summary);
+  try {
+    const announced: [string, string][] = [];
+    f.workspace.on('publishing', (taskId: string, revision: string) => announced.push([taskId, revision]));
+    await f.workspace.publish(f.task.id);
+    assert.equal(polls, 3);
+    assert.deepEqual(announced, [[f.task.id, 'a1b2c3']]);
+  } finally { f.close(); }
+});
+
 test('publication records each completed run result once and treats no new edits as no result', async () => {
   let round = 2, outcome = 'published';
   const f = fixture(async (_method, route) => route.includes('/jobs/') ? { status: 'done', outcome, round } : route.endsWith('/publish') ? { job: 'job' } : { ...summary, round });
@@ -361,7 +375,7 @@ test('shutdown during polling leaves a durable job that a new workspace resumes'
   f.store.close();
   const store = new Store(file);
   const review: ReviewClient = { url: 'http://unused', token: '', get: async <T>(route: string) => (route.includes('/jobs/') ? { status: 'done' } : summary) as T, post: async () => { throw new Error('Must not republish'); } };
-  const workspace = new Workspace(store, new FakeCodex() as unknown as Codex, 2, async () => review);
+  const workspace = new Workspace(store, new FakeCodex() as unknown as Codex, async () => review);
   try {
     store.recover();
     assert.equal(store.task(f.task.id).pendingBuild?.job, 'durable-job');
@@ -815,6 +829,25 @@ test('checking a lost review response replays its original identity exactly once
   } finally { f.close(); await server.close(); }
 });
 
+test('every queued task starts at once, with no limit on how many run together', async () => {
+  const f = fixture();
+  try {
+    const ids = [f.task.id];
+    for (let i = 1; i < 5; i++) {
+      const task = { ...f.task, id: `task-${i}`, name: `p-task-${i}`, threadId: `thread-${i}` };
+      f.store.saveTask(task);
+      (f.workspace as any).loaded.add(task.threadId);
+      ids.push(task.id);
+    }
+    for (const id of ids) await f.workspace.enqueue(id, 'Revise this section.', `request-${id}`, false);
+    f.codex.ready = true;
+    await (f.workspace as any).drain();
+    await tick();
+    assert.deepEqual(ids.map(id => f.store.task(id).status), Array(5).fill('running'));
+    assert.equal(f.codex.calls.filter(call => call.method === 'turn/start').length, 5);
+  } finally { f.close(); }
+});
+
 test('concurrent review status checks cannot replay the decision twice', async () => {
   const received = deferred<void>(), release = deferred<void>();
   const server = await reviewServer(async (_request, response) => {
@@ -1005,7 +1038,7 @@ test('lost finish responses stay reserved across restart and retry confirms clos
     assert.equal(reopened.task(f.task.id).status, 'deleting');
     assert.match(reopened.task(f.task.id).error!, /restarted during deletion/);
     const review: ReviewClient = { url: 'http://unused', token: 'test', get: async <T>() => ({ ...pageState, closed }) as T, post: async () => { finishCalls++; throw new Error('A closed task must not be finished again.'); } };
-    workspace = new Workspace(reopened, new FakeCodex() as unknown as Codex, 2, async () => review);
+    workspace = new Workspace(reopened, new FakeCodex() as unknown as Codex, async () => review);
     await assert.rejects(workspace.enqueue(f.task.id, 'Do not resume.', 'next', false));
     await workspace.deleteTask(f.task.id);
     assert.equal(reopened.tasks().length, 0);
@@ -1063,7 +1096,7 @@ test('real engine deletion removes one temporary worktree while preserving accep
     disk.edit(target, METHOD, 'Method sentence 2.', 'Accepted manuscript sentence.');
     disk.edit(target, METHOD, 'Detail sentence 15.', 'Unaccepted draft sentence.');
     const round = fakeRound(app, target.name);
-    app.review.decide(target.name, { id: 'accept-before-delete', action: 'accept', round: round.number, changes: [round.units[0].id] });
+    await app.review.decide(target.name, { id: 'accept-before-delete', action: 'accept', round: round.number, changes: [round.units[0].id] });
     const manuscript = disk.read(METHOD);
     assert.match(manuscript, /Accepted manuscript sentence/);
     assert.doesNotMatch(manuscript, /Unaccepted draft sentence/);
@@ -1312,7 +1345,7 @@ test('accepting puts a change in the manuscript without a commit, and the review
     assert.deepEqual(await acceptedFiles(disk.root, target.name), []);
     const head = app.repo.text(['rev-parse', 'HEAD']);
     const round = fakeRound(app, target.name);
-    app.review.decide(target.name, { id: 'accept', action: 'accept', round: round.number, changes: [round.units[0].id] });
+    await app.review.decide(target.name, { id: 'accept', action: 'accept', round: round.number, changes: [round.units[0].id] });
     assert.match(fs.readFileSync(path.join(disk.root, METHOD), 'utf8'), /Accepted manuscript sentence\./);
     assert.equal(app.repo.text(['rev-parse', 'HEAD']), head);
     await f.workspace.refresh(f.task.id);
@@ -1603,14 +1636,14 @@ for (const mode of ['workspace', 'commit'] as const) test(`tasks save to the man
   const disk = new Fixture(), app = disk.app();
   const f = fixture(async (method, route, body: any) => {
     if (route.includes('/feedback')) return app.review.feedback('p-task');
-    if (method === 'POST' && route.endsWith('/apply')) return app.delivery.apply('p-task', body.keepCurrent, body.mode, body.message);
+    if (method === 'POST' && route.endsWith('/apply')) return await app.delivery.apply('p-task', body.keepCurrent, body.mode, body.message);
     return app.taskInfo('p-task');
   });
   try {
     const target = app.tasks.create('p-task', 'Isolated revision', [], ['paper'], true);
     disk.edit(target, METHOD, 'Method sentence 2.', 'Accepted isolated text.');
     const round = fakeRound(app, target.name);
-    app.review.decide(target.name, { id: 'accept-isolated', action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
+    await app.review.decide(target.name, { id: 'accept-isolated', action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
     f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: disk.root, createdAt: 1 });
     await f.workspace.refresh(f.task.id);
     assert.equal(f.store.task(f.task.id).deferred, true);
@@ -1642,14 +1675,14 @@ test('application conflicts automatically queue one AI suggestion and require re
   const disk = new Fixture(), app = disk.app();
   const f = fixture(async (method, route, body: any) => {
     if (route.includes('/feedback')) return app.review.feedback('p-task');
-    if (method === 'POST' && route.endsWith('/apply')) return app.delivery.apply('p-task', body.keepCurrent, body.mode, body.message);
+    if (method === 'POST' && route.endsWith('/apply')) return await app.delivery.apply('p-task', body.keepCurrent, body.mode, body.message);
     return app.taskInfo('p-task');
   });
   try {
     const target = app.tasks.create('p-task', 'Conflicting revision', [], ['paper'], true);
     disk.edit(target, METHOD, 'Method sentence 2.', 'Accepted proposal.');
     const round = fakeRound(app, target.name);
-    app.review.decide(target.name, { id: 'accept-before-conflict', action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
+    await app.review.decide(target.name, { id: 'accept-before-conflict', action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
     disk.write(METHOD, disk.read(METHOD).replace('Method sentence 2.', 'Latest manuscript.'));
     f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: disk.root, createdAt: 1 });
     f.store.updateTask(f.task.id, { worktree: target.worktree });
@@ -1678,7 +1711,7 @@ test('application conflicts automatically queue one AI suggestion and require re
     disk.edit(target, METHOD, 'Latest manuscript.', 'Reviewed combined wording.');
     const next = fakeRound(app, target.name);
     await assert.rejects(f.workspace.applyTask(f.task.id), /Finish reviewing/);
-    app.review.decide(target.name, { id: 'accept-combination', action: 'accept', round: next.number, changes: next.units.map((unit: any) => unit.id) });
+    await app.review.decide(target.name, { id: 'accept-combination', action: 'accept', round: next.number, changes: next.units.map((unit: any) => unit.id) });
     const applied = await f.workspace.applyTask(f.task.id);
     assert.equal(applied.delivery?.mode, 'workspace');
     assert.equal(f.store.task(f.task.id).reconciliation, null);
@@ -1691,20 +1724,20 @@ for (const recovery of ['lost-response', 'restart', 'legacy-manual'] as const) t
   const disk = new Fixture(), app = disk.app();
   const f = fixture(async (method, route) => {
     if (route.includes('/feedback')) return app.review.feedback('p-task');
-    if (method === 'POST' && route.endsWith('/apply')) { app.delivery.apply('p-task'); throw new Error('Response lost'); }
+    if (method === 'POST' && route.endsWith('/apply')) { await app.delivery.apply('p-task'); throw new Error('Response lost'); }
     return app.taskInfo('p-task');
   });
   try {
     const target = app.tasks.create('p-task', 'Review', [], ['paper'], true);
     disk.edit(target, METHOD, 'Method sentence 2.', 'Accepted proposal.');
     const round = fakeRound(app, target.name);
-    app.review.decide(target.name, { id: crypto.randomUUID(), action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
+    await app.review.decide(target.name, { id: crypto.randomUUID(), action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
     disk.write(METHOD, disk.read(METHOD).replace('Method sentence 2.', 'Latest text.'));
     f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: disk.root, createdAt: 1 });
     f.store.updateTask(f.task.id, { worktree: target.worktree, deferred: true });
     if (recovery === 'lost-response') await f.workspace.applyTask(f.task.id);
     else {
-      const merge = app.delivery.apply(target.name).reconciliation!;
+      const merge = (await app.delivery.apply(target.name)).reconciliation!;
       if (recovery === 'legacy-manual') {
         // Older sessions could stop at the manual choice. Keep their edits
         // intact, but let AI finish instead of reopening the removed editor.
@@ -1730,9 +1763,9 @@ for (const stage of ['reviewed', 'interrupted', 'waiting_input'] as const) test(
     const target = app.tasks.create('p-task', 'Review', [], ['paper'], true);
     disk.edit(target, METHOD, 'Method sentence 2.', 'Accepted proposal.');
     const round = fakeRound(app, target.name);
-    app.review.decide(target.name, { id: crypto.randomUUID(), action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
+    await app.review.decide(target.name, { id: crypto.randomUUID(), action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
     disk.write(METHOD, disk.read(METHOD).replace('Method sentence 2.', 'Latest text.'));
-    app.delivery.apply(target.name);
+    await app.delivery.apply(target.name);
     if (stage === 'reviewed') {
       disk.edit(target, METHOD, 'Latest text.', 'Combined proposal.');
       fakeRound(app, target.name);
@@ -1758,7 +1791,7 @@ test('a task commits only what it accepted since its last commit, never during a
     f.store.saveProject({ id: f.task.projectId, name: 'Temporary paper', path: disk.root, createdAt: 1 });
     await assert.rejects(f.workspace.commitTask(f.task.id, 'Nothing yet'), /no accepted changes/);
     const round = fakeRound(app, target.name);
-    app.review.decide(target.name, { id: 'accept-first', action: 'accept', round: round.number, changes: [round.units[0].id] });
+    await app.review.decide(target.name, { id: 'accept-first', action: 'accept', round: round.number, changes: [round.units[0].id] });
     assert.deepEqual(await acceptedFiles(disk.root, target.name), [METHOD]);
     const first = await f.workspace.commitTask(f.task.id, 'Accept the first sentence', true);
     assert.equal(app.repo.text(['log', '-1', '--format=%s']).trim(), 'Accept the first sentence');
@@ -1773,7 +1806,7 @@ test('a task commits only what it accepted since its last commit, never during a
     assert.deepEqual(f.store.task(f.task.id).review?.files, []);
     await assert.rejects(f.workspace.commitTask(f.task.id, 'Not mine'), /no accepted changes left/);
     // Accepting more makes the file this task's again.
-    app.review.decide(target.name, { id: 'accept-second', action: 'accept', round: round.number, changes: [round.units[1].id] });
+    await app.review.decide(target.name, { id: 'accept-second', action: 'accept', round: round.number, changes: [round.units[1].id] });
     await f.workspace.refresh(f.task.id);
     assert.deepEqual(f.store.task(f.task.id).review?.files, [METHOD]);
     // A review write in progress on the paper holds the commit back, and the reverse.
@@ -1797,7 +1830,7 @@ test('a task commits only what it accepted since its last commit, never during a
     finally { reopened.close(); }
     disk.edit(target, METHOD, 'Method sentence 7.', 'A later accepted sentence.');
     const next = fakeRound(app, target.name);
-    app.review.decide(target.name, { id: 'accept-next', action: 'accept', round: next.number, changes: next.units.map((unit: any) => unit.id) });
+    await app.review.decide(target.name, { id: 'accept-next', action: 'accept', round: next.number, changes: next.units.map((unit: any) => unit.id) });
     const third = await f.workspace.commitTask(f.task.id, 'Keep the next revision local');
     assert.equal(third.pushError, undefined);
     assert.equal(f.store.task(f.task.id).committed?.hash, third.commit);
@@ -1818,7 +1851,7 @@ test('agents that are not found on the host are neither started nor offered, and
   (codex as any).start = async () => { codex.ready = true; };
   const qwen = new Detected();
   const others = Object.fromEntries((['claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'deepseek', 'opencode'] as const).map(id => [id, Object.assign(new Detected(), { found: false })]));
-  const workspace = new Workspace(store, codex as unknown as Codex, 2, async () => { throw new Error('unused'); }, { ...others, qwen } as any);
+  const workspace = new Workspace(store, codex as unknown as Codex, async () => { throw new Error('unused'); }, { ...others, qwen } as any);
   try {
     await workspace.connect();
     assert.equal(qwen.starts, 0);
@@ -1939,7 +1972,7 @@ test('creating an AI review skill task persists its snapshot and queues review-o
   const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/isolated-review', deferred: true } : {});
   try {
     const reviewInput = { key: 'pdf-at-start', lines: [{ id: 'p1-l1', page: 0, text: 'Read this claim.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
-    const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', reviewInput };
+    const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async () => reviewInput };
     const created = await f.workspace.createTask(input);
     assert.equal(created.mode, 'review');
     assert.equal(created.worktree, '/isolated-review');
@@ -1951,18 +1984,34 @@ test('creating an AI review skill task persists its snapshot and queues review-o
     assert.equal(f.store.items(created.id)[0].text, '');
     assert.equal((await f.workspace.createTask(input)).id, created.id);
     assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 1);
-    await assert.rejects(f.workspace.createTask({ ...input, reviewInput: undefined, instructions: 'Edit it.' }), /Invalid task ID/);
+    await assert.rejects(f.workspace.createTask({ ...input, prepareReview: undefined, instructions: 'Edit it.' }), /Invalid task ID/);
     await assert.rejects(f.workspace.createTask({ ...input, id: 'ai-review-task-0002', agent: 'cursor' }), /Choose Codex, Claude or GLM/);
+  } finally { f.close(); }
+});
+
+test('an AI review whose manuscript copy cannot be read discards the copy, so a retry copies it again', async () => {
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : route.endsWith('/finish') ? { task: 'p-ai-review-retry-task', finished: true } : {});
+  try {
+    const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The fixed copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
+    let fail = true;
+    const input = { id: 'ai-review-retry-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async () => { if (fail) throw new Error('The manuscript could not be compiled for AI review.'); return captured; } };
+    await assert.rejects(f.workspace.createTask(input), /could not be compiled/);
+    assert.equal(f.store.tasks().some(task => task.id === input.id), false);
+    assert.deepEqual(f.calls.map(call => call.route), ['/api/tasks', '/api/tasks/p-ai-review-retry-task/finish']);
+    assert.deepEqual(f.calls[1].body, { force: true });
+    fail = false;
+    const created = await f.workspace.createTask(input);
+    assert.equal(created.aiReview?.key, 'task-pdf');
+    assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 2);
   } finally { f.close(); }
 });
 
 test('AI review captures the task worktree before enqueueing and retries keep that snapshot', async () => {
   const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : {});
   try {
-    const requested = { key: 'main-pdf', lines: [] };
     const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The task copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     let calls = 0;
-    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', reviewInput: requested, prepareReview: async (worktree: string) => { calls++; assert.equal(worktree, '/task-copy'); return captured; } };
+    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async (worktree: string) => { calls++; assert.equal(worktree, '/task-copy'); return captured; } };
     const created = await f.workspace.createTask(input);
     assert.equal(created.aiReview?.key, 'task-pdf');
     assert.deepEqual(f.store.reviewInput(created.id), captured);

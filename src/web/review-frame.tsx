@@ -35,8 +35,12 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
   style.textContent = themeStyles + `
     :root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Noto Sans SC",system-ui,sans-serif;--comment:var(--accent);--accept:var(--green);--reject:var(--red);--frame:var(--canvas);--bar:var(--bg);--muted:var(--text-3);--ink:var(--text);--head:var(--bg-subtle);font-size:14px}
     .banner{border-radius:10px}
-    .source,.source-code,.composer textarea,.composer button,.unit-actions button,.toast,.change-map-tooltip,.review-mode,.review-mode select,.review-complete,.change.standalone{background:var(--bg);color:var(--text)}
+    .source,.source-code,.unit-actions button,.toast,.change-map-tooltip,.review-mode,.review-mode select,.review-complete,.change.standalone{background:var(--bg);color:var(--text)}
     .banner{background:var(--accent-soft);border-color:var(--accent-line)}.banner .details{background:var(--bg-subtle)}
+    .composer{border-color:color-mix(in srgb,var(--line-strong) 65%,transparent);box-shadow:var(--float)}
+    .composer-close:hover{background:var(--bg-hover);color:var(--text)}
+    .composer-send{background:var(--primary)}.composer-send:hover:not(:disabled){background:var(--primary-hover)}.composer-send:disabled{background:var(--bg-active);color:var(--text-3)}
+    .composer-send:focus-visible,.composer-close:focus-visible{outline:none;box-shadow:var(--ring)}
     .source-title{color:var(--text-2)}
     .source-code del{background:var(--red-soft);color:var(--red)}
     .source-code ins{background:var(--green-soft);color:var(--green)}
@@ -56,7 +60,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .review-complete-actions .commit-button{height:auto;min-height:30px;padding:5px 12px;white-space:nowrap}
     .review-complete-actions .commit-button:disabled{opacity:.5;cursor:default}
     :root[data-papilot-phone] .review-complete-actions{justify-content:flex-start;margin-left:0}
-    :root[data-papilot-phone] .review-complete-actions .commit-state{flex-basis:100%}
+    :root[data-papilot-phone] .review-complete-actions .commit-state:not(.task-save-result){flex-basis:100%}
     :root[data-papilot-phone] .review-complete-actions .commit-button{min-height:40px}
     /* Page images follow the theme like the manuscript's PDF. They are
        transparent: the sheet is the paper, and the before/after rows tint it. */
@@ -186,8 +190,8 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       }
       .composer{left:0!important;right:0!important;width:auto!important;max-width:none;top:var(--papilot-review-bar-height,48px);bottom:auto;transform:none;max-height:calc(100% - var(--papilot-review-bar-height,48px) - var(--keyboard,0px));overflow:auto;border-width:0 0 1px;border-radius:0 0 16px 16px}
       #root:has(>.composer) .change-head .dock{display:none}
-      .composer textarea{font-size:16px;min-height:76px;max-height:min(140px,30vh);resize:none}.composer button{min-height:44px}
-      .composer-row{justify-content:flex-end;gap:8px}.composer-row .muted{display:none}
+      .composer textarea{font-size:16px;min-height:76px;max-height:min(140px,30vh)}.composer-head{padding:10px 10px 0 16px}.composer-close{width:40px;height:40px}.composer-send{width:44px;height:44px}
+      .composer-row{justify-content:flex-end;padding:4px 12px 12px 16px}.composer-row .muted{display:none}
       .side .pdf-strip,.context .pdf-strip{width:calc(100% * var(--pdf-crop-scale,1));margin-left:calc(-100% * var(--pdf-crop-scale,1) * var(--pdf-crop-shift,0))}
       .side,.context{overflow-x:clip}
     }

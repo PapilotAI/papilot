@@ -130,7 +130,7 @@ export class Workspace extends EventEmitter {
       || this.store.tasks().some(task => ['queued', 'running', 'waiting_input', 'building', 'uncertain', 'deleting'].includes(task.status) || task.pendingReview));
   }
   readonly attachments: Attachments;
-  constructor(public store: Store, public codex: AgentRuntime = new Codex(), private concurrency = 2, private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
+  constructor(public store: Store, public codex: AgentRuntime = new Codex(), private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.attachments = new Attachments(store);
     this.agents = { codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), copilot: others.copilot || new AcpAgent(ACP_PROFILES.copilot), grok: others.grok || new AcpAgent(ACP_PROFILES.grok), antigravity: others.antigravity || new AntigravityAgent(),
@@ -161,6 +161,16 @@ export class Workspace extends EventEmitter {
     this.emit('change');
   }
   snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), tasks: this.store.tasks(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
+  /** Loads the SDKs of the agents this host has before the server answers
+   *  requests. Evaluating one blocks for up to a few hundred milliseconds,
+   *  which would otherwise hold up whatever the app asked for while the
+   *  agents connect. SDKs not installed yet are fetched when first used. */
+  async preload() {
+    await Promise.all(AGENTS.map(async id => {
+      const agent = this.agents[id];
+      try { if (agent.preload && (!agent.detect || agent.detect())) await agent.preload(); } catch { /* Connecting reports it. */ }
+    }));
+  }
   async connect() {
     if (this.connecting) return this.connecting;
     this.connecting = Promise.all(AGENTS.map(id => this.connectAgent(id))).then(() => { this.emit('change'); this.schedule(); }).finally(() => { this.connecting = null; });
@@ -271,14 +281,15 @@ export class Workspace extends EventEmitter {
   }
   // A task combines the author's words, an optional skill and selected PDF notes.
   annotationSending(id: string) { return this.preparingNotes.has(id); }
-  async createTask(input: { reviewInput?: ReviewSnapshot; prepareReview?: (worktree: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
+  // An AI review passes prepareReview, which reads the PDF of the new task's manuscript copy.
+  async createTask(input: { prepareReview?: (worktree: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; author?: Author }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     // A retried request returns its task; an ID from another paper is refused.
     const existing = this.store.tasks().find(t => t.id === input.id);
-    if (existing) { if (existing.projectId !== input.projectId || (existing.mode === 'review') !== Boolean(input.reviewInput)) throw new Error('Invalid task ID.'); return existing; }
-    if (input.reviewInput && !REVIEW_AGENTS.includes(input.agent || 'codex')) throw new Error('Choose Codex, Claude or GLM for AI review.');
-    if (input.reviewInput && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
+    if (existing) { if (existing.projectId !== input.projectId || (existing.mode === 'review') !== Boolean(input.prepareReview)) throw new Error('Invalid task ID.'); return existing; }
+    if (input.prepareReview && !REVIEW_AGENTS.includes(input.agent || 'codex')) throw new Error('Choose Codex, Claude or GLM for AI review.');
+    if (input.prepareReview && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
     if (input.serviceTier !== undefined) {
       if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
       const models = this.runtimes.codex.models;
@@ -291,7 +302,7 @@ export class Workspace extends EventEmitter {
     let releaseAttachments = () => {};
     try {
       const project = this.store.project(input.projectId), skill = input.skill ? findSkill(project.path, input.skill) : undefined;
-      if (skill?.output === 'annotations' && !input.reviewInput) throw new Error('Start a new task to run the AI review skill on the current PDF.');
+      if (skill?.output === 'annotations' && !input.prepareReview) throw new Error('Start a new task to run the AI review skill on the current PDF.');
       const files = this.attachments.resolve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
       releaseAttachments = this.attachments.reserve(project.id, input.attachments || [], input.author?.id || 'owner', input.id);
       const available = new Map(this.store.annotations(project.id).filter(note => !note.taskId && !isTaskReviewNote(note)).map(note => [note.id, note]));
@@ -306,12 +317,17 @@ export class Workspace extends EventEmitter {
       if (Object.keys(groupInstructions).some(group => !selectedGroups.has(group as keyof GroupInstructions))) throw new Error('Group instructions must refer to selected PDF notes.');
       if (groupsWithoutInstructions(notes, groupInstructions).length && !input.instructions.trim() && !skill) throw new Error('Describe what to do with each selected color group.');
       claimed = notes.map(note => note.id); claimed.forEach(id => this.preparingNotes.add(id));
-      if (!input.reviewInput && !skill && !notes.length && !files.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
+      if (!input.prepareReview && !skill && !notes.length && !files.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
       const instructions = notes.length ? notesInstructions(notes, input.instructions, groupInstructions) : input.instructions;
       const client = await this.connectReview(project.path);
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
       const info = await client.post('/api/tasks', { name, title: input.title, deferred: true });
-      const reviewInput = input.reviewInput && (input.prepareReview ? await input.prepareReview(info.worktree) : input.reviewInput);
+      let reviewInput: ReviewSnapshot | undefined;
+      if (input.prepareReview) try { reviewInput = await input.prepareReview(info.worktree); } catch (error) {
+        // Discard the copy, so a retry copies the manuscript again with the author's fixes.
+        await client.post(`${taskRoute(name)}/finish`, { force: true }).catch(() => undefined);
+        throw error;
+      }
       const task: Task = { ...(reviewInput ? { mode: 'review' as const, aiReview: { key: reviewInput.key } } : {}), id: input.id, projectId: project.id, name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
         worktree: info.worktree, deferred: info.deferred === true, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'idle',
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
@@ -319,7 +335,7 @@ export class Workspace extends EventEmitter {
         this.store.saveTask(task);
         if (reviewInput) this.store.saveReviewInput(task.id, reviewInput);
       });
-      await this.enqueue(task.id, input.instructions || (input.reviewInput && !skill ? 'Review this manuscript and suggest improvements.' : ''), 'initial-' + task.id, false, { skill, notes, groupInstructions, attachments: files.map(file => file.id), author: input.author });
+      await this.enqueue(task.id, input.instructions || (input.prepareReview && !skill ? 'Review this manuscript and suggest improvements.' : ''), 'initial-' + task.id, false, { skill, notes, groupInstructions, attachments: files.map(file => file.id), author: input.author });
       // Naming is independent of the editing turn. An unavailable helper must
       // not fail creation or prevent the queued task from running.
       try { this.requestTaskTitle(task.id); } catch { /* Keep the prompt-derived title. */ }
@@ -397,7 +413,6 @@ export class Workspace extends EventEmitter {
   private async drain() {
     if (this.closing) return;
     for (const run of this.store.runs().filter(r => r.status === 'queued')) {
-      if (this.active.size >= this.concurrency) break;
       const agent = this.agentOf(this.store.task(run.taskId));
       if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) continue;
       if (this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status)) continue;
@@ -780,6 +795,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
     let pending = this.store.task(taskId).pendingBuild!;
     let client: ReviewClient | undefined;
     let reuse = resume;
+    let compiling: string | undefined;
     // Only connection failures are retried. Every submission has a persisted key,
     // so losing its response cannot submit a second build.
     const request = async <T>(work: (client: ReviewClient) => Promise<T>, submitting = false): Promise<T> => {
@@ -810,6 +826,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
           this.store.updateTask(taskId, { pendingBuild: pending });
         }
         const current = await request(client => client.get(`/api/jobs/${pending.job}`));
+        // The round's new version exists; it compiles only some chapters here.
+        if (typeof current.revision === 'string' && current.revision !== compiling) {
+          compiling = current.revision;
+          this.emit('publishing', taskId, compiling);
+        }
         const summary = await request(client => client.get(taskRoute(task.name)));
         this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, job: { ...current, id: pending.job } } });
         if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') {
@@ -838,6 +859,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Shell commands are not available to yo
         await delay(1500);
       }
       await this.refresh(taskId);
+      // What applying the new round will write can now be compiled ahead.
+      this.emit('reviewed', taskId);
     } catch (e) {
       if (this.closing) return;
       if (reviewConnectionError(e)) {
