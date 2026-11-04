@@ -1,3 +1,4 @@
+import { npmCli } from './update-install.ts';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -132,7 +133,8 @@ export async function loadPackage(name: string, version: string, label: string, 
   try { entry = resolve(); } catch {
     ready();
     console.log(`Installing ${label} (first use only)...`);
-    await promisify(execFile)('npm', ['install', '--prefix', prefix, `${name}@${version}`, '--no-audit', '--no-fund', '--loglevel=error'], { maxBuffer: 16 * 1024 * 1024 });
+    const npm = process.platform === 'win32' ? [npmCli()] : [];
+    await promisify(execFile)(npm.length ? process.execPath : 'npm', [...npm, 'install', '--prefix', prefix, `${name}@${version}`, '--no-audit', '--no-fund', '--loglevel=error'], { maxBuffer: 16 * 1024 * 1024 });
     entry = resolve();
   }
   return import(pathToFileURL(entry).href);

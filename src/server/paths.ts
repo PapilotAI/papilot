@@ -15,4 +15,4 @@ export const ACCOUNT_ORIGIN = (process.env.PAPILOT_ACCOUNT_ORIGIN || '').replace
 export const ACCOUNT_PORT = Number(process.env.PAPILOT_ACCOUNT_PORT || 7275);
 const codexCandidate = process.env.PAPILOT_CODEX_BIN || [path.join(ROOT, 'node_modules/.bin/codex'), path.join(DATA, 'agents/node_modules/.bin/codex')].find(file => fs.existsSync(file)) || 'codex';
 
-export const CODEX = codexExecutable(codexCandidate) || codexCandidate;
+export const CODEX = process.platform === 'win32' ? codexExecutable(codexCandidate) || codexCandidate : codexCandidate;

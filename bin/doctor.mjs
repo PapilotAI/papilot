@@ -31,7 +31,7 @@ const atLeast = (version, minimum) => {
 function executable(command, env = process.env) {
   const candidates = command.includes('/') || command.includes('\\') ? [path.resolve(command)]
     : (env.PATH || '').split(path.delimiter).map(dir => path.resolve(dir || '.', command));
-  return candidates.find(file => {
+  return (process.platform === 'win32' ? candidates.flatMap(file => path.extname(file) ? [file] : [file + '.exe', file]) : candidates).find(file => {
     try { fs.accessSync(file, fs.constants.X_OK); return fs.statSync(file).isFile(); } catch { return false; }
   });
 }
@@ -130,7 +130,7 @@ export async function doctor(args) {
     const candidates = configured ? [configured] : ['codex', path.join(data, 'agents/node_modules/.bin/codex')];
     let found = false;
     for (const candidate of candidates) {
-      const file = codexExecutable(candidate);
+      const file = process.platform === 'win32' ? codexExecutable(candidate) : executable(candidate);
       if (!file) continue;
       found = true;
       const result = await command(file, ['--version']);

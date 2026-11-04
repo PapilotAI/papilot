@@ -60,7 +60,9 @@ export function startBackend(options: { node: string; root: string; data: string
         resolve();
       }, 4000);
       child.once('exit', () => { clearTimeout(timer); resolve(); });
-      child.kill('SIGTERM');
+      if (process.platform === 'win32') {
+        if (child.connected) child.disconnect();
+      } else child.kill('SIGTERM');
     });
   }
   return { child, ready, stop };

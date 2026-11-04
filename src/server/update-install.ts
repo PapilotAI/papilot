@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
+import { pathToFileURL } from 'node:url';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
@@ -18,7 +19,10 @@ export function npmCli(env = process.env, executable = process.execPath) {
   }
   throw new Error('npm is unavailable to Papilot.');
 }
-export const loaderFor = (root: string) => createRequire(path.join(root, 'package.json')).resolve('tsx/esm');
+export const loaderFor = (root: string) => {
+  const loader = createRequire(path.join(root, 'package.json')).resolve('tsx/esm');
+  return process.platform === 'win32' ? pathToFileURL(loader).href : loader;
+};
 export function runInstall(args: string[], cwd: string, log: number, timeout = 600000) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(process.execPath, [npmCli(), ...args], { cwd, env: { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + (process.env.PATH || '') }, stdio: ['ignore', log, log] });

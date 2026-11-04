@@ -6,7 +6,7 @@ import path from 'node:path';
 import { codexExecutable } from '../bin/codex-executable.mjs';
 
 test('Windows resolves global and local npm Codex packages without executing shell shims', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot codex '));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot codex ')));
   try {
     const native = path.join(root, 'node_modules/@openai/codex/vendor/x86_64-pc-windows-msvc/bin/codex.exe');
     fs.mkdirSync(path.dirname(native), { recursive: true }); fs.writeFileSync(native, '');
@@ -23,7 +23,7 @@ test('Windows resolves global and local npm Codex packages without executing she
 });
 
 test('Windows resolves the optional architecture package, including paths with spaces', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot codex '));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot codex ')));
   try {
     const pkg = path.join(root, 'node_modules/@openai/codex/node_modules/@openai/codex-win32-arm64');
     const native = path.join(pkg, 'vendor/aarch64-pc-windows-msvc/bin/codex.exe');

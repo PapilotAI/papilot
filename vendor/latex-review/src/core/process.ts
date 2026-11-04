@@ -40,14 +40,19 @@ export function run(
     status: result.status ?? 1,
   };
 }
+function killTree(child: ReturnType<typeof spawn>, signal: NodeJS.Signals) {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === "win32") {
+    const result = spawnSync("taskkill.exe", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, timeout: 5000 });
+    if (result.status !== 0) child.kill(signal);
+  } else {
+    try { process.kill(-child.pid, signal); } catch { child.kill(signal); }
+  }
+}
 const running = new Set<ReturnType<typeof spawn>>();
 export function stopAll() {
   for (const child of running) {
-    try {
-      if (child.pid) process.kill(-child.pid, "SIGTERM");
-    } catch {
-      child.kill();
-    }
+    killTree(child, "SIGTERM");
   }
 }
 export function runAsync(
@@ -73,11 +78,7 @@ export function runAsync(
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      try {
-        if (child.pid) process.kill(-child.pid, "SIGKILL");
-      } catch {
-        child.kill("SIGKILL");
-      }
+      killTree(child, "SIGKILL");
     }, options.timeout ?? 300000);
     const receive = (data: Buffer) => {
       chunks.push(data);

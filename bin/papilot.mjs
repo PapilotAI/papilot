@@ -88,7 +88,7 @@ async function main() {
   // as the tested version is used as it is; otherwise that version is installed
   // once into the data folder.
   function findCodex() {
-    if (process.env.PAPILOT_CODEX_BIN) return codexExecutable(process.env.PAPILOT_CODEX_BIN) || process.env.PAPILOT_CODEX_BIN;
+    if (process.env.PAPILOT_CODEX_BIN) return (process.platform === 'win32' && codexExecutable(process.env.PAPILOT_CODEX_BIN)) || process.env.PAPILOT_CODEX_BIN;
     const tested = pkg.devDependencies['@openai/codex'];
     const version = file => (spawnSync(file, ['--version'], { encoding: 'utf8' }).stdout || '').match(/\d+\.\d+\.\d+/)?.[0] || '0.0.0';
     const recent = file => { const [a, b] = [parse(version(file)), parse(tested)]; return (a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) >= 0; };
@@ -100,7 +100,7 @@ async function main() {
     const npm = process.platform === 'win32' ? path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js') : 'npm';
     const result = spawnSync(process.platform === 'win32' ? process.execPath : npm, [...(process.platform === 'win32' ? [npm] : []), 'install', '--prefix', prefix, `@openai/codex@${tested}`, '--no-audit', '--no-fund', '--loglevel=error'], { stdio: 'inherit' });
     const downloaded = codexExecutable(path.join(prefix, 'node_modules/.bin/codex'));
-    if (result.status === 0 && downloaded && recent(downloaded)) return downloaded;
+    if (result.status === 0 && downloaded && (process.platform !== 'win32' || recent(downloaded))) return downloaded;
     console.warn('Codex could not be installed, so Codex tasks are unavailable. Install it with npm install -g @openai/codex and run papilot again.');
     return '';
   }
