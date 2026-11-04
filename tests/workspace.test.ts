@@ -48,7 +48,7 @@ function fixture(reviewHandler?: (method: string, route: string, body?: unknown)
     return summary;
   };
   const review: ReviewClient = { url: options.reviewUrl || 'http://unused', token: 'test', get: route => invoke('GET', route), post: (route, body) => invoke('POST', route, body) };
-  const workspace = new Workspace(store, codex as unknown as Codex, 2, async () => review, options.claude ? { claude: options.claude as unknown as Codex } : {});
+  const workspace = new Workspace(store, codex as unknown as Codex, async () => review, options.claude ? { claude: options.claude as unknown as Codex } : {});
   const task: Task = { id: 'task-id', projectId: 'paper', name: 'p-task', title: 'Task', instructions: 'Edit the introduction.', worktree: '/unused', threadId: 'thread', turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
   store.saveProject({ id: task.projectId, name: 'Paper', path: '/unused', createdAt: 1 });
   store.saveTask(task);
@@ -375,7 +375,7 @@ test('shutdown during polling leaves a durable job that a new workspace resumes'
   f.store.close();
   const store = new Store(file);
   const review: ReviewClient = { url: 'http://unused', token: '', get: async <T>(route: string) => (route.includes('/jobs/') ? { status: 'done' } : summary) as T, post: async () => { throw new Error('Must not republish'); } };
-  const workspace = new Workspace(store, new FakeCodex() as unknown as Codex, 2, async () => review);
+  const workspace = new Workspace(store, new FakeCodex() as unknown as Codex, async () => review);
   try {
     store.recover();
     assert.equal(store.task(f.task.id).pendingBuild?.job, 'durable-job');
@@ -829,6 +829,25 @@ test('checking a lost review response replays its original identity exactly once
   } finally { f.close(); await server.close(); }
 });
 
+test('every queued task starts at once, with no limit on how many run together', async () => {
+  const f = fixture();
+  try {
+    const ids = [f.task.id];
+    for (let i = 1; i < 5; i++) {
+      const task = { ...f.task, id: `task-${i}`, name: `p-task-${i}`, threadId: `thread-${i}` };
+      f.store.saveTask(task);
+      (f.workspace as any).loaded.add(task.threadId);
+      ids.push(task.id);
+    }
+    for (const id of ids) await f.workspace.enqueue(id, 'Revise this section.', `request-${id}`, false);
+    f.codex.ready = true;
+    await (f.workspace as any).drain();
+    await tick();
+    assert.deepEqual(ids.map(id => f.store.task(id).status), Array(5).fill('running'));
+    assert.equal(f.codex.calls.filter(call => call.method === 'turn/start').length, 5);
+  } finally { f.close(); }
+});
+
 test('concurrent review status checks cannot replay the decision twice', async () => {
   const received = deferred<void>(), release = deferred<void>();
   const server = await reviewServer(async (_request, response) => {
@@ -1019,7 +1038,7 @@ test('lost finish responses stay reserved across restart and retry confirms clos
     assert.equal(reopened.task(f.task.id).status, 'deleting');
     assert.match(reopened.task(f.task.id).error!, /restarted during deletion/);
     const review: ReviewClient = { url: 'http://unused', token: 'test', get: async <T>() => ({ ...pageState, closed }) as T, post: async () => { finishCalls++; throw new Error('A closed task must not be finished again.'); } };
-    workspace = new Workspace(reopened, new FakeCodex() as unknown as Codex, 2, async () => review);
+    workspace = new Workspace(reopened, new FakeCodex() as unknown as Codex, async () => review);
     await assert.rejects(workspace.enqueue(f.task.id, 'Do not resume.', 'next', false));
     await workspace.deleteTask(f.task.id);
     assert.equal(reopened.tasks().length, 0);
@@ -1832,7 +1851,7 @@ test('agents that are not found on the host are neither started nor offered, and
   (codex as any).start = async () => { codex.ready = true; };
   const qwen = new Detected();
   const others = Object.fromEntries((['claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'deepseek', 'opencode'] as const).map(id => [id, Object.assign(new Detected(), { found: false })]));
-  const workspace = new Workspace(store, codex as unknown as Codex, 2, async () => { throw new Error('unused'); }, { ...others, qwen } as any);
+  const workspace = new Workspace(store, codex as unknown as Codex, async () => { throw new Error('unused'); }, { ...others, qwen } as any);
   try {
     await workspace.connect();
     assert.equal(qwen.starts, 0);
@@ -1953,7 +1972,7 @@ test('creating an AI review skill task persists its snapshot and queues review-o
   const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/isolated-review', deferred: true } : {});
   try {
     const reviewInput = { key: 'pdf-at-start', lines: [{ id: 'p1-l1', page: 0, text: 'Read this claim.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
-    const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', reviewInput };
+    const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async () => reviewInput };
     const created = await f.workspace.createTask(input);
     assert.equal(created.mode, 'review');
     assert.equal(created.worktree, '/isolated-review');
@@ -1965,18 +1984,34 @@ test('creating an AI review skill task persists its snapshot and queues review-o
     assert.equal(f.store.items(created.id)[0].text, '');
     assert.equal((await f.workspace.createTask(input)).id, created.id);
     assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 1);
-    await assert.rejects(f.workspace.createTask({ ...input, reviewInput: undefined, instructions: 'Edit it.' }), /Invalid task ID/);
+    await assert.rejects(f.workspace.createTask({ ...input, prepareReview: undefined, instructions: 'Edit it.' }), /Invalid task ID/);
     await assert.rejects(f.workspace.createTask({ ...input, id: 'ai-review-task-0002', agent: 'cursor' }), /Choose Codex, Claude or GLM/);
+  } finally { f.close(); }
+});
+
+test('an AI review whose manuscript copy cannot be read discards the copy, so a retry copies it again', async () => {
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : route.endsWith('/finish') ? { task: 'p-ai-review-retry-task', finished: true } : {});
+  try {
+    const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The fixed copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
+    let fail = true;
+    const input = { id: 'ai-review-retry-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async () => { if (fail) throw new Error('The manuscript could not be compiled for AI review.'); return captured; } };
+    await assert.rejects(f.workspace.createTask(input), /could not be compiled/);
+    assert.equal(f.store.tasks().some(task => task.id === input.id), false);
+    assert.deepEqual(f.calls.map(call => call.route), ['/api/tasks', '/api/tasks/p-ai-review-retry-task/finish']);
+    assert.deepEqual(f.calls[1].body, { force: true });
+    fail = false;
+    const created = await f.workspace.createTask(input);
+    assert.equal(created.aiReview?.key, 'task-pdf');
+    assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 2);
   } finally { f.close(); }
 });
 
 test('AI review captures the task worktree before enqueueing and retries keep that snapshot', async () => {
   const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : {});
   try {
-    const requested = { key: 'main-pdf', lines: [] };
     const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The task copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     let calls = 0;
-    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', reviewInput: requested, prepareReview: async (worktree: string) => { calls++; assert.equal(worktree, '/task-copy'); return captured; } };
+    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async (worktree: string) => { calls++; assert.equal(worktree, '/task-copy'); return captured; } };
     const created = await f.workspace.createTask(input);
     assert.equal(created.aiReview?.key, 'task-pdf');
     assert.deepEqual(f.store.reviewInput(created.id), captured);
