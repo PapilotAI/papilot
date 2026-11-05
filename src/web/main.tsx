@@ -1089,7 +1089,7 @@ function App() {
     if (annotationHistory.current !== history || entry.note.projectId !== history.projectId) return;
     history.undo.push(entry); history.redo = []; historyChanged();
   };
-  const noteEditVersion = useRef(0), noteWrites = useRef(new Map<string, Promise<unknown>>());
+  const noteEditVersion = useRef(0), noteWrites = useRef(new Map<string, { saved: Annotation; tail: Promise<void> }>());
   useEffect(() => { setNoteGroup(null); }, [projectId]);
   const [pdfNoteEditing, setNoteEditing] = useState(false);
   const [reviewNoteBusy, setReviewNoteBusy] = useState(false);
@@ -1533,21 +1533,26 @@ function App() {
         recordAnnotation({ kind: 'add', note });
       } finally { setMarking(value => value - 1); }
     },
-    // Writes of one note go out one after another, so the server keeps the
-    // last one; the pending text stays on top until the newest write settles.
+    // Each queue retains the last successful server value, independently of
+    // optimistic text. Failed writes must never become an Undo destination.
     async edit(note, comment) {
       const version = ++noteEditVersion.current;
       setPendingComments(current => ({ ...current, [note.id]: { comment, version } }));
-      const write = (noteWrites.current.get(note.id) || Promise.resolve()).catch(() => undefined)
-        .then(() => api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, { comment }));
-      noteWrites.current.set(note.id, write);
-      try {
-        const saved = await write;
+      const queue = noteWrites.current.get(note.id) || { saved: savedNotes?.find(item => item.id === note.id) || note, tail: Promise.resolve() };
+      const write = queue.tail.then(async () => {
+        const before = queue.saved;
+        const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, { comment });
+        queue.saved = saved;
         if (annotationHistory.current !== history) return;
         withNotes(list => list.map(item => item.id === note.id ? saved : item));
-        if (note.comment !== saved.comment) recordAnnotation({ kind: 'edit', note, comment: saved.comment });
-      } finally {
-        if (noteWrites.current.get(note.id) === write) noteWrites.current.delete(note.id);
+        if (before.comment !== saved.comment) recordAnnotation({ kind: 'edit', note: before, comment: saved.comment });
+      });
+      // Later writes may proceed after a failure; this caller still receives it.
+      const tail = write.catch(() => undefined);
+      queue.tail = tail; noteWrites.current.set(note.id, queue);
+      try { await write; }
+      finally {
+        if (noteWrites.current.get(note.id) === queue && queue.tail === tail) noteWrites.current.delete(note.id);
         setPendingComments(current => {
           if (current[note.id]?.version !== version) return current;
           const next = { ...current }; delete next[note.id]; return next;

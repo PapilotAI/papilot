@@ -158,6 +158,35 @@ try {
     await tool('Hand').click(); await expect(tool('Hand')).toHaveAttribute('aria-pressed', 'true');
     await tool('Magic pen').hover(); await expect(tool('Magic pen').locator('.rail-tip')).toBeVisible();
   }
+  // Closing a menu restores keyboard focus while the browser is still
+  // changing its popover stack. The hint must wait and never re-enter it.
+  for (let repeat = 0; repeat < 3; repeat++) {
+    await tool('Collapse marking tools').focus(); await page.keyboard.press('Tab');
+    await expect(tool('Magic pen')).toBeFocused();
+    await expect(tool('Magic pen').locator('.rail-tip')).toBeVisible();
+    await page.keyboard.press('Shift+Tab');
+    await expect(tool('Collapse marking tools')).toBeFocused();
+    await expect(page.locator('.rail-tip:popover-open')).toHaveCount(0);
+    await page.keyboard.press('Tab');
+    for (let index = 0; index < 6; index++) await page.keyboard.press('Tab');
+    await expect(tool('Hand')).toBeFocused();
+    await expect(tool('Hand').locator('.rail-tip')).toBeVisible();
+    await page.keyboard.press('Enter');
+    await tool('Magic pen').hover();
+    await expect(tool('Magic pen').locator('.rail-tip')).toBeVisible();
+    await tool('Magic pen').click(); await tool('Magic pen').click();
+    const menu = rail().getByRole('menu', { name: 'Quick notes' });
+    await expect(menu).toBeVisible();
+    await expect(tool('Magic pen').locator('.rail-tip')).toBeHidden();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(tool('Magic pen')).toBeFocused();
+    await expect(tool('Magic pen').locator('.rail-tip')).toBeVisible();
+    await page.mouse.move(1000, 250);
+    await page.getByRole('textbox', { name: 'Describe the revision', exact: true }).focus();
+    await expect(page.locator('.rail-tip:popover-open')).toHaveCount(0);
+    assert.deepEqual(errors, []);
+  }
   await page.setViewportSize({ width: 1440, height: 900 });
   await key('d');
   failHistoryDelete = true;

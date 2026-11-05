@@ -186,17 +186,20 @@ export interface PdfHistoryActions {
 }
 
 // Tooltips use the top layer so scrolling a short rail cannot clip them.
-function hideRailTips(rail: HTMLElement | null) {
-  rail?.querySelectorAll<HTMLElement>('.rail-tip:popover-open').forEach(tip => tip.hidePopover());
+function hideRailTips(rail: HTMLElement | null, except?: HTMLElement) {
+  rail?.querySelectorAll<HTMLElement>('.rail-tip:popover-open').forEach(tip => { if (tip !== except) tip.hidePopover(); });
 }
 function showRailTip(button: Element | null) {
-  if (!button?.isConnected || button.getAttribute('aria-expanded') === 'true') return;
+  if (!button?.isConnected) return;
+  const rail = button.closest<HTMLElement>('.pdf-rail');
+  const menu = button.getAttribute('popovertarget');
+  if (menu && document.getElementById(menu)?.matches(':popover-open')) { hideRailTips(rail); return; }
   const tip = button.querySelector<HTMLElement>('.rail-tip');
-  if (!tip) return;
+  if (!tip) { hideRailTips(rail); return; }
   const rect = button.getBoundingClientRect(), viewport = button.closest('.rail-tools')?.getBoundingClientRect();
-  if (viewport && (rect.bottom <= viewport.top || rect.top >= viewport.bottom)) return;
-  hideRailTips(button.closest<HTMLElement>('.pdf-rail'));
-  tip.showPopover();
+  if (viewport && (rect.bottom <= viewport.top || rect.top >= viewport.bottom)) { hideRailTips(rail); return; }
+  hideRailTips(rail, tip);
+  if (!tip.matches(':popover-open')) tip.showPopover();
   tip.style.left = `${Math.max(8, Math.min(rect.right + 12, window.innerWidth - tip.offsetWidth - 8))}px`;
   tip.style.top = `${Math.max(8, Math.min(rect.top + (rect.height - tip.offsetHeight) / 2, window.innerHeight - tip.offsetHeight - 8))}px`;
 }
@@ -244,10 +247,32 @@ export const PdfView = forwardRef<PdfHandle, {
   const [tool, setTool] = useState<PdfTool>(props.region ? 'region' : 'select'), [spaceHand, setSpaceHand] = useState(false);
   const railId = useId(), [railCollapsed, setRailCollapsed] = useState(() => browserStorage.getItem('papilot:pdf-tools-collapsed') === 'true');
   const rail = useRef<HTMLDivElement>(null);
+  const railTipFrame = useRef<number | null>(null);
+  const railTipTarget = useRef<Element | null>(null);
+  // Menu dismissal restores focus synchronously. Defer all tooltip operations
+  // until that native popover operation has finished, and coalesce focus/scroll.
+  function queueRailTip(button: Element | null = railTipTarget.current) {
+    // Preserve the last deliberate hover/focus through scrolling, which can
+    // move unrelated buttons under a stationary pointer.
+    railTipTarget.current = button;
+    if (railTipFrame.current !== null) return;
+    railTipFrame.current = requestAnimationFrame(() => {
+      railTipFrame.current = null;
+      const owner = rail.current, target = railTipTarget.current;
+      if (!target || !owner?.contains(target) || !target.matches(':hover, :focus-visible') || latest.current.suspended) hideRailTips(owner);
+      else showRailTip(target);
+    });
+  }
   useEffect(() => {
-    const hide = () => hideRailTips(rail.current);
+    const hide = () => queueRailTip(null);
     window.addEventListener('resize', hide);
-    return () => window.removeEventListener('resize', hide);
+    return () => {
+      window.removeEventListener('resize', hide);
+      if (railTipFrame.current !== null) cancelAnimationFrame(railTipFrame.current);
+      railTipFrame.current = null;
+      railTipTarget.current = null;
+      hideRailTips(rail.current);
+    };
   }, []);
   const active: PdfTool = spaceHand ? 'hand' : tool, toolRef = useRef(active); toolRef.current = active;
   const spaceRef = useRef({ held: false, used: false }); spaceRef.current.held = spaceHand;
@@ -830,19 +855,15 @@ export const PdfView = forwardRef<PdfHandle, {
     </div>}
     <div className="pdf-body">
     {markable && <div ref={rail} className="pdf-rail" data-collapsed={railCollapsed} role="toolbar" aria-orientation="vertical" aria-label={t('Marking tools')}
-      onPointerOver={event => {
+      onPointerMove={event => {
         const button = (event.target as Element).closest('.rail-tool');
-        if (!button?.contains(event.relatedTarget as Node | null)) showRailTip(button);
+        if (button !== railTipTarget.current) queueRailTip(button);
       }} onPointerOut={event => {
-        if (!(event.target as Element).closest('.rail-tool')?.contains(event.relatedTarget as Node | null)) hideRailTips(event.currentTarget);
-      }} onFocus={event => { if (event.target.matches(':focus-visible')) showRailTip(event.target.closest('.rail-tool')); }}
-      onBlur={event => hideRailTips(event.currentTarget)} onPointerDownCapture={event => hideRailTips(event.currentTarget)}
-      onKeyDownCapture={event => hideRailTips(event.currentTarget)} onScrollCapture={event => {
-        const rail = event.currentTarget;
-        hideRailTips(rail);
-        // Hover/focus may precede the scroll that brought its button into view.
-        requestAnimationFrame(() => showRailTip(rail.querySelector('.rail-tool:hover') || rail.querySelector('.rail-tool:focus-visible')));
-      }}>
+        const button = (event.target as Element).closest('.rail-tool');
+        if (button === railTipTarget.current && !button?.contains(event.relatedTarget as Node | null) && !button?.matches(':focus-visible')) queueRailTip(null);
+      }} onFocus={event => { if (event.target.matches(':focus-visible')) queueRailTip(event.target.closest('.rail-tool')); }}
+      onBlur={() => queueRailTip(null)} onPointerDownCapture={() => queueRailTip(null)}
+      onKeyDownCapture={() => queueRailTip(null)} onScrollCapture={() => queueRailTip()}>
       <button type="button" className="rail-tool rail-toggle" aria-expanded={!railCollapsed} aria-controls={railId}
         aria-label={railCollapsed ? t('Expand marking tools') : t('Collapse marking tools')} title={railCollapsed ? t('Expand marking tools') : t('Collapse marking tools')}
         onClick={() => { const next = !railCollapsed; setRailCollapsed(next); browserStorage.setItem('papilot:pdf-tools-collapsed', String(next)); }}>
