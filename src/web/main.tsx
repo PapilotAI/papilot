@@ -472,8 +472,8 @@ function GitWorkspace({ projectId, projectName, navigation, git, onStatus, write
     api<GitDiff>(`/projects/${projectId}/git/diff?path=${encodeURIComponent(openPath)}`).then(result => { if (live) setDiff({ path: openPath, result, error: '' }); }, e => { if (live) setDiff({ path: openPath, result: null, error: e instanceof Error ? e.message : String(e) }); });
     return () => { live = false; };
   }, [projectId, openPath, openFile?.status, openFile?.staged, openFile?.unstaged, openFile?.lines?.join(), git?.head?.hash, diffRefresh]);
-  const heading = <header className="git-workspace-header">{navigation}<Icon name="branch" size={18}/><h2>Git</h2><span>{projectName}</span></header>;
-  if (!git || !Array.isArray(git.files)) return <section className="git-workspace" aria-label={t('Git status')}>{heading}<p className="git-clean" role="status">{t('Reading Git status…')}</p></section>;
+  const heading = <header className="git-workspace-header">{navigation}<Icon name="restore" size={18}/><h2>{t('Version History')}</h2><span>{projectName}</span></header>;
+  if (!git || !Array.isArray(git.files)) return <section className="git-workspace" aria-label={t('Version History')}>{heading}<p className="git-clean" role="status">{t('Loading version history…')}</p></section>;
   const staged = files.filter(file => file.staged), unstaged = files.filter(file => file.unstaged), chosen = staged.length ? staged : files.filter(file => !ignorable(file));
   const stage = (paths: string[], on: boolean) => { if (paths.length) void run('stage', () => api<{ git: GitStatus }>(`/projects/${projectId}/git/stage`, { paths, stage: on }), () => ''); };
   const saveMessage = (value: string) => { setMessage(value); if (value) browserStorage.setItem(draftKey, value); else browserStorage.removeItem(draftKey); };
@@ -563,11 +563,11 @@ function GitWorkspace({ projectId, projectName, navigation, git, onStatus, write
     </div>;
   };
   const sync = git.upstream && (git.ahead > 0 || git.behind > 0) ? <span className="git-sync">{git.ahead > 0 && <span>↑{git.ahead}</span>}{git.behind > 0 && <span>↓{git.behind}</span>}</span> : null;
-  return <section className="git-workspace" aria-label={t('Git status')} aria-busy={Boolean(busy)}>
+  return <section className="git-workspace" aria-label={t('Version History')} aria-busy={Boolean(busy)}>
     {heading}
     <div className="git-workspace-body">
     <aside className="git-panel" aria-label={t('Changes')}>
-    <div className="git-toolbar" role="group" aria-label="Git">
+    <div className="git-toolbar" role="group" aria-label={t('Version History')}>
       <div className="git-toolbar-branch">
         <span className="git-branch" title={git.upstream ? `${t('Tracking')} ${git.upstream}` : t('No upstream branch')}><Icon name="branch" size={14}/><code>{git.branch || t('detached HEAD')}</code>{sync}</span>
         {git.remote && <button type="button" className="icon-button" aria-label={t('Fetch from the remote')} title={t('Fetch from the remote')} disabled={Boolean(busy)} onClick={() => remote('fetch')}>{busy === 'fetch' ? <span className="spinner"/> : <Icon name="fetch" size={15}/>}</button>}
@@ -622,10 +622,10 @@ function GitWorkspace({ projectId, projectName, navigation, git, onStatus, write
     </GitPane>
     </div>
     </aside>
-    <section className="git-details" aria-label="Git">
+    <section className="git-details" aria-label={t('Workspace view')}>
       <div className="git-detail-switcher view-selector" role="group" aria-label={t('Workspace view')}>
         <button type="button" aria-pressed={detail === 'changes'} onClick={() => showDetail('changes')}><Icon name="diff" size={16}/><span>{t('Changes')}</span></button>
-        <button type="button" aria-pressed={detail === 'history'} onClick={() => showDetail('history')}><Icon name="branch" size={16}/><span>{t('Commit graph')}</span></button>
+        <button type="button" aria-pressed={detail === 'history'} onClick={() => showDetail('history')}><Icon name="restore" size={16}/><span>{t('Commit graph')}</span></button>
       </div>
       <div id={diffId} className="git-file-preview" hidden={detail !== 'changes'}>
         {openFile ? <section className="git-selected-diff" aria-label={t('Changes in {path}', { path: openPath })}>
@@ -1002,7 +1002,7 @@ function App() {
   const [git, setGit] = useState<{ projectId: string; status: GitStatus | null }>({ projectId: '', status: null });
   const [chatWidth, setChatWidth] = useState(() => Number(browserStorage.getItem('papilot:chat-width')) || 0);
   // Appearance, language and notifications live in Settings; a new language re-renders everything.
-  const theme = useTheme(); useLanguage();
+  const theme = useTheme(); const { language: uiLanguage } = useLanguage();
   const [settings, setSettings] = useState<false | 'general' | 'shortcuts'>(false);
   useEffect(() => {
     const open = () => setSettings('shortcuts');
@@ -1459,7 +1459,7 @@ function App() {
   });
 
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
-  useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : gitOpen && project ? `Git · ${project.name} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, gitOpen, project?.name]);
+  useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : gitOpen && project ? `${t('Version History')} · ${project.name} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, gitOpen, project?.name, uiLanguage]);
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
   const active = Boolean(task && ACTIVE.includes(task.status));
@@ -1615,7 +1615,7 @@ function App() {
       <div className="sidebar-actions">
         {project && <>
           <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><Icon name="pdf" size={16}/><span className="nav-label">{t('Manuscript')}</span></button>
-          <button className={'nav-link git-link' + (gitOpen ? ' active' : '')} aria-label={projectGit?.files?.length ? t('Git, {n} changed', { n: projectGit.files.length }) : 'Git'} aria-current={gitOpen ? 'page' : undefined} title={t('Git status of the manuscript') + '\n' + gitSummary(projectGit)} onClick={openGit}><Icon name="branch" size={16}/><span className="nav-label">Git</span><span className="nav-meta">{projectGit?.files?.length ? <span className="count">{projectGit.files.length}</span> : null}</span></button>
+          <button className={'nav-link git-link' + (gitOpen ? ' active' : '')} aria-label={projectGit?.files?.length ? t('Version History, {n} changed', { n: projectGit.files.length }) : t('Version History')} aria-current={gitOpen ? 'page' : undefined} title={t('Version history of the manuscript') + '\n' + gitSummary(projectGit)} onClick={openGit}><Icon name="restore" size={16}/><span className="nav-label">{t('Version History')}</span><span className="nav-meta">{projectGit?.files?.length ? <span className="count">{projectGit.files.length}</span> : null}</span></button>
           <ActionMenu label={t('Paper tools')} className="nav-link paper-tools" menuClassName="paper-tools-menu" align="side" actions={[
             { id: 'references', label: t('Reference check'), icon: 'checklist', detail: t('Citations, entries and their records'), hint: problems ? String(problems) : undefined, checked: referencesOpen || undefined, select: () => { setSelected(''); setPage('references'); setSidebar(false); } },
           ]}><Icon name="tool" size={16}/><span className="nav-label">{t('Tools')}</span><Icon name="more" size={16}/></ActionMenu>
@@ -1658,7 +1658,7 @@ function App() {
     </aside>
     {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label={t('Close task list')} onClick={() => setSidebar(false)}/>}
     <main className="main" inert={narrow && sidebar}>
-      <h1 className="sr-only">{task ? task.title : manuscriptOpen ? t('Manuscript') : referencesOpen ? t('Reference check') : gitOpen ? 'Git' : 'Papilot'}</h1>
+      <h1 className="sr-only">{task ? task.title : manuscriptOpen ? t('Manuscript') : referencesOpen ? t('Reference check') : gitOpen ? t('Version History') : 'Papilot'}</h1>
       {flyingTask && <TaskFlight task={flyingTask} sidebarShown={sidebarShown} onArrive={taskArrived}/>}
       <span className="sr-only" role="status" aria-atomic="true">{addedTask ? t('Task added: {title}', { title: addedTask.title }) : ''}</span>
       {!gitOpen && (mobile || (!task && !manuscriptOpen)) && (sidebarToggle || task || manuscriptOpen) && <div className="workspace-navigation">

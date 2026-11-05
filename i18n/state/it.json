@@ -865,7 +865,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Commit graph": {
-    "revision": "8b63a65d518d11168dbbde42f27cfac8e6b180556716b56f74d7e45016937503",
+    "revision": "bee6309a8f9db4ddc02fedbfaf457a1a66238fcce93123880d734c42a0621fb2",
     "textHash": "c323ec764c7195ccad4a99c71baf3e83d3120984c846eea803115be6500c5628",
     "model": "gemini-4-argon-medium"
   },
@@ -1792,21 +1792,6 @@
   "Get started and make Papilot your own.": {
     "revision": "99caa4b8941d2ce9688fdc7bcc6c3421bb00e3d308f44b3d71bc2db0a02774af",
     "textHash": "4410c95eb5db2ad3ff53816631012c81fada857775a8e8be02b57e13d17272b4",
-    "model": "gemini-4-argon-medium"
-  },
-  "Git status": {
-    "revision": "a6faed0ef415639f21ca25a3af0b8cf1d3b44205e95995b382ae57f696708d70",
-    "textHash": "fa505af7dd5ed4960d04d135c7710cfefa722087f003d38bddf533074aadfd6d",
-    "model": "gemini-4-argon-medium"
-  },
-  "Git status of the manuscript": {
-    "revision": "1432c652b5b9387ef027252109c5ad3e8f1f758d5c814db9a90c97a8392e7377",
-    "textHash": "b75a0b55155b9c8c37891da7780a5bc2529aa08d5bbac283aeb887ec3cab8952",
-    "model": "gemini-4-argon-medium"
-  },
-  "Git, {n} changed": {
-    "revision": "62318550f7cdeeac30be5e1fc3dea3c900d9b19299db86821868baebccd4b133",
-    "textHash": "8a9665553e08a93bef3ce4dd1e93f25f7513c8b35ae49a35bd501121b40a297d",
     "model": "gemini-4-argon-medium"
   },
   "GitHub repository": {
@@ -3237,11 +3222,6 @@
   "Read, annotate, and revise your papers with AI, all in one place.": {
     "revision": "aa12c250ec62f6566f07520d75651e5e40bf7f389b05761cda6f59b157b12d6d",
     "textHash": "e20f30fed657c4018205584fe5da771e6cb73d4c830ba0d81843e458f2df6117",
-    "model": "gemini-4-argon-medium"
-  },
-  "Reading Git status…": {
-    "revision": "abaa33a9a1fad3ce983c1166b156e14fa5678ca296c66c3476249f8ffb796c7f",
-    "textHash": "2aca245263d8d0afa99c07d7b4dc2b080d3f31c547a6d38043dc5934e0e9bac1",
     "model": "gemini-4-argon-medium"
   },
   "Reading paper files…": {

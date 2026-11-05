@@ -52,7 +52,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
   throw new Error(`Unexpected request: ${route.request().method()} ${url.pathname}`);
 });
-const workspace = page.getByRole('region', { name: 'Git status', exact: true });
+const workspace = page.getByRole('region', { name: 'Version History', exact: true });
 const panel = workspace.locator('.git-panel');
 const details = workspace.locator('.git-details');
 const toolbar = workspace.locator('.git-toolbar');
@@ -61,7 +61,7 @@ try {
   await page.goto(origin);
   await page.locator('.manuscript-link').click();
   await page.locator('.textLayer span').first().waitFor();
-  await expect(page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab', { name: /^Git/ })).toHaveCount(0);
+  await expect(page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab', { name: /^Version History/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Collapse manuscript panel', exact: true }).click();
   await openGit();
   await expect(workspace).toBeVisible();
