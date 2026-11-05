@@ -1,3 +1,24 @@
 {
-  "Updates are managed by Nix.": "更新由 Nix 管理。"
+  "Updates are managed by Nix.": "更新由 Nix 管理。",
+  "Paper Q&A": "论文问答",
+  "Resize question panel": "调整问答区域高度",
+  "Question history": "问答记录",
+  "Thinking…": "思考中…",
+  "Could not answer the question.": "暂时无法回答这个问题。",
+  "Retry question": "重试问题",
+  "A portion of the manuscript was used because the paper is large.": "论文较长，本次回答只使用了部分内容。",
+  "Default model": "默认模型",
+  "Connect an agent to ask questions.": "连接 agent 后即可提问。",
+  "Ask a question": "提问",
+  "Ask a question about this paper…": "针对这篇论文提问…",
+  "Send question": "发送问题",
+  "Q&A sessions": "历史会话",
+  "New conversation": "新对话",
+  "What would you like to discuss?": "想讨论论文的什么内容？",
+  "Full access": "完全访问",
+  "Can run commands and modify files": "可运行命令和修改文件",
+  "Delete conversation: {title}": "删除会话：{title}",
+  "Delete conversation?": "删除会话？",
+  "Delete conversation": "删除会话",
+  "This permanently deletes this conversation and its saved questions, answers and draft. Changes already made to the manuscript stay in place.": "这将永久删除此会话及其问题、回答和草稿。已经对论文做出的修改会保留。"
 }

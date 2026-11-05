@@ -91,6 +91,8 @@ let reconnects = 0;
 let reconnectFailure = false;
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
 await page.route('**/api/**', async route => {
+  if (new URL(route.request().url()).pathname.endsWith('/question-sessions')) return route.fulfill({ json: { sessions: [{ id: 'default', title: '', createdAt: 1, updatedAt: 1 }] } });
+  if (new URL(route.request().url()).pathname.endsWith('/questions')) return route.fulfill({ json: { questions: [] } });
   const url = new URL(route.request().url());
   if (url.pathname.endsWith('/note-results')) return route.fulfill({ json: { notes: [] } });
   const json = data => route.fulfill({ json: data });
@@ -1145,6 +1147,8 @@ try {
   await graph.getByRole('alert').waitFor({ state: 'detached' });
   // Build output goes into .gitignore from the Changes menu, one pattern per kind.
   await unstagedList.getByText('main.aux', { exact: true }).waitFor();
+  await changes.getByRole('button', { name: 'More Git actions', exact: true }).scrollIntoViewIfNeeded();
+  await page.clock.runFor(100);
   await changes.getByRole('button', { name: 'More Git actions', exact: true }).click();
   const ignoreItem = page.getByRole('menuitem', { name: /^Add to \.gitignore/ });
   await expect(ignoreItem).toContainText('2 build files');
@@ -1279,7 +1283,7 @@ try {
   await usage.locator('summary').click();
   // One picker lists every agent's models with a search; one choice sets the
   // agent and its model, and effort and fast mode follow the chosen model.
-  const settingsTrigger = page.getByRole('button', { name: 'Agent settings', exact: true });
+  const settingsTrigger = page.locator('.new-task-panel').getByRole('button', { name: 'Agent settings', exact: true });
   const agentSettings = page.getByRole('dialog', { name: 'Agent settings', exact: true });
   await settingsTrigger.click();
   const search = agentSettings.getByRole('combobox', { name: 'Search models', exact: true });
@@ -1861,15 +1865,21 @@ try {
   assert.deepEqual(await work.locator('.tool-label').allInnerTexts(), ['cat main.tex', 'git status --short', 'Edited main.tex']);
   assert.equal(await page.locator('.thread > .tool-item .tool-label').innerText(), 'latexmk -pdf main.tex');
   // A task on the host's default model names that model.
-  assert.equal(await page.locator('.activity-panel .agent-picker .agent-model-name').innerText(), 'Fast model');
-  assert.equal(await page.locator('.activity-panel .agent-picker .agent-model-label small').innerText(), 'Medium');
+  assert.equal(await page.locator('.activity-panel .question-top .agent-picker .agent-model-name').innerText(), 'Fast model');
+  assert.equal(await page.locator('.activity-panel .question-top .agent-picker .agent-model-label small').innerText(), 'Medium');
   console.log('PASS: Notes sent from the PDF read as notes, and consecutive commands fold into one line with task paths');
 
+  // Inspecting tools in the smaller upper pane can scroll away from the end.
+  // Start the following/unfollowing check from an explicit following state.
+  const latestBeforeHistory = page.getByRole('button', { name: 'Latest messages' });
+  if (await latestBeforeHistory.isVisible()) await latestBeforeHistory.click();
+  await page.clock.runFor(100);
   history = Array.from({ length: 120 }, (_, i) => ({ id: `history-${i}`, taskId: task.id, type: 'assistant', text: `Message ${i}: A detailed review of the argument.`, createdAt: i + 1 }));
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.getByText('Message 119: A detailed review of the argument.', { exact: true }).waitFor();
   const scroller = page.locator('.messages');
-  assert.ok(await scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 5));
+  await page.screenshot({ path: 'test-results/conversation-following.png' });
+  await expect.poll(() => scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThan(5);
   await scroller.evaluate(el => { el.scrollTop = 0; });
   await page.getByRole('button', { name: 'Latest messages' }).waitFor();
   history.push({ ...history[0], id: 'history-new', text: 'A new message while reading history.' });
@@ -1877,7 +1887,7 @@ try {
   await page.getByText('A new message while reading history.', { exact: true }).waitFor();
   assert.equal(await scroller.evaluate(el => el.scrollTop), 0);
   await page.getByRole('button', { name: 'Latest messages' }).click();
-  assert.ok(await scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 5));
+  await expect.poll(() => scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThan(5);
   history = null;
   task.status = 'failed'; task.error = 'A build failed in the test fixture.'; task.review.job = { status: 'failed' };
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
@@ -1952,7 +1962,7 @@ try {
   const papers = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 900 } });
   const papersPage = await papers.newPage();
   const paperState = { ...snapshot, projects: [...snapshot.projects, otherPaper], tasks: [otherTask], requests: [] };
-  await papersPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? paperState : { items: [], build: { status: 'building' }, git: { files: [] } } }));
+  await papersPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? paperState : { items: [], questions: [], sessions: [{ id: 'default', title: '', createdAt: 1, updatedAt: 1 }], build: { status: 'building' }, git: { files: [] } } }));
   await papersPage.goto(origin);
   await papersPage.getByRole('heading', { name: otherTask.title }).waitFor();
   assert.equal(await papersPage.getByRole('button', { name: /^Paper:/ }).getAttribute('aria-label'), 'Paper: Second paper');
@@ -1995,7 +2005,7 @@ try {
   const restrictedPage = await restricted.newPage();
   const restrictedErrors = [];
   restrictedPage.on('pageerror', error => restrictedErrors.push(error.message));
-  await restrictedPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? { ...snapshot, tasks: [secondTask], requests: [] } : { items: [] } }));
+  await restrictedPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/state') ? { ...snapshot, tasks: [secondTask], requests: [] } : { items: [], questions: [], sessions: [{ id: 'default', title: '', createdAt: 1, updatedAt: 1 }] } }));
   await restrictedPage.goto(origin);
   const restrictedInput = restrictedPage.getByRole('textbox', { name: 'Instructions for Codex' });
   await restrictedInput.fill('A usable draft with storage disabled.');

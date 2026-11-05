@@ -38,7 +38,7 @@ export { AGENT_NAMES };
 import { agentDirs, findExecutable, agentPath } from '../../bin/agent-paths.mjs';
 export { agentDirs, findExecutable };
 
-export interface Thread { readOnly?: boolean; webSearch?: boolean; cwd: string; instructions: string; model: string | null; started: boolean }
+export interface Thread { fullAccess?: boolean; readOnly?: boolean; webSearch?: boolean; cwd: string; instructions: string; model: string | null; started: boolean }
 export interface Turn { id: string; threadId: string; clientId?: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; stop: () => void }
 export interface Item { id: string; type: string; [key: string]: unknown }
 
@@ -60,7 +60,7 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
       const id = method === 'thread/start' ? randomUUID() : String(params.threadId);
       const known = this.threads.get(id);
       const model = params.model || known?.model || null;
-      this.threads.set(id, { readOnly: params.sandbox === 'read-only', webSearch: params.sandbox !== 'read-only' && params.config?.web_search === 'live', cwd: params.cwd, instructions: params.developerInstructions || '', model, started: method === 'thread/resume' || Boolean(known?.started) });
+      this.threads.set(id, { fullAccess: params.sandbox === 'danger-full-access', readOnly: params.sandbox === 'read-only', webSearch: params.config?.web_search === 'live', cwd: params.cwd, instructions: params.developerInstructions || '', model, started: method === 'thread/resume' || Boolean(known?.started) });
       return { thread: { id }, model };
     }
     if (method === 'turn/start') {
@@ -307,10 +307,11 @@ export class ClaudeAgent extends Adapter {
         content.push({ type: 'image', source: { type: 'base64', media_type: mime, data: bytes.toString('base64') } });
       }
       const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-        ...(thread.readOnly ? ['--tools', ''] : []),
+        ...(thread.readOnly ? ['--tools', thread.webSearch ? 'WebSearch,WebFetch' : ''] : []),
         ...(thread.webSearch ? ['--allowedTools', 'WebSearch,WebFetch'] : []),
-        '--permission-mode', 'acceptEdits', '--permission-prompts', 'none', '--setting-sources', thread.readOnly ? '' : 'project',
-        '--settings', JSON.stringify({ sandbox: { enabled: true, autoAllowBashIfSandboxed: true, ...(thread.webSearch ? { network: { allowedDomains: ['*'] } } : {}) } }),
+        '--permission-mode', thread.fullAccess ? 'bypassPermissions' : 'acceptEdits', '--permission-prompts', 'none',
+        ...(thread.fullAccess ? [] : ['--setting-sources', thread.readOnly ? '' : 'project']),
+        '--settings', JSON.stringify({ sandbox: { enabled: !thread.fullAccess, autoAllowBashIfSandboxed: true, ...(thread.webSearch ? { network: { allowedDomains: ['*'] } } : {}) } }),
         // A question cannot be answered in -p; Claude asks in its reply instead.
         '--disallowedTools', 'AskUserQuestion', ...(thread.instructions ? ['--append-system-prompt', thread.instructions] : []),
         ...(thread.model ? ['--model', thread.model] : []), ...(effort ? ['--effort', effort] : []),
@@ -351,12 +352,20 @@ export class ClaudeAgent extends Adapter {
         // The thread ID is the Claude session ID, so a later turn resumes it.
         ...(thread.started ? { resume: turn.threadId } : { sessionId: turn.threadId }),
         systemPrompt: { type: 'preset', preset: 'claude_code', append: thread.instructions },
-        settingSources: thread.readOnly ? [] : ['project'], permissionMode: 'acceptEdits', ...(thread.readOnly ? { tools: [] } : {}),
+        ...(thread.fullAccess ? { permissionMode: 'bypassPermissions' as const, allowDangerouslySkipPermissions: true, settingSources: ['user', 'project', 'local'] } : { settingSources: thread.readOnly ? [] : ['project'], permissionMode: 'acceptEdits' as const }), ...(thread.readOnly ? { tools: thread.webSearch ? ['WebSearch', 'WebFetch'] : [] } : {}),
         ...(thread.webSearch ? { allowedTools: ['WebSearch', 'WebFetch'] } : {}),
-        sandbox: { enabled: true, autoAllowBashIfSandboxed: true, ...(thread.webSearch ? { network: { allowedDomains: ['*'] } } : {}) },
+        sandbox: { enabled: !thread.fullAccess, autoAllowBashIfSandboxed: true, ...(thread.webSearch ? { network: { allowedDomains: ['*'] } } : {}) },
         canUseTool: (name, input, { signal, title, decisionReason }) => new Promise<PermissionResult>(resolve => {
+          if (thread.fullAccess) {
+            resolve(name === 'AskUserQuestion' ? { behavior: 'deny', message: 'Ask any clarification in your reply.' } : { behavior: 'allow', updatedInput: input });
+            return;
+          }
           if (thread.webSearch && ['WebSearch', 'WebFetch'].includes(name)) {
             resolve({ behavior: 'allow', updatedInput: input });
+            return;
+          }
+          if (thread.readOnly) {
+            resolve(thread.webSearch && ['WebSearch', 'WebFetch'].includes(name) ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'This helper only permits web search and fetching when enabled.' });
             return;
           }
           const id = randomUUID(), question = name === 'AskUserQuestion' && Array.isArray(input.questions);

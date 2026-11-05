@@ -29,6 +29,8 @@ let fail = false, hold = false, release, failEdit = false, holdEdit = false, rel
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/state') return json(snapshot);
+  if (url.pathname.endsWith('/question-sessions')) return json({ sessions: [{ id: 'default', title: '', createdAt: 1, updatedAt: 1 }] });
+  if (url.pathname.endsWith('/questions')) return json({ questions: [] });
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/skills')) return json({ skills: [{ id: 'review', name: 'Review', description: 'Review the paper', hint: '', source: 'builtin', output: 'annotations' }] });
