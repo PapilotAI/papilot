@@ -14,6 +14,13 @@ export const zhCN: Record<string, string> = {
   "Go to changes": "前往改动",
   "Restoring…": "正在恢复…",
   "Version restored. Previous versions are kept in history.": "版本已恢复，之前的版本仍保留在记录中。",
+  'Before revision': '修改前', 'After revision': '修改后', 'Whole change': '整处修改',
+  'Page {page}': '第 {page} 页', 'Show quoted passage': '定位引用原文',
+  'From review round {n}': '引用自第 {n} 轮审阅', 'Comment {n}': '评论 {n}',
+  'Comment for {group} (optional)': '{group}评论（可选）',
+  '{n} review update': '{n} 项审阅意见', '{n} review updates': '{n} 项审阅意见',
+  '{n} review update included': '将附带 {n} 项审阅意见', '{n} review updates included': '将附带 {n} 项审阅意见',
+  'Add a comment to each quotation, or remove it.': '请为引用添加评论，或移除该引用。',
 
   'AI is resolving conflicts…': 'AI 正在解决冲突…',
   'Open chat': '打开聊天',
