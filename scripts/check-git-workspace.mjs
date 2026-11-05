@@ -12,6 +12,7 @@ await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 900 } });
+await page.addInitScript(() => localStorage.setItem('papilot:advanced-git', 'on'));
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const project = { id: 'git-paper', name: 'Example paper', path: '/tmp/git-paper', createdAt: 1 };
 const task = { id: 'git-task', projectId: project.id, title: 'Clarify the introduction', name: 'git-task', instructions: '', status: 'idle', createdAt: 1, updatedAt: 1, review: null };
@@ -20,16 +21,25 @@ const snapshot = { version: 'test', csrf: 'fixture', projects: [project], tasks:
 const initialFiles = [{ path: 'main.tex', status: 'M', staged: false, unstaged: true, lines: [2, 4] }, { path: 'references.bib', status: '?', staged: false, unstaged: true }];
 const git = { branch: 'main', remote: true, upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Clarify the introduction', date: 1 }, files: structuredClone(initialFiles) };
 const actions = [];
+const note = { id: 'note-1', projectId: project.id, key: 'fixture', page: 0, rect: [72, 72, 200, 90], rects: [[72, 72, 200, 90]], source: null, quote: 'Fixture', comment: 'Original note', createdAt: 1 };
+let failNoteSave = false;
 const words = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
+  if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: null, phase: 'idle', canUpdate: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/items')) return json({ items: [] });
+  if (url.pathname.endsWith('/annotations/note-1')) {
+    if (failNoteSave) return route.fulfill({ status: 503, json: { error: 'Could not save note.' } });
+    note.comment = route.request().postDataJSON().comment; return json(note);
+  }
   if (url.pathname.endsWith('/git')) return json(git);
+  if (url.pathname.endsWith('/git/fetch')) return json({ git });
+  if (url.pathname.endsWith('/git/history')) return json({ versions: [], next: null });
   if (url.pathname.endsWith('/git/overview')) return json({ worktrees: [{ path: project.path, current: true, branch: git.branch, head: git.head.hash, status: git }], commits: [{ ...git.head, parents: [], author: 'Author', refs: ['main'] }], truncated: false });
   if (url.pathname.endsWith('/git/diff')) {
     const file = url.searchParams.get('path');
@@ -47,7 +57,7 @@ await page.route('**/api/**', async route => {
     return json({ git, commit: 'def5678' });
   }
   if (url.pathname.endsWith('/git/push')) { actions.push(['push']); git.ahead = 0; return json({ git }); }
-  if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]] }, annotations: [] });
+  if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]] }, annotations: [note] });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
   throw new Error(`Unexpected request: ${route.request().method()} ${url.pathname}`);
@@ -61,6 +71,22 @@ try {
   await page.goto(origin);
   await page.locator('.manuscript-link').click();
   await page.locator('.textLayer span').first().waitFor();
+  // Leaving the manuscript saves note edits, and a failed save keeps the editor open.
+  await page.getByRole('button', { name: 'My notes', exact: true }).click();
+  await page.locator('.pdf-reading-notes').getByRole('button', { name: 'Edit note 1', exact: true }).click();
+  const noteEditor = page.locator('.pdf-reading-notes').getByRole('textbox', { name: 'Edit note 1', exact: true });
+  await noteEditor.fill('Save before opening version management');
+  failNoteSave = true;
+  await openGit();
+  await expect(page.locator('.pdf-reading-notes').getByRole('alert')).toContainText('Could not save note.');
+  await expect(workspace).toHaveCount(0);
+  await expect(noteEditor).toHaveValue('Save before opening version management');
+  failNoteSave = false;
+  await openGit();
+  await expect(workspace).toBeVisible();
+  assert.equal(note.comment, 'Save before opening version management');
+  await page.locator('.manuscript-link').click();
+
   await expect(page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab', { name: /^Version Management/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Collapse manuscript panel', exact: true }).click();
   await openGit();
@@ -76,12 +102,12 @@ try {
   await message.fill('Keep this commit draft');
   await panel.getByRole('button', { name: 'references.bib', exact: true }).click();
   await expect(details.getByRole('region', { name: 'Changes in references.bib', exact: true })).toContainText('New references.bib');
-  await details.locator('.git-detail-switcher').getByRole('button', { name: 'Commit graph', exact: true }).click();
+  await details.locator('.git-detail-switcher').getByRole('button', { name: 'Version history', exact: true }).click();
   await expect(details.locator('.git-graph-row')).toHaveCount(1);
   await page.reload();
   await expect(workspace).toBeVisible();
   await expect(message).toHaveValue('Keep this commit draft');
-  await expect(details.locator('.git-detail-switcher').getByRole('button', { name: 'Commit graph', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(details.locator('.git-detail-switcher').getByRole('button', { name: 'Version history', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await details.locator('.git-detail-switcher').getByRole('button', { name: 'Changes', exact: true }).click();
   await expect(details.getByRole('region', { name: 'Changes in references.bib', exact: true })).toBeVisible();
   await page.locator('.task-link').click();
@@ -135,6 +161,7 @@ try {
   assert.deepEqual(errors, []);
   console.log('Git workspace passed: left-side controls, separate diff/history, navigation and draft restoration, pinned commit controls, staging/commit/push, responsive layouts.');
 } catch (error) {
+  if (errors.length) console.error('Page errors:', errors);
   await page.screenshot({ path: 'test-results/git-workspace-failure.png' });
   throw error;
 } finally { await browser.close(); await server.close(); }

@@ -61,6 +61,92 @@ async function fixture() {
   return { updates, diagnosticRequests, manuscripts: shared.manuscripts, store, workspace, review, accounts, local, remote, ada, joined, session, state, as, async close() { updates.close(); await local.close(); await remote.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
 }
 
+test('Git sync requires project access and CSRF, publishes commits and respects the review write lock', async () => {
+  const f = await fixture(), base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-api-sync-'));
+  const root = path.join(base, 'paper'), remote = path.join(base, 'remote.git');
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  try {
+    git(base, 'init', '-q', '--bare', '-b', 'main', remote);
+    git(base, 'clone', '-q', remote, root);
+    git(root, 'config', 'user.name', 'Test'); git(root, 'config', 'user.email', 'test@localhost');
+    git(root, 'config', 'commit.gpgsign', 'false'); git(root, 'config', 'core.hooksPath', path.join(base, 'no-hooks'));
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Committed.\n'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'Initial');
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Pending.\n');
+    f.store.saveProject({ ...f.store.project('thesis'), path: root });
+    f.manuscripts.refresh = async () => {};
+    const url = '/api/projects/thesis/git/sync';
+    assert.equal((await f.local.inject({ method: 'POST', url, headers: LOCAL, payload: {} })).statusCode, 403);
+    assert.equal((await f.remote.inject({ method: 'POST', url: '/api/projects/grant/git/sync', headers: f.as, payload: {} })).statusCode, 400);
+    await f.workspace.reviewWrite('thesis-task', true, async () => {
+      const locked = await f.remote.inject({ method: 'POST', url, headers: f.as, payload: {} });
+      assert.equal(locked.statusCode, 400); assert.match(locked.json().error, /review action/);
+    });
+    const synced = await f.remote.inject({ method: 'POST', url, headers: f.as, payload: {} });
+    assert.equal(synced.statusCode, 200, synced.body);
+    assert.equal(synced.json().git.upstream, 'origin/main');
+    assert.equal(synced.json().git.files[0].path, 'main.tex');
+    assert.equal(git(remote, 'show', 'main:main.tex'), 'Committed.');
+    assert.equal(fs.readFileSync(path.join(root, 'main.tex'), 'utf8'), 'Pending.\n');
+    const first = git(root, 'rev-parse', 'HEAD');
+    git(root, 'add', '.'); git(root, 'commit', '-qm', 'Second version');
+    const head = git(root, 'rev-parse', 'HEAD'), restore = '/api/projects/thesis/git/restore', payload = { hash: first, head };
+    const history = await f.remote.inject({ url: '/api/projects/thesis/git/history', headers: f.as });
+    assert.equal(history.statusCode, 200); assert.equal(history.json().versions[0].message, 'Second version');
+    assert.equal((await f.remote.inject({ url: '/api/projects/grant/git/history', headers: f.as })).statusCode, 400);
+    assert.equal((await f.local.inject({ method: 'POST', url: restore, headers: LOCAL, payload })).statusCode, 403);
+    await f.workspace.reviewWrite('thesis-task', true, async () => {
+      const locked = await f.remote.inject({ method: 'POST', url: restore, headers: f.as, payload });
+      assert.equal(locked.statusCode, 400); assert.match(locked.json().error, /review action/);
+    });
+    const restored = await f.remote.inject({ method: 'POST', url: restore, headers: f.as, payload });
+    assert.equal(restored.statusCode, 200, restored.body);
+    assert.equal(git(root, 'rev-parse', 'HEAD^'), head);
+    assert.equal(fs.readFileSync(path.join(root, 'main.tex'), 'utf8'), 'Committed.\n');
+    assert.equal(git(remote, 'rev-parse', 'main'), first, 'Restoring does not write to the remote');
+  } finally { await f.close(); fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('a background fetch does not queue local staging or commits and concurrent listeners share the fetch', async () => {
+  const f = await fixture(), base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-fetch-queue-'));
+  const root = path.join(base, 'paper'), remote = path.join(base, 'remote.git');
+  const started = path.join(base, 'started'), release = path.join(base, 'release'), script = path.join(base, 'upload-pack.cjs');
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  const pending: Promise<any>[] = [];
+  async function promptly<T>(work: Promise<T>) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try { return await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Local operation waited for the blocked fetch')), 10_000); })]); }
+    finally { clearTimeout(timer); }
+  }
+  try {
+    git(base, 'init', '-q', '--bare', '-b', 'main', remote); git(base, 'clone', '-q', remote, root);
+    git(root, 'config', 'user.name', 'Writer'); git(root, 'config', 'user.email', 'writer@localhost');
+    git(root, 'config', 'commit.gpgsign', 'false'); git(root, 'config', 'core.hooksPath', path.join(base, 'no-hooks'));
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Initial.\n'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'Initial'); git(root, 'push', '-qu', 'origin', 'main');
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Revised.\n');
+    fs.writeFileSync(script, `const fs = require('node:fs');\nfs.appendFileSync(${JSON.stringify(started)}, 'fetch\\n');\nconst timer = setInterval(() => {\n  if (!fs.existsSync(${JSON.stringify(release)})) return;\n  clearInterval(timer);\n  process.exit(require('node:child_process').spawnSync('git', ['upload-pack', ...process.argv.slice(2)], { stdio: 'inherit' }).status ?? 1);\n}, 10);\n`);
+    const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+    git(root, 'config', 'remote.origin.uploadpack', `${quote(process.execPath)} ${quote(script)}`);
+    f.store.saveProject({ ...f.store.project('thesis'), path: root }); f.manuscripts.refresh = async () => {};
+    const headers = { ...LOCAL, 'x-papilot-token': 'local-csrf' }, url = '/api/projects/thesis/git/';
+    pending.push(f.local.inject({ method: 'POST', url: url + 'fetch', headers, payload: {} }).then(response => response));
+    const deadline = Date.now() + 10_000;
+    while (!fs.existsSync(started)) {
+      assert.ok(Date.now() < deadline, 'Fetch reaches the gated local remote');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    pending.push(f.remote.inject({ method: 'POST', url: url + 'fetch', headers: f.as, payload: {} }).then(response => response));
+    const staged = await promptly(f.local.inject({ method: 'POST', url: url + 'stage', headers, payload: { paths: ['main.tex'], stage: true } }).then(response => response));
+    assert.equal(staged.statusCode, 200, staged.body); assert.equal(git(root, 'show', ':main.tex'), 'Revised.');
+    const committed = await promptly(f.remote.inject({ method: 'POST', url: url + 'commit', headers: f.as, payload: { message: 'Revise locally', staged: true } }).then(response => response));
+    assert.equal(committed.statusCode, 200, committed.body); assert.equal(git(root, 'log', '-1', '--format=%s'), 'Revise locally');
+    assert.ok(!fs.existsSync(release), 'Both writes finish while the remote is still blocked');
+    fs.writeFileSync(release, '');
+    for (const response of await Promise.all(pending)) { assert.equal(response.statusCode, 200, response.body); assert.equal(response.json().git.ahead, 1); }
+    assert.equal(fs.readFileSync(started, 'utf8'), 'fetch\n', 'Concurrent requests reuse one fetch');
+    assert.equal(git(root, 'status', '--porcelain'), '');
+  } finally { fs.writeFileSync(release, ''); await Promise.allSettled(pending); await f.close(); fs.rmSync(base, { recursive: true, force: true }); }
+});
+
 test('task model changes keep the agent fixed and require task access and valid settings', async () => {
   const f = await fixture();
   try {
@@ -664,6 +750,73 @@ test('color groups persist without per-location comments and take their meaning 
   } finally { await f.close(); }
 });
 
+test('deletions need no comment, quick notes keep their name, and a task of deletions alone is accepted', async () => {
+  const f = await fixture();
+  f.manuscripts.locate = async () => ({ quote: 'a very simple idea', source: { file: 'main.tex', lines: [4, 4], excerpt: undefined } });
+  try {
+    const post = (payload: object) => f.remote.inject({ method: 'POST', url: '/api/projects/thesis/annotations', headers: f.as, payload: { key: 'pdf', page: 0, rect: [0.1, 0.1, 0.4, 0.2], ...payload } });
+    const deletion = await post({ kind: 'delete' });
+    assert.equal(deletion.statusCode, 200, deletion.body);
+    assert.equal(deletion.json().kind, 'delete'); assert.equal(deletion.json().comment, '');
+    assert.equal((await post({ comment: '' })).statusCode, 400, 'An ordinary note still needs a comment');
+    assert.equal((await post({ kind: 'erase', comment: 'x' })).statusCode, 400);
+    const stamped = await post({ comment: 'Say this more concisely.', stamp: 'Tight·en\n' });
+    assert.equal(stamped.json().stamp, 'Tight en', 'A name cannot break the heading it is written into');
+    const replaced = await f.remote.inject({ method: 'POST', url: `/api/projects/thesis/annotations/${deletion.json().id}`, headers: f.as, payload: { comment: 'a plain idea' } });
+    assert.equal(replaced.json().comment, 'a plain idea');
+    const cleared = await f.remote.inject({ method: 'POST', url: `/api/projects/thesis/annotations/${deletion.json().id}`, headers: f.as, payload: { comment: '' } });
+    assert.equal(cleared.statusCode, 200, 'Clearing the replacement goes back to deleting');
+    const send = await f.remote.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'deletions-only-task-01', projectId: 'thesis', title: 'Delete marked text', instructions: '', annotations: [deletion.json().id] } });
+    assert.equal(send.statusCode, 200, send.body);
+    assert.match(f.store.runByKey('initial-deletions-only-task-01')!.prompt, /· Delete\n {3}PDF text: "a very simple idea"\n {3}Note: Delete the marked text\./);
+  } finally { await f.close(); }
+});
+
+test('each person keeps their own quick notes, presets by id and their own in full', async () => {
+  const f = await fixture();
+  try {
+    const owner = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'local-csrf' };
+    const read = async (headers: Record<string, string>) => (await f.local.inject({ url: '/api/quick-notes', headers })).json().quickNotes;
+    assert.equal(await read(LOCAL), null, 'No list saved means the presets');
+    const mine = [{ id: 'verify' }, { id: 'polish', label: 'Smooth' }, { id: 'custom-define', label: ' Define  ·  term ', instruction: ' Define this term where it first appears. ', icon: 'book' }];
+    const saved = await f.local.inject({ method: 'POST', url: '/api/quick-notes', headers: owner, payload: { quickNotes: mine } });
+    assert.equal(saved.statusCode, 200, saved.body);
+    assert.deepEqual(saved.json().quickNotes[2], { id: 'custom-define', label: 'Define term', instruction: 'Define this term where it first appears.', icon: 'book' });
+    assert.deepEqual(await read(LOCAL), saved.json().quickNotes);
+    // Another person has their own list, and theirs goes when they are removed.
+    assert.equal((await f.remote.inject({ url: '/api/quick-notes', headers: f.as })).json().quickNotes, null);
+    assert.equal((await f.remote.inject({ method: 'POST', url: '/api/quick-notes', headers: f.as, payload: { quickNotes: [{ id: 'runt' }] } })).statusCode, 200);
+    assert.deepEqual(await read(LOCAL), saved.json().quickNotes);
+    for (const quickNotes of [[], Array.from({ length: 9 }, (_, index) => ({ id: `n${index}`, label: 'N', instruction: 'Do it.' })), [{ id: 'custom-x', label: 'X' }], [{ id: 'runt' }, { id: 'runt' }], [{ id: 'Bad id' }], [{ id: 'runt', label: 'x'.repeat(41) }], [{ id: 'runt', icon: '<svg>' }], 'runt']) {
+      assert.equal((await f.local.inject({ method: 'POST', url: '/api/quick-notes', headers: owner, payload: { quickNotes } })).statusCode, 400, JSON.stringify(quickNotes));
+    }
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/quick-notes', headers: owner, payload: { quickNotes: null } })).json().quickNotes, null, 'Restoring the presets forgets the list');
+    assert.equal(await read(LOCAL), null);
+    f.accounts.remove(f.ada.id);
+    assert.equal(f.store.preference(f.ada.id, 'quick-notes'), undefined);
+  } finally { await f.close(); }
+});
+
+test('indirect changes stay off until the owner turns them on', async () => {
+  const f = await fixture();
+  try {
+    const owner = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'local-csrf' };
+    const read = async () => (await f.local.inject({ url: '/api/indirect-changes', headers: LOCAL })).json().indirectChanges;
+    assert.equal(await read(), false, 'Off by default');
+    const other = await f.remote.inject({ method: 'POST', url: '/api/indirect-changes', headers: f.as, payload: { indirectChanges: true } });
+    assert.notEqual(other.statusCode, 200, 'Only the owner may turn them on');
+    assert.equal(await read(), false);
+    for (const payload of [{}, { indirectChanges: 'true' }, { indirect: true }])
+      assert.equal((await f.local.inject({ method: 'POST', url: '/api/indirect-changes', headers: owner, payload })).statusCode, 400, JSON.stringify(payload));
+    const saved = await f.local.inject({ method: 'POST', url: '/api/indirect-changes', headers: owner, payload: { indirectChanges: true } });
+    assert.equal(saved.json().indirectChanges, true, saved.body);
+    assert.equal(await read(), true);
+    assert.equal(f.workspace.indirectChanges(), true, 'Task rounds follow the setting');
+    await f.local.inject({ method: 'POST', url: '/api/indirect-changes', headers: owner, payload: { indirectChanges: false } });
+    assert.equal(f.store.preference(f.accounts.owner().id, 'indirect-changes'), undefined, 'Off again forgets the preference');
+  } finally { await f.close(); }
+});
+
 test('group-specific instructions are scoped to selected notes and preserved in the agent prompt and chat', async () => {
   const f = await fixture();
   try {
@@ -879,6 +1032,38 @@ test('changing a relocated paper path recovers its preserved review PDF without 
     assert.equal(missing.statusCode, 400);
     assert.match(missing.json().error, /PDF copy.*unavailable/);
   } finally { await f.close(); fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('inline source writes use the review token and reserve the task while its PDF rebuilds', async () => {
+  const f = await fixture();
+  let writes = 0;
+  const engine = http.createServer((_request, response) => {
+    writes++;
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ task: 'p-thesis-task', csrf: 'review-token', closed: false, decisions: {}, job: { id: 'source-job', status: 'running' } }));
+  });
+  await new Promise<void>(resolve => engine.listen(0, '127.0.0.1', resolve));
+  f.review.url = `http://127.0.0.1:${(engine.address() as { port: number }).port}`;
+  let finish!: (value: any) => void;
+  const job = new Promise(resolve => { finish = resolve; });
+  f.review.get = async route => (route.includes('/jobs/') ? await job : {}) as any;
+  const url = '/review/thesis/api/tasks/p-thesis-task/source';
+  try {
+    assert.equal((await f.local.inject({ method: 'POST', url, headers: LOCAL, payload: { id: 'source-edit' } })).statusCode, 403);
+    f.store.updateTask('thesis-task', { status: 'running' });
+    const headers = { ...LOCAL, 'x-review-token': 'review-token' };
+    assert.equal((await f.local.inject({ method: 'POST', url, headers, payload: { id: 'source-edit' } })).statusCode, 400);
+    assert.equal(writes, 0);
+    f.store.updateTask('thesis-task', { status: 'reviewing' });
+    const response = await f.local.inject({ method: 'POST', url, headers, payload: { id: 'source-edit' } });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(writes, 1);
+    assert.equal(f.store.task('thesis-task').status, 'building');
+    assert.equal(f.store.task('thesis-task').pendingBuild?.job, 'source-job');
+    assert.match(response.json().decisionLock, /PDF build/);
+    finish({ status: 'done' });
+    for (let i = 0; i < 20 && f.store.task('thesis-task').status === 'building'; i++) await new Promise(resolve => setImmediate(resolve));
+  } finally { finish({ status: 'done' }); engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); await f.close(); }
 });
 
 test('writing a paper compiles its manuscript at once, and a reviewed deferred task compiles what applying it will write', async () => {
