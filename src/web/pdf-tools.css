@@ -5,8 +5,9 @@
 .pdf-body{position:relative;flex:1;min-height:0;display:flex}
 .pdf-body>.pdf-scroll-host{flex:1;min-width:0}
 .pdf-rail{position:relative;z-index:20;display:flex;flex-direction:column;align-items:center;gap:2px;width:46px;flex:none;padding:8px 0;border-right:1px solid var(--line);background:var(--bg);transition:width .16s var(--ease)}
-.rail-items{display:flex;flex:1;flex-direction:column;align-items:center;gap:2px}
-.rail-history{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:auto;padding-top:10px}
+.rail-items{display:flex;flex:1;min-height:0;width:100%;flex-direction:column;align-items:center;gap:2px}
+.rail-tools{display:flex;flex:1;min-height:0;width:100%;flex-direction:column;align-items:center;gap:2px;padding:2px 0;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
+.rail-history{display:flex;flex:none;flex-direction:column;align-items:center;gap:2px;margin-top:auto;padding-top:10px}
 .rail-items[hidden]{display:none}
 .pdf-rail[data-collapsed=true]{width:0;border-right:0}
 .pdf-rail[data-collapsed=true] .rail-toggle{position:absolute;left:0;top:8px;width:24px;border:1px solid var(--line);border-left:0;border-radius:0 9px 9px 0;background:var(--bg);box-shadow:var(--shadow-sm)}
@@ -18,15 +19,14 @@
 .rail-tool:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .rail-separator{flex:none;width:20px;height:1px;margin:5px 0;background:var(--line)}
 .rail-badge{position:absolute;right:-1px;bottom:-1px;min-width:10px;height:14px;padding:0 3px;border:2px solid var(--bg);border-radius:9px;background:var(--stamp);color:#fff;font:600 9.5px/14px var(--sans);text-align:center}
-/* A tool's name, key and use, beside the rail after a short hover. */
-.rail-tip{position:absolute;left:calc(100% + 12px);top:50%;transform:translateY(-50%);z-index:30;display:flex;flex-direction:column;gap:3px;width:max-content;max-width:236px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text-2);box-shadow:var(--float);font:12px/1.45 var(--sans);text-align:left;white-space:normal;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .12s,visibility .12s}
-.rail-tool:hover .rail-tip,.rail-tool:focus-visible .rail-tip{opacity:1;visibility:visible;transition-delay:.4s}
-.rail-tool[aria-expanded=true] .rail-tip{opacity:0;visibility:hidden;transition:none}
+/* A tool's name, key and use stay outside the rail's scroll clipping. */
+.rail-tip{position:fixed;inset:auto;margin:0;display:flex;flex-direction:column;gap:3px;width:max-content;max-width:236px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text-2);box-shadow:var(--float);font:12px/1.45 var(--sans);text-align:left;white-space:normal;pointer-events:none}
+.rail-tip:not(:popover-open){display:none}
 .rail-tip-title{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--text);font-weight:600;font-size:12.5px}
 .rail-tip kbd{min-width:18px;height:18px;padding:0 5px;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:5px;background:var(--bg-subtle);color:var(--text-2);font:500 11px/15px var(--sans);text-align:center}
 /* The note tool is its own color picker: the line under the pencil takes the
    group's color, and a small corner mark says a second click opens colors. */
-.group-picker:has(>.rail-tool){display:flex}
+.group-picker:has(>.rail-tool){display:flex;flex:none}
 .rail-tool[data-group] .tool-note-line{fill:var(--note-color)}
 .rail-tool.has-menu::after{content:"";position:absolute;right:4px;bottom:4px;border-left:4px solid transparent;border-bottom:4px solid currentColor;border-radius:0 0 1px 0;opacity:.4}
 /* Narrow viewers have no rail and keep their marking tools in the toolbar. */

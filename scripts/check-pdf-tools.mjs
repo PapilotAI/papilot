@@ -89,7 +89,8 @@ try {
   await expect(tool('Undo')).toBeDisabled(); await expect(tool('Redo')).toBeDisabled();
   assert.deepEqual(await rail().getByRole('button').evaluateAll(buttons => buttons.slice(-2).map(button => button.getAttribute('aria-label'))), ['Undo', 'Redo']);
   const railBox = await rail().boundingBox(), redoBox = await tool('Redo').boundingBox();
-  assert.ok(railBox.y + railBox.height - redoBox.y - redoBox.height < 12, 'History belongs at the bottom of the rail');
+  const bottomGap = railBox.y + railBox.height - redoBox.y - redoBox.height;
+  assert.ok(bottomGap >= 0 && bottomGap < 12, 'History belongs inside the bottom of the rail');
   // Retracting the rail gives the width back to the PDF, keeps the selected
   // tool and keyboard shortcuts, and remembers the preference on reload.
   const collapse = () => tool('Collapse marking tools'), expand = () => tool('Expand marking tools');
@@ -139,6 +140,26 @@ try {
   // History waits for the server, preserves a failed operation for retry, and
   // restores the same annotation (including its original id and geometry).
   const originalMark = structuredClone(notes[0]);
+  // Short windows scroll the tools while history stays visible and clickable.
+  for (const height of [400, 320]) {
+    await page.setViewportSize({ width: 1440, height });
+    const railBox = await settled(rail()), undoBox = await tool('Undo').boundingBox(), redoBox = await tool('Redo').boundingBox();
+    const gap = railBox.y + railBox.height - redoBox.y - redoBox.height;
+    assert.ok(gap >= 0 && gap < 12 && undoBox.y >= railBox.y);
+    await tool('Undo').click(); await expect.poll(() => notes.length).toBe(0);
+    await tool('Redo').click(); await expect.poll(() => notes).toEqual([originalMark]);
+    await tool('Hand').hover();
+    const tip = tool('Hand').locator('.rail-tip');
+    await expect(tip).toBeVisible();
+    const tipBox = await tip.boundingBox();
+    assert.ok(tipBox.x >= railBox.x + railBox.width && tipBox.y >= 0 && tipBox.y + tipBox.height <= height, 'Hover hints escape scroll clipping and stay in the viewport');
+    assert.ok(await rail().locator('.rail-tools').evaluate(element => element.scrollTop > 0));
+    await page.screenshot({ path: `test-results/pdf-tools-short-${height}.png` });
+    await tool('Hand').click(); await expect(tool('Hand')).toHaveAttribute('aria-pressed', 'true');
+    await tool('Magic pen').hover(); await expect(tool('Magic pen').locator('.rail-tip')).toBeVisible();
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await key('d');
   failHistoryDelete = true;
   await tool('Undo').click();
   await expect(page.getByRole('alert').filter({ hasText: 'History fixture failure' })).toBeVisible();

@@ -185,6 +185,22 @@ export interface PdfHistoryActions {
   undo: () => void; redo: () => void;
 }
 
+// Tooltips use the top layer so scrolling a short rail cannot clip them.
+function hideRailTips(rail: HTMLElement | null) {
+  rail?.querySelectorAll<HTMLElement>('.rail-tip:popover-open').forEach(tip => tip.hidePopover());
+}
+function showRailTip(button: Element | null) {
+  if (!button?.isConnected || button.getAttribute('aria-expanded') === 'true') return;
+  const tip = button.querySelector<HTMLElement>('.rail-tip');
+  if (!tip) return;
+  const rect = button.getBoundingClientRect(), viewport = button.closest('.rail-tools')?.getBoundingClientRect();
+  if (viewport && (rect.bottom <= viewport.top || rect.top >= viewport.bottom)) return;
+  hideRailTips(button.closest<HTMLElement>('.pdf-rail'));
+  tip.showPopover();
+  tip.style.left = `${Math.max(8, Math.min(rect.right + 12, window.innerWidth - tip.offsetWidth - 8))}px`;
+  tip.style.top = `${Math.max(8, Math.min(rect.top + (rect.height - tip.offsetHeight) / 2, window.innerHeight - tip.offsetHeight - 8))}px`;
+}
+
 export const PdfView = forwardRef<PdfHandle, {
   readOnly?: boolean;
   group?: NoteGroup | null; onGroupChange?: (group: NoteGroup | null) => void; markingDisabled?: boolean;
@@ -227,6 +243,12 @@ export const PdfView = forwardRef<PdfHandle, {
   // The chosen tool; holding Space borrows the hand without changing it.
   const [tool, setTool] = useState<PdfTool>(props.region ? 'region' : 'select'), [spaceHand, setSpaceHand] = useState(false);
   const railId = useId(), [railCollapsed, setRailCollapsed] = useState(() => browserStorage.getItem('papilot:pdf-tools-collapsed') === 'true');
+  const rail = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const hide = () => hideRailTips(rail.current);
+    window.addEventListener('resize', hide);
+    return () => window.removeEventListener('resize', hide);
+  }, []);
   const active: PdfTool = spaceHand ? 'hand' : tool, toolRef = useRef(active); toolRef.current = active;
   const spaceRef = useRef({ held: false, used: false }); spaceRef.current.held = spaceHand;
   // A number key keeps one quick note on the magic pen until 0 or Escape.
@@ -807,17 +829,31 @@ export const PdfView = forwardRef<PdfHandle, {
       <button type="button" className="icon-button" aria-label={t('Close search')} onClick={closeFind}><Icon name="close" size={15}/></button>
     </div>}
     <div className="pdf-body">
-    {markable && <div className="pdf-rail" data-collapsed={railCollapsed} role="toolbar" aria-orientation="vertical" aria-label={t('Marking tools')}>
+    {markable && <div ref={rail} className="pdf-rail" data-collapsed={railCollapsed} role="toolbar" aria-orientation="vertical" aria-label={t('Marking tools')}
+      onPointerOver={event => {
+        const button = (event.target as Element).closest('.rail-tool');
+        if (!button?.contains(event.relatedTarget as Node | null)) showRailTip(button);
+      }} onPointerOut={event => {
+        if (!(event.target as Element).closest('.rail-tool')?.contains(event.relatedTarget as Node | null)) hideRailTips(event.currentTarget);
+      }} onFocus={event => { if (event.target.matches(':focus-visible')) showRailTip(event.target.closest('.rail-tool')); }}
+      onBlur={event => hideRailTips(event.currentTarget)} onPointerDownCapture={event => hideRailTips(event.currentTarget)}
+      onKeyDownCapture={event => hideRailTips(event.currentTarget)} onScrollCapture={event => {
+        const rail = event.currentTarget;
+        hideRailTips(rail);
+        // Hover/focus may precede the scroll that brought its button into view.
+        requestAnimationFrame(() => showRailTip(rail.querySelector('.rail-tool:hover') || rail.querySelector('.rail-tool:focus-visible')));
+      }}>
       <button type="button" className="rail-tool rail-toggle" aria-expanded={!railCollapsed} aria-controls={railId}
         aria-label={railCollapsed ? t('Expand marking tools') : t('Collapse marking tools')} title={railCollapsed ? t('Expand marking tools') : t('Collapse marking tools')}
         onClick={() => { const next = !railCollapsed; setRailCollapsed(next); browserStorage.setItem('papilot:pdf-tools-collapsed', String(next)); }}>
         <Icon name={railCollapsed ? 'chevronRight' : 'chevronLeft'} size={16}/>
       </button>
       <div id={railId} className="rail-items" hidden={railCollapsed}>
+      <div className="rail-tools">
       {!railCollapsed && railTools.map(item => {
         const content = <><Icon name={item.icon} size={item.id === 'magic' ? 22 : 18}/>
           {item.id === 'magic' && locked !== null && <span className="rail-badge" aria-hidden="true">{slotKey(locked)}</span>}
-          <span className="rail-tip" aria-hidden="true"><span className="rail-tip-title">{item.label}<kbd>{item.key}</kbd></span><span>{item.hint}</span></span></>;
+          <span className="rail-tip" popover="manual" aria-hidden="true"><span className="rail-tip-title">{item.label}<kbd>{item.key}</kbd></span><span>{item.hint}</span></span></>;
         return <Fragment key={item.id}>
           {(item.id === 'note' || item.id === 'select') && <span className="rail-separator" aria-hidden="true"/>}
           {/* The note tool doubles as its color picker: its underline shows the color. */}
@@ -828,6 +864,7 @@ export const PdfView = forwardRef<PdfHandle, {
             : <button type="button" className="rail-tool" aria-label={item.label} aria-pressed={tool === item.id} aria-keyshortcuts={item.key} disabled={item.id !== 'select' && item.id !== 'hand' && props.markingDisabled} onClick={() => pickTool(item.id)}>{content}</button>}
         </Fragment>;
       })}
+      </div>
       {!railCollapsed && props.history && <div className="rail-history">
         <span className="rail-separator" aria-hidden="true"/>
         {(['undo', 'redo'] as const).map(action => {
@@ -838,7 +875,7 @@ export const PdfView = forwardRef<PdfHandle, {
             aria-keyshortcuts={`${mac ? 'Meta' : 'Control'}+${action === 'redo' ? 'Shift+' : ''}Z`}
             disabled={!(action === 'undo' ? props.history!.canUndo : props.history!.canRedo)} onClick={props.history![action]}>
             <Icon name={action} size={18}/>
-            <span className="rail-tip" aria-hidden="true"><span className="rail-tip-title">{label}<kbd>{keys}</kbd></span></span>
+            <span className="rail-tip" popover="manual" aria-hidden="true"><span className="rail-tip-title">{label}<kbd>{keys}</kbd></span></span>
           </button>;
         })}
       </div>}

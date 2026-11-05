@@ -28,6 +28,7 @@ let failDelete = false, holdDelete = false, releaseDelete, deletedFixture, resto
 let fail = false, hold = false, release, failEdit = false, holdEdit = false, releaseEdit;
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
+  if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
@@ -106,6 +107,27 @@ try {
   await setSelection(check('n1'), true);
   await page.getByRole('button', { name: 'My notes', exact: true }).click();
   await expect(page.locator('.note-tag[data-note="n1"]')).toHaveCount(1);
+  // Undo and redo must finish before a task can snapshot its selected notes.
+  await deletingCard.getByRole('button', { name: 'Edit note 1', exact: true }).click();
+  await deletingCard.getByRole('textbox').fill('Changed instruction.');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => notes[0].comment).toBe('Changed instruction.');
+  await expect(deletingCard.getByRole('textbox')).toHaveCount(0);
+  for (const [action, comment] of [['Undo', 'Revise n1.'], ['Redo', 'Changed instruction.'], ['Undo', 'Revise n1.']]) {
+    holdEdit = true; releaseEdit = undefined;
+    await page.getByRole('toolbar', { name: 'Marking tools' }).getByRole('button', { name: action, exact: true }).click();
+    await expect.poll(() => Boolean(releaseEdit)).toBe(true);
+    await expect(send()).toBeDisabled();
+    await page.getByRole('textbox', { name: 'Describe the revision', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    // Also exercise the submit handler independently of the disabled button.
+    await send().evaluate(button => button.form.requestSubmit());
+    await page.waitForTimeout(100);
+    assert.equal(attempts.length, 0, `${action} must finish before task submission`);
+    releaseEdit(); releaseEdit = undefined;
+    await expect.poll(() => notes[0].comment).toBe(comment);
+    await expect(send()).toBeEnabled();
+  }
   failDelete = true;
   await deletingCard.getByRole('button', { name: 'Delete note 1', exact: true }).click();
   await expect(deletingCard.getByRole('alert')).toHaveText('Could not delete the note.');
