@@ -168,7 +168,7 @@ function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, aut
     {imageHint && <p className="attachment-agent-hint">{t('Antigravity opens images through its file tools. For direct image input, choose Codex or Claude.')}</p>}
     {open && <SkillMenu id={menuId} skills={matches} active={active} onActive={setActive} onPick={pick}/>}
     {skill && <div className="composer-skill"><SkillChip skill={skill} onRemove={onSkill && !readOnly ? () => { onSkill(null); input.current?.focus(); } : undefined}/></div>}
-    <textarea ref={input} rows={1} aria-label={label} maxLength={20000} placeholder={skill ? (skill.source !== 'builtin' && skill.hint) || t('Details (optional)') : placeholder} value={value} readOnly={readOnly} onChange={e => onChange(e.target.value)} onKeyDown={keyDown}
+    <textarea ref={input} rows={1} aria-label={label} placeholder={skill ? (skill.source !== 'builtin' && skill.hint) || t('Details (optional)') : placeholder} value={value} readOnly={readOnly} onChange={e => onChange(e.target.value)} onKeyDown={keyDown}
       {...(onSkill && skills?.length ? { 'aria-autocomplete': 'list' as const, 'aria-controls': open ? menuId : undefined, 'aria-activedescendant': open && matches.length ? `${menuId}-${Math.min(active, matches.length - 1)}` : undefined } : {})}/>
     <div className="composer-footer">{typeof footer === 'function' ? footer(() => fileInput.current?.click()) : footer}{action}</div>
   </form>;

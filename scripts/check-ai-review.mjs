@@ -28,6 +28,7 @@ const fixturePdf = fs.readFileSync('tests/fixtures/outline.pdf');
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/state') return json(state);
+  if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/skills')) return json({ skills: [{ id: 'ai-review', name: 'AI review', description: 'Read the paper and leave PDF comments without editing the manuscript', hint: 'Review focus', source: 'builtin', output: 'annotations' }] });
@@ -78,11 +79,12 @@ try {
   };
   await expect(page.getByRole('group', { name: 'Task type' })).toHaveCount(0);
   await chooseReview();
-  await page.getByRole('textbox', { name: 'Describe the revision' }).fill('Check assumptions and clarity.');
+  const instructions = 'Check assumptions and clarity. '.repeat(1000) + 'FINAL REQUEST';
+  await page.getByRole('textbox', { name: 'Describe the revision' }).fill(instructions);
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await expect(page.getByText('Temporary failure. Try again.', { exact: true })).toBeVisible();
   await page.reload(); await chooseReview();
-  await expect(page.getByRole('textbox', { name: 'Describe the revision' })).toHaveValue('Check assumptions and clarity.');
+  await expect(page.getByRole('textbox', { name: 'Describe the revision' })).toHaveValue(instructions);
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await page.locator('.task-link').first().click();
   await expect(page.locator('.message.assistant .message-body')).toHaveText('Clarify the assumptions behind the main claim.');
@@ -90,6 +92,8 @@ try {
   await expect(page.locator('.ai-review-view .pdfViewer canvas').first()).toBeVisible();
   await expect(page.getByText('Review copy', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mark region', exact: true })).toHaveCount(0);
+  assert.equal(attempts[0].instructions, instructions);
+  assert.equal(attempts[1].instructions, instructions);
   assert.equal(attempts.length, 2); assert.equal(attempts[0].id, attempts[1].id);
   assert.equal(attempts[0].skill, 'ai-review'); assert.equal(attempts[0].mode, undefined);
   assert.deepEqual(notes.map(item => item.id), [personal.id], 'review completion leaves the manuscript alone');
