@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { NoteSummary } from '../shared.ts';
-import type { NoteGroup } from '../note-groups.ts';
+import { canonicalGroup, type NoteGroup } from '../note-groups.ts';
 import type { Rect } from './note-geometry.ts';
 import { noteAnchor } from '../notes.ts';
 import { browserStorage } from './storage.ts';
@@ -105,3 +105,11 @@ export const reviewNoteSummary = (note: ReviewNote): NoteSummary => ({
   where: note.where + (note.region ? ` · Region in displayed strip: ${note.rects[0].map(v => `${Math.round(v * 100)}%`).join(', ')}` : ''),
   quote: note.quote.slice(0, 2000), comment: note.comment.trim(), anchor: { ...noteAnchor(note), round: note.round },
 });
+
+// Unwritten individual comments remain drafts. A color group's shared direction
+// can cover its empty per-location fields without blocking unrelated messages.
+export function reviewSubmission(draft: Snapshot, text = '', skill?: string): Snapshot {
+  const directedGroups = new Set(draft.notes.filter(note => note.group && note.comment.trim()).map(note => canonicalGroup(note.group!)));
+  const shared = Boolean(text.trim() || draft.instructions.trim() || skill);
+  return { ...draft, notes: draft.notes.filter(note => note.comment.trim() || (note.group && (shared || directedGroups.has(canonicalGroup(note.group))))) };
+}

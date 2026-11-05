@@ -143,7 +143,11 @@ try {
   await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toBeFocused();
   await expect(page.locator('.review-draft-note')).toContainText('Before revision');
   await expect(page.locator('.review-draft-note blockquote')).toHaveText('Original');
+  await expect(send()).toBeEnabled();
+  await expect(page.locator('.composer-hint')).toHaveText('1 empty comment will stay in drafts');
+  await input().fill('');
   await expect(send()).toBeDisabled();
+  await input().fill('Keep the examples.');
   await page.getByRole('textbox', { name: 'Comment 1', exact: true }).fill('Keep this original term.');
   await quote('after', 7);
   await page.getByRole('textbox', { name: 'Comment 2', exact: true }).fill('Make this more precise.');
@@ -163,8 +167,8 @@ try {
   await page.reload();
   await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveValue('Keep this original term.');
   await expect(input()).toHaveValue('Keep the examples.');
-  await page.getByRole('button', { name: 'Delete review note 3' }).click();
-  await expect(page.locator('.review-draft-note')).toHaveCount(2);
+  await page.getByRole('textbox', { name: 'Comment 3', exact: true }).fill('');
+  await expect(page.locator('.review-draft-note')).toHaveCount(3);
   await input().fill('');
   await expect(send()).toBeEnabled();
   fs.mkdirSync('test-results', { recursive: true });
@@ -173,15 +177,25 @@ try {
   await send().click(); await expect.poll(() => sent.length).toBe(1);
   await expect(send()).toBeEnabled();
   await page.reload();
-  await expect(page.locator('.review-draft-note')).toHaveCount(2);
+  await expect(page.locator('.review-draft-note')).toHaveCount(3);
   failSend = false;
   await send().click(); await expect.poll(() => sent.length).toBe(2);
   assert.deepEqual(sent[0], sent[1], 'Failed combined submissions reuse their identity after reload');
   assert.equal(sent[1].text, ''); assert.equal(sent[1].notes[0].quote, 'Original');
   assert.match(sent[1].notes[0].where, /Before/); assert.match(sent[1].notes[1].where, /After/);
   assert.equal(sent[1].notes[0].anchor.round, 1);
-  await expect(page.locator('.review-draft')).toHaveCount(0);
+  assert.equal(sent[1].notes.length, 2, 'Only written comments are included');
+  await expect(page.locator('.review-draft-note')).toHaveCount(1);
+  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveValue('');
   await expect(send()).toBeDisabled();
+  // A message can also be sent while keeping the empty quote in drafts.
+  await input().fill('A follow-up without a comment on that quotation.');
+  await expect(send()).toBeEnabled();
+  await send().click(); await expect.poll(() => sent.length).toBe(3);
+  assert.equal(sent[2].notes, undefined);
+  await expect(page.locator('.review-draft-note')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Delete review note 1' }).click();
+  await expect(page.locator('.review-draft')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Send feedback', exact: true })).toHaveCount(0);
   // Pure acceptance has no pending-feedback nag and no spurious agent run.
   rounds[1] = { first: 'accepted', second: 'accepted', third: 'accepted', fourth: 'accepted' };
@@ -193,7 +207,7 @@ try {
   rounds[1] = { first: 'rejected', second: 'rejected', third: 'rejected', fourth: 'rejected' }; update();
   task.review.unsent = 4; task.review.files = []; await sync();
   await expect(send()).toBeEnabled(); await send().click();
-  await expect.poll(() => sent.length).toBe(3); assert.equal(sent[2].feedback, true);
+  await expect.poll(() => sent.length).toBe(4); assert.equal(sent[3].feedback, true);
   await expect(page.locator('.review-draft')).toHaveCount(0);
   // A comment can outlive a review round and navigate back to its exact source.
   rounds[1] = { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' }; update();

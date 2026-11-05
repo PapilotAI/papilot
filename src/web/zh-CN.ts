@@ -20,7 +20,8 @@ export const zhCN: Record<string, string> = {
   'Comment for {group} (optional)': '{group}评论（可选）',
   '{n} review update': '{n} 项审阅意见', '{n} review updates': '{n} 项审阅意见',
   '{n} review update included': '将附带 {n} 项审阅意见', '{n} review updates included': '将附带 {n} 项审阅意见',
-  'Add a comment to each quotation, or remove it.': '请为引用添加评论，或移除该引用。',
+  '{n} empty comment will stay in drafts': '{n} 条空评论将保留在草稿中', '{n} empty comments will stay in drafts': '{n} 条空评论将保留在草稿中',
+  'Write a comment or message to send.': '写下评论或消息即可发送。',
 
   'AI is resolving conflicts…': 'AI 正在解决冲突…',
   'Open chat': '打开聊天',

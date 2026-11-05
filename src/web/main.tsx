@@ -13,7 +13,7 @@ import { ignorePattern } from '../commit.ts';
 import { AGENT_IDS, AGENT_NAMES, isAgentId, taskFinished } from '../shared.ts';
 import type { TaskCommitReview, LatexInstallation, AgentId, Annotation, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem, Viewer } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
-import { reviewDraft, useReviewDraft, reviewNoteSummary } from './review-draft.ts';
+import { reviewDraft, useReviewDraft, reviewNoteSummary, reviewSubmission } from './review-draft.ts';
 import { ReviewDraftCards } from './review-draft-cards.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, pendingReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
@@ -315,7 +315,7 @@ function Activity({ onRevealQuote, task, runtime, reconnecting, onReconnect, ski
   const input = useRef<HTMLTextAreaElement>(null);
   const reviewNotes = reviewDraft(task.id), notes = useReviewDraft(task.id);
   const [savingModel, setSavingModel] = useState(false);
-  const { text: draft, sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
+  const { text: draft, sending } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
   const viewer = useContext(ViewerContext);
   const files = useAttachmentDraft(`papilot:files:${viewer?.id || 'owner'}:task:${task.id}`);
   const [skill, setSkill] = useState<Skill | null>(null);
@@ -345,11 +345,13 @@ function Activity({ onRevealQuote, task, runtime, reconnecting, onReconnect, ski
     observer.observe(scroller.current); return () => observer.disconnect();
   }, []);
   const feedbackCount = task.mode === 'review' ? 0 : pendingReviewFeedback(task.review);
-  const incompleteNotes = notes.notes.some(note => !note.group && !note.comment.trim()) || (notes.notes.some(note => note.group) && !notes.instructions.trim() && !draft.trim() && !notes.notes.some(note => note.comment.trim()));
+  const readyReview = reviewSubmission(notes, draft, skill?.id);
+  const emptyNotes = notes.notes.length - readyReview.notes.length;
+  const canSend = Boolean(draft.trim() || skill || files.files.length || readyReview.notes.length || readyReview.instructions.trim() || feedbackCount);
   async function submit() {
-    if (savingModel || composer.sending || ['uncertain', 'deleting'].includes(task.status) || files.draft.getSnapshot().blocked || incompleteNotes) return;
-    const submitted = reviewNotes.getSnapshot(), attached = files.draft.getSnapshot().files;
-    const source = !composer.text.trim() && !skill && !attached.length && !submitted.notes.length && feedbackCount ? 'feedback' : 'draft';
+    if (savingModel || composer.sending || ['uncertain', 'deleting'].includes(task.status) || files.draft.getSnapshot().blocked) return;
+    const submitted = reviewSubmission(reviewNotes.getSnapshot(), composer.text, skill?.id), attached = files.draft.getSnapshot().files;
+    const source = !composer.text.trim() && !skill && !attached.length && !submitted.notes.length && !submitted.instructions.trim() && feedbackCount ? 'feedback' : 'draft';
     reviewNotes.setBusy(true);
     try {
       if (await composer.submit(source, message => api('/tasks/' + task.id + '/messages', message), skill?.id, attached.map(file => file.id), submitted.notes.map(reviewNoteSummary), submitted.instructions)) {
@@ -367,7 +369,7 @@ function Activity({ onRevealQuote, task, runtime, reconnecting, onReconnect, ski
   const thread = useMemo(() => timelineEntries(items.filter(item => item.type !== 'reviewOutput').map(item => review && item.type === 'assistant' ? { ...item, text: aiReviewSummary(item.text) } : item))
     .map(entry => entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root}/>), [items, review, agent, root]);
   const hint = task.status === 'deleting' ? t('This task is being deleted') : task.status === 'uncertain' ? t('Check task status before sending') : sending ? t('Sending…')
-    : incompleteNotes ? t('Add a comment to each quotation, or remove it.') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : '';
+    : emptyNotes ? canSend ? tn(emptyNotes, '{n} empty comment will stay in drafts', '{n} empty comments will stay in drafts') : t('Write a comment or message to send.') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : '';
   return <section id="conversation-panel" className="activity-panel" aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading">{lead}{tools && <div className="panel-tools">{tools}</div>}</div>
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current && back.current === undefined) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); savePlace(place, shouldFollow.current ? undefined : Math.round(el.scrollTop)); } }}><div className="thread">
       {loading && <p className="muted" role="status">{t('Loading conversation…')}</p>}
@@ -386,7 +388,7 @@ function Activity({ onRevealQuote, task, runtime, reconnecting, onReconnect, ski
         footer={attach => <div className="composer-options">{task.mode !== 'review' && <SkillPicker onAttach={attach} skills={skills.filter(skill => skill.output !== 'annotations')} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/>}<TaskModelPicker task={task} runtime={runtime} disabled={sending || blocked} reconnecting={reconnecting} onReconnect={onReconnect} save={settings => api<Task>(`/tasks/${task.id}/model`, settings)} onSaving={setSavingModel} refresh={refresh} reportError={reportError}/></div>}
         action={<div className="composer-actions">
           {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
-          {(!active || draft.trim() || skill || files.entries.length || notes.notes.length || feedbackCount || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={(!draft.trim() && !skill && !files.files.length && !notes.notes.length && !feedbackCount) || incompleteNotes || files.blocked || sending || savingModel || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
+          {(!active || draft.trim() || skill || files.entries.length || notes.notes.length || feedbackCount || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={!canSend || files.blocked || sending || savingModel || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
         </div>}/>
       {hint && <p className="composer-hint" role="status">{hint}</p>}
     </div>

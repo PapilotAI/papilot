@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ReviewDraft, reviewNoteSummary, type ReviewMark } from '../src/web/review-draft.ts';
+import { ReviewDraft, reviewNoteSummary, reviewSubmission, type ReviewMark } from '../src/web/review-draft.ts';
 const mark: ReviewMark = { strip: '1:before.svg', round: 1, stop: 0, where: 'Round 1 · PDF page 1 · Before · main.tex:2–4', quote: 'Original term', rects: [[0.1, 0.2, 0.4, 0.3]], region: false };
 const storage = () => { const values = new Map<string, string>(); return { getItem: (key: string) => values.get(key) || null, setItem: (key: string, value: string) => { values.set(key, value); } }; };
 test('review draft keeps exact before/after anchors across reload and delete/undo', () => {
@@ -53,4 +53,25 @@ test('reloading the first trial consolidates repeated overall drafts without los
   const draft = new ReviewDraft('task', saved);
   assert.equal(draft.getSnapshot().notes.length, 1);
   assert.equal(draft.getSnapshot().notes[0].comment, 'Keep the meaning.\n\nShorten the wording.');
+});
+
+test('empty comments do not block written notes, and stay in the draft after sending', () => {
+  const draft = new ReviewDraft('task', storage());
+  draft.add(mark); draft.add({ ...mark, whole: true });
+  const [empty, written] = draft.getSnapshot().notes;
+  draft.edit(written.id, 'A complete comment');
+  const submitted = reviewSubmission(draft.getSnapshot());
+  assert.deepEqual(submitted.notes.map(note => note.id), [written.id]);
+  draft.clear(submitted);
+  assert.deepEqual(draft.getSnapshot().notes.map(note => note.id), [empty.id]);
+  assert.equal(reviewSubmission(draft.getSnapshot(), 'A separate message').notes.length, 0);
+});
+test('empty color marks need a shared direction, without blocking other comments', () => {
+  const draft = new ReviewDraft('task', storage());
+  draft.add({ ...mark, group: 'green' }); draft.add(mark);
+  draft.edit(draft.getSnapshot().notes[1].id, 'A comment on another passage');
+  assert.equal(reviewSubmission(draft.getSnapshot()).notes.length, 1);
+  assert.equal(reviewSubmission(draft.getSnapshot(), 'Explain the highlighted passages').notes.length, 2);
+  draft.instructions('Green: shorten this.');
+  assert.equal(reviewSubmission(draft.getSnapshot()).notes.length, 2);
 });
