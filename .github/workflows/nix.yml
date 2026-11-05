@@ -17,6 +17,13 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
+      - name: Free space for the NixOS desktop build
+        run: |
+          # Nix provides the toolchain; these hosted-runner SDKs are unused.
+          # Leave room for TeX Live, Electron and the desktop VM image.
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: cachix/install-nix-action@v31
       - name: Build and boot the NixOS desktop VM
         run: nix build .#checks.x86_64-linux.desktop-vm -L
