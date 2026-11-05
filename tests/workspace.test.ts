@@ -2022,9 +2022,11 @@ test('AI review uses normal agent tools and approvals, saves PDF notes, and neve
     assert.equal(f.codex.rejections.length, 0);
     assert.equal(f.workspace.requests.size, 1);
     await (f.workspace as any).notification({ method: 'item/completed', params: { threadId: 'thread', turnId: 'turn-new', item: { id: 'answer', type: 'agentMessage', text: JSON.stringify({ summary: 'Clarify the assumptions.', notes: [{ start: 'p1-l1', end: 'p1-l1', comment: 'Which assumptions are required?' }] }) } } });
+    await (f.workspace as any).notification({ method: 'item/completed', params: { threadId: 'thread', turnId: 'turn-new', item: { id: 'denied', type: 'toolCall', status: 'declined', text: 'The CLI could not use Bash.' } } });
     const completion = { method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } };
     await (f.workspace as any).notification(completion);
     await (f.workspace as any).notification(completion);
+    assert.equal(f.store.items(f.task.id).find(item => item.id.endsWith(':denied'))?.type, 'tool');
     const notes = f.store.annotations(f.task.projectId);
     assert.equal(notes.length, 1);
     assert.equal(notes[0].key, 'pdf-original');
@@ -2040,7 +2042,7 @@ test('AI review uses normal agent tools and approvals, saves PDF notes, and neve
     await assert.rejects(f.workspace.deliverTask(f.task.id, 'workspace'), /no manuscript changes/);
     await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => {}), /PDF notes/);
     await assert.rejects(f.workspace.enqueue(f.task.id, 'Apply the notes', 'wrong-mode', true, { notes }), /editing task/);
-    assert.equal(f.store.items(f.task.id).at(-1)!.text, 'Clarify the assumptions.');
+    assert.equal(f.store.items(f.task.id).filter(item => item.type === 'assistant').at(-1)!.text, 'Clarify the assumptions.');
   } finally { f.close(); }
 });
 
