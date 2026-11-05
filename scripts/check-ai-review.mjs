@@ -79,10 +79,15 @@ try {
   };
   await expect(page.getByRole('group', { name: 'Task type' })).toHaveCount(0);
   await chooseReview();
-  const instructions = 'Check assumptions and clarity. '.repeat(1000) + 'FINAL REQUEST';
+  // The draft fits localStorage, but storing a second copy as the retry
+  // signature used to exhaust its quota and lose the task ID on reload.
+  const instructions = 'Check assumptions and clarity. '.repeat(100000) + 'FINAL REQUEST';
   await page.getByRole('textbox', { name: 'Describe the revision' }).fill(instructions);
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await expect(page.getByText('Temporary failure. Try again.', { exact: true })).toBeVisible();
+  const savedRequest = await page.evaluate(() => localStorage.getItem('papilot:new-task-request'));
+  assert.ok(savedRequest && savedRequest.length < 200, 'retry ID is durable without duplicating the long draft');
+  assert.equal(JSON.parse(savedRequest).id, attempts[0].id);
   await page.reload(); await chooseReview();
   await expect(page.getByRole('textbox', { name: 'Describe the revision' })).toHaveValue(instructions);
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
