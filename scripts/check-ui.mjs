@@ -1076,7 +1076,7 @@ try {
   await page.locator(`[data-task="${task.id}"] .task-link`).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
   await page.locator('.git-link').click();
-  const gitPanel = page.getByRole('region', { name: 'Version History' });
+  const gitPanel = page.getByRole('region', { name: 'Version Management' });
   // Cursor's source control: the commit box, then staged and unstaged lists.
   const changes = gitPanel.getByRole('region', { name: 'Changes', exact: true });
   const unstagedList = changes.getByRole('group', { name: 'Changes', exact: true });
@@ -1086,7 +1086,7 @@ try {
   assert.equal(await changes.getByRole('textbox', { name: 'Commit message' }).getAttribute('placeholder'), 'Message (↵ to commit on “main”)');
   assert.equal(await gitPanel.getByRole('checkbox').count(), 0, 'Files are staged with + and −, not checkboxes');
   const graphPane = gitPanel.getByRole('region', { name: 'Commit graph', exact: true });
-  const gitToolbar = gitPanel.getByRole('group', { name: 'Version History', exact: true });
+  const gitToolbar = gitPanel.getByRole('group', { name: 'Version Management', exact: true });
   assert.match(await gitToolbar.locator('.git-branch').innerText(), /main\s*↑1/);
   assert.equal(await gitToolbar.locator('.git-branch').getAttribute('title'), 'Tracking origin/main');
   await expect(gitToolbar.getByRole('button', { name: 'Pull', exact: true })).toHaveText('Pull');
@@ -1784,7 +1784,7 @@ try {
       await page.locator('.git-link').click();
       await expect(page.locator('.sidebar')).toBeHidden();
       await expect(page.locator('.git-toolbar').getByRole('button', { name: 'Push', exact: true })).toBeVisible();
-      await page.getByRole('region', { name: 'Version History' }).locator('.git-panel').getByText('main.tex', { exact: true }).waitFor();
+      await page.getByRole('region', { name: 'Version Management' }).locator('.git-panel').getByText('main.tex', { exact: true }).waitFor();
       await page.locator('.git-detail-switcher').getByRole('button', { name: 'Commit graph', exact: true }).click();
       const treesToggle = page.getByRole('region', { name: 'Worktrees', exact: true }).locator('.git-pane-toggle');
       if (await treesToggle.getAttribute('aria-expanded') !== 'true') await treesToggle.click();
