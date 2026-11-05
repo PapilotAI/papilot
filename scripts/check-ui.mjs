@@ -744,7 +744,7 @@ try {
   await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().waitFor();
   console.log('PASS: Manuscript panel resizes with pointer and keyboard, persists, clamps on narrow screens and resets');
   // Notes belong to New task; Contents keeps the bookmarks beside the PDF.
-  assert.deepEqual((await page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['New task', 'Contents', 'Git 2']);
+  assert.deepEqual((await page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['New task', 'Contents']);
   await page.getByRole('tab', { name: 'Contents', exact: true }).click();
   const contents = page.getByRole('navigation', { name: 'PDF contents' });
   assert.deepEqual((await contents.getByRole('button').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
@@ -1066,19 +1066,16 @@ try {
   gitState.files.push({ path: 'main.aux', status: '?', staged: false, unstaged: true }, { path: 'main.log', status: '?', staged: false, unstaged: true });
   await pdfLink.click();
   await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
-  // The project-level entry opens Git even when its panel was hidden.
+  // Git is a separate workspace, independent of the manuscript panel preference.
   await collapsePanel.click();
   await manuscriptSide.waitFor({ state: 'hidden' });
   await page.locator('.git-link').click();
-  await expect(manuscriptSide).toBeVisible();
+  await expect(page.locator('.manuscript')).toHaveCount(0);
   await expect(page.locator('.git-link')).toHaveAttribute('aria-current', 'page');
   await expect(pdfLink).not.toHaveAttribute('aria-current', 'page');
-  // The same entry also works from a task, with Git selected but collapsed.
-  await collapsePanel.click();
   await page.locator(`[data-task="${task.id}"] .task-link`).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
   await page.locator('.git-link').click();
-  await expect(manuscriptSide).toBeVisible();
   const gitPanel = page.getByRole('region', { name: 'Git status' });
   // Cursor's source control: the commit box, then staged and unstaged lists.
   const changes = gitPanel.getByRole('region', { name: 'Changes', exact: true });
@@ -1095,6 +1092,8 @@ try {
   await expect(gitToolbar.getByRole('button', { name: 'Pull', exact: true })).toHaveText('Pull');
   await expect(gitToolbar.getByRole('button', { name: 'Push', exact: true })).toHaveText('Push1');
   await expect(page.locator('.git-link .count')).toHaveText('4');
+  const historyTab = gitPanel.locator('.git-detail-switcher').getByRole('button', { name: 'Commit graph', exact: true });
+  await historyTab.click();
   await graphPane.locator('.git-graph-row.head').getByText('Draft the introduction', { exact: true }).waitFor();
   await graphPane.locator('.current-ref').getByText('main', { exact: true }).waitFor();
   await graphPane.locator('.remote-ref').getByText('origin/main', { exact: true }).waitFor();
@@ -1140,17 +1139,17 @@ try {
   await proposalTree.locator('.git-worktree-button').click();
   await graph.scrollIntoViewIfNeeded();
   // Scrolling long history and collapsing it never hides the remote commands.
-  await page.setViewportSize({ width: 1440, height: 600 });
+  await page.setViewportSize({ width: 1440, height: 380 });
   const toolbarTop = (await gitToolbar.boundingBox()).y;
-  await gitPanel.locator('.git-panel-content').evaluate(el => { el.scrollTop = el.scrollHeight; });
-  assert.ok(await gitPanel.locator('.git-panel-content').evaluate(el => el.scrollTop > 0));
+  await gitPanel.locator('.git-repository-view').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  assert.ok(await gitPanel.locator('.git-repository-view').evaluate(el => el.scrollTop > 0));
   assert.equal((await gitToolbar.boundingBox()).y, toolbarTop);
   await expect(gitToolbar.getByRole('button', { name: 'Push', exact: true })).toBeInViewport();
   await graphPane.locator('.git-pane-toggle').click();
   await expect(gitToolbar.getByRole('button', { name: 'Push', exact: true })).toBeInViewport();
   await graphPane.locator('.git-pane-toggle').click();
   await page.setViewportSize({ width: 1440, height: 900 });
-  await gitPanel.locator('.git-panel-content').evaluate(el => { el.scrollTop = 0; });
+  await gitPanel.locator('.git-repository-view').evaluate(el => { el.scrollTop = 0; });
   await page.screenshot({ path: 'test-results/git-overview-desktop.png' });
   overviewFailure = true;
   await graph.getByRole('button', { name: 'Refresh worktrees and history' }).click();
@@ -1204,6 +1203,7 @@ try {
   assert.deepEqual(gitCommits, [{ message: 'Tighten the introduction', staged: true }]);
   assert.deepEqual(gitState.files.map(file => file.path), ['notes.md', '.gitignore'], 'Unstaged files stay for the next commit');
   assert.equal(await commitMessage.inputValue(), '');
+  await historyTab.click();
   await graph.locator('.git-graph-row.head').getByText('Tighten the introduction', { exact: true }).waitFor();
   // Confirming deletes an untracked file.
   await unstagedList.getByRole('button', { name: 'Discard changes in .gitignore', exact: true }).click();
@@ -1237,6 +1237,8 @@ try {
   assert.equal(await merge.count(), 0);
   assert.deepEqual(gitActions.filter(action => typeof action === 'string'), ['push', 'fetch', 'merge', 'finish']);
   Object.assign(gitState, structuredClone(originalGit));
+  await pdfLink.click();
+  await expandPanel.click();
   const pdfToolbar = page.getByRole('toolbar', { name: 'PDF controls' });
   await page.locator('.manuscript-side-header').getByRole('button', { name: 'Share', exact: true }).click();
   assert.equal(await page.getByRole('menuitem', { name: 'Open PDF', exact: true }).getAttribute('href'), '/api/projects/fixture-paper/manuscript.pdf?key=fixture');
@@ -1244,6 +1246,8 @@ try {
   await page.keyboard.press('Escape');
   await pdfToolbar.getByRole('button', { name: 'Recompile PDF', exact: true }).waitFor();
   assert.equal(await page.title(), 'Example paper · Papilot');
+  await page.locator('.git-link').click();
+  await historyTab.click();
   await worktrees.getByRole('button', { name: `Open task: ${task.title}`, exact: true }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
   await page.locator('.git-link').click();
@@ -1780,7 +1784,8 @@ try {
       await page.locator('.git-link').click();
       await expect(page.locator('.sidebar')).toBeHidden();
       await expect(page.locator('.git-toolbar').getByRole('button', { name: 'Push', exact: true })).toBeVisible();
-      await page.getByRole('region', { name: 'Git status' }).getByText('main.tex', { exact: true }).waitFor();
+      await page.getByRole('region', { name: 'Git status' }).locator('.git-panel').getByText('main.tex', { exact: true }).waitFor();
+      await page.locator('.git-detail-switcher').getByRole('button', { name: 'Commit graph', exact: true }).click();
       const treesToggle = page.getByRole('region', { name: 'Worktrees', exact: true }).locator('.git-pane-toggle');
       if (await treesToggle.getAttribute('aria-expanded') !== 'true') await treesToggle.click();
       await page.getByRole('region', { name: 'Worktrees', exact: true }).locator(`[data-task-id="${task.id}"]`).waitFor();
@@ -1788,7 +1793,8 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
       await page.screenshot({ path: `test-results/git-overview-mobile-${width}.png` });
       assert.equal(await pdfPage.isVisible(), false);
-      await page.getByRole('button', { name: 'PDF', exact: true }).click();
+      await page.getByRole('button', { name: 'Show task list', exact: true }).click();
+      await page.locator('.manuscript-link').click();
       await pdfPage.waitFor();
       await page.getByRole('button', { name: 'New task', exact: true }).click();
       await prompt.fill('A task beside the PDF\nKeep the manuscript composer visible.');

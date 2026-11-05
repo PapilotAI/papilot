@@ -447,7 +447,7 @@ function DiscardDialog({ files, onCancel, onConfirm }: { files: GitFile[]; onCan
   </dialog>;
 }
 
-function GitPanel({ projectId, git, onStatus, writer, tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (id: string) => void; projectId: string; git: GitStatus | null; onStatus: (status: GitStatus) => void; writer: CommitWriter }) {
+function GitWorkspace({ projectId, projectName, navigation, git, onStatus, writer, tasks, onOpenTask }: { projectName: string; navigation?: React.ReactNode; tasks: Task[]; onOpenTask: (id: string) => void; projectId: string; git: GitStatus | null; onStatus: (status: GitStatus) => void; writer: CommitWriter }) {
   const loadOverview = useCallback((signal: AbortSignal) => api<GitOverview>(`/projects/${projectId}/git/overview`, undefined, signal, 60000), [projectId]);
   const draftKey = `papilot:commit:${projectId}`;
   const [message, setMessage] = useState(() => browserStorage.getItem(draftKey) || '');
@@ -456,25 +456,31 @@ function GitPanel({ projectId, git, onStatus, writer, tasks, onOpenTask }: { tas
   const [discarding, setDiscarding] = useState<GitFile[] | null>(null);
   const [changesOpen, toggleChanges] = usePane('changes', true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  // A file can be in both lists, so the open diff is its list and its path.
-  const [open, setOpen] = useState(''), [diff, setDiff] = useState<{ path: string; result: GitDiff | null; error: string } | null>(null);
+  // Keep the selected file and detail view when returning from a task.
+  const [detail, setDetail] = useState<'changes' | 'history'>(() => readPlace('git-view:' + projectId) === 'history' ? 'history' : 'changes');
+  const showDetail = (next: 'changes' | 'history') => { setDetail(next); savePlace('git-view:' + projectId, next); };
+  const diffId = useId(), [diffRefresh, setDiffRefresh] = useState(0);
+  const [open, setOpen] = useState(() => readPlace<string>('git-file:' + projectId) || ''), [diff, setDiff] = useState<{ path: string; result: GitDiff | null; error: string } | null>(null);
   const files = git?.files || [];
-  const openPath = open.slice(open.indexOf(':') + 1), openFile = open ? files.find(file => file.path === openPath) : undefined;
+  const requestedPath = open.slice(open.indexOf(':') + 1);
+  const openFile = files.find(file => file.path === requestedPath) || files[0], openPath = openFile?.path || '';
+  const selectedList = !git?.merging && openFile?.staged && (!openFile.unstaged || !open.startsWith('changes:')) ? 'staged' : 'changes';
   useEffect(() => {
     if (!openFile) { setDiff(null); return; }
     let live = true;
     setDiff(current => current?.path === openPath ? current : { path: openPath, result: null, error: '' });
     api<GitDiff>(`/projects/${projectId}/git/diff?path=${encodeURIComponent(openPath)}`).then(result => { if (live) setDiff({ path: openPath, result, error: '' }); }, e => { if (live) setDiff({ path: openPath, result: null, error: e instanceof Error ? e.message : String(e) }); });
     return () => { live = false; };
-  }, [projectId, openPath, openFile?.status, openFile?.lines?.join()]);
-  if (!git || !Array.isArray(git.files)) return <section className="git-panel" aria-label={t('Git status')}><p className="git-clean">{t('Reading Git status…')}</p></section>;
+  }, [projectId, openPath, openFile?.status, openFile?.staged, openFile?.unstaged, openFile?.lines?.join(), git?.head?.hash, diffRefresh]);
+  const heading = <header className="git-workspace-header">{navigation}<Icon name="branch" size={18}/><h2>Git</h2><span>{projectName}</span></header>;
+  if (!git || !Array.isArray(git.files)) return <section className="git-workspace" aria-label={t('Git status')}>{heading}<p className="git-clean" role="status">{t('Reading Git status…')}</p></section>;
   const staged = files.filter(file => file.staged), unstaged = files.filter(file => file.unstaged), chosen = staged.length ? staged : files.filter(file => !ignorable(file));
   const stage = (paths: string[], on: boolean) => { if (paths.length) void run('stage', () => api<{ git: GitStatus }>(`/projects/${projectId}/git/stage`, { paths, stage: on }), () => ''); };
   const saveMessage = (value: string) => { setMessage(value); if (value) browserStorage.setItem(draftKey, value); else browserStorage.removeItem(draftKey); };
   async function run<R extends { git: GitStatus }>(action: string, work: () => Promise<R>, done: (result: R) => string) {
     if (busy) return;
     setBusy(action); setError(''); setNotice('');
-    try { const result = await work(); onStatus(result.git); setNotice(done(result)); }
+    try { const result = await work(); onStatus(result.git); setNotice(done(result)); setDiffRefresh(value => value + 1); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(''); }
   }
@@ -524,10 +530,10 @@ function GitPanel({ projectId, git, onStatus, writer, tasks, onOpenTask }: { tas
   // One row per file and list. The staged list shows the index's status.
   const row = (file: GitFile, list: 'staged' | 'changes') => {
     const status = file.status === 'U' && merging && !merging.conflicts.includes(file.path) ? 'M' : list === 'staged' ? file.index || file.status : file.status;
-    const slash = file.path.lastIndexOf('/'), code = status === '?' ? 'U' : status === 'U' ? '!' : status, key = list + ':' + file.path, expanded = open === key;
-    return <li key={key} className={expanded ? 'open' : undefined}>
+    const slash = file.path.lastIndexOf('/'), code = status === '?' ? 'U' : status === 'U' ? '!' : status, key = list + ':' + file.path, selected = openPath === file.path && selectedList === list;
+    return <li key={key} className={selected ? 'open' : undefined}>
       <div className="git-row">
-        <button type="button" className="git-file" aria-expanded={expanded} title={`${gitNames()[status] || status}: ${file.from ? `${file.from} → ` : ''}${file.path}`} onClick={() => setOpen(expanded ? '' : key)}>
+        <button type="button" className="git-file" aria-pressed={selected} aria-controls={diffId} title={`${gitNames()[status] || status}: ${file.from ? `${file.from} → ` : ''}${file.path}`} onClick={() => { setOpen(key); savePlace('git-file:' + projectId, key); showDetail('changes'); setDiffRefresh(value => value + 1); }}>
           <Icon name="paper" size={14}/><span className="git-name">{file.path.slice(slash + 1)}</span>{slash > 0 && <span className="git-dir">{file.path.slice(0, slash)}</span>}
         </button>
         {!merging && <span className="git-row-actions">
@@ -538,9 +544,6 @@ function GitPanel({ projectId, git, onStatus, writer, tasks, onOpenTask }: { tas
         </span>}
         <span className={'git-code s-' + (status === '?' ? 'u' : status === 'U' ? 'conflict' : status.toLowerCase())} aria-label={gitNames()[status] || status}>{code}</span>
       </div>
-      {expanded && <div className="git-diff-wrap" aria-label={t('Changes in {path}', { path: file.path })} role="region">
-        {diff?.path === file.path && diff.result ? <DiffView diff={diff.result}/> : diff?.error ? <p className="inline-error">{diff.error}</p> : <p className="git-diff-note">{t('Loading the diff…')}</p>}
-      </div>}
     </li>;
   };
   const group = (list: 'staged' | 'changes', items: GitFile[]) => {
@@ -560,7 +563,10 @@ function GitPanel({ projectId, git, onStatus, writer, tasks, onOpenTask }: { tas
     </div>;
   };
   const sync = git.upstream && (git.ahead > 0 || git.behind > 0) ? <span className="git-sync">{git.ahead > 0 && <span>↑{git.ahead}</span>}{git.behind > 0 && <span>↓{git.behind}</span>}</span> : null;
-  return <section className="git-panel" aria-label={t('Git status')} aria-busy={Boolean(busy)}>
+  return <section className="git-workspace" aria-label={t('Git status')} aria-busy={Boolean(busy)}>
+    {heading}
+    <div className="git-workspace-body">
+    <aside className="git-panel" aria-label={t('Changes')}>
     <div className="git-toolbar" role="group" aria-label="Git">
       <div className="git-toolbar-branch">
         <span className="git-branch" title={git.upstream ? `${t('Tracking')} ${git.upstream}` : t('No upstream branch')}><Icon name="branch" size={14}/><code>{git.branch || t('detached HEAD')}</code>{sync}</span>
@@ -606,13 +612,29 @@ function GitPanel({ projectId, git, onStatus, writer, tasks, onOpenTask }: { tas
           ]}><Icon name="chevronDown" size={14}/></ActionMenu>}
         </div>
       </form>}
+      <div className="git-file-lists">
       {merging ? files.length > 0 && group('changes', files) : <>
         {staged.length > 0 && group('staged', staged)}
         {unstaged.length > 0 && group('changes', unstaged)}
       </>}
       {!files.length && <p className="git-clean">{t('No uncommitted changes')}</p>}
+      </div>
     </GitPane>
-    <GitRepository git={git} load={loadOverview} tasks={tasks} onOpenTask={onOpenTask} taskStatus={task => <Status task={task}/>}/>
+    </div>
+    </aside>
+    <section className="git-details" aria-label="Git">
+      <div className="git-detail-switcher view-selector" role="group" aria-label={t('Workspace view')}>
+        <button type="button" aria-pressed={detail === 'changes'} onClick={() => showDetail('changes')}><Icon name="diff" size={16}/><span>{t('Changes')}</span></button>
+        <button type="button" aria-pressed={detail === 'history'} onClick={() => showDetail('history')}><Icon name="branch" size={16}/><span>{t('Commit graph')}</span></button>
+      </div>
+      <div id={diffId} className="git-file-preview" hidden={detail !== 'changes'}>
+        {openFile ? <section className="git-selected-diff" aria-label={t('Changes in {path}', { path: openPath })}>
+          <header className="git-diff-header"><Icon name="paper" size={15}/><span title={openPath}>{openPath}</span></header>
+          <div className="git-diff-content">{diff?.path === openPath && diff.result ? <DiffView diff={diff.result}/> : diff?.path === openPath && diff.error ? <p className="inline-error" role="alert">{diff.error}</p> : <p className="git-diff-note" role="status">{t('Loading the diff…')}</p>}</div>
+        </section> : <p className="git-empty-diff"><Icon name="check" size={20}/>{t('No uncommitted changes')}</p>}
+      </div>
+      <div className="git-repository-view" hidden={detail !== 'history'}><GitRepository git={git} load={loadOverview} tasks={tasks} onOpenTask={onOpenTask} taskStatus={task => <Status task={task}/>}/></div>
+    </section>
     </div>
     {discarding && <DiscardDialog files={discarding} onCancel={() => setDiscarding(null)} onConfirm={() => discard(discarding)}/>}
   </section>;
@@ -782,8 +804,8 @@ function PendingComparison({ task, busy, onBuild }: { task: Task; busy: boolean;
 }
 
 
-type ManuscriptPanel = 'pdf' | 'task' | 'contents' | 'git';
-function ManuscriptView({ collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, share, navigation, onGit, writer, reportError, tasks, onOpenTask, onFixProblems }: { collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; onFixProblems?: (request: string) => void; tasks: Task[]; onOpenTask: (id: string) => void; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
+type ManuscriptPanel = 'pdf' | 'task' | 'contents';
+function ManuscriptView({ collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, share, navigation, onGit, writer, reportError, onFixProblems }: { collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; onFixProblems?: (request: string) => void; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
   const build = data?.build, notes = data?.annotations || [], git = data?.git;
   const pdf = useRef<PdfHandle>(null);
   const [readingNotes, setReadingNotes] = useState(false);
@@ -862,17 +884,16 @@ function ManuscriptView({ collapsed, setCollapsed, project, data, error, view, s
         <div className="side-tabs" role="tablist" aria-label={t('Manuscript panels')}>
           <button role="tab" data-task-home aria-selected={side === 'task'} title={t('New task')} onClick={() => setView('task')}><Icon name="compose" size={14}/><span className="tab-label">{t('New task')}</span>{actions.selection.selected.length > 0 && <span className="count" aria-hidden="true">{actions.selection.selected.length}</span>}</button>
           <button role="tab" aria-selected={side === 'contents'} title={t('Contents')} onClick={() => setView('contents')}><Icon name="list" size={14}/><span className="tab-label">{t('Contents')}</span></button>
-          <button role="tab" aria-selected={side === 'git'} title="Git" onClick={() => setView('git')}><Icon name="branch" size={14}/><span className="tab-label">Git</span>{data?.git?.files?.length ? <span className="count">{data.git.files.length}</span> : null}</button>
         </div>
         {!hidden && sideBySide && share}
       </div>
-      {side === 'task' ? newTask(<TaskNotes notes={notes} currentKey={build?.key} actions={actions} onShow={show}/>) : side === 'contents' ? <nav className="contents-panel" aria-label={t('PDF contents')}>
+      {side === 'task' ? newTask(<TaskNotes notes={notes} currentKey={build?.key} actions={actions} onShow={show}/>) : <nav className="contents-panel" aria-label={t('PDF contents')}>
         {outline.length ? <ol>{outline.map((item, index) => <li key={index}>
           <button type="button" aria-current={index === section ? 'location' : undefined} style={{ paddingLeft: 12 + Math.min(item.level, 4) * 14 }} onClick={() => goTo(item)}>
             <span>{item.title}</span><span className="contents-page">{item.page}</span>
           </button>
         </li>)}</ol> : <p className="muted">{build?.key ? t('This PDF has no bookmarks.') : t('Contents will appear when the PDF is ready.')}</p>}
-      </nav> : <GitPanel key={project.id + project.path} projectId={project.id} git={data?.git || null} onStatus={onGit} writer={writer} tasks={tasks} onOpenTask={onOpenTask}/>}
+      </nav>}
     </aside>
     {committing && <CommitDialog branch={git?.branch ?? null} files={staged} staged remote={Boolean(git?.remote)} agent={AGENT_LABELS[writer.agent]} onClose={() => setCommitting(false)}
       generate={fresh => api<{ message: string }>(`/projects/${project.id}/git/message`, { paths: staged, staged: true, agent: writer.agent, fresh }, undefined, 130000).then(result => result.message)}
@@ -963,7 +984,8 @@ function App() {
   useEffect(() => { browserStorage.setItem('papilot:manuscript-panel', manuscriptCollapsed ? 'hidden' : 'visible'); }, [manuscriptCollapsed]);
   // Without a task, the main area shows the manuscript or a tool from the
   // sidebar's Tools menu, such as the reference check.
-  const [page, setPage] = useState<'manuscript' | 'references'>('manuscript');
+  const [page, setPage] = useState<'manuscript' | 'references' | 'git'>(() => browserStorage.getItem('papilot:page') === 'git' ? 'git' : 'manuscript');
+  useEffect(() => { browserStorage.setItem('papilot:page', page); }, [page]);
   const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
   const [noteGroup, setNoteGroup] = useState<NoteGroup | null>(null);
@@ -1284,10 +1306,9 @@ function App() {
   }
   const manuscriptOpen = !task && Boolean(project) && page === 'manuscript';
   const referencesOpen = !task && Boolean(project) && page === 'references';
-  const gitOpen = manuscriptOpen && manuscriptView === 'git' && (mobile || !manuscriptCollapsed);
+  const gitOpen = !task && Boolean(project) && page === 'git';
   function openGit() {
-    setSelected(''); setPage('manuscript'); setManuscriptView('git');
-    setManuscriptCollapsed(false); setRegion(false); setSidebar(false);
+    setSelected(''); setPage('git'); setRegion(false); setSidebar(false);
   }
   const loadManuscript = useCallback(async (projectId: string, rebuild = false) => {
     // A background read must not replace the result of an in-flight compile.
@@ -1327,10 +1348,12 @@ function App() {
   const reviewKey = (state?.tasks || []).filter(t => t.projectId === project?.id).map(t => `${t.review?.files?.join()}:${t.review?.counts?.accepted}`).join('|');
   useEffect(() => {
     if (!project || manuscriptOpen) return;
-    const load = () => void api<GitStatus>(`/projects/${project.id}/git`).then(status => setGit({ projectId: project.id, status })).catch(() => undefined);
-    load(); const timer = setInterval(load, 20000);
-    return () => clearInterval(timer);
-  }, [project?.id, project?.path, manuscriptOpen, reviewKey]);
+    let live = true;
+    const load = () => void api<GitStatus>(`/projects/${project.id}/git`).then(status => { if (live) setGit({ projectId: project.id, status }); }).catch(() => undefined);
+    load(); const timer = setInterval(load, gitOpen ? 5000 : 20000);
+    window.addEventListener('focus', load);
+    return () => { live = false; clearInterval(timer); window.removeEventListener('focus', load); };
+  }, [project?.id, project?.path, manuscriptOpen, gitOpen, reviewKey]);
   // A skill chosen for one paper may not exist on another.
   useEffect(() => setNewSkill(null), [project?.id, project?.path]);
   // Skills come from Papilot, ~/.papilot/skills and the paper's .papilot/skills,
@@ -1436,7 +1459,7 @@ function App() {
   });
 
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
-  useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, project?.name]);
+  useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : gitOpen && project ? `Git · ${project.name} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, gitOpen, project?.name]);
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
   const active = Boolean(task && ACTIVE.includes(task.status));
@@ -1559,7 +1582,6 @@ function App() {
           <button aria-label="PDF" data-notes-home="pdf" aria-pressed={manuscriptView === 'pdf'} onClick={() => setManuscriptView('pdf')}><Icon name="pdf" size={16}/><span>PDF</span></button>
           <button aria-label={t('New task')} data-task-home aria-pressed={manuscriptView === 'task'} onClick={() => { setManuscriptView('task'); setRegion(false); }}><Icon name="compose" size={16}/><span>{t('New task')}</span>{noteSelection.selected.length > 0 && <b className="view-count" aria-hidden="true">{noteSelection.selected.length}</b>}</button>
           <button aria-label={t('Contents')} aria-pressed={manuscriptView === 'contents'} onClick={() => { setManuscriptView('contents'); setRegion(false); }}><Icon name="list" size={16}/><span>{t('Contents')}</span></button>
-          <button aria-label={projectGit?.files?.length ? t('Git, {n} changed', { n: projectGit.files.length }) : 'Git'} aria-pressed={manuscriptView === 'git'} onClick={openGit}><Icon name="branch" size={16}/><span>Git</span>{projectGit?.files?.length ? <b className="view-count" aria-hidden="true">{projectGit.files.length}</b> : null}</button>
         </div>
     {manuscriptShare}
   </>;
@@ -1592,7 +1614,7 @@ function App() {
       </div>
       <div className="sidebar-actions">
         {project && <>
-          <button className={'nav-link manuscript-link' + (manuscriptOpen && !gitOpen ? ' active' : '')} aria-current={manuscriptOpen && !gitOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); setManuscriptView(view => mobile ? 'pdf' : view === 'git' ? 'task' : view); setSidebar(false); }}><Icon name="pdf" size={16}/><span className="nav-label">{t('Manuscript')}</span></button>
+          <button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} onClick={() => { setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><Icon name="pdf" size={16}/><span className="nav-label">{t('Manuscript')}</span></button>
           <button className={'nav-link git-link' + (gitOpen ? ' active' : '')} aria-label={projectGit?.files?.length ? t('Git, {n} changed', { n: projectGit.files.length }) : 'Git'} aria-current={gitOpen ? 'page' : undefined} title={t('Git status of the manuscript') + '\n' + gitSummary(projectGit)} onClick={openGit}><Icon name="branch" size={16}/><span className="nav-label">Git</span><span className="nav-meta">{projectGit?.files?.length ? <span className="count">{projectGit.files.length}</span> : null}</span></button>
           <ActionMenu label={t('Paper tools')} className="nav-link paper-tools" menuClassName="paper-tools-menu" align="side" actions={[
             { id: 'references', label: t('Reference check'), icon: 'checklist', detail: t('Citations, entries and their records'), hint: problems ? String(problems) : undefined, checked: referencesOpen || undefined, select: () => { setSelected(''); setPage('references'); setSidebar(false); } },
@@ -1636,10 +1658,10 @@ function App() {
     </aside>
     {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label={t('Close task list')} onClick={() => setSidebar(false)}/>}
     <main className="main" inert={narrow && sidebar}>
-      <h1 className="sr-only">{task ? task.title : manuscriptOpen ? t('Manuscript') : referencesOpen ? t('Reference check') : 'Papilot'}</h1>
+      <h1 className="sr-only">{task ? task.title : manuscriptOpen ? t('Manuscript') : referencesOpen ? t('Reference check') : gitOpen ? 'Git' : 'Papilot'}</h1>
       {flyingTask && <TaskFlight task={flyingTask} sidebarShown={sidebarShown} onArrive={taskArrived}/>}
       <span className="sr-only" role="status" aria-atomic="true">{addedTask ? t('Task added: {title}', { title: addedTask.title }) : ''}</span>
-      {(mobile || (!task && !manuscriptOpen)) && (sidebarToggle || task || manuscriptOpen) && <div className="workspace-navigation">
+      {!gitOpen && (mobile || (!task && !manuscriptOpen)) && (sidebarToggle || task || manuscriptOpen) && <div className="workspace-navigation">
         {sidebarToggle}{taskControls}{manuscriptNavigation}{reviewOpen}
       </div>}
       {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>{t('Connection lost. Showing the last update; your draft is kept.')}</span><button onClick={() => void refresh(true)}>{t('Retry connection')}</button></div>}
@@ -1651,7 +1673,8 @@ function App() {
           {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : task.review?.round ? <ReviewFrame key={task.id} task={task} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && <>{taskStateActions}{reviewOpen}</>}</>} completion={chatOnly ? null : applicationStep} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); }}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>}
           {!chatOnly && reviewFeedback(false)}
         </section><Activity key={task.id} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? <>{taskControls}{reviewOpen}</> : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{applicationStep && <div className="review-feedback card commit-card task-delivery">{applicationStep}</div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : manuscriptOpen && project ? <ManuscriptView key={project.id + project.path} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} tasks={state?.tasks.filter(task => task.projectId === project.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} navigation={!mobile ? sidebarToggle : null} project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} onGit={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} reportError={reportError}/>
+      : manuscriptOpen && project ? <ManuscriptView key={project.id + project.path} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} navigation={!mobile ? sidebarToggle : null} project={project} data={manuscriptData.data} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} onGit={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} reportError={reportError}/>
+      : gitOpen && project ? <GitWorkspace key={project.id + project.path} projectId={project.id} projectName={project.name} navigation={sidebarToggle} git={projectGit} onStatus={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} tasks={state?.tasks.filter(task => task.projectId === project.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }}/>
       : referencesOpen && project ? <section className="references-page" aria-label={t('Reference check')}>
           <header className="references-page-head"><h2>{t('Reference check')}</h2><span>{project.name}</span></header>
           <ReferencesPanel key={project.id} place={'references:' + project.id} data={bibliography} onInvestigate={draftInvestigation}/>

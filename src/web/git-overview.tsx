@@ -42,7 +42,7 @@ export function GitPane({ title, count, actions, open, onToggle, className = '',
   </section>;
 }
 
-// The commit graph and the worktrees beside the manuscript, as two views.
+// Repository history and related task worktrees in the Git workspace.
 export function GitRepository({ git, load, tasks, onOpenTask, taskStatus }: { git: GitStatus; load: (signal: AbortSignal) => Promise<GitOverview>; tasks: Task[]; onOpenTask: (id: string) => void; taskStatus: (task: Task) => ReactNode }) {
   const [data, setData] = useState<GitOverview | null>(null), [error, setError] = useState('');
   const [loading, setLoading] = useState(true), [refresh, setRefresh] = useState(0);

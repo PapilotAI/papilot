@@ -539,7 +539,7 @@ body.resizing iframe{pointer-events:none}
 .home h1{font:400 34px/1.2 var(--serif);letter-spacing:-.01em;margin:0 0 26px;text-wrap:balance}
 .home-copy{font-size:15px;line-height:1.65;color:var(--text-2);max-width:480px;margin:-12px 0 22px}
 
-/* Manuscript preview, new tasks, notes and Git status */
+/* Manuscript preview, new tasks and notes */
 .manuscript{position:relative;flex:1;min-height:0;display:grid;--manuscript-width:340px;--manuscript-side-width:clamp(300px,var(--manuscript-width),calc(100% - 360px));grid-template-columns:minmax(0,1fr) var(--manuscript-side-width)}
 .manuscript.panel-collapsed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
 .manuscript-side[hidden]{display:none}
@@ -699,7 +699,6 @@ body.resizing iframe{pointer-events:none}
 .git-code{flex:none;width:14px;font:600 12px/24px var(--mono);text-align:center;color:var(--text-3)}
 .git-code.s-m{color:var(--amber-text)}.git-code.s-a,.git-code.s-u{color:var(--green)}.git-code.s-d,.git-code.s-conflict{color:var(--red)}.git-code.s-r,.git-code.s-c{color:var(--accent)}
 .git-clean{display:flex;align-items:center;gap:8px;margin:0;padding:2px 12px 8px 24px;font-size:12px;color:var(--text-3)}
-.git-panel .git-diff-wrap{margin:2px 8px 8px 24px}
 .git-merge{margin:0 12px 8px;padding:10px 12px;border:1px solid var(--red-line);border-radius:var(--r);background:var(--red-soft);font-size:13px}
 .git-merge.resolved{border-color:var(--accent-line);background:var(--accent-soft)}
 .git-merge>p{display:flex;flex-direction:column;gap:2px;margin:0 0 10px}
@@ -952,7 +951,7 @@ body.resizing iframe{pointer-events:none}
   .manuscript{display:flex;flex-direction:column}
   .manuscript-side{max-height:none;flex:1;border-top:0;padding-bottom:env(safe-area-inset-bottom)}
   .manuscript-side-header{display:none}
-  .manuscript.show-pdf .manuscript-side,.manuscript.show-task .manuscript-pages,.manuscript.show-contents .manuscript-pages,.manuscript.show-git .manuscript-pages{display:none}
+  .manuscript.show-pdf .manuscript-side,.manuscript.show-task .manuscript-pages,.manuscript.show-contents .manuscript-pages{display:none}
   .contents-panel button{min-height:44px;font-size:15px}
   .note-entry-actions .button{min-height:40px}
   .manuscript-pages{flex:1;display:flex;flex-direction:column}
