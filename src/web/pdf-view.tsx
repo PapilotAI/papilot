@@ -1,6 +1,6 @@
 import type { NoteGroup } from '../note-groups.ts';
 import { GroupPicker, GroupAction, groupName, groupStyle } from './note-groups.tsx';
-import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, Fragment, useEffect, useId, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
@@ -180,6 +180,11 @@ async function readOutline(document: PDFDocumentProxy) {
 // crisp zoom, selectable text, search, links and bookmarks. Notes live in a
 // layer above each page; pdf.js clears unknown children when it redraws a
 // page, so each layer is re-attached after rendering.
+export interface PdfHistoryActions {
+  canUndo: boolean; canRedo: boolean;
+  undo: () => void; redo: () => void;
+}
+
 export const PdfView = forwardRef<PdfHandle, {
   readOnly?: boolean;
   group?: NoteGroup | null; onGroupChange?: (group: NoteGroup | null) => void; markingDisabled?: boolean;
@@ -187,6 +192,7 @@ export const PdfView = forwardRef<PdfHandle, {
   onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup, options?: { reveal?: boolean; quote?: boolean; kind?: MarkKind; stamp?: string }) => Promise<void>;
   onSelect: (note: Annotation) => void; outline: OutlineItem[]; section: number;
   noteActions?: PdfNoteActions; onDeselect?: () => void;
+  history?: PdfHistoryActions;
   onOutline: (items: OutlineItem[]) => void; onSection: (index: number) => void;
   lead?: ReactNode;
   tools?: ReactNode;
@@ -220,6 +226,7 @@ export const PdfView = forwardRef<PdfHandle, {
   const [dismissedNote, setDismissedNote] = useState<Annotation | null>(null);
   // The chosen tool; holding Space borrows the hand without changing it.
   const [tool, setTool] = useState<PdfTool>(props.region ? 'region' : 'select'), [spaceHand, setSpaceHand] = useState(false);
+  const railId = useId(), [railCollapsed, setRailCollapsed] = useState(() => browserStorage.getItem('papilot:pdf-tools-collapsed') === 'true');
   const active: PdfTool = spaceHand ? 'hand' : tool, toolRef = useRef(active); toolRef.current = active;
   const spaceRef = useRef({ held: false, used: false }); spaceRef.current.held = spaceHand;
   // A number key keeps one quick note on the magic pen until 0 or Escape.
@@ -743,12 +750,12 @@ export const PdfView = forwardRef<PdfHandle, {
   // On touch screens the button beside a selection does what the chosen tool does.
   const pillTool = active === 'delete' || active === 'magic' ? active : null;
   const railTools: { id: PdfTool; icon: string; label: string; key: string; hint: string }[] = [
-    { id: 'select', icon: 'toolSelect', label: t('Select'), key: 'V', hint: t('Select text to copy it or add a note from the button beside it.') },
-    { id: 'note', icon: 'toolNote', label: t('Note'), key: 'T', hint: t('Drag over text and write a note straight away. Click again to pick a color, and marks join that color group.') },
     { id: 'magic', icon: 'toolMagic', label: t('Magic pen'), key: 'Q', hint: t('Drag over text or click a spot, then pick a quick note. Click again, or press a number key, to keep one on the pen.') },
+    { id: 'note', icon: 'toolNote', label: t('Note'), key: 'T', hint: t('Drag over text and write a note straight away. Click again to pick a color, and marks join that color group.') },
     { id: 'region', icon: 'toolRegion', label: t('Region'), key: 'M', hint: t('Draw a box around a figure, table or equation.') },
     { id: 'point', icon: 'toolSticky', label: t('Sticky note'), key: 'P', hint: t('Click anywhere on the page to leave a note there.') },
     { id: 'delete', icon: 'toolStrike', label: t('Delete'), key: 'D', hint: t('Strike out text to ask for it to be removed. Open the mark to give a replacement.') },
+    { id: 'select', icon: 'toolSelect', label: t('Select'), key: 'V', hint: t('Select text to copy it or add a note from the button beside it.') },
     { id: 'hand', icon: 'toolHand', label: t('Hand'), key: 'H', hint: t('Drag to move around the page. Hold Space to use it with any tool.') },
   ];
   const lockedStamp = locked === null ? undefined : stamps[locked];
@@ -800,13 +807,19 @@ export const PdfView = forwardRef<PdfHandle, {
       <button type="button" className="icon-button" aria-label={t('Close search')} onClick={closeFind}><Icon name="close" size={15}/></button>
     </div>}
     <div className="pdf-body">
-    {markable && <div className="pdf-rail" role="toolbar" aria-orientation="vertical" aria-label={t('Marking tools')}>
-      {railTools.map(item => {
-        const content = <><Icon name={item.icon} size={18}/>
+    {markable && <div className="pdf-rail" data-collapsed={railCollapsed} role="toolbar" aria-orientation="vertical" aria-label={t('Marking tools')}>
+      <button type="button" className="rail-tool rail-toggle" aria-expanded={!railCollapsed} aria-controls={railId}
+        aria-label={railCollapsed ? t('Expand marking tools') : t('Collapse marking tools')} title={railCollapsed ? t('Expand marking tools') : t('Collapse marking tools')}
+        onClick={() => { const next = !railCollapsed; setRailCollapsed(next); browserStorage.setItem('papilot:pdf-tools-collapsed', String(next)); }}>
+        <Icon name={railCollapsed ? 'chevronRight' : 'chevronLeft'} size={16}/>
+      </button>
+      <div id={railId} className="rail-items" hidden={railCollapsed}>
+      {!railCollapsed && railTools.map(item => {
+        const content = <><Icon name={item.icon} size={item.id === 'magic' ? 22 : 18}/>
           {item.id === 'magic' && locked !== null && <span className="rail-badge" aria-hidden="true">{slotKey(locked)}</span>}
           <span className="rail-tip" aria-hidden="true"><span className="rail-tip-title">{item.label}<kbd>{item.key}</kbd></span><span>{item.hint}</span></span></>;
         return <Fragment key={item.id}>
-          {(item.id === 'note' || item.id === 'hand') && <span className="rail-separator" aria-hidden="true"/>}
+          {(item.id === 'note' || item.id === 'select') && <span className="rail-separator" aria-hidden="true"/>}
           {/* The note tool doubles as its color picker: its underline shows the color. */}
           {item.id === 'note' && props.onGroupChange ? <GroupPicker value={props.group || null} disabled={props.markingDisabled} onChange={group => props.onGroupChange!(group)}
             tool={{ label: item.label, pressed: tool === 'note', keys: item.key, content, onPress: () => { if (tool !== 'note') { pickTool('note'); return false; } return !editing; } }}/>
@@ -815,6 +828,21 @@ export const PdfView = forwardRef<PdfHandle, {
             : <button type="button" className="rail-tool" aria-label={item.label} aria-pressed={tool === item.id} aria-keyshortcuts={item.key} disabled={item.id !== 'select' && item.id !== 'hand' && props.markingDisabled} onClick={() => pickTool(item.id)}>{content}</button>}
         </Fragment>;
       })}
+      {!railCollapsed && props.history && <div className="rail-history">
+        <span className="rail-separator" aria-hidden="true"/>
+        {(['undo', 'redo'] as const).map(action => {
+          const label = action === 'undo' ? t('Undo') : t('Redo');
+          const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+          const keys = (mac ? '⌘' : 'Ctrl+') + (action === 'redo' ? mac ? '⇧Z' : 'Shift+Z' : 'Z');
+          return <button key={action} type="button" className="rail-tool" aria-label={label}
+            aria-keyshortcuts={`${mac ? 'Meta' : 'Control'}+${action === 'redo' ? 'Shift+' : ''}Z`}
+            disabled={!(action === 'undo' ? props.history!.canUndo : props.history!.canRedo)} onClick={props.history![action]}>
+            <Icon name={action} size={18}/>
+            <span className="rail-tip" aria-hidden="true"><span className="rail-tip-title">{label}<kbd>{keys}</kbd></span></span>
+          </button>;
+        })}
+      </div>}
+      </div>
     </div>}
     <div className="pdf-scroll-host">
       <div ref={container} className="pdf-container" tabIndex={0} aria-label={t('PDF pages')}>
