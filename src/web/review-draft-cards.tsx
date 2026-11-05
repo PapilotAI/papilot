@@ -6,10 +6,14 @@ import { reviewDraft, useReviewDraft, type ReviewNote } from './review-draft.ts'
 import type { Task } from '../shared.ts';
 import './review-draft.css';
 
+function version(note: ReviewNote) {
+  return note.whole ? 'whole' : / · Before(?: ·|$)/.test(note.where) ? 'before' : / · After(?: ·|$)/.test(note.where) ? 'after' : 'unchanged';
+}
 function place(note: ReviewNote) {
-  const side = / · Before(?: ·|$)/.test(note.where) ? t('Before revision') : / · After(?: ·|$)/.test(note.where) ? t('After revision') : t('Unchanged text');
+  const side = version(note);
+  const label = side === 'whole' ? t('Whole change') : side === 'before' ? t('Before revision') : side === 'after' ? t('After revision') : t('Unchanged text');
   const page = note.where.match(/PDF page ([^·]+)/)?.[1].trim();
-  return [note.whole ? t('Whole change') : side, page && t('Page {page}', { page })].filter(Boolean).join(' · ');
+  return <><span className="review-draft-side">{label}</span>{page && <span className="review-draft-page">· {t('Page {page}', { page })}</span>}</>;
 }
 export function ReviewDraftCards({ task, feedbackCount, onReveal }: { task: Task; feedbackCount: number; onReveal: () => void }) {
   const draft = reviewDraft(task.id), state = useReviewDraft(task.id), box = useRef<HTMLDivElement>(null);
@@ -29,8 +33,8 @@ export function ReviewDraftCards({ task, feedbackCount, onReveal }: { task: Task
     <button type="button" className="review-draft-heading" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}><Icon name="chat" size={15}/><strong>{t('Review feedback')}</strong><span>{count ? tn(count, '{n} comment', '{n} comments') : tn(feedbackCount, '{n} review update', '{n} review updates')}</span><Icon name={expanded ? 'chevronUp' : 'chevronDown'} size={14}/></button>
     {expanded && <div className="review-draft-list">
       {feedbackCount > 0 && <p className="review-draft-decisions">{tn(feedbackCount, '{n} review update included', '{n} review updates included')}</p>}
-      {state.notes.map((note, index) => <div key={note.id} className="review-draft-note" style={groupStyle(note.group)} data-note={note.id}>
-        <div className="review-draft-location"><button type="button" onClick={() => { draft.reveal(note); onReveal(); }} title={t('Show quoted passage')}><span>{index + 1}</span>{place(note)}{note.group && <i className="group-dot"/>}<Icon name="arrowRight" size={12}/></button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={state.busy} onClick={() => draft.remove(note.id)}><Icon name="close" size={13}/></button></div>
+      {state.notes.map((note, index) => <div key={note.id} className="review-draft-note" style={groupStyle(note.group)} data-note={note.id} data-version={version(note)}>
+        <div className="review-draft-location"><button type="button" onClick={() => { draft.reveal(note); onReveal(); }} title={t('Show quoted passage')}><span className="review-draft-number">{index + 1}</span>{place(note)}{note.group && <i className="group-dot"/>}<Icon name="arrowRight" size={12}/></button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={state.busy} onClick={() => draft.remove(note.id)}><Icon name="close" size={13}/></button></div>
         {note.quote && <blockquote>{note.quote}</blockquote>}
         {note.round !== task.review?.round && <small>{t('From review round {n}', { n: note.round })}</small>}
         <textarea data-note-id={note.id} aria-label={t('Comment {n}', { n: index + 1 })} placeholder={note.group ? t('Comment for {group} (optional)', { group: groupName(note.group) }) : t('What should change here?')} rows={2} maxLength={4000} value={note.comment} readOnly={state.busy} onChange={event => draft.edit(note.id, event.target.value)} onKeyDown={event => { event.stopPropagation(); }}/>
