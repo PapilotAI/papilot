@@ -307,7 +307,6 @@ try {
   await commentBox.press('b');
   await expect(commentBox).toHaveValue('b');
   assert.equal(writes.length, beforeKeys, 'typing does not accept a change');
-  await page.getByRole('button', { name: 'Delete review note 1' }).click();
   await viewer().locator('.change.current .change-number').click();
   await page.keyboard.press('b');
   await expect.poll(() => rounds[1].first).toBe('accepted');
@@ -316,6 +315,9 @@ try {
   await viewer().locator('.change.current .change-number').click();
   await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(() => rounds[1].first).toBe('pending');
+  // Clean up after checking decision undo; deleting a note has its own undo.
+  await page.getByRole('button', { name: 'Delete review note 1' }).click();
+  await viewer().locator('.change.current .change-number').click();
   await page.keyboard.press('?');
   await shortcuts.waitFor();
   await acceptKey.click(); await acceptKey.press('Backspace');
