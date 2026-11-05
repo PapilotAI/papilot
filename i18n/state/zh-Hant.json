@@ -2934,11 +2934,6 @@
     "textHash": "47c2237eb6dcb09ba07744d0d4db1053cae44e07cb9fd21a49fa8f6d91ad5fcd",
     "model": "gemini-4-argon-medium"
   },
-  "Paper tools": {
-    "revision": "21cd80febb37fab986140d2c00b55f724d1c911e68af893e23665e7234d0a539",
-    "textHash": "fc664411294f02731fe105cee7a0c62e906199f52384096f5d7f5ee9170d8f17",
-    "model": "gemini-4-argon-medium"
-  },
   "Paper: {name}": {
     "revision": "250c0d7a907425f37b05cf8d363ada188acaed3a22429c0fc7793225155859ef",
     "textHash": "cb5d96daa115fcdeef77ddbfb5eed64c69ae4d60855543c9317d27f3557c4947",
@@ -4625,7 +4620,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Tools": {
-    "revision": "db4f6da0708eabb3c371b5df153fd63abd926cd6b44ae783f6fb9005f81748c4",
+    "revision": "2cf89273f9ce875775c65063388d2b4b9ee3eec0f1199749e27c7544cd133da5",
     "textHash": "5ca6730d441522017552bf309fcddbed161b77440dc3a11d9945788d802afdb3",
     "model": "gemini-4-argon-medium"
   },

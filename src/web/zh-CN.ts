@@ -645,7 +645,7 @@ export const zhCN: Record<string, string> = {
   'Verified': '已核实',
   'Year': '年份',
   'You checked this entry yourself.': '你已人工确认过这个条目。',
-  'Paper tools': '论文工具',
+  'Research Tools': '研究工具',
   'Tools': '工具',
   'Reference check': '引用检查',
   'Citations, entries and their records': '引用、条目及其正式记录',
