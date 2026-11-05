@@ -621,6 +621,7 @@ body.resizing iframe{pointer-events:none}
 /* pdf.js viewer: toolbar, find bar, pages and the note layer above each page */
 .pdf-view{flex:1;min-height:0;display:flex;flex-direction:column;container-type:inline-size}
 .pdf-toolbar{display:flex;align-items:center;gap:6px;height:46px;padding:0 8px;border-bottom:1px solid var(--line);background:var(--bg);flex-shrink:0}
+.pdf-toolbar:has(.pdf-contents-trigger){height:auto;min-height:46px;flex-wrap:wrap;padding-block:4px}
 .pdf-toolbar-spacer{flex:1;min-width:0}
 .pdf-pager,.pdf-zoom{display:flex;align-items:center;gap:2px;flex-shrink:0}
 .pdf-pager{font-size:13px;color:var(--text-2)}
@@ -631,7 +632,6 @@ body.resizing iframe{pointer-events:none}
 .pdf-toolbar .icon-button{width:30px;height:30px}
 .pdf-toolbar .icon-button.active,.pdf-find .icon-button.active{background:var(--accent-soft);color:var(--accent)}
 @container (max-width:760px){.pdf-toolbar .pdf-zoom{display:none}}
-@container (max-width:960px){.pdf-toolbar:has(.pdf-contents-trigger) .pdf-zoom{display:none}}
 @container (max-width:620px){.pdf-pager>.icon-button{display:none}}
 @container (max-width:400px){.pdf-toolbar .pdf-modes>button{padding:0 6px}.pdf-pages{min-width:24px;padding-left:2px}}
 .pdf-find{display:flex;align-items:center;gap:6px;height:44px;padding:0 8px 0 14px;border-bottom:1px solid var(--line);background:var(--bg-subtle);flex-shrink:0}
@@ -993,13 +993,14 @@ body.resizing iframe{pointer-events:none}
   .modal-close{width:44px;height:44px;right:6px;top:6px}
   .toast{top:60px}
 }
-/* The paper's views and its share button fit a large phone when only the open view keeps its label. */
-@media(max-width:420px){
+/* A resized desktop pane needs the same room for controls as a small phone. */
+@container (max-width:480px){
   .pdf-toolbar:has(.pdf-contents-trigger){height:auto;min-height:46px;flex-wrap:wrap;padding:4px}
   .pdf-toolbar:has(.pdf-contents-trigger) .pdf-toolbar-spacer{flex:0 0 100%;height:0}
   .pdf-contents-trigger{width:auto;padding:0 8px}
   .pdf-contents-trigger>span,.pdf-contents-trigger>svg:last-child{display:inline}
 }
+/* The paper's views and its share button fit a large phone when only the open view keeps its label. */
 @media(max-width:520px){.manuscript-view-selector>button:not([aria-pressed=true])>span{display:none}}
 @media(max-width:400px){.view-selector>button>span{display:none}.view-selector>button{padding:0 11px}.task-state-actions .button-label{display:none}}
 

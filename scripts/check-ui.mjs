@@ -699,7 +699,6 @@ try {
 
   const pdfLink = page.locator('.manuscript-link');
   await pdfLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
-  await page.setViewportSize({ width: 1680, height: 900 });
   // A previously saved percentage must not prevent the divider from fitting the PDF.
   await page.evaluate(() => localStorage.setItem('papilot:pdf-zoom', '0.95'));
   await pdfLink.click();
@@ -733,7 +732,7 @@ try {
   await page.setViewportSize({ width: 800, height: 900 });
   await manuscriptDivider.waitFor({ state: 'hidden' });
   assert.equal(await page.evaluate(() => document.body.classList.contains('resizing')), false);
-  await page.setViewportSize({ width: 1680, height: 900 }); await manuscriptDivider.waitFor();
+  await page.setViewportSize({ width: 1440, height: 900 }); await manuscriptDivider.waitFor();
   assert.equal(Math.round((await manuscriptSide.boundingBox()).width), widenedSide);
   await manuscriptDivider.focus(); await page.keyboard.press('End');
   await page.waitForFunction(() => Math.round(document.querySelector('.manuscript-side').getBoundingClientRect().width) === 300);
@@ -743,6 +742,19 @@ try {
   await page.waitForFunction(width => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().width - width) < 2, originalPdfWidth);
   await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().waitFor();
   console.log('PASS: Manuscript panel resizes with pointer and keyboard, persists, clamps on narrow screens and resets');
+  // A wide window can still contain a narrow PDF pane. Every control stays inside it.
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await manuscriptDivider.focus(); await page.keyboard.press('Home');
+  const narrowPdfToolbar = page.getByRole('toolbar', { name: 'PDF controls' });
+  for (const paneWidth of [360, 384, 408]) {
+    await expect.poll(() => narrowPdfToolbar.evaluate(el => Math.round(el.clientWidth))).toBe(paneWidth);
+    assert.equal(await narrowPdfToolbar.evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    const toolbarBox = await narrowPdfToolbar.boundingBox(), notesBox = await narrowPdfToolbar.getByRole('button', { name: 'My notes', exact: true }).boundingBox();
+    assert.ok(notesBox.x >= toolbarBox.x && notesBox.x + notesBox.width <= toolbarBox.x + toolbarBox.width);
+    await page.keyboard.press('ArrowRight');
+  }
+  await manuscriptDivider.dblclick();
+
   await page.setViewportSize({ width: 1440, height: 900 });
   // Contents opens beside PDF / Changes without replacing the task panel.
   assert.deepEqual((await page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['New task', 'Git 2']);
@@ -803,10 +815,10 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
   await page.getByRole('button', { name: 'Previous page', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '1');
-  // Zoom steps away from fit width and returns to it; the choice is remembered.
-  await page.setViewportSize({ width: 1680, height: 900 });
+  // Zoom stays accessible at the default desktop width and remembers its choice.
   const zoom = page.getByRole('combobox', { name: 'Zoom', exact: true });
   assert.equal(await selectedValue(zoom), 'page-width');
+  await expect(zoom).toBeVisible();
   const width = (await pdfPages.first().boundingBox()).width;
   await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
   await page.waitForFunction(() => /^[\d.]+$/.test(document.querySelector('[role="combobox"][aria-label="Zoom"]').dataset.value));
@@ -817,18 +829,18 @@ try {
   // Window resizing preserves manual zoom; dragging the divider restores fit width.
   await selectOption(zoom, '1');
   const fixedWidth = (await pdfPages.first().boundingBox()).width;
-  await page.setViewportSize({ width: 1680, height: 700 });
+  await page.setViewportSize({ width: 1440, height: 700 });
   await page.clock.runFor(100);
   assert.equal((await pdfPages.first().boundingBox()).width, fixedWidth);
   assert.equal(await selectedValue(zoom), '1');
-  await page.setViewportSize({ width: 1680, height: 900 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await manuscriptDivider.dblclick();
   await selectOption(zoom, 'page-fit');
   const fitHeight = (await pdfPages.first().boundingBox()).height;
-  await page.setViewportSize({ width: 1680, height: 700 });
+  await page.setViewportSize({ width: 1440, height: 700 });
   await page.waitForFunction(height => document.querySelector('.pdfViewer .page').getBoundingClientRect().height < height - 100, fitHeight);
   assert.equal(await selectedValue(zoom), 'page-fit');
-  await page.setViewportSize({ width: 1680, height: 900 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForFunction(height => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().height - height) < 2, fitHeight);
   await selectOption(zoom, 'page-width');
   console.log('PASS: Dragging restores fit width from saved percentages; viewport resize preserves the chosen zoom mode');
@@ -985,7 +997,7 @@ try {
   await prompt.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
   assert.ok((await prompt.inputValue()).length < 'Undo this text'.length, 'native undo edits the text');
   assert.equal(annotations.length, 0); await prompt.fill('');
-  await page.getByRole('button', { name: 'Mark region', exact: true }).focus();
+  await page.getByRole('button', { name: 'Region', exact: true }).focus();
   await page.keyboard.press('Meta+Shift+z');
   assert.equal(annotations.length, 0, 'redo is not interpreted as undo');
   failNoteRestore = true;
@@ -1037,7 +1049,7 @@ try {
   await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
   assert.equal(annotations.length, 0);
   // A region marks a figure or equation that has no text to select.
-  await page.getByRole('button', { name: 'Mark region', exact: true }).click();
+  await page.getByRole('button', { name: 'Region', exact: true }).click();
   const firstPage = await pdfPages.first().boundingBox();
   await page.mouse.move(firstPage.x + firstPage.width * 0.2, firstPage.y + firstPage.height * 0.3);
   await page.mouse.down();
@@ -1060,7 +1072,7 @@ try {
   assert.equal(annotations.length, 1);
   await page.getByRole('button', { name: 'Note 1: Define the operator here.', exact: true }).click();
   await expect(notesPanel).toContainText('Define the operator here.');
-  assert.equal(await page.getByRole('button', { name: 'Mark region', exact: true }).getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.getByRole('button', { name: 'Region', exact: true }).getAttribute('aria-pressed'), 'false');
   assert.equal(annotations[0].rects, undefined);
   assert.ok(annotations[0].rect[0] > 0.15 && annotations[0].rect[2] < 0.75 && annotations[0].rect[1] < annotations[0].rect[3]);
   await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
