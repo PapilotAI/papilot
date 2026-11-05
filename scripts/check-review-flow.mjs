@@ -382,7 +382,10 @@ try {
   await viewer().locator('.change.current').getByRole('button', { name: 'Comment', exact: true }).click();
   await page.getByRole('textbox', { name: 'Comment 2', exact: true }).fill('Try a clearer explanation.');
   // Comments preserve the pending decision until the author explicitly decides.
-  await viewer().locator('.change.current').getByRole('button', { name: 'Reject', exact: true }).click();
+  const commentedChange = viewer().locator('.change[data-stop="2"]');
+  await expect(commentedChange).toHaveAttribute('data-state', 'pending');
+  await commentedChange.locator('.change-number').click();
+  await commentedChange.getByRole('button', { name: 'Reject (2)', exact: true }).click();
   await expect(viewer().locator('.change-head:visible')).toHaveCount(0);
   await expect(viewer().locator('.change-map-mark')).toHaveCount(0);
   await expect(viewer().locator('.review-complete')).toBeVisible();

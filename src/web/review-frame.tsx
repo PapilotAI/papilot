@@ -263,7 +263,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   // Current changes open in the usual review; only older results need history.
   const linkedRound = quoteFocus?.note.round ?? (task ? noteLinks?.focus?.change.round : undefined);
   const linkedChange = quoteFocus?.note.stop ?? (linkedRound === task?.review?.round ? noteLinks?.focus?.change.stop : undefined);
-  const focusSequence = quoteFocus?.sequence ?? (task ? noteLinks?.focus?.sequence : undefined);
+  const focusSequence = quoteFocus ? `quote:${quoteFocus.sequence}` : task && noteLinks?.focus ? `result:${noteLinks.focus.sequence}` : undefined;
   const [document, setDocument] = useState<Document | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const toolbar = useRef<HTMLDivElement>(null), leading = useRef<HTMLDivElement>(null), hostBar = useRef<HTMLDivElement>(null);

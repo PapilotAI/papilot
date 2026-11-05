@@ -1583,7 +1583,7 @@ function App() {
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
   const localReview = useReviewDraft(task?.id || '');
-  const hasReviewFeedback = Boolean(localReview.notes.length || pendingReviewFeedback(task?.review || null));
+  const hasReviewFeedback = Boolean(reviewSubmission(localReview).notes.length || pendingReviewFeedback(task?.review || null));
   const active = Boolean(task && ACTIVE.includes(task.status));
   const answerOnly = Boolean(task && task.mode !== 'review' && (noManuscriptChanges(task) || (active && task.review?.round === null)));
   // Do not save this as the author's layout preference: switching back to a

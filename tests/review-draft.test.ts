@@ -75,3 +75,19 @@ test('empty color marks need a shared direction, without blocking other comments
   draft.instructions('Green: shorten this.');
   assert.equal(reviewSubmission(draft.getSnapshot()).notes.length, 2);
 });
+
+test('sending or deleting the revealed note releases its pinned review round', () => {
+  const draft = new ReviewDraft('task', storage());
+  draft.add(mark);
+  const note = draft.getSnapshot().notes[0];
+  draft.edit(note.id, 'Keep the term.');
+  draft.reveal(note);
+  draft.clear(reviewSubmission(draft.getSnapshot()));
+  assert.equal(draft.getSnapshot().reveal, undefined);
+  assert.equal(draft.getSnapshot().notes.length, 0);
+  draft.add(mark);
+  const next = draft.getSnapshot().notes[0];
+  draft.reveal(next);
+  draft.remove(next.id);
+  assert.equal(draft.getSnapshot().reveal, undefined);
+});

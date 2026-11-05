@@ -62,13 +62,14 @@ export class ReviewDraft {
   }
   focus(id: string) { this.update({ editing: { id, sequence: ++this.sequence } }); }
   reveal(note: ReviewNote) { this.update({ reveal: { note, sequence: ++this.sequence } }); }
+  clearReveal() { if (this.value.reveal) this.update({ reveal: undefined }); }
   instructions(text: string) { if (!this.value.busy) this.update({ instructions: text }); }
   remove(id: string) {
     if (this.value.busy) return;
     const index = this.value.notes.findIndex(note => note.id === id);
     if (index < 0) return;
     this.deleted.push({ note: this.value.notes[index], index });
-    this.update({ notes: this.value.notes.filter(note => note.id !== id) });
+    this.update({ notes: this.value.notes.filter(note => note.id !== id), ...(this.value.reveal?.note.id === id ? { reveal: undefined } : {}) });
   }
   undoAdded() {
     if (this.value.busy) return false;
@@ -87,7 +88,7 @@ export class ReviewDraft {
     try { saved = JSON.parse(this.storage.getItem(this.key) || 'null') || saved; } catch { /* Keep current draft. */ }
     const notes = saved.notes.filter(note => !submitted.notes.some(sent => JSON.stringify(sent) === JSON.stringify(note)));
     this.deleted = []; this.added = [];
-    this.update({ notes, instructions: saved.instructions === submitted.instructions ? '' : saved.instructions });
+    this.update({ notes, instructions: saved.instructions === submitted.instructions ? '' : saved.instructions, reveal: undefined });
   }
 }
 const drafts = new Map<string, ReviewDraft>();

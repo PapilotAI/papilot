@@ -27,6 +27,7 @@ const actions = [], writes = [], messageRequests = [], commitRequests = [], appl
 let gitFiles = [];
 let pushError, conflictOnApply = false, combinedOnCommit = false;
 let timeline = [];
+let noteResults = [];
 const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, history: Object.keys(rounds).map(number => ({ number: Number(number), created: 1793322000 + Number(number) * 120 })), round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: null });
 function update() {
   const values = Object.values(rounds[latest]);
@@ -60,6 +61,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: timeline } });
+  if (url.pathname.endsWith('/note-results')) return route.fulfill({ json: { notes: noteResults } });
   if (url.pathname.endsWith('/delete')) {
     deleteRequests.push(route.request().postDataJSON());
     snapshot.tasks = snapshot.tasks.filter(item => item.id !== task.id);
@@ -195,6 +197,17 @@ try {
   await send().click(); await expect.poll(() => sent.length).toBe(3);
   assert.equal(sent[2].notes, undefined);
   await expect(page.locator('.review-draft-note')).toHaveCount(1);
+  // An unwritten comment must not hide the save action after accepting everything.
+  rounds[1] = { first: 'accepted', second: 'accepted', third: 'accepted', fourth: 'accepted' };
+  task.review.unsent = 4; task.review.comments = 0; task.review.files = ['main.tex']; task.deferred = true; update();
+  await page.reload();
+  await expect(page.locator('.review-draft-note')).toHaveCount(1);
+  await expect(send()).toBeDisabled();
+  await expect(viewer().getByRole('button', { name: 'Apply to workspace', exact: true })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Comment 1', exact: true }).fill('Revise this before saving.');
+  await expect(viewer().getByRole('button', { name: 'Apply to workspace', exact: true })).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Comment 1', exact: true }).fill('');
+  await expect(viewer().getByRole('button', { name: 'Apply to workspace', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Delete review note 1' }).click();
   await expect(page.locator('.review-draft')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Send feedback', exact: true })).toHaveCount(0);
@@ -219,6 +232,21 @@ try {
   await page.getByRole('button', { name: /Before revision.*Page 1/ }).click();
   await expect(page.locator('.review-frame')).toHaveAttribute('src', /round=1/);
   await expect(viewer().locator('.review-note-tag').first()).toBeVisible();
+  // Draft quotations and sent-note results must take turns owning navigation.
+  const linkedNote = sent[1].notes[0];
+  timeline = [{ id: 'sent-note', taskId: task.id, type: 'user', text: '', createdAt: 2, meta: { notes: [linkedNote] } }];
+  noteResults = [{ key: 'sent-note:0', itemId: 'sent-note', index: 0, note: linkedNote, round: 2, state: 'matched', changes: [{ round: 2, stop: 0, state: 'pending' }] }];
+  task.updatedAt = 2; await sync();
+  const resultLink = page.locator('[data-note-result="sent-note:0"]').getByRole('button', { name: /Change 1/ });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await resultLink.click();
+    await expect(page.locator('.review-frame')).toHaveAttribute('src', /round=2/);
+    await expect(viewer().locator('.papilot-linked-change[data-stop="0"]')).toBeVisible();
+    await page.getByRole('button', { name: /Before revision.*Page 1/ }).click();
+    await expect(page.locator('.review-frame')).toHaveAttribute('src', /round=1/);
+    await expect(viewer().locator('.review-note-tag').first()).toBeVisible();
+    await expect(viewer().locator('.papilot-linked-change')).toHaveCount(0);
+  }
   // Phone: comment selection opens Chat, and the quote brings the PDF back.
   latest = 1; delete rounds[2]; task.review.round = 1; update();
   await page.setViewportSize({ width: 390, height: 844 }); await page.reload();
