@@ -1819,7 +1819,7 @@ try {
       await page.getByRole('button', { name: 'Start task' }).click();
       await page.waitForFunction(() => document.querySelector('.new-task-panel textarea')?.value === '');
       assert.equal(await prompt.isVisible(), true);
-      assert.equal(await page.locator('.sidebar').isVisible(), false);
+      await expect(page.locator('.sidebar')).toBeHidden();
       assert.equal(await page.getByRole('button', { name: 'New task', exact: true }).getAttribute('aria-pressed'), 'true');
       await page.getByRole('button', { name: 'Show task list', exact: true }).click();
       await page.locator(`[data-task="${task.id}"] .task-link`).click();
