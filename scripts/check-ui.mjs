@@ -699,6 +699,7 @@ try {
 
   const pdfLink = page.locator('.manuscript-link');
   await pdfLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
+  await page.setViewportSize({ width: 1680, height: 900 });
   // A previously saved percentage must not prevent the divider from fitting the PDF.
   await page.evaluate(() => localStorage.setItem('papilot:pdf-zoom', '0.95'));
   await pdfLink.click();
@@ -732,7 +733,7 @@ try {
   await page.setViewportSize({ width: 800, height: 900 });
   await manuscriptDivider.waitFor({ state: 'hidden' });
   assert.equal(await page.evaluate(() => document.body.classList.contains('resizing')), false);
-  await page.setViewportSize({ width: 1440, height: 900 }); await manuscriptDivider.waitFor();
+  await page.setViewportSize({ width: 1680, height: 900 }); await manuscriptDivider.waitFor();
   assert.equal(Math.round((await manuscriptSide.boundingBox()).width), widenedSide);
   await manuscriptDivider.focus(); await page.keyboard.press('End');
   await page.waitForFunction(() => Math.round(document.querySelector('.manuscript-side').getBoundingClientRect().width) === 300);
@@ -742,22 +743,31 @@ try {
   await page.waitForFunction(width => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().width - width) < 2, originalPdfWidth);
   await page.locator('.textLayer span').filter({ hasText: /^Fixture ?$/ }).first().waitFor();
   console.log('PASS: Manuscript panel resizes with pointer and keyboard, persists, clamps on narrow screens and resets');
-  // Notes belong to New task; Contents keeps the bookmarks beside the PDF.
-  assert.deepEqual((await page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['New task', 'Contents', 'Git 2']);
-  await page.getByRole('tab', { name: 'Contents', exact: true }).click();
-  const contents = page.getByRole('navigation', { name: 'PDF contents' });
-  assert.deepEqual((await contents.getByRole('button').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
-  await contents.getByRole('button', { name: /^Results/ }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // Contents opens beside PDF / Changes without replacing the task panel.
+  assert.deepEqual((await page.getByRole('tablist', { name: 'Manuscript panels' }).getByRole('tab').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['New task', 'Git 2']);
+  const contentsTrigger = page.getByRole('button', { name: 'Contents', exact: true });
+  await contentsTrigger.click();
+  const contents = page.getByRole('menu', { name: 'Contents', exact: true });
+  assert.deepEqual((await contents.getByRole('menuitemradio').allInnerTexts()).map(text => text.replace(/\s+/g, ' ')), ['Introduction 1', 'Method 2', 'Results 2']);
+  const modesBox = await page.locator('.pdf-toolbar .pdf-modes').boundingBox(), contentsBox = await contentsTrigger.boundingBox();
+  assert.ok(contentsBox.x >= modesBox.x + modesBox.width && Math.abs(contentsBox.y - modesBox.y) < 3);
+  await contents.getByRole('menuitemradio', { name: /^Results/ }).click();
   await expect(page.getByLabel('Page number')).toHaveValue('2');
-  await expect(contents.getByRole('button', { name: /^Results/ })).toHaveAttribute('aria-current', 'location');
+  await expect(contents).toBeHidden();
+  await contentsTrigger.click();
+  await expect(contents.getByRole('menuitemradio', { name: /^Results/ })).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
+  await expect(contentsTrigger).toBeFocused();
   const mountedPdf = await pdfPages.first().elementHandle();
   await page.locator('.manuscript-link').click();
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
   await prompt.fill('Keep this draft beside the PDF.');
   assert.equal(await mountedPdf.evaluate(el => el.isConnected), true, 'Opening New task keeps the PDF mounted');
   assert.equal(await page.getByLabel('Page number').inputValue(), '2');
-  await page.getByRole('tab', { name: 'Contents', exact: true }).click();
+  await contentsTrigger.click();
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
+  await expect(contents).toBeHidden();
   assert.equal(await prompt.inputValue(), 'Keep this draft beside the PDF.');
   await page.screenshot({ path: 'test-results/new-task-beside-pdf.png', fullPage: true });
   const beforeCollapseWidth = (await page.locator('.manuscript-pages').boundingBox()).width;
@@ -782,18 +792,19 @@ try {
   await page.waitForFunction(() => document.activeElement === document.querySelector('.manuscript-side-header .manuscript-panel-toggle'));
   console.log('PASS: Manuscript panel collapses and expands from the keyboard, preserving its draft, PDF and width');
   await prompt.fill('');
-  await page.getByRole('tab', { name: 'Contents', exact: true }).click();
   await page.getByLabel('Page number').fill('1');
   await page.getByLabel('Page number').press('Enter');
+  await contentsTrigger.press('ArrowDown');
   assert.equal(await contents.isVisible(), true);
-  await expect(contents.getByRole('button', { name: /^Introduction/ })).toHaveAttribute('aria-current', 'location');
+  await expect(contents.getByRole('menuitemradio', { name: /^Introduction/ })).toHaveAttribute('aria-checked', 'true');
   await page.clock.runFor(200);
   await page.screenshot({ path: 'test-results/contents-desktop.png', fullPage: true });
-  await contents.getByRole('button', { name: /^Method/ }).click();
+  await contents.getByRole('menuitemradio', { name: /^Method/ }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
   await page.getByRole('button', { name: 'Previous page', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '1');
   // Zoom steps away from fit width and returns to it; the choice is remembered.
+  await page.setViewportSize({ width: 1680, height: 900 });
   const zoom = page.getByRole('combobox', { name: 'Zoom', exact: true });
   assert.equal(await selectedValue(zoom), 'page-width');
   const width = (await pdfPages.first().boundingBox()).width;
@@ -806,21 +817,22 @@ try {
   // Window resizing preserves manual zoom; dragging the divider restores fit width.
   await selectOption(zoom, '1');
   const fixedWidth = (await pdfPages.first().boundingBox()).width;
-  await page.setViewportSize({ width: 1440, height: 700 });
+  await page.setViewportSize({ width: 1680, height: 700 });
   await page.clock.runFor(100);
   assert.equal((await pdfPages.first().boundingBox()).width, fixedWidth);
   assert.equal(await selectedValue(zoom), '1');
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({ width: 1680, height: 900 });
   await manuscriptDivider.dblclick();
   await selectOption(zoom, 'page-fit');
   const fitHeight = (await pdfPages.first().boundingBox()).height;
-  await page.setViewportSize({ width: 1440, height: 700 });
+  await page.setViewportSize({ width: 1680, height: 700 });
   await page.waitForFunction(height => document.querySelector('.pdfViewer .page').getBoundingClientRect().height < height - 100, fitHeight);
   assert.equal(await selectedValue(zoom), 'page-fit');
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({ width: 1680, height: 900 });
   await page.waitForFunction(height => Math.abs(document.querySelector('.pdfViewer .page').getBoundingClientRect().height - height) < 2, fitHeight);
   await selectOption(zoom, 'page-width');
   console.log('PASS: Dragging restores fit width from saved percentages; viewport resize preserves the chosen zoom mode');
+  await page.setViewportSize({ width: 1440, height: 900 });
   // Find runs across every page.
   await page.locator('.pdf-container').focus();
   await page.keyboard.press('ControlOrMeta+f');
@@ -1743,12 +1755,13 @@ try {
       const toolbar = page.getByRole('toolbar', { name: 'PDF controls' });
       assert.equal(await toolbar.evaluate(el => el.scrollWidth <= el.clientWidth), true);
       await page.getByRole('button', { name: 'Contents', exact: true }).click();
-      await page.getByRole('navigation', { name: 'PDF contents' }).waitFor();
-      assert.equal(await pdfPage.isVisible(), false);
-      assert.equal(await page.getByRole('button', { name: 'Contents', exact: true }).getAttribute('aria-pressed'), 'true');
+      await page.getByRole('menu', { name: 'Contents', exact: true }).waitFor();
+      assert.equal(await pdfPage.isVisible(), true);
+      assert.equal(await page.getByRole('button', { name: 'Contents', exact: true }).getAttribute('aria-expanded'), 'true');
       await page.clock.runFor(200);
       await page.screenshot({ path: 'test-results/contents-mobile.png', fullPage: true });
-      await page.getByRole('navigation', { name: 'PDF contents' }).getByRole('button', { name: /^Results/ }).click();
+      await page.getByRole('menu', { name: 'Contents', exact: true }).getByRole('menuitemradio', { name: /^Results/ }).click();
+      await expect(page.getByRole('menu', { name: 'Contents', exact: true })).toBeHidden();
       await pdfPage.waitFor();
       await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
       await page.getByRole('button', { name: 'Git, 2 changed' }).click();
