@@ -42,7 +42,18 @@ node --import tsx scripts/capture-release-0.9.0.mjs
 
 ## Release checks
 
-Final checks are being run on the release branch based on `98c331b`; results will be recorded here before handoff. No live provider calls are needed for the documentation and version changes.
+Checked on the release branch based on `98c331b`, using Node.js 22.22.0 on macOS:
+
+- Application tests: **647 passed, 1 skipped**; review-engine tests: **179 passed**.
+- Type checking, application and review-engine builds, translation catalogue and application-locale checks passed.
+- Every browser check in `test:ui` passed, including targeted reruns after updating stale fixtures for the settings endpoint, Version Management, unified review feedback and asynchronous annotation saves. No application behavior was changed by these test updates.
+- `test:review-comments` passed (21 tests plus the unified feedback and PDF-note browser checks); source editing passed with a real PDF rebuild.
+- Website checks, npm package dry run, development desktop smoke and native notifications passed. The desktop reported version `0.9.0`.
+- All five screenshots were regenerated, visually inspected and checked for dimensions and asset links.
+- The Release workflow's exact notes-extraction step passed for both the curated 0.9.0 introduction and the legacy 0.8.9 changelog fallback.
+- [PR #66 checks](https://github.com/PapilotAI/papilot/pull/66/checks) cover Node 22/24 and packaged macOS ARM64/Linux desktop smoke tests. Full installer checks run again on the release tag before publication.
+
+The release tag has not been pushed. Browser and screenshot fixtures do not make live provider calls.
 
 ## Publishing sequence
 
