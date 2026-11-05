@@ -698,7 +698,8 @@ try {
   console.log('PASS: Content toolbars retain view-switch focus and reopen the sidebar in every desktop layout');
 
   const pdfLink = page.locator('.manuscript-link');
-  await pdfLink.locator('.nav-meta').filter({ hasText: 'main · 2 changed · ↑1' }).waitFor();
+  await expect(page.locator('.git-link')).toHaveAttribute('title', /main · 2 changed · ↑1/);
+  await expect(page.locator('.git-link .count')).toHaveText('2');
   // A previously saved percentage must not prevent the divider from fitting the PDF.
   await page.evaluate(() => localStorage.setItem('papilot:pdf-zoom', '0.95'));
   await pdfLink.click();
@@ -1065,7 +1066,19 @@ try {
   gitState.files.push({ path: 'main.aux', status: '?', staged: false, unstaged: true }, { path: 'main.log', status: '?', staged: false, unstaged: true });
   await pdfLink.click();
   await page.getByRole('heading', { name: 'Manuscript', exact: true }).waitFor();
-  await page.getByRole('tab', { name: /^Git/ }).click();
+  // The project-level entry opens Git even when its panel was hidden.
+  await collapsePanel.click();
+  await manuscriptSide.waitFor({ state: 'hidden' });
+  await page.locator('.git-link').click();
+  await expect(manuscriptSide).toBeVisible();
+  await expect(page.locator('.git-link')).toHaveAttribute('aria-current', 'page');
+  await expect(pdfLink).not.toHaveAttribute('aria-current', 'page');
+  // The same entry also works from a task, with Git selected but collapsed.
+  await collapsePanel.click();
+  await page.locator(`[data-task="${task.id}"] .task-link`).click();
+  await page.getByRole('heading', { name: task.title }).waitFor();
+  await page.locator('.git-link').click();
+  await expect(manuscriptSide).toBeVisible();
   const gitPanel = page.getByRole('region', { name: 'Git status' });
   // Cursor's source control: the commit box, then staged and unstaged lists.
   const changes = gitPanel.getByRole('region', { name: 'Changes', exact: true });
@@ -1076,8 +1089,12 @@ try {
   assert.equal(await changes.getByRole('textbox', { name: 'Commit message' }).getAttribute('placeholder'), 'Message (↵ to commit on “main”)');
   assert.equal(await gitPanel.getByRole('checkbox').count(), 0, 'Files are staged with + and −, not checkboxes');
   const graphPane = gitPanel.getByRole('region', { name: 'Commit graph', exact: true });
-  assert.match(await graphPane.locator('.git-branch').innerText(), /main\s*↑1/);
-  assert.equal(await graphPane.locator('.git-branch').getAttribute('title'), 'Tracking origin/main');
+  const gitToolbar = gitPanel.getByRole('group', { name: 'Git', exact: true });
+  assert.match(await gitToolbar.locator('.git-branch').innerText(), /main\s*↑1/);
+  assert.equal(await gitToolbar.locator('.git-branch').getAttribute('title'), 'Tracking origin/main');
+  await expect(gitToolbar.getByRole('button', { name: 'Pull', exact: true })).toHaveText('Pull');
+  await expect(gitToolbar.getByRole('button', { name: 'Push', exact: true })).toHaveText('Push1');
+  await expect(page.locator('.git-link .count')).toHaveText('4');
   await graphPane.locator('.git-graph-row.head').getByText('Draft the introduction', { exact: true }).waitFor();
   await graphPane.locator('.current-ref').getByText('main', { exact: true }).waitFor();
   await graphPane.locator('.remote-ref').getByText('origin/main', { exact: true }).waitFor();
@@ -1122,6 +1139,18 @@ try {
   assert.equal(await graph.locator('.highlighted').getAttribute('data-commit'), 'bbb2222');
   await proposalTree.locator('.git-worktree-button').click();
   await graph.scrollIntoViewIfNeeded();
+  // Scrolling long history and collapsing it never hides the remote commands.
+  await page.setViewportSize({ width: 1440, height: 600 });
+  const toolbarTop = (await gitToolbar.boundingBox()).y;
+  await gitPanel.locator('.git-panel-content').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  assert.ok(await gitPanel.locator('.git-panel-content').evaluate(el => el.scrollTop > 0));
+  assert.equal((await gitToolbar.boundingBox()).y, toolbarTop);
+  await expect(gitToolbar.getByRole('button', { name: 'Push', exact: true })).toBeInViewport();
+  await graphPane.locator('.git-pane-toggle').click();
+  await expect(gitToolbar.getByRole('button', { name: 'Push', exact: true })).toBeInViewport();
+  await graphPane.locator('.git-pane-toggle').click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gitPanel.locator('.git-panel-content').evaluate(el => { el.scrollTop = 0; });
   await page.screenshot({ path: 'test-results/git-overview-desktop.png' });
   overviewFailure = true;
   await graph.getByRole('button', { name: 'Refresh worktrees and history' }).click();
@@ -1188,17 +1217,17 @@ try {
   await gitPanel.getByRole('status').filter({ hasText: 'Committed def5678 and pushed.' }).waitFor();
   assert.deepEqual(gitCommits.at(-1), { message: 'Add notes', paths: ['notes.md'] });
   assert.deepEqual(gitActions, ['push']);
-  assert.equal(await graph.getByRole('button', { name: 'Push', exact: true }).isDisabled(), true, 'Nothing is left to push');
+  assert.equal(await gitToolbar.getByRole('button', { name: 'Push', exact: true }).isDisabled(), true, 'Nothing is left to push');
   await changes.getByText('No uncommitted changes', { exact: true }).waitFor();
   // A branch and upstream that both moved on merge instead of pulling.
   Object.assign(gitState, { ahead: 1, behind: 2 });
-  await graph.getByRole('button', { name: 'Fetch from the remote', exact: true }).click();
-  await graph.getByRole('button', { name: 'Merge', exact: true }).click();
+  await gitToolbar.getByRole('button', { name: 'Fetch from the remote', exact: true }).click();
+  await gitToolbar.getByRole('button', { name: 'Merge', exact: true }).click();
   const merge = gitPanel.getByRole('group', { name: 'Merge in progress' });
   await merge.getByText('Merging: 1 file has conflicts', { exact: true }).waitFor();
   assert.equal(await gitPanel.getByLabel('Conflict').innerText(), '!');
   assert.equal(await gitPanel.getByRole('textbox', { name: 'Commit message' }).count(), 0);
-  assert.equal(await graph.getByRole('button', { name: 'Push', exact: true }).isDisabled(), true);
+  assert.equal(await gitToolbar.getByRole('button', { name: 'Push', exact: true }).isDisabled(), true);
   await merge.getByRole('button', { name: /^Resolve with / }).click();
   await gitPanel.getByRole('status').filter({ hasText: 'Conflicts resolved. Read the diffs, then commit the merge.' }).waitFor();
   assert.equal(await merge.locator('.git-merge-summary strong').innerText(), 'both');
@@ -1217,6 +1246,15 @@ try {
   assert.equal(await page.title(), 'Example paper · Papilot');
   await worktrees.getByRole('button', { name: `Open task: ${task.title}`, exact: true }).click();
   await page.getByRole('heading', { name: task.title }).waitFor();
+  await page.locator('.git-link').click();
+  await gitPanel.getByRole('textbox', { name: 'Commit message' }).fill('Keep this Git draft.');
+  await pdfLink.click();
+  await expect(page.locator('.new-task-panel')).toBeVisible();
+  await expect(pdfLink).toHaveAttribute('aria-current', 'page');
+  await page.locator('.git-link').click();
+  await expect(gitPanel.getByRole('textbox', { name: 'Commit message' })).toHaveValue('Keep this Git draft.');
+  await gitPanel.getByRole('textbox', { name: 'Commit message' }).fill('');
+  await page.locator(`[data-task="${task.id}"] .task-link`).click();
   console.log('PASS: Each paper has a PDF view with contents, paging, zoom and find; text and region notes are added, deleted and sent as one task; Git changes are diffed, committed and pushed');
 
   const divider = page.getByRole('separator', { name: 'Resize chat panel' });
@@ -1738,7 +1776,10 @@ try {
       await page.getByRole('navigation', { name: 'PDF contents' }).getByRole('button', { name: /^Results/ }).click();
       await pdfPage.waitFor();
       await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
-      await page.getByRole('button', { name: 'Git, 2 changed' }).click();
+      await page.getByRole('button', { name: 'Show task list', exact: true }).click();
+      await page.locator('.git-link').click();
+      await expect(page.locator('.sidebar')).toBeHidden();
+      await expect(page.locator('.git-toolbar').getByRole('button', { name: 'Push', exact: true })).toBeVisible();
       await page.getByRole('region', { name: 'Git status' }).getByText('main.tex', { exact: true }).waitFor();
       const treesToggle = page.getByRole('region', { name: 'Worktrees', exact: true }).locator('.git-pane-toggle');
       if (await treesToggle.getAttribute('aria-expanded') !== 'true') await treesToggle.click();
