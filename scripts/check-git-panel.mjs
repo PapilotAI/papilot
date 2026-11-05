@@ -20,7 +20,7 @@ page.on('pageerror', error => errors.push(error.message));
 const files = [{ path: 'main.tex', status: 'M', staged: false, unstaged: true, incoming: 'M', lines: [18, 4] }, { path: 'chapters/results.tex', status: 'M', staged: false, unstaged: true, lines: [6, 2] }, { path: 'references.bib', status: '?', staged: false, unstaged: true }];
 const longDiff = '@@ -1,9002 +1,9002 @@\n-First result.\n+Updated result.\n' + Array.from({ length: 9000 }, (_, index) => ` Context ${index + 2}\n`).join('') + '-Late result.\n+Late updated result.\n';
 let git = { remote: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 1, head: { hash: 'abc1234', subject: 'Initial', date: 1 }, files: structuredClone(files), merging: null };
-let syncFailure = false, syncConflict = false, syncGate = null, overviewRequests = 0, fetches = 0, incoming = 0;
+let syncFailure = false, syncConflict = false, syncGate = null, overviewRequests = 0, fetches = 0, incoming = 0, historyDiffs = 0;
 const project = { id: 'paper', name: 'Example paper', path: '/tmp/git-panel-fixture', createdAt: 1 };
 const history = [{ hash: 'abc1234'.padEnd(40, '0'), message: 'Refine the discussion\n\nExplain the limitations and next steps.', author: 'Chen', date: Date.now() }, { hash: '1'.repeat(40), message: 'Add comparison results\n\nInclude the baseline and shared workspace results.', author: 'Lin', date: Date.now() - 86400000 }];
 const runtime = { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'model', name: 'Model', isDefault: true, efforts: ['high'], defaultEffort: 'high' }] };
@@ -36,10 +36,11 @@ await context.route('**/api/**', async route => {
   if (url.pathname.endsWith('/manuscript/words')) return json(JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'))[Number(url.searchParams.get('page'))]);
   if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]], builtAt: 1, current: true }, annotations: [] });
   if (url.pathname.endsWith('/git')) return json(git);
+  if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname.endsWith('/git/fetch')) { fetches++; if (incoming) git = { ...git, behind: incoming }; return json({ git }); }
   if (url.pathname.endsWith('/git/overview')) { overviewRequests++; return json({ commits: [], worktrees: [], truncated: false }); }
   if (url.pathname.endsWith('/git/history')) return json({ versions: history, next: null });
-  if (/\/git\/history\/[a-f0-9]+\/diff$/.test(url.pathname)) return json({ path: 'main.tex', diff: '@@ -1 +1 @@\n-First draft\n+Historical result\n', truncated: false });
+  if (/\/git\/history\/[a-f0-9]+\/diff$/.test(url.pathname)) { historyDiffs++; return json({ path: 'main.tex', diff: '@@ -1 +1 @@\n-First draft\n+Historical result\n', truncated: false }); }
   if (/\/git\/history\/[a-f0-9]+$/.test(url.pathname)) return json({ version: history.find(version => url.pathname.endsWith(version.hash)), files: [{ path: 'main.tex', status: 'M' }] });
   if (url.pathname.endsWith('/git/restore')) { requests.push({ action: 'restore', ...route.request().postDataJSON() }); git = { ...git, ahead: git.ahead + 1, head: { hash: '2'.repeat(40), subject: 'Restore version: Add comparison results', date: Date.now() } }; history.unshift({ ...git.head, message: git.head.subject, author: 'Chen' }); return json({ git }); }
   if (url.pathname.endsWith('/git/diff')) {
@@ -98,6 +99,12 @@ try {
   await expect(panel.getByRole('textbox', { name: 'Commit message' })).toBeFocused();
   await versions.locator('.git-version-file').click();
   await expect(page.locator('.git-diff-view')).toContainText('Historical result');
+  const historicalRequests = historyDiffs, liveRequests = diffs.length;
+  await page.clock.fastForward(16000);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.locator('.git-diff-view')).toContainText('Historical result');
+  assert.equal(historyDiffs, historicalRequests, 'Immutable historical diffs do not poll');
+  assert.equal(diffs.length, liveRequests, 'Leaving the working-tree diff stops its refresh');
   // The dedicated workspace releases the PDF and its keyboard shortcuts.
   await expect(page.locator('.manuscript')).toHaveCount(0);
   const swallowed = await page.evaluate(() => {

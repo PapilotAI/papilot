@@ -4,11 +4,12 @@
 .git-workspace-header h2{flex:none;margin:0;font-size:14px;font-weight:600}
 .git-workspace-body{flex:1;min-height:0;min-width:0;display:grid;grid-template-columns:clamp(300px,30%,360px) minmax(0,1fr)}
 .git-workspace .git-panel{min-width:0;border-right:1px solid var(--line)}
-.git-workspace .git-panel-content{overflow:hidden;display:flex;flex-direction:column;padding-bottom:0}
-.git-workspace .git-changes{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+/* If the draft and minimum file list cannot fit, scroll the whole content. */
+.git-workspace .git-panel-content{overflow:auto;display:flex;flex-direction:column;padding-bottom:0}
+.git-workspace .git-changes{flex:1;min-height:0;display:flex;flex-direction:column;overflow:visible}
 .git-workspace .git-changes>.git-pane-header,.git-workspace .git-commit-form{flex:none}
 .git-workspace .git-merge{flex:0 1 auto;overflow:auto;max-height:60%}
-.git-file-lists{flex:1;min-height:0;overflow:auto;padding-bottom:12px}
+.git-file-lists{flex:1;min-height:72px;overflow:auto;padding-bottom:12px}
 .git-details{min-width:0;min-height:0;display:flex;flex-direction:column}
 .git-detail-switcher{flex:none;align-self:flex-start;flex-wrap:wrap;max-width:calc(100% - 24px);margin:8px 12px}
 .git-details .git-detail-switcher>button>span{display:inline}

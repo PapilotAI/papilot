@@ -13,7 +13,9 @@ import { ignorePattern } from '../commit.ts';
 import { AGENT_IDS, AGENT_NAMES, isAgentId, taskFinished } from '../shared.ts';
 import type { TaskCommitReview, LatexInstallation, AgentId, Annotation, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem, Viewer } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
-import { ComposerDraft, sendsMessage, taskTitle, unsentReviewFeedback } from './composer.ts';
+import { reviewDraft, useReviewDraft, reviewNoteSummary, reviewSubmission } from './review-draft.ts';
+import { ReviewDraftCards } from './review-draft-cards.tsx';
+import { ComposerDraft, sendsMessage, taskTitle, pendingReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
 import { type AttachmentDraft, type UploadAttachment } from './attachment-draft.ts';
 import type { Attachment } from '../shared.ts';
@@ -69,7 +71,7 @@ import { UsageSummary } from './usage.tsx';
 import { useNoteUndo } from './use-note-undo.ts';
 import { NoteResultsProvider, NoteResultLinks, useNoteResults } from './note-results.tsx';
 import { usePanelWidth } from './panel-width.tsx';
-import type { OutlineItem, PdfHandle, Rect } from './pdf-view.tsx';
+import type { OutlineItem, PdfHandle, PdfHistoryActions, Rect } from './pdf-view.tsx';
 // pdf.js is large, so the PDF view loads the first time it opens.
 const PdfView = lazy(() => import('./pdf-view.tsx').then(module => ({ default: module.PdfView })));
 import './style.css';
@@ -129,7 +131,7 @@ function useMedia(query: string) {
 // Enter (see sendsMessage), and keeps its actions inside the same surface.
 // With skills, "/" opens the skill menu; the chosen skill sits above the text
 // as a chip, the text becomes optional, and Backspace in an empty box removes it.
-function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, autoFocus, inputRef, footer, action, large, skills, skill, onSkill, attachments, upload, filesDisabled, imageHint }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSubmit: () => void; readOnly?: boolean; autoFocus?: boolean; inputRef?: React.RefObject<HTMLTextAreaElement | null>; footer: React.ReactNode | ((attach: () => void) => React.ReactNode); action: React.ReactNode; attachments?: AttachmentDraft; upload?: UploadAttachment; filesDisabled?: boolean; imageHint?: boolean; large?: boolean; skills?: Skill[]; skill?: Skill | null; onSkill?: (skill: Skill | null) => void }) {
+function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, autoFocus, inputRef, footer, action, large, skills, skill, onSkill, attachments, upload, filesDisabled, imageHint, reviewContent }: { reviewContent?: React.ReactNode; label: string; value: string; placeholder: string; onChange: (value: string) => void; onSubmit: () => void; readOnly?: boolean; autoFocus?: boolean; inputRef?: React.RefObject<HTMLTextAreaElement | null>; footer: React.ReactNode | ((attach: () => void) => React.ReactNode); action: React.ReactNode; attachments?: AttachmentDraft; upload?: UploadAttachment; filesDisabled?: boolean; imageHint?: boolean; large?: boolean; skills?: Skill[]; skill?: Skill | null; onSkill?: (skill: Skill | null) => void }) {
   const fallback = useRef<HTMLTextAreaElement>(null), input = inputRef || fallback;
   const fileInput = useRef<HTMLInputElement>(null), dragDepth = useRef(0);
   const [dragging, setDragging] = useState(false);
@@ -160,6 +162,7 @@ function Composer({ label, value, placeholder, onChange, onSubmit, readOnly, aut
     onDrop={event => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current = 0; setDragging(false); addFiles(Array.from(event.dataTransfer.files)); }}
     onPaste={event => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); addFiles(files); const text = event.clipboardData.getData('text/plain'); if (canAttach && text && input.current) { const area = input.current; onChange(value.slice(0, area.selectionStart) + text + value.slice(area.selectionEnd)); } } }}
     onSubmit={e => { e.preventDefault(); onSubmit(); }} onPointerDown={e => { if (e.target === e.currentTarget) { e.preventDefault(); input.current?.focus(); } }}>
+    {reviewContent}
     {attachments && upload && <><input ref={fileInput} type="file" multiple hidden aria-label={t('Choose attachments')} disabled={!canAttach} onChange={event => { addFiles(Array.from(event.target.files || [])); event.target.value = ''; }}/><DraftAttachments draft={attachments} upload={upload} discard={file => { void api(`/projects/${file.projectId}/attachments/${file.id}/discard`, {}).catch(() => {}); }} disabled={readOnly || filesDisabled}/></>}
     {dragging && <div className="attachment-drop-hint">{t('Drop files to attach')}</div>}
     {imageHint && <p className="attachment-agent-hint">{t('Antigravity opens images through its file tools. For direct image input, choose Codex or Claude.')}</p>}
@@ -238,6 +241,7 @@ function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[
     </GroupCard>)}
     <ol className="sent-notes">{notes.map((note, index) => !note.group && renderNote(note, index))}</ol>
     <MessageAttachments files={item.meta?.attachments}/>
+    {item.meta?.feedback && <details className="feedback-attachment"><summary><Icon name="paper" size={13}/>{t('With review feedback')}</summary><FeedbackDetails feedback={item.meta.feedback}/></details>}
   </div></article>;
 }
 
@@ -307,10 +311,11 @@ function timelineEntries(items: TimelineItem[]) {
   return entries;
 }
 
-function Activity({ task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing, openReview, feedback, connection, tools, lead }: { tools?: React.ReactNode; lead?: React.ReactNode; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
+function Activity({ onRevealQuote, task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, reportError, pause, pausing, openReview, feedback, connection, tools, lead }: { tools?: React.ReactNode; lead?: React.ReactNode; onRevealQuote: () => void; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
   const input = useRef<HTMLTextAreaElement>(null);
+  const reviewNotes = reviewDraft(task.id), notes = useReviewDraft(task.id);
   const [savingModel, setSavingModel] = useState(false);
-  const { text: draft, sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
+  const { text: draft, sending } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
   const viewer = useContext(ViewerContext);
   const files = useAttachmentDraft(`papilot:files:${viewer?.id || 'owner'}:task:${task.id}`);
   const [skill, setSkill] = useState<Skill | null>(null);
@@ -339,13 +344,23 @@ function Activity({ task, runtime, reconnecting, onReconnect, skills, composer, 
     const observer = new ResizeObserver(() => { if (back.current !== undefined) goBack(); else if (shouldFollow.current) latest(); });
     observer.observe(scroller.current); return () => observer.disconnect();
   }, []);
-  async function submit(source: 'draft' | 'feedback') {
-    if (savingModel || composer.sending || ['uncertain', 'deleting'].includes(task.status) || (source === 'draft' && files.draft.getSnapshot().blocked)) return;
-    const chosen = source === 'draft' ? skill : null;
-    const attached = source === 'draft' ? files.draft.getSnapshot().files : [];
-    const pending = composer.submit(source, message => api('/tasks/' + task.id + '/messages', message), chosen?.id, attached.map(file => file.id));
-    try { if (await pending) { files.draft.clear(attached); shouldFollow.current = true; if (chosen) setSkill(current => current === chosen ? null : current); refresh(); } }
-    catch (e) { reportError(e); }
+  const feedbackCount = task.mode === 'review' ? 0 : pendingReviewFeedback(task.review);
+  const readyReview = reviewSubmission(notes, draft, skill?.id);
+  const emptyNotes = notes.notes.length - readyReview.notes.length;
+  const canSend = Boolean(draft.trim() || skill || files.files.length || readyReview.notes.length || readyReview.instructions.trim() || feedbackCount);
+  async function submit() {
+    if (savingModel || composer.sending || ['uncertain', 'deleting'].includes(task.status) || files.draft.getSnapshot().blocked) return;
+    const submitted = reviewSubmission(reviewNotes.getSnapshot(), composer.text, skill?.id), attached = files.draft.getSnapshot().files;
+    const source = !composer.text.trim() && !skill && !attached.length && !submitted.notes.length && !submitted.instructions.trim() && feedbackCount ? 'feedback' : 'draft';
+    reviewNotes.setBusy(true);
+    try {
+      if (await composer.submit(source, message => api('/tasks/' + task.id + '/messages', message), skill?.id, attached.map(file => file.id), submitted.notes.map(reviewNoteSummary), submitted.instructions)) {
+        reviewNotes.clear(submitted); files.draft.clear(attached); shouldFollow.current = true;
+        if (skill) setSkill(current => current === skill ? null : current);
+        refresh();
+      }
+    } catch (e) { reportError(e); }
+    finally { reviewNotes.setBusy(false); }
   }
   const active = ACTIVE.includes(task.status), blocked = ['uncertain', 'deleting'].includes(task.status);
   // The draft re-renders this panel on every keystroke; the same elements let
@@ -353,9 +368,8 @@ function Activity({ task, runtime, reconnecting, onReconnect, skills, composer, 
   const agent = agentName(task), review = task.mode === 'review', root = task.worktree;
   const thread = useMemo(() => timelineEntries(items.filter(item => item.type !== 'reviewOutput').map(item => review && item.type === 'assistant' ? { ...item, text: aiReviewSummary(item.text) } : item))
     .map(entry => entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root}/>), [items, review, agent, root]);
-  const unsent = unsentReviewFeedback(task.review);
-  const hint = task.status === 'deleting' ? t('This task is being deleted') : task.status === 'uncertain' ? t('Check task status before sending') : sendingSource === 'feedback' ? t('Sending feedback…') : sending ? t('Sending…')
-    : unsent ? tn(unsent, '{n} review update will be sent with this message', '{n} review updates will be sent with this message') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : '';
+  const hint = task.status === 'deleting' ? t('This task is being deleted') : task.status === 'uncertain' ? t('Check task status before sending') : sending ? t('Sending…')
+    : emptyNotes ? canSend ? tn(emptyNotes, '{n} empty comment will stay in drafts', '{n} empty comments will stay in drafts') : t('Write a comment or message to send.') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : '';
   return <section id="conversation-panel" className="activity-panel" aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading">{lead}{tools && <div className="panel-tools">{tools}</div>}</div>
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current && back.current === undefined) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); savePlace(place, shouldFollow.current ? undefined : Math.round(el.scrollTop)); } }}><div className="thread">
       {loading && <p className="muted" role="status">{t('Loading conversation…')}</p>}
@@ -370,38 +384,16 @@ function Activity({ task, runtime, reconnecting, onReconnect, skills, composer, 
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
     <div className="composer-wrap">
       {connection}
-      <Composer attachments={task.mode === 'review' ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit('draft')} placeholder={task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : t('Ask a question or request changes…')} skills={task.mode === 'review' ? [] : skills.filter(skill => skill.output !== 'annotations')} skill={skill} onSkill={setSkill}
+      <Composer reviewContent={<ReviewDraftCards task={task} feedbackCount={feedbackCount} onReveal={onRevealQuote}/>} attachments={task.mode === 'review' ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit()} placeholder={task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : notes.notes.length || feedbackCount ? t('Add overall instructions (optional)') : t('Ask a question or request changes…')} skills={task.mode === 'review' ? [] : skills.filter(skill => skill.output !== 'annotations')} skill={skill} onSkill={setSkill}
         footer={attach => <div className="composer-options">{task.mode !== 'review' && <SkillPicker onAttach={attach} skills={skills.filter(skill => skill.output !== 'annotations')} selected={skill} disabled={sending || blocked} onPick={value => { setSkill(value); input.current?.focus(); }}/>}<TaskModelPicker task={task} runtime={runtime} disabled={sending || blocked} reconnecting={reconnecting} onReconnect={onReconnect} save={settings => api<Task>(`/tasks/${task.id}/model`, settings)} onSaving={setSavingModel} refresh={refresh} reportError={reportError}/></div>}
         action={<div className="composer-actions">
           {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
-          {(!active || draft.trim() || skill || files.entries.length || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={(!draft.trim() && !skill && !files.files.length) || files.blocked || sending || savingModel || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
+          {(!active || draft.trim() || skill || files.entries.length || notes.notes.length || feedbackCount || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={!canSend || files.blocked || sending || savingModel || blocked} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
         </div>}/>
       {hint && <p className="composer-hint" role="status">{hint}</p>}
     </div>
   </section>;
 }
-
-// Comments go back to the agent for another round; so does a round that
-// rejected everything. Accepted changes are already in the manuscript, and
-// decisions alone reach the agent with the next message. Shown under the
-// review, or at the end of the chat when the review is hidden.
-function ReviewFeedback({ task, composer, refresh, reportError, onSent, card }: { task: Task; composer: ComposerDraft; refresh: () => void; reportError: (error: unknown) => void; onSent: () => void; card?: boolean }) {
-  const { sending, sendingSource } = useSyncExternalStore(composer.subscribe, composer.getSnapshot);
-  const unsent = unsentReviewFeedback(task.review), comments = task.review?.comments ?? unsent;
-  const done = task.status === 'reviewing' && !task.review?.counts?.pending;
-  const count = unsent || comments;
-  if (!(comments > 0 || (done && unsent > 0 && !task.review?.counts?.accepted)) || task.status === 'deleting') return null;
-  async function send() {
-    if (task.status === 'uncertain') return;
-    try { if (await composer.submit('feedback', message => api('/tasks/' + task.id + '/messages', message))) { refresh(); onSent(); } }
-    catch (error) { reportError(error); }
-  }
-  return <div className={'review-feedback' + (card ? ' card' : '')}>
-    <span><Icon name="chat" size={15}/>{tn(count, '{n} review update not sent yet', '{n} review updates not sent yet')}</span>
-    <button className="button primary compact" title={t('Send your review decisions and comments to the agent')} disabled={sending || task.status === 'uncertain'} onClick={() => void send()}>{sendingSource === 'feedback' ? t('Sending feedback…') : t('Send feedback')}<Icon name="arrowRight" size={14}/></button>
-  </div>;
-}
-
 
 // Shorten an absolute repository path to its last folders for menus.
 function shortPath(value: string) { const parts = value.split('/').filter(Boolean); return (parts.length > 2 ? '…/' : '/') + parts.slice(-2).join('/'); }
@@ -681,7 +673,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
         <button type="button" aria-pressed={detail === 'history'} onClick={() => showDetail('history')}><Icon name="restore" size={16}/><span>{t('Version history')}</span></button>
       </div>
       <div className="git-file-preview" hidden={detail !== 'changes'}>
-        {detail === 'changes' && source?.path ? <GitDiffView key={projectId + ':' + source.list + ':' + historyHash + ':' + source.path} path={source.path} scopeLabel={source.list === 'history' ? source.subject : source.list === 'staged' ? t('Staged changes') : t('Changes')} revision={historyHash || JSON.stringify([git.head?.hash, git.files, diffRefresh])} load={loadDiff} onClose={closeSource} closeLabel={t('Back to files')}/>
+        {detail === 'changes' && source?.path ? <GitDiffView key={projectId + ':' + source.list + ':' + historyHash + ':' + source.path} path={source.path} scopeLabel={source.list === 'history' ? source.subject : source.list === 'staged' ? t('Staged changes') : t('Changes')} revision={historyHash || JSON.stringify([git.head?.hash, git.files, diffRefresh])} live={source.list !== 'history'} load={loadDiff} onClose={closeSource} closeLabel={t('Back to files')}/>
           : <p className="git-empty-diff"><Icon name="check" size={18}/>{files.length ? t('Changes') : t('No uncommitted changes')}</p>}
       </div>
       <div className="git-repository-view" hidden={detail !== 'history'}>
@@ -712,7 +704,9 @@ function NotePlacementWarning() {
   return <small className="note-placement-warning" title={t('The position in the new PDF could not be confirmed. The original text and note are kept.')}><Icon name="alert" size={12}/>{t('Position needs confirmation')}</small>;
 }
 
+type AnnotationChange = { note: Annotation; selected?: boolean } & ({ kind: 'add' | 'remove' } | { kind: 'edit'; comment: string });
 interface NoteActions {
+  history?: PdfHistoryActions;
   selection: ReturnType<typeof useNoteSelection>;
   instructions: ReturnType<typeof useGroupInstructions>;
   group: NoteGroup | null;
@@ -992,7 +986,7 @@ function ManuscriptView({ taskCards, navigationGuard, collapsed, setCollapsed, p
         ? <div className="manuscript-note error brief" role="alert"><span>{t('The latest changes did not compile. This is the last PDF that did.')}</span><button type="button" className="note-link" onClick={() => problems.current?.open()}>{t('Show problems')}</button></div>
         : <div className="manuscript-note error" role="alert"><strong>{t('The manuscript did not compile.')}</strong><pre>{build.error}</pre></div>)}
       {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView ref={pdf} place={'pdf:' + project.id} url={`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`} words={`/api/projects/${project.id}/manuscript/words?key=${build.key}`} notes={numbered.filter(item => item.note.key === build.key)} active={active} region={region} setRegion={setRegion} group={actions.group} onGroupChange={actions.setGroup} markingDisabled={actions.sending}
-          noteActions={{ has: actions.selection.has, toggle: note => actions.selection.set([note.id], !actions.selection.has(note.id)), remove: actions.remove, restore: actions.restore, edit: actions.edit, onEditing: actions.onEditing, onBusy: actions.onReviewBusy, disabled: actions.sending }} onDeselect={() => setActive('')}
+          history={actions.history} noteActions={{ has: actions.selection.has, toggle: note => actions.selection.set([note.id], !actions.selection.has(note.id)), remove: actions.remove, restore: actions.restore, edit: actions.edit, onEditing: actions.onEditing, onBusy: actions.onReviewBusy, disabled: actions.sending }} onDeselect={() => setActive('')}
           onCreate={actions.add} onSelect={async note => { if (await closeReadingNotes()) setActive(note.id); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={pdfTools}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
       {readingNotes && <aside className="pdf-reading-notes" aria-label={t('PDF note library')}><div className="pdf-reading-notes-head"><strong>{t('My notes')}</strong><button type="button" className="icon-button" aria-label={t('Close notes')} onClick={() => void closeReadingNotes()}><Icon name="close" size={16}/></button></div><NotesPanel key={project.id} controller={notesPanel} notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/></aside>}
@@ -1102,11 +1096,19 @@ function App() {
   const [activeNote, setActiveNote] = useState('');
   const [noteGroup, setNoteGroup] = useState<NoteGroup | null>(null);
   const [marking, setMarking] = useState(0);
-  // A deleted note that was in the task returns to it when undone.
-  const annotationUndo = useRef<{ kind: 'add' | 'remove'; note: Annotation; selected?: boolean }[]>([]);
-  const noteEditVersion = useRef(0), noteWrites = useRef(new Map<string, Promise<unknown>>());
-  const undoingAnnotation = useRef(false);
-  useEffect(() => { setNoteGroup(null); annotationUndo.current = []; }, [projectId]);
+  // History belongs to this paper session. A restored note also returns to
+  // the task draft it was in; late requests cannot populate another session.
+  const annotationHistory = useRef({ projectId, undo: [] as AnnotationChange[], redo: [] as AnnotationChange[], busy: false });
+  if (annotationHistory.current.projectId !== projectId) annotationHistory.current = { projectId, undo: [], redo: [], busy: false };
+  const history = annotationHistory.current;
+  const [, refreshHistory] = useState(0);
+  const historyChanged = () => { if (annotationHistory.current === history) refreshHistory(value => value + 1); };
+  const recordAnnotation = (entry: AnnotationChange) => {
+    if (annotationHistory.current !== history || entry.note.projectId !== history.projectId) return;
+    history.undo.push(entry); history.redo = []; historyChanged();
+  };
+  const noteEditVersion = useRef(0), noteWrites = useRef(new Map<string, { saved: Annotation; tail: Promise<void> }>());
+  useEffect(() => { setNoteGroup(null); }, [projectId]);
   const [pdfNoteEditing, setNoteEditing] = useState(false);
   const [reviewNoteBusy, setReviewNoteBusy] = useState(false);
   const [manuscript, setManuscript] = useState<{ projectId: string; data: Manuscript | null; error: string }>({ projectId: '', data: null, error: '' });
@@ -1316,7 +1318,7 @@ function App() {
     const reviewing = skill?.output === 'annotations';
     const attached = reviewing ? [] : noteSelection.selected, files = reviewing ? [] : newFiles.draft.getSnapshot().files;
     const groupInstructions = groupDrafts.forNotes(attached);
-    if ((!text && !skill && !files.length && !attached.some(actionable) && !Object.keys(groupInstructions).length) || (!text && !skill && groupsWithoutInstructions(attached, groupInstructions).length > 0) || (!reviewing && newFiles.draft.getSnapshot().blocked) || creating || marking || noteEditing || reviewNoteBusy || !target) return;
+    if ((!text && !skill && !files.length && !attached.some(actionable) && !Object.keys(groupInstructions).length) || (!text && !skill && groupsWithoutInstructions(attached, groupInstructions).length > 0) || (!reviewing && newFiles.draft.getSnapshot().blocked) || creating || marking || noteEditing || reviewNoteBusy || history.busy || !target) return;
     const input = newTaskInput.current, submittedNotes = new Set(attached.map(note => note.id));
     const restoreFocus = input?.closest('form')?.contains(document.activeElement);
     setCreating(true); setCreateError('');
@@ -1349,10 +1351,13 @@ function App() {
       if (!reviewing) { noteSelection.reset(target); taskCards.forget(); }
       groupDrafts.sent(target, attached, notes);
       setActiveNote(id => submittedNotes.has(id) ? '' : id);
-      setNoteGroup(null); annotationUndo.current = annotationUndo.current.filter(entry => !submittedNotes.has(entry.note.id));
+      setNoteGroup(null);
       // A later Undo may restore a deleted annotation, but its inclusion belonged
       // to the submitted draft. It must not attach itself to the next task.
-      if (!reviewing) annotationUndo.current = annotationUndo.current.map(entry => entry.note.projectId === target ? { ...entry, selected: false } : entry);
+      for (const direction of ['undo', 'redo'] as const) history[direction] = history[direction]
+        .filter(entry => !submittedNotes.has(entry.note.id))
+        .map(entry => !reviewing && entry.note.projectId === target ? { ...entry, selected: false } : entry);
+      historyChanged();
       if (restoreFocus && input?.isConnected && (document.activeElement === document.body || input.closest('form')?.contains(document.activeElement))) input.focus({ preventScroll: true });
       // Reload pending notes from the server: a retry may have returned an
       // earlier successful task, while newer notes still belong to the draft.
@@ -1544,27 +1549,35 @@ function App() {
       try {
         const kind = options?.kind, stamp = options?.stamp;
         const note = await api<Annotation>(`/projects/${project.id}/annotations`, { key: manuscriptData.data.build.key, page, rect, ...(rects.length ? { rects, quote } : kind === 'point' ? { quote } : {}), comment, ...(group ? { group } : {}), ...(kind ? { kind } : {}), ...(stamp ? { stamp } : {}) });
+        if (annotationHistory.current !== history) return;
         withNotes(list => [...list, note]);
-        // Marks saved without a card (a color group, a deletion, a quick note) can be undone with ⌘Z.
+        // Quick marks stay on the page without opening a card.
         const quick = Boolean(group || stamp || kind === 'delete');
         if (quick) setActiveNote(''); else if (options?.reveal !== false) setActiveNote(note.id);
         if (options?.quote) noteSelection.set([note.id], true);
-        if (quick) annotationUndo.current.push({ kind: 'add', note });
+        recordAnnotation({ kind: 'add', note });
       } finally { setMarking(value => value - 1); }
     },
-    // Writes of one note go out one after another, so the server keeps the
-    // last one; the pending text stays on top until the newest write settles.
+    // Each queue retains the last successful server value, independently of
+    // optimistic text. Failed writes must never become an Undo destination.
     async edit(note, comment) {
       const version = ++noteEditVersion.current;
       setPendingComments(current => ({ ...current, [note.id]: { comment, version } }));
-      const write = (noteWrites.current.get(note.id) || Promise.resolve()).catch(() => undefined)
-        .then(() => api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, { comment }));
-      noteWrites.current.set(note.id, write);
-      try {
-        const saved = await write;
+      const queue = noteWrites.current.get(note.id) || { saved: savedNotes?.find(item => item.id === note.id) || note, tail: Promise.resolve() };
+      const write = queue.tail.then(async () => {
+        const before = queue.saved;
+        const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, { comment });
+        queue.saved = saved;
+        if (annotationHistory.current !== history) return;
         withNotes(list => list.map(item => item.id === note.id ? saved : item));
-      } finally {
-        if (noteWrites.current.get(note.id) === write) noteWrites.current.delete(note.id);
+        if (before.comment !== saved.comment) recordAnnotation({ kind: 'edit', note: before, comment: saved.comment });
+      });
+      // Later writes may proceed after a failure; this caller still receives it.
+      const tail = write.catch(() => undefined);
+      queue.tail = tail; noteWrites.current.set(note.id, queue);
+      try { await write; }
+      finally {
+        if (noteWrites.current.get(note.id) === queue && queue.tail === tail) noteWrites.current.delete(note.id);
         setPendingComments(current => {
           if (current[note.id]?.version !== version) return current;
           const next = { ...current }; delete next[note.id]; return next;
@@ -1574,55 +1587,78 @@ function App() {
     async remove(note) {
       const selected = noteSelection.has(note.id);
       await api(`/projects/${note.projectId}/annotations/${note.id}/delete`, {});
+      if (annotationHistory.current !== history) return;
       noteSelection.set([note.id], false);
       withNotes(list => list.filter(item => item.id !== note.id));
       setActiveNote(id => id === note.id ? '' : id);
-      annotationUndo.current.push({ kind: 'remove', note, selected });
+      recordAnnotation({ kind: 'remove', note, selected });
     },
-    // Every Undo (⌘Z, the PDF's and the lists' buttons) comes here, so each one
-    // returns a note to the task it was in and clears its ⌘Z entry.
+    // The deletion toast shares history with the rail and keyboard shortcuts.
     async restore(note) {
       const restored = await api<{ annotations: Annotation[] }>(`/projects/${note.projectId}/annotations/${note.id}/restore`, {});
-      const deletion = annotationUndo.current.filter(entry => entry.kind === 'remove' && entry.note.id === note.id).at(-1);
-      annotationUndo.current = annotationUndo.current.filter(entry => !(entry.kind === 'remove' && entry.note.id === note.id));
+      if (annotationHistory.current !== history) return;
+      const deletion = history.undo.filter(entry => entry.kind === 'remove' && entry.note.id === note.id).at(-1);
+      history.undo = history.undo.filter(entry => !(entry.kind === 'remove' && entry.note.id === note.id));
+      if (deletion) history.redo.push(deletion);
+      historyChanged();
       withNotes(() => restored.annotations); setActiveNote(note.id);
       if (deletion?.selected) noteSelection.set([note.id], true);
     },
     onEditing: setNoteEditing,
     onReviewBusy: setReviewNoteBusy,
-    sending: creating || reviewNoteBusy,
+    sending: creating || reviewNoteBusy || history.busy,
   };
   // Keep task editors alive across tabs, skills and paper switches. Undefined
   // notes mean the paper is still loading, so its drafts must not be pruned.
   const taskCards = useNoteCards(manuscriptData.data ? notes : undefined, noteActions, undefined, project?.id || projectId);
   const noteEditing = pdfNoteEditing || taskCards.editing || taskCards.busy;
-  useNoteUndo(() => {
-    const entry = annotationUndo.current.at(-1);
+  const replayAnnotation = (direction: 'undo' | 'redo') => {
+    const entry = history[direction].at(-1);
     if (!manuscriptOpen || !entry) return false;
-    if (creating || marking || noteEditing || reviewNoteBusy || undoingAnnotation.current) return true;
-    undoingAnnotation.current = true;
+    if (creating || marking || noteEditing || reviewNoteBusy || noteWrites.current.size || history.busy) return true;
+    history.busy = true; historyChanged();
     setError('');
     const { note } = entry;
     void (async () => {
       try {
-        if (entry.kind === 'add') {
+        if (entry.kind === 'edit') {
+          const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, { comment: direction === 'undo' ? note.comment : entry.comment });
+          if (annotationHistory.current !== history) return;
+          withNotes(list => list.map(item => item.id === note.id ? saved : item));
+        } else if ((entry.kind === 'add') === (direction === 'undo')) {
+          const selected = noteSelection.has(note.id);
           await api(`/projects/${note.projectId}/annotations/${note.id}/delete`, {});
+          if (annotationHistory.current !== history) return;
           withNotes(list => list.filter(item => item.id !== note.id));
+          entry.selected = selected; noteSelection.set([note.id], false); setActiveNote(id => id === note.id ? '' : id);
         } else {
-          await noteActions.restore(note);
-          requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-note="${note.id}"] .note-edit-trigger`)?.focus());
+          const restored = await api<{ annotations: Annotation[] }>(`/projects/${note.projectId}/annotations/${note.id}/restore`, {});
+          if (annotationHistory.current !== history) return;
+          withNotes(() => restored.annotations);
+          if (entry.selected) noteSelection.set([note.id], true);
+          if (entry.kind === 'remove') setActiveNote(note.id);
         }
-        annotationUndo.current = annotationUndo.current.filter(item => item !== entry);
+        history[direction] = history[direction].filter(item => item !== entry);
+        history[direction === 'undo' ? 'redo' : 'undo'].push(entry);
       } catch (error) { reportError(error); }
-      finally { undoingAnnotation.current = false; }
+      finally { history.busy = false; historyChanged(); }
     })();
     return true;
-  });
+  };
+  const historyDisabled = creating || Boolean(marking) || noteEditing || reviewNoteBusy || history.busy || noteWrites.current.size > 0;
+  noteActions.history = {
+    canUndo: Boolean(history.undo.length) && !historyDisabled,
+    canRedo: Boolean(history.redo.length) && !historyDisabled,
+    undo: () => { replayAnnotation('undo'); }, redo: () => { replayAnnotation('redo'); },
+  };
+  useNoteUndo(() => replayAnnotation('undo'), undefined, () => replayAnnotation('redo'));
 
   const waiting = state?.tasks.filter(t => t.status === 'waiting_input').length || 0;
   useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + (task ? `${task.title} · Papilot` : gitOpen && project ? `${t('Version Management')} · ${project.name} · Papilot` : manuscriptOpen && project ? `${project.name} · Papilot` : 'Papilot'); }, [waiting, task?.title, manuscriptOpen, gitOpen, project?.name, uiLanguage]);
   const replyNeeded = Boolean(task && state?.requests.some(r => r.taskId === task.id));
   const pending = task?.review?.counts?.pending || 0;
+  const localReview = useReviewDraft(task?.id || '');
+  const hasReviewFeedback = Boolean(reviewSubmission(localReview).notes.length || pendingReviewFeedback(task?.review || null));
   const active = Boolean(task && ACTIVE.includes(task.status));
   const answerOnly = Boolean(task && task.mode !== 'review' && (noManuscriptChanges(task) || (active && task.review?.round === null)));
   // Do not save this as the author's layout preference: switching back to a
@@ -1637,7 +1673,7 @@ function App() {
     onDelete={task && saved && taskFinished(task) ? () => void deleteSavedTask(task) : undefined}/>;
   const merging = task?.reconciliation;
   const mergeWaiting = Boolean(merging && (!merging.ready || (task?.review?.round ?? 0) <= merging.round));
-  const deliveryReady = task?.deferred && task.status === 'reviewing' && !task.pendingReview && task.review?.state === 'done' && !task.review.counts.pending
+  const deliveryReady = !hasReviewFeedback && task?.deferred && task.status === 'reviewing' && !task.pendingReview && task.review?.state === 'done' && !task.review.counts.pending
     && (Boolean(task.review.files?.length) || task.delivery?.mode === 'branch' || task.delivery?.pending || merging);
   const applyKey = task?.id || '';
   if (deliveryReady && !applyStates.current.has(applyKey)) applyStates.current.set(applyKey, new TaskApplyState(merging?.intent?.message || task!.title));
@@ -1650,7 +1686,7 @@ function App() {
   };
   // Older tasks accepted directly into the manuscript; retain their existing
   // commit form while new isolated tasks save only their reviewed delta.
-  const legacyFiles = task && !task.deferred && !projectGit?.merging && task.status === 'reviewing' && !task.pendingReview && !pending
+  const legacyFiles = task && !hasReviewFeedback && !task.deferred && !projectGit?.merging && task.status === 'reviewing' && !task.pendingReview && !pending
     ? (task.review?.files || []).filter(file => projectGit?.files.some(item => item.path === file)) : [];
   const legacyKey = JSON.stringify([task?.id, legacyFiles, task?.committed?.accepted, projectGit?.branch]);
   if (legacyFiles.length && !commitDrafts.current.has(legacyKey)) commitDrafts.current.set(legacyKey, new TaskCommitDraft());
@@ -1671,8 +1707,7 @@ function App() {
     : merging ? <TaskConflict status={task.status} waiting={mergeWaiting} onChat={() => selectLayout('conversation')}/>
     : saved === 'committed' && task.delivery ? savedResult(t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' }))
     : !task.deferred ? legacySave : saved === 'applied' ? savedResult(t('Applied to manuscript')) : null);
-  const reviewFeedback = (card: boolean) => task?.mode === 'review' ? (card && task.aiReview?.notes ? <button type="button" className="ai-review-link" onClick={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }}><Icon name="notes" size={14}/>{tn(task.aiReview.notes, 'View {n} review suggestion', 'View {n} review suggestions')}<Icon name="arrowRight" size={13}/></button> : null) : task && <ReviewFeedback key={'review-feedback:' + task.id} card={card} task={task} composer={composers.current.get(task.id)!} refresh={() => void refresh(true)} reportError={reportError}
-    onSent={() => { if (selectedRef.current !== task.id) return; setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>;
+  const reviewFeedback = (card: boolean) => task?.mode === 'review' ? (card && task.aiReview?.notes ? <button type="button" className="ai-review-link" onClick={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }}><Icon name="notes" size={14}/>{tn(task.aiReview.notes, 'View {n} review suggestion', 'View {n} review suggestions')}<Icon name="arrowRight" size={13}/></button> : null) : null;
   const sidebarToggle = (narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/>{addedTask && !sidebarShown && <span key={addedTask.id} className="task-added-dot" aria-hidden="true"/>}</button>;
   function selectLayout(next: typeof layout) {
     if (next === (mobile ? mobileTab : layout) && !layoutTransition.current) return;
@@ -1755,7 +1790,7 @@ function App() {
         <SkillPicker onAttach={newSkill?.output === 'annotations' ? undefined : attach} skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
         {agentOptions(creating)}
       </div>}
-      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || reviewNoteBusy || noteEditing || (newSkill?.output !== 'annotations' && (newFiles.blocked || marking > 0 || missingGroupDirections)) || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(actionable) && !Object.keys(groupDirections).length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || reviewNoteBusy || noteEditing || history.busy || (newSkill?.output !== 'annotations' && (newFiles.blocked || marking > 0 || missingGroupDirections)) || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(actionable) && !Object.keys(groupDirections).length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
     </div>
@@ -1830,9 +1865,8 @@ function App() {
           <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
           {!mobile && !chatOnly && task.mode !== 'review' && (!task.review?.round || task.status === 'deleting') && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}{!conversationVisible && workspaceViews}<div className="panel-tools">{!conversationVisible && taskStateActions}</div></div>}
           {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('Could not generate the PDF comparison.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
-          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : task.review?.round ? <ReviewFrame key={task.id} task={task} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && <>{taskStateActions}{reviewOpen}</>}</>} completion={chatOnly ? null : applicationStep} onSendNotes={async message => { await api('/tasks/' + task.id + '/messages', message); void refresh(true); }}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>}
-          {!chatOnly && reviewFeedback(false)}
-        </section><Activity key={task.id} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? <>{taskControls}{reviewOpen}</> : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{applicationStep && <div className="review-feedback card commit-card task-delivery">{applicationStep}</div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
+          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : task.review?.round ? <ReviewFrame key={task.id} task={task} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && <>{taskStateActions}{reviewOpen}</>}</>} completion={chatOnly ? null : applicationStep} onComment={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>}
+        </section><Activity key={task.id} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? <>{taskControls}{reviewOpen}</> : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{applicationStep && <div className="review-feedback card commit-card task-delivery">{applicationStep}</div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
       : manuscriptOpen && project ? <ManuscriptView taskCards={taskCards} key={project.id + project.path} navigationGuard={manuscriptNavigationGuard} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} navigation={!mobile ? sidebarToggle : null} project={project} data={shownManuscript} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} onGit={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} reportError={reportError}/>
       : gitOpen && project ? <GitWorkspace key={project.id + project.path} projectId={project.id} navigation={sidebarToggle} git={projectGit} onStatus={status => updateGit(project.id, status)} writer={{ agent: agent.agent, model: agent.model }} tasks={state?.tasks.filter(task => task.projectId === project.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }}/>
       : referencesOpen && project ? <section className="references-page" aria-label={t('Reference check')}>

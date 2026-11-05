@@ -318,7 +318,7 @@ export async function buildApp(options: AppOptions) {
     const skill = name ? findSkill(store.project(task.projectId).path, name) : undefined;
     let reviewNotes: NoteSummary[] | undefined;
     if (b.notes !== undefined) {
-      if (!Array.isArray(b.notes) || !b.notes.length || b.notes.length > 500 || feedback || skill) throw new Error('Select valid review notes.');
+      if (!Array.isArray(b.notes) || !b.notes.length || b.notes.length > 500 || feedback) throw new Error('Select valid review notes.');
       reviewNotes = b.notes.map((note: any) => {
         if (!note || typeof note !== 'object') throw new Error('Select valid review notes.');
         if (note.group !== undefined && !isNoteGroup(note.group)) throw new Error('Invalid annotation group.');
@@ -473,7 +473,7 @@ export async function buildApp(options: AppOptions) {
     if (note.taskId) throw new Error('This note has already been sent.');
     if (note.deletedAt !== undefined) throw new Error('This note has been deleted. Undo the deletion first.');
     const comment = (request.body as any)?.comment;
-    return store.saveAnnotation({ ...note, comment: note.kind === 'delete' ? optional(comment, 'Note', 4000) : string(comment, 'Note', 4000) });
+    return store.saveAnnotation({ ...note, comment: note.group || note.kind === 'delete' ? optional(comment, 'Note', 4000) : string(comment, 'Note', 4000) });
   });
   app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/delete', project(), request => {
     const note = store.annotation(request.params.id, request.params.note);

@@ -12,6 +12,7 @@ await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 900 } });
+await page.clock.install();
 await page.addInitScript(() => localStorage.setItem('papilot:advanced-git', 'on'));
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const project = { id: 'git-paper', name: 'Example paper', path: '/tmp/git-paper', createdAt: 1 };
@@ -23,6 +24,7 @@ const git = { branch: 'main', remote: true, upstream: 'origin/main', ahead: 1, b
 const actions = [];
 const note = { id: 'note-1', projectId: project.id, key: 'fixture', page: 0, rect: [72, 72, 200, 90], rects: [[72, 72, 200, 90]], source: null, quote: 'Fixture', comment: 'Original note', createdAt: 1 };
 let failNoteSave = false;
+let diffText = 'New', diffRequests = 0, diffGate = null;
 const words = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
@@ -42,8 +44,10 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/git/history')) return json({ versions: [], next: null });
   if (url.pathname.endsWith('/git/overview')) return json({ worktrees: [{ path: project.path, current: true, branch: git.branch, head: git.head.hash, status: git }], commits: [{ ...git.head, parents: [], author: 'Author', refs: ['main'] }], truncated: false });
   if (url.pathname.endsWith('/git/diff')) {
-    const file = url.searchParams.get('path');
-    return json({ path: file, diff: `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n-Old ${file}\n+New ${file}\n`, truncated: false });
+    const file = url.searchParams.get('path'), text = diffText;
+    diffRequests++;
+    if (diffGate) await diffGate;
+    return json({ path: file, diff: `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n-Old ${file}\n+${text} ${file}\n`, truncated: false });
   }
   if (url.pathname.endsWith('/git/stage')) {
     const body = route.request().postDataJSON(); actions.push(['stage', body]);
@@ -100,6 +104,32 @@ try {
   await expect(details.getByRole('region', { name: 'Changes in main.tex', exact: true })).toContainText('New main.tex');
   const message = panel.getByRole('textbox', { name: 'Commit message' });
   await message.fill('Keep this commit draft');
+  // Same status and line counts must not leave an outdated working-tree diff.
+  diffText = 'Updated on focus';
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(details.locator('.git-diff-view')).toContainText('Updated on focus main.tex');
+  await expect(message).toBeFocused();
+  diffText = 'Updated by polling';
+  await page.clock.fastForward(5100);
+  await expect(details.locator('.git-diff-view')).toContainText('Updated by polling main.tex');
+  await expect(message).toBeFocused();
+  // Slow requests are allowed to finish, without overlapping or being aborted
+  // by a polling interval or repeated focus/visibility events.
+  let releaseDiff;
+  diffGate = new Promise(resolve => { releaseDiff = resolve; });
+  diffText = 'Slow update';
+  const beforeSlow = diffRequests;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => diffRequests).toBe(beforeSlow + 1);
+  await page.clock.fastForward(16000);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  assert.equal(diffRequests, beforeSlow + 1, 'Only one live diff request may be in flight');
+  diffGate = null; releaseDiff();
+  await expect(details.locator('.git-diff-view')).toContainText('Slow update main.tex');
+  diffText = 'New';
   await panel.getByRole('button', { name: 'references.bib', exact: true }).click();
   await expect(details.getByRole('region', { name: 'Changes in references.bib', exact: true })).toContainText('New references.bib');
   await details.locator('.git-detail-switcher').getByRole('button', { name: 'Version history', exact: true }).click();
@@ -153,13 +183,32 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
     await page.screenshot({ path: `test-results/git-workspace-${width}.png` });
   }
+  // In short windows a multiline draft must not clip the commit action or files.
+  await message.fill('Explain this revision\n\nClarify the definitions.\nAdd the missing argument.\nDocument assumptions.\nUpdate the examples.\nExplain the edge cases.\nKeep the original notation.');
+  const centerClickable = locator => locator.evaluate(el => {
+    const rect = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+  });
+  for (const size of [{ width: 390, height: 568 }, { width: 1440, height: 400 }]) {
+    await page.setViewportSize(size);
+    const commit = panel.getByRole('button', { name: 'Commit', exact: true });
+    await commit.scrollIntoViewIfNeeded();
+    await expect.poll(() => centerClickable(commit)).toBe(true);
+    await page.screenshot({ path: `test-results/git-workspace-short-${size.width}.png` });
+    const file = panel.getByRole('button', { name: 'main.tex', exact: true });
+    await file.scrollIntoViewIfNeeded();
+    await expect.poll(() => centerClickable(file)).toBe(true);
+    await file.click();
+    await expect(details.locator('.git-diff-view')).toContainText('New main.tex');
+  }
+  await page.setViewportSize({ width: 820, height: 800 });
   // Git keeps the manuscript's collapsed preference and PDF view separate.
   await page.getByRole('button', { name: 'Show task list', exact: true }).click();
   await page.locator('.manuscript-link').click();
   await expect(page.locator('.manuscript-side')).toBeHidden();
   await expect(page.locator('.git-workspace')).toHaveCount(0);
   assert.deepEqual(errors, []);
-  console.log('Git workspace passed: left-side controls, separate diff/history, navigation and draft restoration, pinned commit controls, staging/commit/push, responsive layouts.');
+  console.log('Git workspace passed: left-side controls, separate diff/history, navigation and draft restoration, live and slow diff refresh, pinned commit controls, staging/commit/push, responsive and short-window layouts.');
 } catch (error) {
   if (errors.length) console.error('Page errors:', errors);
   await page.screenshot({ path: 'test-results/git-workspace-failure.png' });
