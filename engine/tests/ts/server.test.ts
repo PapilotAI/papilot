@@ -163,6 +163,38 @@ it("waits for cache cleanup before starting newly queued builds", async () => {
   await app.publisher.join();
 });
 
+it("reports the full baseline and both parallel compilations while a review is building", async () => {
+  const task = app.tasks.create("progress");
+  f.edit(task, METHOD, "Method sentence 0.", "A revised introduction.");
+  vi.spyOn(app.publisher, "pruneCache").mockResolvedValue();
+  vi.spyOn(Builder.prototype, "planAsync").mockResolvedValue(["sections/method"]);
+  type Progress = import("../../src/types.ts").BuildProgress;
+  type Build = import("../../src/types.ts").BuildInfo;
+  const builds: { progress: (value: Progress) => void; resolve: (value: Build) => void; reject: (error: Error) => void }[] = [];
+  vi.spyOn(Builder.prototype, "build").mockImplementation((_rev, _targets, _seed, options) => new Promise((resolve, reject) => {
+    builds.push({ progress: options!.progress!, resolve, reject });
+  }));
+  const job = app.publisher.submit(task.name);
+  const status = async () => (await server.inject({ url: `/api/jobs/${job.id}`, headers: headers() })).json();
+  const progress: Progress = { step: "tex", pass: 1, pages: 23, total: 180 };
+  const built: Build = { key: "seed", tree: "tree", targets: ["full"], root: f.root, cwd: f.root, pdf: "unused.pdf", seconds: 1, warnings: [] };
+  await vi.waitFor(() => expect(builds).toHaveLength(1));
+  builds[0].progress(progress);
+  expect(await status()).toMatchObject({ status: "running", phase: "build", createdAt: job.created * 1000, progress: { baseline: progress } });
+  builds[0].resolve(built);
+  await vi.waitFor(() => expect(builds).toHaveLength(3));
+  builds[1].progress({ ...progress, pages: 5, total: 12 });
+  builds[2].progress({ ...progress, pass: 2, pages: 7, total: 13 });
+  expect((await status()).progress).toEqual({ baseline: { ...progress, pages: 5, total: 12 }, revised: { ...progress, pass: 2, pages: 7, total: 13 } });
+  builds[1].resolve(built);
+  await vi.waitFor(async () => expect((await status()).progress.baseline).toBeUndefined());
+  expect((await status()).progress.revised.pages).toBe(7);
+  builds[2].reject(new Error("Compiler stopped"));
+  await app.publisher.join();
+  expect(await status()).toMatchObject({ status: "failed", error: "Compiler stopped" });
+  expect((await status()).progress).toBeUndefined();
+});
+
 it("replays build requests across lost responses and server restarts without new jobs", async () => {
   app.tasks.create("a");
   app.tasks.create("b");
