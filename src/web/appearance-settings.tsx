@@ -42,7 +42,7 @@ function PaperAppearanceOptions<T extends Appearance['review']>({ label, name, v
   return <div className="segmented appearance-paper-options" role="radiogroup" aria-label={label}>
     {options.map(mode => <label key={mode} className={value === mode ? 'checked' : undefined}>
       <input type="radio" name={name} value={mode} checked={value === mode} onChange={() => onChange(mode)}/>
-      <span>{mode === 'pdf' ? 'PDF' : mode === 'theme' ? t('Auto') : t('Light')}</span>
+      <span>{mode === 'pdf' ? 'PDF' : mode === 'theme' ? t('Auto') : t('Original')}</span>
     </label>)}
   </div>;
 }

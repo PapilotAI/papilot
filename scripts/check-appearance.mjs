@@ -82,7 +82,7 @@ try {
   await background.fill('#252229');
   await background.press('Enter');
   await rootHas('--bg', '#252229');
-  await dialog.getByRole('radiogroup', { name: 'PDF appearance', exact: true }).getByRole('radio', { name: 'Light', exact: true }).check();
+  await dialog.getByRole('radiogroup', { name: 'PDF appearance', exact: true }).getByRole('radio', { name: 'Original', exact: true }).check();
   await rootHas('--pdf-filter', 'none');
   assert.equal(await variable(page.frameLocator('.review-frame'), '--pdf-filter'), 'none');
   const reviewOptions = dialog.getByRole('radiogroup', { name: 'Review appearance', exact: true });
@@ -116,7 +116,7 @@ try {
   await page.bringToFront();
   await reviewOptions.getByRole('radio', { name: 'PDF', exact: true }).check();
   await other.waitForFunction(() => JSON.parse(localStorage.getItem('papilot:appearance')).review === 'pdf');
-  await reviewOptions.getByRole('radio', { name: 'Light', exact: true }).check();
+  await reviewOptions.getByRole('radio', { name: 'Original', exact: true }).check();
   await other.waitForFunction(() => JSON.parse(localStorage.getItem('papilot:appearance')).review === 'light');
   await choose('Theme', 'slate');
   await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--bg') === '#f6f7f8');

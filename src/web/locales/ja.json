@@ -47,7 +47,6 @@
   "Added {n} patterns to .gitignore.": "{n} 件のパターンを .gitignore に追加しました。",
   "Address reviewers": "査読者への対応",
   "Address {n} PDF notes": "{n} 件のPDF注釈に対応",
-  "Advanced": "詳細設定",
   "After": "変更後",
   "After you mark text with the magic pen, its wheel offers these notes, clockwise from the top. Each is sent to the agent as the instruction for that text.": "マジックペンでテキストをマークすると、ホイールの上部から時計回りにこれらの注釈が表示されます。選択した注釈は、そのテキストに対する指示としてエージェントに送信されます。",
   "Agent configuration": "エージェントの構成",
@@ -1289,5 +1288,6 @@
   "Auto": "自動",
   "PDF uses the setting above.": "PDF は上の設定を使用します。",
   "Review appearance": "レビューの外観",
-  "Auto matches the interface mode.": "自動ではインターフェースのモードに合わせます。"
+  "Auto matches the interface mode.": "自動ではインターフェースのモードに合わせます。",
+  "Original": "元の色"
 }

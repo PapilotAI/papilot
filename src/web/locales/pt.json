@@ -47,7 +47,6 @@
   "Added {n} patterns to .gitignore.": "{n} padrões adicionados ao .gitignore.",
   "Address reviewers": "Responder aos revisores",
   "Address {n} PDF notes": "Resolver {n} anotações do PDF",
-  "Advanced": "Avançado",
   "After": "Depois",
   "After you mark text with the magic pen, its wheel offers these notes, clockwise from the top. Each is sent to the agent as the instruction for that text.": "Depois de marcar o texto com a caneta mágica, a roda oferece estas anotações, em sentido horário a partir do topo. Cada uma é enviada ao agente como a instrução para esse texto.",
   "Agent configuration": "Configuração do agente",
@@ -1289,5 +1288,6 @@
   "Auto": "Automático",
   "PDF uses the setting above.": "PDF usa a configuração acima.",
   "Review appearance": "Aparência da revisão",
-  "Auto matches the interface mode.": "Automático usa o modo da interface."
+  "Auto matches the interface mode.": "Automático usa o modo da interface.",
+  "Original": "Original"
 }

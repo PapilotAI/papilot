@@ -47,7 +47,6 @@
   "Added {n} patterns to .gitignore.": "已將 {n} 個樣式加入 .gitignore。",
   "Address reviewers": "回覆審閱者",
   "Address {n} PDF notes": "處理 {n} 則 PDF 註解",
-  "Advanced": "進階",
   "After": "修改後",
   "After you mark text with the magic pen, its wheel offers these notes, clockwise from the top. Each is sent to the agent as the instruction for that text.": "用魔法筆標記文字後，轉盤會從上方依順時針方向提供這些註解。選取後會作為該段文字的指令傳送給智慧代理。",
   "Agent configuration": "智慧代理設定",
@@ -1289,5 +1288,6 @@
   "Auto": "自動",
   "PDF uses the setting above.": "PDF 使用上方的設定。",
   "Review appearance": "審閱外觀",
-  "Auto matches the interface mode.": "自動使用目前的介面模式。"
+  "Auto matches the interface mode.": "自動使用目前的介面模式。",
+  "Original": "原始"
 }

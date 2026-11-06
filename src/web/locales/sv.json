@@ -47,7 +47,6 @@
   "Added {n} patterns to .gitignore.": "Lade till {n} mönster i .gitignore.",
   "Address reviewers": "Bemöt granskare",
   "Address {n} PDF notes": "Åtgärda {n} PDF-anteckningar",
-  "Advanced": "Avancerat",
   "After": "Efter",
   "After you mark text with the magic pen, its wheel offers these notes, clockwise from the top. Each is sent to the agent as the instruction for that text.": "När du har markerat text med magiska pennan visar hjulet dessa anteckningar medurs uppifrån. Var och en skickas till agenten som instruktion för texten.",
   "Agent configuration": "Agentkonfiguration",
@@ -1289,5 +1288,6 @@
   "Auto": "Auto",
   "PDF uses the setting above.": "PDF använder inställningen ovan.",
   "Review appearance": "Granskningens utseende",
-  "Auto matches the interface mode.": "Auto använder gränssnittets läge."
+  "Auto matches the interface mode.": "Auto använder gränssnittets läge.",
+  "Original": "Original"
 }

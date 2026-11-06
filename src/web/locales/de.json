@@ -47,7 +47,6 @@
   "Added {n} patterns to .gitignore.": "{n} Muster zu .gitignore hinzugefügt.",
   "Address reviewers": "Auf Gutachter eingehen",
   "Address {n} PDF notes": "{n} PDF-Anmerkungen bearbeiten",
-  "Advanced": "Erweitert",
   "After": "Nachher",
   "After you mark text with the magic pen, its wheel offers these notes, clockwise from the top. Each is sent to the agent as the instruction for that text.": "Nachdem Sie Text mit dem Zauberstift markiert haben, bietet dessen Rad diese Anmerkungen im Uhrzeigersinn von oben an. Jede wird als Anweisung für diesen Text an den Agenten gesendet.",
   "Agent configuration": "Agent-Konfiguration",
@@ -1289,5 +1288,6 @@
   "Auto": "Automatisch",
   "PDF uses the setting above.": "PDF verwendet die obige Einstellung.",
   "Review appearance": "Darstellung der Überprüfung",
-  "Auto matches the interface mode.": "Automatisch übernimmt den Modus der Oberfläche."
+  "Auto matches the interface mode.": "Automatisch übernimmt den Modus der Oberfläche.",
+  "Original": "Original"
 }
