@@ -6,7 +6,7 @@ import type { SystemRequirements } from '../shared.ts';
 
 type Probe = (file: string, args: string[], env: NodeJS.ProcessEnv) => Promise<boolean>;
 const command: Probe = (file, args, env) => new Promise(resolve => {
-  const child = execFile(file, args, { env, cwd: os.homedir(), timeout: 5000, killSignal: 'SIGKILL', maxBuffer: 128 * 1024 }, error => resolve(!error));
+  const child = execFile(file, args, { env, cwd: os.homedir(), windowsHide: true, timeout: 5000, killSignal: 'SIGKILL', maxBuffer: 128 * 1024 }, error => resolve(!error));
   child.stdin?.end();
 });
 
