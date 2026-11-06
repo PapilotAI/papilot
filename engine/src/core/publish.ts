@@ -198,12 +198,13 @@ export class Publisher {
   // for every page of a long baseline or either parallel comparison build.
   private builds = new Map<string, Partial<Record<"baseline" | "revised", BuildProgress>>>();
   progress(id: string) { return this.builds.get(id); }
-  private async compile(job: Pick<Job, "id">, side: "baseline" | "revised", builder: Builder, rev: string, targets = ["full"], seed: BuildInfo | null = null) {
+  private async compile(job: Pick<Job, "id">, side: "baseline" | "revised", builder: Builder, rev: string, targets = ["full"], seed: BuildInfo | null = null, asSeed = false) {
     const progress = this.builds.get(job.id) ?? {};
     this.builds.set(job.id, progress);
     progress[side] = { step: "tex", pass: 0, pages: 0, total: null };
     try {
-      return await builder.build(rev, targets, seed, { progress: value => { progress[side] = value; } });
+      const options = { progress: (value: BuildProgress) => { progress[side] = value; } };
+      return await (asSeed ? builder.buildSeed(rev, options) : builder.build(rev, targets, seed, options));
     } finally {
       delete progress[side];
       if (!Object.keys(progress).length) this.builds.delete(job.id);
@@ -459,7 +460,7 @@ export class Publisher {
         );
       throw error;
     };
-    const seed = targets[0] !== "full" ? await this.compile(job, "baseline", builder, task.base).catch(failed("The comparison baseline could not be compiled.")) : null;
+    const seed = targets[0] !== "full" ? await this.compile(job, "baseline", builder, task.base, ["full"], null, true).catch(failed("The comparison baseline could not be compiled.")) : null;
     // Both versions compile at once: each needs only the seed.
     const baseline = this.compile(job, "baseline", builder, before, targets, seed).catch(failed("The comparison baseline could not be compiled.")),
       revised = this.compile(job, "revised", builder, after, targets, seed).catch(failed("The revised document could not be compiled."));

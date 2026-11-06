@@ -338,6 +338,41 @@ export class Builder {
         selected.add(dependency);
     return targets.filter((t) => selected.has(t));
   }
+  /** A chapter comparison needs the fixed baseline's auxiliary files, not a
+   *  freshly dated full PDF. Reuse that exact snapshot even across days and
+   *  app upgrades, with the same compatibility checks as incremental builds. */
+  async buildSeed(rev: string, options: { progress?: (progress: BuildProgress) => void } = {}): Promise<BuildInfo> {
+    let version: string;
+    try { version = await commandVersion(this.project.engine); }
+    catch { return this.build(rev, ["full"], null, options); }
+    const tree = await this.repo.treeIdAsync(rev, this.project.source_dir),
+      context = hash(JSON.stringify([signature(this.project), version]));
+    let incomplete = false;
+    for (const entry of this.recent(["full"])) {
+      if (entry.context !== context || (entry.tree && entry.tree !== tree)
+        || (process.env.SOURCE_DATE_EPOCH && entry.date !== process.env.SOURCE_DATE_EPOCH)) continue;
+      let matched = false;
+      try {
+        const folder = path.join(this.cache, entry.key), info = await this.finished(folder);
+        if (!info || info.tree !== tree || JSON.stringify(info.targets) !== '["full"]') continue;
+        matched = true;
+        const main = path.posix.basename(this.project.main), out = path.dirname(info.pdf),
+          auxiliary = new Set([path.basename(main, ".tex") + ".aux"]);
+        await fs.promises.access(path.join(info.cwd, main));
+        // A PDF alone is not a seed: the omitted chapters need their labels
+        // and counters. An incomplete cache falls back to a normal build.
+        for (const file of auxiliary) {
+          const text = await fs.promises.readFile(path.join(out, file), "utf8");
+          for (const match of text.matchAll(/\\@input\{([^}]+\.aux)\}/g)) auxiliary.add(match[1]);
+        }
+        await this.remember(["full"], { ...entry, tree });
+        return info;
+      } catch { incomplete ||= matched; }
+    }
+    // A cached PDF with missing auxiliary state must not be returned again
+    // by the normal build cache, even if it was made earlier today.
+    return this.build(rev, ["full"], null, { ...options, ...(incomplete ? { force: true } : {}) });
+  }
   async build(
     rev: string,
     targets = ["full"],

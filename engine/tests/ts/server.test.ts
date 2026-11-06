@@ -168,6 +168,7 @@ it("reports the full baseline and both parallel compilations while a review is b
   f.edit(task, METHOD, "Method sentence 0.", "A revised introduction.");
   vi.spyOn(app.publisher, "pruneCache").mockResolvedValue();
   vi.spyOn(Builder.prototype, "planAsync").mockResolvedValue(["sections/method"]);
+  const seed = vi.spyOn(Builder.prototype, "buildSeed").mockImplementation(function (this: Builder, rev, options) { return this.build(rev, ["full"], null, options); });
   type Progress = import("../../src/types.ts").BuildProgress;
   type Build = import("../../src/types.ts").BuildInfo;
   const builds: { progress: (value: Progress) => void; resolve: (value: Build) => void; reject: (error: Error) => void }[] = [];
@@ -179,6 +180,7 @@ it("reports the full baseline and both parallel compilations while a review is b
   const progress: Progress = { step: "tex", pass: 1, pages: 23, total: 180 };
   const built: Build = { key: "seed", tree: "tree", targets: ["full"], root: f.root, cwd: f.root, pdf: "unused.pdf", seconds: 1, warnings: [] };
   await vi.waitFor(() => expect(builds).toHaveLength(1));
+  expect(seed).toHaveBeenCalledWith(task.base, expect.objectContaining({ progress: expect.any(Function) }));
   builds[0].progress(progress);
   expect(await status()).toMatchObject({ status: "running", phase: "build", createdAt: job.created * 1000, progress: { baseline: progress } });
   builds[0].resolve(built);

@@ -115,7 +115,7 @@ export async function view(
     ]);
   let build: BuildInfo;
   try {
-    const seed = targets[0] !== "full" ? await builder.build(task.base) : null;
+    const seed = targets[0] !== "full" ? await builder.buildSeed(task.base) : null;
     build = await builder.build(request.accepted ? before : after, targets, seed);
   } catch (error) {
     if (!(error instanceof BuildError)) throw error;
