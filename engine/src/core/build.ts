@@ -32,6 +32,14 @@ const AUXILIARY = new Set([
   ".out",
   ".thm",
 ]);
+// Only generated-state diagnostics justify rebuilding a cached seed. Source
+// errors and interrupted compilers must keep their original failure.
+export function auxiliaryBuildError(error: unknown): error is BuildError {
+  return error instanceof BuildError && error.details.some((line) => {
+    const file = /(?:^|[/\\\s(])(?:\.\/)?build[/\\]([^:\r\n]+):\d+:/.exec(line)?.[1];
+    return file !== undefined && AUXILIARY.has(path.extname(file));
+  });
+}
 // Output that TeX writes for this folder: SyncTeX data and the log name its
 // absolute path.
 const OUTPUT = /\.(?:pdf|xdv|dvi|log|synctex(?:\.gz)?)$/i;
@@ -342,7 +350,8 @@ export class Builder {
   /** A chapter comparison needs the fixed baseline's auxiliary files, not a
    *  freshly dated full PDF. Reuse that exact snapshot even across days and
    *  app upgrades, with the same compatibility checks as incremental builds. */
-  async buildSeed(rev: string, options: { progress?: (progress: BuildProgress) => void } = {}): Promise<BuildInfo> {
+  async buildSeed(rev: string, options: { force?: boolean; progress?: (progress: BuildProgress) => void } = {}): Promise<BuildInfo> {
+    if (options.force) return this.build(rev, ["full"], null, options);
     let version: string;
     try { version = await commandVersion(this.project.engine); }
     catch { return this.build(rev, ["full"], null, options); }
