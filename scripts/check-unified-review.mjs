@@ -13,7 +13,7 @@ await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
-const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 1000 } });
+const page = await browser.newPage({ locale: 'en-US', hasTouch: process.env.PAPILOT_REVIEW_TOOLS_TOUCH === '1', viewport: { width: 1440, height: 1000 } });
 page.setDefaultTimeout(15000);
 const errors = []; page.on('pageerror', error => { errors.push(error.message); console.error('PAGE ERROR', error.message); });
 const prefix = '/review/paper';

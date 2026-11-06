@@ -41,6 +41,18 @@ function rangeMark(layer: Layer, range: Range) {
   return quote && rects.length ? mark(layer, mergeLines(rects), quote, false) : null;
 }
 
+function pointMark(layer: Layer, clientX: number, clientY: number): Mark {
+  const box = layer.strip.getBoundingClientRect(), x = unit((clientX - box.left) / box.width), y = unit((clientY - box.top) / box.height);
+  const glyphs = Array.from(layer.strip.querySelectorAll<HTMLElement>('.pdf-glyph')).map(element => ({ element, box: element.getBoundingClientRect() }));
+  const distance = (rect: DOMRect) => Math.max(rect.top - clientY, clientY - rect.bottom, 0) * 4 + Math.max(rect.left - clientX, clientX - rect.right, 0);
+  const nearest = glyphs.sort((a, b) => distance(a.box) - distance(b.box))[0];
+  const line = nearest ? glyphs.filter(glyph => glyph.element.parentElement === nearest.element.parentElement).sort((a, b) => a.box.left - b.box.left) : [];
+  const before = line.filter(glyph => (glyph.box.left + glyph.box.right) / 2 < clientX).map(glyph => glyph.element.textContent).join('');
+  const after = line.filter(glyph => (glyph.box.left + glyph.box.right) / 2 >= clientX).map(glyph => glyph.element.textContent).join('');
+  const quote = `${before}‸${after}`.replace(/\s+/g, ' ').trim();
+  return { ...mark(layer, [[unit(x - .006), unit(y - .004), unit(x + .006), unit(y + .004)]], quote, false), kind: 'point' };
+}
+
 // The menu for a touch selection floats in the viewer above the selection,
 // or below it near the top, and follows it as the paper scrolls.
 function SelectionMenu({ doc, layer, selection, group, onAdd }: { doc: Document; layer: Layer; selection: Mark; group: NoteGroup | null; onAdd: () => void }) {
@@ -146,14 +158,33 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
     const selectionChanged = () => { clearTimeout(timer); timer = setTimeout(select, 100); };
     doc.addEventListener('selectionchange', selectionChanged);
     let disposed = false;
+    let pressed: { layer: Layer; x: number; y: number; at: number } | null = null;
+    const press = (event: PointerEvent) => {
+      const target = event.target as Element, strip = target.closest<HTMLElement>('.pdf-strip');
+      const layer = strip && mounted.get(strip);
+      pressed = event.button === 0 && layer && !target.closest('button,a,input,textarea') ? { layer, x: event.clientX, y: event.clientY, at: performance.now() } : null;
+    };
     const marked = (event: PointerEvent) => {
-      if (event.pointerType === 'touch' || !(event.target as Element).closest('.pdf-text')) return;
+      const start = pressed; pressed = null;
+      if ((event.target as Element).closest('button,a,input,textarea')) return;
+      // Long presses belong to the touch-selection handles and their menu.
+      if (event.pointerType === 'touch' && (current.current.tool !== 'magic' || touch.current?.active() || !start || performance.now() - start.at >= 450)) return;
+      if (!start && !(event.target as Element).closest('.pdf-strip')) return;
       if (!['note', 'delete', 'magic'].includes(current.current.tool)) return;
+      // A native selection can end in the blank margin, outside the text layer.
+      // A click with the magic pen marks a point, whether on text or whitespace.
       setTimeout(() => {
         if (disposed) return;
-        const value = select(); if (value) current.current.markSelection(value, event.clientX, event.clientY);
+        const value = select();
+        if (value) current.current.markSelection(value, event.clientX, event.clientY);
+        else if (start && current.current.tool === 'magic' && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 6) {
+          current.current.markSelection(pointMark(start.layer, event.clientX, event.clientY), event.clientX, event.clientY);
+        }
       }, 0);
     };
+    const cancelPress = () => { pressed = null; };
+    doc.addEventListener('pointercancel', cancelPress);
+    doc.addEventListener('pointerdown', press);
     doc.addEventListener('pointerup', marked);
     // Touch screens select glyphs with Papilot's own handles and menu
     // (review-notes.css turns native selection off there).
@@ -173,7 +204,7 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
     });
     return () => {
       disposed = true; clearTimeout(timer); observer.disconnect(); touch.current?.stop(); touch.current = null;
-      doc.removeEventListener('selectionchange', selectionChanged); doc.removeEventListener('pointerup', marked);
+      doc.removeEventListener('selectionchange', selectionChanged); doc.removeEventListener('pointercancel', cancelPress); doc.removeEventListener('pointerdown', press); doc.removeEventListener('pointerup', marked);
       for (const layer of mounted.values()) layer.element.remove();
     };
   }, [doc, task.review?.round]);
@@ -271,16 +302,8 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
         const quote = (start.layer.strip.querySelector('.pdf-text')?.textContent || '').replace(/\s+/g, ' ').trim();
         edit(mark(start.layer, [rect], quote, true));
       }} onPointerCancel={() => { origin.current = null; setDrag(null); }}/>}
-      {!busy && !hand && (tool === 'point' || tool === 'magic') && <div className="review-point-capture" onClick={event => {
-        const box = layer.strip.getBoundingClientRect(), x = unit((event.clientX - box.left) / box.width), y = unit((event.clientY - box.top) / box.height);
-        const glyphs = Array.from(layer.strip.querySelectorAll<HTMLElement>('.pdf-glyph')).map(element => ({ element, box: element.getBoundingClientRect() }));
-        const distance = (rect: DOMRect) => Math.max(rect.top - event.clientY, event.clientY - rect.bottom, 0) * 4 + Math.max(rect.left - event.clientX, event.clientX - rect.right, 0);
-        const nearest = glyphs.sort((a, b) => distance(a.box) - distance(b.box))[0];
-        const line = nearest ? glyphs.filter(glyph => glyph.element.parentElement === nearest.element.parentElement).sort((a, b) => a.box.left - b.box.left) : [];
-        const before = line.filter(glyph => (glyph.box.left + glyph.box.right) / 2 < event.clientX).map(glyph => glyph.element.textContent).join('');
-        const after = line.filter(glyph => (glyph.box.left + glyph.box.right) / 2 >= event.clientX).map(glyph => glyph.element.textContent).join('');
-        const quote = `${before}‸${after}`.replace(/\s+/g, ' ').trim();
-        markSelection({ ...mark(layer, [[unit(x - .006), unit(y - .004), unit(x + .006), unit(y + .004)]], quote, false), kind: 'point' }, event.clientX, event.clientY);
+      {!busy && !hand && tool === 'point' && <div className="review-point-capture" onClick={event => {
+        markSelection(pointMark(layer, event.clientX, event.clientY), event.clientX, event.clientY);
       }}/>}
       {drag?.key === layer.key && <div className="review-note-box" style={percent(drag.rect)}/>}
       {selection?.handles && selection.strip === layer.key && <>

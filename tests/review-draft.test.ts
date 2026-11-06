@@ -116,3 +116,17 @@ test('review history preserves written text and drops redo after a new mark or s
   draft.setBusy(false); draft.add({ ...mark, kind: 'delete' }); assert.equal(draft.redo(), false);
   draft.clear(reviewSubmission(draft.getSnapshot())); assert.equal(draft.undo(), false);
 });
+
+
+test('review marks work on HTTP tailnet addresses without crypto.randomUUID', () => {
+  const descriptor = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
+  Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined });
+  try {
+    const draft = new ReviewDraft('task', storage()); draft.add(mark); draft.add(mark);
+    const ids = draft.getSnapshot().notes.map(note => note.id);
+    assert.match(ids[0], /^[a-f0-9]{32}$/); assert.notEqual(ids[0], ids[1]);
+  } finally {
+    if (descriptor) Object.defineProperty(crypto, 'randomUUID', descriptor);
+    else Reflect.deleteProperty(crypto, 'randomUUID');
+  }
+});

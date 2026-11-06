@@ -24,7 +24,9 @@ export function useReviewToolKeys(options: {
       if (documents.some(document => document.querySelector('dialog[open],[aria-modal="true"],[popover]:popover-open:not(.rail-tip)'))) return;
       if (event.currentTarget === document && !target?.closest('.review-viewport')) return;
       if (shortcutAction(event, state.shortcuts)) return;
-      if (event.code === 'Space') { event.preventDefault(); event.stopPropagation(); space = true; setHand(true); }
+      if (event.code === 'Space') {
+        if (target?.closest('button,a,[role="button"]')) return;
+        event.preventDefault(); event.stopPropagation(); space = true; setHand(true); }
       else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); state.lock(null); state.choose('select'); }
       else if (!state.busy && state.tool === 'magic' && /^[0-9]$/.test(event.key)) {
         const index = Number(event.key) - 1;

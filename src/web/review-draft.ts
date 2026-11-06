@@ -8,7 +8,8 @@ import { browserStorage } from './storage.ts';
 export type ReviewMark = { group?: NoteGroup; kind?: MarkKind; stamp?: string; strip: string; round: number; stop?: number; where: string; quote: string; rects: Rect[]; region: boolean; whole?: boolean };
 export type ReviewNote = ReviewMark & { id: string; comment: string };
 type Snapshot = { notes: ReviewNote[]; instructions: string; editing?: { id: string; sequence: number }; reveal?: { note: ReviewNote; sequence: number }; busy: boolean; canUndo: boolean; canRedo: boolean };
-const uuid = () => crypto.randomUUID();
+// HTTP tailnet addresses are not secure contexts, but still provide random bytes.
+const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
 
 // One persisted draft shared by the PDF selections and the chat composer.
 // Geometry stays local; the message retains the quoted text, source and round.

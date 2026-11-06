@@ -14,6 +14,29 @@ export async function checkReviewTools(page, writes, sent) {
     element.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }));
   });
   await expect(rail()).toBeVisible();
+  if (process.env.PAPILOT_REVIEW_TOOLS_TOUCH === '1') {
+    await tool('Magic pen').click();
+    const glyph = viewer().locator('.change[data-stop="0"] .after .pdf-glyph').first();
+    const rect = await glyph.boundingBox(), x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
+    await page.touchscreen.tap(x, y); await expect(page.locator('.stamp-wheel')).toBeVisible(); await page.keyboard.press('Escape');
+    const strip = await viewer().locator('.change[data-stop="0"] .after .pdf-strip').boundingBox();
+    await page.touchscreen.tap(strip.x + 200, strip.y + 10);
+    await expect(page.locator('.stamp-wheel')).toBeVisible(); await page.keyboard.press('Escape');
+    const client = await page.context().newCDPSession(page);
+    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    await page.waitForTimeout(550);
+    await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(viewer().locator('.review-select-menu')).toBeVisible();
+    await expect(page.locator('.stamp-wheel')).toHaveCount(0);
+    await viewer().locator('.review-select-menu button').click();
+    await expect(page.locator('.stamp-wheel')).toBeVisible();
+    await page.getByRole('menuitem', { name: 'Polish', exact: true }).click();
+    await expect(notes()).toHaveCount(1);
+    assert.equal(writes.length, 0);
+    await client.detach();
+    console.log('PASS: Touch magic pen on text and whitespace, with long-press selection');
+    return;
+  }
   await expect(tool('Undo')).toBeDisabled(); await expect(tool('Redo')).toBeDisabled();
   await tool('Collapse marking tools').click();
   await expect(rail()).toHaveAttribute('data-collapsed', 'true');
@@ -49,7 +72,7 @@ export async function checkReviewTools(page, writes, sent) {
   await select(); await expect(notes()).toHaveCount(6);
   await expect(notes().last()).toContainText('Shorten');
   // Clicking a blank spot with the pen uses a point anchor too.
-  await viewer().locator('.change[data-stop="0"] .after .review-point-capture').click({ position: { x: 20, y: 20 } });
+  await viewer().locator('.change[data-stop="0"] .after .pdf-strip').click({ position: { x: 200, y: 10 } });
   await expect(notes()).toHaveCount(7);
   await tool('Select').click();
   await viewer().locator('#paper').evaluate(element => { element.tabIndex = -1; element.focus(); });
@@ -73,6 +96,36 @@ export async function checkReviewTools(page, writes, sent) {
   assert.equal(sent[0].notes[4].stamp, 'Polish'); assert.ok(sent[0].notes[4].comment);
   assert.equal(sent[0].notes[6].kind, 'point'); assert.equal(sent[0].notes[6].stamp, 'Shorten');
   sent.length = 0;
+  // Use real pointer gestures too: releasing beyond the last glyph and clicking
+  // directly on text must both reach the magic pen, without obscuring old tags.
+  await viewer().locator('#paper').evaluate(element => element.scrollTo(0, 0));
+  await tool('Magic pen').click(); await tool('Magic pen').press('0');
+  const glyph = viewer().locator('.change[data-stop="0"] .after .pdf-glyph').first();
+  const glyphBox = await glyph.boundingBox();
+  await page.mouse.move(glyphBox.x + 5, glyphBox.y + glyphBox.height / 2); await page.mouse.down();
+  await page.mouse.move(glyphBox.x + glyphBox.width + 15, glyphBox.y + glyphBox.height / 2, { steps: 12 }); await page.mouse.up();
+  await expect(page.locator('.stamp-wheel')).toBeVisible(); await page.keyboard.press('Escape');
+  await glyph.click(); await expect(page.locator('.stamp-wheel')).toBeVisible(); await page.keyboard.press('Escape');
+  await tool('Sticky note').click();
+  await viewer().locator('.change[data-stop="0"] .after .review-point-capture').click({ position: { x: 30, y: 30 } });
+  await expect(notes()).toHaveCount(1);
+  const tag = viewer().locator('.change[data-stop="0"] .after .review-note-tag');
+  for (const mode of ['Sticky note', 'Magic pen']) {
+    if (mode === 'Magic pen') await tool(mode).click();
+    await tag.click();
+    await expect(notes()).toHaveCount(1);
+    await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toBeFocused();
+    await expect(page.locator('.stamp-wheel')).toHaveCount(0);
+  }
+  await page.getByRole('button', { name: 'Delete review note 1', exact: true }).click();
+  await tool('Collapse marking tools').press('Space');
+  await expect(rail()).toHaveAttribute('data-collapsed', 'true');
+  await tool('Expand marking tools').click();
+  const accept = viewer().locator('.change[data-stop="0"] .accept').first();
+  // Observe native activation without deciding a change in the shared fixture.
+  await accept.evaluate(element => element.addEventListener('click', event => { event.stopImmediatePropagation(); element.dataset.spaceClicked = 'true'; }, { once: true }));
+  await accept.press('Space'); await expect(accept).toHaveAttribute('data-space-clicked', 'true');
+  assert.equal(writes.length, 0);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('group', { name: 'Workspace view', exact: true }).getByRole('button', { name: /^Review/ }).click();
   await expect(rail()).toBeHidden();
