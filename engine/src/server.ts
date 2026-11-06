@@ -10,6 +10,7 @@ import { CONFIG_NAME, loadProject, type Project } from "./core/config.ts";
 import { Store } from "./core/store.ts";
 import { Tasks } from "./core/tasks.ts";
 import { Review } from "./core/review.ts";
+import { SourceEdits } from "./core/source-edit.ts";
 import { Reconciliations } from "./core/reconcile.ts";
 import { Deliveries } from "./core/delivery.ts";
 import { more, PublishError, Publisher } from "./core/publish.ts";
@@ -17,7 +18,7 @@ import { view, type ViewRequest } from "./core/view.ts";
 import { acquireLock, now, readJson, writeJson } from "./core/files.ts";
 import { stopAll } from "./core/process.ts";
 import { checkInputs, Confirmations, ReferenceChecker } from "./core/verify.ts";
-import type { ActionKind } from "./types.ts";
+import type { ActionKind, SourceEditRequest } from "./types.ts";
 export class App {
   root: string;
   repo: Repo;
@@ -29,6 +30,7 @@ export class App {
   activity = now();
   tasks: Tasks;
   review: Review;
+  sourceEdits: SourceEdits;
   delivery: Deliveries;
   reconciliation: Reconciliations;
   publisher: Publisher;
@@ -43,6 +45,7 @@ export class App {
     this.store = new Store(path.join(this.state, "state.sqlite3"));
     this.tasks = new Tasks(this);
     this.review = new Review(this);
+    this.sourceEdits = new SourceEdits(this);
     this.delivery = new Deliveries(this);
     this.reconciliation = new Reconciliations(this);
     this.publisher = new Publisher(this);
@@ -118,7 +121,7 @@ export class App {
   }
 }
 export function createServer(app: App) {
-  const server = Fastify({ logger: false, bodyLimit: 999999 });
+  const server = Fastify({ logger: false, bodyLimit: Number.MAX_SAFE_INTEGER });
   server.register(compress, { threshold: 1024 });
   server.addHook("onRequest", async (request, reply) => {
     app.activity = now();
@@ -174,6 +177,8 @@ export function createServer(app: App) {
         task: j.task,
         status: j.status,
         phase: j.phase,
+        createdAt: j.created * 1000,
+        ...(app.publisher.progress(j.id) ? { progress: app.publisher.progress(j.id) } : {}),
         ...(revision ? { revision } : {}),
         ...j.result,
       };
@@ -190,6 +195,18 @@ export function createServer(app: App) {
             ? Number(request.query.round)
             : undefined,
         ),
+    );
+    server.get<{ Params: { name: string }; Querystring: { round: number; change: string } }>(
+      "/api/tasks/:name/source",
+      { schema: { querystring: { type: "object", required: ["round", "change"], properties: { round: { type: "integer", minimum: 1 }, change: { type: "string", pattern: "^c[0-9]+$" } } } } },
+      request => app.sourceEdits.read(request.params.name, request.query.round, request.query.change),
+    );
+    server.post<{ Params: { name: string }; Body: SourceEditRequest }>(
+      "/api/tasks/:name/source",
+      { schema: { body: { type: "object", additionalProperties: false, required: ["id", "round", "change", "revision", "text"], properties: {
+        id: { type: "string", pattern: "^[A-Za-z0-9-]{1,80}$" }, round: { type: "integer", minimum: 1 }, change: { type: "string", pattern: "^c[0-9]+$" }, revision: { type: "string", pattern: "^[a-f0-9]{64}$" }, text: { type: "string", maxLength: 200000 },
+      } } } },
+      request => app.sourceEdits.save(request.params.name, request.body),
     );
     server.get<{ Params: { name: string }; Querystring: { after?: string } }>(
       "/api/tasks/:name/feedback",
@@ -347,19 +364,19 @@ export function createServer(app: App) {
         );
       },
     );
-    server.post<{ Params: { name: string }; Body: { requestId?: string } }>(
+    server.post<{ Params: { name: string }; Body: { requestId?: string; indirect?: boolean } }>(
       "/api/tasks/:name/publish",
-      { schema: { body: { ...objectSchema, properties: { requestId: { type: "string", pattern: "^[a-zA-Z0-9-]{1,80}$" } } } } },
+      { schema: { body: { ...objectSchema, properties: { requestId: { type: "string", pattern: "^[a-zA-Z0-9-]{1,80}$" }, indirect: { type: "boolean" } } } } },
       (request) => {
         app.delivery.assertReady(request.params.name);
-        const job = app.publisher.submit(request.params.name, request.body?.requestId);
+        const job = app.publisher.submit(request.params.name, request.body?.requestId, request.body?.indirect);
         return { job: job.id, status: job.status };
       },
     );
     // The task's typeset pages as images, for its agent to look at.
     server.post<{ Params: { name: string }; Body: ViewRequest }>(
       "/api/tasks/:name/view",
-      { schema: { body: { ...objectSchema, additionalProperties: false, properties: { locations: { type: "array", maxItems: 8, items: { type: "string", maxLength: 1000 } }, pages: { type: "array", maxItems: 8, items: { type: "string", maxLength: 40 } }, accepted: { type: "boolean" } } } } },
+      { schema: { body: { ...objectSchema, additionalProperties: false, properties: { locations: { type: "array", items: { type: "string", maxLength: 1000 } }, pages: { type: "array", items: { type: "string", maxLength: 40 } }, accepted: { type: "boolean" } } } } },
       (request) => view(app, request.params.name, request.body),
     );
     server.post<{ Params: { name: string }; Body: { keepCurrent?: boolean; mode?: "workspace" | "commit"; message?: string; confirmation?: string } }>(

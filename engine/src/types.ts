@@ -88,6 +88,9 @@ export interface Round {
     targets: string[];
     builds: string[];
     renderer?: string;
+    /** Whether the round lists indirect changes; absent in older rounds,
+     * which did. */
+    indirect?: boolean;
   };
   created: number;
 }
@@ -388,6 +391,10 @@ export interface RenderRequest {
   causes?: string[][];
   /** The cards of the first pass, reused with `causes`. */
   cards?: Card[];
+  /** List the changes each edit makes away from its own lines, such as
+   * renumbered references, and compile variants to find their edits. Off,
+   * an edit shows only its own lines. */
+  indirect?: boolean;
 }
 /** Words of the old and new PDF that changed, as ranges of each document's
  * words in reading order. */
@@ -433,6 +440,7 @@ export interface Summary {
   next: string;
 }
 export interface PageState {
+  sourceEditing?: boolean;
   csrf: string;
   task: string;
   title: string;
@@ -466,6 +474,23 @@ export interface PageState {
     | (Pick<Job, "id" | "status" | "phase" | "created"> &
         JobResult & { ahead: number })
     | null;
+}
+export interface SourceExcerpt {
+  round: number;
+  change: string;
+  file: string;
+  revision: string;
+  /** Zero-based, half-open line range in the current worktree. */
+  start: number;
+  end: number;
+  text: string;
+}
+export interface SourceEditRequest {
+  id: string;
+  round: number;
+  change: string;
+  revision: string;
+  text: string;
 }
 export interface FeedbackItem {
   id: number;

@@ -9,6 +9,7 @@ import http from 'node:http';
 import { buildLayer } from './desktop-layer.mjs';
 import { _electron as electron, expect } from '../engine/node_modules/@playwright/test/index.mjs';
 import { selectOption, selectedValue } from './select.mjs';
+import { checkDesktopNotifications } from './check-desktop-notifications.mjs';
 
 const require = createRequire(import.meta.url);
 const data = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-desktop-test-'));
@@ -149,6 +150,7 @@ try {
   await paperDialog.getByRole('button', { name: /^(Cancel|取消)$/ }).click();
   await application.evaluate(({ dialog }) => { dialog.showOpenDialog = globalThis.originalOpenDialog; delete globalThis.originalOpenDialog; });
   const settings = page.getByRole('button', { name: /^(Settings|设置)$/ });
+  await checkDesktopNotifications(application, page, await (await fetch(`${origin}/api/state`)).json());
   await settings.click();
   await page.getByRole('button', { name: /^(Updates|版本更新)$/ }).click();
   await expect(page.getByRole('button', { name: /^(Check for updates|检查更新)$/ })).toBeVisible();
@@ -238,7 +240,14 @@ try {
       if (await selectedValue(channel) === 'dev') await view.getByRole('button', { name: /^(Check for updates|检查更新)$/ }).click();
       else await selectOption(channel, 'dev');
       await view.getByRole('button', { name: /^(Update now|立即更新)$/ }).click();
-      await expect.poll(() => running(address).catch(() => null), { timeout: 120000, message: 'The app restarts on the downloaded layer' }).toBe(built.version);
+      try {
+        await expect.poll(() => running(address).catch(() => null), { timeout: 120000, message: 'The app restarts on the downloaded layer' }).toBe(built.version);
+      } catch (error) {
+        console.error('Desktop update status:', await (await fetch(`${address}/api/updates`)).json().catch(() => null));
+        const log = path.join(data, 'updates/desktop/install.log');
+        if (fs.existsSync(log)) console.error(fs.readFileSync(log, 'utf8').slice(-8000));
+        throw error;
+      }
       // The page reloads itself on the new version.
       await expect(view.locator('.brand-version').first()).toHaveText(`v${built.version.slice(0, -33)}`, { timeout: 30000 });
       const record = JSON.parse(fs.readFileSync(path.join(data, 'updates/desktop/active.json'), 'utf8'));

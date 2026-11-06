@@ -10,6 +10,7 @@ export interface Attachment { id: string; projectId: string; name: string; size:
 export type UpdateChannel = 'stable' | 'dev';
 export interface UpdateStatus {
   // Present when the update must be downloaded as a new desktop app.
+  packageManager?: 'nix';
   downloadUrl?: string;
   channel?: UpdateChannel;
   currentVersion: string; latestVersion: string | null;
@@ -19,7 +20,8 @@ export interface UpdateStatus {
 // unsent counts review updates the agent has not received; comments are the
 // ones that ask for a revision. files are the manuscript files this task's
 // accepted changes touched since its last commit, relative to the repository root.
-export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: { id?: string; phase: string; status: string; error?: string; details?: string[] } | null }
+export interface ReviewJob { id?: string; phase: string; status: string; error?: string; details?: string[]; createdAt?: number; progress?: Partial<Record<'baseline' | 'revised', Omit<BuildProgress, 'startedAt'>>> }
+export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: ReviewJob | null }
 export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 export interface TaskCommitReview { token: string; files: string[]; diff: string }
@@ -71,7 +73,7 @@ export interface TimelineItem { id: string; taskId: string; type: string; text: 
 // those as what they are rather than as the prompt the agent receives.
 // Papilot itself sends the agent a build its own edits broke.
 export interface NoteAnchor { sources: { file: string; lines: [number, number] }[]; round?: number }
-export interface NoteSummary { group?: NoteGroup; where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor }
+export interface NoteSummary { group?: NoteGroup; kind?: MarkKind; stamp?: string; where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor }
 export interface NoteChange { round: number; stop: number; units: string[]; state: 'pending' | 'accepted' | 'rejected' | 'commented' | 'mixed'; match: 'source' | 'quote' }
 export interface NoteResult { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
 export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
@@ -117,10 +119,14 @@ export interface Device { id: string; kind: 'passkey' | 'session'; label: string
 export interface People { origin: string | null; people: Person[] }
 // staged: the index has changes to this file; unstaged: the working tree has more.
 // index is the staged status where it differs from status, which is the working tree's when it has changes.
-export interface GitFile { path: string; status: string; staged: boolean; unstaged: boolean; lines?: [number, number]; from?: string; index?: string }
+export interface GitFile { path: string; status: string; staged: boolean; unstaged: boolean; lines?: [number, number]; from?: string; index?: string; incoming?: string }
 // merging is a merge in progress, with the files whose conflict markers remain.
 export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFile[]; head: { hash: string; subject: string; date: number } | null; remote?: boolean; merging?: { message: string; conflicts: string[] } | null }
 export interface GitDiff { path: string; diff: string; truncated: boolean }
+export type GitDiffScope = 'all' | 'staged' | 'unstaged';
+export interface GitVersion { hash: string; message: string; author: string; date: number }
+export interface GitHistory { versions: GitVersion[]; next: string | null }
+export interface GitVersionDetail { version: GitVersion; files: { path: string; status: string; from?: string }[] }
 export interface GitWorktree {
   path: string; branch: string | null; head: string | null; current: boolean; bare: boolean;
   locked?: string; prunable?: string; status: GitStatus | null; error?: string;
@@ -154,7 +160,18 @@ export function countProblems(problems: Pick<BuildProblem, 'severity' | 'kind' |
 }
 // `key` names the PDF whose pages the locations refer to.
 export interface ManuscriptProblems { status: ManuscriptBuild['status']; key?: string; problems: BuildProblem[]; log: boolean }
-export interface Annotation { aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
+// A delete mark asks for the marked text to go, or to be replaced by its
+// comment; a point marks a place rather than a passage. A stamp is the short
+// name of a quick note the author picked; its comment holds the instruction.
+export type MarkKind = 'delete' | 'point';
+export const isMarkKind = (value: unknown): value is MarkKind => value === 'delete' || value === 'point';
+// The magic pen's quick notes, as each person keeps them. A preset that is
+// unchanged stores only its id, so its name and instruction follow the
+// interface language; anything changed or added stores its own text.
+export interface QuickNote { id: string; label?: string; instruction?: string; icon?: string }
+export const QUICK_NOTE_LIMIT = 8;
+export const PRESET_QUICK_NOTES = ['polish', 'tighten', 'runt', 'connect', 'verify'];
+export interface Annotation { aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; kind?: MarkKind; stamp?: string; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
 // Review findings stay with their task; only explicit copies belong to the manuscript.
 export const isTaskReviewNote = (note: Annotation) => Boolean(note.aiReview && !note.aiReview.sourceId);
 export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }

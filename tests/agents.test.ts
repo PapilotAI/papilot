@@ -18,14 +18,19 @@ test('agy effort variants are grouped into one model with efforts, and the saved
     { model: 'gemini-4-argon', displayName: 'Gemini 4 Argon', efforts: ['low', 'medium', 'high'], ids: { medium: 'gemini-4-argon-medium', high: 'gemini-4-argon-high', low: 'gemini-4-argon-low' }, isDefault: true, defaultEffort: 'high' },
     { model: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', efforts: [], ids: { '': 'claude-sonnet-4-6' }, isDefault: false, defaultEffort: null },
   ]);
+  assert.deepEqual(groupModels(listing, 'gemini-4-argon-high'), groupModels(listing, 'Gemini 4 Argon (High)'), 'saved model IDs resolve the same default as display names');
+  assert.equal(groupModels(listing, 'gemini-4-argon')[0].isDefault, true);
+  assert.equal(groupModels(listing, 'gemini-4-argon')[0].defaultEffort, 'medium');
 });
 
 function fakeAgy(lines: string[][]) {
-  const launches: { args: string[]; cwd: string; child: any }[] = [];
+  const launches: { args: string[]; cwd: string; child: any; stdin: string }[] = [];
   const launch = (_command: string, args: string[], options: { cwd: string }) => {
-    const child: any = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+    const child: any = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough();
     child.kill = (signal: string) => { child.killed = signal; setImmediate(() => child.emit('close', null, signal)); };
-    launches.push({ args, cwd: options.cwd, child });
+    const record = { args, cwd: options.cwd, child, stdin: '' };
+    child.stdin.on('data', (chunk: Buffer) => { record.stdin += chunk.toString(); });
+    launches.push(record);
     const script = lines.shift() || [];
     setImmediate(() => { for (const line of script) child.stdout.write(line + '\n'); if (script.length) { child.stdout.end(); setImmediate(() => child.emit('close', 0)); } });
     return child;
@@ -57,10 +62,11 @@ test('Antigravity turns run agy in accept-edits mode, stream into items, and res
     const args = fake.launches[0].args;
     assert.equal(fake.launches[0].cwd, '/work');
     assert.deepEqual(args.slice(2), ['--output-format', 'stream-json', '--mode', 'accept-edits', '--model', 'gemini-4-argon-high']);
-    assert.match(args[1], /^Only edit the worktree\.\n\n---\n\nShorten the abstract\.$/);
+    assert.deepEqual(args.slice(0, 2), ['--input-format', 'stream-json']);
+    assert.match(JSON.parse(fake.launches[0].stdin).message.content, /^Only edit the worktree\.\n\n---\n\nShorten the abstract\.$/);
     assert.deepEqual(seen.filter(e => e.method === 'item/agentMessage/delta').map(e => e.params.delta), ['Editing ', 'now.']);
     const items = seen.filter(e => e.method === 'item/completed').map(e => e.params.item);
-    assert.deepEqual(items.map(item => item.type), ['agentMessage', 'fileChange', 'agentMessage']);
+    assert.deepEqual(items.map(item => item.type), ['agentMessage', 'fileChange', 'toolCall']);
     assert.equal(items[0].text, 'Editing now.');
     assert.deepEqual(items[1].changes, [{ path: '/work/main.tex' }]);
     assert.match(items[2].text, /could not run RunCommand/);
@@ -76,7 +82,7 @@ test('Antigravity turns run agy in accept-edits mode, stream into items, and res
     await restarted.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Now the introduction.' }], cwd: '/work' });
     const failed = await completed(again);
     assert.deepEqual([failed.status, failed.error.message], ['failed', 'Quota exceeded']);
-    assert.deepEqual(fake.launches[1].args.slice(0, 2), ['-p', 'Now the introduction.']);
+    assert.equal(JSON.parse(fake.launches[1].stdin).message.content, 'Now the introduction.');
     assert.deepEqual(fake.launches[1].args.slice(-2), ['--conversation', 'conv-1']);
     // Pausing stops the process and ends the turn as interrupted.
     const paused = events(restarted);
@@ -88,7 +94,42 @@ test('Antigravity turns run agy in accept-edits mode, stream into items, and res
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-function fakeClaude(script: (options: any) => AsyncGenerator<any>, account: Record<string, string> = { email: 'me@example.com', apiKeySource: 'ANTHROPIC_API_KEY', apiProvider: 'firstParty' }) {
+test('Antigravity grants only selected images read access for the current turn', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agy-images-'));
+  const image = path.join(dir, 'attached.png'); fs.writeFileSync(image, 'image fixture');
+  const fake = fakeAgy([[JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } })], [JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } })]]);
+  const agent = new AntigravityAgent('agy', path.join(dir, 'conversations.json'), fake.launch as any); agent.ready = true;
+  try {
+    const seen = events(agent);
+    const { thread } = await agent.request('thread/start', { cwd: '/work' });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: `See ${image}` }, { type: 'localImage', path: image }] });
+    assert.equal((await completed(seen)).status, 'completed');
+    const args = fake.launches[0].args, resolved = fs.realpathSync(image);
+    assert.deepEqual(JSON.parse(args[args.indexOf('--settings') + 1]), { permissions: { allow: [`read_file(${resolved})`] } });
+    assert.ok(JSON.parse(fake.launches[0].stdin).message.content.includes(resolved));
+    assert.ok(!args.includes('--add-dir') && !args.includes('--dangerously-skip-permissions'));
+    const next = events(agent);
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Continue without an image.' }] });
+    assert.equal((await completed(next)).status, 'completed');
+    assert.ok(!fake.launches[1].args.includes('--settings'), 'Image permission must not persist into later turns');
+  } finally { agent.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+for (const name of ['wild*card.png', 'paren).png', 'missing.png', 'directory']) test(`Antigravity refuses unsafe image permission paths: ${name}`, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agy-images-'));
+  const file = path.join(dir, name);
+  if (name === 'directory') fs.mkdirSync(file);
+  else if (name !== 'missing.png') fs.writeFileSync(file, 'fixture');
+  const fake = fakeAgy([]), agent = new AntigravityAgent('agy', path.join(dir, 'conversations.json'), fake.launch as any); agent.ready = true;
+  try {
+    const seen = events(agent), { thread } = await agent.request('thread/start', { cwd: '/work' });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'localImage', path: file }] });
+    assert.equal((await completed(seen)).status, 'failed');
+    assert.equal(fake.launches.length, 0);
+  } finally { agent.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+function fakeClaude(script: (options: any) => AsyncGenerator<any>, account: Record<string, string> = { email: 'me@example.com', apiKeySource: 'ANTHROPIC_API_KEY', apiProvider: 'firstParty' }, currentModel: string | null = 'claude-opus-5-5') {
   const calls: { prompt: unknown; options: any }[] = [];
   const query = ((input: { prompt: unknown; options: any }) => {
     calls.push(input);
@@ -100,9 +141,29 @@ function fakeClaude(script: (options: any) => AsyncGenerator<any>, account: Reco
       { value: 'haiku', displayName: 'Haiku 5.5', description: '', resolvedModel: 'claude-haiku-5-5', supportedEffortLevels: ['low'] },
     ];
     generator.close = () => {};
+    generator.getContextUsage = async (options: any) => {
+      assert.deepEqual(options, { detail: 'summary' });
+      if (!currentModel) throw new Error('Unsupported request');
+      return { model: currentModel };
+    };
     return generator;
   });
   return { calls, load: async () => query as any };
+}
+
+for (const [current, expected] of [['claude-haiku-5-5', 'haiku'], ['custom-model', 'custom-model'], [null, null]]) {
+  test(`Claude SDK uses its current model (${current}) instead of its recommended default`, async () => {
+    const fake = fakeClaude(async function* () {}, undefined, current);
+    const agent = new ClaudeAgent(fake.load, () => null);
+    try {
+      await agent.start();
+      const models = (await agent.request('model/list')).data;
+      assert.deepEqual(models.filter((m: any) => m.isDefault).map((m: any) => m.model), expected ? [expected] : []);
+      assert.ok(models.some((m: any) => m.model === 'opus'), 'unknown defaults keep the model list');
+      assert.equal(fake.calls.length, 1);
+      assert.notEqual(typeof fake.calls[0].prompt, 'string', 'probing does not generate');
+    } finally { agent.close(); }
+  });
 }
 
 test('Claude turns use the local Claude Code login, resume their session, and report items, approvals and usage', async () => {
@@ -228,7 +289,8 @@ test('GLM runs Claude Code on Zhipu\'s endpoint with only the GLM key, and offer
     assert.equal(options.env.ANTHROPIC_AUTH_TOKEN, 'zhipu-key');
     assert.equal(options.env.ANTHROPIC_API_KEY, undefined, 'an Anthropic key never goes to Zhipu');
     assert.equal(options.env.CLAUDE_CODE_USE_BEDROCK, undefined);
-    assert.equal(options.env.PATH, '/usr/bin');
+    assert.ok(options.env.PATH.startsWith('/usr/bin' + path.delimiter));
+    assert.ok(options.env.PATH.split(path.delimiter).includes(path.join(os.homedir(), '.nix-profile/bin')));
   }
   assert.equal(fake.calls.at(-1)!.options.model, 'glm-5.3-flash');
 });
@@ -385,13 +447,14 @@ const CLI_MODELS = [
   { value: 'opus', displayName: 'Opus 5.5', resolvedModel: 'claude-opus-5-5', supportedEffortLevels: ['low', 'high'] },
   { value: 'haiku', displayName: 'Haiku 5.5', resolvedModel: 'claude-haiku-5-5', supportedEffortLevels: [] },
 ];
-function fakeClaudeCli(dir: string, login: Record<string, unknown>, turns: any[][], models: unknown[] | null = CLI_MODELS) {
+function fakeClaudeCli(dir: string, login: Record<string, unknown>, turns: any[][], models: unknown[] | null = CLI_MODELS, currentModel: string | null = 'claude-opus-5-5') {
   const bin = path.join(dir, 'claude');
   fs.writeFileSync(bin, `#!/bin/sh\necho '${JSON.stringify(login)}'\n`); fs.chmodSync(bin, 0o755);
-  const launches: { command: string; args: string[]; cwd: string; stdin: string; child: any }[] = [];
+  const launches: { command: string; args: string[]; cwd: string; stdin: string; child: any; instructions: string }[] = [];
   const launch = (command: string, args: string[], options: { cwd: string }) => {
     const child: any = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough();
-    const record = { command, args, cwd: options.cwd, stdin: '', child };
+    const promptFile = args.includes('--append-system-prompt-file') ? args[args.indexOf('--append-system-prompt-file') + 1] : undefined;
+    const record = { command, args, cwd: options.cwd, stdin: '', child, instructions: promptFile ? fs.readFileSync(promptFile, 'utf8') : '' };
     child.stdin.on('data', (chunk: Buffer) => { record.stdin += chunk.toString(); });
     child.kill = (signal: string) => { child.killed = signal; setImmediate(() => child.emit('close', null, signal)); return true; };
     // The model listing answers an initialize request and is not a turn.
@@ -399,6 +462,10 @@ function fakeClaudeCli(dir: string, login: Record<string, unknown>, turns: any[]
       child.stdin.on('data', (chunk: Buffer) => {
         const request = JSON.parse(chunk.toString().trim());
         if (models && request.request?.subtype === 'initialize') child.stdout.write(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: { models } } }) + '\n');
+        else if (request.request?.subtype === 'get_context_usage') {
+          assert.equal(request.request.detail, 'summary');
+          child.stdout.write(JSON.stringify({ type: 'control_response', response: { request_id: request.request_id, ...(currentModel ? { subtype: 'success', response: { model: currentModel } } : { subtype: 'error', error: 'Unsupported request' }) } }) + '\n');
+        }
         else setImmediate(() => child.emit('close', 1));
       });
       return child;
@@ -409,6 +476,21 @@ function fakeClaudeCli(dir: string, login: Record<string, unknown>, turns: any[]
     return child;
   };
   return { bin, launches, launch };
+}
+
+for (const [current, expected] of [['claude-haiku-5-5', 'haiku'], ['custom-model', 'custom-model'], [null, null]]) {
+  test(`Claude CLI uses its current model (${current}) instead of its recommended default`, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-claude-default-'));
+    const fake = fakeClaudeCli(dir, { loggedIn: true }, [], CLI_MODELS, current);
+    const agent = new ClaudeAgent(async () => { throw new Error('unused'); }, () => fake.bin, fake.launch as any);
+    try {
+      await agent.start();
+      const models = (await agent.request('model/list')).data;
+      assert.deepEqual(models.filter((m: any) => m.isDefault).map((m: any) => m.model), expected ? [expected] : []);
+      assert.ok(models.some((m: any) => m.model === 'opus'));
+      assert.equal(fake.launches.length, 0, 'probing never starts a generation turn');
+    } finally { agent.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+  });
 }
 
 test('with Claude Code installed, Claude runs claude -p on the host login, streams items and resumes its session', async () => {
@@ -443,12 +525,12 @@ test('with Claude Code installed, Claude runs claude -p on the host login, strea
     assert.equal(run.args[0], '-p');
     assert.equal(flag('--permission-mode'), 'acceptEdits'); assert.equal(flag('--permission-prompts'), 'none');
     assert.equal(flag('--session-id'), thread.id); assert.equal(flag('--model'), 'opus'); assert.equal(flag('--effort'), 'high');
-    assert.equal(flag('--append-system-prompt'), 'Only edit the worktree.'); assert.equal(flag('--disallowedTools'), 'AskUserQuestion');
+    assert.equal(run.instructions, 'Only edit the worktree.'); assert.equal(fs.existsSync(flag('--append-system-prompt-file')), false); assert.equal(flag('--disallowedTools'), 'AskUserQuestion');
     assert.deepEqual(JSON.parse(flag('--settings')).sandbox, { enabled: true, autoAllowBashIfSandboxed: true });
     const sent = JSON.parse(run.stdin.trim());
     assert.equal(sent.message.content[0].text, 'Fix it.'); assert.equal(sent.message.content[1].source.media_type, 'image/png');
     const items = seen.filter(e => e.method === 'item/completed').map(e => e.params.item);
-    assert.deepEqual(items.map(item => item.type), ['agentMessage', 'fileChange', 'agentMessage']);
+    assert.deepEqual(items.map(item => item.type), ['agentMessage', 'fileChange', 'toolCall']);
     assert.match(items[2].text, /could not use Write.*cannot ask for approval/);
     assert.equal(seen.find(e => e.method === 'item/agentMessage/delta')!.params.delta, 'Fixing.');
     assert.equal((await agent.request('account/rateLimits/read')).rateLimits.planType, 'max');
@@ -479,7 +561,7 @@ test('Claude Code that is not signed in says how to sign in, and pausing stops c
     const { thread } = await agent.request('thread/start', { cwd: '/work' });
     const { turn } = await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Wait.' }] });
     for (let i = 0; i < 20 && !fake.launches.length; i++) await tick();
-    assert.equal(fake.launches[0].args.includes('--append-system-prompt'), false, 'no empty system prompt');
+    assert.equal(fake.launches[0].args.includes('--append-system-prompt-file'), false, 'no empty system prompt');
     await agent.request('turn/interrupt', { turnId: turn.id });
     assert.equal((await completed(seen)).status, 'interrupted');
     assert.equal(fake.launches[0].child.killed, 'SIGINT');
@@ -520,4 +602,107 @@ test('read-only Claude CLI reviews disable tool access and project settings', as
     assert.equal(args[args.indexOf('--setting-sources') + 1], '');
     agent.close();
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('editing network SDK permissions allow web tools while retaining sandbox and other approvals', async () => {
+  const fake = fakeClaude(async function* (options) {
+    assert.equal(options.tools, undefined, 'editing tools remain available');
+    assert.deepEqual(options.allowedTools, ['WebSearch', 'WebFetch']);
+    assert.equal(options.permissionMode, 'acceptEdits');
+    assert.equal(options.sandbox.enabled, true);
+    assert.deepEqual(options.sandbox.network.allowedDomains, ['*']);
+    const context = { signal: new AbortController().signal };
+    for (const name of ['WebSearch', 'WebFetch']) assert.equal((await options.canUseTool(name, { query: 'paper' }, context)).behavior, 'allow');
+    assert.equal((await options.canUseTool('Bash', { command: 'outside-sandbox-command' }, context)).behavior, 'deny');
+    yield { type: 'result', subtype: 'success', result: 'Done.', session_id: options.sessionId };
+  });
+  const agent = new ClaudeAgent(fake.load, () => null);
+  const requests: any[] = [];
+  agent.on('request', message => { requests.push(message); agent.respond(message.id, { decision: 'decline' }); });
+  try {
+    await agent.start(); const seen = events(agent);
+    const { thread } = await agent.request('thread/start', { cwd: '/tmp', sandbox: 'workspace-write', config: { web_search: 'live' } });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Find and update a reference.' }] });
+    assert.equal((await completed(seen)).status, 'completed');
+    assert.equal(requests.length, 1, 'only the non-web action requires approval');
+  } finally { agent.close(); }
+});
+
+test('editing network CLI permissions allow web access without bypassing sandbox or disabling editing', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-edit-web-cli-'));
+  let agent: ClaudeAgent | undefined;
+  try {
+    const fake = fakeClaudeCli(dir, { loggedIn: true, authMethod: 'claude.ai' }, [[{ type: 'result', subtype: 'success', is_error: false, result: 'Done.' }]]);
+    agent = new ClaudeAgent(async () => { throw Error('No SDK needed'); }, () => fake.bin, fake.launch as any);
+    await agent.start(); const seen = events(agent);
+    const { thread } = await agent.request('thread/resume', { threadId: 'existing-task', cwd: dir, sandbox: 'workspace-write', config: { web_search: 'live' } });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Find and update a reference.' }] });
+    assert.equal((await completed(seen)).status, 'completed');
+    const args = fake.launches[0].args;
+    assert.equal(args.includes('--tools'), false);
+    assert.equal(args[args.indexOf('--allowedTools') + 1], 'WebSearch,WebFetch');
+    assert.equal(args[args.indexOf('--permission-mode') + 1], 'acceptEdits');
+    const sandbox = JSON.parse(args[args.indexOf('--settings') + 1]).sandbox;
+    assert.equal(sandbox.enabled, true);
+    assert.deepEqual(sandbox.network.allowedDomains, ['*']);
+  } finally { agent?.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+for (const provider of ['claude', 'antigravity']) test(`${provider} transports multi-megabyte instructions and messages without argv limits`, { timeout: 15000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agent-large-input-'));
+  const program = path.join(dir, 'transport'), received = path.join(dir, 'received.json');
+  fs.writeFileSync(program, `#!${process.execPath}
+    const fs = require('node:fs');
+    const args = process.argv.slice(2), index = args.indexOf('--append-system-prompt-file');
+    const instructions = index >= 0 ? fs.readFileSync(args[index + 1], 'utf8') : '';
+    let input = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', chunk => { input += chunk; });
+    process.stdin.on('end', () => {
+      const message = JSON.parse(input);
+      fs.writeFileSync(${JSON.stringify(received)}, JSON.stringify({ instructions, message, args }));
+      console.log(JSON.stringify(message.event === 'user'
+        ? { event: 'result', result: { status: 'SUCCESS' } }
+        : { type: 'result', subtype: 'success', result: 'Done' }));
+    });
+  `);
+  fs.chmodSync(program, 0o755);
+  const agent = provider === 'claude'
+    ? new ClaudeAgent(async () => { throw Error('No SDK'); }, () => program)
+    : new AntigravityAgent(program, path.join(dir, 'conversations.json'));
+  if (provider === 'claude') (agent as any).cli = program;
+  try {
+    const instructions = 'Review this manuscript. '.repeat(100000) + 'SYSTEM TAIL';
+    const text = '检查所有章节。'.repeat(100000) + 'MESSAGE TAIL';
+    const seen = events(agent), { thread } = await agent.request('thread/start', { cwd: dir, developerInstructions: instructions });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text }] });
+    assert.equal((await completed(seen)).status, 'completed');
+    const saved = JSON.parse(fs.readFileSync(received, 'utf8')), args: string[] = saved.args;
+    if (provider === 'claude') {
+      assert.equal(saved.instructions, instructions);
+      assert.equal(saved.message.message.content[0].text, text);
+      assert.equal(fs.existsSync(args[args.indexOf('--append-system-prompt-file') + 1]), false);
+    } else assert.equal(saved.message.message.content, `${instructions}\n\n---\n\n${text}`);
+    assert.ok(!args.includes(instructions) && !args.includes(text));
+  } finally { agent.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+for (const provider of ['claude', 'antigravity']) test(`${provider} reports synchronous launch failures without crashing the service`, { timeout: 10000 }, async () => {
+  let promptFile: string | undefined;
+  const launch = (_command: string, args: string[]) => {
+    if (args.includes('--append-system-prompt-file')) promptFile = args[args.indexOf('--append-system-prompt-file') + 1];
+    throw new Error('spawn E2BIG');
+  };
+  const agent = provider === 'claude'
+    ? new ClaudeAgent(async () => { throw Error('No SDK'); }, () => process.execPath, launch as any)
+    : new AntigravityAgent(process.execPath, '/unused/conversations.json', launch as any);
+  if (provider === 'claude') (agent as any).cli = process.execPath;
+  try {
+    const seen = events(agent), { thread } = await agent.request('thread/start', { cwd: os.tmpdir(), developerInstructions: 'Review.' });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Review.' }] });
+    const result = await completed(seen);
+    assert.equal(result.status, 'failed'); assert.equal(result.error.message, 'spawn E2BIG');
+    if (promptFile) assert.equal(fs.existsSync(promptFile), false);
+  } finally { agent.close(); }
 });

@@ -26,6 +26,7 @@ let failUpload = false, failCreate = false, failMessage = false;
 await page.route('**/api/**', async route => {
   const request = route.request(), url = new URL(request.url()), json = data => route.fulfill({ json: data });
   if (url.pathname === '/api/state') return json(snapshot);
+  if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname === '/api/updates') return json({});
   if (url.pathname.endsWith('/skills')) return json({ skills: [{ id: 'polish', name: 'Polish', source: 'builtin', description: 'Polish', hint: '' }] });
@@ -69,6 +70,9 @@ try {
   await page.goto(origin);
   const input = page.getByRole('textbox', { name: 'Describe the revision', exact: true });
   await expect(input).toBeVisible();
+  // Exercise a fully initialized PDF viewer before switching papers and
+  // pasting in chat; a discarded viewer must not retain clipboard handlers.
+  await page.locator('.pdfViewer .textLayer').first().waitFor();
   await page.getByRole('button', { name: 'Add files or skills', exact: true }).click();
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('menuitem', { name: 'Add files…', exact: true }).click();

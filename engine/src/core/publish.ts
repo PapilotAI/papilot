@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, codeVersion } from "../runtime.ts";
-import { Builder, BuildError } from "./build.ts";
+import { Builder, BuildError, auxiliaryBuildError } from "./build.ts";
 import { diffUnitsAsync, scopeViolationsAsync, withUnits } from "./changes.ts";
 import { isFigure } from "./config.ts";
 import { now, readJson, writeJson } from "./files.ts";
@@ -10,6 +10,7 @@ import { runAsync } from "./process.ts";
 import type { App } from "../server.ts";
 import type {
   BuildInfo,
+  BuildProgress,
   Effect,
   Job,
   JobResult,
@@ -193,6 +194,27 @@ export class Publisher {
   // its chapters: a host may compile the whole paper meanwhile, without
   // waiting for or competing with a build of the same files here.
   private revisions = new Map<string, string>();
+  // Page updates are transient, like revisions; polling must not write SQLite
+  // for every page of a long baseline or either parallel comparison build.
+  private builds = new Map<string, Partial<Record<"baseline" | "revised", BuildProgress>>>();
+  progress(id: string) { return this.builds.get(id); }
+  private async compile(job: Pick<Job, "id">, side: "baseline" | "revised", builder: Builder, rev: string, targets = ["full"], seed: BuildInfo | null = null, { asSeed = false, force = false } = {}) {
+    const progress = this.builds.get(job.id) ?? {};
+    this.builds.set(job.id, progress);
+    progress[side] = { step: "tex", pass: 0, pages: 0, total: null };
+    try {
+      const options = { force, progress: (value: BuildProgress) => { progress[side] = value; } };
+      return await (asSeed ? builder.buildSeed(rev, options) : builder.build(rev, targets, seed, options));
+    } finally {
+      delete progress[side];
+      if (!Object.keys(progress).length) this.builds.delete(job.id);
+    }
+  }
+  // Whether each job lists indirect changes, and each task's latest choice:
+  // a request that does not say, such as an inline source edit or the CLI
+  // without --indirect, keeps the task's choice.
+  private indirect = new Map<string, boolean>();
+  private tracking = new Map<string, boolean>();
   constructor(public app: App) {
     app.store.execute(
       "UPDATE jobs SET status='failed', finished=?, result=? WHERE status IN ('queued','running')",
@@ -203,9 +225,13 @@ export class Publisher {
       }),
     );
   }
-  submit(name: string, requestId?: string) {
+  submit(name: string, requestId?: string, indirect?: boolean) {
     this.app.tasks.get(name);
-    return this.app.store.transaction(() => this.enqueue(name, requestId));
+    if (indirect !== undefined) this.tracking.set(name, indirect);
+    const job = this.app.store.transaction(() => this.enqueue(name, requestId));
+    if (job.status === "queued" && (indirect !== undefined || !this.indirect.has(job.id)))
+      this.indirect.set(job.id, this.tracking.get(name) ?? false);
+    return job;
   }
   private enqueue(name: string, requestId?: string) {
     if (requestId) {
@@ -339,6 +365,8 @@ export class Publisher {
       this.update(job.id, { status: "failed", result, finished: now() });
     } finally {
       this.revisions.delete(job.id);
+      this.builds.delete(job.id);
+      this.indirect.delete(job.id);
       this.running.delete(job.task);
       if (this.pending.get(job.task) === job.id) this.pending.delete(job.task);
       else if (!this.stopping) this.queue.push(this.pending.get(job.task)!);
@@ -384,11 +412,14 @@ export class Publisher {
         ],
         "Undo edits outside the scope, then publish again.",
       );
+    // A round from before the choice existed listed indirect changes.
+    const indirect = this.indirect.get(job.id) ?? this.tracking.get(name) ?? false;
     if (
       latest &&
       latest.before === before &&
       (await app.repo.treeIdAsync(latest.after)) === (await app.repo.treeIdAsync(after)) &&
-      latest.summary.renderer === codeVersion()
+      latest.summary.renderer === codeVersion() &&
+      (latest.summary.indirect ?? true) === indirect
     )
       return {
         outcome: "unchanged",
@@ -396,7 +427,22 @@ export class Publisher {
         changes: latest.units.length,
       };
     const files = await app.repo.changedFilesAsync(before, after);
-    if (!files.length) return { outcome: "empty", round: null, changes: 0 };
+    if (!files.length) {
+      // A manual correction can remove the final proposal altogether. Give
+      // it an empty latest round so the viewer cannot keep offering the old
+      // wording for acceptance after it has disappeared from the worktree.
+      if (latest && app.store.one("SELECT id FROM build_requests WHERE job=? AND id LIKE 'source-%'", job.id)) {
+        this.phase(job, "build");
+        const built = await this.compile(job, "baseline", new Builder(project, app.repo), before), number = latest.number + 1;
+        await app.exclusive(async () => {
+          if (app.review.lastChange(name) !== decided) throw new Stale();
+          app.store.execute("INSERT INTO rounds(task,number,before,after,units,summary,created) VALUES(?,?,?,?,?,?,?)", name, number, before, after, "[]", JSON.stringify({ renderer: codeVersion(), indirect, warnings: [], targets: ["full"], builds: [built.key] }), now());
+          await app.repo.updateRefAsync(`refs/latex-review/${name}/round-${number}`, after);
+        });
+        return { outcome: "empty", round: number, changes: 0 };
+      }
+      return { outcome: "empty", round: null, changes: 0 };
+    }
     const units = await diffUnitsAsync(app.repo, before, after, (f) =>
       isFigure(project, f),
     );
@@ -414,13 +460,24 @@ export class Publisher {
         );
       throw error;
     };
-    const seed = targets[0] !== "full" ? await builder.build(task.base).catch(failed("The comparison baseline could not be compiled.")) : null;
+    let seed = targets[0] !== "full" ? await this.compile(job, "baseline", builder, task.base, ["full"], null, { asSeed: true }).catch(failed("The comparison baseline could not be compiled.")) : null;
     // Both versions compile at once: each needs only the seed.
-    const baseline = builder.build(before, targets, seed).catch(failed("The comparison baseline could not be compiled.")),
-      revised = builder.build(after, targets, seed).catch(failed("The revised document could not be compiled."));
+    const versions = () => Promise.allSettled([
+      this.compile(job, "baseline", builder, before, targets, seed),
+      this.compile(job, "revised", builder, after, targets, seed),
+    ]);
+    let builds = await versions();
+    if (!this.stopping && seed && builds.some((built) => built.status === "rejected" && auxiliaryBuildError(built.reason))) {
+      // An external package can invalidate readable aux files without
+      // changing the source tree or engine version. Rebuild the seed once,
+      // after both attempts finish, then use it for both comparison sides.
+      seed = await this.compile(job, "baseline", builder, task.base, ["full"], null, { asSeed: true, force: true }).catch(failed("The comparison baseline could not be compiled."));
+      builds = await versions();
+    }
     // A failure of either is reported once both have settled, the baseline's first.
-    await Promise.allSettled([baseline, revised]);
-    const old = await baseline, next = await revised;
+    const [baseline, revised] = builds,
+      old = baseline.status === "fulfilled" ? baseline.value : failed("The comparison baseline could not be compiled.")(baseline.reason),
+      next = revised.status === "fulfilled" ? revised.value : failed("The revised document could not be compiled.")(revised.reason);
     if (app.review.lastChange(name) !== decided) throw new Stale();
     const warnings = next.warnings.filter((w) => !old.warnings.includes(w));
     this.phase(job, "render");
@@ -431,6 +488,7 @@ export class Publisher {
     fs.mkdirSync(output, { recursive: true });
     const summary = {
       renderer: codeVersion(),
+      indirect,
       warnings,
       targets,
       builds: [seed, old, next].filter((b) => b !== null).map((b) => b.key),
@@ -445,13 +503,18 @@ export class Publisher {
           old,
           new: next,
           units,
+          indirect,
         },
-        (subset) =>
-          builder.build(
-            withUnits(app.repo, before, after, subset),
-            targets,
-            seed,
-          ),
+        // Only a round that lists indirect changes compiles variants to
+        // find the edits behind them.
+        indirect
+          ? (subset) =>
+              builder.build(
+                withUnits(app.repo, before, after, subset),
+                targets,
+                seed,
+              )
+          : undefined,
       );
       // No decision may come between this check and the new round.
       await app.exclusive(async () => {

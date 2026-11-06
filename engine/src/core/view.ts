@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { Builder, BuildError } from "./build.ts";
+import { Builder, BuildError, auxiliaryBuildError } from "./build.ts";
 import { cleanPath, within } from "./git.ts";
 import { capture } from "./process.ts";
 import { mupdf } from "../render/pdf.ts";
@@ -36,10 +36,9 @@ export interface ViewResult {
   error?: string;
   details?: string[];
 }
-// Pages drawn per request, and how far from an asked-for line SyncTeX may
-// look for one that printed something (blank lines and comments print nothing).
-const PAGES = 4,
-  NEARBY = 10,
+// How far from an asked-for line SyncTeX may look for one that printed
+// something (blank lines and comments print nothing).
+const NEARBY = 10,
   SCALE = 1.5,
   // Drawn pages are kept this long, for an agent that opens them later in its turn.
   KEEP = 6 * 3600 * 1000;
@@ -116,8 +115,14 @@ export async function view(
     ]);
   let build: BuildInfo;
   try {
-    const seed = targets[0] !== "full" ? await builder.build(task.base) : null;
-    build = await builder.build(request.accepted ? before : after, targets, seed);
+    let seed = targets[0] !== "full" ? await builder.buildSeed(task.base) : null;
+    try {
+      build = await builder.build(request.accepted ? before : after, targets, seed);
+    } catch (error) {
+      if (!seed || !auxiliaryBuildError(error)) throw error;
+      seed = await builder.buildSeed(task.base, { force: true });
+      build = await builder.build(request.accepted ? before : after, targets, seed);
+    }
   } catch (error) {
     if (!(error instanceof BuildError)) throw error;
     return {
@@ -177,12 +182,8 @@ export async function view(
       }
     }
     const indices = [...wanted.keys()].sort((a, b) => a - b);
-    if (indices.length > PAGES)
-      missing.push(
-        `Only the first ${PAGES} pages are shown; ask for more specific source locations to see the remaining pages (physical positions ${indices.slice(PAGES).join(", ")} in this build).`,
-      );
     const out = indices.length ? folder(app, name) : "";
-    const pages = indices.slice(0, PAGES).map((index) => {
+    const pages = indices.map((index) => {
       const page = document.loadPage(index - 1),
         pixmap = page.toPixmap(
           [SCALE, 0, 0, SCALE, 0, 0],

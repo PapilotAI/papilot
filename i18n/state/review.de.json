@@ -1249,9 +1249,9 @@
     "textHash": "e09bb2cf4968b1dc875a296ae4e08a6d5d3c1ec5165d9e08604a755d10b95a1e",
     "model": "gemini-4-argon-medium"
   },
-  "⌘↵ send · Esc cancel": {
-    "revision": "c40718c388039aae3207b787902e77e2066bbee51e85d6d3cc3c9259078816d3",
-    "textHash": "24dfe8ed3964c425ed7ecf5b40840d6858067b3cc704fe3485bf77ae6fab0e6f",
-    "model": "gemini-4-argon-medium"
+  "Your comments are saved. Continue in Chat to request a revision.": {
+    "revision": "b6a4321e6286d5d2dc2a0fa868dd589e594b9ed1765ca783bd524f64a53f07f9",
+    "textHash": "ea80747c16785bee102def2bba5c1d71fe24b2f5095ba280fa901ff52899ff74",
+    "model": "codex-reviewed"
   }
 }

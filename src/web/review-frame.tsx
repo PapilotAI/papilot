@@ -1,7 +1,8 @@
 import taskCommitStyles from './task-commit.css?inline';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { NoteSummary, Task } from '../shared.ts';
+import type { Task } from '../shared.ts';
+import { useReviewDraft } from './review-draft.ts';
 import { ReviewNotes } from './review-notes.tsx';
 import { Icon } from './icons.tsx';
 import themeStyles from './theme.css?inline';
@@ -11,7 +12,7 @@ import { useNoteResults } from './note-results.tsx';
 import { ReviewNoteConnections } from './review-note-connections.tsx';
 import { SHORTCUT_EVENT, useShortcuts } from './shortcuts.ts';
 import { installReviewScroll } from './review-scroll.ts';
-import { EFFECTS_EVENT, useExpandedEffects } from './effect-preferences.ts';
+import { EFFECTS_EVENT, loadIndirectChanges, useIndirectChanges } from './effect-preferences.ts';
 import { useDefaultReviewView, VIEW_EVENT, type ReviewView } from './review-view.ts';
 import { ModeSwitch } from './mode-switch.tsx';
 import { readPlace, savePlace } from './places.ts';
@@ -67,7 +68,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .document{--pdf-filter:var(--review-filter);--pdf-page:var(--review-page);--before:var(--review-before);--after:var(--review-after)}
     .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}.sheet{background:var(--pdf-page)}
     :root[data-theme="dark"][data-review-theme="light"] :is(.sheet,.paper-page,.document .change){
-      color-scheme:light;--bg:#ffffff;--bg-subtle:#fafafa;--bg-muted:#f4f4f4;--bg-hover:#efefef;--bg-active:#e7e7e7;
+      color-scheme:light;--bg:#ffffff;--bg-subtle:#fafafa;--bg-muted:#f4f4f4;--bg-hover:#efefef;--bg-active:#e7e7e7;--frame:#f3f3f3;
       --text:#171717;--text-2:#525252;--text-3:#8a8a8a;--ink:var(--text);--muted:var(--text-3);--head:var(--bg-subtle);
       --line:#e8e8e8;--line-strong:#d6d6d6;--line-hover:#c4c4c4;
       --accent:#2563eb;--accent-hover:#1d4ed8;--accent-soft:#eff6ff;--accent-line:#bfdbfe;
@@ -249,9 +250,12 @@ function cropMargins(doc: Document) {
 // completion is the next step shown in the viewer's card once every change is decided.
 // Without a task the frame shows the paper's uncommitted changes (changesOf),
 // and the viewer's own waiting message shows while they are compared.
-export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNotes, onDecided }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onSendNotes?: (message: { text: string; requestKey: string; notes?: NoteSummary[] }) => Promise<void>; onDecided?: () => void }) {
+export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void }) {
+  const draft = useReviewDraft(task?.id || '');
+  const quoteFocus = draft.reveal;
   const shortcuts = useShortcuts();
-  const expandedEffects = useExpandedEffects();
+  const expandedEffects = useIndirectChanges();
+  useEffect(loadIndirectChanges, []);
   // A review opens on the default from Settings, or on the view the author
   // last chose for this task, and follows the default when it changes.
   const viewPlace = task ? 'review-view:' + task.id : '';
@@ -266,9 +270,9 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
   const modes = task && fullPaper ? <ModeSwitch mode={view === 'paper' ? 'pdf' : 'changes'} onMode={mode => chooseView(mode === 'pdf' ? 'paper' : 'changes')} changesTitle={t('Changes')}/> : null;
   const noteLinks = useNoteResults(), linksRef = useRef(noteLinks); linksRef.current = noteLinks;
   // Current changes open in the usual review; only older results need history.
-  const linkedRound = task ? noteLinks?.focus?.change.round : undefined;
-  const linkedChange = linkedRound === task?.review?.round ? noteLinks?.focus?.change.stop : undefined;
-  const focusSequence = task ? noteLinks?.focus?.sequence : undefined;
+  const linkedRound = quoteFocus?.note.round ?? (task ? noteLinks?.focus?.change.round : undefined);
+  const linkedChange = quoteFocus?.note.stop ?? (linkedRound === task?.review?.round ? noteLinks?.focus?.change.stop : undefined);
+  const focusSequence = quoteFocus ? `quote:${quoteFocus.sequence}` : task && noteLinks?.focus ? `result:${noteLinks.focus.sequence}` : undefined;
   const [document, setDocument] = useState<Document | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const toolbar = useRef<HTMLDivElement>(null), leading = useRef<HTMLDivElement>(null), hostBar = useRef<HTMLDivElement>(null);
@@ -427,7 +431,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onSendNo
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
     <div ref={hostBar} className="review-host-bar">
       {(lead || modes) && <div ref={leading} className="review-lead">{lead}{modes}</div>}
-      <div ref={toolbar} className="review-tools">{task && onSendNotes && <ReviewNotes doc={ready ? document : null} task={task} onSend={onSendNotes}/>}{tools}</div>
+      <div ref={toolbar} className="review-tools">{task && onComment && <ReviewNotes doc={ready ? document : null} task={task} onComment={onComment}/>}{tools}</div>
     </div>
     {slot && completion ? createPortal(completion, slot) : null}
     {!ready && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}

@@ -10,15 +10,16 @@ export function parseGroupInstructions(value: unknown): GroupInstructions {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Use valid instructions for each color group.');
   const result: GroupInstructions = {};
   for (const [key, text] of Object.entries(value)) {
-    if (!isNoteGroup(key) || typeof text !== 'string' || text.length > 4000) throw new Error('Use valid instructions for each color group (up to 4000 characters).');
+    if (!isNoteGroup(key) || typeof text !== 'string') throw new Error('Use valid instructions for each color group.');
     const group = canonicalGroup(key);
     if (result[group] && result[group] !== text.trim()) throw new Error('Use one instruction for each color group.');
     if (text.trim()) result[group] = text.trim();
   }
   return result;
 }
-export const groupsWithoutInstructions = (notes: { group?: NoteGroup; comment: string }[], instructions: GroupInstructions) =>
-  NOTE_GROUPS.filter(group => !instructions[group]?.trim() && notes.some(note => note.group && canonicalGroup(note.group) === group && !note.comment.trim()));
+// A deletion says what to do by itself, so its group needs no instruction for it.
+export const groupsWithoutInstructions = (notes: { group?: NoteGroup; comment: string; kind?: string }[], instructions: GroupInstructions) =>
+  NOTE_GROUPS.filter(group => !instructions[group]?.trim() && notes.some(note => note.group && canonicalGroup(note.group) === group && !note.comment.trim() && note.kind !== 'delete'));
 export const GROUP_COLORS: Record<NoteGroup, string> = { yellow: '#eab308', blue: '#eab308', green: '#16a34a', purple: '#a855f7', orange: '#ea860c', red: '#e05260' };
 export const GROUP_NAMES: Record<NoteGroup, string> = { yellow: 'Yellow', blue: 'Yellow', green: 'Green', purple: 'Purple', orange: 'Orange', red: 'Red' };
 export function noteGroups<T extends { group?: NoteGroup }>(notes: T[]) {

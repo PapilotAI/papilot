@@ -25,6 +25,7 @@ await context.route('**/api/**', route => {
   const url = new URL(route.request().url());
   const json = data => route.fulfill({ json: data });
   if (url.pathname === '/api/state') return json(snapshot);
+  if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: 'test', phase: 'idle', checkedAt: 1, error: null, canUpdate: true });
   if (url.pathname.endsWith('/items')) return json({ items: [] });
@@ -112,6 +113,9 @@ try {
   const other = await context.newPage();
   await other.goto(origin);
   await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--bg') === '#fef9ed');
+  // Keep the window receiving pointer input active; the second tab only
+  // observes storage changes and may otherwise throttle the first renderer.
+  await page.bringToFront();
   await reviewOptions.getByRole('radio', { name: 'PDF', exact: true }).check();
   await other.waitForFunction(() => JSON.parse(localStorage.getItem('papilot:appearance')).review === 'pdf');
   await reviewOptions.getByRole('radio', { name: 'Light', exact: true }).check();

@@ -14,16 +14,17 @@ const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHA
 const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 1100 } });
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const prefix = '/review/paper', reviewDist = path.resolve('engine/dist/web');
-const task = { id: 'appearance-task', projectId: 'paper', name: 'colors', title: 'Clarify the experimental results', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { state: 'reviewing', round: 1, counts: { pending: 2 }, unsent: 0 } };
+const task = { id: 'appearance-task', projectId: 'paper', name: 'colors', title: 'Clarify the experimental results', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { state: 'reviewing', round: 1, counts: { pending: 3 }, unsent: 0 } };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Example paper', path: '/tmp/paper' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
 const image = name => ({ src: name + '.svg', clean: name + '.svg', width: 600, height: 110, page: 1, label: '1' });
-const block = id => ({ kind: 'change', units: [id], identical: false, before: [image('before')], after: [image('after')] });
+const block = (...units) => ({ kind: 'change', units, identical: false, before: [image('before')], after: [image('after')] });
 const detail = { task: 'colors', round: 1, before: 'before', after: 'after', warnings: [], files: prefix + '/files/',
-  sections: [{ node: 'results', title: 'Results', number: '4', blocks: [block('first')] }], loose: [block('second')],
-  units: ['first', 'second'].map((id, i) => ({ id, file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: i + 1, old_end: i + 1, new_start: i + 1, new_end: i + 1, old_text: 'Results improve.', new_text: 'The results improve across all evaluated settings.', truncated: false })) };
+  sections: [{ node: 'results', title: 'Results', number: '4', blocks: [block('first', 'second')] }], loose: [block('third')],
+  units: ['first', 'second', 'third'].map((id, i) => ({ id, file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: i + 1, old_end: i + 1, new_start: i + 1, new_end: i + 1, old_text: 'Results improve.', new_text: 'The results improve across all evaluated settings.', truncated: false })) };
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = data => route.fulfill({ json: data });
   if (url.pathname === '/api/state') return json(snapshot);
+  if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', phase: 'idle', canUpdate: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/items')) return json({ items: [] });
@@ -39,7 +40,7 @@ await page.route('**/review/**', async route => {
   if (relative.startsWith('/assets/')) return route.fulfill({ path: path.join(reviewDist, relative), contentType: /\.m?js$/.test(relative) ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'font/otf' });
   if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 110"><rect width="600" height="110" fill="white"/><text x="40" y="60" font-size="21">${relative.includes('after') ? 'Results improve across all evaluated settings.' : 'Results improve.'}</text></svg>` });
   if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail });
-  return route.fulfill({ json: annotateReviewState({ task: 'colors', title: task.title, csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, history: [{ number: 1, created: 1 }], round: 1, revision: 'after', decisions: { first: 'pending', second: 'pending' }, comments: {}, undo: null, job: null }, [task]) });
+  return route.fulfill({ json: annotateReviewState({ task: 'colors', title: task.title, csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, history: [{ number: 1, created: 1 }], round: 1, revision: 'after', decisions: { first: 'pending', second: 'pending', third: 'pending' }, comments: {}, undo: null, job: null }, [task]) });
 });
 try {
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
@@ -69,15 +70,30 @@ try {
       await expect(change.locator('.pdf-strip img').first()).toHaveCSS('filter', darkReview ? 'invert(0.84) hue-rotate(180deg)' : 'none');
       const selected = /\bcurrent\b/.test(await change.getAttribute('class'));
       await expect(change.locator('.change-head')).toHaveCSS('background-color', darkReview ? (selected ? 'rgb(48, 49, 53)' : 'rgb(42, 43, 47)') : (selected ? 'rgb(244, 244, 244)' : 'rgb(250, 250, 250)'));
-      await change.getByRole('button', { name: 'LaTeX', exact: true }).click();
+      const sourceToggle = change.getByRole('button', { name: /LaTeX$/ });
+      await sourceToggle.click();
       await expect(change.locator('.source-code').first()).toHaveCSS('background-color', darkReview ? 'rgb(38, 39, 43)' : 'rgb(255, 255, 255)');
       await expect(change.locator('.source-code').first()).toHaveCSS('color', darkReview ? 'rgb(236, 236, 238)' : 'rgb(23, 23, 23)');
-      await change.getByRole('button', { name: 'LaTeX', exact: true }).click();
+      // Grouped changes expose per-edit actions. Their hover background must
+      // follow the review surface even when the surrounding workspace is dark.
+      if (kind === 'inline') {
+        for (const [action, light, dark] of [
+          ['accept', 'rgb(21, 128, 61)', 'rgb(123, 213, 160)'],
+          ['reject', 'rgb(220, 38, 38)', 'rgb(255, 150, 150)'],
+          ['comment', 'rgb(37, 99, 235)', 'rgb(138, 180, 255)'],
+        ]) {
+          const button = change.locator('.unit-actions .' + action).first();
+          await button.hover();
+          await expect(button).toHaveCSS('background-color', darkReview ? 'rgb(30, 31, 34)' : 'rgb(243, 243, 243)');
+          await expect(button).toHaveCSS('color', darkReview ? dark : light);
+        }
+      }
+      await sourceToggle.click();
     }
     if (theme === 'Dark') await page.screenshot({ path: `test-results/review-appearance-pdf-${pdf}-review-${review}.png` });
   }
   assert.deepEqual(errors, []);
-  console.log('PASS: all 12 UI/PDF/review appearance combinations, inline and standalone changes, preview filters, controls and LaTeX colors.');
+  console.log('PASS: all 12 UI/PDF/review appearance combinations, inline and standalone changes, preview filters, controls, LaTeX colors and per-edit action hover states.');
 } catch (error) {
   await page.screenshot({ path: 'test-results/review-appearance-failure.png' });
   throw error;

@@ -21,6 +21,7 @@ const routeApi = async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
   if (url.pathname === '/api/state') return json(snapshot);
+  if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git')) return json(git);
@@ -51,9 +52,15 @@ const routeApi = async route => {
   throw Error(`Unexpected fixture request ${url.pathname}`);
 };
 await page.route('**/api/**', routeApi);
-const picker = () => page.getByRole('button', { name: 'Annotation group color', exact: true });
+// On wide viewers the note tool is the color picker: a click picks the tool,
+// a second click opens the colors. Narrow viewers keep the toolbar's picker.
+const noteTool = () => page.getByRole('toolbar', { name: 'Marking tools' }).getByRole('button', { name: 'Note', exact: true });
+const picker = () => page.locator('.group-select:visible');
 async function chooseGroup(name) {
-  await picker().click();
+  if (await noteTool().isVisible()) {
+    if (await noteTool().getAttribute('aria-pressed') !== 'true') await noteTool().click();
+    await noteTool().click();
+  } else await picker().click();
   await page.getByRole('menuitemradio', { name, exact: true }).click();
 }
 async function selectText(index, automatic = true) {
@@ -95,8 +102,10 @@ try {
   await page.locator('.pdf-container').focus();
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
   await expect.poll(() => notes.length).toBe(1);
+  await expect(page.getByRole('toolbar', { name: 'Marking tools' }).getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
   await selectText(2); await expect.poll(() => notes.length).toBe(2);
-  await page.getByRole('button', { name: 'Mark region', exact: true }).click();
+  // Color belongs to the note tool and carries over to the region tool in the rail.
+  await page.getByRole('toolbar', { name: 'Marking tools' }).getByRole('button', { name: 'Region', exact: true }).click();
   const regionBox = await page.locator('.region-capture').first().boundingBox();
   await page.mouse.move(regionBox.x + 60, regionBox.y + 90); await page.mouse.down();
   await page.mouse.move(regionBox.x + 180, regionBox.y + 150, { steps: 5 }); await page.mouse.up();
@@ -119,16 +128,20 @@ try {
   await expect(page.locator('.annotation-group')).toHaveCount(2);
   await page.getByRole('button', { name: 'Close notes', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Start task', exact: true })).toBeDisabled();
-  await page.keyboard.press('Escape'); await expect(picker()).not.toHaveAttribute('data-group');
+  // Escape returns to Select; like a brush color, the group color stays for the next time.
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('toolbar', { name: 'Marking tools' }).getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(picker()).toHaveAttribute('data-group', 'purple');
   await page.reload();
   await page.getByRole('button', { name: 'My notes', exact: true }).click();
   await expect(page.locator('.annotation-group')).toHaveCount(2);
   await page.getByRole('button', { name: 'Close notes', exact: true }).click();
   await expect(page.locator('.note-tag[data-group="yellow"]')).toHaveCount(2);
-  await page.getByRole('tab', { name: 'Contents', exact: true }).click();
+  await page.getByRole('button', { name: 'Contents', exact: true }).click();
   await clickMark(notes[0]);
   await clickMark(notes[2]);
-  await expect(page.getByRole('tab', { name: 'Contents', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: 'Contents', exact: true })).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('tab', { name: 'New task', exact: true })).toHaveAttribute('aria-selected', 'true');
   // Dragging outside the card closes it while keeping normal PDF text selection.
   const dragMark = page.locator(`.note-mark[data-note="${notes[0].id}"]`).first();
   const dragBox = await dragMark.boundingBox();
