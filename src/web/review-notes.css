@@ -48,3 +48,18 @@
   .review-notes-panel button{min-height:40px}
   .review-notes-panel footer button{padding:0 16px}
 }
+
+/* The review shares the manuscript's marking tools and keeps their geometry
+   anchored to the displayed round and strip. */
+.review-note-mark[data-kind=delete]{background:linear-gradient(to bottom,transparent calc(54% - .75px),var(--red) calc(54% - .75px),var(--red) calc(54% + .75px),transparent calc(54% + .75px))}
+.review-note-mark[data-stamp]{background:color-mix(in srgb,var(--purple) 20%,transparent)}
+.review-note-tag[data-kind=delete]{background:var(--red)}
+.review-note-tag[data-stamp]{background:var(--purple)}
+.review-note-point{position:absolute;border-left:2px solid var(--primary);min-height:16px;pointer-events:none}
+.review-note-point::before{content:"";position:absolute;left:-5px;top:-5px;width:8px;height:8px;border-radius:50%;background:var(--primary)}
+.review-point-capture{position:absolute;inset:0;pointer-events:auto;cursor:crosshair}
+:root[data-review-tool=hand] #paper{cursor:grab;user-select:none;touch-action:none}
+:root[data-review-tool=hand] .pdf-text,:root[data-review-tool=point] .pdf-text{pointer-events:none}
+:root[data-review-tool=magic] .pdf-strip .pdf-text{z-index:4;pointer-events:none}
+:root[data-review-tool=magic] .pdf-strip .pdf-glyph{pointer-events:auto}
+:root[data-review-tool=delete] .pdf-text ::selection{background:color-mix(in srgb,var(--red) 20%,transparent);text-decoration:line-through}

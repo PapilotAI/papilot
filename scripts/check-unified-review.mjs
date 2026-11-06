@@ -1,3 +1,4 @@
+import { checkReviewTools } from './review-tools-checks.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,6 +58,7 @@ await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
   if (url.pathname === '/api/indirect-changes') return route.fulfill({ json: { indirectChanges: false } });
   if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
+  if (url.pathname === '/api/quick-notes') return route.fulfill({ json: { quickNotes: null } });
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
@@ -141,6 +143,8 @@ async function quote(side, offset = 8) {
 try {
   console.log('Opening fixture'); await page.goto(origin);
   await viewer().locator('.change.current').waitFor();
+  await checkReviewTools(page, writes, sent);
+  if (!process.env.PAPILOT_REVIEW_TOOLS_ONLY) {
   await input().fill('Keep the examples.');
   console.log('Selecting before'); await quote('before');
   await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toBeFocused();
@@ -259,4 +263,5 @@ try {
   await page.screenshot({ path: 'test-results/unified-review-dark.png' });
   assert.deepEqual(errors, []);
   console.log('PASS: unified quote and whole-change comments, before/after anchors, independent decisions, persisted drafts, notes-only send, retry identity, acceptance, rejection-only send, old rounds, mobile and dark mode');
+  }
 } catch (error) { await page.screenshot({ path: 'test-results/unified-review-failure.png' }); console.error(await page.locator('body').innerText()); throw error; } finally { await browser.close(); await server.close(); }
