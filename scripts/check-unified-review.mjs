@@ -1,4 +1,5 @@
 import { checkReviewTools } from './review-tools-checks.mjs';
+import { readyRequirements } from './required-tools-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,6 +60,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/indirect-changes') return route.fulfill({ json: { indirectChanges: false } });
   if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
   if (url.pathname === '/api/quick-notes') return route.fulfill({ json: { quickNotes: null } });
+  if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
