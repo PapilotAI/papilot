@@ -55,7 +55,6 @@
   "Allow this action": "Permitir esta ação",
   "Already set up?": "Já configurado?",
   "Already used for {action}. Choose another shortcut.": "Já usado para {action}. Escolha outro atalho.",
-  "Always light": "Sempre claro",
   "An environment variable set in a new terminal does not reach an already running server. Restart Papilot with the credentials; Reconnect alone cannot change its environment.": "Uma variável de ambiente definida em um novo terminal não alcança um servidor já em execução. Reinicie o Papilot com as credenciais; apenas reconectar não altera seu ambiente.",
   "Annotation group color": "Cor do grupo de anotações",
   "Annotation groups": "Grupos de anotações",
@@ -141,7 +140,6 @@
   "Choose attachments": "Escolher anexos",
   "Choose different files": "Escolher outros arquivos",
   "Choose folder": "Escolher pasta",
-  "Choose how paper pages look in dark mode.": "Escolha a aparência das páginas do artigo no modo escuro.",
   "Choose the papers to share, then send a personal invite link.": "Escolha os artigos para compartilhar e envie um link de convite pessoal.",
   "Choose up to 5,000 files, totaling less than 64 MB.": "Escolha até 5.000 arquivos, totalizando menos de 64 MB.",
   "Choose {color} color": "Escolher cor {color}",
@@ -348,7 +346,6 @@
   "Fix typos, grammar and punctuation without rewording": "Corrigir erros de digitação, gramática e pontuação sem reformular",
   "Fix with an agent…": "Corrigir com um agente…",
   "Folder path": "Caminho da pasta",
-  "Follow mode": "Modo de acompanhamento",
   "For the SDK instead, start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured. Restart Papilot after changing its environment.": "Para usar o SDK, inicie o Papilot com ANTHROPIC_API_KEY ou um provedor de nuvem compatível configurado. Reinicie o Papilot após alterar seu ambiente.",
   "Foreground": "Primeiro plano",
   "Full PDF": "PDF completo",
@@ -1155,5 +1152,9 @@
   "{sources} could not be reached.": "Não foi possível acessar {sources}.",
   "{time} ago": "há {time}",
   "{title} PDF change review": "Revisão de alterações no PDF de {title}",
-  "{used}% used": "{used}% utilizado"
+  "{used}% used": "{used}% utilizado",
+  "Review appearance": "Aparência da revisão",
+  "Auto": "Automático",
+  "Auto matches the interface mode.": "Automático usa o modo da interface.",
+  "PDF uses the setting above.": "PDF usa a configuração acima."
 }

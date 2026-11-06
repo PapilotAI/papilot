@@ -55,7 +55,6 @@
   "Allow this action": "この操作を許可",
   "Already set up?": "設定済みですか？",
   "Already used for {action}. Choose another shortcut.": "すでに「{action}」で使用されています。別のショートカットを選択してください。",
-  "Always light": "常にライト",
   "An environment variable set in a new terminal does not reach an already running server. Restart Papilot with the credentials; Reconnect alone cannot change its environment.": "新しいターミナルで設定した環境変数は、すでに実行中のサーバーには反映されません。認証情報を設定した状態でPapilotを再起動してください。再接続だけでは環境変数は変更されません。",
   "Annotation group color": "注釈グループの色",
   "Annotation groups": "注釈グループ",
@@ -141,7 +140,6 @@
   "Choose attachments": "添付ファイルを選択",
   "Choose different files": "別のファイルを選択",
   "Choose folder": "フォルダを選択",
-  "Choose how paper pages look in dark mode.": "ダークモードでの論文ページの表示方法を選択します。",
   "Choose the papers to share, then send a personal invite link.": "共有する論文を選択し、個別の招待リンクを送信します。",
   "Choose up to 5,000 files, totaling less than 64 MB.": "合計64 MB未満、最大5,000個のファイルを選択してください。",
   "Choose {color} color": "{color}の色を選択",
@@ -348,7 +346,6 @@
   "Fix typos, grammar and punctuation without rewording": "表現を変えずに誤字・文法・句読点を修正します",
   "Fix with an agent…": "エージェントで修正…",
   "Folder path": "フォルダーのパス",
-  "Follow mode": "追従モード",
   "For the SDK instead, start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured. Restart Papilot after changing its environment.": "代わりに SDK を使用する場合は、ANTHROPIC_API_KEY または対応しているクラウドプロバイダーを設定した状態で Papilot を起動してください。環境を変更した後は Papilot を再起動してください。",
   "Foreground": "前面表示",
   "Full PDF": "PDF 全体",
@@ -1155,5 +1152,9 @@
   "{sources} could not be reached.": "{sources} に接続できませんでした。",
   "{time} ago": "{time}前",
   "{title} PDF change review": "{title} PDF 変更レビュー",
-  "{used}% used": "{used}% 使用済み"
+  "{used}% used": "{used}% 使用済み",
+  "Review appearance": "レビューの外観",
+  "Auto": "自動",
+  "Auto matches the interface mode.": "自動ではインターフェースのモードに合わせます。",
+  "PDF uses the setting above.": "PDF は上の設定を使用します。"
 }

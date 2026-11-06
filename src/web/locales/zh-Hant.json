@@ -55,7 +55,6 @@
   "Allow this action": "允許此操作",
   "Already set up?": "已經設定好了嗎？",
   "Already used for {action}. Choose another shortcut.": "已用於「{action}」。請選擇其他快捷鍵。",
-  "Always light": "永遠使用淺色模式",
   "An environment variable set in a new terminal does not reach an already running server. Restart Papilot with the credentials; Reconnect alone cannot change its environment.": "在新終端機中設定的環境變數不會傳遞給已在執行中的伺服器。請攜帶憑證重新啟動 Papilot；僅重新連線無法變更其環境。",
   "Annotation group color": "註解群組顏色",
   "Annotation groups": "註解群組",
@@ -141,7 +140,6 @@
   "Choose attachments": "選擇附件",
   "Choose different files": "選擇其他檔案",
   "Choose folder": "選擇資料夾",
-  "Choose how paper pages look in dark mode.": "選擇論文頁面在深色模式下的顯示方式。",
   "Choose the papers to share, then send a personal invite link.": "選擇要分享的論文，然後傳送個人邀請連結。",
   "Choose up to 5,000 files, totaling less than 64 MB.": "最多可選擇 5,000 個檔案，總大小需小於 64 MB。",
   "Choose {color} color": "選擇 {color} 顏色",
@@ -348,7 +346,6 @@
   "Fix typos, grammar and punctuation without rewording": "修正錯字、文法與標點符號而不改寫文句",
   "Fix with an agent…": "使用智慧代理修正…",
   "Folder path": "資料夾路徑",
-  "Follow mode": "跟隨模式",
   "For the SDK instead, start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured. Restart Papilot after changing its environment.": "若要改用 SDK，請在設定好 ANTHROPIC_API_KEY 或支援的雲端供應商後啟動 Papilot。變更環境設定後請重新啟動 Papilot。",
   "Foreground": "前景",
   "Full PDF": "完整 PDF",
@@ -1155,5 +1152,9 @@
   "{sources} could not be reached.": "無法連線至 {sources}。",
   "{time} ago": "{time}前",
   "{title} PDF change review": "{title} PDF 變更審閱",
-  "{used}% used": "已使用 {used}%"
+  "{used}% used": "已使用 {used}%",
+  "Review appearance": "審閱外觀",
+  "Auto": "自動",
+  "Auto matches the interface mode.": "自動使用目前的介面模式。",
+  "PDF uses the setting above.": "PDF 使用上方的設定。"
 }
