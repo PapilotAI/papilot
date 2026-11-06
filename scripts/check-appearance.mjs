@@ -82,12 +82,11 @@ try {
   await background.fill('#252229');
   await background.press('Enter');
   await rootHas('--bg', '#252229');
-  await dialog.getByText('Advanced', { exact: true }).click();
   await dialog.getByRole('radiogroup', { name: 'PDF appearance', exact: true }).getByRole('radio', { name: 'Light', exact: true }).check();
   await rootHas('--pdf-filter', 'none');
   assert.equal(await variable(page.frameLocator('.review-frame'), '--pdf-filter'), 'none');
   const reviewOptions = dialog.getByRole('radiogroup', { name: 'Review appearance', exact: true });
-  await expect(dialog.locator('.appearance-advanced').getByRole('switch')).toHaveCount(0);
+  await expect(dialog.locator('.appearance-paper-card').getByRole('switch')).toHaveCount(0);
   await expect(reviewOptions).toBeVisible();
   await expect(reviewOptions.getByRole('radio', { name: 'PDF', exact: true })).toBeChecked();
   await expect(page.frameLocator('.review-frame').locator('html')).toHaveAttribute('data-review-theme', 'light');
@@ -100,7 +99,6 @@ try {
   assert.equal(await variable(page, '--primary'), '#55565a');
   assert.equal(await variable(page, '--review-theme'), 'dark');
   await open();
-  await dialog.getByText('Advanced', { exact: true }).click();
   await expect(reviewOptions.getByRole('radio', { name: 'Auto', exact: true })).toBeChecked();
   await modes.getByRole('radio', { name: 'Light', exact: true }).check();
   await rootHas('--bg', '#fef9ed');

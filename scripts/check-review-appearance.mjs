@@ -51,7 +51,6 @@ try {
     const dialog = page.locator('.settings-dialog');
     await dialog.getByRole('button', { name: 'Appearance', exact: true }).click();
     await dialog.getByRole('radiogroup', { name: 'Mode', exact: true }).getByRole('radio', { name: theme, exact: true }).check();
-    await dialog.getByText('Advanced', { exact: true }).click();
     await dialog.getByRole('radiogroup', { name: 'PDF appearance', exact: true }).getByRole('radio', { name: pdf === 'theme' ? 'Auto' : 'Light', exact: true }).check();
     await dialog.getByRole('radiogroup', { name: 'Review appearance', exact: true }).getByRole('radio', { name: review === 'pdf' ? 'PDF' : review === 'theme' ? 'Auto' : 'Light', exact: true }).check();
     if (theme === 'Dark' && pdf === 'light' && review === 'pdf') await page.screenshot({ path: 'test-results/review-appearance-settings.png' });

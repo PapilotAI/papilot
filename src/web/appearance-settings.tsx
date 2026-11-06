@@ -73,6 +73,16 @@ export function AppearanceSettings({ theme, onTheme, resolved, appearance, onApp
           </div>
         </div>
       </div>
+      <div className="settings-card appearance-paper-card">
+        <div className="settings-row settings-choice appearance-paper-row">
+          <div className="settings-text"><span className="settings-name">{t('PDF appearance')}</span><p>{t('Auto matches the interface mode.')}</p></div>
+          <PaperAppearanceOptions label={t('PDF appearance')} name="pdf-appearance" value={appearance.pdf} options={['theme', 'light']} onChange={pdf => onAppearance({ ...appearance, pdf })}/>
+        </div>
+        <div className="settings-row settings-choice appearance-paper-row">
+          <div className="settings-text"><span className="settings-name">{t('Review appearance')}</span><p>{t('PDF uses the setting above.')}</p></div>
+          <PaperAppearanceOptions label={t('Review appearance')} name="review-appearance" value={appearance.review} options={['pdf', 'theme', 'light']} onChange={review => onAppearance({ ...appearance, review })}/>
+        </div>
+      </div>
       <div className="settings-card appearance-colors-card">
         <div className="settings-row">
           <span className="settings-name">{t('Theme')}</span>
@@ -90,19 +100,6 @@ export function AppearanceSettings({ theme, onTheme, resolved, appearance, onApp
       </div>
       <p className="appearance-hint">{resolved === 'light' ? t('Editing light mode colors. Changes are saved automatically.') : t('Editing dark mode colors. Changes are saved automatically.')}</p>
     </section>
-    <details className="appearance-advanced">
-      <summary>{t('Advanced')}<Icon name="chevronRight" size={15}/></summary>
-      <div className="settings-card">
-        <div className="settings-row settings-choice appearance-paper-row">
-          <div className="settings-text"><span className="settings-name">{t('PDF appearance')}</span><p>{t('Auto matches the interface mode.')}</p></div>
-          <PaperAppearanceOptions label={t('PDF appearance')} name="pdf-appearance" value={appearance.pdf} options={['theme', 'light']} onChange={pdf => onAppearance({ ...appearance, pdf })}/>
-        </div>
-        <div className="settings-row settings-choice appearance-paper-row">
-          <div className="settings-text"><span className="settings-name">{t('Review appearance')}</span><p>{t('PDF uses the setting above.')}</p></div>
-          <PaperAppearanceOptions label={t('Review appearance')} name="review-appearance" value={appearance.review} options={['pdf', 'theme', 'light']} onChange={review => onAppearance({ ...appearance, review })}/>
-        </div>
-      </div>
-    </details>
     <button type="button" className="appearance-reset" onClick={() => { onAppearance(DEFAULT_APPEARANCE); onTheme('system'); }}><Icon name="restore" size={15}/>{t('Reset appearance')}</button>
   </div>;
 }
