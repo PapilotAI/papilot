@@ -138,7 +138,7 @@ async function quote(side, offset = 8) {
     const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     document.dispatchEvent(new Event('selectionchange'));
   }, offset);
-  await viewer().locator('.review-add-note').click();
+  await viewer().locator('.review-select-menu button').click();
 }
 try {
   console.log('Opening fixture'); await page.goto(origin);
