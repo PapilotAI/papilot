@@ -1289,11 +1289,12 @@ function App() {
   const requirements = useSystemRequirements(Boolean(state) && online, loadRequirements);
   const [setupOpen, setSetupOpen] = useState(false);
   const setupPrompted = useRef(false);
-  const firstSetupVisit = useRef(!browserStorage.getItem('papilot:project'));
+  const firstSetupVisit = useRef(!browserStorage.getItem('papilot:setup-seen') && !browserStorage.getItem('papilot:project'));
   useEffect(() => {
-    if (!requirements.report || setupPrompted.current) return;
+    if (!owner || !requirements.report || setupPrompted.current) return;
     setupPrompted.current = true;
-    if (owner && firstSetupVisit.current && requirementsMissing(requirements.report) && !document.querySelector('dialog[open]')) setSetupOpen(true);
+    browserStorage.setItem('papilot:setup-seen', '1');
+    if (firstSetupVisit.current && requirementsMissing(requirements.report) && !document.querySelector('dialog[open]')) setSetupOpen(true);
   }, [requirements.report, owner]);
   const newFiles = useAttachmentDraft(`papilot:files:${viewer?.id || 'owner'}:new:${project?.id || projectId}`);
   // A session that already ended signs out too.
@@ -1311,9 +1312,8 @@ function App() {
   const running = state?.tasks.filter(t => ['running', 'waiting_input', 'building'].includes(t.status)).length || 0;
   // The desktop app opens a folder the way an editor does: the system picker,
   // then the paper itself. The browser imports a folder or ZIP in a dialog.
-  function openProject() { if (requirementsMissing(requirements.report)) { setSetupOpen(true); return; } if (nativeFolders) void openFolder(); else setModal('project'); }
+  function openProject() { if (nativeFolders) void openFolder(); else setModal('project'); }
   async function openFolder(folder?: string, main?: string) {
-    if (requirementsMissing(requirements.report)) { setSetupOpen(true); return; }
     if (folderRequest.current) return;
     folderRequest.current = true;
     try {

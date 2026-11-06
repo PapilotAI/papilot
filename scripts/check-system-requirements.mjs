@@ -20,7 +20,7 @@ async function fixture({ platform = 'darwin', missing = all, member = false, exi
   await context.addInitScript(({ language, returning, desktop, platform }) => {
     localStorage.setItem('papilot:language', language);
     if (returning) localStorage.setItem('papilot:project', 'paper');
-    if (desktop) window.papilotDesktop = { platform, minimize() {}, maximize() {}, close() {}, chooseDirectory: async () => null };
+    if (desktop) window.papilotDesktop = { platform, minimize() {}, maximize() {}, close() {}, chooseDirectory: async () => { window.fixtureFolderRequests = (window.fixtureFolderRequests || 0) + 1; return null; } };
   }, { language, returning, desktop, platform });
   const state = { version: '0.9.0', csrf: 'fixture', projects: existing ? [{ id: 'paper', name: 'Paper', path: '/fixture/paper', createdAt: 1 }] : [], tasks: [], requests: [], runtime: { connected: true, authenticated: true, account: 'Owner', error: null, models: [] }, viewer: { id: member ? 'member' : 'owner', role: member ? 'member' : 'owner', name: 'Reader', listener: member ? 'account' : 'local', owner: 'Owner' } };
   await context.route('**/api/**', route => {
@@ -55,8 +55,16 @@ try {
   assert.equal(await dialog.getByRole('button', { name: 'Close', exact: true }).evaluate(el => el === document.activeElement), true);
   await f.page.keyboard.press('Escape');
   assert.equal(await dialog.count(), 0);
+  await f.page.reload();
+  await f.page.getByRole('button', { name: 'Review setup' }).waitFor();
+  assert.equal(await dialog.count(), 0, 'returning users without a paper are not prompted again');
   await f.page.getByRole('button', { name: 'Open a folder', exact: true }).first().click();
-  await dialog.waitFor(); // Missing tools lead back to setup, not a failed import.
+  assert.equal(await f.page.evaluate(() => window.fixtureFolderRequests), 1, 'setup guidance does not block the folder picker');
+  assert.equal(await dialog.count(), 0);
+  const bannerBox = await f.page.locator('.requirements-banner').boundingBox();
+  assert.ok(bannerBox.y > 46, 'the desktop notice stays clear of the window controls');
+  await f.page.getByRole('button', { name: 'Review setup' }).click();
+  await dialog.waitFor();
   f.scenario.report = report('darwin', ['synctex']);
   await dialog.getByRole('button', { name: 'Check again' }).click();
   await dialog.getByRole('link', { name: 'Install Git' }).waitFor({ state: 'hidden' });

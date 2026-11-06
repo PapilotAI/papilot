@@ -3,6 +3,8 @@
 .requirements-banner>span{flex:1;min-width:0}
 .requirements-banner>button{flex:none;color:var(--text);padding:4px 6px;border-radius:var(--r-sm)}
 .requirements-banner>button:hover{background:var(--bg-hover)}
+/* Keep desktop window controls aligned with their toolbar. */
+[data-desktop] .requirements-banner{order:1;border-top:1px solid var(--line);border-bottom:0}
 .modal.requirements-dialog{display:flex;flex-direction:column;width:480px;padding:0;overflow:hidden}
 .modal.requirements-dialog h2{flex:none;margin:0;padding:26px 56px 8px 26px}
 .modal.requirements-dialog h2:focus{outline:none}

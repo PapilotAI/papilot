@@ -11,9 +11,13 @@ const command: Probe = (file, args, env) => new Promise(resolve => {
 });
 
 export async function checkSystemRequirements(env = process.env, platform = process.platform, probe: Probe = command): Promise<SystemRequirements> {
+  // Windows treats environment names as case-insensitive; match Node's choice
+  // if a supplied environment contains both PATH and Path.
+  const pathKey = platform === 'win32' ? Object.keys(env).sort().find(key => key.toLowerCase() === 'path') || 'PATH' : 'PATH';
+  const directories = (env[pathKey] || '').split(platform === 'win32' ? ';' : path.delimiter).filter(Boolean).map(dir => platform === 'win32' ? dir.replace(/^"|"$/g, '') : dir);
   async function available(name: string, args = ['--version']) {
     // Use the server's actual PATH, just like compilation and Git operations.
-    const file = (env.PATH || '').split(path.delimiter).filter(Boolean).map(dir => path.resolve(dir, name + (platform === 'win32' ? '.exe' : ''))).find(candidate => {
+    const file = directories.map(dir => path.resolve(dir, name + (platform === 'win32' ? '.exe' : ''))).find(candidate => {
       try { fs.accessSync(candidate, platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK); return fs.statSync(candidate).isFile(); } catch { return false; }
     });
     if (!file) return false;

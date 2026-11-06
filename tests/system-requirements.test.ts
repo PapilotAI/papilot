@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { checkSystemRequirements } from '../src/server/system-requirements.ts';
 
-test('setup detects missing, broken and partially installed tools on the server PATH', async () => {
+test('setup detects missing, broken and partially installed tools on the server PATH', { skip: process.platform === 'win32' }, async () => {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-requirements-'));
   const env = { PATH: bin };
   const tool = (name: string, body = 'exit 0') => fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
@@ -20,6 +20,18 @@ test('setup detects missing, broken and partially installed tools on the server 
     assert.ok(!JSON.stringify(report).includes(bin), 'shared status must not expose host paths');
     fs.unlinkSync(path.join(bin, 'git'));
     assert.equal((await checkSystemRequirements(env)).checks[0].ok, false, 'a later check sees changed installations');
+  } finally { fs.rmSync(bin, { recursive: true, force: true }); }
+});
+
+test('Windows setup recognizes Path and quoted installation directories', async () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-requirements-win-'));
+  try {
+    fs.writeFileSync(path.join(bin, 'git.exe'), 'fixture');
+    const calls: string[] = [];
+    const report = await checkSystemRequirements({ Path: `"${bin}"`, PATHEXT: '.EXE' }, 'win32', async file => { calls.push(file); return true; });
+    assert.equal(report.checks[0].ok, true);
+    assert.deepEqual(calls, [path.join(bin, 'git.exe')]);
+    assert.ok(report.checks.slice(1).every(check => !check.ok));
   } finally { fs.rmSync(bin, { recursive: true, force: true }); }
 });
 
