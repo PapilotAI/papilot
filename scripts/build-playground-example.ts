@@ -33,7 +33,12 @@ try {
   execFileSync('rsvg-convert', ['--format', 'pdf', '--output', path.join(assets, 'agents.pdf')], {
     input: agents.replaceAll(/<text\b[^>]*>[\s\S]*?<\/text>/g, ''),
   });
-  const tex = (text: string) => text.replace(/[&%$#_{}]/g, '\\$&');
+  const tex = (text: string) => text.replace(/[\\&%$#_{}~^]/g, character => {
+    if (character === '\\') return '\\textbackslash{}';
+    if (character === '~') return '\\textasciitilde{}';
+    if (character === '^') return '\\textasciicircum{}';
+    return '\\' + character;
+  });
   fs.writeFileSync(path.join(assets, 'agents.tex'), [
     '\\setlength{\\unitlength}{1bp}',
     `\\begin{picture}(${width},${height})`,
