@@ -171,7 +171,7 @@ const SAVED = /^Papilot: pass (\d+) output saved/m, NEXT = /^Run number \d+ of r
 export interface PassPreview { pass: number; pdf: string; root: string; cwd: string }
 // Completed builds kept per set of targets, as candidates to continue from.
 const RECENT = 16;
-interface Recent { key: string; context: string; date: unknown; tree?: string }
+interface Recent { key: string; context: string; date: unknown; tree?: string; cacheKey?: string }
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 export const includes = (text: string) =>
@@ -278,10 +278,9 @@ export function warnings(text: string) {
     ),
   ].sort();
 }
-// The date every build of a day prints, so that a build kept from an earlier
-// day differs from today's in its text alone, not in \today. TeX reads it
-// from SOURCE_DATE_EPOCH; noon UTC of the local date shows the local date in
-// every time zone. A SOURCE_DATE_EPOCH set by the user is kept as it is.
+// The date used when TeX actually runs, not an expiry date for cached PDFs.
+// Noon UTC of the local date shows the local date in every time zone.
+// A SOURCE_DATE_EPOCH set by the user is kept as it is.
 export function buildDate(now = new Date(), env = process.env) {
   return env.SOURCE_DATE_EPOCH
     ? { SOURCE_DATE_EPOCH: env.SOURCE_DATE_EPOCH }
@@ -363,7 +362,8 @@ export class Builder {
     try { version = await commandVersion(this.project.engine); }
     catch { return this.build(rev, ["full"], null, options); }
     const tree = await this.repo.treeIdAsync(rev, this.project.source_dir),
-      context = hash(JSON.stringify([signature(this.project), version]));
+      fixedDate = process.env.SOURCE_DATE_EPOCH ? buildDate() : null,
+      context = hash(JSON.stringify([signature(this.project), version, ...(fixedDate ? [fixedDate] : [])]));
     let incomplete = false;
     for (const entry of this.recent(["full"])) {
       if (entry.context !== context || (entry.tree && entry.tree !== tree)
@@ -413,21 +413,24 @@ export class Builder {
     }
     const tree = await this.repo.treeIdAsync(rev, p.source_dir),
       date = buildDate(),
-      context = hash(JSON.stringify([signature(p), version])),
-      key = hash(
+      // Only an explicitly configured date changes the build's inputs.
+      // Opening an unchanged paper on another day keeps its existing PDF.
+      fixedDate = process.env.SOURCE_DATE_EPOCH ? date : null,
+      context = hash(JSON.stringify([signature(p), version, ...(fixedDate ? [fixedDate] : [])])),
+      cacheKey = hash(
         JSON.stringify([
           tree,
           targets,
           seed?.key ?? null,
           signature(p),
           version,
-          date,
+          fixedDate,
           SELF,
-          // Manual recompilation gets a fresh output directory. Other previews
-          // and review rounds may still be reading the previous cached PDF.
-          ...(options.force ? [randomUUID()] : []),
         ]),
       ).slice(0, 32),
+      // Manual recompilation gets a fresh output directory. Other previews
+      // and review rounds may still be reading the previous cached PDF.
+      key = options.force ? hash(JSON.stringify([cacheKey, randomUUID()])).slice(0, 32) : cacheKey,
       folder = path.join(this.cache, key);
     // Someone now waits for a build of this key that may already be running,
     // and sees its passes from now on, starting with the latest one.
@@ -450,11 +453,19 @@ export class Builder {
         const result = await ongoing.catch(() => null);
         if (result) return result;
       }
-      const attempt = (async () =>
-        (await this.finished(folder)) ??
-        withLock(path.join(this.cache, key + ".lock"), async () =>
-          (await this.finished(folder)) ?? this.compileOnce(rev, tree, key, context, targets, seed, date, partial, options),
-        ))();
+      const attempt = (async () => {
+        // A manual refresh becomes the preferred result for these inputs,
+        // including after a restart, while older PDFs stay immutable.
+        if (!options.force) for (const entry of this.recent(targets)) {
+          if (entry.cacheKey !== cacheKey) continue;
+          const refreshed = await this.finished(path.join(this.cache, entry.key));
+          if (refreshed) return refreshed;
+        }
+        return (await this.finished(folder)) ??
+          withLock(path.join(this.cache, key + ".lock"), async () =>
+            (await this.finished(folder)) ?? this.compileOnce(rev, tree, key, cacheKey, context, targets, seed, date, partial, options),
+          );
+      })();
       building.set(key, attempt);
       try {
         return await attempt;
@@ -470,6 +481,7 @@ export class Builder {
     rev: string,
     tree: string,
     key: string,
+    cacheKey: string,
     context: string,
     targets: string[],
     seed: BuildInfo | null,
@@ -506,7 +518,7 @@ export class Builder {
       active.delete(run);
       schedule();
     }
-    await this.remember(targets, { key, context, date: date.SOURCE_DATE_EPOCH, tree });
+    await this.remember(targets, { key, cacheKey, context, date: date.SOURCE_DATE_EPOCH, tree });
     return result;
   }
   // A completed build in this folder, whose PDF is still there.
@@ -592,13 +604,12 @@ export class Builder {
     await fs.promises.mkdir(out, { recursive: true });
     const included = includes(await fs.promises.readFile(path.join(cwd, main), "utf8"));
     await Promise.all(included.map((target) => fs.promises.mkdir(path.join(out, path.dirname(target)), { recursive: true })));
-    // The PDF, SyncTeX data and log carry over only within a day, so that
-    // \today stays current; latexmk then skips TeX when no input changed.
-    const reused = base !== null && start !== "author" && start?.date === date.SOURCE_DATE_EPOCH;
+    // Keep outputs across days too: latexmk decides whether inputs changed.
+    // A different explicit date has a different context and cannot get here.
     if (base) {
       const previous = path.dirname(base.pdf);
       await Promise.all((await filesIn(previous))
-        .filter((file) => !/\.fls$/i.test(file) && (reused || !OUTPUT.test(file)))
+        .filter((file) => !/\.fls$/i.test(file))
         .map((file) => clone(file, path.join(out, path.relative(previous, file)))));
     } else if (start === "author") {
       // Only this job's state: the author's folder may hold other editions.
@@ -737,8 +748,8 @@ export class Builder {
     if (keeping) for (let number = 1; number <= saved; number++) if (!kept.has(number)) await fs.promises.rm(path.join(passes, String(number)), { recursive: true, force: true });
     const pdf = path.join(out, job + ".pdf"),
       texLog = path.join(out, job + ".log");
-    if (reused && !failure)
-      await Promise.all([path.join(out, job + ".synctex.gz"), texLog].map((file) => relocate(file, path.dirname(base!.root), folder)));
+    if (base && !failure)
+      await Promise.all([path.join(out, job + ".synctex.gz"), texLog].map((file) => relocate(file, path.dirname(base.root), folder)));
     const logText = await fs.promises.readFile(texLog, "utf8").catch(() => "");
     if (failure || !fs.existsSync(pdf)) {
       const transcriptText = await fs.promises.readFile(transcript, "utf8"),
