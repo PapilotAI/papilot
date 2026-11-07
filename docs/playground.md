@@ -111,5 +111,6 @@ normal app build excludes the playground adapter, notice and sample content.
 Browser storage is namespaced separately from a real workspace. Notes carry the
 PDF's content hash, and review storage includes the example revisions, so an
 updated example never reuses notes or decisions from a different paper. Blocked
-browser storage falls back to the current tab. The internal reset endpoint is
+or full browser storage falls back to the current tab, shared with its review
+frames so decisions survive switching tasks. The internal reset endpoint is
 used by checks; there is no reset action in the Demo header.

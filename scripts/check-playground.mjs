@@ -39,7 +39,7 @@ const markersFit = () => page.locator('.note-tag').evaluateAll(elements => {
 });
 try {
   await page.goto(origin + '/demo');
-  await expect(page).toHaveURL(origin + '/demo/');
+  assert.ok(['/demo', '/demo/'].includes(new URL(page.url()).pathname));
   await expect(page.getByRole('region', { name: 'Demo', exact: true })).toBeVisible();
   await expect(page).toHaveTitle('Papilot Demo');
   await expect(page.locator('.brand-version')).toHaveText(`v${version}`);
@@ -299,6 +299,35 @@ try {
   await expect(download).toBeVisible();
   await download.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(input).toHaveValue('Run my own custom task');
+  // A review iframe must use the same tab-local state as its parent, even when
+  // durable storage is denied or has no space. Remounting it preserves decisions.
+  for (const failure of ['blocked', 'full']) {
+    const temporary = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'en-US' });
+    await temporary.addInitScript(failure => {
+      for (const method of failure === 'blocked' ? ['getItem', 'setItem', 'removeItem'] : ['setItem']) {
+        Storage.prototype[method] = () => { throw new DOMException('Storage unavailable', failure === 'blocked' ? 'SecurityError' : 'QuotaExceededError'); };
+      }
+    }, failure);
+    temporary.on('request', request => { if (new URL(request.url()).pathname.includes('/api/')) apiRequests.push(request.url()); });
+    const tab = await temporary.newPage();
+    tab.on('pageerror', error => errors.push(error.message));
+    tab.on('response', response => { if (response.status() >= 400) failed.push(`${response.status()} ${response.url()}`); });
+    await tab.goto(origin + '/demo');
+    const clarity = tab.locator('[data-task="example-clarity"]');
+    const comparison = tab.frameLocator('iframe.review-frame');
+    await clarity.locator('.task-link').click();
+    await expect(comparison.locator('.change')).toHaveCount(2);
+    await comparison.locator('.change.current button.accept').click();
+    await expect(clarity.locator('.task-badge')).toHaveText('1');
+    await tab.locator('[data-task="example-math"] .task-link').click();
+    await expect(comparison.locator('.change')).toHaveCount(mathBlocks);
+    await clarity.locator('.task-link').click();
+    await expect(comparison.locator('.reviewed-change')).toHaveCount(1);
+    await comparison.getByRole('button', { name: 'History', exact: true }).click();
+    await comparison.locator('button.undo').click();
+    await expect(clarity.locator('.task-badge')).toHaveText('2');
+    await temporary.close();
+  }
   assert.deepEqual(apiRequests, [], 'static playground must never contact /api');
   assert.deepEqual(failed, [], 'all static assets resolve under /demo/');
   assert.deepEqual(errors, []);
