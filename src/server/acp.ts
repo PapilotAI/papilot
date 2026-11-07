@@ -226,13 +226,13 @@ export class AcpAgent extends Adapter {
       }
     }
   }
-  private async chooseModel(session: Session, option: ConfigOption, value: string, deadline = Date.now() + 20000) {
+  private async chooseModel(session: Session, option: ConfigOption, value: string, deadline?: number) {
     // OpenCode can acknowledge a change with the previous model's options.
     // Never apply an effort or prompt against such an unconfirmed selection.
     for (let attempt = 0; attempt < 3; attempt++) {
-      const remaining = deadline - Date.now();
+      const remaining = deadline === undefined ? 20000 : Math.min(2000, deadline - Date.now());
       if (remaining <= 0) break;
-      const result = await this.rpc('session/set_config_option', { sessionId: session.sessionId, configId: option.id, value }, Math.min(this.profile.modelEfforts ? 2000 : 20000, remaining));
+      const result = await this.rpc('session/set_config_option', { sessionId: session.sessionId, configId: option.id, value }, remaining);
       if (this.profile.modelEfforts && result?.configOptions?.find((entry: ConfigOption) => entry.id === option.id)?.currentValue !== value) continue;
       if (result?.configOptions) session.configOptions = result.configOptions;
       return;
@@ -334,6 +334,7 @@ export class AcpAgent extends Adapter {
       if (chosenEffort) {
         if (!option || !choices(option).some(choice => choice.value === chosenEffort)) throw new Error(`${this.name} does not support reasoning effort ${chosenEffort} for this model.`);
         const result = await this.rpc('session/set_config_option', { sessionId: turn.threadId, configId: option.id, value: chosenEffort });
+        if (this.profile.modelEfforts && result?.configOptions?.find((entry: ConfigOption) => entry.id === option.id)?.currentValue !== chosenEffort) throw new Error(`${this.name} could not apply ${option.id}=${chosenEffort}.`);
         if (result?.configOptions) session.configOptions = result.configOptions;
       }
       const prompt: any[] = [{ type: 'text', text: thread.started ? text : `${thread.instructions}\n\n---\n\n${text}` }];

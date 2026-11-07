@@ -635,7 +635,7 @@ function openCodeEffortFixture() {
   ];
   const calls: any[] = [], sessions = new Map<string, { model: string; effort: string }>();
   let serial = 0;
-  const behavior = { stale: 0, missing: false, rejected: '', onModel: () => {} };
+  const behavior = { stale: 0, missing: false, stalled: false, rejected: '', effortResponse: 'applied', onModel: () => {} };
   const launch = () => {
     const rpc = peer(message => {
       calls.push(message);
@@ -650,11 +650,15 @@ function openCodeEffortFixture() {
         const session = sessions.get(params.sessionId)!;
         if (params.configId === 'model') {
           behavior.onModel();
+          if (behavior.stalled) return;
           if (params.value === behavior.rejected) { rpc.send({ id, error: { code: -32602, message: 'Unavailable model' } }); return; }
           if (behavior.missing) { rpc.reply(id, {}); return; }
           if (behavior.stale > 0) behavior.stale--;
           else if (session.model !== params.value) { session.model = params.value; session.effort = 'default'; }
-        } else session.effort = params.value;
+        } else {
+          if (behavior.effortResponse === 'missing') { rpc.reply(id, {}); return; }
+          if (behavior.effortResponse === 'applied') session.effort = params.value;
+        }
         rpc.reply(id, { configOptions: options(session.model, session.effort) });
       } else if (method === 'session/prompt') {
         rpc.update(params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'OK' } });
@@ -663,7 +667,7 @@ function openCodeEffortFixture() {
     });
     return rpc.child;
   };
-  return { agent: new AcpAgent(ACP_PROFILES.opencode, 'fake-opencode', launch as any), calls, sessions, behavior };
+  return { agent: new AcpAgent(ACP_PROFILES.opencode, 'fake-opencode', launch as any), calls, sessions, behavior, levels };
 }
 
 test('OpenCode discovers per-model efforts, retries stale responses and preserves defaults across turns', async () => {
@@ -725,6 +729,30 @@ test('OpenCode skips failed discovery and bounds the total discovery time', asyn
   } finally { agent.close(); }
 });
 
+for (const response of ['stale', 'missing']) test(`OpenCode refuses to prompt when effort confirmation is ${response}`, async () => {
+  const { agent, calls, behavior } = openCodeEffortFixture();
+  try {
+    await agent.start();
+    const { thread } = await agent.request('thread/start', { cwd: '/paper', model: 'second' });
+    behavior.effortResponse = response;
+    const result = await run(agent, thread.id, { effort: 'max' });
+    assert.equal(result.status, 'failed');
+    assert.match(result.error.message, /could not apply effort=max/);
+    assert.equal(calls.some(c => c.method === 'session/prompt'), false);
+  } finally { agent.close(); }
+});
+
+test('OpenCode task selection retains the normal RPC timeout outside discovery', async t => {
+  const { agent, behavior } = openCodeEffortFixture();
+  try {
+    await agent.start();
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+    behavior.onModel = () => t.mock.timers.tick(3000);
+    const { thread } = await agent.request('thread/start', { cwd: '/paper', model: 'second' });
+    assert.equal((await run(agent, thread.id, { effort: 'max' })).status, 'completed');
+  } finally { agent.close(); }
+});
+
 test('OpenCode continues discovery after a rejected model without copying another model\'s efforts', async () => {
   const { agent, calls, behavior } = openCodeEffortFixture();
   behavior.rejected = 'second';
@@ -732,6 +760,22 @@ test('OpenCode continues discovery after a rejected model without copying anothe
     await agent.start();
     assert.deepEqual((await agent.request('model/list')).data[1].supportedReasoningEfforts, []);
     assert.ok(calls.some(c => c.params?.configId === 'model' && c.params.value === 'plain'));
+  } finally { agent.close(); }
+});
+
+test('OpenCode stops probing a large unresponsive catalog at the discovery deadline', async t => {
+  const { agent, calls, behavior, levels } = openCodeEffortFixture();
+  for (let i = 0; i < 100; i++) levels[`extra-${i}`] = ['low', 'high'];
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+  behavior.stalled = true;
+  behavior.onModel = () => t.mock.timers.tick(2000);
+  try {
+    await agent.start();
+    assert.equal(Date.now(), 11000);
+    assert.equal(calls.filter(c => c.params?.configId === 'model').length, 5);
+    assert.equal(agent.ready, true);
+    assert.equal((await agent.request('model/list')).data.length, 103, 'models remain selectable even when their effort discovery times out');
+    assert.ok(calls.some(c => c.method === 'session/delete'));
   } finally { agent.close(); }
 });
 
