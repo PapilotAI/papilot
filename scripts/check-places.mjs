@@ -50,10 +50,12 @@ await page.route('**/api/**', async route => {
 await page.route('**/review/**', async route => {
   const url = new URL(route.request().url()), relative = url.pathname.slice(prefix.length);
   if (relative === '/') return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(fs.readFileSync('engine/dist/web/index.html', 'utf8'), prefix) });
-  if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('engine/dist/web' + relative), contentType: relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'font/otf' });
+  if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('engine/dist/web' + relative), contentType: /\.m?js$/.test(relative) ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'font/otf' });
+  if (relative === '/files/full.pdf') return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420"><rect width="600" height="420" fill="white"/><text x="60" y="60" font-size="20">A paragraph in the review PDF.</text></svg>' });
-  if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail });
-  return route.fulfill({ json: annotateReviewState(reviewState, [task]) });
+  const requested = snapshot.tasks.find(item => relative.includes(`/tasks/${item.name}/`)) || task;
+  if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: { ...detail, task: requested.name } });
+  return route.fulfill({ json: annotateReviewState({ ...reviewState, task: requested.name, title: requested.title }, snapshot.tasks) });
 });
 const scrollOf = locator => locator.evaluate(element => Math.round(element.scrollTop));
 const manuscript = () => page.locator('.manuscript-link').click();
@@ -147,6 +149,100 @@ try {
   await expect.poll(() => scrollOf(chat())).toBeGreaterThan(0);
   near(await scrollOf(chat()), phoneChat, 'phone chat position after the Review tab');
   await page.screenshot({ path: 'test-results/places.png' });
+
+  // The full review shares the manuscript's controls, and reading untouched
+  // pages must survive leaving, changing modes and reloading as well.
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  detail.pdf = `${prefix}/files/full.pdf`;
+  const otherTask = { ...task, id: 'places-second', name: 'second', title: 'Revise another section' };
+  snapshot.tasks.push(otherTask);
+  const openOther = () => page.locator('.task-link').filter({ hasText: otherTask.title }).click();
+  for (const [index, block] of detail.sections[0].blocks.entries()) {
+    for (const strip of [...block.before, ...block.after]) Object.assign(strip, { page: 1, label: '1', top: 100 + index * 55, left: 0, width: 612, height: 35 });
+  }
+  await page.evaluate(() => { localStorage.setItem('latex-review:default-view', 'paper'); localStorage.removeItem('papilot:pdf-zoom'); });
+  await page.reload();
+  const full = page.frameLocator('.review-frame');
+  await expect(full.locator('.paper-page')).toHaveCount(2);
+  await expect(page.locator('.review-host-bar .pdf-pages')).toHaveText('/ 2');
+  await expect.poll(() => full.locator('#paper').evaluate(root => Math.abs(root.querySelector('.paper-page').getBoundingClientRect().width - root.clientWidth))).toBeLessThan(2);
+  await page.getByRole('button', { name: 'Contents', exact: true }).click();
+  const entries = page.locator('.pdf-contents-menu [role="menuitemradio"]');
+  const sectionTitles = await entries.allTextContents();
+  assert.ok(sectionTitles.length >= 2, 'the review reads PDF bookmarks');
+  await entries.last().click();
+  await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('2');
+  await expect.poll(() => scrollOf(paper())).toBeGreaterThan(500);
+
+  // Fit and explicit zoom use the same picker in both readers.
+  const chooseZoom = async label => {
+    await page.getByRole('combobox', { name: 'Zoom', exact: true }).click();
+    await page.getByRole('option', { name: label, exact: true }).click();
+  };
+  await chooseZoom('125%');
+  await expect.poll(() => full.locator('.paper-page').first().evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(1020);
+  await paper().evaluate(root => { const second = root.querySelector('.paper-page[data-page="1"]'); root.scrollTop += second.getBoundingClientRect().top - root.getBoundingClientRect().top + 180; });
+  await page.waitForTimeout(250);
+  const secondPageOffset = () => paper().evaluate(root => Math.round(root.querySelector('.paper-page[data-page="1"]').getBoundingClientRect().top - root.getBoundingClientRect().top));
+  const fullOffset = await secondPageOffset();
+  await manuscript();
+  await page.locator('.pdf-view .page[data-page-number="2"]').waitFor();
+  await chooseZoom('75%');
+  await openTask();
+  await expect(full.locator('.paper-page')).toHaveCount(2);
+  await expect.poll(() => scrollOf(paper())).toBeGreaterThan(500);
+  near(await secondPageOffset(), fullOffset, 'full PDF reading position after another reader changes zoom', 6);
+  await expect(page.getByRole('combobox', { name: 'Zoom', exact: true })).toHaveText('125%');
+  await openOther();
+  await expect(full.locator('.paper-page')).toHaveCount(2);
+  await chooseZoom('150%');
+  await paper().evaluate(root => { root.scrollTop = 200; });
+  await page.waitForTimeout(200);
+  await openTask();
+  await expect(full.locator('.paper-page')).toHaveCount(2);
+  await expect(page.getByRole('combobox', { name: 'Zoom', exact: true })).toHaveText('125%');
+  near(await secondPageOffset(), fullOffset, 'two tasks keep separate reading places', 6);
+
+
+  await page.locator('.review-lead .pdf-modes').getByRole('button', { name: 'Changes', exact: true }).click();
+  await expect(full.locator('.paper-page')).toHaveCount(0);
+  await page.locator('.review-lead .pdf-modes').getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(full.locator('.paper-page')).toHaveCount(2);
+  near(await secondPageOffset(), fullOffset, 'full PDF reading position after Changes', 6);
+  await page.reload();
+  await expect(full.locator('.paper-page')).toHaveCount(2);
+  await expect.poll(() => scrollOf(paper())).toBeGreaterThan(500);
+  near(await secondPageOffset(), fullOffset, 'full PDF reading position after reload', 6);
+
+  // Search uses PDF.js matching even in unchanged parts of the paper.
+  await page.getByRole('button', { name: 'Find in PDF', exact: true }).click();
+  const search = page.getByRole('textbox', { name: 'Search the PDF', exact: true });
+  await search.fill('Method');
+  await expect(page.locator('.pdf-find-count')).toContainText('of');
+  await expect(full.locator('.paper-find-mark.selected').first()).toBeVisible();
+  await search.fill('operator applies');
+  await expect(page.locator('.pdf-find-count')).toContainText('of');
+  await expect(full.locator('.paper-find-mark.selected').first()).toBeVisible();
+  await expect.poll(() => full.locator('.paper-find-mark.selected').first().evaluate(mark => {
+    const page = mark.closest('.paper-page').getBoundingClientRect(), box = mark.getBoundingClientRect();
+    return Math.abs((box.top - page.top) / page.width * 612 - 167);
+  })).toBeLessThan(5);
+  await page.screenshot({ path: 'test-results/review-reader-search.png' });
+  await search.fill('unfindable-phrase-987654');
+  await expect(page.locator('.pdf-find-count')).toHaveText('No matches');
+  await search.press('Escape');
+  await expect(page.locator('.pdf-find')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/review-reader-desktop.png' });
+
+  await chooseZoom('Fit width');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('button', { name: 'Contents', exact: true })).toBeVisible();
+  await expect.poll(() => full.locator('#paper').evaluate(root => Math.abs(root.querySelector('.paper-page').getBoundingClientRect().width - root.clientWidth))).toBeLessThan(2);
+  await page.getByRole('button', { name: 'Contents', exact: true }).click();
+  await expect(page.locator('.pdf-contents-menu')).toBeVisible();
+  await entries.last().click();
+  await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('2');
+  await page.screenshot({ path: 'test-results/review-reader-phone.png' });
   assert.deepEqual(errors, []);
   console.log('Places check passed');
 } catch (error) {
