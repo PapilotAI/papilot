@@ -29,6 +29,8 @@ const detail = { task: 'places', round: 1, before: 'b', after: 'a', warnings: []
   sections: [{ node: 'method', title: 'Method', number: '2', blocks: ids.map((id, i) => ({ kind: 'change', units: [id], identical: false, before: [image(`before-${i}`, `Old ${i}`)], after: [image(`after-${i}`, `New ${i}`)] })) }],
   units: ids.map((id, i) => ({ id, file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: i + 1, old_end: i + 1, new_start: i + 1, new_end: i + 1, old_text: `Old ${i}`, new_text: `New ${i}`, truncated: false })) };
 const reviewState = { task: 'places', title: task.title, csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, history: [{ number: 1, created: 1 }], round: 1, revision: 'a', decisions: Object.fromEntries(ids.map(id => [id, 'pending'])), comments: {}, undo: null, job: null };
+let fullPdfWait;
+const fullPdfRequests = [];
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
@@ -51,8 +53,14 @@ await page.route('**/review/**', async route => {
   const url = new URL(route.request().url()), relative = url.pathname.slice(prefix.length);
   if (relative === '/') return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(fs.readFileSync('engine/dist/web/index.html', 'utf8'), prefix) });
   if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('engine/dist/web' + relative), contentType: /\.m?js$/.test(relative) ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'font/otf' });
-  if (relative === '/files/full.pdf') return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
-  if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420"><rect width="600" height="420" fill="white"/><text x="60" y="60" font-size="20">A paragraph in the review PDF.</text></svg>' });
+  if (relative === '/files/full.pdf') {
+    fullPdfRequests.push(Number(url.searchParams.get('round') || 1));
+    await fullPdfWait;
+    return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
+  }
+  if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: detail.pdf
+    ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 612 35"><rect width="612" height="35" fill="white"/><text x="60" y="24" font-size="12">A paragraph in the review PDF.</text></svg>'
+    : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420"><rect width="600" height="420" fill="white"/><text x="60" y="60" font-size="20">A paragraph in the review PDF.</text></svg>' });
   const requested = snapshot.tasks.find(item => relative.includes(`/tasks/${item.name}/`)) || task;
   if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: { ...detail, task: requested.name } });
   return route.fulfill({ json: annotateReviewState({ ...reviewState, task: requested.name, title: requested.title }, snapshot.tasks) });
@@ -158,7 +166,7 @@ try {
   snapshot.tasks.push(otherTask);
   const openOther = () => page.locator('.task-link').filter({ hasText: otherTask.title }).click();
   for (const [index, block] of detail.sections[0].blocks.entries()) {
-    for (const strip of [...block.before, ...block.after]) Object.assign(strip, { page: 1, label: '1', top: 100 + index * 55, left: 0, width: 612, height: 35 });
+    for (const strip of [...block.before, ...block.after]) Object.assign(strip, { page: 1, label: '1', top: 100 + index * 55, left: 0, width: 612, height: 35, text: [{ chars: [{ text: 'A paragraph in the review PDF.', rect: [60, 12, 250, 26] }] }] });
   }
   await page.evaluate(() => { localStorage.setItem('latex-review:default-view', 'paper'); localStorage.removeItem('papilot:pdf-zoom'); });
   await page.reload();
@@ -214,6 +222,51 @@ try {
   await expect.poll(() => scrollOf(paper())).toBeGreaterThan(500);
   near(await secondPageOffset(), fullOffset, 'full PDF reading position after reload', 6);
 
+  // Fit page measures the expanded review, including all eight change rows.
+  const pageNumber = page.getByRole('textbox', { name: 'Page number', exact: true });
+  await pageNumber.fill('1'); await pageNumber.press('Enter');
+  await chooseZoom('Fit page');
+  const fitsPage = () => paper().evaluate(root => {
+    const page = root.querySelector('.paper-page'), box = page.getBoundingClientRect(), viewport = root.getBoundingClientRect();
+    return box.height <= root.clientHeight + 1 && box.width <= root.clientWidth + 1 && box.top >= viewport.top - 1 && box.bottom <= viewport.bottom + 1;
+  });
+  await expect.poll(fitsPage).toBe(true);
+  await expect.poll(() => full.locator('.paper-page').first().locator('canvas').count()).toBeGreaterThan(0);
+  await page.locator('.review-viewport').screenshot({ path: 'test-results/review-reader-fit-page.png' });
+  await page.setViewportSize({ width: 1800, height: 850 });
+  await expect.poll(fitsPage).toBe(true);
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  await chooseZoom('Fit width');
+
+  // Both pinch paths keep the actual PDF content beneath the gesture's
+  // midpoint, including strips next to controls that do not scale.
+  for (const gesture of ['wheel', 'touch']) {
+    const delta = await paper().evaluate(async (root, gesture) => {
+      const strip = root.querySelector('[data-stop="3"] .side.after .pdf-strip');
+      root.scrollTop += strip.getBoundingClientRect().top - root.getBoundingClientRect().top - root.clientHeight / 3;
+      await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
+      const box = strip.getBoundingClientRect(), x = box.left + box.width / 2, y = box.top + box.height / 2;
+      let event;
+      if (gesture === 'wheel') {
+        event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -30, clientX: x, clientY: y });
+        strip.dispatchEvent(event);
+      } else {
+        const touches = distance => [-1, 1].map((sign, identifier) => new Touch({ identifier, target: strip, clientX: x + sign * distance / 2, clientY: y }));
+        strip.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: touches(100) }));
+        event = new TouchEvent('touchmove', { bubbles: true, cancelable: true, touches: touches(135) });
+        strip.dispatchEvent(event);
+        strip.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [] }));
+      }
+      await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
+      const after = strip.getBoundingClientRect();
+      return { x: after.left + after.width / 2 - x, y: after.top + after.height / 2 - y, intercepted: event.defaultPrevented };
+    }, gesture);
+    assert.equal(delta.intercepted, true, `${gesture} zoom belongs to the PDF`);
+    near(delta.x, 0, `${gesture} horizontal zoom anchor`, 2);
+    near(delta.y, 0, `${gesture} vertical zoom anchor`, 2);
+  }
+  await chooseZoom('Fit width');
+
   // Search uses PDF.js matching even in unchanged parts of the paper.
   await page.getByRole('button', { name: 'Find in PDF', exact: true }).click();
   const search = page.getByRole('textbox', { name: 'Search the PDF', exact: true });
@@ -233,6 +286,44 @@ try {
   await search.press('Escape');
   await expect(page.locator('.pdf-find')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/review-reader-desktop.png' });
+
+  // A new round cannot save the old PDF under its own reading-place key.
+  // Delay its PDF to expose the interval between receiving detail and pages.
+  const nextRound = async (number, whileLoading) => {
+    let release;
+    fullPdfWait = new Promise(resolve => { release = resolve; });
+    detail.round = number; detail.after = `a${number}`; detail.pdf = `${prefix}/files/full.pdf?round=${number}`;
+    Object.assign(reviewState, { latest: number, round: number, revision: detail.after });
+    reviewState.history.push({ number, created: number }); task.review.round = number;
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    try {
+      await expect.poll(() => fullPdfRequests.at(-1)).toBe(number);
+      await expect(full.locator('.paper-status')).toContainText('Preparing the full PDF');
+      await whileLoading();
+    } finally { release(); fullPdfWait = undefined; }
+    await expect(full.locator('.paper-page')).toHaveCount(2);
+  };
+  await pageNumber.fill('2'); await pageNumber.press('Enter');
+  await expect.poll(secondPageOffset).toBeLessThan(2);
+  await nextRound(2, async () => {
+    assert.equal(await full.locator('body').evaluate(() => localStorage.getItem('latex-review:/review/paper/:places:pdf:2')), null);
+  });
+  await expect(full.locator('.change.current')).toHaveAttribute('data-stop', '0');
+  await expect(full.locator('[data-stop="0"] .change-head')).toBeInViewport();
+
+  // The open query is replayed when a new PDF replaces its search controller.
+  await page.getByRole('button', { name: 'Find in PDF', exact: true }).click();
+  await search.fill('operator applies');
+  await expect(page.locator('.pdf-find-count')).toHaveText('1 of 1');
+  await expect(full.locator('.paper-find-mark.selected')).toHaveCount(1);
+  await nextRound(3, async () => {
+    await expect(search).toHaveValue('operator applies');
+    await expect(page.locator('.pdf-find-count')).toBeEmpty();
+  });
+  await expect(page.locator('.pdf-find-count')).toHaveText('1 of 1');
+  await expect(full.locator('.paper-find-mark.selected')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Next match', exact: true })).toBeEnabled();
+  await search.press('Escape');
 
   await chooseZoom('Fit width');
   await page.setViewportSize({ width: 390, height: 844 });

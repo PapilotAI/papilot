@@ -1605,6 +1605,7 @@ export function ReviewApp({
               <>
                 <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
                 <FullPaper
+                  key={`${placeKey}:pdf:${detail.round}:${detail.pdf}`}
                   url={detail.pdf!}
                   passes={detail.passes}
                   changes={placed}

@@ -306,6 +306,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   const [reader, setReader] = useState<PdfReaderState | null>(null);
   const [findOpen, setFindOpen] = useState(false), [query, setQuery] = useState('');
   const findInput = useRef<HTMLInputElement>(null);
+  const currentFind = useRef({ open: findOpen, query }); currentFind.current = { open: findOpen, query };
   const readingPdf = fullPaper && view === 'paper';
   const readerCommand = (detail: PdfReaderCommand) => document?.defaultView?.dispatchEvent(new CustomEvent(PDF_READER_COMMAND, { detail }));
   const closeFind = () => { setFindOpen(false); setQuery(''); readerCommand({ type: 'closeFind' }); };
@@ -328,7 +329,15 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     setReader(null);
     const target = document?.defaultView;
     if (!target) return;
-    const update = (event: Event) => setReader((event as CustomEvent<PdfReaderState | null>).detail);
+    let active = false;
+    const update = (event: Event) => {
+      const next = (event as CustomEvent<PdfReaderState | null>).detail, starting = Boolean(next) && !active;
+      active = Boolean(next); setReader(next);
+      // A new round or compilation pass replaces the search controller while
+      // the host's search field stays open. Replay its query once per reader.
+      const find = currentFind.current;
+      if (starting && find.open && find.query) target.dispatchEvent(new CustomEvent(PDF_READER_COMMAND, { detail: { type: 'find', query: find.query, again: false, previous: false } }));
+    };
     target.addEventListener(PDF_READER_STATE, update);
     target.dispatchEvent(new CustomEvent(PDF_READER_COMMAND, { detail: { type: 'state' } }));
     return () => target.removeEventListener(PDF_READER_STATE, update);
