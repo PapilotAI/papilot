@@ -306,11 +306,12 @@ export async function buildApp(options: AppOptions) {
     const current = store.task(request.params.id), client = await connectReview(store.project(current.projectId).path);
     return (await noteOptionContext(store, current, string(request.query.key, 'Note key', 200), client)).options;
   });
-  app.get<{ Params: { id: string }; Querystring: { key: string; round: string; option: string; retry?: string } }>('/api/tasks/:id/note-options/preview', task, async request => {
+  app.get<{ Params: { id: string }; Querystring: { key: string; round: string; option: string; retry?: string; comparison?: string } }>('/api/tasks/:id/note-options/preview', task, async request => {
     const current = store.task(request.params.id), client = await connectReview(store.project(current.projectId).path);
     const context = await noteOptionContext(store, current, string(request.query.key, 'Note key', 200), client);
     if (context.options.round !== Number(request.query.round)) throw new Error('The review changed. Reload the options.');
-    if (request.query.option === context.options.selected) return rewriteReviewJson(context.detail, `/review/${current.projectId}`);
+    if (request.query.comparison && request.query.comparison !== context.options.comparisonKey) throw new Error('The review changed. Reload the options.');
+    if (request.query.option === context.options.selected && (!context.rejected.length || context.options.locked)) return rewriteReviewJson(context.detail, `/review/${current.projectId}`);
     if (context.options.locked) throw new Error(context.options.locked);
     const option = context.options.options.find(option => option.id === request.query.option);
     if (!option) throw new Error('This option is no longer available.');

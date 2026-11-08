@@ -7,7 +7,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { Fixture, fakeRound, METHOD, BODY } from './helpers.ts';
 import { acceptNoteOption, noteOptionUnits, useNoteOption } from '../../src/core/note-options.ts';
 import type { App } from '../../src/server.ts';
-import type { Task } from '../../src/types.ts';
+import type { Task, Unit } from '../../src/types.ts';
 
 let f: Fixture, app: App, task: Task;
 beforeEach(async () => {
@@ -204,7 +204,7 @@ for (const replacement of ['Procedure', 'A much longer\nprocedure', '']) it(`pre
   const selected = units().find(unit => unit.new_text === 'Approach')!;
   const original = f.read(METHOD, task.worktree);
   const candidate = optionCandidate(units(), [{ unit: selected.id, text: replacement }], () => original);
-  const source = candidate.files[METHOD].toString();
+  const source = candidate.files[METHOD]!.toString();
   expect(source).toBe(original.replace('Approach', replacement));
   expect(candidate.units.map(unit => unit.id)).toEqual(units().map(unit => unit.id));
   for (const unit of candidate.units) {
@@ -267,6 +267,39 @@ it('reuses the published chapter scope, baseline and frozen date, compiling only
   expect(completed.mock.calls).toEqual([[keys[0]], [keys[1]]]);
   expect(seed).not.toHaveBeenCalled();
   expect(build).toHaveBeenCalledExactlyOnceWith(detail.after, targets, info(keys[0]), { date });
+});
+
+it('preview caches follow rejection and undo without resurrecting a neighboring edit', async () => {
+  const selected = units().find(unit => unit.new_text === 'Approach')!, neighbor = units().find(unit => unit.new_text === 'two')!;
+  const pdf = path.join(app.state, 'preview-test.pdf'); fs.writeFileSync(pdf, 'test PDF');
+  const build = vi.spyOn(Builder.prototype, 'build').mockImplementation(async rev => ({ key: rev, tree: rev, targets: ['full'], root: task.worktree, cwd: task.worktree, pdf, seconds: 0, warnings: [] }));
+  vi.spyOn(publisher, 'render').mockImplementation(async out => {
+    fs.writeFileSync(path.join(out, 'round.json'), JSON.stringify({ units: {}, sections: [], loose: [] }));
+  });
+  const input = { id: 'respect-rejection', round: 1, edits: [{ unit: selected.id, text: 'Procedure' }] };
+  const first = await previewNoteOption(app, task.name, input);
+  expect(app.repo.blob(first.after, METHOD)?.toString()).toContain('Procedure sentence two.');
+  await app.review.decide(task.name, { id: 'reject-neighbor', round: 1, changes: [neighbor.id], action: 'reject' });
+  const second = await previewNoteOption(app, task.name, input);
+  expect(second.files).not.toBe(first.files);
+  expect(app.repo.blob(second.after, METHOD)?.toString()).toContain('Procedure sentence 2.');
+  expect(second.units.map(unit => unit.id)).toEqual(first.units.filter(unit => unit.id !== neighbor.id).map(unit => unit.id));
+  expect(f.read(METHOD, task.worktree)).toContain('Approach sentence 2.');
+  await app.review.undo(task.name, 'reject-neighbor');
+  expect((await previewNoteOption(app, task.name, input)).files).toBe(first.files);
+  expect(build).toHaveBeenCalledTimes(4);
+});
+
+it('restores rejected multi-range and whole-file edits while adjusting the selected candidate', () => {
+  const original = 'new word and tail';
+  const selected = { ...units()[0], id: 'selected', file: 'main.tex', old_text: 'word', new_text: 'word', text_ops: [['replace', 4, 8, 4, 8]], ops: [['replace', 0, 1, 0, 1]] } as Unit;
+  const rejected = { ...selected, id: 'rejected', text_ops: [['replace', 0, 3, 0, 3], ['replace', 13, 16, 13, 17]], ops: [['replace', 0, 1, 0, 1], ['replace', 0, 1, 0, 1]] } as typeof selected;
+  const file = { ...selected, id: 'file', file: 'added.tex', whole_file: true };
+  const candidate = optionCandidate([selected, rejected, file], [{ unit: selected.id, text: 'longer word' }], () => original,
+    { ids: new Set(['rejected', 'file']), source: file => file === 'main.tex' ? Buffer.from('old word and end') : null });
+  expect(candidate.files['main.tex']?.toString()).toBe('old longer word and end');
+  expect(candidate.files['added.tex']).toBeNull();
+  expect(candidate.units.map(unit => unit.id)).toEqual(['selected']);
 });
 
 it('a candidate restoring the original wording has no empty diff card or source row', async () => {

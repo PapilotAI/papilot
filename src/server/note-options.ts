@@ -91,6 +91,8 @@ export async function noteOptionContext(store: Store, task: Task, key: string, c
     if (initial.length) { cached = { ...cached, options: [...initial, ...cached.options] }; store.savePreference(cacheKey, cached); }
   }
   const choices = cached?.options.filter(option => option.id === 'current' || (option.id !== 'latest' && typeof option.reason === 'string' && option.reason.trim())) || [current];
-  const options: NoteOptions = { before: Object.fromEntries(units.map(unit => [unit.id, unit.old_text])), round: note.round, key, ...selectedNoteOptions(choices.length ? choices : [current], current), ...(locked ? { locked } : {}) };
-  return { note, notes, units, options, detail };
+  const rejected = Object.keys(state.decisions).filter(id => state.decisions[id] === 'rejected').sort();
+  const comparisonKey = createHash('sha256').update(JSON.stringify([detail.after, rejected])).digest('hex');
+  const options: NoteOptions = { before: Object.fromEntries(units.map(unit => [unit.id, unit.old_text])), round: note.round, key, comparisonKey, ...selectedNoteOptions(choices.length ? choices : [current], current), ...(locked ? { locked } : {}) };
+  return { note, notes, units, options, detail, rejected };
 }

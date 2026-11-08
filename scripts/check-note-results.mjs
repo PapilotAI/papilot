@@ -34,6 +34,7 @@ const client = { get: async route => route.includes('/rounds/') ? rounds[Number(
 let failResults = true;
 const optionWrites = [];
 let rejectFails = false;
+let comparisonVersion = 'initial';
 const alternateSource = '\\emph{A concise alternative preserving the technical term.}';
 const strip = text => {
   const src = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="30"><rect width="600" height="30" fill="white"/><text x="40" y="20" font-size="12">${text.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</text></svg>`);
@@ -50,9 +51,10 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items } });
   if (url.pathname.endsWith('/note-results')) return route.fulfill(failResults ? { status: 503, json: { error: 'Temporary failure' } } : { json: { notes: await taskNoteResults(task, items, runs, client) } });
   if (url.pathname.endsWith('/note-options/preview')) {
+    assert.equal(url.searchParams.get('comparison'), comparisonVersion);
     const round = Number(url.searchParams.get('round')), option = url.searchParams.get('option');
     const candidate = round === 2 ? [...units[round].map(unit => ({ ...unit, new_text: option === 'brief' ? alternateSource : unit.new_text })), unit('other', 80, 'Three datasets.', 'Five datasets.')] : units[round];
-    return route.fulfill({ json: { ...rounds[round], units: candidate, task: task.name, before: 'before', after: `candidate-${option}`, files: '', warnings: [], loose: [...candidate.map(unit => ({ kind: 'change', units: [unit.id], before: [strip(unit.old_text)], after: [strip(unit.new_text)] })), ...Array.from({ length: 5 }, (_, i) => ({ kind: 'change', units: ['space-' + i], identical: true, before: [], after: [] }))] } });
+    return route.fulfill({ json: { ...rounds[round], units: candidate, task: task.name, before: 'before', after: `candidate-${option}-${comparisonVersion}`, files: '', warnings: [], loose: [...candidate.map(unit => ({ kind: 'change', units: [unit.id], before: [strip(unit.old_text)], after: [strip(unit.new_text)] })), ...Array.from({ length: 5 }, (_, i) => ({ kind: 'change', units: ['space-' + i], identical: true, before: [], after: [] }))] } });
   }
   if (url.pathname.endsWith('/note-options')) {
     const body = route.request().method() !== 'GET' ? route.request().postDataJSON() : null;
@@ -62,7 +64,7 @@ await page.route('**/api/**', async route => {
       if (body.reject) decisions[2].c1 = 'rejected';
     }
     const round = (body?.key || url.searchParams.get('key'))?.startsWith('request-1:') ? 1 : 2;
-    return route.fulfill({ json: { round, key: url.searchParams.get('key'), ...(round === 1 ? { options: [], locked: 'Options are not available for this source range yet.' } : { options: [
+    return route.fulfill({ json: { round, comparisonKey: comparisonVersion, key: url.searchParams.get('key'), ...(round === 1 ? { options: [], locked: 'Options are not available for this source range yet.' } : { options: [
       { id: 'current', label: 'Current proposal', edits: [{ unit: 'c1', text: units[2][0].new_text }] },
       { id: 'brief', label: 'Concise', reason: 'Keep the technical term in a shorter sentence.', edits: [{ unit: 'c1', text: alternateSource }] },
     ] }) } });
@@ -124,12 +126,15 @@ try {
   await sourceToggle.click();
   await controls().getByRole('region', { name: 'LaTeX comparison', exact: true }).waitFor();
   await controls().getByRole('tab', { name: 'Concise', exact: true }).click();
-  const sourceView = controls().locator('.note-option-source[data-revision="candidate-brief"]');
+  const sourceView = controls().locator('.note-option-source[data-revision="candidate-brief-initial"]');
   await sourceView.waitFor();
   assert.ok((await sourceView.locator('.note-source-unit[data-unit="c1"]').textContent()).includes(alternateSource), 'source follows the selected alternative');
   assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"]').count(), 0, 'other groups are excluded from this note’s drawer');
   assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"] ins, .note-source-unit[data-unit="other"] del').count(), 0, 'unrelated edits retain context without focused colors');
   assert.deepEqual(optionWrites, [], 'source and option switches never generate or apply a proposal');
+  comparisonVersion = 'rejected-neighbor'; task.updatedAt++;
+  await frame().locator('body').evaluate(element => element.ownerDocument.defaultView.dispatchEvent(new Event('latex-review:decided')));
+  await controls().locator('.note-option-source[data-revision="candidate-brief-rejected-neighbor"]').waitFor();
   fs.mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/note-options-latex.png', fullPage: true });
   await sourceToggle.click();
