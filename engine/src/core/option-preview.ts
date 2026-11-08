@@ -91,12 +91,16 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
       builder.build(after, ["full"], null, { date, priority: "foreground" }),
     ]);
     fs.mkdirSync(output, { recursive: true });
-    await render(output, { main: project.main, source_dir: project.source_dir, figures: project.figures, old, new: next, units: candidate.units, indirect: false });
+    // A choice can restore part of the original wording (including cancelling
+    // an insertion). Keep its decision ID in the saved round, but do not render
+    // a before/after card for an edit that this candidate no longer contains.
+    const visible = candidate.units.filter(unit => unit.kind !== "text" || unit.truncated || unit.whole_file || unit.old_text !== unit.new_text);
+    await render(output, { main: project.main, source_dir: project.source_dir, figures: project.figures, old, new: next, units: visible, indirect: false });
     const rendered = readJson<RenderedRound>(path.join(output, "round.json"), { units: {}, sections: [], loose: [] });
     fs.copyFileSync(next.pdf, path.join(output, "preview.pdf"));
     const files = `/option-files/${name}/${round.number}/${key}/`;
     const detail: RoundDetail = groupFormattingChanges({ ...rendered, task: name, round: round.number, before: round.before, after,
-      units: candidate.units.map(unit => ({ ...unit, ...rendered.units[unit.id] })),
+      units: visible.map(unit => ({ ...unit, ...rendered.units[unit.id] })),
       warnings: [...old.warnings, ...next.warnings], files, pdf: files + "preview.pdf", build: { key: next.key, targets: ["full"] } }, file => app.repo.blob(round.before, file)?.toString("utf8") ?? null);
     writeJson(path.join(output, "preview.json"), detail);
     return detail;

@@ -44,6 +44,29 @@ test('source context disambiguates prepared choices but cannot change another no
   assert.throws(() => preparedOptionEdits({ ...prepared.options[0], edits: [{ file: '../other.tex', find: after, replace: 'other' }] }, [units[0]], files), /unrelated/);
 });
 
+test('reordered wording preserves the unchanged source between this note’s units', () => {
+  const source = 'The model has a short runtime and yields stable estimates.\nAnother claim remains unchanged.\n';
+  const fragments = ['has a short runtime and yields', ' estimates'];
+  const linked: NoteRound['units'] = fragments.map((text, i) => ({
+    id: `c${i}`, file: 'main.tex', old_start: 1, old_end: 1, old_text: '', new_text: text,
+    text_ops: [['replace', 0, 0, source.indexOf(text), source.indexOf(text) + text.length]],
+  }));
+  const option = { label: 'Emphasize estimates', reason: 'Use estimates as the subject.', edits: [{
+    file: 'main.tex', find: 'and yields stable estimates.', replace: 'and the resulting estimates are stable.',
+  }] };
+  const files = new Map([['main.tex', source]]);
+  const edits = preparedOptionEdits(option, linked, files);
+  assert.deepEqual(edits, [{ unit: 'c0', text: 'has a short runtime and the resulting estimates are' }, { unit: 'c1', text: '' }]);
+  const applied = [...linked].reverse().reduce((text, unit) => {
+    const [, , , start, end] = unit.text_ops![0];
+    return text.slice(0, start) + edits.find(edit => edit.unit === unit.id)!.text + text.slice(end);
+  }, source);
+  assert.equal(applied, source.replace(option.edits[0].find, option.edits[0].replace));
+  assert.throws(() => preparedOptionEdits(option, [linked[0]], files), /outside this note/);
+  assert.throws(() => preparedOptionEdits({ ...option, edits: [{ file: 'main.tex', find: source, replace: applied.replace('Another claim', 'A different claim') }] }, linked, files), /outside this note/);
+  assert.throws(() => preparedOptionEdits({ ...option, edits: [{ ...option.edits[0], replace: 'and the resulting estimates are stable and stable.' }] }, linked, files), /ambiguous/);
+});
+
 test('published notes expose choices from the editing turn without any agent request or source mutation', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-prepared-options-')), store = new Store(':memory:');
   try {

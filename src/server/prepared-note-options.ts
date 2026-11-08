@@ -45,10 +45,42 @@ export function readPreparedNoteOptions(text: string, count: number): PreparedNo
   });
 }
 
+// A minimal diff can align a moved word with the wrong occurrence. When that
+// crosses a unit boundary, project against the unchanged source between units
+// instead. Only a unique placement of every unchanged gap is safe to use.
+function projectPreparedSource(source: string, candidate: string, units: NoteRound['units']) {
+  const ranges = units.map(unit => ({ unit, start: unit.text_ops![0][3], end: unit.text_ops![0][4] })).sort((a, b) => a.start - b.start);
+  if (!ranges.length) throw new Error('The option changes source outside this note.');
+  const prefix = source.slice(0, ranges[0].start), suffix = source.slice(ranges.at(-1)!.end);
+  if (!candidate.startsWith(prefix) || !candidate.endsWith(suffix) || candidate.length < prefix.length + suffix.length)
+    throw new Error('The option changes source outside this note.');
+  const body = candidate.slice(prefix.length, candidate.length - suffix.length);
+  const gaps = ranges.slice(1).map((range, i) => source.slice(ranges[i].end, range.start));
+  const positions: number[] = [];
+  let cursor = 0;
+  for (const gap of gaps) {
+    const at = body.indexOf(gap, cursor);
+    if (at < 0) throw new Error('The option changes source outside this note.');
+    positions.push(at); cursor = at + gap.length;
+  }
+  cursor = body.length;
+  for (let i = gaps.length - 1; i >= 0; i--) {
+    const at = body.lastIndexOf(gaps[i], cursor - gaps[i].length);
+    if (at !== positions[i]) throw new Error('The option source is missing or ambiguous.');
+    cursor = at;
+  }
+  return ranges.map(({ unit }, i) => ({ unit: unit.id, text: body.slice(i ? positions[i - 1] + gaps[i - 1].length : 0, i < gaps.length ? positions[i] : body.length) }));
+}
+
 // Resolve source patches to exactly the units linked to this note. Context may
 // identify a patch, but it cannot authorize changing another note's source.
 export function preparedOptionEdits(option: PreparedNoteOptions['options'][number], units: NoteRound['units'], files: Map<string, string>) {
   const changes = new Map<string, { start: number; end: number; text: string }[]>();
+  for (const unit of units) {
+    const op = unit.text_ops?.length === 1 && unit.text_ops[0], source = files.get(unit.file);
+    if (!op || source === undefined || op[3] < 0 || op[4] < op[3] || op[4] > source.length || source.slice(op[3], op[4]) !== unit.new_text)
+      throw new Error('The option source is missing or ambiguous.');
+  }
   for (const patch of option.edits) {
     const source = files.get(patch.file);
     if (source === undefined) throw new Error('The option targets an unrelated source file.');
@@ -56,16 +88,29 @@ export function preparedOptionEdits(option: PreparedNoteOptions['options'][numbe
     if (at < 0 || source.indexOf(patch.find, at + 1) >= 0) throw new Error('The option source is missing or ambiguous.');
     for (const [, i, j, x, y] of textEdits(patch.find, patch.replace)) {
       const start = at + i, end = at + j;
-      const matches = units.filter(unit => unit.file === patch.file && unit.text_ops?.length === 1 && unit.text_ops[0][3] <= start && end <= unit.text_ops[0][4]);
-      if (matches.length !== 1) throw new Error('The option changes source outside this note.');
-      const unit = matches[0], offset = unit.text_ops![0][3], edits = changes.get(unit.id) || [];
-      if (edits.some(edit => start - offset <= edit.end && edit.start <= end - offset)) throw new Error('The option has overlapping patches.');
-      edits.push({ start: start - offset, end: end - offset, text: patch.replace.slice(x, y) });
-      changes.set(unit.id, edits);
+      const edits = changes.get(patch.file) || [];
+      if (edits.some(edit => start <= edit.end && edit.start <= end)) throw new Error('The option has overlapping patches.');
+      edits.push({ start, end, text: patch.replace.slice(x, y) });
+      changes.set(patch.file, edits);
     }
   }
-  return units.map(unit => ({ unit: unit.id, text: (changes.get(unit.id) || []).sort((a, b) => b.start - a.start)
-    .reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), unit.new_text) }));
+  const result = new Map(units.map(unit => [unit.id, unit.new_text]));
+  for (const [file, edits] of changes) {
+    const source = files.get(file)!, ranges = units.filter(unit => unit.file === file).sort((a, b) => a.text_ops![0][3] - b.text_ops![0][3]);
+    if (ranges.some((unit, i) => i && ranges[i - 1].text_ops![0][4] > unit.text_ops![0][3])) throw new Error('The option source is missing or ambiguous.');
+    edits.sort((a, b) => b.start - a.start);
+    const owners = edits.map(edit => ranges.filter(unit => unit.text_ops![0][3] <= edit.start && edit.end <= unit.text_ops![0][4]));
+    if (owners.every(matches => matches.length === 1)) {
+      edits.forEach((edit, i) => {
+        const unit = owners[i][0], offset = unit.text_ops![0][3], text = result.get(unit.id)!;
+        result.set(unit.id, text.slice(0, edit.start - offset) + edit.text + text.slice(edit.end - offset));
+      });
+    } else {
+      const candidate = edits.reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
+      for (const edit of projectPreparedSource(source, candidate, ranges)) result.set(edit.unit, edit.text);
+    }
+  }
+  return units.map(unit => ({ unit: unit.id, text: result.get(unit.id)! }));
 }
 
 export async function savePreparedNoteOptions(store: Store, task: Task, run: Run, client: ReviewClient) {

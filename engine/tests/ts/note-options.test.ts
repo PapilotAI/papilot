@@ -243,6 +243,23 @@ it('compiles an isolated preview and caches it without publishing, writing sourc
   await expect(previewNoteOption(app, task.name, input)).rejects.toThrow('reviewed');
 });
 
+it('a candidate restoring the original wording has no empty diff card or source row', async () => {
+  const selected = units().find(unit => unit.new_text === 'Approach')!;
+  const original = f.read(METHOD, task.worktree), round = app.review.latestRound(task.name)!;
+  const pdf = path.join(app.state, 'preview-test.pdf'); fs.writeFileSync(pdf, 'test PDF');
+  vi.spyOn(Builder.prototype, 'build').mockImplementation(async rev => ({ key: rev, tree: rev, targets: ['full'], root: task.worktree, cwd: task.worktree, pdf, seconds: 0, warnings: [] }));
+  vi.spyOn(publisher, 'render').mockImplementation(async (out, request) => {
+    expect(request.units.some(unit => unit.id === selected.id)).toBe(false);
+    expect(app.repo.blob(request.new.tree, METHOD)?.toString()).toContain('Method sentence two.');
+    fs.writeFileSync(path.join(out, 'round.json'), JSON.stringify({ units: {}, sections: [], loose: [] }));
+  });
+  const detail = await previewNoteOption(app, task.name, { id: 'restore-word', round: 1, edits: [{ unit: selected.id, text: selected.old_text }] });
+  expect(detail.units.map(unit => unit.id)).toEqual(round.units.filter(unit => unit.id !== selected.id).map(unit => unit.id));
+  expect(f.read(METHOD, task.worktree)).toBe(original);
+  expect(app.review.latestRound(task.name)).toEqual(round);
+  expect(app.review.decisions(task.name, round)[selected.id]).toBe('pending');
+});
+
 it('a failed candidate compilation leaves the published review and source intact', async () => {
   const selected = units().find(unit => unit.new_text === 'Approach')!;
   const round = app.review.latestRound(task.name), original = f.read(METHOD, task.worktree);
