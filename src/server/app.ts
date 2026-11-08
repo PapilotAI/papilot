@@ -322,17 +322,20 @@ export async function buildApp(options: AppOptions) {
     }
     return rewriteReviewJson(detail, `/review/${current.projectId}`);
   });
-  app.post<{ Params: { id: string }; Body: { key: string; round: number; option?: string; id?: string; accept?: boolean } }>('/api/tasks/:id/note-options', task, async request => {
+  app.post<{ Params: { id: string }; Body: { key: string; round: number; option?: string; id?: string; accept?: boolean; reject?: boolean } }>('/api/tasks/:id/note-options', task, async request => {
     const current = store.task(request.params.id), client = await connectReview(store.project(current.projectId).path), body = request.body;
     const context = await noteOptionContext(store, current, string(body.key, 'Note key', 200), client);
     if (context.options.round !== body.round) throw new Error('The review changed. Reload the options.');
     if (context.options.locked) throw new Error(context.options.locked);
+    if ((body.reject !== undefined && typeof body.reject !== 'boolean') || (body.accept !== undefined && typeof body.accept !== 'boolean') || (body.accept && body.reject)) throw new Error('Invalid review action.');
     if (body.option) {
       const option = context.options.options.find(option => option.id === body.option);
       if (!option) throw new Error('This option is no longer available.');
-      if (option.id === context.options.selected) {
-        if (!body.accept) return context.options;
-        const route = `${taskRoute(current.name)}/decide`, input = { id: string(body.id, 'Review action ID', 80), round: body.round, changes: option.edits.map(edit => edit.unit), action: 'accept' };
+      // Reject the note's published edits directly, even if an uncommitted
+      // alternative is being previewed. No candidate build or feedback draft.
+      if (body.reject || option.id === context.options.selected) {
+        if (!body.accept && !body.reject) return context.options;
+        const route = `${taskRoute(current.name)}/decide`, input = { id: string(body.id, 'Review action ID', 80), round: body.round, changes: option.edits.map(edit => edit.unit), action: body.reject ? 'reject' : 'accept' };
         const result = await workspace.reviewWrite(current.id, true, async () => {
           const response = await fetch(client.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': client.token }, body: JSON.stringify(input), signal: AbortSignal.timeout(120000) });
           const value = await response.json() as { error?: string };

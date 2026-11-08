@@ -190,6 +190,12 @@ test('prepared note options preview locally and accept only the focused note thr
   assert.ok(notes[1].changes.flatMap(change => change.units).every(unit => decisions[unit] === 'pending'));
   await reload(`/playground-reviews/${id}/undo`, { id: 'note-accept' });
   assert.equal((await reload<NoteOptions>(`${route}?key=${encodeURIComponent(key)}`)).locked, undefined);
+  await reload(route, { key, round: 1, option: 'current', reject: true, id: 'note-reject' });
+  const rejected = (await reload<{ decisions: Record<string, string> }>(`/playground-reviews/${id}/state`)).decisions;
+  assert.deepEqual(Object.keys(rejected).filter(unit => rejected[unit] === 'rejected'), chosen);
+  assert.ok(notes[1].changes.flatMap(change => change.units).every(unit => rejected[unit] === 'pending'));
+  await reload(`/playground-reviews/${id}/undo`, { id: 'note-reject' });
+  assert.equal((await reload<NoteOptions>(`${route}?key=${encodeURIComponent(key)}`)).locked, undefined);
 });
 test('demo replay reveals progress and streams the answer before publishing the diff, with pause and reload support', async () => {
   let clock = 1_000_000;

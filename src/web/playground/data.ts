@@ -164,7 +164,7 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
     const optionRoute = path.match(/^\/tasks\/([^/]+)\/note-options(\/preview)?$/);
     if (optionRoute && rounds[optionRoute[1]]) {
       const [, id, preview] = optionRoute, query = new URLSearchParams(route.split('?')[1]);
-      const input = body as { key?: string; round?: number; option?: string; id?: string; accept?: boolean } | undefined;
+      const input = body as { key?: string; round?: number; option?: string; id?: string; accept?: boolean; reject?: boolean } | undefined;
       const key = input?.key ?? query.get('key') ?? '', options = noteOptions(id, key);
       if (body === undefined && !preview) return options;
       if ((preview ? Number(query.get('round')) : input?.round) !== options.round) throw new Error('The review changed. Reload the options.');
@@ -174,9 +174,10 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
       }
       if (!input?.option) throw new Error('Select an existing option.');
       if (input.option !== 'current') throw new Error('This option is no longer available.');
-      if (!input.accept) return options;
+      if ((input.reject !== undefined && typeof input.reject !== 'boolean') || (input.accept !== undefined && typeof input.accept !== 'boolean') || (input.accept && input.reject)) throw new Error('Invalid review action.');
+      if (!input.accept && !input.reject) return options;
       if (options.locked) throw new Error(options.locked);
-      read(`/playground-reviews/${id}/decide`, { id: input.id, round: 1, action: 'accept', changes: options.options[0].edits.map(edit => edit.unit) });
+      read(`/playground-reviews/${id}/decide`, { id: input.id, round: 1, action: input.reject ? 'reject' : 'accept', changes: options.options[0].edits.map(edit => edit.unit) });
       return noteOptions(id, key);
     }
     const match = path.match(/^\/playground-reviews\/([^/]+)(\/.*)$/);

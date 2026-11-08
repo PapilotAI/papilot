@@ -10,7 +10,7 @@ import { browserStorage } from './storage.ts';
 import { NotePreviewCache } from './note-preview-cache.ts';
 
 export interface NoteFocus { key: string; change: NoteChange; sequence: number; historical: boolean }
-type OptionsRequest = (id: string, key: string, body?: { round: number; option?: string; id?: string; accept?: boolean }) => Promise<NoteOptions | { building: true }>;
+type OptionsRequest = (id: string, key: string, body?: { round: number; option?: string; id?: string; accept?: boolean; reject?: boolean }) => Promise<NoteOptions | { building: true }>;
 type Preview = { key: string; round: number; detail?: RoundDetail } | null;
 type PreviewRequest = (id: string, key: string, round: number, option: string, retry?: boolean) => Promise<RoundDetail>;
 const previewKey = (id: string, key: string, round: number, option: string) => JSON.stringify([id, key, round, option]);
@@ -242,14 +242,14 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const remembered = optionCache.get(optionsKey);
   const draft = reviewDraft(task?.id || ''), feedback = useReviewDraft(task?.id || '');
   const [editor, setEditor] = useState<string | null>(null), commentInput = useRef<HTMLTextAreaElement>(null);
-  const [actingOption, setActingOption] = useState('');
+  const [actingOption, setActingOption] = useState(''), [actingKind, setActingKind] = useState<'accept' | 'reject'>('accept');
   const [source, setSource] = useState(false);
   const [data, setData] = useState<NoteOptions | null>(remembered || null), [selected, setSelected] = useState(() => rememberedChoice(storageKey, remembered));
   const [busy, setBusy] = useState(false), [applying, setApplying] = useState(false), [error, setError] = useState('');
   const [baseline, setBaseline] = useState<RoundDetail | null>(() => task && remembered ? links.cachedPreview(task.id, note.key, remembered.round, remembered.selected || 'current') || null : null), [baselineError, setBaselineError] = useState('');
   const [retry, setRetry] = useState(0), [previewBusy, setPreviewBusy] = useState(false);
   const [shown, setShown] = useState<RoundDetail | null>(() => task && remembered ? links.cachedPreview(task.id, note.key, remembered.round, selected) || baseline : null);
-  const previewSequence = useRef(0), requestId = useRef<string | null>(null);
+  const previewSequence = useRef(0), requestId = useRef<{ option: string; action: 'accept' | 'reject'; id: string } | null>(null);
   useEffect(() => {
     if (applying && task && ['failed', 'uncertain', 'interrupted'].includes(task.status)) {
       setApplying(false); setError(task.error || t('The choice could not be saved.'));
@@ -321,19 +321,20 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     links.setScope('note'); setSelected(option); setEditor(null); requestId.current = null; setError('');
     browserStorage.setItem(storageKey, JSON.stringify({ round: data.round, option }));
   };
-  const apply = async (option: NoteOption) => {
+  const decide = async (option: NoteOption, action: 'accept' | 'reject') => {
     if (!data || applying || locked || !links.previewRequest) return;
     if (selected !== option.id) choose(option.id);
-    setApplying(true); setActingOption(option.id); setError('');
+    setApplying(true); setActingOption(option.id); setActingKind(action); setError('');
     try {
       // HTTP tailnet addresses provide random bytes without randomUUID.
-      requestId.current ??= crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), byte => byte.toString(16).padStart(2, '0')).join('');
-      // Bind the action to the selected option before the async request starts.
-      await links.previewRequest(task.id, note.key, data.round, option.id);
-      const result = await request(task.id, note.key, { round: data.round, option: option.id, id: requestId.current, accept: true });
+      if (requestId.current?.option !== option.id || requestId.current.action !== action)
+        requestId.current = { option: option.id, action, id: crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), byte => byte.toString(16).padStart(2, '0')).join('') };
+      // Rejection restores the original edit and never waits for an option PDF.
+      if (action === 'accept') await links.previewRequest(task.id, note.key, data.round, option.id);
+      const result = await request(task.id, note.key, { round: data.round, option: option.id, id: requestId.current.id, ...(action === 'accept' ? { accept: true } : { reject: true }) });
       const rejected = optionFeedback(option.id, 'reject'); if (rejected) draft.remove(rejected.id);
       browserStorage.removeItem(storageKey);
-      if ('options' in result) { setData(result); setSelected(result.selected || 'current'); setApplying(false); }
+      if ('options' in result) { setData(result); setSelected(result.selected || 'current'); setApplying(false); links.clearFocus(); }
       links.reload();
     }
     catch (error) { setError((error as Error).message); setApplying(false); }
@@ -341,31 +342,26 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const saving = applying || task.status === 'building';
   const label = (id: string, text: string) => id === 'current' ? t('Initial proposal') : id === 'latest' ? t('Current proposal') : text;
   const optionFeedback = (id: string, kind: 'comment' | 'reject') => feedback.notes.find(item => item.round === data?.round && item.option?.note === note.key && item.option.id === id && item.option.kind === kind);
-  const addFeedback = (option: NoteOption, kind: 'comment' | 'reject') => draft.add({
+  const addFeedback = (option: NoteOption) => draft.add({
     round: data!.round, strip: '', rects: [], region: false,
     where: `Round ${data!.round} · ${note.note.where} · Note ${note.index + 1} · Option: ${label(option.id, option.label)}`,
     quote: option.edits.map(edit => edit.text).join('\n'),
-    option: { note: note.key, id: option.id, label: label(option.id, option.label), kind },
-  }, false, kind === 'reject' ? t('Do not use this option.') : '');
-  const reject = (option: NoteOption) => {
-    const existing = optionFeedback(option.id, 'reject');
-    if (existing) draft.remove(existing.id); else addFeedback(option, 'reject');
-  };
+    option: { note: note.key, id: option.id, label: label(option.id, option.label), kind: 'comment' },
+  }, false);
   const comment = (option: NoteOption) => {
     if (!locked) choose(option.id);
-    setEditor(optionFeedback(option.id, 'comment')?.id || addFeedback(option, 'comment') || null);
+    setEditor(optionFeedback(option.id, 'comment')?.id || addFeedback(option) || null);
   };
   const editing = feedback.notes.find(item => item.id === editor);
   const active = data?.options.find(option => option.id === selected);
   const name = active ? label(active.id, active.label) : '';
-  const rejected = Boolean(active && optionFeedback(active.id, 'reject'));
   const commented = Boolean(active && optionFeedback(active.id, 'comment'));
   return <div className="note-options" onClick={event => event.stopPropagation()}>
     <div className="note-option-navigation">
     {data && <div ref={tabs} className="note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
       {data.options.map((option, index) => {
         const name = label(option.id, option.label);
-        return <button type="button" className="note-option-tab" role="tab" key={option.id} id={`${tabsId}-${option.id}`} aria-controls={`${tabsId}-panel`} data-option={option.id} data-rejected={Boolean(optionFeedback(option.id, 'reject'))} aria-selected={selected === option.id} tabIndex={selected === option.id ? 0 : -1} disabled={saving || Boolean(locked) || busy} aria-label={name} onClick={() => choose(option.id)} onKeyDown={event => {
+        return <button type="button" className="note-option-tab" role="tab" key={option.id} id={`${tabsId}-${option.id}`} aria-controls={`${tabsId}-panel`} data-option={option.id} aria-selected={selected === option.id} tabIndex={selected === option.id ? 0 : -1} disabled={saving || Boolean(locked) || busy} aria-label={name} onClick={() => choose(option.id)} onKeyDown={event => {
           const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
           if (!offset && event.key !== 'Home' && event.key !== 'End') return;
           event.preventDefault();
@@ -376,8 +372,8 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     </div>}
     {navigation}
     {active && <div className="note-option-actions" role="group" aria-label={t('Review {label}', { label: name })}>
-      <button type="button" className="icon-button accept" aria-label={t('Accept {label}', { label: name })} title={t('Accept')} disabled={saving || Boolean(locked) || busy} onClick={() => void apply(active)}>{saving && actingOption === active.id ? <span className="spinner"/> : <Icon name="check" size={18}/>}</button>
-      <button type="button" className="icon-button reject" aria-label={t('Reject {label}', { label: name })} aria-pressed={rejected} title={rejected ? t('Undo rejection') : t('Reject')} disabled={saving || feedback.busy} onClick={() => reject(active)}><Icon name="close" size={18}/></button>
+      <button type="button" className="icon-button accept" aria-label={t('Accept {label}', { label: name })} title={t('Accept')} disabled={saving || Boolean(locked) || busy} onClick={() => void decide(active, 'accept')}>{saving && actingOption === active.id && actingKind === 'accept' ? <span className="spinner"/> : <Icon name="check" size={18}/>}</button>
+      <button type="button" className="icon-button reject" aria-label={t('Reject {label}', { label: name })} title={t('Reject')} disabled={saving || Boolean(locked) || busy || feedback.busy} onClick={() => void decide(active, 'reject')}>{saving && actingOption === active.id && actingKind === 'reject' ? <span className="spinner"/> : <Icon name="close" size={18}/>}</button>
       <button type="button" className="icon-button comment" aria-label={t('Comment on {label}', { label: name })} aria-expanded={editing?.option?.id === active.id} data-commented={commented} title={t('Comment')} disabled={saving || feedback.busy} onClick={() => comment(active)}><Icon name="chat" size={18}/></button>
       <button type="button" className="icon-button source" aria-label={t('Show LaTeX source')} aria-pressed={source} title={t('Show LaTeX source')} disabled={!comparison} onClick={() => setSource(value => !value)}><Icon name="code" size={18}/></button>
     </div>}
