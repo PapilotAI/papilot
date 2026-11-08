@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { applyUnits, revertUnits } from "./changes.ts";
 import { now, readBytes, readJson, same, writeOrDelete } from "./files.ts";
 import { cleanPath, merge3Async } from "./git.ts";
@@ -280,12 +280,17 @@ export class Review {
         block.after = block.after ? [block.after] : [];
       block.kind = "change";
     }
-    const sources = new Map<string, string>();
+    const sources = new Map<string, { text: string; hash?: string }>();
     const context = (unit: Unit) => {
       if (!unit.text_ops?.length) return {};
-      if (!sources.has(unit.file)) sources.set(unit.file, this.app.repo.blob(round.before, unit.file)?.toString("utf8") || "");
-      const text = sources.get(unit.file)!, offset = unit.text_ops[0][1], start = Math.max(0, offset - 2000);
-      return { old_context: { text: text.slice(start, unit.text_ops.at(-1)![2] + 2000), start } };
+      if (!sources.has(unit.file)) {
+        const data = this.app.repo.blob(round.before, unit.file);
+        sources.set(unit.file, { text: data?.toString("utf8") || "", ...(data ? { hash: createHash("sha256").update(data).digest("hex") } : {}) });
+      }
+      // Identify the complete baseline file, not just this bounded excerpt.
+      // Accepting another file changes the round's commit but not this source.
+      const { text, hash } = sources.get(unit.file)!, offset = unit.text_ops[0][1], start = Math.max(0, offset - 2000);
+      return { old_context: { text: text.slice(start, unit.text_ops.at(-1)![2] + 2000), start, ...(hash ? { source_hash: hash } : {}) } };
     };
     return {
       task: name,

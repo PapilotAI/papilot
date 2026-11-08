@@ -59,6 +59,19 @@ it("keeps math and nested command arguments atomic and handles CJK prose", () =>
   ).toHaveLength(2);
 });
 
+it("keeps prose line rewrapping together without exposing unchanged words as deletions", () => {
+  const old = 'The editor keeps an undo\nhistory for every version, with a pointer\nto an older root.\n';
+  const next = 'The editor keeps an\nundo history for every version, with a\npointer to an older root.\n';
+  f.write(METHOD, old);
+  const before = f.repo.snapshot(['paper']);
+  f.write(METHOD, next);
+  const after = f.repo.snapshot(['paper']), units = diffUnits(f.repo, before, after);
+  expect(units).toHaveLength(1);
+  expect(units[0].old_text.replace(/\s+/g, ' ').trim()).toBe(units[0].new_text.replace(/\s+/g, ' ').trim());
+  expect(applyUnits(Buffer.from(old), Buffer.from(next), units)?.toString()).toBe(next);
+  expect(revertUnits(Buffer.from(old), Buffer.from(next), units)?.toString()).toBe(old);
+});
+
 it("applies insertions and deletions precisely, while older line-based units still work", () => {
   const old = "A quick model is very useful.\r\nUnchanged.\r\n",
     next = "A new quick model is useful.\r\nUnchanged.\r\n";

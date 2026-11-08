@@ -76,7 +76,7 @@ export interface Unit {
   new_start: number;
   new_end: number;
   old_text: string;
-  old_context?: { text: string; start: number };
+  old_context?: { text: string; start: number; source_hash?: string };
   new_text: string;
   truncated: boolean;
 }

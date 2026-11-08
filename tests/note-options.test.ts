@@ -72,4 +72,10 @@ test('short source options rebase by exact offsets only when the baseline is unc
   assert.deepEqual(rebaseNoteOptions(options, [previous], [next], true).map(option => option.edits), [[{ unit: 'b', text: 'quick' }], [{ unit: 'b', text: 'speedy' }]]);
   assert.deepEqual(rebaseNoteOptions(options, [previous], [next], false), []);
   assert.deepEqual(rebaseNoteOptions(options, [previous], [{ ...next, text_ops: [['replace', 4, 8, 4, 10]] }], true), [], 'same baseline must use the exact range, not similar context');
+  const source = { ...previous, old_context: { ...previous.old_context, source_hash: 'same-file-hash' } };
+  const rebased = { ...next, old_context: source.old_context };
+  assert.deepEqual(rebaseNoteOptions(options, [source], [rebased], false).map(option => option.edits), [[{ unit: 'b', text: 'quick' }], [{ unit: 'b', text: 'speedy' }]], 'the same file is sufficient even when an unrelated acceptance changes the baseline commit');
+  assert.deepEqual(rebaseNoteOptions(options, [source], [{ ...rebased, old_context: { ...rebased.old_context, source_hash: 'changed-file-hash' } }], false), [], 'a short context must not prove unchanged source');
+  assert.deepEqual(rebaseNoteOptions(options, [source], [{ ...rebased, text_ops: [['replace', 4, 8, 4, 10]] }], false), [], 'matching file hashes still require matching offsets');
+  assert.deepEqual(rebaseNoteOptions(options, [source], [rebased, { ...rebased, id: 'c' }], false), [], 'an ambiguous source mapping stays unavailable');
 });

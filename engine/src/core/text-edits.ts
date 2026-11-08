@@ -125,7 +125,20 @@ export function textEdits(before: string, after: string): Op[] {
 function wordEdits(before: string, after: string): Op[] {
   const a = textTokens(before),
     b = textTokens(after),
-    left = offsets(a),
+    words = (tokens: string[]) => tokens.filter(token => !/^\s+$/.test(token)),
+    oldWords = words(a), newWords = words(b);
+  // Rewrapping prose moves spaces/newlines, not its words. A token LCS may
+  // otherwise match the newline and expose a word as an independent deletion
+  // plus insertion. Keep the formatting-only rewrite together so accepting a
+  // subset cannot silently remove or duplicate that word.
+  if (oldWords.length === newWords.length && oldWords.every((word, i) => word === newWords[i])) {
+    let start = 0, end = before.length, nextEnd = after.length;
+    while (start < end && start < nextEnd && before[start] === after[start]) start++;
+    while (end > start && nextEnd > start && before[end - 1] === after[nextEnd - 1]) { end--; nextEnd--; }
+    if (start === end && start === nextEnd) return [];
+    return [[start === end ? 'insert' : start === nextEnd ? 'delete' : 'replace', start, end, start, nextEnd]];
+  }
+  const left = offsets(a),
     right = offsets(b),
     ops = opcodesWithin(a, b, 100);
   if (!ops) return [["replace", 0, before.length, 0, after.length]];

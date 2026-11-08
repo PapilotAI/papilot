@@ -31,21 +31,21 @@ function mappedRange(before: string, after: string, start: number, end: number):
   return result;
 }
 
-async function optionComparison(app: App, name: string, edits: OptionInput['edits'], writes: Saved['writes']) {
-  const task = app.tasks.get(name), round = app.review.latestRound(name)!;
-  const candidate = optionCandidate(round.units, edits, file => app.repo.blob(round.after, file)!.toString('utf8'));
-  const before = task.accepted;
-  // The actual worktree already contains rejections and independent manual
-  // edits. Preserve those while preparing a comparison for the pending option.
-  const current = await app.tasks.snapshotAsync(task);
-  const after = await app.repo.commitWithAsync(current, Object.fromEntries(writes.map(write => [write.file, Buffer.from(write.after, 'base64')])), 'Selected note option');
+async function preserveRanges(app: App, before: string, after: string, anchors: Unit[], original: (file: string) => string, proposed: (file: string) => string) {
   const units = await diffUnitsAsync(app.repo, before, after, file => isFigure(app.project, file));
-  const chosen = new Set(edits.map(edit => edit.unit));
-  const selected = candidate.units.filter(unit => chosen.has(unit.id)).map(unit => {
+  const files = new Map<string, { old: string; next: string; original: string; proposed: string }>();
+  const source = (file: string) => {
+    if (!files.has(file)) files.set(file, {
+      old: app.repo.blob(before, file)!.toString('utf8'), next: app.repo.blob(after, file)!.toString('utf8'),
+      original: original(file), proposed: proposed(file),
+    });
+    return files.get(file)!;
+  };
+  const selected = anchors.map(unit => {
     const [, a, b, x, y] = unit.text_ops![0];
-    const old = app.repo.blob(before, unit.file)!.toString('utf8'), next = app.repo.blob(after, unit.file)!.toString('utf8');
-    const [i, j] = mappedRange(app.repo.blob(round.before, unit.file)!.toString('utf8'), old, a, b);
-    const [u, v] = mappedRange(candidate.files[unit.file].toString('utf8'), next, x, y);
+    const { old, next, original, proposed } = source(unit.file);
+    const [i, j] = mappedRange(original, old, a, b);
+    const [u, v] = mappedRange(proposed, next, x, y);
     const line = (text: string, offset: number) => text.slice(0, offset).split('\n').length - 1;
     const tag = i === j ? 'insert' : u === v ? 'delete' : 'replace';
     return { ...unit, old_start: line(old, i) + 1, old_end: line(old, Math.max(i, j - 1)) + 1,
@@ -58,8 +58,17 @@ async function optionComparison(app: App, name: string, edits: OptionInput['edit
     if (unit.file !== anchor.file) return false;
     const [, i, j, x, y] = anchor.text_ops![0];
     if (!unit.text_ops?.length) throw new Error('This change cannot be replaced independently.');
-    if (!unit.text_ops.some(([, a, b, u, v]) => overlaps(i, j, a, b) || overlaps(x, y, u, v))) return false;
-    if (unit.text_ops.some(([, a, b, u, v]) => a < i || b > j || u < x || v > y))
+    const { old, next } = source(unit.file);
+    // Tokenization can include equal surrounding whitespace in a deletion.
+    // Only bytes that actually change determine whether it crosses the
+    // authorized span; the reconstruction check below preserves every byte.
+    const exact = unit.text_ops.map(([, a, b, u, v]) => {
+      while (a < b && u < v && old[a] === next[u]) { a++; u++; }
+      while (a < b && u < v && old[b - 1] === next[v - 1]) { b--; v--; }
+      return [a, b, u, v];
+    });
+    if (!exact.some(([a, b, u, v]) => overlaps(i, j, a, b) || overlaps(x, y, u, v))) return false;
+    if (exact.some(([a, b, u, v]) => a < i || b > j || u < x || v > y))
       throw new Error('These changes overlap and must be revised together.');
     return true;
   }));
@@ -68,11 +77,24 @@ async function optionComparison(app: App, name: string, edits: OptionInput['edit
   // Replacing narrower diffs with the chosen source span must neither include
   // a neighbor nor omit any part of the actual proposal.
   for (const file of new Set(selected.map(unit => unit.file))) {
-    const old = app.repo.blob(before, file), next = app.repo.blob(after, file);
-    if (!same(applyUnits(old, next, combined.filter(unit => unit.file === file)), next))
+    const { old, next } = source(file);
+    if (applyUnits(Buffer.from(old), Buffer.from(next), combined.filter(unit => unit.file === file))?.toString('utf8') !== next)
       throw new Error('These changes overlap and must be revised together.');
   }
   return { comparison: { before, after, units: combined }, selected };
+}
+
+async function optionComparison(app: App, name: string, edits: OptionInput['edits'], writes: Saved['writes']) {
+  const task = app.tasks.get(name), round = app.review.latestRound(name)!;
+  const candidate = optionCandidate(round.units, edits, file => app.repo.blob(round.after, file)!.toString('utf8'));
+  const before = task.accepted;
+  // The actual worktree already contains rejections and independent manual
+  // edits. Preserve those while preparing a comparison for the pending option.
+  const current = await app.tasks.snapshotAsync(task);
+  const after = await app.repo.commitWithAsync(current, Object.fromEntries(writes.map(write => [write.file, Buffer.from(write.after, 'base64')])), 'Selected note option');
+  const chosen = new Set(edits.map(edit => edit.unit));
+  return preserveRanges(app, before, after, candidate.units.filter(unit => chosen.has(unit.id)),
+    file => app.repo.blob(round.before, file)!.toString('utf8'), file => candidate.files[file].toString('utf8'));
 }
 
 // An option changes wording inside an existing review unit. Keep that range
@@ -80,9 +102,18 @@ async function optionComparison(app: App, name: string, edits: OptionInput['edit
 // the original “stable” unit into an unrelated insertion and lose its choices.
 export async function noteOptionUnits(app: App, name: string, job: string, before: string, after: string) {
   const saved = app.store.one<{ data: Saved }>("SELECT s.data FROM source_edits s JOIN build_requests b ON b.id=json_extract(s.data,'$.publishRequest') WHERE b.job=? AND s.task=?", job, name)?.data;
-  if (!saved?.applied || saved.comparison?.before !== before) return;
-  if (await app.repo.treeIdAsync(saved.comparison.after) !== await app.repo.treeIdAsync(after)) return;
-  return saved.comparison.units;
+  if (!saved?.applied || !saved.comparison) return;
+  if (saved.comparison.before === before && await app.repo.treeIdAsync(saved.comparison.after) === await app.repo.treeIdAsync(after))
+    return saved.comparison.units;
+  // A decision made while this option compiles can move the accepted baseline
+  // or revert another proposal. Rebase the authorized spans, not their narrower
+  // fresh diffs, so retained old words do not become unrelated insertions.
+  if (saved.accept) {
+    const rebased = await preserveRanges(app, before, after, saved.accept.units,
+      file => app.repo.blob(saved.comparison!.before, file)!.toString('utf8'),
+      file => app.repo.blob(saved.comparison!.after, file)!.toString('utf8'));
+    return rebased.comparison.units;
+  }
 }
 
 /** The checkmark authorizes only this note's edits. Finish that decision after

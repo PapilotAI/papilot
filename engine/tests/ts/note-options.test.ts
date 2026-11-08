@@ -118,6 +118,23 @@ it('accepts the intended repeated fragment after a distant accepted edit', async
   expect(accepted).toContain('Detail proposal 15.');
 });
 
+for (const action of ['accept', 'reject'] as const) it(`accepts the original option span when another ${action} arrives during publication`, async () => {
+  const word = units().find(unit => unit.new_text === 'Approach')!, number = units().find(unit => unit.new_text === 'two')!;
+  publishOptionRound();
+  const publish = vi.mocked(app.publisher.publish).getMockImplementation()!;
+  vi.mocked(app.publisher.publish).mockImplementation(async (...args) => {
+    await app.review.decide(task.name, { round: 1, changes: [number.id], action });
+    return publish(...args);
+  });
+  await useNoteOption(app, task.name, { id: 'decision-during-option', round: 1, accept: true, edits: [{ unit: word.id, text: 'Revised Method' }] }); await app.publisher.join();
+  expect(app.publisher.current(task.name)?.status).toBe('done');
+  const accepted = app.repo.blob(app.tasks.get(task.name).accepted, METHOD)!.toString();
+  expect(accepted).toContain(`Revised Method sentence ${action === 'accept' ? 'two' : '2'}.`);
+  expect(accepted).toContain('Detail sentence 15.');
+  const round = app.review.latestRound(task.name)!, decisions = app.review.decisions(task.name, round);
+  expect(round.units.filter(unit => decisions[unit.id] === 'pending').map(unit => unit.new_text)).toEqual(['proposal']);
+});
+
 it('keeps an independent manual edit outside the selected acceptance', async () => {
   const word = units().find(unit => unit.new_text === 'Approach')!;
   f.edit(task, METHOD, 'Method sentence 4.', 'Manual sentence 4.');
@@ -149,12 +166,24 @@ it('keeps a distant atomic TeX construct pending when accepting a prose option',
   expect(accepted).not.toContain(equation);
 });
 
+it('accepts an empty option without consuming the surrounding whitespace or neighbor', async () => {
+  const word = units().find(unit => unit.new_text === 'Approach')!;
+  publishOptionRound();
+  await useNoteOption(app, task.name, { id: 'delete-word', round: 1, accept: true, edits: [{ unit: word.id, text: '' }] }); await app.publisher.join();
+  expect(app.publisher.current(task.name)?.status).toBe('done');
+  expect(app.repo.blob(app.tasks.get(task.name).accepted, METHOD)!.toString()).toBe(BODY.replace('Method sentence 2.', ' sentence 2.'));
+  expect(f.read(METHOD, task.worktree)).toBe(BODY.replace('Method sentence 2.', ' sentence two.').replace('Detail sentence 15.', 'Detail proposal 15.'));
+  const round = app.review.latestRound(task.name)!, decisions = app.review.decisions(task.name, round);
+  expect(round.units.filter(unit => decisions[unit.id] === 'accepted').map(unit => [unit.old_text, unit.new_text])).toEqual([['Method', '']]);
+});
+
 it('fails closed if the selected wording changes while publication is pending', async () => {
   const word = units().find(unit => unit.new_text === 'Approach')!;
-  vi.mocked(app.publisher.publish).mockImplementation(async () => {
+  publishOptionRound();
+  const publish = vi.mocked(app.publisher.publish).getMockImplementation()!;
+  vi.mocked(app.publisher.publish).mockImplementation(async (...args) => {
     f.edit(task, METHOD, 'Procedure', 'Different');
-    const round = fakeRound(app, task.name);
-    return { outcome: 'published', round: round.number, changes: round.units.length };
+    return publish(...args);
   });
   await useNoteOption(app, task.name, { id: 'changed-during-build', round: 1, accept: true, edits: [{ unit: word.id, text: 'Procedure' }] }); await app.publisher.join();
   expect(app.publisher.current(task.name)?.status).toBe('failed');

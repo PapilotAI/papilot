@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { matchNoteChanges, taskNoteResults, type NoteRound } from '../src/server/note-results.ts';
 import { noteAnchor, reviewNotesInstructions } from '../src/notes.ts';
 import type { NoteSummary, Run, Task, TimelineItem } from '../src/shared.ts';
 import type { ReviewClient } from '../src/server/review.ts';
 import { diffUnits } from '../engine/src/core/changes.ts';
+import { Fixture, fakeRound, METHOD } from '../engine/tests/ts/helpers.ts';
 
 const note: NoteSummary = { id: 'n1', where: 'Page 2 · main.tex lines 10–12', quote: 'The original technical sentence.', comment: 'Shorten it.', anchor: { sources: [{ file: 'main.tex', lines: [10, 12] }] } };
 const detail: NoteRound = {
@@ -110,4 +112,38 @@ test('short included sources retain exact note identity and decisions across opt
   rounds[2].before = 'different-base';
   const [unresolved] = await taskNoteResults(task, [item], [run], client);
   assert.equal(unresolved.round, 1, 'offsets alone must not match against a different baseline');
+});
+
+test('short note sources retain their identity after accepting another file', async () => {
+  const fixture = new Fixture(), file = 'paper/short.tex', text = 'A fast dog.\n';
+  try {
+    fixture.write(file, text);
+    fixture.repo.run(['add', file]);
+    fixture.repo.run(['commit', '-qm', 'Add included source']);
+    const app = fixture.app(); await app.ready;
+    const engineTask = app.tasks.create('short-note', 'Short note', [], ['paper'], true);
+    fixture.edit(engineTask, file, 'fast', 'quick');
+    fixture.edit(engineTask, METHOD, 'Method sentence 2.', 'Approach sentence 2.');
+    const first = fakeRound(app, engineTask.name);
+    await app.review.decide(engineTask.name, { round: first.number, action: 'accept', changes: first.units.filter(unit => unit.file === METHOD).map(unit => unit.id) });
+    fixture.edit(engineTask, file, 'quick', 'speedy');
+    const second = fakeRound(app, engineTask.name);
+    await app.review.decide(engineTask.name, { round: second.number, action: 'accept', changes: second.units.filter(unit => unit.file === file).map(unit => unit.id) });
+    const old = app.review.roundDetail(engineTask.name, first.number), next = app.review.roundDetail(engineTask.name, second.number);
+    assert.notEqual(old.before, next.before, 'accepting another file changes the baseline commit');
+    const hash = createHash('sha256').update(text).digest('hex');
+    assert.equal(old.units.find(unit => unit.file === file)?.old_context?.source_hash, hash);
+    assert.equal(next.units.find(unit => unit.file === file)?.old_context?.source_hash, hash);
+    const task = { id: 'task', name: engineTask.name, status: 'reviewing', review: { round: second.number } } as Task;
+    const run = { id: 'run', requestKey: 'options', prompt: '', createdAt: 1, finishedAt: 2, taskId: task.id, status: 'completed', reviewRound: second.number, noteRounds: { 0: first.number } } as Run;
+    const item = { id: run.id, taskId: task.id, type: 'user', text: '', createdAt: 1, meta: { notes: [{ where: `${file} line 1`, quote: text, comment: 'Improve.' }] } };
+    const client = { get: async (route: string) => {
+      const number = Number(route.match(/(?:rounds\/|round=)(\d+)/)![1]);
+      const round = app.review.roundDetail(engineTask.name, number);
+      return route.includes('/rounds/') ? { ...round, loose: [{ kind: 'change', units: round.units.map(unit => unit.id) }] } : { decisions: app.review.decisions(engineTask.name, app.review.round(engineTask.name, number)) };
+    } } as unknown as ReviewClient;
+    const [result] = await taskNoteResults(task, [item], [run], client);
+    assert.equal(result.round, second.number);
+    assert.deepEqual(result.changes.map(change => change.state), ['accepted']);
+  } finally { await fixture.close(); }
 });

@@ -6,7 +6,7 @@ import { taskRoute, type ReviewClient } from './review.ts';
 export interface NoteRound {
   round: number;
   before?: string;
-  units: { id: string; file: string; old_start: number; old_end: number; old_text: string; new_text: string; truncated?: boolean; whole_file?: boolean; kind?: string; text_ops?: [string, number, number, number, number][]; old_context?: { text: string; start: number } }[];
+  units: { id: string; file: string; old_start: number; old_end: number; old_text: string; new_text: string; truncated?: boolean; whole_file?: boolean; kind?: string; text_ops?: [string, number, number, number, number][]; old_context?: { text: string; start: number; source_hash?: string } }[];
   sections: { blocks: NoteBlock[] }[];
   loose: NoteBlock[];
 }
@@ -94,7 +94,8 @@ export function matchNoteChanges(note: NoteSummary, detail: NoteRound, decisions
 
 export function sameFragment(previous: NoteRound['units'][number], next: NoteRound['units'][number], sameBase = false) {
   if (previous.file !== next.file || previous.old_text !== next.old_text) return false;
-  if (sameBase && previous.text_ops && next.text_ops) return previous.text_ops.length === next.text_ops.length && previous.text_ops.every((op, index) => op[1] === next.text_ops![index][1] && op[2] === next.text_ops![index][2]);
+  const sameSource = sameBase || Boolean(previous.old_context?.source_hash && previous.old_context.source_hash === next.old_context?.source_hash);
+  if (sameSource && previous.text_ops && next.text_ops) return previous.text_ops.length === next.text_ops.length && previous.text_ops.every((op, index) => op[1] === next.text_ops![index][1] && op[2] === next.text_ops![index][2]);
   if (!previous.old_context || !next.old_context || !previous.text_ops || !next.text_ops) return true;
   const surroundings = (unit: NoteRound['units'][number]) => {
     const { text, start } = unit.old_context!, [, a, b] = unit.text_ops![0];
