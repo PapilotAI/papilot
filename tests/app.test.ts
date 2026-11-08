@@ -10,7 +10,7 @@ import path from 'node:path';
 import { Store } from '../src/server/store.ts';
 import { Workspace } from '../src/server/workspace.ts';
 import { Manuscripts } from '../src/server/manuscript.ts';
-import { buildApp, gitQueue } from '../src/server/app.ts';
+import { buildApp, gitQueue, type AppOptions } from '../src/server/app.ts';
 import { Updates } from '../src/server/updates.ts';
 import { Diagnostics } from '../src/server/diagnostics.ts';
 import type { SystemRequirements } from '../src/shared.ts';
@@ -24,7 +24,7 @@ const LOCAL = { host: '127.0.0.1:7274' };
 class FakeAgent extends EventEmitter { ready = false; async request() { return {}; } respond() {} reject() {} close() {} }
 const task = (id: string, projectId: string): Task => ({ id, projectId, name: 'p-' + id, title: id, instructions: 'Edit.', worktree: '/unused', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null });
 
-async function fixture() {
+async function fixture(latexInstallation: AppOptions['latexInstallation'] = async () => ({ distribution: 'MacTeX', version: '2025', path: '/usr/local/texlive/2025' })) {
   const store = new Store(':memory:'), dist = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-app-'));
   fs.writeFileSync(path.join(dist, 'index.html'), '<html>app</html>');
   fs.writeFileSync(path.join(dist, '.env'), 'SECRET=1');
@@ -40,7 +40,7 @@ async function fixture() {
   const diagnosticRequests: { repo?: string; port?: number }[] = [];
   const diagnostics = new Diagnostics(async (repo, port) => { diagnosticRequests.push({ repo, port }); return { version: '9.9.9', ok: false, checks: [{ id: 'latexmk', ok: false, severity: 'error', detail: 'Not installed.', fix: 'Install TeX Live.' }] }; });
   const systemRequirements = async (): Promise<SystemRequirements> => ({ platform: 'linux', checks: [{ id: 'git', ok: true }, { id: 'latexmk', ok: false }, { id: 'synctex', ok: false }, { id: 'tex-engine', ok: false }] });
-  const shared = { store, workspace, updates, diagnostics, systemRequirements, latexInstallation: async () => ({ distribution: 'MacTeX' as const, version: '2025', path: '/usr/local/texlive/2025' }), manuscripts: new Manuscripts(), csrf: 'local-csrf', serialGit: gitQueue(), dist, version: '9.9.9', connectReview: async () => review };
+  const shared = { store, workspace, updates, diagnostics, systemRequirements, latexInstallation, manuscripts: new Manuscripts(), csrf: 'local-csrf', serialGit: gitQueue(), dist, version: '9.9.9', connectReview: async () => review };
   const local = await buildApp({ ...shared, listener: { kind: 'local', port: 7274, publicOrigin: PUBLIC, owner: 'owner@example' } });
   const state = (await local.inject({ url: '/api/state', headers: LOCAL })).json();
   const as = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': state.csrf };
@@ -212,6 +212,45 @@ test('LaTeX installation information is read-only', async () => {
     assert.deepEqual(result.json(), { distribution: 'MacTeX', version: '2025', path: '/usr/local/texlive/2025' });
     assert.equal(f.diagnosticRequests.length, 0, 'Reading the installation does not run repository or agent diagnostics');
   } finally { await f.close(); }
+});
+
+test('LaTeX detection shares a host-wide rate limit, rejects excess probes and recovers after its window', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  let probes = 0;
+  const f = await fixture(async () => { probes++; return null; });
+  try {
+    const url = '/api/runtime/latex';
+    assert.equal((await f.local.inject({ url, headers: { host: 'untrusted.example' } })).statusCode, 403);
+    for (let i = 0; i < 5; i++) assert.equal((await f.local.inject({ url, headers: LOCAL })).statusCode, 200);
+    const limited = await f.local.inject({ url, headers: { host: 'mini.example.ts.net:8443', 'tailscale-user-login': 'owner@example' } });
+    assert.equal(limited.statusCode, 429, 'Changing connection identity cannot bypass the host probe budget');
+    assert.equal(limited.headers['retry-after'], '10');
+    assert.equal((await f.local.inject({ method: 'HEAD', url, headers: LOCAL })).statusCode, 429, 'HEAD shares the GET probe budget');
+    assert.equal(probes, 5, 'Excess requests never start detection');
+    assert.equal((await f.local.inject({ url: '/api/state', headers: LOCAL })).statusCode, 200, 'Workspace polling is not rate-limited');
+    t.mock.timers.tick(10001);
+    assert.equal((await f.local.inject({ url, headers: LOCAL })).statusCode, 200);
+    assert.equal(probes, 6);
+  } finally { await f.close(); }
+});
+
+test('concurrent LaTeX detections share a probe and failures allow another attempt', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  let probes = 0, fail!: (error: Error) => void;
+  const failed = new Promise<never>((_resolve, reject) => { fail = reject; });
+  const f = await fixture(() => { probes++; return probes === 1 ? failed : Promise.resolve(null); });
+  const responses = Array.from({ length: 5 }, () => f.local.inject({ url: '/api/runtime/latex', headers: LOCAL }).then(reply => reply));
+  try {
+    // A refused sixth request confirms the five allowed requests entered the limiter.
+    const limited = await f.local.inject({ url: '/api/runtime/latex', headers: LOCAL });
+    assert.equal(limited.statusCode, 429);
+    assert.equal(probes, 1);
+    fail(new Error('Detection failed'));
+    for (const reply of await Promise.all(responses)) assert.equal(reply.statusCode, 400);
+    t.mock.timers.tick(10001);
+    assert.equal((await f.local.inject({ url: '/api/runtime/latex', headers: LOCAL })).statusCode, 200);
+    assert.equal(probes, 2, 'A rejected probe is released for retry');
+  } finally { fail(new Error('Test complete')); await Promise.allSettled(responses); await f.close(); }
 });
 
 test('diagnostics require CSRF and resolve only registered paper IDs', async () => {

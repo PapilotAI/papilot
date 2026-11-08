@@ -92,6 +92,7 @@
   },
   "dependencies": {
     "@fastify/compress": "^9.2.2",
+    "@fastify/rate-limit": "^11.2.2",
     "@fastify/static": "^10.1.7",
     "commander": "^15.0.0",
     "cross-spawn": "^7.0.6",

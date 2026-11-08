@@ -1,6 +1,7 @@
 import { isNoteGroup } from '../note-groups.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
+import rateLimit from '@fastify/rate-limit';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -187,7 +188,16 @@ export async function buildApp(options: AppOptions) {
 
   app.get('/api/health', () => ({ ok: true, name: 'Papilot', version: options.version, ...(options.desktopInstance ? { desktopInstance: options.desktopInstance } : {}), ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) }));
   app.get('/api/runtime/requirements', () => (options.systemRequirements || systemRequirements)());
-  app.get('/api/runtime/latex', () => (options.latexInstallation || detectLatex)());
+  // Detection starts host processes. All tabs and personal remote connections
+  // share one budget and one in-flight probe; polling other routes is unaffected.
+  await app.register(async latex => {
+    await latex.register(rateLimit, { max: 5, timeWindow: 10000, keyGenerator: () => 'latex-installation' });
+    let probe: ReturnType<typeof detectLatex> | undefined;
+    latex.get('/api/runtime/latex', () => {
+      probe ??= (options.latexInstallation || detectLatex)().finally(() => { probe = undefined; });
+      return probe;
+    });
+  });
   app.post('/api/diagnostics', request => {
     const projectId = (request.body as { projectId?: unknown } | null)?.projectId;
     if (projectId !== undefined && (typeof projectId !== 'string' || !projectId || projectId.length > 64)) throw new Error('Select a valid paper to check.');
