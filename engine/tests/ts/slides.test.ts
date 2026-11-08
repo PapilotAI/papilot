@@ -36,6 +36,57 @@ interface Scenario {
   fragment?: string;
 }
 const cases: Scenario[] = [
+  {
+    name: "FancyVerb options preserve following environment boundaries",
+    preamble: "\\documentclass{beamer}\n\\usepackage{fancyvrb}",
+    body: String.raw`\begin{frame}{Previous sentinel}
+Unchanged.
+\end{frame}
+\begin{frame}[fragile]{Changed title}
+The oldvalue is here.
+\begin{itemize}
+\item \Verb[fontsize=\small]|literal| \end{itemize}
+\end{frame}`,
+    from: "oldvalue",
+    to: "newvalue",
+    pages: [2],
+    beforePages: [2],
+    slides: true,
+  },
+  ...[
+    String.raw`\verb{literal{`,
+    String.raw`\lstinline[language={[LaTeX]TeX}]|literal|`,
+  ].map((literal) => ({
+    name: `body input following inline code: ${literal}`,
+    preamble: "\\documentclass{article}\n\\usepackage{listings}",
+    body: `${literal} \\input{inner}`,
+    fragment: "The oldvalue is here.\n",
+    from: "oldvalue",
+    to: "newvalue",
+    pages: [1],
+    beforePages: [1],
+  })),
+  ...["insert", "delete"].map((operation) => ({
+    name: `${operation} in an input containing an unexecuted frame definition`,
+    preamble: "\\documentclass{beamer}",
+    body: String.raw`\begin{frame}{Previous sentinel}
+Unchanged.
+\end{frame}
+\begin{frame}{Changed title}
+\input{inner}
+\end{frame}`,
+    fragment:
+      "\\newcommand{\\backupframe}{\\frame{Backup content.}}\nThe oldvalue is here.\n" +
+      (operation === "delete" ? "The newvalue is here.\n" : ""),
+    from: "The oldvalue is here.\n",
+    to:
+      operation === "insert"
+        ? "The oldvalue is here.\nThe newvalue is here.\n"
+        : "",
+    pages: [2],
+    beforePages: [2],
+    slides: true,
+  })),
   ...["verbatim", "lstlisting"].map((env) => ({
     name: `frame examples inside ${env} do not alter frame boundaries`,
     preamble: "\\documentclass{beamer}\n\\usepackage{listings}",
@@ -357,3 +408,60 @@ for (const scenario of cases)
       await f.close();
     }
   });
+
+for (const deletion of [false, true])
+  it.skipIf(!tex)(
+    `orders changed input files by slide position${deletion ? " with a deleted slide" : ""}`,
+    async () => {
+      const f = new Fixture();
+      try {
+        f.write(
+          "paper/main.tex",
+          String.raw`\documentclass{beamer}
+\begin{document}
+\input{z-intro}
+\input{m-middle}
+\input{a-conclusion}
+\end{document}
+`,
+        );
+        for (const name of ["z-intro", "m-middle", "a-conclusion"])
+          f.write(
+            `paper/${name}.tex`,
+            `\\begin{frame}{${name}}\nThe oldvalue is here.\n\\end{frame}\n`,
+          );
+        f.repo.run(["add", "."]);
+        f.repo.run(["commit", "-qm", "slides in document order"]);
+        const app = f.app(),
+          task = app.tasks.create("order");
+        for (const name of ["z-intro", "m-middle", "a-conclusion"])
+          if (deletion && name !== "a-conclusion")
+            f.write(`paper/${name}.tex`, "", task.worktree);
+          else f.edit(task, `paper/${name}.tex`, "oldvalue", "newvalue");
+        const job = app.publisher.submit(task.name, undefined, false);
+        await app.publisher.join();
+        const result = app.publisher.job(job.id);
+        expect(result.status, JSON.stringify(result.result)).toBe("done");
+        const detail = app.review.roundDetail(task.name, 1);
+        expect(detail.loose.map((b) => b.before.map((s) => s.page))).toEqual([
+          [1],
+          [2],
+          [3],
+        ]);
+        expect(detail.loose.map((b) => b.after.map((s) => s.page))).toEqual(
+          deletion ? [[], [], [1]] : [[1], [2], [3]],
+        );
+        expect(
+          detail.loose.map((b) =>
+            b.units.map((id) => detail.units.find((u) => u.id === id)!.file),
+          ),
+        ).toEqual([
+          ["paper/z-intro.tex"],
+          ["paper/m-middle.tex"],
+          ["paper/a-conclusion.tex"],
+        ]);
+      } finally {
+        await f.close();
+      }
+    },
+  );

@@ -442,6 +442,26 @@ export class Locator {
   ): Position[] {
     if (visited.has(file)) return [];
     visited = new Set(visited).add(file);
+    // An input inside a frame belongs to that canvas, even when the input
+    // also defines macros that contain frame syntax. Resolve the enclosing
+    // frame before inspecting local boundaries or an empty diff side.
+    const inherited = (this.build.inputParents.get(file) ?? []).flatMap(
+      (parent) =>
+        fs.existsSync(parent.file)
+          ? this.slidePages(
+              parent.file,
+              fs.readFileSync(parent.file, "utf8").split("\n"),
+              [[parent.line - 1, parent.line]],
+              false,
+              visited,
+              true,
+            )
+          : [],
+    );
+    if (inherited.length)
+      return [...new Map(inherited.map((at) => [at.page, at])).values()].sort(
+        (a, b) => a.page - b.page,
+      );
     // Beamer (and body-capturing frame wrappers) records the frame at its
     // closing line. Interior queries can instead resolve to the previous
     // frame. Query enclosing frame environments at their closing lines.
@@ -478,28 +498,6 @@ export class Locator {
           text.slice(0, match.index).split("\n").length,
           text.slice(0, end).split("\n").length,
         ]);
-    }
-    // Included body fragments have no frame boundaries of their own. Follow
-    // their input sites, including for an empty diff side, so inserting text
-    // still shows the existing frame on both sides of the comparison.
-    if (!blocks.length) {
-      const inherited = (this.build.inputParents.get(file) ?? []).flatMap(
-        (parent) =>
-          fs.existsSync(parent.file)
-            ? this.slidePages(
-                parent.file,
-                fs.readFileSync(parent.file, "utf8").split("\n"),
-                [[parent.line - 1, parent.line]],
-                false,
-                visited,
-                true,
-              )
-            : [],
-      );
-      if (inherited.length)
-        return [...new Map(inherited.map((at) => [at.page, at])).values()].sort(
-          (a, b) => a.page - b.page,
-        );
     }
     // Diff operations are zero-based, half-open. An empty side belongs to
     // a frame only when its insertion point is strictly inside that frame.

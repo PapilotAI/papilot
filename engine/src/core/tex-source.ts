@@ -1,5 +1,21 @@
 import path from "node:path";
 
+// A closing bracket inside a braced option value does not end the options.
+function optionsEnd(text: string, start: number): number {
+  let depth = 0;
+  for (let i = start + 1; i < text.length; i++) {
+    if (text[i] === "\\") i++;
+    else if (text[i] === "%") {
+      const newline = text.indexOf("\n", i);
+      if (newline < 0) return -1;
+      i = newline;
+    } else if (text[i] === "{") depth++;
+    else if (text[i] === "}") depth--;
+    else if (text[i] === "]" && depth === 0) return i + 1;
+  }
+  return -1;
+}
+
 // Hide comments and literal examples while retaining source offsets and lines.
 // The remaining text is for structural discovery, never for compiling TeX.
 export function structuralSource(text: string): string {
@@ -48,13 +64,21 @@ export function structuralSource(text: string): string {
     if (["verb", "Verb", "lstinline"].includes(command[1])) {
       let at = i + command[0].length;
       if (text[at] === "*") at++;
-      if (command[1] === "lstinline" && text[at] === "[") {
-        const close = text.indexOf("]", at + 1);
-        if (close >= 0) at = close + 1;
+      if (command[1] !== "verb") {
+        while (at < text.length && /\s/.test(text[at])) at++;
+        if (text[at] === "[") {
+          const end = optionsEnd(text, at);
+          if (end >= 0) at = end;
+        }
+        while (at < text.length && /\s/.test(text[at])) at++;
       }
       const delimiter = text[at];
       if (delimiter && !/\s/.test(delimiter)) {
-        const close = text.indexOf(delimiter === "{" ? "}" : delimiter, at + 1),
+        // Only lstinline has a braced form. verb and Verb close with the
+        // same delimiter they opened with, including an opening brace.
+        const closing =
+            command[1] === "lstinline" && delimiter === "{" ? "}" : delimiter,
+          close = text.indexOf(closing, at + 1),
           newline = text.indexOf("\n", at + 1);
         const end =
           close >= 0 && (newline < 0 || close < newline)

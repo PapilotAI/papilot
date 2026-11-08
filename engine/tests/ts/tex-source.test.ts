@@ -5,6 +5,22 @@ import {
   structuralSource,
 } from "../../src/core/tex-source.ts";
 
+it.each([
+  String.raw`\Verb[fontsize=\small]|\frame{example}|`,
+  String.raw`\verb{\frame{`,
+  String.raw`\lstinline[language={[LaTeX]TeX}]|\frame{example}|`,
+  String.raw`\lstinline{example}`,
+])("preserves real commands after inline code: %s", (literal) => {
+  const text = `${literal} \\end{itemize} \\input{actual}`;
+  const source = structuralSource(text);
+  expect(source.length).toBe(text.length);
+  expect(source).not.toContain("\\frame");
+  expect(source).toContain("\\end{itemize}");
+  expect(sourceInputs(source, "paper/main.tex")).toEqual([
+    { file: "paper/actual.tex", line: 1 },
+  ]);
+});
+
 it("ignores literal commands while preserving source lines and offsets", () => {
   const text = String.raw`% \input{comment}
 \verb|\frame{fake}| \lstinline[language=TeX]|\input{inline}|

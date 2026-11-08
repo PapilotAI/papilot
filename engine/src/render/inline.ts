@@ -686,9 +686,30 @@ function renderSlides(
       pairs: card.pairs.map((pair) => ({ ...pair, group: 0 })),
     })),
   );
+  const ordered = areas
+    .filter((area) => area.new.length)
+    .sort((a, b) => a.new[0].page - b.new[0].page);
+  // Place deletions before the next surviving changed slide in the old
+  // deck. Comparing old and new page numbers directly loses that order
+  // when earlier slides have been inserted or removed.
+  for (const area of areas
+    .filter((area) => !area.new.length)
+    .sort(
+      (a, b) => (a.old[0]?.page ?? Infinity) - (b.old[0]?.page ?? Infinity),
+    )) {
+    const following = ordered
+      .filter(
+        (other) =>
+          other.old.length &&
+          other.old[0].page > (area.old[0]?.page ?? Infinity),
+      )
+      .sort((a, b) => a.old[0].page - b.old[0].page)[0];
+    if (following) ordered.splice(ordered.indexOf(following), 0, area);
+    else ordered.push(area);
+  }
   return {
     sections: [],
-    loose: areas.map((area) => {
+    loose: ordered.map((area) => {
       const members = area.members.map((i) => cards[i]),
         identical = members.every((c) => c.comparison === "identical"),
         analysis = textChanges(old.document, next.document, area.old, area.new),
