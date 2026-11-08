@@ -262,5 +262,6 @@
   "The option targets an unrelated source file.": "Cette option vise un fichier source sans rapport.",
   "The option source is missing or ambiguous.": "La source de cette option est introuvable ou ambiguë.",
   "The option changes source outside this note.": "Cette option modifie du code source hors de cette annotation.",
-  "The option has overlapping patches.": "Cette option comporte des modifications qui se chevauchent."
+  "The option has overlapping patches.": "Cette option comporte des modifications qui se chevauchent.",
+  "Invalid review action.": "Action de révision non valide."
 }

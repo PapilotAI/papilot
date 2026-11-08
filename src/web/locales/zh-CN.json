@@ -106,9 +106,7 @@
   "Accept {label}": "接受「{label}」",
   "Reject {label}": "拒绝「{label}」",
   "Comment on {label}": "评论「{label}」",
-  "Undo rejection": "撤销拒绝",
   "Close comment": "收起评论",
-  "Do not use this option.": "不采用此方案。",
   "The choice could not be saved.": "未能保存选择。",
   "Saving choice…": "正在保存选择…",
   "Preparing this option’s PDF diff…": "正在生成此方案的 PDF diff…",
@@ -120,5 +118,6 @@
   "LaTeX comparison": "LaTeX 对比",
   "Long change: the source is shortened.": "修改较长，源码已截断显示。",
   "Prepare alternatives by default": "默认提供备选方案",
-  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "处理 PDF 批注时，让 AI 在同一次任务中准备两种备选和简短理由。审阅时直接选择，无需再次请求 AI。"
+  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "处理 PDF 批注时，让 AI 在同一次任务中准备两种备选和简短理由。审阅时直接选择，无需再次请求 AI。",
+  "No visible change": "无可见变化"
 }

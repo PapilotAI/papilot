@@ -262,5 +262,6 @@
   "The option targets an unrelated source file.": "この案は関係のないソースファイルを対象としています。",
   "The option source is missing or ambiguous.": "この案のソースが見つからないか、一意に特定できません。",
   "The option changes source outside this note.": "この案はこの注釈の範囲外のソースを変更します。",
-  "The option has overlapping patches.": "この案には重複する変更が含まれています。"
+  "The option has overlapping patches.": "この案には重複する変更が含まれています。",
+  "Invalid review action.": "無効なレビュー操作です。"
 }

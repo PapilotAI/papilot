@@ -262,5 +262,6 @@
   "The option targets an unrelated source file.": "La opción afecta a un archivo fuente no relacionado.",
   "The option source is missing or ambiguous.": "No se encuentra la fuente de la opción o es ambigua.",
   "The option changes source outside this note.": "La opción modifica código fuente fuera de esta anotación.",
-  "The option has overlapping patches.": "La opción contiene cambios superpuestos."
+  "The option has overlapping patches.": "La opción contiene cambios superpuestos.",
+  "Invalid review action.": "Acción de revisión no válida."
 }

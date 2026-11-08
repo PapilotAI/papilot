@@ -1271,7 +1271,6 @@
   "Comment on {label}": "{label} kommentieren",
   "Complete PDF comparison": "Vollständiger PDF-Vergleich",
   "Current proposal": "Aktueller Vorschlag",
-  "Do not use this option.": "Diese Option nicht verwenden.",
   "Initial proposal": "Ursprünglicher Vorschlag",
   "Loading PDF comparison…": "PDF-Vergleich wird geladen…",
   "Next note": "Nächste Anmerkung",
@@ -1292,11 +1291,11 @@
   "The choice could not be saved.": "Die Auswahl konnte nicht gespeichert werden.",
   "This note includes a reviewed change. Undo that decision before replacing it.": "Diese Anmerkung enthält eine bereits überprüfte Änderung. Machen Sie die Entscheidung rückgängig, bevor Sie sie ersetzen.",
   "Unchanged context": "Unveränderter Kontext",
-  "Undo rejection": "Ablehnung rückgängig machen",
   "Wait for the current task and review actions to finish.": "Warten Sie, bis die aktuelle Aufgabe und die Überprüfungsaktionen abgeschlossen sind.",
   "Binary file changed.": "Binärdatei geändert.",
   "LaTeX comparison": "LaTeX-Vergleich",
   "Long change: the source is shortened.": "Umfangreiche Änderung: Der Quelltext ist gekürzt.",
   "Prepare alternatives by default": "Standardmäßig Alternativen vorbereiten",
-  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "Beim Bearbeiten von PDF-Anmerkungen erstellt die KI in derselben Aufgabe zwei Alternativen mit kurzen Begründungen. Bei der Prüfung stehen sie ohne weitere KI-Anfrage bereit."
+  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "Beim Bearbeiten von PDF-Anmerkungen erstellt die KI in derselben Aufgabe zwei Alternativen mit kurzen Begründungen. Bei der Prüfung stehen sie ohne weitere KI-Anfrage bereit.",
+  "No visible change": "Keine sichtbare Änderung"
 }

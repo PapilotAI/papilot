@@ -262,5 +262,6 @@
   "The option targets an unrelated source file.": "该方案涉及无关的源文件。",
   "The option source is missing or ambiguous.": "无法唯一定位该方案的源码。",
   "The option changes source outside this note.": "该方案修改了本批注范围之外的源码。",
-  "The option has overlapping patches.": "该方案包含重叠的修改。"
+  "The option has overlapping patches.": "该方案包含重叠的修改。",
+  "Invalid review action.": "无效的审阅操作。"
 }

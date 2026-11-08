@@ -1271,7 +1271,6 @@
   "Comment on {label}": "留言討論「{label}」",
   "Complete PDF comparison": "完整 PDF 對比",
   "Current proposal": "目前方案",
-  "Do not use this option.": "不使用此方案。",
   "Initial proposal": "初始方案",
   "Loading PDF comparison…": "正在載入 PDF 對比…",
   "Next note": "下一則註解",
@@ -1292,11 +1291,11 @@
   "The choice could not be saved.": "無法儲存選擇。",
   "This note includes a reviewed change. Undo that decision before replacing it.": "此註解包含已審閱的修改。請先復原該決定，再替換方案。",
   "Unchanged context": "未修改的上下文",
-  "Undo rejection": "復原拒絕",
   "Wait for the current task and review actions to finish.": "請等待目前任務和審閱操作完成。",
   "Binary file changed.": "二進位檔案已變更。",
   "LaTeX comparison": "LaTeX 對比",
   "Long change: the source is shortened.": "變更較長：原始碼已縮略。",
   "Prepare alternatives by default": "預設提供備選方案",
-  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "處理 PDF 批註時，讓 AI 在同一次任務中準備兩種備選和簡短理由。審閱時直接選擇，無需再次請求 AI。"
+  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "處理 PDF 批註時，讓 AI 在同一次任務中準備兩種備選和簡短理由。審閱時直接選擇，無需再次請求 AI。",
+  "No visible change": "無可見變更"
 }
