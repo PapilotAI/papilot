@@ -84,11 +84,27 @@ export function classify(
     own0 = {
       left:
         located && unit.status !== "added"
-          ? old.locator.locate(name, unit.old_start, unit.old_end, whole)
+          ? old.locator.locate(
+              name,
+              unit.old_start,
+              unit.old_end,
+              whole,
+              unit.ops.length
+                ? unit.ops.map(([, start, end]) => [start, end])
+                : undefined,
+            )
           : [],
       right:
         located && unit.status !== "deleted"
-          ? next.locator.locate(name, unit.new_start, unit.new_end, whole)
+          ? next.locator.locate(
+              name,
+              unit.new_start,
+              unit.new_end,
+              whole,
+              unit.ops.length
+                ? unit.ops.map(([, , , start, end]) => [start, end])
+                : undefined,
+            )
           : [],
     },
     al =
