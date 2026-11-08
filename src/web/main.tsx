@@ -910,6 +910,9 @@ function PendingComparison({ task, busy, onBuild }: { task: Task; busy: boolean;
     else if (job?.phase === 'build') {
       title = t('Compiling the PDF…');
       detail = t('Preparing both versions for comparison. Large documents can take several minutes.');
+    } else if (job?.phase === 'options') {
+      title = t('Preparing option comparisons…');
+      detail = job.options ? t('{current} of {total}', { current: job.options.completed, total: job.options.total }) : '';
     } else if (job?.phase === 'render') {
       title = t('PDF comparison');
       detail = t('Comparing the typeset pages…');
@@ -1896,7 +1899,7 @@ function App() {
     </div>
   </section>;
 
-  return <NoteResultsProvider task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} optionsRequest={(id, key, body) => body ? api(`/tasks/${id}/note-options`, { key, ...body }, undefined, 150000) : api(`/tasks/${id}/note-options?key=${encodeURIComponent(key)}`)} previewRequest={(id, key, round, option) => api(`/tasks/${id}/note-options/preview?key=${encodeURIComponent(key)}&round=${round}&option=${encodeURIComponent(option)}`, undefined, undefined, 150000)} openReview={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} openChat={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
+  return <NoteResultsProvider task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} optionsRequest={(id, key, body) => body ? api(`/tasks/${id}/note-options`, { key, ...body }, undefined, 150000) : api(`/tasks/${id}/note-options?key=${encodeURIComponent(key)}`)} previewRequest={(id, key, round, option, retry) => api(`/tasks/${id}/note-options/preview?key=${encodeURIComponent(key)}&round=${round}&option=${encodeURIComponent(option)}${retry ? '&retry=1' : ''}`, undefined, undefined, 150000)} openReview={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} openChat={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
     <DesktopWindowChrome/>
     {project && <WorkspaceSwitcher key={project.id} active={task?.id ?? (manuscriptOpen ? '' : null)}
       items={[{ id: '', title: t('Manuscript') }, ...[...tasks].reverse().filter(item => item.status !== 'deleting' && (!item.archivedAt || item.id === task?.id)).map(item => ({ id: item.id, title: item.title }))]}

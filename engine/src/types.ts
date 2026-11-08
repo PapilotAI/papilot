@@ -90,6 +90,7 @@ export interface Round {
     warnings: string[];
     targets: string[];
     builds: string[];
+    date?: { SOURCE_DATE_EPOCH: string; FORCE_SOURCE_DATE?: string };
     renderer?: string;
     /** Whether the round lists indirect changes; absent in older rounds,
      * which did. */

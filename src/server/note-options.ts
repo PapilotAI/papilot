@@ -14,7 +14,7 @@ export function rebaseNoteOptions(options: NoteOption[], previous: NoteRound['un
     const matches = next.filter(candidate => sameFragment(unit, candidate, sameBase));
     if (matches.length === 1) mapping.set(unit.id, matches[0].id);
   }
-  return options.filter(option => option.id !== 'latest').flatMap(option => {
+  return options.filter(option => option.id !== 'latest').flatMap(({ previewError: _error, ...option }) => {
     const edits = option.edits.map(edit => ({ ...edit, unit: mapping.get(edit.unit) || '' }));
     return edits.length === next.length && edits.every(edit => edit.unit) && new Set(edits.map(edit => edit.unit)).size === next.length ? [{ ...option, edits }] : [];
   });

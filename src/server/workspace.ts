@@ -23,7 +23,7 @@ import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } fr
 import { reconciliationPrompt } from './reconcile.ts';
 import { commitMessageFrom } from '../commit.ts';
 import { taskCaptionFrom, taskCaptionInstructions } from '../task-caption.ts';
-import { noteOptionsSummary, preparedNoteOptionsInstructions, readPreparedNoteOptions, savePreparedNoteOptions } from './prepared-note-options.ts';
+import { noteOptionsSummary, preparedNoteOptionsInstructions, readPreparedNoteOptions, savePreparedNoteOptions, prepareNoteComparisons } from './prepared-note-options.ts';
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
@@ -942,7 +942,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           });
           for (const run of this.store.runs().filter(run => pending.runs.includes(run.id) && run.noteOptions?.length))
             await savePreparedNoteOptions(this.store, { ...this.store.task(taskId), status: 'reviewing' }, run, client!);
-          this.store.updateTask(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null, pendingBuild: null });
+          await prepareNoteComparisons(this.store, { ...this.store.task(taskId), status: 'reviewing' }, client!, (completed, total) => {
+            const review = this.store.task(taskId).review!;
+            this.store.updateTask(taskId, { review: { ...review, job: { id: pending.job, status: 'running', phase: 'options', createdAt: current.createdAt, options: { completed, total } } } });
+          }, () => this.closing);
+          if (this.closing) return;
+          this.store.updateTask(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null, pendingBuild: null,
+            review: { ...this.store.task(taskId).review!, job: { ...current, id: pending.job } } });
           break;
         }
         if (current.status === 'failed') {

@@ -21,7 +21,7 @@ import { registerSkillRoutes } from './skill-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
 import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type NoteSummary, type QuickNote } from '../shared.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
-import { noteOptionContext } from './note-options.ts';
+import { noteOptionContext, noteOptionsKey } from './note-options.ts';
 import { taskNoteResults } from './note-results.ts';
 import type { Updates } from './updates.ts';
 import { Diagnostics } from './diagnostics.ts';
@@ -306,7 +306,7 @@ export async function buildApp(options: AppOptions) {
     const current = store.task(request.params.id), client = await connectReview(store.project(current.projectId).path);
     return (await noteOptionContext(store, current, string(request.query.key, 'Note key', 200), client)).options;
   });
-  app.get<{ Params: { id: string }; Querystring: { key: string; round: string; option: string } }>('/api/tasks/:id/note-options/preview', task, async request => {
+  app.get<{ Params: { id: string }; Querystring: { key: string; round: string; option: string; retry?: string } }>('/api/tasks/:id/note-options/preview', task, async request => {
     const current = store.task(request.params.id), client = await connectReview(store.project(current.projectId).path);
     const context = await noteOptionContext(store, current, string(request.query.key, 'Note key', 200), client);
     if (context.options.round !== Number(request.query.round)) throw new Error('The review changed. Reload the options.');
@@ -314,7 +314,12 @@ export async function buildApp(options: AppOptions) {
     if (context.options.locked) throw new Error(context.options.locked);
     const option = context.options.options.find(option => option.id === request.query.option);
     if (!option) throw new Error('This option is no longer available.');
+    if (option.previewError && request.query.retry !== '1') throw new Error(option.previewError);
     const detail = await client.post(`${taskRoute(current.name)}/source/options/preview`, { id: option.id, round: context.options.round, edits: option.edits }, 120000);
+    if (option.previewError) {
+      delete option.previewError;
+      store.savePreference(noteOptionsKey(current.id, context.options.key, context.options.round), context.options);
+    }
     return rewriteReviewJson(detail, `/review/${current.projectId}`);
   });
   app.post<{ Params: { id: string }; Body: { key: string; round: number; option?: string; id?: string; accept?: boolean } }>('/api/tasks/:id/note-options', task, async request => {

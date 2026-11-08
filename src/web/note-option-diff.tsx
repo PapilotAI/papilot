@@ -3,6 +3,7 @@ import type { Block, RoundDetail, Strip } from '../../engine/src/types.ts';
 import { PdfStrip } from '../../engine/src/web/PdfStrip.tsx';
 import { wordDiff } from '../../engine/src/web/model.ts';
 import { t } from './i18n.ts';
+import { noteComparisonScope } from './note-comparison-scope.ts';
 
 // Clip only trailing blank page space. Scan the rendered image rather than
 // text bounds so figures and other non-text content remain in the preview.
@@ -43,9 +44,10 @@ function CompactContext({ image, base }: { image: Strip; base: string }) {
   </div>;
 }
 
-/** Keep the complete candidate and its native PDF context, but attribute
- * highlights only to the current note's exact edits. */
+/** Compare this note's groups in the complete candidate's native layout,
+ * attributing highlights only to the note's exact edits. */
 export function NoteOptionDiff({ detail, focus }: { detail: RoundDetail; focus: string[] }) {
+  const scoped = noteComparisonScope(detail, focus);
   const strips = (images: Strip[], label: string, clean = false) => images.map((image, index) =>
     <PdfStrip key={`${image.src}:${index}`} image={image} base={detail.files} label={label} clean={clean} focus={focus}/>);
   const block = (item: Block, index: number) => {
@@ -64,17 +66,19 @@ export function NoteOptionDiff({ detail, focus }: { detail: RoundDetail; focus: 
     </div>;
   };
   return <div className="note-option-comparison" role="region" aria-label={t('Complete PDF comparison')} tabIndex={0} data-revision={detail.after}>
-    {detail.sections.map((section, index) => <section key={`${section.node}:${index}`} aria-label={`${section.number} ${section.title}`}>{section.blocks.map(block)}</section>)}
-    {detail.loose.map(block)}
+    {scoped.sections.map((section, index) => <section key={`${section.node}:${index}`} aria-label={`${section.number} ${section.title}`}>{section.blocks.map(block)}</section>)}
+    {scoped.loose.map(block)}
+    {!scoped.sections.length && !scoped.loose.length && <p className="note-option-hint">{t('No visible change')}</p>}
   </div>;
 }
 
-/** Read the same complete candidate as the PDF, including unrelated edits.
+/** The same groups as the PDF, including shared edits within those groups.
  * Only the focused note receives colored source marks. */
 export function NoteOptionSource({ detail, focus }: { detail: RoundDetail; focus: string[] }) {
+  const scoped = noteComparisonScope(detail, focus);
   const lines = (start: number, end: number) => end <= start ? String(start) : `${start}–${end}`;
   return <div className="note-option-comparison note-option-source" role="region" aria-label={t('LaTeX comparison')} tabIndex={0} data-revision={detail.after}>
-    {detail.units.map(unit => {
+    {scoped.units.map(unit => {
       const related = focus.includes(unit.id), parts = wordDiff(unit.old_text, unit.new_text);
       return <section className="note-source-unit" key={unit.id} data-unit={unit.id} data-related={related}>
         <header><code>{unit.file}</code><span>{lines(unit.old_start, unit.old_end)} → {lines(unit.new_start, unit.new_end)}</span></header>

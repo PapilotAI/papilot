@@ -232,6 +232,10 @@ it('compiles an isolated preview and caches it without publishing, writing sourc
   expect(first.after).toBe(second.after);
   expect(first.units.find(unit => unit.id === selected.id)?.new_text).toBe('Procedure');
   await previewNoteOption(app, task.name, input);
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2030-01-02T13:00:00Z'));
+  expect((await previewNoteOption(app, task.name, input)).files).toBe(first.files);
+  vi.useRealTimers();
   expect(built).toHaveBeenCalledTimes(2);
   expect(f.read(METHOD, task.worktree)).toBe(original);
   expect(f.read(METHOD)).toBe(BODY);
@@ -241,6 +245,28 @@ it('compiles an isolated preview and caches it without publishing, writing sourc
   expect(app.publisher.publish).not.toHaveBeenCalled();
   await app.review.decide(task.name, { round: 1, changes: [selected.id], action: 'accept' });
   await expect(previewNoteOption(app, task.name, input)).rejects.toThrow('reviewed');
+});
+
+it('reuses the published chapter scope, baseline and frozen date, compiling only the candidate', async () => {
+  const selected = units().find(unit => unit.new_text === 'Approach')!;
+  const round = app.review.latestRound(task.name)!;
+  const date = { SOURCE_DATE_EPOCH: '1735732800', FORCE_SOURCE_DATE: '1' };
+  const keys = ['a'.repeat(32), 'b'.repeat(32), 'c'.repeat(32)], targets = ['sections/method'];
+  app.store.execute('UPDATE rounds SET summary=? WHERE task=? AND number=1', JSON.stringify({ ...round.summary, date, targets, builds: keys }), task.name);
+  const pdf = path.join(app.state, 'preview-test.pdf'); fs.writeFileSync(pdf, 'test PDF');
+  const info = (key: string) => ({ key, tree: key, targets, root: task.worktree, cwd: task.worktree, pdf, seconds: 0, warnings: [] });
+  const completed = vi.spyOn(Builder.prototype, 'completed').mockImplementation(async key => info(key));
+  const seed = vi.spyOn(Builder.prototype, 'buildSeed');
+  const build = vi.spyOn(Builder.prototype, 'build').mockImplementation(async rev => info(rev));
+  vi.spyOn(publisher, 'render').mockImplementation(async (out, request) => {
+    expect(request.old.key).toBe(keys[1]);
+    fs.writeFileSync(path.join(out, 'round.json'), JSON.stringify({ units: {}, sections: [], loose: [] }));
+  });
+  const detail = await previewNoteOption(app, task.name, { id: 'chapter', round: 1, edits: [{ unit: selected.id, text: 'Procedure' }] });
+  expect(detail.build?.targets).toEqual(targets);
+  expect(completed.mock.calls).toEqual([[keys[0]], [keys[1]]]);
+  expect(seed).not.toHaveBeenCalled();
+  expect(build).toHaveBeenCalledExactlyOnceWith(detail.after, targets, info(keys[0]), { date });
 });
 
 it('a candidate restoring the original wording has no empty diff card or source row', async () => {

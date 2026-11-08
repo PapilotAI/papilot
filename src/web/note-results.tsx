@@ -12,7 +12,7 @@ import { NotePreviewCache } from './note-preview-cache.ts';
 export interface NoteFocus { key: string; change: NoteChange; sequence: number; historical: boolean }
 type OptionsRequest = (id: string, key: string, body?: { round: number; option?: string; id?: string; accept?: boolean }) => Promise<NoteOptions | { building: true }>;
 type Preview = { key: string; round: number; detail?: RoundDetail } | null;
-type PreviewRequest = (id: string, key: string, round: number, option: string) => Promise<RoundDetail>;
+type PreviewRequest = (id: string, key: string, round: number, option: string, retry?: boolean) => Promise<RoundDetail>;
 const previewKey = (id: string, key: string, round: number, option: string) => JSON.stringify([id, key, round, option]);
 const comparisonCache = new NotePreviewCache<RoundDetail>();
 const optionCache = new Map<string, NoteOptions>();
@@ -40,9 +40,15 @@ async function warmComparison(detail: RoundDetail) {
   const strips = [...detail.sections.flatMap(section => section.blocks), ...detail.loose].flatMap(block => block.kind === 'context' ? [block.image] : block.kind === 'change' ? [...block.before, ...block.after] : []);
   // Decode the first visible strips before swapping, so a ready comparison
   // does not briefly show a blank page while its SVGs arrive.
-  await Promise.allSettled([...new Set(strips.map(strip => detail.files + (strip.clean || strip.src)))].slice(0, 16).map(src => {
-    const image = new Image(); image.src = src; return image.decode();
-  }));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.allSettled([...new Set(strips.map(strip => detail.files + (strip.clean || strip.src)))].slice(0, 16).map(src => {
+        const image = new Image(); image.src = src; return image.decode();
+      })),
+      new Promise(resolve => { timer = setTimeout(resolve, 500); }),
+    ]);
+  } finally { clearTimeout(timer); }
   return detail;
 }
 interface Links {
@@ -98,7 +104,31 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     const note = notes.find(note => note.key === focus.key);
     if (note?.changes[0] && note.changes[0].round !== focus.change.round) setFocus({ ...focus, change: note.changes[0], sequence: focus.sequence + 1, historical: note.changes[0].round !== task?.review?.round });
   }, [notes]);
-  const value: Links = { task, optionsRequest, previewRequest: previewRequest && ((id, key, round, option) => comparisonCache.read(previewKey(id, key, round, option), () => previewRequest(id, key, round, option).then(warmComparison))), cachedPreview: (id, key, round, option) => comparisonCache.peek(previewKey(id, key, round, option)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
+  const requests = useRef({ optionsRequest, previewRequest }); requests.current = { optionsRequest, previewRequest };
+  const noteSignature = JSON.stringify(notes.map(note => [note.key, note.round, note.changes.map(change => change.state)]));
+  useEffect(() => {
+    if (!id || task?.status !== 'reviewing') return;
+    const { optionsRequest, previewRequest } = requests.current;
+    if (!optionsRequest || !previewRequest) return;
+    let cancelled = false;
+    // Published choices are already rendered. Load their small manifests and
+    // warm the images before a note is opened, including after an app restart.
+    void (async () => {
+      for (const note of notes) {
+        if (cancelled) return;
+        if (note.round !== task.review?.round || !note.changes.length) continue;
+        try {
+          const options = await optionsRequest(id, note.key);
+          if (cancelled || !('options' in options) || options.locked) continue;
+          rememberOptions(JSON.stringify([id, note.key, note.round, note.changes.map(change => `${change.round}:${change.stop}:${change.state}`).join(',')]), options);
+          await Promise.allSettled(options.options.filter(option => !option.previewError).map(option =>
+            comparisonCache.read(previewKey(id, note.key, options.round, option.id), () => previewRequest(id, note.key, options.round, option.id).then(warmComparison))));
+        } catch { /* Opening the note reports errors and offers Retry. */ }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, task?.status, task?.review?.round, noteSignature]);
+  const value: Links = { task, optionsRequest, previewRequest: previewRequest && ((id, key, round, option, retry) => comparisonCache.read(previewKey(id, key, round, option), () => previewRequest(id, key, round, option, retry).then(warmComparison))), cachedPreview: (id, key, round, option) => comparisonCache.peek(previewKey(id, key, round, option)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); }, showChange };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
@@ -253,7 +283,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     const cached = links.cachedPreview(task.id, note.key, data.round, selected);
     if (cached) { links.setPreview({ key: note.key, round: data.round, detail: cached }); return; }
     links.setPreview({ key: note.key, round: data.round }); setPreviewBusy(true);
-    void links.previewRequest(task.id, note.key, data.round, selected).then(detail => {
+    void links.previewRequest(task.id, note.key, data.round, selected, retry > 0).then(detail => {
       if (previewSequence.current !== sequence) return;
       links.setPreview({ key: note.key, round: data.round, detail });
     }).catch(error => { if (previewSequence.current === sequence) setError(error.message); })
@@ -277,9 +307,8 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   }, [selected, optionIds]);
   useEffect(() => {
     if (!task || !data || data.locked || !links.previewRequest) return;
-    // Existing alternatives compile in the background; this never asks an AI
-    // for new suggestions or writes the manuscript.
-    for (const option of data.options) void links.previewRequest(task.id, note.key, data.round, option.id).catch(() => {});
+    // Read the prepared comparisons; tab switches share the same decoded cache.
+    for (const option of data.options.filter(option => !option.previewError)) void links.previewRequest(task.id, note.key, data.round, option.id).catch(() => {});
   }, [task?.id, note.key, data?.round, data?.locked, optionIds]);
   const readyComparison = selected === saved ? baseline : links.preview?.detail;
   useEffect(() => { if (readyComparison) setShown(readyComparison); }, [readyComparison]);

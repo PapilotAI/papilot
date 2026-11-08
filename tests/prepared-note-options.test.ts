@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { noteOptionsSummary, readPreparedNoteOptions, preparedOptionEdits, savePreparedNoteOptions } from '../src/server/prepared-note-options.ts';
+import { noteOptionsSummary, readPreparedNoteOptions, preparedOptionEdits, savePreparedNoteOptions, prepareNoteComparisons } from '../src/server/prepared-note-options.ts';
 import { noteOptionContext } from '../src/server/note-options.ts';
 import { Store } from '../src/server/store.ts';
 import type { PreparedNoteOptions, Run, Task } from '../src/shared.ts';
@@ -88,6 +88,19 @@ test('published notes expose choices from the editing turn without any agent req
     assert.deepEqual((await noteOptionContext(store, task, 'run:0', client)).options, first, 'Recovery preserves choice identities');
     assert.equal(store.items('task')[0].text, 'Keep the facts.');
     assert.equal(fs.readFileSync(path.join(root, 'main.tex'), 'utf8'), after);
+    assert.equal(git('status', '--porcelain'), '');
+    const rendered: string[] = [], progress: number[][] = [];
+    const renderer = { ...client, post: async (route: string, body: any) => {
+      assert.equal(route, '/api/tasks/task/source/options/preview');
+      assert.equal(body.round, 1);
+      rendered.push(body.edits[0].text);
+      if (body.edits[0].text === 'quick') throw new Error('Invalid optional LaTeX');
+      return {};
+    } } as ReviewClient;
+    await prepareNoteComparisons(store, task, renderer, (...values) => progress.push(values));
+    assert.deepEqual(rendered, ['quick', 'computationally efficient']);
+    assert.deepEqual(progress, [[0, 2], [1, 2], [2, 2]]);
+    assert.equal((await noteOptionContext(store, task, 'run:0', client)).options.options[1].previewError, 'Invalid optional LaTeX', 'A failed optional render is recorded without losing the main review or other choices');
     assert.equal(git('status', '--porcelain'), '');
     const partial: Run = { ...run, id: 'partial', requestKey: 'partial', noteOptions: [{ ...prepared, options: [prepared.options[0], {
       ...prepared.options[1], edits: [{ file: 'main.tex', find: after, replace: after.replace('robust', 'reliable') }],

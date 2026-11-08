@@ -20,7 +20,7 @@ export interface UpdateStatus {
 // unsent counts review updates the agent has not received; comments are the
 // ones that ask for a revision. files are the manuscript files this task's
 // accepted changes touched since its last commit, relative to the repository root.
-export interface ReviewJob { id?: string; phase: string; status: string; error?: string; details?: string[]; createdAt?: number; progress?: Partial<Record<'baseline' | 'revised', Omit<BuildProgress, 'startedAt'>>> }
+export interface ReviewJob { id?: string; phase: string; status: string; error?: string; details?: string[]; createdAt?: number; options?: { completed: number; total: number }; progress?: Partial<Record<'baseline' | 'revised', Omit<BuildProgress, 'startedAt'>>> }
 export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: ReviewJob | null }
 export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
@@ -80,7 +80,7 @@ export interface NoteAnchor { sources: { file: string; lines: [number, number] }
 export interface NoteSummary { group?: NoteGroup; kind?: MarkKind; stamp?: string; where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor }
 export interface NoteChange { round: number; stop: number; units: string[]; state: 'pending' | 'accepted' | 'rejected' | 'commented' | 'mixed'; match: 'source' | 'quote' }
 export interface NoteResult { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
-export interface NoteOption { id: string; label: string; reason?: string; edits: { unit: string; text: string }[] }
+export interface NoteOption { id: string; label: string; reason?: string; previewError?: string; edits: { unit: string; text: string }[] }
 // Prepared by the editing agent in the same turn, before review-unit IDs exist.
 export interface PreparedNoteOptions { note: number; current: { label: string; reason: string }; options: { label: string; reason: string; edits: { file: string; find: string; replace: string }[] }[] }
 export interface NoteOptions { before?: Record<string, string>; round: number; key: string; options: NoteOption[]; selected?: string; locked?: string }

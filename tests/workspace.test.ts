@@ -14,6 +14,7 @@ import { RpcResponseError, Codex } from '../src/server/codex.ts';
 import type { ReviewClient } from '../src/server/review.ts';
 import { AGENT_IDS, type PendingReview, type Run, type Task } from '../src/shared.ts';
 import { visibleTimeline } from '../src/web/refresh.ts';
+import { noteOptionsKey } from '../src/server/note-options.ts';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -21,6 +22,40 @@ function deferred<T>() {
   return { promise, resolve };
 }
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test('publication stays building until all saved option comparisons are ready', async () => {
+  const gate = deferred<unknown>(), started = deferred<void>();
+  const detail = { round: 1, before: 'before', after: 'after', units: [{ id: 'word', file: 'main.tex', old_start: 1, old_end: 1, old_text: 'fast', new_text: 'efficient', text_ops: [['replace', 0, 4, 0, 9]] }], sections: [], loose: [{ kind: 'change', units: ['word'] }] };
+  const f = fixture(async (_method, route) => {
+    if (route.endsWith('/source/options/preview')) { started.resolve(); return gate.promise; }
+    if (route.includes('/rounds/')) return detail;
+    if (route.includes('/state?')) return { latest: 1, closed: false, decisions: { word: 'pending' } };
+    if (route.endsWith('/publish')) return { job: 'job' };
+    if (route.includes('/jobs/')) return { status: 'done', phase: 'render', outcome: 'published', round: 1 };
+    if (route.includes('/feedback')) return feedback;
+    return summary;
+  });
+  try {
+    const run = { id: 'prepared-run', taskId: f.task.id, requestKey: 'prepared-run', prompt: '', status: 'completed', createdAt: 1, reviewRound: 0, noteOptions: [{ note: 1 }] } as Run;
+    f.store.saveRun(run);
+    f.store.saveItem({ id: run.id, taskId: f.task.id, type: 'user', text: '', createdAt: 1, meta: { notes: [{ where: 'main.tex line 1', quote: 'fast', comment: 'Clarify speed.' }] } });
+    f.store.savePreference(noteOptionsKey(f.task.id, run.id + ':0', 1), { round: 1, key: run.id + ':0', selected: 'current', options: [
+      { id: 'current', label: 'Current', edits: [{ unit: 'word', text: 'efficient' }] },
+      { id: 'quick', label: 'Concise', reason: 'A familiar term.', edits: [{ unit: 'word', text: 'quick' }] },
+    ] });
+    const published = f.workspace.publish(f.task.id, run);
+    await started.promise;
+    assert.equal(f.store.task(f.task.id).status, 'building');
+    assert.equal(f.store.task(f.task.id).review?.job?.phase, 'options');
+    assert.deepEqual(f.store.task(f.task.id).review?.job?.options, { completed: 0, total: 1 });
+    assert.ok(f.store.task(f.task.id).pendingBuild, 'The preparation can recover after restart');
+    gate.resolve({});
+    await published;
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).pendingBuild, null);
+    assert.equal(f.store.task(f.task.id).review?.job?.status, 'done');
+  } finally { gate.resolve({}); f.close(); }
+});
 
 test('note alternatives are requested in the editing turn, respect the saved default, and preserve the original message', async () => {
   const f = fixture();

@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import type { App } from "../server.ts";
 import type { Op, RenderedRound, RoundDetail, Unit } from "../types.ts";
 import { groupFormattingChanges } from "./formatting-changes.ts";
-import { codeVersion } from "../runtime.ts";
 import { Builder, buildDate } from "./build.ts";
 import { readJson, writeJson } from "./files.ts";
 import { render } from "./publish.ts";
@@ -71,8 +70,12 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
     if (decisions[unit.id] !== "pending") throw new Error("This option overlaps a reviewed change. Undo that decision before replacing it.");
     ids.add(unit.id);
   }
-  const project = app.project, date = buildDate();
-  const key = createHash("sha256").update(JSON.stringify([round.before, round.after, input.edits, project, date, codeVersion()])).digest("hex");
+  const project = app.project;
+  // A saved round is immutable. Opening it tomorrow or after an app restart
+  // must not invalidate its comparisons (or change \today in the document).
+  const date = round.summary.date ?? buildDate(new Date(round.created * 1000), {});
+  const targets = round.summary.targets.length ? round.summary.targets : ["full"];
+  const key = createHash("sha256").update(JSON.stringify([2, round.before, round.after, input.edits, project, targets, date])).digest("hex");
   const output = path.join(app.state, "cache/option-previews", name, String(round.number), key);
   const cached = readJson<RoundDetail | null>(path.join(output, "preview.json"), null);
   if (cached) return cached;
@@ -86,9 +89,15 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
     // An unreferenced Git object is safe to compile; no branch or index moves.
     const after = await app.repo.commitWithAsync(round.after, candidate.files, "Preview note option");
     const builder = new Builder(project, app.repo);
+    // Reuse precisely the baseline and chapter scope the author is reviewing.
+    // Rebuilding the whole thesis here was both slow and a different comparison.
+    const keys = round.summary.builds;
+    const seed = targets.includes("full") ? null
+      : (keys.length > 2 ? await builder.completed(keys[0]) : null) ?? await builder.buildSeed(task.base);
+    const baseline = keys.length >= 2 ? await builder.completed(keys.at(-2)!) : null;
     const [old, next] = await Promise.all([
-      builder.build(round.before, ["full"], null, { date, priority: "foreground" }),
-      builder.build(after, ["full"], null, { date, priority: "foreground" }),
+      baseline ?? builder.build(round.before, targets, seed, { date }),
+      builder.build(after, targets, seed, { date }),
     ]);
     fs.mkdirSync(output, { recursive: true });
     // A choice can restore part of the original wording (including cancelling
@@ -101,7 +110,7 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
     const files = `/option-files/${name}/${round.number}/${key}/`;
     const detail: RoundDetail = groupFormattingChanges({ ...rendered, task: name, round: round.number, before: round.before, after,
       units: visible.map(unit => ({ ...unit, ...rendered.units[unit.id] })),
-      warnings: [...old.warnings, ...next.warnings], files, pdf: files + "preview.pdf", build: { key: next.key, targets: ["full"] } }, file => app.repo.blob(round.before, file)?.toString("utf8") ?? null);
+      warnings: [...old.warnings, ...next.warnings], files, pdf: files + "preview.pdf", build: { key: next.key, targets } }, file => app.repo.blob(round.before, file)?.toString("utf8") ?? null);
     writeJson(path.join(output, "preview.json"), detail);
     return detail;
   })();

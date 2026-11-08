@@ -4,7 +4,8 @@ import type { PreparedNoteOptions, Run, Task } from '../shared.ts';
 import type { Store } from './store.ts';
 import type { ReviewClient } from './review.ts';
 import { noteOptionContext, noteOptionsKey, parseNoteOptions } from './note-options.ts';
-import type { NoteRound } from './note-results.ts';
+import { taskNoteResults, type NoteRound } from './note-results.ts';
+import { taskRoute } from './review.ts';
 import { textEdits } from '../../engine/src/core/text-edits.ts';
 
 const execute = promisify(execFile);
@@ -141,5 +142,41 @@ export async function savePreparedNoteOptions(store: Store, task: Task, run: Run
       // A malformed optional choice must not discard the author's main review.
       console.warn('Could not use prepared note options:', task.name, prepared.note, (error as Error).message);
     }
+  }
+}
+
+/** Finish the saved choices before the task becomes reviewable. Also covers
+ * rebased choices after a local acceptance publishes the next round. */
+export async function prepareNoteComparisons(store: Store, task: Task, client: ReviewClient,
+  progress: (completed: number, total: number) => void = () => {}, stopped = () => false) {
+  const runs = store.runs().filter(run => run.taskId === task.id);
+  if (!runs.some(run => run.noteOptions?.length)) return;
+  const notes = await taskNoteResults(task, store.items(task.id), runs, client);
+  const contexts = [];
+  for (const note of notes) {
+    if (stopped()) return;
+    if (note.round !== task.review?.round || !note.changes.length) continue;
+    const context = await noteOptionContext(store, task, note.key, client);
+    if (!context.options.locked) contexts.push(context.options);
+  }
+  const total = contexts.reduce((n, options) => n + options.options.filter(option => option.id !== options.selected).length, 0);
+  let completed = 0;
+  if (total) progress(completed, total);
+  // Keep compilers bounded; each candidate already reuses the published baseline.
+  for (const options of contexts) for (const option of options.options) {
+    if (stopped()) return;
+    if (option.id === options.selected) continue;
+    try {
+      await client.post(`${taskRoute(task.name)}/source/options/preview`, { id: option.id, round: options.round, edits: option.edits }, 1850000);
+      delete option.previewError;
+    } catch (error) {
+      // A broken optional choice must not discard the main review or spin on
+      // every tab switch. An explicit Retry can try rendering it again.
+      option.previewError = (error as Error).message;
+      console.warn('Could not prepare note comparison:', task.name, option.label, option.previewError);
+    }
+    if (stopped()) return;
+    store.savePreference(noteOptionsKey(task.id, options.key, options.round), options);
+    progress(++completed, total);
   }
 }

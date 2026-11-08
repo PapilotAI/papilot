@@ -14,6 +14,8 @@ await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ locale: 'en-US', colorScheme: 'dark', viewport: { width: 1440, height: 900 } });
+// A browser decode that never settles must not keep a prepared choice spinning.
+await page.addInitScript(() => { Image.prototype.decode = () => new Promise(() => {}); });
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const task = { id: 'note-results-task', projectId: 'paper', name: 'p-note-results', title: 'Revise the introduction', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { round: 2, state: 'reviewing', counts: { pending: 1 } } };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Thesis', path: '/tmp/paper' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
@@ -32,6 +34,10 @@ const client = { get: async route => route.includes('/rounds/') ? rounds[Number(
 let failResults = true;
 const optionWrites = [];
 const alternateSource = '\\emph{A concise alternative preserving the technical term.}';
+const strip = text => {
+  const src = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="30"><rect width="600" height="30" fill="white"/><text x="40" y="20" font-size="12">${text.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</text></svg>`);
+  return { src, clean: src, width: 600, height: 30, page: 1, label: '1' };
+};
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
   if (url.pathname.startsWith('/review/')) return route.fallback();
@@ -45,7 +51,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/note-options/preview')) {
     const round = Number(url.searchParams.get('round')), option = url.searchParams.get('option');
     const candidate = round === 2 ? [...units[round].map(unit => ({ ...unit, new_text: option === 'brief' ? alternateSource : unit.new_text })), unit('other', 80, 'Three datasets.', 'Five datasets.')] : units[round];
-    return route.fulfill({ json: { ...rounds[round], units: candidate, task: task.name, before: 'before', after: `candidate-${option}`, files: '', warnings: [], loose: candidate.map(unit => ({ kind: 'change', units: [unit.id], before: [], after: [] })) } });
+    return route.fulfill({ json: { ...rounds[round], units: candidate, task: task.name, before: 'before', after: `candidate-${option}`, files: '', warnings: [], loose: [...candidate.map(unit => ({ kind: 'change', units: [unit.id], before: [strip(unit.old_text)], after: [strip(unit.new_text)] })), ...Array.from({ length: 5 }, (_, i) => ({ kind: 'change', units: ['space-' + i], identical: true, before: [], after: [] }))] } });
   }
   if (url.pathname.endsWith('/note-options')) {
     if (route.request().method() !== 'GET') optionWrites.push(route.request().postData());
@@ -105,6 +111,8 @@ try {
   assert.doesNotMatch(await page.locator('.review-frame').getAttribute('src'), /[?&](history|round)=/);
   assert.deepEqual(await page.locator('[data-note-result]').allTextContents(), original, 'review operations never add content to original messages');
   await controls().getByRole('region', { name: 'Complete PDF comparison', exact: true }).waitFor();
+  assert.equal(await controls().locator('.note-comparison-side-label').count(), 2, 'Only this group has before/after labels');
+  assert.equal(await controls().locator('.note-comparison-change[data-units="other"]').count(), 0, 'Other groups remain in the main review');
   const sourceToggle = controls().getByRole('button', { name: 'Show LaTeX source', exact: true });
   assert.equal(await sourceToggle.getAttribute('aria-pressed'), 'false', 'PDF remains the default');
   await sourceToggle.click();
@@ -113,7 +121,7 @@ try {
   const sourceView = controls().locator('.note-option-source[data-revision="candidate-brief"]');
   await sourceView.waitFor();
   assert.ok((await sourceView.locator('.note-source-unit[data-unit="c1"]').textContent()).includes(alternateSource), 'source follows the selected alternative');
-  assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"] pre').allTextContents().then(values => values.join('|')), 'Three datasets.|Five datasets.');
+  assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"]').count(), 0, 'other groups are excluded from this note’s drawer');
   assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"] ins, .note-source-unit[data-unit="other"] del').count(), 0, 'unrelated edits retain context without focused colors');
   assert.deepEqual(optionWrites, [], 'source and option switches never generate or apply a proposal');
   fs.mkdirSync('test-results', { recursive: true });
