@@ -35,6 +35,42 @@ test('Windows setup recognizes Path and quoted installation directories', async 
   } finally { fs.rmSync(bin, { recursive: true, force: true }); }
 });
 
+test('setup distinguishes missing tools from failed probes and retries timeouts once', async () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-requirements-probe-'));
+  try {
+    for (const name of ['git', 'latexmk', 'synctex', 'pdflatex', 'xelatex']) fs.writeFileSync(path.join(bin, name), '', { mode: 0o755 });
+    const calls: Record<string, number> = {};
+    const deadlines: number[] = [];
+    const report = await checkSystemRequirements({ PATH: bin }, 'linux', async (file, _args, _env, timeout) => {
+      const name = path.basename(file);
+      calls[name] = (calls[name] || 0) + 1;
+      if (name === 'latexmk') { deadlines.push(timeout); return calls[name] === 1 ? 'timeout' : true; }
+      if (name === 'synctex' || name === 'pdflatex') return 'timeout';
+      return name !== 'xelatex';
+    });
+    assert.deepEqual(report.checks, [
+      { id: 'git', ok: true }, { id: 'latexmk', ok: true },
+      { id: 'synctex', ok: false, error: 'timeout' }, { id: 'tex-engine', ok: false, error: 'timeout' },
+    ]);
+    assert.deepEqual(calls, { git: 1, latexmk: 2, synctex: 2, pdflatex: 2, xelatex: 1 });
+    assert.deepEqual(deadlines, [5000, 10000], 'The retry gives a slow process more time to finish');
+    const broken = await checkSystemRequirements({ PATH: bin }, 'linux', async () => false);
+    assert.ok(broken.checks.every(check => check.error === 'failed'));
+    fs.rmSync(path.join(bin, 'latexmk'));
+    const missing = await checkSystemRequirements({ PATH: bin }, 'linux', async () => true);
+    assert.deepEqual(missing.checks.find(check => check.id === 'latexmk'), { id: 'latexmk', ok: false });
+  } finally { fs.rmSync(bin, { recursive: true, force: true }); }
+});
+
+test('a cold latexmk process that exceeds the deadline is retried instead of reported missing', { skip: process.platform === 'win32', timeout: 30000 }, async () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-requirements-cold-'));
+  try {
+    fs.writeFileSync(path.join(bin, 'latexmk'), '#!/bin/sh\nexec /bin/sleep 6\n', { mode: 0o755 });
+    const report = await checkSystemRequirements({ PATH: bin });
+    assert.deepEqual(report.checks.find(check => check.id === 'latexmk'), { id: 'latexmk', ok: true });
+  } finally { fs.rmSync(bin, { recursive: true, force: true }); }
+});
+
 test('macOS setup does not invoke the Git installer stub when developer tools are missing', { skip: !fs.existsSync('/usr/bin/git') }, async () => {
   const calls: string[] = [];
   const report = await checkSystemRequirements({ PATH: '/usr/bin' }, 'darwin', async file => { calls.push(file); return false; });

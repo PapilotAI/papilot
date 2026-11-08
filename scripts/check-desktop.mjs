@@ -43,6 +43,14 @@ const launch = () => electron.launch({ executablePath: packaged || require('elec
   chromiumSandbox: process.env.PAPILOT_DESKTOP_TEST_CONTAINER !== '1', timeout: 90000 });
 async function dismissInitialSetup(page) {
   const requirements = await (await fetch(`${new URL(page.url()).origin}/api/runtime/requirements`)).json();
+  // A missing-tools dialog is expected on clean CI hosts, but must not hide a
+  // detection regression when the test machine already has those tools.
+  const toolEnv = { ...env, PATH: [env.PATH, ...(process.platform === 'darwin' ? ['/Library/TeX/texbin'] : [])].join(path.delimiter) };
+  for (const [id, tools] of [['git', ['git']], ['latexmk', ['latexmk']], ['synctex', ['synctex']], ['tex-engine', ['pdflatex', 'xelatex', 'lualatex']]]) {
+    if (tools.some(tool => findCommand(tool, toolEnv))) {
+      assert.equal(requirements.checks.find(check => check.id === id)?.ok, true, `The packaged app must detect installed ${id}: ${JSON.stringify(requirements)}`);
+    }
+  }
   if (requirements.checks.some(check => !check.ok)) {
     const setup = page.getByRole('dialog', { name: /^(Get ready to write|准备开始写作)$/ });
     await expect(setup).toBeVisible();

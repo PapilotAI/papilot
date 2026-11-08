@@ -24,10 +24,11 @@ export function useSystemRequirements(enabled: boolean, load: (signal: AbortSign
 }
 export type RequirementsState = ReturnType<typeof useSystemRequirements>;
 export const requirementsMissing = (report: SystemRequirements | null) => Boolean(report?.checks.some(check => !check.ok));
+const requirementsFailed = (report: SystemRequirements | null) => Boolean(report?.checks.some(check => check.error));
 
 export function RequirementsBanner({ state, onOpen }: { state: RequirementsState; onOpen: () => void }) {
   if (!state.failed && !requirementsMissing(state.report)) return null;
-  return <div className="requirements-banner" role="status"><Icon name="info" size={18}/><span>{state.failed ? t('Could not check the required tools.') : t('A few tools are needed before you can work on papers.')}</span><button type="button" onClick={onOpen}>{t('Review setup')}</button></div>;
+  return <div className="requirements-banner" role="status"><Icon name="info" size={18}/><span>{state.failed || requirementsFailed(state.report) ? t('Could not check the required tools.') : t('A few tools are needed before you can work on papers.')}</span><button type="button" onClick={onOpen}>{t('Review setup')}</button></div>;
 }
 
 function CheckAgain({ state, online, primary = false }: { state: RequirementsState; online: boolean; primary?: boolean }) {
@@ -47,17 +48,18 @@ export function RequirementsPanel({ state, online, showRecheck = true }: { state
     <div className="requirements-list">
       {(['git', 'latex'] as const).map(id => {
         const ok = id === 'git' ? git : latex;
+        const checkFailed = failed || report?.checks.some(check => (id === 'git' ? check.id === 'git' : check.id !== 'git') && check.error);
         const partial = id === 'latex' && report?.checks.some(check => check.id !== 'git' && check.ok);
-        const status = !online ? 'unknown' : busy ? 'checking' : failed ? 'unknown' : ok === true ? 'ready' : ok === false ? 'missing' : 'checking';
-        const label = !online ? t('Offline') : busy ? t('Checking…') : failed ? t('Check failed') : ok === true ? t('Ready') : ok === false ? partial ? t('Incomplete installation') : t('Not installed or unavailable') : t('Checking…');
+        const status = !online ? 'unknown' : busy ? 'checking' : checkFailed ? 'unknown' : ok === true ? 'ready' : ok === false ? 'missing' : 'checking';
+        const label = !online ? t('Offline') : busy ? t('Checking…') : checkFailed ? t('Check failed') : ok === true ? t('Ready') : ok === false ? partial ? t('Incomplete installation') : t('Not installed or unavailable') : t('Checking…');
         return <section key={id} className="requirement-row" aria-label={id === 'git' ? 'Git' : 'LaTeX'}>
           <BrandIcon name={id} size={22}/>
           <div className="requirement-copy"><div className="requirement-heading"><h3>{id === 'git' ? 'Git' : 'LaTeX'}</h3><span className={'requirement-status ' + status}>{status === 'checking' ? <span className="spinner"/> : <Icon name={status === 'ready' ? 'check' : 'alert'} size={12}/>} {label}</span></div><p>{id === 'git' ? t('Version history') : t('PDF compilation')}</p></div>
-          {ok === false && <a className="requirement-install" href={id === 'git' ? gitUrl : texUrl} target="_blank" rel="noopener noreferrer">{id === 'git' ? t('Install Git') : platform === 'darwin' ? t('Install MacTeX') : t('Install TeX Live')}<Icon name="external" size={13}/></a>}
+          {ok === false && !checkFailed && !busy && online && <a className="requirement-install" href={id === 'git' ? gitUrl : texUrl} target="_blank" rel="noopener noreferrer">{id === 'git' ? t('Install Git') : platform === 'darwin' ? t('Install MacTeX') : t('Install TeX Live')}<Icon name="external" size={13}/></a>}
         </section>;
       })}
     </div>
-    <div className="requirements-result" role="status" aria-live="polite">{!online ? t('Reconnect to check the required tools.') : busy ? t('Checking the required tools…') : failed ? t('Could not check the required tools. Try again.') : ready ? t('All required tools are ready. You can open a paper.') : null}</div>
+    <div className="requirements-result" role="status" aria-live="polite">{!online ? t('Reconnect to check the required tools.') : busy ? t('Checking the required tools…') : failed || requirementsFailed(report) ? t('Could not check the required tools. Try again.') : ready ? t('All required tools are ready. You can open a paper.') : null}</div>
     {showRecheck && <CheckAgain state={state} online={online}/>}
   </div>;
 }

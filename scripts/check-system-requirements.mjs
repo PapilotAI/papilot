@@ -70,9 +70,20 @@ try {
   await dialog.getByRole('link', { name: 'Install Git' }).waitFor({ state: 'hidden' });
   assert.deepEqual((await dialog.locator('.requirement-status').allTextContents()).map(text => text.trim()), ['Ready', 'Incomplete installation']);
   assert.equal(await dialog.locator('details').count(), 0);
+  for (const error of ['timeout', 'failed']) {
+    f.scenario.report = report('darwin', ['latexmk']);
+    f.scenario.report.checks.find(check => check.id === 'latexmk').error = error;
+    await dialog.getByRole('button', { name: 'Check again' }).click();
+    await dialog.getByText('Could not check the required tools. Try again.', { exact: true }).waitFor();
+    assert.deepEqual((await dialog.locator('.requirement-status').allTextContents()).map(text => text.trim()), ['Ready', 'Check failed']);
+    assert.equal(await dialog.getByRole('link', { name: 'Install MacTeX' }).count(), 0, 'A failed probe must not recommend reinstalling LaTeX');
+    assert.match(await f.page.locator('.requirements-banner').textContent(), /Could not check the required tools/);
+    if (error === 'timeout') await dialog.screenshot({ animations: 'disabled', path: 'test-results/setup-latex-probe-failed.png' });
+  }
   f.scenario.failure = true;
   await dialog.getByRole('button', { name: 'Check again' }).click();
   await dialog.getByText('Could not check the required tools. Try again.', { exact: true }).waitFor();
+  await dialog.locator('.requirement-status').first().filter({ hasText: 'Check failed' }).waitFor();
   assert.deepEqual((await dialog.locator('.requirement-status').allTextContents()).map(text => text.trim()), ['Check failed', 'Check failed']);
   f.scenario.failure = false; f.scenario.report = report('darwin');
   await dialog.getByRole('button', { name: 'Check again' }).click();
