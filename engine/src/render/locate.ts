@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { argument, buildOutline } from "../core/outline.ts";
+import { argument, buildOutline, stripComments } from "../core/outline.ts";
 import { SynctexIndex } from "./synctex.ts";
 import { listFiles } from "../core/files.ts";
 import { PdfDocument, type PdfPage, type OutlineEntry } from "./pdf.ts";
@@ -23,6 +23,8 @@ export class Build {
   margins: Margins;
   figures: FigureLocator;
   outline: Heading[];
+  bodyFiles: string[];
+  slides: boolean;
   constructor(
     public info: BuildInfo,
     public main: string,
@@ -31,7 +33,12 @@ export class Build {
     this.document = new PdfDocument(info.pdf);
     this.margins = new Margins(this.document);
     this.locator = new Locator(this);
-    this.outline = buildOutline((n) => this.read(n), main).nodes;
+    const outline = buildOutline((n) => this.read(n), main);
+    this.outline = outline.nodes;
+    this.bodyFiles = outline.files;
+    this.slides = /\\documentclass\s*(?:\[[^\]]*\]\s*)?\{beamer\}/.test(
+      stripComments(this.read(main) ?? ""),
+    );
     this.figures = new FigureLocator(this);
   }
   path(name: string) {
@@ -247,6 +254,8 @@ export class Locator {
     const file = this.build.path(name);
     if (!fs.existsSync(file) || path.extname(file) !== ".tex") return [];
     const lines = fs.readFileSync(file, "utf8").split("\n");
+    if (this.build.slides)
+      return this.slidePages(file, lines, start, end, whole);
     [start, end] = sourceRange(lines, start, end, whole);
     let wanted = Array.from(
       { length: Math.max(0, end - start + 1) },
@@ -322,6 +331,56 @@ export class Locator {
             Math.min(right, columnRight),
             Math.min(page.height, bottom),
           ],
+          label: page.label,
+        };
+      });
+  }
+  private slidePages(
+    file: string,
+    lines: string[],
+    start: number,
+    end: number,
+    whole: boolean,
+  ): Position[] {
+    // Beamer (and body-capturing frame wrappers) records the frame at its
+    // closing line. Interior queries can instead resolve to the previous
+    // frame. Query enclosing top-level environments at their closing lines.
+    const stack: { name: string; line: number }[] = [],
+      blocks: Span[] = [];
+    stripComments(lines.join("\n"))
+      .split("\n")
+      .forEach((line, i) => {
+        for (const match of line.matchAll(/\\(begin|end)\{([^}]+)\}/g)) {
+          if (match[2] === "document") continue;
+          if (match[1] === "begin") stack.push({ name: match[2], line: i + 1 });
+          else if (stack.at(-1)?.name === match[2]) {
+            const opening = stack.pop()!;
+            if (!stack.length) blocks.push([opening.line, i + 1]);
+          }
+        }
+      });
+    const selected = blocks.filter(
+        ([a, b]) => whole || (a <= end && b >= start),
+      ),
+      queries = selected.length
+        ? selected.map(([, b]) => b)
+        : Array.from(
+            { length: Math.max(0, end - start + 1) },
+            (_, i) => start + i,
+          );
+    this.index ??= new SynctexIndex(this.build.info.pdf);
+    const pages = new Set<number>();
+    for (const line of queries)
+      for (const [number] of this.index.view(file, line))
+        if (number >= 1 && number <= this.build.document.length)
+          pages.add(number - 1);
+    return [...pages]
+      .sort((a, b) => a - b)
+      .map((number) => {
+        const page = this.build.document.page(number);
+        return {
+          page: number,
+          clip: [0, 0, page.width, page.height] as Rect,
           label: page.label,
         };
       });

@@ -77,6 +77,7 @@ export function buildOutline(
     nodes: Draft[] = [],
     stack: Draft[] = [],
     warnings: string[] = [],
+    files = new Set<string>(),
     used = new Set<string>();
   const counters = [0, 0, 0, 0, 0];
   let appendix = false,
@@ -126,6 +127,7 @@ export function buildOutline(
         continue;
       }
       if (root && line.includes("\\end{document}")) break;
+      files.add(file);
       const environment = line.match(
         /\\begin\{(verbatim\*?|Verbatim\*?|lstlisting|minted|comment)\}/,
       );
@@ -240,6 +242,7 @@ export function buildOutline(
   );
   return {
     nodes: headings,
+    files: [...files].sort(),
     warnings,
     signature: createHash("sha256")
       .update(JSON.stringify(headings))

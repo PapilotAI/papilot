@@ -671,6 +671,61 @@ function balanceSection(
   }
 }
 
+function renderSlides(
+  old: Build,
+  next: Build,
+  cards: Card[],
+  strips: Strips,
+): Pick<RenderedRound, "sections" | "loose"> {
+  // A slide is a canvas. Keep its title, artwork and columns together;
+  // paragraph/reading-lane crops would dismantle the layout under review.
+  const areas = regions(
+    cards.map((card) => ({
+      ...card,
+      aligned: true,
+      pairs: card.pairs.map((pair) => ({ ...pair, group: 0 })),
+    })),
+  );
+  return {
+    sections: [],
+    loose: areas.map((area) => {
+      const members = area.members.map((i) => cards[i]),
+        identical = members.every((c) => c.comparison === "identical"),
+        analysis = textChanges(old.document, next.document, area.old, area.new),
+        images = (
+          build: Build,
+          positions: Position[],
+          marks: Record<number, Mark[]>,
+          side: string,
+        ) =>
+          positions
+            .map((at, i) =>
+              strips.write(
+                build.document,
+                at.page,
+                at.clip[1],
+                at.clip[3],
+                (marks[i] ?? []).filter((m) => m.kind !== "moved"),
+                side,
+                [at.clip[0], at.clip[2]],
+              ),
+            )
+            .filter((s): s is Strip => s !== null);
+      return {
+        kind: "change",
+        units: members.map((c) => c.id),
+        identical,
+        reflow: false,
+        before:
+          identical && area.new.length
+            ? []
+            : images(old, area.old, analysis.old_marks, "old"),
+        after: images(next, area.new, analysis.new_marks, "new"),
+      };
+    }),
+  };
+}
+
 /** Plan the whole round before assigning sections. Source edits identify
  * regions; sections provide context, but never own a second copy of ink. */
 export function renderDocument(
@@ -680,6 +735,8 @@ export function renderDocument(
   strips: Strips,
   figureFiles: (file: string) => boolean,
 ): Pick<RenderedRound, "sections" | "loose"> {
+  if (old.slides || next.slides)
+    return renderSlides(old, next, inputCards, strips);
   const cards = structuredClone(inputCards);
   for (const node of next.outline) {
     const members = cards.filter((c) => c.context_node === node.id);
