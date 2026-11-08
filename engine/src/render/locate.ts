@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { argument, buildOutline, stripComments } from "../core/outline.ts";
+import { argument, buildOutline } from "../core/outline.ts";
+import {
+  bodyFiles,
+  sourceInputs,
+  structuralSource,
+} from "../core/tex-source.ts";
 import { SynctexIndex } from "./synctex.ts";
 import { listFiles } from "../core/files.ts";
 import { PdfDocument, type PdfPage, type OutlineEntry } from "./pdf.ts";
@@ -31,21 +36,11 @@ function frameEnvironments(
   const walk = (file: string) => {
     if (seen.has(file)) return;
     seen.add(file);
-    const text = stripComments(read(file) ?? "");
-    for (const match of text.matchAll(
-      /\\(?:input|include|subfile)\s*\{([^}]+)\}/g,
-    )) {
-      if (/[\\#]/.test(match[1]) || path.posix.isAbsolute(match[1])) continue;
-      let child = path.posix.normalize(
-        path.posix.join(path.posix.dirname(main), match[1]),
-      );
-      if (child === ".." || child.startsWith("../")) continue;
-      if (!path.posix.extname(child)) child += ".tex";
-      if (!parents.has(child)) parents.set(child, []);
-      parents
-        .get(child)!
-        .push({ file, line: text.slice(0, match.index).split("\n").length });
-      walk(child);
+    const text = structuralSource(read(file) ?? "");
+    for (const input of sourceInputs(text, main)) {
+      if (!parents.has(input.file)) parents.set(input.file, []);
+      parents.get(input.file)!.push({ file, line: input.line });
+      walk(input.file);
     }
     // Wrapper environments are often defined in a project-local package.
     // Installed TeX packages need no filesystem search here: read() returns
@@ -121,9 +116,9 @@ export class Build {
     this.locator = new Locator(this);
     const outline = buildOutline((n) => this.read(n), main);
     this.outline = outline.nodes;
-    this.bodyFiles = outline.files;
+    this.bodyFiles = bodyFiles((name) => this.read(name), main);
     this.slides = /\\documentclass\s*(?:\[[^\]]*\]\s*)?\{beamer\}/.test(
-      stripComments(this.read(main) ?? ""),
+      structuralSource(this.read(main) ?? ""),
     );
     const frames = this.slides
       ? frameEnvironments((name) => this.read(name), main)
@@ -452,7 +447,7 @@ export class Locator {
     // frame. Query enclosing frame environments at their closing lines.
     const stack: { name: string; line: number }[] = [],
       blocks: Span[] = [],
-      source = stripComments(lines.join("\n")).split("\n");
+      source = structuralSource(lines.join("\n")).split("\n");
     source.forEach((line, i) => {
       for (const match of line.matchAll(/\\(begin|end)\s*\{([^}]+)\}/g)) {
         if (match[2] === "document") continue;
@@ -464,6 +459,26 @@ export class Locator {
         }
       }
     });
+    const text = source.join("\n");
+    for (const match of text.matchAll(/\\frame\b/g)) {
+      let at = match.index + match[0].length;
+      // Beamer accepts overlay specifications and frame options before its
+      // braced body. Match the body braces, rather than guessing a nearby row.
+      while (at < text.length) {
+        while (/\s/.test(text[at] ?? "") && at < text.length) at++;
+        const close = text[at] === "<" ? ">" : text[at] === "[" ? "]" : null;
+        if (!close) break;
+        const end = text.indexOf(close, at + 1);
+        if (end < 0) break;
+        at = end + 1;
+      }
+      const [body, end] = argument(text, at);
+      if (body !== null)
+        blocks.push([
+          text.slice(0, match.index).split("\n").length,
+          text.slice(0, end).split("\n").length,
+        ]);
+    }
     // Included body fragments have no frame boundaries of their own. Follow
     // their input sites, including for an empty diff side, so inserting text
     // still shows the existing frame on both sides of the comparison.

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { it, expect } from "vitest";
 import { Fixture } from "./helpers.ts";
-import { buildOutline } from "../../src/core/outline.ts";
+import { bodyFiles } from "../../src/core/tex-source.ts";
 import { which } from "../../src/core/process.ts";
 import type { Strip } from "../../src/types.ts";
 
@@ -13,9 +13,10 @@ it("finds body files without requiring section headings", () => {
     "theme.tex": "Preamble definitions.",
     "slides.tex": "\\begin{frame}\nContent.\n\\end{frame}",
   };
-  const outline = buildOutline((name) => files[name], "main.tex");
-  expect(outline.nodes).toEqual([]);
-  expect(outline.files).toEqual(["main.tex", "slides.tex"]);
+  expect(bodyFiles((name) => files[name], "main.tex")).toEqual([
+    "main.tex",
+    "slides.tex",
+  ]);
 });
 
 const tex = Boolean(which("latexmk") && which("pdflatex"));
@@ -35,6 +36,68 @@ interface Scenario {
   fragment?: string;
 }
 const cases: Scenario[] = [
+  ...["verbatim", "lstlisting"].map((env) => ({
+    name: `frame examples inside ${env} do not alter frame boundaries`,
+    preamble: "\\documentclass{beamer}\n\\usepackage{listings}",
+    body: `\\begin{frame}{Previous sentinel}\nUnchanged.\n\\end{frame}\n\\begin{frame}[fragile]{Changed title}\nThe oldvalue is here.\n\\begin{${env}}\n\\begin{frame}\n\\end{${env}}\n\\end{frame}`,
+    from: "oldvalue",
+    to: "newvalue",
+    pages: [2],
+    beforePages: [2],
+    slides: true,
+  })),
+  ...["insert", "delete"].map((operation) => ({
+    name: `${operation} text inside a frame command retains both versions`,
+    preamble: "\\documentclass{beamer}",
+    body:
+      "\\frame{\\frametitle{Previous sentinel}\nUnchanged.\n}\n\\frame<1>[t]{\\frametitle{Changed title}\nThe oldvalue is here.\n" +
+      (operation === "delete" ? "The newvalue is here.\n" : "") +
+      "}",
+    from: "The oldvalue is here.\n",
+    to:
+      operation === "insert"
+        ? "The oldvalue is here.\nThe newvalue is here.\n"
+        : "",
+    pages: [2],
+    beforePages: [2],
+    slides: true,
+  })),
+  {
+    name: "inserting an entire frame command leaves its old side empty",
+    preamble: "\\documentclass{beamer}",
+    body: "\\frame{\\frametitle{Following sentinel}\nUnchanged.\n}",
+    from: "\\frame{\\frametitle{Following sentinel}",
+    to: "\\frame{\\frametitle{Changed title}\nThe newvalue is here.\n}\n\\frame{\\frametitle{Following sentinel}",
+    pages: [1],
+    beforePages: [],
+    beforeText: "",
+    slides: true,
+  },
+  {
+    name: "deleting an entire frame command leaves its new side empty",
+    preamble: "\\documentclass{beamer}",
+    body: "\\frame{\\frametitle{Changed title}\nThe oldvalue is here.\n}\n\\frame{\\frametitle{Following sentinel}\nUnchanged.\n}",
+    from: "\\frame{\\frametitle{Changed title}\nThe oldvalue is here.\n}\n",
+    to: "",
+    pages: [],
+    beforePages: [1],
+    afterText: "",
+    slides: true,
+  },
+  ...["beamer", "article"].map((type) => ({
+    name: `inline inputs in a sectionless ${type} document`,
+    preamble: `\\documentclass{${type}}`,
+    body:
+      type === "beamer"
+        ? "\\begin{frame}{Previous sentinel}\nUnchanged.\n\\end{frame}\n\\begin{frame}{Changed title}\nPrefix. \\input{inner}\n\\end{frame}"
+        : "Prefix. \\input{inner}",
+    fragment: "The oldvalue is here.\n",
+    from: "oldvalue",
+    to: "newvalue",
+    pages: [type === "beamer" ? 2 : 1],
+    beforePages: [type === "beamer" ? 2 : 1],
+    slides: type === "beamer",
+  })),
   {
     name: "a long frame wrapper defined through local packages",
     preamble: "\\documentclass{beamer}\n\\usepackage{slides}",
