@@ -4,7 +4,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
-## [0.9.3] - 2026-11-08 — PDF review for papers and slides
+## [0.9.3] - 2026-11-08
 
 Papilot shows complete PDF comparisons for Beamer slides and documents without sections, brings the manuscript's PDF controls into task reviews, and simplifies the app to a single-user workspace.
 

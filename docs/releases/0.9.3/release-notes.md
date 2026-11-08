@@ -1,4 +1,4 @@
-# Papilot 0.9.3 — PDF review for papers and slides
+# Papilot 0.9.3
 
 ## Review complete slides, even without sections
 
