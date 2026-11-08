@@ -327,8 +327,12 @@ export async function buildApp(options: AppOptions) {
     const current = store.task(request.params.id), client = await connectReview(store.project(current.projectId).path), body = request.body;
     const context = await noteOptionContext(store, current, string(body.key, 'Note key', 200), client);
     if (context.options.round !== body.round) throw new Error('The review changed. Reload the options.');
-    if (context.options.locked) throw new Error(context.options.locked);
     if ((body.reject !== undefined && typeof body.reject !== 'boolean') || (body.accept !== undefined && typeof body.accept !== 'boolean') || (body.accept && body.reject)) throw new Error('Invalid review action.');
+    // A confirmed decision may have lost its HTTP response. Let the journal
+    // verify an exact replay even though the note is now reviewed; it rejects
+    // new IDs, changed actions and undone decisions without touching source.
+    const decision = body.reject || (body.accept && body.option === context.options.selected);
+    if (context.options.locked && !(decision && context.options.locked === 'This note includes a reviewed change. Undo that decision before replacing it.')) throw new Error(context.options.locked);
     if (body.option) {
       const option = context.options.options.find(option => option.id === body.option);
       if (!option) throw new Error('This option is no longer available.');

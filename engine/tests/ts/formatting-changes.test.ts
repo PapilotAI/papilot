@@ -12,7 +12,9 @@ function fixture(old: string, next: string, format: [number, number, string, str
 
 it('folds existing invisible wrap cards into a nearby prose card without losing exact units or mutating the saved round', () => {
   const old = 'The model is fast and\nthe result is stable.\n', at = old.indexOf('\n');
-  const detail = fixture(old, old.replace('fast', 'efficient').replace('\n', ' '), [at, at + 1, '\n', ' ']);
+  // Rewrap this one interior break; preserve the file's final newline.
+  const next = old.slice(0, at).replace('fast', 'efficient') + ' ' + old.slice(at + 1);
+  const detail = fixture(old, next, [at, at + 1, '\n', ' ']);
   const grouped = groupFormattingChanges(detail, () => old);
   expect(grouped.loose).toEqual([]);
   expect((grouped.sections[0].blocks[0] as ChangeBlock).units).toEqual(['word', 'space']);

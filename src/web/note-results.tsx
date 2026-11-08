@@ -343,7 +343,8 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     catch (error) { setError((error as Error).message); setApplying(false); }
   };
   const saving = applying || task.status === 'building';
-  const label = (id: string, text: string) => id === 'current' ? t('Initial proposal') : id === 'latest' ? t('Current proposal') : text;
+  const label = (id: string, text: string) => id === 'latest' ? t('Current proposal')
+    : id === 'current' && (text === 'Current proposal' || text === 'Initial proposal') ? t('Initial proposal') : text;
   const optionFeedback = (id: string, kind: 'comment' | 'reject') => feedback.notes.find(item => item.round === data?.round && item.option?.note === note.key && item.option.id === id && item.option.kind === kind);
   const addFeedback = (option: NoteOption) => draft.add({
     round: data!.round, strip: '', rects: [], region: false,

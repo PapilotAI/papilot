@@ -62,9 +62,17 @@ test('rejecting a note restores its source even when previewing an alternative; 
     await engine.review.undo(task.name, 'reject-other');
     assert.equal((await options()).comparisonKey, initialKey, 'Undo restores the reusable preview identity');
     for (const option of ['current', 'alternative']) {
-      const response = await local.inject({ method: 'POST', url: '/api/tasks/task/note-options', headers, payload: { key: 'run:0', round: 1, option, reject: true, id: 'reject-' + option } });
+      const request = { method: 'POST' as const, url: '/api/tasks/task/note-options', headers, payload: { key: 'run:0', round: 1, option, reject: true, id: 'reject-' + option } };
+      const response = await local.inject(request);
       assert.equal(response.statusCode, 200, response.body);
       assert.ok(response.json().locked);
+      const replay = await local.inject(request);
+      assert.equal(replay.statusCode, 200, 'A lost successful response can be retried with the same action ID: ' + replay.body);
+      assert.equal(engine.store.all('SELECT id FROM actions WHERE id=?', request.payload.id).length, 1);
+      const changed = await local.inject({ ...request, payload: { ...request.payload, reject: false, accept: true } });
+      assert.equal(changed.statusCode, 400, 'The action ID cannot authorize a different decision');
+      const duplicate = await local.inject({ ...request, payload: { ...request.payload, id: request.payload.id + '-new' } });
+      assert.equal(duplicate.statusCode, 400, 'A new ID cannot re-decide reviewed source');
       assert.match(f.read(METHOD, task.worktree), /Method sentence two\./, 'Only the note’s wording is restored');
       assert.match(f.read(METHOD, task.worktree), /Detail proposal 15\./, 'The accepted neighbor stays accepted');
       const decisions = engine.review.decisions(task.name, round);
@@ -76,6 +84,9 @@ test('rejecting a note restores its source even when previewing an alternative; 
       assert.equal(store.items('task').length, 1, 'No rejection feedback draft or chat message is created');
       await transport.post(`/api/tasks/${task.name}/undo`, { id: 'reject-' + option });
       assert.match(f.read(METHOD, task.worktree), /Approach sentence two\./);
+      assert.equal(engine.review.decisions(task.name, round)[word.id], 'pending');
+      const undone = await local.inject(request);
+      assert.equal(undone.statusCode, 400, 'A late retry must not repeat an undone decision');
       assert.equal(engine.review.decisions(task.name, round)[word.id], 'pending');
     }
   } finally { await local.close(); workspace.close(); store.close(); await server.close(); await f.close(); }

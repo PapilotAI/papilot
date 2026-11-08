@@ -65,7 +65,7 @@ await page.route('**/api/**', async route => {
     }
     const round = (body?.key || url.searchParams.get('key'))?.startsWith('request-1:') ? 1 : 2;
     return route.fulfill({ json: { round, comparisonKey: comparisonVersion, key: url.searchParams.get('key'), ...(round === 1 ? { options: [], locked: 'Options are not available for this source range yet.' } : { options: [
-      { id: 'current', label: 'Current proposal', edits: [{ unit: 'c1', text: units[2][0].new_text }] },
+      { id: 'current', label: 'Keep terminology', reason: 'Preserve the author’s technical term.', edits: [{ unit: 'c1', text: units[2][0].new_text }] },
       { id: 'brief', label: 'Concise', reason: 'Keep the technical term in a shorter sentence.', edits: [{ unit: 'c1', text: alternateSource }] },
     ] }) } });
   }
@@ -119,6 +119,8 @@ try {
   assert.doesNotMatch(await page.locator('.review-frame').getAttribute('src'), /[?&](history|round)=/);
   assert.deepEqual(await page.locator('[data-note-result]').allTextContents(), original, 'review operations never add content to original messages');
   await controls().getByRole('region', { name: 'Complete PDF comparison', exact: true }).waitFor();
+  await controls().getByRole('tab', { name: 'Keep terminology', selected: true, exact: true }).waitFor();
+  assert.equal(await controls().locator('.note-option-reason').textContent(), 'Preserve the author’s technical term.', 'The preferred proposal uses the AI-provided title and reason');
   assert.equal(await controls().locator('.note-comparison-side-label').count(), 2, 'Only this group has before/after labels');
   assert.equal(await controls().locator('.note-comparison-change[data-units="other"]').count(), 0, 'Other groups remain in the main review');
   const sourceToggle = controls().getByRole('button', { name: 'Show LaTeX source', exact: true });
