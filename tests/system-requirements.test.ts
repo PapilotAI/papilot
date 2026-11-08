@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { checkSystemRequirements } from '../src/server/system-requirements.ts';
 
 test('setup detects missing, broken and partially installed tools on the server PATH', { skip: process.platform === 'win32' }, async () => {
@@ -50,12 +51,12 @@ test('setup distinguishes missing tools from failed probes and retries timeouts 
     });
     assert.deepEqual(report.checks, [
       { id: 'git', ok: true }, { id: 'latexmk', ok: true },
-      { id: 'synctex', ok: false, error: 'timeout' }, { id: 'tex-engine', ok: false, error: 'timeout' },
+      { id: 'synctex', ok: false, failureReason: 'timeout' }, { id: 'tex-engine', ok: false, failureReason: 'timeout' },
     ]);
     assert.deepEqual(calls, { git: 1, latexmk: 2, synctex: 2, pdflatex: 2, xelatex: 1 });
     assert.deepEqual(deadlines, [5000, 10000], 'The retry gives a slow process more time to finish');
     const broken = await checkSystemRequirements({ PATH: bin }, 'linux', async () => false);
-    assert.ok(broken.checks.every(check => check.error === 'failed'));
+    assert.ok(broken.checks.every(check => check.failureReason === 'failed'));
     fs.rmSync(path.join(bin, 'latexmk'));
     const missing = await checkSystemRequirements({ PATH: bin }, 'linux', async () => true);
     assert.deepEqual(missing.checks.find(check => check.id === 'latexmk'), { id: 'latexmk', ok: false });
@@ -69,6 +70,28 @@ test('a cold latexmk process that exceeds the deadline is retried instead of rep
     const report = await checkSystemRequirements({ PATH: bin });
     assert.deepEqual(report.checks.find(check => check.id === 'latexmk'), { id: 'latexmk', ok: true });
   } finally { fs.rmSync(bin, { recursive: true, force: true }); }
+});
+
+test('native Windows probes recover from slow startup and distinguish timeout from failure', { skip: process.platform !== 'win32', timeout: 90000 }, async () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot LaTeX 中文 '));
+  try {
+    const file = path.join(bin, 'latexmk.exe');
+    // Windows PowerShell 5.1 can build a console executable without a separate
+    // compiler installation. Exercise execFile itself, including Windows kills.
+    const source = 'public static class Probe { public static int Main() { System.Threading.Thread.Sleep(int.Parse(System.Environment.GetEnvironmentVariable("PAPILOT_PROBE_DELAY"))); return int.Parse(System.Environment.GetEnvironmentVariable("PAPILOT_PROBE_EXIT")); } }';
+    execFileSync(path.join(process.env.SystemRoot!, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+      ['-NoProfile', '-NonInteractive', '-Command', '$ErrorActionPreference = "Stop"; Add-Type -TypeDefinition $env:PAPILOT_PROBE_SOURCE -OutputAssembly $env:PAPILOT_PROBE_FILE -OutputType ConsoleApplication'],
+      { env: { ...process.env, PAPILOT_PROBE_SOURCE: source, PAPILOT_PROBE_FILE: file }, timeout: 30000, windowsHide: true });
+    const env = { ...process.env, PATH: bin, PAPILOT_PROBE_DELAY: '6000', PAPILOT_PROBE_EXIT: '0' };
+    const latexmk = async () => (await checkSystemRequirements(env)).checks.find(check => check.id === 'latexmk');
+    assert.deepEqual(await latexmk(), { id: 'latexmk', ok: true }, 'The longer retry must allow the native executable to finish');
+    env.PAPILOT_PROBE_DELAY = '60000';
+    assert.deepEqual(await latexmk(), { id: 'latexmk', ok: false, failureReason: 'timeout' });
+    env.PAPILOT_PROBE_DELAY = '0'; env.PAPILOT_PROBE_EXIT = '1';
+    assert.deepEqual(await latexmk(), { id: 'latexmk', ok: false, failureReason: 'failed' });
+    env.PAPILOT_PROBE_EXIT = '0';
+    assert.deepEqual(await latexmk(), { id: 'latexmk', ok: true }, 'A fresh check recovers after failure');
+  } finally { fs.rmSync(bin, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 });
 
 test('macOS setup does not invoke the Git installer stub when developer tools are missing', { skip: !fs.existsSync('/usr/bin/git') }, async () => {

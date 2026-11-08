@@ -23,7 +23,7 @@ export async function checkSystemRequirements(env = process.env, platform = proc
     // Cold starts can exceed the short probe deadline. Retry once, but never
     // tell users to reinstall a tool merely because its version probe failed.
     if (result === 'timeout') result = await probe(file, args, env, 10000);
-    return result === true ? { ok: true } : { ok: false, error: result === 'timeout' ? 'timeout' : 'failed' };
+    return result === true ? { ok: true } : { ok: false, failureReason: result === 'timeout' ? 'timeout' : 'failed' };
   }
   async function available(name: string, args = ['--version']): Promise<Result> {
     // Use the server's actual PATH, just like compilation and Git operations.
@@ -34,7 +34,7 @@ export async function checkSystemRequirements(env = process.env, platform = proc
     // Apple's Git stub may open an OS installation prompt. Keep detection quiet.
     if (platform === 'darwin' && file === '/usr/bin/git') {
       const developerTools = await run('/usr/bin/xcode-select', ['-p']);
-      if (!developerTools.ok) return developerTools.error === 'timeout' ? developerTools : { ok: false };
+      if (!developerTools.ok) return developerTools.failureReason === 'timeout' ? developerTools : { ok: false };
     }
     return run(file, args);
   }
@@ -42,7 +42,7 @@ export async function checkSystemRequirements(env = process.env, platform = proc
     available('git'), available('latexmk', ['-v']), available('synctex'),
     ...['pdflatex', 'xelatex', 'lualatex'].map(name => available(name)),
   ]);
-  const engine = engines.find(result => result.ok) || engines.find(result => result.error === 'timeout') || engines.find(result => result.error) || { ok: false };
+  const engine = engines.find(result => result.ok) || engines.find(result => result.failureReason === 'timeout') || engines.find(result => result.failureReason) || { ok: false };
   return { platform, checks: [{ id: 'git', ...git }, { id: 'latexmk', ...latexmk }, { id: 'synctex', ...synctex }, { id: 'tex-engine', ...engine }] };
 }
 

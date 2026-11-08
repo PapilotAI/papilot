@@ -24,7 +24,7 @@ export function useSystemRequirements(enabled: boolean, load: (signal: AbortSign
 }
 export type RequirementsState = ReturnType<typeof useSystemRequirements>;
 export const requirementsMissing = (report: SystemRequirements | null) => Boolean(report?.checks.some(check => !check.ok));
-const requirementsFailed = (report: SystemRequirements | null) => Boolean(report?.checks.some(check => check.error));
+const requirementsFailed = (report: SystemRequirements | null) => Boolean(report?.checks.some(check => check.failureReason));
 
 export function RequirementsBanner({ state, onOpen }: { state: RequirementsState; onOpen: () => void }) {
   if (!state.failed && !requirementsMissing(state.report)) return null;
@@ -48,7 +48,7 @@ export function RequirementsPanel({ state, online, showRecheck = true }: { state
     <div className="requirements-list">
       {(['git', 'latex'] as const).map(id => {
         const ok = id === 'git' ? git : latex;
-        const checkFailed = failed || report?.checks.some(check => (id === 'git' ? check.id === 'git' : check.id !== 'git') && check.error);
+        const checkFailed = failed || report?.checks.some(check => (id === 'git' ? check.id === 'git' : check.id !== 'git') && check.failureReason);
         const partial = id === 'latex' && report?.checks.some(check => check.id !== 'git' && check.ok);
         const status = !online ? 'unknown' : busy ? 'checking' : checkFailed ? 'unknown' : ok === true ? 'ready' : ok === false ? 'missing' : 'checking';
         const label = !online ? t('Offline') : busy ? t('Checking…') : checkFailed ? t('Check failed') : ok === true ? t('Ready') : ok === false ? partial ? t('Incomplete installation') : t('Not installed or unavailable') : t('Checking…');
