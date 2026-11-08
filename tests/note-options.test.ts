@@ -25,6 +25,8 @@ test('options must be distinct and cover exactly the supplied edits', () => {
   for (const reason of [undefined, '', ' ', 'x'.repeat(181)]) assert.throws(() => parseNoteOptions(JSON.stringify({ options: [{ ...valid.options[0], reason }, valid.options[1]] }), current), /reason/);
   assert.throws(() => parseNoteOptions(JSON.stringify({ options: [valid.options[0], valid.options[0]] }), current), /repeated/);
   assert.throws(() => parseNoteOptions(JSON.stringify({ options: [{ label: 'escape', reason: 'Escape the source range.', edits: [{ unit: 'b', text: 'oops' }] }, valid.options[0]] }), current), /invalid/);
+  assert.equal(parseNoteOptions(JSON.stringify({ options: [valid.options[0], valid.options[0]] }), current, true).length, 1);
+  assert.deepEqual(parseNoteOptions(JSON.stringify({ options: [{ ...valid.options[0], reason: '' }, valid.options[1]] }), current, true).map(option => option.label), ['fast']);
 });
 
 test('choices and the selected alternative survive publication and a fresh context read', async () => {

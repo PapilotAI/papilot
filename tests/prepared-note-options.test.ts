@@ -89,5 +89,15 @@ test('published notes expose choices from the editing turn without any agent req
     assert.equal(store.items('task')[0].text, 'Keep the facts.');
     assert.equal(fs.readFileSync(path.join(root, 'main.tex'), 'utf8'), after);
     assert.equal(git('status', '--porcelain'), '');
+    const partial: Run = { ...run, id: 'partial', requestKey: 'partial', noteOptions: [{ ...prepared, options: [prepared.options[0], {
+      ...prepared.options[1], edits: [{ file: 'main.tex', find: after, replace: after.replace('robust', 'reliable') }],
+    }] }] };
+    store.saveRun(partial);
+    store.saveItem({ ...store.items('task')[0], id: 'partial', createdAt: 3 });
+    await savePreparedNoteOptions(store, task, partial, client);
+    const remaining = (await noteOptionContext(store, task, 'partial:0', client)).options;
+    assert.deepEqual(remaining.options.map(option => option.label), ['Efficient', 'Concise'], 'An out-of-scope choice does not discard the valid alternative');
+    assert.equal(remaining.options[0].reason, prepared.current.reason);
+    assert.equal(git('status', '--porcelain'), '');
   } finally { store.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
