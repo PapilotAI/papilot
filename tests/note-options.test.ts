@@ -64,3 +64,12 @@ test('overlapping choices reflect actual wording and ambiguous source ranges are
   const unit = { id: 'a', file: 'main.tex', old_start: 1, old_end: 1, old_text: 'fast', new_text: 'efficient' };
   assert.deepEqual(rebaseNoteOptions([{ ...initial, edits: [initial.edits[0]] }], [unit], [unit, { ...unit, id: 'b' }]), []);
 });
+
+test('short source options rebase by exact offsets only when the baseline is unchanged', () => {
+  const previous = { id: 'a', file: 'sentence.tex', old_start: 1, old_end: 1, old_text: 'fast', new_text: 'quick', text_ops: [['replace', 2, 6, 2, 7]] as NoteRound['units'][number]['text_ops'], old_context: { text: 'A fast dog.', start: 0 } };
+  const next = { ...previous, id: 'b', new_text: 'speedy' };
+  const options = [{ id: 'current', label: 'Initial', edits: [{ unit: 'a', text: 'quick' }] }, { id: 'specific', label: 'Specific', reason: 'Clarify speed.', edits: [{ unit: 'a', text: 'speedy' }] }];
+  assert.deepEqual(rebaseNoteOptions(options, [previous], [next], true).map(option => option.edits), [[{ unit: 'b', text: 'quick' }], [{ unit: 'b', text: 'speedy' }]]);
+  assert.deepEqual(rebaseNoteOptions(options, [previous], [next], false), []);
+  assert.deepEqual(rebaseNoteOptions(options, [previous], [{ ...next, text_ops: [['replace', 4, 8, 4, 10]] }], true), [], 'same baseline must use the exact range, not similar context');
+});

@@ -43,6 +43,7 @@ import {
   copyReference,
   describeLocation,
   nextPending,
+  commentScope,
   pendingUnits,
   progress,
   resolvedSide,
@@ -234,8 +235,12 @@ export function ReviewApp({
     const changed = (event: Event) => setNoteFocus((event as CustomEvent).detail || null);
     const preview = (event: Event) => {
       const value = (event as CustomEvent).detail || null;
+      const transition = Boolean(value) !== previewNow.current;
       previewNow.current = Boolean(value);
-      setOptionPreview(value); setComposer(null); setConfirm(null); setOpenSource(new Set());
+      setOptionPreview(value);
+      // Re-sending the current scope (including null) must not discard a
+      // source editor or dialog the author just opened outside the drawer.
+      if (transition) { setComposer(null); setConfirm(null); setOpenSource(new Set()); }
     };
     window.addEventListener("papilot:option-preview", preview);
     window.addEventListener("papilot:note-focus", changed);
@@ -326,7 +331,7 @@ export function ReviewApp({
           : [];
   const navigation = stops
     .map((stop, index) => ({ stop, index }))
-    .filter(({ stop, index }) => stop.units.some(inFocus) && (browsing || index === linkedChange || pendingUnits(stop, decisions).length))
+    .filter(({ stop, index }) => stop.units.some(inFocus) && (browsing || index === linkedChange || pendingUnits(stop, decisions).some(inFocus)))
     .map(({ index }) => index);
   const adjacent = (index: number, direction: number) =>
     navigation[navigation.indexOf(index) + direction] ?? -1;
@@ -548,7 +553,11 @@ export function ReviewApp({
       blocked("comment")
     )
       return;
-    const event = new CustomEvent('latex-review:comment', { cancelable: true, detail: { round: detail?.round, stop: current, changes } });
+    const scoped = focused !== undefined || changes.length !== stops[current]?.units.length;
+    const event = new CustomEvent('latex-review:comment', { cancelable: true, detail: {
+      round: detail?.round, stop: current, changes,
+      ...(scoped ? { scope: commentScope(changes.map(id => units.get(id)!).filter(Boolean)) } : {}),
+    } });
     if (!window.dispatchEvent(event)) return;
     const key = `latex-review:${task}:draft:${detail?.round}:${changes.join(",")}`;
     setDraft(readStorage(key, ""));
@@ -594,9 +603,9 @@ export function ReviewApp({
       // The host refreshes what depends on the decision, such as Git status.
       window.dispatchEvent(new CustomEvent("latex-review:decided"));
       if (kind === "comment") closeComposer(true);
-      const target = pendingUnits(stops[current], next.decisions).length
+      const target = pendingUnits(stops[current], next.decisions).some(inFocus)
         ? current
-        : nextPending(stops, next.decisions, current);
+        : nextPending(stops, next.decisions, current, focused);
       if (target >= 0 && target !== current) select(target);
       if (target < 0) {
         if (!browsing) setCurrent(-1);
@@ -605,7 +614,7 @@ export function ReviewApp({
             ? kind === "accept"
               ? t("All changes are staged.")
               : ""
-            : t("All changes reviewed. Your decisions are saved."),
+            : focused ? t("Review complete") : t("All changes reviewed. Your decisions are saved."),
         );
       }
     } catch (e) {
@@ -715,7 +724,7 @@ export function ReviewApp({
         select(adjacent(current, 1));
       else if (action === 'previous')
         select(adjacent(current, -1));
-      else if (action === 'pending') select(nextPending(stops, decisions, current));
+      else if (action === 'pending') select(nextPending(stops, decisions, current, focused));
       else if (action === 'source') toggleSource(current);
       else if (action === 'undo') void undo();
       else if (action === 'help') showHelp();
@@ -750,7 +759,7 @@ export function ReviewApp({
     if (index !== current || !state) return null;
     const units = stops[index].units.filter(inFocus),
       available = kinds(units),
-      remaining = focused ? navigation.find(i => pendingUnits(stops[i], decisions).some(inFocus)) ?? -1 : nextPending(stops, decisions);
+      remaining = nextPending(stops, decisions, current, focused);
     return (
       <div className="dock">
         <nav className="actions" aria-label={t("Review the current change")}>
@@ -804,7 +813,7 @@ export function ReviewApp({
               className="skip"
               aria-keyshortcuts={shortcuts.pending.join(' ')}
               title={[changes ? t("Next unstaged") : t("Next undecided"), shortcuts.pending.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
-              onClick={() => select(focused ? remaining : nextPending(stops, decisions, current))}
+              onClick={() => select(remaining)}
             >
               {changes ? t("Next unstaged") : t("Next undecided")}
             </button>
@@ -1482,7 +1491,7 @@ export function ReviewApp({
                 );
               else {
                 setHistory(false);
-                setCurrent(nextPending(stops, decisions));
+                setCurrent(nextPending(stops, decisions, -1, focused));
               }
             }}
           >

@@ -4,7 +4,7 @@ import type { NoteChange, NoteResult, NoteOption, NoteOptions, Task, TimelineIte
 import { readNotesInstructions } from '../notes.ts';
 import { NoteOptionDiff } from './note-option-diff.tsx';
 import { Icon } from './icons.tsx';
-import { t } from './i18n.ts';
+import { errorText, t } from './i18n.ts';
 import { reviewDraft, useReviewDraft } from './review-draft.ts';
 import { browserStorage } from './storage.ts';
 import { NotePreviewCache } from './note-preview-cache.ts';
@@ -26,6 +26,15 @@ function rememberedChoice(key: string, options?: NoteOptions | null) {
     if (options && !options.locked && saved?.round === options.round && options.options.some(option => option.id === saved.option)) return saved.option as string;
   } catch { /* Ignore a stale local choice. */ }
   return options?.selected || 'current';
+}
+function optionLockText(reason: string) {
+  switch (reason) {
+    case 'Options are available on the latest open review.': return t('Options are available on the latest open review.');
+    case 'Options are not available for this source range yet.': return t('Options are not available for this source range yet.');
+    case 'This note includes a reviewed change. Undo that decision before replacing it.': return t('This note includes a reviewed change. Undo that decision before replacing it.');
+    case 'Wait for the current task and review actions to finish.': return t('Wait for the current task and review actions to finish.');
+    default: return errorText(reason);
+  }
 }
 async function warmComparison(detail: RoundDetail) {
   const strips = [...detail.sections.flatMap(section => section.blocks), ...detail.loose].flatMap(block => block.kind === 'context' ? [block.image] : block.kind === 'change' ? [...block.before, ...block.after] : []);
@@ -161,7 +170,12 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     const resize = new ResizeObserver(sync); resize.observe(element); sync();
     return () => { resize.disconnect(); cancelAnimationFrame(pending); root.removeAttribute('data-papilot-note-drawer'); root.style.removeProperty('--papilot-note-inset'); };
   }, [doc, Boolean(displayed), Boolean(note), links?.focus?.sequence]);
-  if (!links || !displayed) return null;
+  if (!links) return null;
+  // A first failed lookup has no note to select yet. Keep retry reachable in
+  // the PDF pane without adding controls to the original conversation.
+  if (!displayed) return links.error ? <section className="review-note-controls" data-open="true" aria-label={t('Options for this note')}>
+    <button type="button" className="note-result-retry" onClick={links.reload}><Icon name="refresh" size={12}/>{t('Retry linking changes')}</button>
+  </section> : null;
   const siblings = links.notes.filter(other => other.itemId === displayed.itemId);
   const index = siblings.findIndex(other => other.key === displayed.key);
   const move = (offset: number) => {
@@ -256,7 +270,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   if (!request || !task) return null;
   const comparison = readyComparison || shown;
   const focusedUnits = [...new Set(note.changes.filter(change => change.round === comparison?.round).flatMap(change => change.units))];
-  const locked = data?.locked || (note.changes.some(change => change.state !== 'pending') ? t('This note includes a reviewed change. Undo that decision before replacing it.') : task.status !== 'reviewing' || task.pendingReview ? t('Wait for the current task and review actions to finish.') : '');
+  const locked = data?.locked || (note.changes.some(change => change.state !== 'pending') ? 'This note includes a reviewed change. Undo that decision before replacing it.' : task.status !== 'reviewing' || task.pendingReview ? 'Wait for the current task and review actions to finish.' : '');
   const choose = (option: string) => {
     if (!data || applying) return;
     links.setScope('note'); setSelected(option); setEditor(null); requestId.current = null; setError('');
@@ -274,8 +288,10 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const apply = async (option: NoteOption) => {
     if (!data || applying || locked || !links.previewRequest) return;
     if (selected !== option.id) choose(option.id);
-    setApplying(true); setActingOption(option.id); setError(''); requestId.current ??= crypto.randomUUID();
+    setApplying(true); setActingOption(option.id); setError('');
     try {
+      // HTTP tailnet addresses provide random bytes without randomUUID.
+      requestId.current ??= crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), byte => byte.toString(16).padStart(2, '0')).join('');
       // Bind the action to the selected option before the async request starts.
       await links.previewRequest(task.id, note.key, data.round, option.id);
       const result = await request(task.id, note.key, { round: data.round, option: option.id, id: requestId.current, accept: true });
@@ -340,8 +356,8 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     {baselineError && !comparison && <p className="note-option-error" role="alert">{baselineError} <button type="button" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></p>}
     {data && data.options.length <= 1 && !locked && <button type="button" className="note-options-generate" disabled={generating || saving} onClick={() => void generate()}>{generating ? <><span className="spinner"/>{t('Preparing two alternatives…')}</> : t('Generate alternatives')}</button>}
     {(saving || previewBusy) && <span className="sr-only" role="status">{saving ? t('Saving choice…') : t('Preparing this option’s PDF diff…')}</span>}
-    {locked && !saving && <p className="note-option-hint">{t(locked)}</p>}
-    {error && <p role="alert" className="note-option-error">{t(error)} <button type="button" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></p>}
+    {locked && !saving && <p className="note-option-hint">{optionLockText(locked)}</p>}
+    {error && <p role="alert" className="note-option-error">{errorText(error)} <button type="button" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></p>}
     </div>
   </div>;
 }

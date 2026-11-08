@@ -8,10 +8,10 @@ export const noteOptionsKey = (task: string, key: string, round: number) => `not
 
 // Choices remain the same choices after a selection rebuilds the proposal.
 // Match source fragments, never their ordinal IDs alone (IDs can be reused).
-export function rebaseNoteOptions(options: NoteOption[], previous: NoteRound['units'], next: NoteRound['units']): NoteOption[] {
+export function rebaseNoteOptions(options: NoteOption[], previous: NoteRound['units'], next: NoteRound['units'], sameBase = false): NoteOption[] {
   const mapping = new Map<string, string>();
   for (const unit of previous) {
-    const matches = next.filter(candidate => sameFragment(unit, candidate));
+    const matches = next.filter(candidate => sameFragment(unit, candidate, sameBase));
     if (matches.length === 1) mapping.set(unit.id, matches[0].id);
   }
   return options.filter(option => option.id !== 'latest').flatMap(option => {
@@ -73,15 +73,16 @@ export async function noteOptionContext(store: Store, task: Task, key: string, c
     const old = await client.get<NoteRound>(`${taskRoute(task.name)}/rounds/${number}`);
     const oldIds = new Set(previous.options.flatMap(option => option.edits.map(edit => edit.unit)));
     const original = { id: 'current', label: 'Initial proposal', edits: old.units.filter(unit => oldIds.has(unit.id)).map(unit => ({ unit: unit.id, text: unit.new_text })) };
-    const choices = rebaseNoteOptions(previous.options.some(option => option.id === 'current') ? previous.options : [original, ...previous.options], old.units, units);
+    const choices = rebaseNoteOptions(previous.options.some(option => option.id === 'current') ? previous.options : [original, ...previous.options], old.units, units, Boolean(old.before && old.before === detail.before));
     if (choices.length) { cached = { ...previous, round: note.round, options: choices }; store.savePreference(cacheKey, cached); }
     break;
   }
   if (cached && !cached.options.some(option => option.id === 'current')) {
     const old = origin && origin < note.round ? await client.get<NoteRound>(`${taskRoute(task.name)}/rounds/${origin}`) : detail;
-    const originalUnits = old.units.filter(unit => units.some(next => sameFragment(unit, next)));
+    const sameBase = Boolean(old.before && old.before === detail.before);
+    const originalUnits = old.units.filter(unit => units.some(next => sameFragment(unit, next, sameBase)));
     const original = { id: 'current', label: 'Initial proposal', edits: originalUnits.map(unit => ({ unit: unit.id, text: unit.new_text })) };
-    const initial = rebaseNoteOptions([original], old.units, units);
+    const initial = rebaseNoteOptions([original], old.units, units, sameBase);
     if (initial.length) { cached = { ...cached, options: [...initial, ...cached.options] }; store.savePreference(cacheKey, cached); }
   }
   const choices = cached?.options.filter(option => option.id === 'current' || (option.id !== 'latest' && typeof option.reason === 'string' && option.reason.trim())) || [current];

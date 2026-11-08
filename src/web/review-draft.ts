@@ -5,8 +5,17 @@ import type { Rect } from './note-geometry.ts';
 import { noteAnchor } from '../notes.ts';
 import { browserStorage } from './storage.ts';
 
-export type ReviewMark = { group?: NoteGroup; kind?: MarkKind; stamp?: string; strip: string; round: number; stop?: number; where: string; quote: string; rects: Rect[]; region: boolean; whole?: boolean; option?: { note: string; id: string; label: string; kind: 'comment' | 'reject' } };
+export type ReviewMark = { group?: NoteGroup; kind?: MarkKind; stamp?: string; strip: string; round: number; stop?: number; where: string; quote: string; rects: Rect[]; region: boolean; whole?: boolean; changes?: string[]; option?: { note: string; id: string; label: string; kind: 'comment' | 'reject' } };
 export type ReviewNote = ReviewMark & { id: string; comment: string };
+export type ReviewComment = { round: number; stop: number; changes?: string[]; scope?: { where: string; quote: string } };
+export function reviewCommentMark(base: ReviewMark, detail: ReviewComment, wholeQuote: string): ReviewMark {
+  return detail.scope ? {
+    ...base, whole: false, stop: detail.stop, changes: detail.changes,
+    where: `Round ${detail.round} · ${detail.scope.where} · Source changes: ${detail.changes?.join(', ') || ''}`,
+    quote: detail.scope.quote,
+  } : { ...base, whole: true, stop: detail.stop, quote: wholeQuote };
+}
+const sameChanges = (a: string[] | undefined, b: string[] | undefined) => Boolean(a && b && a.length === b.length && a.every(id => b.includes(id)));
 type Snapshot = { notes: ReviewNote[]; instructions: string; editing?: { id: string; sequence: number }; reveal?: { note: ReviewNote; sequence: number }; busy: boolean; canUndo: boolean; canRedo: boolean };
 // HTTP tailnet addresses are not secure contexts, but still provide random bytes.
 const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -54,6 +63,7 @@ export class ReviewDraft {
     // clicks reopen that draft; distinct quotations can still have separate notes.
     const existing = this.value.notes.find(note => note.round === mark.round && (mark.option
       ? note.option?.note === mark.option.note && note.option.id === mark.option.id && note.option.kind === mark.option.kind
+      : mark.changes ? note.stop === mark.stop && sameChanges(note.changes, mark.changes)
       : mark.whole && note.whole && note.stop === mark.stop));
     if (existing) { if (focus) this.focus(existing.id); return existing.id; }
     const note = { ...mark, id: uuid(), comment };

@@ -1,14 +1,79 @@
 import { createHash } from "node:crypto";
 import type { App } from "../server.ts";
 import type { Unit } from "../types.ts";
+import { applyUnits, diffUnitsAsync } from "./changes.ts";
+import { isFigure } from "./config.ts";
 import { readBytes, same, writeOrDelete } from "./files.ts";
 import { merge3Async } from "./git.ts";
 import { safePath } from "./review.ts";
 import { optionCandidate } from "./option-preview.ts";
+import { textEdits } from "./text-edits.ts";
 
 export interface OptionInput { id: string; round: number; edits: { unit: string; text: string }[]; accept?: boolean }
 type Saved = { request: string; writes: { file: string; before: string; after: string }[]; applied: boolean; publishRequest?: string; comparison?: { before: string; after: string; units: Unit[] }; accept?: { id: string; before: string; units: Unit[] } };
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+
+// Follow an unchanged source span across other decisions. Repeated wording is
+// not an anchor: offsets come from the complete source comparison, and a
+// replacement crossing this span must fail rather than pick a similar phrase.
+function mappedRange(before: string, after: string, start: number, end: number): [number, number] {
+  let shift = 0;
+  for (const [, a, b, x, y] of textEdits(before, after)) {
+    if (a === b && start === end && a === start)
+      throw new Error('The selected source range changed. Review it before accepting.');
+    if (b <= start) shift += y - x - (b - a);
+    else if (a < end || (start === end && a < start && b > start))
+      throw new Error('The selected source range changed. Review it before accepting.');
+  }
+  const result: [number, number] = [start + shift, end + shift];
+  if (after.slice(...result) !== before.slice(start, end))
+    throw new Error('The selected source range changed. Review it before accepting.');
+  return result;
+}
+
+async function optionComparison(app: App, name: string, edits: OptionInput['edits'], writes: Saved['writes']) {
+  const task = app.tasks.get(name), round = app.review.latestRound(name)!;
+  const candidate = optionCandidate(round.units, edits, file => app.repo.blob(round.after, file)!.toString('utf8'));
+  const before = task.accepted;
+  // The actual worktree already contains rejections and independent manual
+  // edits. Preserve those while preparing a comparison for the pending option.
+  const current = await app.tasks.snapshotAsync(task);
+  const after = await app.repo.commitWithAsync(current, Object.fromEntries(writes.map(write => [write.file, Buffer.from(write.after, 'base64')])), 'Selected note option');
+  const units = await diffUnitsAsync(app.repo, before, after, file => isFigure(app.project, file));
+  const chosen = new Set(edits.map(edit => edit.unit));
+  const selected = candidate.units.filter(unit => chosen.has(unit.id)).map(unit => {
+    const [, a, b, x, y] = unit.text_ops![0];
+    const old = app.repo.blob(before, unit.file)!.toString('utf8'), next = app.repo.blob(after, unit.file)!.toString('utf8');
+    const [i, j] = mappedRange(app.repo.blob(round.before, unit.file)!.toString('utf8'), old, a, b);
+    const [u, v] = mappedRange(candidate.files[unit.file].toString('utf8'), next, x, y);
+    const line = (text: string, offset: number) => text.slice(0, offset).split('\n').length - 1;
+    const tag = i === j ? 'insert' : u === v ? 'delete' : 'replace';
+    return { ...unit, old_start: line(old, i) + 1, old_end: line(old, Math.max(i, j - 1)) + 1,
+      new_start: line(next, u) + 1, new_end: line(next, Math.max(u, v - 1)) + 1,
+      text_ops: [[tag, i, j, u, v]], ops: [[tag, line(old, i), line(old, Math.max(i, j - 1)) + 1, line(next, u), line(next, Math.max(u, v - 1)) + 1]],
+      old_text: old.slice(i, j), new_text: next.slice(u, v) } as Unit;
+  });
+  const overlaps = (a: number, b: number, x: number, y: number) => a === b || x === y ? a <= y && x <= b : a < y && x < b;
+  const remaining = units.filter(unit => !selected.some(anchor => {
+    if (unit.file !== anchor.file) return false;
+    const [, i, j, x, y] = anchor.text_ops![0];
+    if (!unit.text_ops?.length) throw new Error('This change cannot be replaced independently.');
+    if (!unit.text_ops.some(([, a, b, u, v]) => overlaps(i, j, a, b) || overlaps(x, y, u, v))) return false;
+    if (unit.text_ops.some(([, a, b, u, v]) => a < i || b > j || u < x || v > y))
+      throw new Error('These changes overlap and must be revised together.');
+    return true;
+  }));
+  const combined = [...remaining, ...selected].sort((a, b) => a.file.localeCompare(b.file) || a.old_start - b.old_start || (a.text_ops?.[0][1] ?? 0) - (b.text_ops?.[0][1] ?? 0));
+  combined.forEach((unit, i) => { unit.id = `c${String(i + 1).padStart(3, '0')}`; });
+  // Replacing narrower diffs with the chosen source span must neither include
+  // a neighbor nor omit any part of the actual proposal.
+  for (const file of new Set(selected.map(unit => unit.file))) {
+    const old = app.repo.blob(before, file), next = app.repo.blob(after, file);
+    if (!same(applyUnits(old, next, combined.filter(unit => unit.file === file)), next))
+      throw new Error('These changes overlap and must be revised together.');
+  }
+  return { comparison: { before, after, units: combined }, selected };
+}
 
 // An option changes wording inside an existing review unit. Keep that range
 // through publication so selecting e.g. “numerically stable” does not turn
@@ -27,17 +92,16 @@ export async function acceptNoteOption(app: App, name: string, job: string) {
   if (!saved?.accept) return;
   const round = app.review.latestRound(name);
   if (!round) throw new Error('The selected option has not been published.');
-  const surroundings = (unit: Unit) => {
-    if (!unit.old_context || !unit.text_ops) return [];
-    const { text, start } = unit.old_context, [, a, b] = unit.text_ops[0];
-    return [text.slice(Math.max(0, a - start - 24), a - start), text.slice(b - start, b - start + 24)];
-  };
   const changes = saved.accept.units.map(original => {
+    if (original.text_ops?.length !== 1) throw new Error('The selected source range changed. Review it before accepting.');
+    const [, a, b] = original.text_ops[0];
+    const prior = app.repo.blob(saved.accept!.before, original.file)?.toString('utf8');
+    const next = app.repo.blob(round.before, original.file)?.toString('utf8');
+    if (prior === undefined || next === undefined) throw new Error('The selected source range changed. Review it before accepting.');
+    const [start, end] = mappedRange(prior, next, a, b);
     const matches = round.units.filter(unit => {
       if (unit.file !== original.file || unit.old_text !== original.old_text || unit.new_text !== original.new_text) return false;
-      if (round.before === saved.accept!.before) return unit.text_ops?.[0][1] === original.text_ops?.[0][1] && unit.text_ops?.[0][2] === original.text_ops?.[0][2];
-      const context = surroundings(unit);
-      return surroundings(original).some((text, index) => text.length >= 8 && text === context[index]);
+      return unit.text_ops?.length === 1 && unit.text_ops[0][1] === start && unit.text_ops[0][2] === end;
     });
     if (matches.length !== 1) throw new Error('The selected source range changed. Review it before accepting.');
     return matches[0].id;
@@ -88,12 +152,8 @@ export function useNoteOption(app: App, name: string, input: OptionInput) {
         if (conflict || !current || !merged) throw new Error("The source changed since these options were prepared. Reload the review.");
         writes.push({ file, before: current.toString("base64"), after: merged.toString("base64") });
       }
-      let comparison: Saved['comparison'];
-      if (round.units.every(unit => states[unit.id] === 'pending' && unit.text_ops?.length)) {
-        const candidate = optionCandidate(round.units, input.edits, file => app.repo.blob(round.after, file)!.toString('utf8'));
-        comparison = { before: round.before, after: await app.repo.commitWithAsync(round.after, candidate.files, 'Selected note option'), units: candidate.units };
-      }
-      const accept = input.accept ? { id: `note-accept-${hash(identity)}`, before: round.before, units: input.edits.map(edit => ({ ...round.units.find(unit => unit.id === edit.unit)!, new_text: edit.text })) } : undefined;
+      const { comparison, selected } = await optionComparison(app, name, input.edits, writes);
+      const accept = input.accept ? { id: `note-accept-${hash(identity)}`, before: comparison.before, units: selected } : undefined;
       saved = { task: name, data: { request, writes, applied: false, publishRequest: `source-${hash(identity)}`, ...(comparison ? { comparison } : {}), ...(accept ? { accept } : {}) } };
       app.store.execute("INSERT INTO source_edits(id,task,data) VALUES(?,?,?)", identity, name, JSON.stringify(saved.data));
     }

@@ -5,6 +5,7 @@ import { taskRoute, type ReviewClient } from './review.ts';
 // Only the fields needed to trace notes; the review engine owns the full format.
 export interface NoteRound {
   round: number;
+  before?: string;
   units: { id: string; file: string; old_start: number; old_end: number; old_text: string; new_text: string; truncated?: boolean; whole_file?: boolean; kind?: string; text_ops?: [string, number, number, number, number][]; old_context?: { text: string; start: number } }[];
   sections: { blocks: NoteBlock[] }[];
   loose: NoteBlock[];
@@ -12,20 +13,54 @@ export interface NoteRound {
 interface NoteBlock { kind: string; units?: string[]; before?: { text?: { text: string }[] }[]; identical?: boolean }
 const normalize = (text: string) => text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
+// These commands print their argument without adding text. Unknown commands
+// and their arguments stay opaque: a PDF quote must not match a citation key,
+// label, or generated macro text by treating it as ordinary prose.
+function quoteSource(text: string, start: number) {
+  const letters: number[] = [];
+  let normalized = '';
+  const opaque = (offset: number) => { normalized += '\0'; letters.push(start + offset); };
+  const groupEnd = (offset: number) => {
+    const open = text[offset], close = open === '{' ? '}' : ']';
+    let depth = 1, i = offset + 1;
+    for (; i < text.length; i++) {
+      if (text[i] === '\\') { i++; continue; }
+      if (text[i] === open) depth++;
+      else if (text[i] === close && --depth === 0) return i + 1;
+    }
+    return text.length;
+  };
+  for (let i = 0; i < text.length;) {
+    if (text[i] === '%') { opaque(i); const end = text.indexOf('\n', i); i = end < 0 ? text.length : end + 1; continue; }
+    if (text[i] === '\\') {
+      const command = text.slice(i).match(/^\\(?:[a-zA-Z@]+\*?|[^])/u)?.[0] || '\\';
+      if (/^\\(?:emph|textbf|textit|textrm|textsf|texttt|textsc|textsl|textup|textnormal|underline|mbox)$/.test(command) && /^\s*\{/.test(text.slice(i + command.length))) { i += command.length; continue; }
+      opaque(i); i += command.length;
+      for (;;) {
+        const next = i + (text.slice(i).match(/^\s*/)?.[0].length || 0);
+        if (text[next] !== '{' && text[next] !== '[') break;
+        i = groupEnd(next);
+      }
+      continue;
+    }
+    const char = String.fromCodePoint(text.codePointAt(i)!), part = normalize(char);
+    normalized += part;
+    for (let j = 0; j < part.length; j++) letters.push(start + i);
+    i += char.length;
+  }
+  return { normalized, letters };
+}
+
 // Exact source offsets distinguish edits sharing one line and one PDF crop.
 // Legacy rounds without these offsets retain their existing source association.
 function quotedUnit(note: NoteSummary, unit: NoteRound['units'][number]): boolean | null {
   if (!unit.text_ops || !unit.old_context || !note.quote.trim()) return null;
-  const { text, start } = unit.old_context, letters: number[] = [];
-  let normalized = '';
-  for (let i = 0; i < text.length; i++) {
-    const part = normalize(text[i]);
-    normalized += part;
-    for (let j = 0; j < part.length; j++) letters.push(start + i);
-  }
+  const { text, start } = unit.old_context, { normalized, letters } = quoteSource(text, start);
   const quote = normalize(note.quote), at = normalized.indexOf(quote);
-  if (!quote || at < 0 || normalized.indexOf(quote, at + 1) >= 0) return null;
-  const low = letters[at], high = letters[at + quote.length - 1] + 1;
+  // Exact units must fail closed when a quote cannot be resolved. Falling back
+  // to its source line would silently accept unrelated edits on that line.
+  if (!quote || at < 0 || normalized.indexOf(quote, at + 1) >= 0) return false;
+  const low = letters[at], last = letters[at + quote.length - 1], high = last + String.fromCodePoint(text.codePointAt(last - start)!).length;
   return unit.text_ops.some(([, a, b]) => a === b ? low <= a && a <= high : a < high && b > low);
 }
 
@@ -57,8 +92,9 @@ export function matchNoteChanges(note: NoteSummary, detail: NoteRound, decisions
   return quote.length < 8 && matches.filter(match => match.match === 'quote').length > 1 ? matches.filter(match => match.match === 'source') : matches;
 }
 
-export function sameFragment(previous: NoteRound['units'][number], next: NoteRound['units'][number]) {
+export function sameFragment(previous: NoteRound['units'][number], next: NoteRound['units'][number], sameBase = false) {
   if (previous.file !== next.file || previous.old_text !== next.old_text) return false;
+  if (sameBase && previous.text_ops && next.text_ops) return previous.text_ops.length === next.text_ops.length && previous.text_ops.every((op, index) => op[1] === next.text_ops![index][1] && op[2] === next.text_ops![index][2]);
   if (!previous.old_context || !next.old_context || !previous.text_ops || !next.text_ops) return true;
   const surroundings = (unit: NoteRound['units'][number]) => {
     const { text, start } = unit.old_context!, [, a, b] = unit.text_ops![0];
@@ -103,7 +139,8 @@ export async function taskNoteResults(task: Task, items: TimelineItem[], runs: R
       for (let number = origin + 1; number <= latest && tracked.some(item => item.state === 'pending'); number++) {
         const next = await read(number);
         for (const item of tracked.filter(item => item.state === 'pending')) {
-          const matches = next.detail.units.filter(unit => sameFragment(item.unit, unit));
+          const previous = await read(item.round);
+          const matches = next.detail.units.filter(unit => sameFragment(item.unit, unit, Boolean(previous.detail.before && previous.detail.before === next.detail.before)));
           // Repeated fragments are ambiguous. Keep the historical link rather
           // than associate an unrelated change or revive a reviewed choice.
           if (matches.length !== 1) continue;

@@ -77,13 +77,16 @@ try {
   await sent(1).click();
   await frame().locator('html[data-papilot-round="1"]').waitFor();
   await frame().locator('.papilot-linked-change[data-stop="1"]').waitFor();
-  assert.equal(await controls().locator('.review-note-numbers button[aria-pressed="true"]').textContent(), '2');
+  assert.equal(await controls().locator('.review-note-position').textContent(), '2 / 3');
+  assert.equal(await controls().getByRole('button', { name: 'Previous note', exact: true }).isEnabled(), true);
+  assert.equal(await controls().getByRole('button', { name: 'Next note', exact: true }).isEnabled(), true);
   assert.match(await page.locator('.review-frame').getAttribute('src'), /round=1&history=1/);
 
   decisions[1].c1 = 'accepted';
   await frame().locator('body').evaluate(element => element.ownerDocument.defaultView.dispatchEvent(new Event('latex-review:decided')));
   await sent(0).click();
-  assert.equal(await controls().locator('.review-note-numbers button[aria-pressed="true"]').textContent(), '1');
+  assert.equal(await controls().locator('.review-note-position').textContent(), '1 / 3');
+  assert.equal(await controls().getByRole('button', { name: 'Previous note', exact: true }).isEnabled(), false);
   const currentNote = page.locator('[data-note-result="request-2:0"]');
   await currentNote.click();
   await frame().locator('html[data-papilot-round="2"]').waitFor();
@@ -94,7 +97,7 @@ try {
   await page.locator('.review-host-bar').getByRole('button', { name: 'Show all changes', exact: true }).click();
   await frame().locator('.papilot-linked-change').waitFor({ state: 'hidden' });
   assert.equal(await controls().isVisible(), true, 'all changes keeps the selected note options open');
-  await controls().getByRole('button', { name: 'Close options', exact: true }).click();
+  await frame().locator('.source-fixture p').first().click();
   await controls().waitFor({ state: 'hidden' });
   await frame().getByRole('button', { name: 'Show note 1: Keep the technical term.', exact: true }).click();
   await controls().waitFor({ state: 'visible' });
@@ -106,7 +109,7 @@ try {
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
   await sent(0).click();
   await frame().locator('.papilot-linked-change[data-stop="0"]').waitFor();
-  assert.equal(await controls().locator('.review-note-numbers button[aria-pressed="true"]').textContent(), '1');
+  assert.equal(await controls().locator('.review-note-position').textContent(), '1 / 3');
   assert.equal(await page.locator('.review-frame').isVisible(), true);
   await frame().getByRole('button', { name: 'Show note 1: Shorten the opening.', exact: true }).click();
   assert.equal(await page.locator('.review-frame').isVisible(), true, 'PDF note badges keep the author in the review');

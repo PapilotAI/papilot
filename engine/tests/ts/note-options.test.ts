@@ -77,6 +77,90 @@ it('preserves a rejected neighboring edit on the same line', async () => {
   expect(f.read(METHOD, task.worktree)).toContain('Procedure sentence 2.');
   expect(app.review.decisions(task.name, app.review.latestRound(task.name)!)[number.id]).toBe('rejected');
 });
+
+// Exercise the same preserved-unit hook used by Publisher.publish without
+// compiling a PDF for each journal/offset regression.
+function publishOptionRound() {
+  vi.mocked(app.publisher.publish).mockImplementation(async job => {
+    const round = fakeRound(app, task.name);
+    const preserved = await noteOptionUnits(app, task.name, job.id, round.before, round.after);
+    if (preserved) app.store.execute('UPDATE rounds SET units=? WHERE task=? AND number=?', JSON.stringify(preserved), task.name, round.number);
+    return { outcome: 'published', round: round.number, changes: (preserved || round.units).length };
+  });
+}
+
+for (const neighbor of ['accepted', 'rejected'] as const) it(`accepts an alternative retaining its old word after an ${neighbor} neighbor`, async () => {
+  const word = units().find(unit => unit.new_text === 'Approach')!, number = units().find(unit => unit.new_text === 'two')!;
+  await app.review.decide(task.name, { round: 1, changes: [word.id], action: neighbor === 'accepted' ? 'accept' : 'reject' });
+  publishOptionRound();
+  const input = { id: `after-${neighbor}`, round: 1, accept: true, edits: [{ unit: number.id, text: 'about 2' }] };
+  await useNoteOption(app, task.name, input); await app.publisher.join();
+  expect(app.publisher.current(task.name)?.status).toBe('done');
+  const round = app.review.latestRound(task.name)!, decisions = app.review.decisions(task.name, round);
+  expect(round.units.filter(unit => decisions[unit.id] === 'accepted').map(unit => [unit.old_text, unit.new_text])).toEqual([['2', 'about 2']]);
+  expect(round.units.filter(unit => decisions[unit.id] === 'pending').map(unit => unit.new_text)).toEqual(['proposal']);
+  const expected = neighbor === 'accepted' ? 'Approach' : 'Method';
+  expect(f.read(METHOD, task.worktree)).toContain(`${expected} sentence about 2.`);
+  expect(app.repo.blob(app.tasks.get(task.name).accepted, METHOD)!.toString()).toContain(`${expected} sentence about 2.`);
+  await useNoteOption(app, task.name, input); await app.publisher.join();
+  expect(app.store.all('SELECT id FROM actions')).toHaveLength(2);
+});
+
+it('accepts the intended repeated fragment after a distant accepted edit', async () => {
+  const word = units().find(unit => unit.new_text === 'Approach')!, distant = units().find(unit => unit.new_text === 'proposal')!;
+  await app.review.decide(task.name, { round: 1, changes: [distant.id], action: 'accept' });
+  publishOptionRound();
+  await useNoteOption(app, task.name, { id: 'after-distant', round: 1, accept: true, edits: [{ unit: word.id, text: 'Procedure' }] }); await app.publisher.join();
+  expect(app.publisher.current(task.name)?.status).toBe('done');
+  const accepted = app.repo.blob(app.tasks.get(task.name).accepted, METHOD)!.toString();
+  expect(accepted).toContain('Procedure sentence 2.');
+  expect(accepted).toContain('Method sentence 3.');
+  expect(accepted).toContain('Detail proposal 15.');
+});
+
+it('keeps an independent manual edit outside the selected acceptance', async () => {
+  const word = units().find(unit => unit.new_text === 'Approach')!;
+  f.edit(task, METHOD, 'Method sentence 4.', 'Manual sentence 4.');
+  publishOptionRound();
+  await useNoteOption(app, task.name, { id: 'with-manual-edit', round: 1, accept: true, edits: [{ unit: word.id, text: 'Revised Method' }] }); await app.publisher.join();
+  expect(app.publisher.current(task.name)?.status).toBe('done');
+  expect(f.read(METHOD, task.worktree)).toContain('Manual sentence 4.');
+  const accepted = app.repo.blob(app.tasks.get(task.name).accepted, METHOD)!.toString();
+  expect(accepted).toContain('Revised Method sentence 2.');
+  expect(accepted).toContain('Method sentence 4.');
+});
+
+it('keeps a distant atomic TeX construct pending when accepting a prose option', async () => {
+  const word = units().find(unit => unit.new_text === 'Approach')!;
+  const equation = '\\begin{equation}x + y = 1\\end{equation}';
+  f.edit(task, METHOD, 'Method sentence 4.', equation);
+  publishOptionRound();
+  await useNoteOption(app, task.name, { id: 'with-atomic-tex', round: 1, accept: true, edits: [{ unit: word.id, text: 'Revised Method' }] }); await app.publisher.join();
+  expect(app.publisher.current(task.name)?.status).toBe('done');
+  const round = app.review.latestRound(task.name)!, decisions = app.review.decisions(task.name, round);
+  const atomic = round.units.find(unit => unit.new_text === equation)!;
+  expect(atomic.old_text).toBe('Method sentence 4.');
+  expect(atomic.text_ops).toHaveLength(1);
+  expect(decisions[atomic.id]).toBe('pending');
+  expect(f.read(METHOD, task.worktree)).toContain(equation);
+  const accepted = app.repo.blob(app.tasks.get(task.name).accepted, METHOD)!.toString();
+  expect(accepted).toContain('Revised Method sentence 2.');
+  expect(accepted).toContain('Method sentence 4.');
+  expect(accepted).not.toContain(equation);
+});
+
+it('fails closed if the selected wording changes while publication is pending', async () => {
+  const word = units().find(unit => unit.new_text === 'Approach')!;
+  vi.mocked(app.publisher.publish).mockImplementation(async () => {
+    f.edit(task, METHOD, 'Procedure', 'Different');
+    const round = fakeRound(app, task.name);
+    return { outcome: 'published', round: round.number, changes: round.units.length };
+  });
+  await useNoteOption(app, task.name, { id: 'changed-during-build', round: 1, accept: true, edits: [{ unit: word.id, text: 'Procedure' }] }); await app.publisher.join();
+  expect(app.publisher.current(task.name)?.status).toBe('failed');
+  expect(app.store.all('SELECT id FROM actions')).toHaveLength(0);
+  expect(f.read(METHOD)).toBe(BODY);
+});
 it('refuses stale rounds and overlapping external writes', async () => {
   const word = units().find(u => u.new_text === 'Approach')!;
   await expect(useNoteOption(app, task.name, { id: 'old', round: 99, edits: [{ unit: word.id, text: 'Procedure' }] })).rejects.toThrow('newer round');
