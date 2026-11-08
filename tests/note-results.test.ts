@@ -63,3 +63,14 @@ test('note links stay with the published run, never the queued follow-up or late
   assert.equal(old[0].state, 'matched');
   await assert.rejects(taskNoteResults(task, [items[0]], [run], { get: async () => ({}) } as unknown as ReviewClient), /could not be loaded/, 'missing review data is not reported as an unmatched note');
 });
+
+test('option rebuilds retain accepted shared edits and follow pending fragments into the new round', async () => {
+  const task = { id: 'task', name: 'p-task', status: 'reviewing', review: { round: 2 } } as Task;
+  const run = { id: 'run', requestKey: 'options', prompt: '', createdAt: 1, finishedAt: 2, taskId: task.id, reviewRound: 2, noteRounds: { 0: 1 }, status: 'completed' } as Run;
+  const item = { id: run.id, taskId: task.id, type: 'user', text: '', meta: { notes: [note] }, createdAt: 1 };
+  const next: NoteRound = { round: 2, units: [{ ...detail.units[0], id: 'c7', new_text: 'A different option.' }], sections: [], loose: [{ kind: 'change', units: ['c7'] }] };
+  const client = { get: async (route: string) => route.includes('/rounds/') ? route.endsWith('/1') ? detail : next : route.endsWith('=1') ? { decisions: { c1: 'pending', c2: 'accepted' } } : { decisions: { c7: 'pending' } } } as unknown as ReviewClient;
+  const [result] = await taskNoteResults(task, [item], [run], client);
+  assert.equal(result.round, 2);
+  assert.deepEqual(result.changes.map(change => [change.round, change.units, change.state]), [[2, ['c7'], 'pending'], [1, ['c2'], 'accepted']]);
+});

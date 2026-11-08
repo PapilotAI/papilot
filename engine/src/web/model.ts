@@ -156,7 +156,7 @@ export function describeLocation(
   const pages = [...new Set(units.flatMap((u) => u.pages ?? []))];
   return (
     [...files]
-      .map(([file, places]) => `${file}:${places.join(", ")}`)
+      .map(([file, places]) => `${file}:${[...new Set(places)].join(", ")}`)
       .join("; ") +
     (pages.length ? ` · ${say("p. {pages}", { pages: pages.join(", ") })}` : "")
   );

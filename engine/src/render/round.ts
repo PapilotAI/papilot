@@ -14,6 +14,7 @@ import {
   type Alignment,
 } from "./align.ts";
 import { Build } from "./locate.ts";
+import { sourcePairs } from "./source-spans.ts";
 import { renderDocument, Strips } from "./inline.ts";
 import { pixelDifference, textChanges } from "./pdfdiff.ts";
 import { containsCenter } from "./pdf.ts";
@@ -57,7 +58,7 @@ export function classify(
   body: Set<string>,
   figureFiles: (file: string) => boolean,
   mine?: Mine,
-): Pick<Card, "pairs" | "comparison" | "own" | "aligned"> {
+): Pick<Card, "pairs" | "comparison" | "own" | "aligned" | "independent"> {
   const name = unit.file;
   // A changed line may be inside a whitespace-sensitive environment without
   // including its \begin in the hunk. Inspect the owning file before using
@@ -74,6 +75,9 @@ export function classify(
     !whitespaceSensitive &&
     !unit.truncated &&
     unit.status === "modified" &&
+    // A word-sized excerpt lacks the neighbours needed to decide whether
+    // whitespace or a comment changes typesetting. Let the PDF decide.
+    !unit.text_ops &&
     JSON.stringify(typesetWords(unit.old_text)) ===
       JSON.stringify(typesetWords(unit.new_text))
   )
@@ -107,7 +111,19 @@ export function classify(
             )
           : [],
     },
-    al =
+    precise =
+      located &&
+      !whole &&
+      !(old.slides || next.slides) &&
+      sourcePairs(old, next, unit, own0.left, own0.right);
+  if (precise)
+    return {
+      pairs: precise,
+      comparison: "text",
+      aligned: true,
+      independent: true,
+    };
+  const al =
       !(old.slides || next.slides) && (own0.left.length || own0.right.length)
         ? alignment(old, next)
         : null,

@@ -150,12 +150,14 @@ export function ReviewApp({
   transport?: <T>(route: string, body?: unknown) => Promise<T>;
 }) {
   const [state, setState] = useState<PageState | null>(null),
-    [detail, setDetail] = useState<RoundDetail | null>(null),
+    [publishedDetail, setDetail] = useState<RoundDetail | null>(null),
+    [optionPreview, setOptionPreview] = useState<{ round: number; detail?: RoundDetail } | null>(null),
     [current, setCurrent] = useState(-1),
     [busy, setBusy] = useState(false),
     [online, setOnline] = useState(true),
     [error, setError] = useState(""),
     [toast, setToast] = useState(""),
+    [noteFocus, setNoteFocus] = useState<{ round: number; units: string[] | null } | null>(null),
     [openSource, setOpenSource] = useState<Set<number>>(new Set()),
     // Places past the first few of each edit, keyed by round and edit.
     [more, setMore] = useState<
@@ -179,6 +181,9 @@ export function ReviewApp({
     [history, setHistory] = useState(
       (Boolean(pinned) && linkedChange < 0) || new URLSearchParams(location.search).has("history"),
     );
+  const previewing = Boolean(optionPreview && optionPreview.round === publishedDetail?.round);
+  const detail = previewing && optionPreview?.detail ? optionPreview.detail : publishedDetail;
+  const previewNow = useRef(previewing); previewNow.current = previewing;
   const paper = useRef<HTMLElement>(null),
     editedPlace = useRef<{ file: string; line: number; offset: number; paper: boolean } | null>(null),
     epoch = useRef(0),
@@ -186,7 +191,7 @@ export function ReviewApp({
     // How far into the current change the author had read, restored once
     // when the review reopens on it in the same view.
     returning = useRef<{ index: number; offset: number; paper: boolean } | null>(null),
-    snapshot = useRef({ state, detail, busy, composer, current });
+    snapshot = useRef({ state, detail: publishedDetail, busy, composer, current });
   // Where each review was left; a host's uncommitted changes are kept per paper.
   const placeKey = `latex-review:${location.pathname}:${changes ? 'changes' : task}`;
   const [shortcuts, setShortcuts] = useState(readShortcuts);
@@ -225,10 +230,25 @@ export function ReviewApp({
     window.addEventListener('storage', stored);
     return () => { window.removeEventListener(SHORTCUT_EVENT, changed); window.removeEventListener('storage', stored); };
   }, []);
+  useEffect(() => {
+    const changed = (event: Event) => setNoteFocus((event as CustomEvent).detail || null);
+    const preview = (event: Event) => {
+      const value = (event as CustomEvent).detail || null;
+      previewNow.current = Boolean(value);
+      setOptionPreview(value); setComposer(null); setConfirm(null); setOpenSource(new Set());
+    };
+    window.addEventListener("papilot:option-preview", preview);
+    window.addEventListener("papilot:note-focus", changed);
+    window.dispatchEvent(new Event("papilot:note-focus-ready"));
+    return () => { window.removeEventListener("papilot:note-focus", changed); window.removeEventListener("papilot:option-preview", preview); };
+  }, []);
+  const focused = noteFocus?.round === detail?.round ? noteFocus?.units ?? undefined : undefined;
+  const fullComparison = previewing || Boolean(noteFocus && noteFocus.round === detail?.round && noteFocus.units === null);
+  const inFocus = (id: string) => !focused || focused.includes(id);
   function showHelp() {
     if (window.dispatchEvent(new Event('latex-review:help', { cancelable: true }))) setHelp(true);
   }
-  snapshot.current = { state, detail, busy, composer, current };
+  snapshot.current = { state, detail: publishedDetail, busy, composer, current };
   const units = useMemo(
       () => new Map(detail?.units.map((u) => [u.id, u]) ?? []),
       [detail],
@@ -265,7 +285,7 @@ export function ReviewApp({
     decisions = state?.decisions ?? {},
     count = progress(decisions),
     undecided = Object.keys(decisions).filter(
-      (id) => decisions[id] === "pending",
+      (id) => decisions[id] === "pending" && inFocus(id),
     ),
     references = useReferenceChecks(detail, api),
     hazards = useMemo(
@@ -275,7 +295,7 @@ export function ReviewApp({
     // Batch acceptance leaves the changes whose entries need a look.
     batch = undecided.filter((id) => !hazards.has(id)),
     latest = Boolean(
-      detail && state && detail.round === state.latest && !state.closed,
+      detail && state && detail.round === state.latest && !state.closed && !previewing,
     ),
     browsing = history || changes,
     label = (kind: string) => t((changes ? CHANGE_ACTION : ACTION)[kind] ?? kind),
@@ -287,7 +307,7 @@ export function ReviewApp({
   // What each button acts on: undecided changes, or in changes mode the
   // staged ones for Unstage and every change still on disk for Revert.
   const targets = (units: string[], kind: Kind) =>
-    units.filter((id) =>
+    units.filter(inFocus).filter((id) =>
       kind === "unstage"
         ? decisions[id] === "accepted"
         : changes && kind === "reject"
@@ -306,7 +326,7 @@ export function ReviewApp({
           : [];
   const navigation = stops
     .map((stop, index) => ({ stop, index }))
-    .filter(({ stop, index }) => browsing || index === linkedChange || pendingUnits(stop, decisions).length)
+    .filter(({ stop, index }) => stop.units.some(inFocus) && (browsing || index === linkedChange || pendingUnits(stop, decisions).length))
     .map(({ index }) => index);
   const adjacent = (index: number, direction: number) =>
     navigation[navigation.indexOf(index) + direction] ?? -1;
@@ -320,18 +340,20 @@ export function ReviewApp({
   useEffect(() => {
     if (browsing || composer) return;
     if (!navigation.includes(current)) setCurrent(navigation[0] ?? -1);
-  }, [decisions, history, composer, detail]);
+  }, [decisions, history, composer, detail, noteFocus]);
   useEffect(() => {
     if (changes && current < 0 && stops.length)
       setCurrent(Math.max(nextPending(stops, decisions), 0));
   }, [detail]);
   // Lock reasons come from the host in English; known ones are translated.
   const actionLock = (kind: Kind) => {
+    if (previewing) return t("Confirm this option before reviewing its changes.");
     const reason =
       kind === "comment" ? state?.commentLock : state?.decisionLock;
     return reason ? t(reason) : reason;
   };
   function blocked(kind: Kind): boolean {
+    if (previewNow.current) { setToast(t("Confirm this option before reviewing its changes.")); return true; }
     const current = snapshot.current.state;
     const reason =
       kind === "comment" ? current?.commentLock : current?.decisionLock;
@@ -339,6 +361,7 @@ export function ReviewApp({
     return Boolean(reason);
   }
   async function api<T>(route: string, body?: unknown): Promise<T> {
+    if (body !== undefined && previewNow.current) throw new Error(t("Confirm this option before reviewing its changes."));
     if (transport) return transport<T>(route, body);
     const response = await fetch(
       `${changes ? "/api/changes" : `/api/tasks/${encodeURIComponent(task)}`}${route}`,
@@ -516,7 +539,7 @@ export function ReviewApp({
     const timer = setTimeout(() => setToast(""), 6000);
     return () => clearTimeout(timer);
   }, [toast]);
-  function beginComposer(changes = pendingUnits(stops[current], decisions)) {
+  function beginComposer(changes = targets(stops[current]?.units ?? [], "comment")) {
     if (
       !latest ||
       !changes.length ||
@@ -699,7 +722,7 @@ export function ReviewApp({
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [state, detail, current, busy, composer, draft, help, confirm, history, shortcuts]);
+  }, [state, detail, current, busy, composer, draft, help, confirm, history, shortcuts, noteFocus]);
   function onScroll() {
     if (
       !paper.current ||
@@ -725,9 +748,9 @@ export function ReviewApp({
   }
   const actionBar = (index: number) => {
     if (index !== current || !state) return null;
-    const units = stops[index].units,
+    const units = stops[index].units.filter(inFocus),
       available = kinds(units),
-      remaining = nextPending(stops, decisions);
+      remaining = focused ? navigation.find(i => pendingUnits(stops[i], decisions).some(inFocus)) ?? -1 : nextPending(stops, decisions);
     return (
       <div className="dock">
         <nav className="actions" aria-label={t("Review the current change")}>
@@ -781,7 +804,7 @@ export function ReviewApp({
               className="skip"
               aria-keyshortcuts={shortcuts.pending.join(' ')}
               title={[changes ? t("Next unstaged") : t("Next undecided"), shortcuts.pending.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
-              onClick={() => select(nextPending(stops, decisions, current))}
+              onClick={() => select(focused ? remaining : nextPending(stops, decisions, current))}
             >
               {changes ? t("Next unstaged") : t("Next undecided")}
             </button>
@@ -926,10 +949,10 @@ export function ReviewApp({
       uncited = detail!.references?.missing.filter((m) => m.unit && block.units.includes(m.unit)) ?? [],
       status = stopState(block.units, decisions),
       reviewed = !pendingUnits(stops[index], decisions).length,
-      expanded = browsing || index === linkedChange,
+      expanded = fullComparison || Boolean(focused) || browsing || index === linkedChange,
       // A reverted change shows the text that is back on disk; staged and
       // unstaged ones keep their before and after.
-      resolved = history || index === linkedChange
+      resolved = fullComparison || focused || history || index === linkedChange
         ? undefined
         : changes
           ? status === "rejected"
@@ -975,6 +998,7 @@ export function ReviewApp({
             base={detail!.files}
             label={side === "before" ? t("Before") : t("After")}
             clean={Boolean(resolved)}
+            focus={focused}
           />
         ))}
       </div>
@@ -983,12 +1007,15 @@ export function ReviewApp({
       <article
         key={index}
         className={`change ${inline ? "inline" : "standalone"}${current === index ? " current" : ""}${reviewed && !expanded ? " reviewed-change" : ""}${reviewed && !expanded && !resolved ? " mixed-reviewed" : ""}`}
+        data-note-focus={focused ? "true" : undefined}
         data-stop={index}
+        data-units={block.units.join(" ")}
+        data-option-preview={previewing ? "true" : undefined}
         data-state={status}
         data-resolved={resolved}
         tabIndex={-1}
         onClick={() => {
-          if (index !== current && !composer && (expanded || !reviewed))
+          if (block.units.some(inFocus) && index !== current && !composer && (expanded || !reviewed))
             select(index, false);
         }}
       >
@@ -1113,7 +1140,7 @@ export function ReviewApp({
                 key={unit.id}
               >
                 <SourceEditor key={`${detail!.round}:${unit.id}`} task={task} round={detail!.round} change={unit.id} api={api}
-                  editable={Boolean(state?.sourceEditing && !changes && !pinned && unit.kind !== "binary")}
+                  editable={Boolean(!previewing && state?.sourceEditing && !changes && !pinned && unit.kind !== "binary")}
                   building={Boolean(state?.job && ["queued", "running"].includes(state.job.status))}
                   locked={!latest ? t("A newer round is available. Reload the page.") : decisions[unit.id] === "rejected" ? t("This change was rejected. Undo that decision before editing it.") : actionLock("accept") || (state?.job && ["queued", "running"].includes(state.job.status) ? t("Wait for the PDF build before editing source.") : null)}
                   onSaving={saving => { snapshot.current.busy = saving; setBusy(saving); }}
@@ -1249,7 +1276,7 @@ export function ReviewApp({
           {/* Batch decisions cover only undecided changes; accepted,
               rejected and commented changes keep their state. A single
               undecided change is decided from its own bar. */}
-          {count.pending > 1 && batch.length > 0 && (
+          {undecided.length > 1 && batch.length > 0 && (
             <button
               className="ghost accept accept-all"
               disabled={
@@ -1297,7 +1324,7 @@ export function ReviewApp({
               <span className="batch-count">{batch.length}</span>
             </button>
           )}
-          {count.pending > 1 && !changes && (
+          {undecided.length > 1 && !changes && (
             <button
               className="ghost reject reject-all"
               disabled={
@@ -1309,17 +1336,17 @@ export function ReviewApp({
               title={
                 state?.decisionLock ||
                 tn(
-                  count.pending,
+                  undecided.length,
                   "Reject {n} undecided change",
                   "Reject {n} undecided changes",
                 )
               }
-              aria-label={t("Reject all ({n})", { n: count.pending })}
+              aria-label={t("Reject all ({n})", { n: undecided.length })}
               aria-describedby={state?.decisionLock ? "review-lock" : undefined}
               onClick={() => void decide("reject", undecided)}
             >
               <span className="batch-label">{t("Reject all")}</span>
-              <span className="batch-count">{count.pending}</span>
+              <span className="batch-count">{undecided.length}</span>
             </button>
           )}
           {/* "All decided" would repeat the meter's "N of N decided". */}
