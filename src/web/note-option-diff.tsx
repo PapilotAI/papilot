@@ -72,7 +72,7 @@ export function NoteOptionDiff({ detail, focus }: { detail: RoundDetail; focus: 
 /** Read the same complete candidate as the PDF, including unrelated edits.
  * Only the focused note receives colored source marks. */
 export function NoteOptionSource({ detail, focus }: { detail: RoundDetail; focus: string[] }) {
-  const lines = (start: number, end: number) => start === end ? String(start) : `${start}–${end}`;
+  const lines = (start: number, end: number) => end <= start ? String(start) : `${start}–${end}`;
   return <div className="note-option-comparison note-option-source" role="region" aria-label={t('LaTeX comparison')} tabIndex={0} data-revision={detail.after}>
     {detail.units.map(unit => {
       const related = focus.includes(unit.id), parts = wordDiff(unit.old_text, unit.new_text);

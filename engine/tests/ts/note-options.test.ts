@@ -175,6 +175,8 @@ it('accepts an empty option without consuming the surrounding whitespace or neig
   expect(f.read(METHOD, task.worktree)).toBe(BODY.replace('Method sentence 2.', ' sentence two.').replace('Detail sentence 15.', 'Detail proposal 15.'));
   const round = app.review.latestRound(task.name)!, decisions = app.review.decisions(task.name, round);
   expect(round.units.filter(unit => decisions[unit.id] === 'accepted').map(unit => [unit.old_text, unit.new_text])).toEqual([['Method', '']]);
+  const removed = round.units.find(unit => decisions[unit.id] === 'accepted')!;
+  expect(removed.ops[0][3]).toBe(removed.ops[0][4]);
 });
 
 it('fails closed if the selected wording changes while publication is pending', async () => {
@@ -209,6 +211,8 @@ for (const replacement of ['Procedure', 'A much longer\nprocedure', '']) it(`pre
     const [, , , start, end] = unit.text_ops![0];
     expect(source.slice(start, end)).toBe(unit.new_text);
     expect(unit.new_start).toBe(source.slice(0, start).split('\n').length);
+    if (start === end) expect(unit.ops[0][3]).toBe(unit.ops[0][4]);
+    expect(unit.new_end).toBeGreaterThanOrEqual(unit.new_start);
   }
   expect(candidate.units.map(unit => unit.old_text)).toEqual(units().map(unit => unit.old_text));
 });

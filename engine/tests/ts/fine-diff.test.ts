@@ -102,6 +102,21 @@ it("applies insertions and deletions precisely, while older line-based units sti
   ).toBe(next);
 });
 
+it("preserves empty source sides in the legacy line coordinates", () => {
+  const old = 'Following line.\n', next = 'Inserted line.\n' + old;
+  f.write(METHOD, old);
+  const before = f.repo.snapshot(['paper']);
+  f.write(METHOD, next);
+  const after = f.repo.snapshot(['paper']);
+  for (const [a, b] of [[before, after], [after, before]]) {
+    const units = diffUnits(f.repo, a, b);
+    expect(units).toHaveLength(1);
+    const text = units[0].text_ops![0], lines = units[0].ops[0];
+    expect(text[1] === text[2]).toBe(lines[1] === lines[2]);
+    expect(text[3] === text[4]).toBe(lines[3] === lines[4]);
+  }
+});
+
 it("keeps multiline math and arguments together even across unchanged source lines", () => {
   const old =
       "Text is fast.\n\\begin{align}\na &= x + y \\\\\n b &= c \\\\\n d &= p + q\n\\end{align}\n\\textbf{The result\nis useful\nand stable}\n",

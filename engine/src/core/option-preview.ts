@@ -43,9 +43,9 @@ export function optionCandidate(units: Unit[], edits: OptionInput["edits"], sour
         }
         return [tag, i, j, x + shift, own ? x + shift + own.text.length : y + shift];
       });
-      unit.ops = unit.text_ops.map(([tag, , , x, y], index) => [tag, unit.ops[index][1], unit.ops[index][2], line(x), line(Math.max(x, y - 1)) + 1]);
+      unit.ops = unit.text_ops.map(([tag, , , x, y], index) => [tag, unit.ops[index][1], unit.ops[index][2], line(x), x === y ? line(x) : line(y - 1) + 1]);
       unit.new_start = unit.ops[0][3] + 1;
-      unit.new_end = unit.ops.at(-1)![4];
+      unit.new_end = Math.max(unit.new_start, unit.ops.at(-1)![4]);
       if (chosen.has(unit.id)) unit.new_text = chosen.get(unit.id)!;
     }
   }

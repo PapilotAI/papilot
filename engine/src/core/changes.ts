@@ -104,9 +104,9 @@ function unitsOf(
         [
           tag,
           lineAt(l, i),
-          lineAt(l, Math.max(i, j - 1)) + 1,
+          i === j ? lineAt(l, i) : lineAt(l, j - 1) + 1,
           lineAt(r, x),
-          lineAt(r, Math.max(x, y - 1)) + 1,
+          x === y ? lineAt(r, x) : lineAt(r, y - 1) + 1,
         ],
       ]);
     for (const [index, edits] of hunks.entries()) {

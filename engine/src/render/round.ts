@@ -106,6 +106,7 @@ export function classify(
               unit.ops.length
                 ? unit.ops.map(([, start, end]) => [start, end])
                 : undefined,
+              unit.text_ops?.map(([, start, end]) => [start, end]),
             )
           : [],
       right:
@@ -118,6 +119,7 @@ export function classify(
               unit.ops.length
                 ? unit.ops.map(([, , , start, end]) => [start, end])
                 : undefined,
+              unit.text_ops?.map(([, , , start, end]) => [start, end]),
             )
           : [],
     },

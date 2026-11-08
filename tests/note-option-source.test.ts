@@ -28,3 +28,14 @@ test('switching alternatives replaces source content without mutating the previo
   assert.doesNotMatch(render(alternate), /efficient/);
   assert.equal(original.units[0].new_text, 'efficient');
 });
+
+test('insertions and deletions show an anchor line instead of a reversed empty range', () => {
+  for (const change of [
+    { ...unit('focused', '', 'inserted'), old_end: 9 },
+    { ...unit('focused', 'deleted', ''), new_end: 9 },
+  ]) {
+    const html = render({ ...candidate(''), units: [change] });
+    assert.match(html, /10 → 10/);
+    assert.doesNotMatch(html, /10–9/);
+  }
+});

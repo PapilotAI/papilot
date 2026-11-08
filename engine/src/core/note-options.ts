@@ -50,7 +50,7 @@ async function preserveRanges(app: App, before: string, after: string, anchors: 
     const tag = i === j ? 'insert' : u === v ? 'delete' : 'replace';
     return { ...unit, old_start: line(old, i) + 1, old_end: line(old, Math.max(i, j - 1)) + 1,
       new_start: line(next, u) + 1, new_end: line(next, Math.max(u, v - 1)) + 1,
-      text_ops: [[tag, i, j, u, v]], ops: [[tag, line(old, i), line(old, Math.max(i, j - 1)) + 1, line(next, u), line(next, Math.max(u, v - 1)) + 1]],
+      text_ops: [[tag, i, j, u, v]], ops: [[tag, line(old, i), i === j ? line(old, i) : line(old, j - 1) + 1, line(next, u), u === v ? line(next, u) : line(next, v - 1) + 1]],
       old_text: old.slice(i, j), new_text: next.slice(u, v) } as Unit;
   });
   const overlaps = (a: number, b: number, x: number, y: number) => a === b || x === y ? a <= y && x <= b : a < y && x < b;
