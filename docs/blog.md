@@ -27,4 +27,6 @@ Preview `_site/` with any local static HTTP server. Check both languages, light/
 
 “Why an AI LaTeX Editor Should Start with the PDF” was drafted in English and Simplified Chinese with `agy` using `gemini-4-argon-medium`, based on Papilot’s README and documented capabilities. The draft was edited to clarify review decisions versus applying or committing changes, and to correct wording in the Chinese edition. Its figures combine existing Papilot product illustrations and a localized SVG revision loop.
 
+At the founder’s request, Argon also revised both editions to explicitly criticize Overleaf and Prism’s source-centered interaction model and explain Papilot’s decision to leave source editing to external editors. The comparison links to official product documentation, acknowledges Overleaf’s Visual Editor and layout controls, and notes OpenAI’s announced retirement of Prism. The retirement is not presented as evidence for the design critique.
+
 The SEO metadata follows Google’s guidance for [article structured data](https://developers.google.com/search/docs/appearance/structured-data/article) and [localized pages](https://developers.google.com/search/docs/specialty/international/localized-versions).

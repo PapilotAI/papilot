@@ -3,16 +3,16 @@
   "locales": {
     "en": {
       "title": "Why an AI LaTeX Editor Should Start with the PDF",
-      "description": "Why an AI LaTeX editor should let researchers annotate and review rendered PDFs instead of reading raw .tex diffs, while keeping local LaTeX files underneath.",
-      "lead": "Readers judge your paper on the typeset page. Papilot lets authors direct AI revisions and review the result there, while LaTeX remains the source underneath.",
+      "description": "Why Overleaf and Prism's source-centered interaction model is outdated for AI scientific writing, and why Papilot gives the workspace exclusively to the rendered PDF.",
+      "lead": "Overleaf and Prism still give prime screen space to source editing. In AI-assisted writing, authors should direct and judge revisions on the rendered manuscript—not inside a code pane.",
       "hero": "/assets/blog/review.en.png",
       "heroAlt": "Papilot product illustration showing a typeset before-and-after change with Accept, Reject and Comment controls.",
       "heroCaption": "Review the change as your readers will see it: on the typeset page."
     },
     "zh-CN": {
       "title": "为什么 AI LaTeX 编辑器应该从 PDF 出发",
-      "description": "为什么 AI LaTeX 编辑器应该让研究者直接在 PDF 上批注、审阅修改？从具体改稿场景出发，介绍 Papilot 的设计理念与工作流程。",
-      "lead": "读者面对的是排版后的页面。我们希望作者也能在这里提出修改、判断 AI 的结果，而让 LaTeX 继续承担底层排版工作。",
+      "description": "为什么 Overleaf 与 Prism 以源码为中心的交互模式已经落伍？介绍 Papilot 如何将工作空间彻底交还给排版后的 PDF 页面。",
+      "lead": "Overleaf 和 Prism 依旧把主要空间留给源代码。在 AI 辅助写作时代，作者应当直接在排版成稿上指明意图、审阅结果，而不是被困在代码窗格里。",
       "hero": "/assets/blog/review.zh-CN.png",
       "heroAlt": "Papilot 产品示意图：排版后的修改前后对比，以及接受、拒绝和评论操作。",
       "heroCaption": "在排版后的页面上审阅改动，看到读者会看到的结果。"
