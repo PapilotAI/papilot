@@ -221,20 +221,22 @@ export function createServer(app: App) {
         ),
     );
     server.post<{ Params: { name: string }; Body: OptionInput }>("/api/tasks/:name/source/options/preview",
-      request => previewNoteOption(app, request.params.name, request.body));
+      request => previewNoteOption(app, app.tasks.get(request.params.name).name, request.body));
     server.get<{ Params: { name: string; number: string; key: string; file: string } }>(
       "/option-files/:name/:number/:key/:file", (request, reply) => {
         const { name, number, key, file } = request.params;
-        app.tasks.get(name, false);
+        const task = app.tasks.get(name, false);
         if (!/^\d+$/.test(number) || !/^[a-f0-9]{64}$/.test(key) || !/^[\w.-]+\.(svg|png|pdf)$/.test(file))
           return reply.code(404).send({ error: "No such file" });
-        const target = path.join(app.state, "cache/option-previews", name, String(Number(number)), key, file);
+        const root = path.resolve(app.state, "cache/option-previews");
+        const target = path.resolve(root, task.name, String(Number(number)), key, file);
+        if (!target.startsWith(root + path.sep)) return reply.code(404).send({ error: "No such file" });
         if (!fs.existsSync(target)) return reply.code(404).send({ error: "No such file" });
         reply.header("Cache-Control", "private, max-age=31536000, immutable").type(file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".pdf") ? "application/pdf" : "image/png");
         return fs.createReadStream(target);
       });
     server.post<{ Params: { name: string }; Body: OptionInput }>("/api/tasks/:name/source/options",
-      request => useNoteOption(app, request.params.name, request.body));
+      request => useNoteOption(app, app.tasks.get(request.params.name).name, request.body));
     server.get<{ Params: { name: string; number: string } }>(
       "/api/tasks/:name/rounds/:number",
       (request) =>
