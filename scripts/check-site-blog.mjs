@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
 import { chromium } from '../engine/node_modules/playwright/index.mjs';
@@ -32,15 +33,18 @@ const page = await context.newPage();
 page.on('response', response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`); });
 const loadIllustrations = async target => {
   await target.locator('.blog-figure img').evaluateAll(images => images.forEach(image => { image.loading = 'eager'; }));
-  // Timer polling remains active when no-JS screenshot contexts stop animation frames after a resize.
-  await target.waitForFunction(() => [...document.querySelectorAll('.blog-figure img')].filter(image => getComputedStyle(image.closest('picture')).display !== 'none').every(image => {
-    const source = [...image.parentElement.querySelectorAll('source')].find(source => matchMedia(source.media).matches);
-    const expected = new URL(source?.srcset || image.getAttribute('src'), location.href).href;
-    return image.complete && image.naturalWidth > 0 && image.currentSrc === expected;
-  }), undefined, { polling: 50 }).catch(async error => {
-    const state = await target.locator('.blog-figure img').evaluateAll(images => images.map(image => ({ src: image.src, currentSrc: image.currentSrc, complete: image.complete, width: image.naturalWidth, display: getComputedStyle(image.closest('picture')).display, sources: [...image.parentElement.querySelectorAll('source')].map(source => ({ src: source.srcset, matches: matchMedia(source.media).matches })) })));
-    throw new Error(`Images not ready on ${target.url()}: ${JSON.stringify(state)}`, { cause: error });
-  });
+  // Poll from Node: callbacks in a no-JS page may stop after responsive image selection.
+  const deadline = Date.now() + 10000;
+  let pending;
+  do {
+    pending = await target.locator('.blog-figure img').evaluateAll(images => images.filter(image => getComputedStyle(image.closest('picture')).display !== 'none').map(image => {
+      const source = [...image.parentElement.querySelectorAll('source')].find(source => matchMedia(source.media).matches);
+      return { current: image.currentSrc, expected: new URL(source?.srcset || image.getAttribute('src'), location.href).href, complete: image.complete, width: image.naturalWidth };
+    }).filter(image => !image.complete || !image.width || image.current !== image.expected));
+    if (!pending.length) break;
+    await delay(50);
+  } while (Date.now() < deadline);
+  assert.deepEqual(pending, [], `Images not ready on ${target.url()}`);
   await target.locator('.blog-figure img').evaluateAll(images => Promise.all(images.filter(image => getComputedStyle(image.closest('picture')).display !== 'none').map(image => image.decode())));
 };
 try {
