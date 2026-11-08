@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
 import { chromium } from '../engine/node_modules/playwright/index.mjs';
-import { blogLocales, blogRoute, loadBlogPosts } from './site-blog.mjs';
+import { blogLocales, blogOgLocales, blogRoute, loadBlogPosts } from './site-blog.mjs';
 
 const posts = loadBlogPosts(process.cwd());
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-blog-check-'));
@@ -17,7 +17,7 @@ try {
   assert.deepEqual(loadBlogPosts(temp), [], 'drafts are excluded from every generated listing');
   fs.writeFileSync(path.join(folder, 'post.json'), JSON.stringify({ published: '2026-02-30' }));
   assert.throws(() => loadBlogPosts(temp), /Invalid blog date/);
-  fs.writeFileSync(path.join(folder, 'post.json'), JSON.stringify({ published: '2026-01-01', locales: { fr: {} } }));
+  fs.writeFileSync(path.join(folder, 'post.json'), JSON.stringify({ published: '2026-01-01', locales: { xx: {} } }));
   assert.throws(() => loadBlogPosts(temp), /Unsupported blog locale/);
 } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 
@@ -50,11 +50,25 @@ const loadIllustrations = async target => {
 try {
   const sitemap = fs.readFileSync('_site/sitemap.xml', 'utf8');
   for (const locale of blogLocales) {
+    const ui = JSON.parse(fs.readFileSync(`site/blog/locales/${locale}.json`, 'utf8')).ui;
     await page.goto(origin + blogRoute(locale));
     assert.equal(await page.locator('html').getAttribute('lang'), locale);
+    assert.equal(await page.title(), ui.indexSeoTitle);
+    assert.equal(await page.locator('h1').innerText(), ui.indexTitle);
+    assert.equal(await page.locator('.blog-index .blog-cta').count(), 0, 'index stays a compact article list');
+    assert.equal(await page.locator('.blog-card-image').count(), posts.filter(post => post.locales[locale]).length);
+    assert.equal(await page.locator('meta[name=description]').getAttribute('content'), ui.indexSeoDescription);
+    for (const width of [320,390,768,1440]) {
+      await page.setViewportSize({width,height:1000});
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `index fits at ${width}px (${locale})`);
+    }
+    await page.locator('.blog-languages summary').click();
+    assert.equal(await page.locator('.blog-language:visible').count(), blogLocales.length);
+    await page.locator('.blog-languages summary').click();
     assert.equal(await page.locator('.blog-card').count(), posts.filter(post => post.locales[locale]).length);
     assert.equal(await page.locator('.blog-theme').isVisible(), false, 'no dead theme button without JS');
     assert.ok(sitemap.includes(`<loc>https://papilot.ai${blogRoute(locale)}</loc>`));
+    await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: `test-results/blog/index-${locale}.png`, fullPage: true });
     const feed = await (await fetch(origin + blogRoute(locale) + 'feed.xml')).text();
     const feedState = await page.evaluate(xml => {
@@ -72,6 +86,12 @@ try {
       assert.equal(await page.locator('link[rel=canonical]').getAttribute('href'), canonical);
       assert.equal(await page.locator('meta[property="og:url"]').getAttribute('content'), canonical);
       assert.equal(await page.locator('meta[name=description]').getAttribute('content'), post.locales[locale].description);
+      assert.equal(await page.locator('meta[property="og:locale"]').getAttribute('content'), blogOgLocales[locale]);
+      assert.equal(await page.locator('meta[property="og:locale:alternate"]').count(), Object.keys(post.locales).length - 1);
+      assert.equal(await page.locator('meta[property="og:image:alt"]').getAttribute('content'), post.locales[locale].heroAlt);
+      assert.ok(Number(await page.locator('meta[property="og:image:width"]').getAttribute('content')) > 0);
+      assert.equal(await page.locator('link[hreflang=x-default]').getAttribute('href'), 'https://papilot.ai' + blogRoute('en', post.slug));
+      assert.deepEqual(await page.locator('[id]').evaluateAll(nodes => nodes.map(node => node.id).filter((id,index,ids) => ids.indexOf(id)!==index)), [], 'no duplicate diagram or heading IDs');
       assert.ok(await page.locator('.blog-prose p').count() > 5, 'full article is rendered without JavaScript');
       for (const code of Object.keys(post.locales)) assert.equal(await page.locator(`link[hreflang="${code}"]`).getAttribute('href'), 'https://papilot.ai' + blogRoute(code, post.slug));
       const structured = JSON.parse(await page.locator('script[type="application/ld+json"]').textContent());
@@ -79,6 +99,14 @@ try {
       assert.equal(article.mainEntityOfPage, canonical);
       assert.equal(article.headline, await page.locator('h1').innerText());
       assert.equal(article.inLanguage, locale);
+      assert.equal(article.datePublished, await page.locator('meta[property="article:published_time"]').getAttribute('content'));
+      assert.equal(article.dateModified, await page.locator('meta[property="article:modified_time"]').getAttribute('content'));
+      assert.equal(article.isPartOf['@id'], 'https://papilot.ai' + blogRoute(locale) + '#blog');
+      assert.equal(await page.locator('.blog-updated, .blog-image-credit, .blog-cta').count(), 0, 'article has no update line or promotional ending');
+      assert.equal(await page.locator('.blog-meta time').getAttribute('datetime'), post.published);
+      const sitemapDoc = await page.evaluate(xml => { const doc = new DOMParser().parseFromString(xml,'application/xml'); return {error:!!doc.querySelector('parsererror'),urls:[...doc.querySelectorAll('url')].map(node=>({loc:node.querySelector('loc').textContent,alternates:[...node.getElementsByTagNameNS('http://www.w3.org/1999/xhtml','link')].map(link=>({locale:link.getAttribute('hreflang'),url:link.getAttribute('href')}))}))};}, sitemap);
+      assert.equal(sitemapDoc.error,false);
+      assert.equal(sitemapDoc.urls.find(item=>item.loc===canonical).alternates.length,Object.keys(post.locales).length+1);
       assert.ok(feedState.dates.includes(new Date(article.datePublished).toUTCString()));
       assert.deepEqual(await page.locator('.blog-toc a[href^="#"]').evaluateAll(links => links.filter(link => !document.getElementById(decodeURIComponent(link.hash.slice(1)))).map(link => link.hash)), []);
       for (const width of [1440, 768, 390, 320]) {
@@ -86,13 +114,23 @@ try {
         await page.evaluate(() => document.fonts.ready);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no page overflow at ${width}px (${locale})`);
         assert.ok(await page.locator('.blog-hero .blog-image-light img').isVisible());
+        for (const diagram of await page.locator('.blog-illustration-responsive').all()) {
+          assert.equal(await diagram.locator('.blog-art-compact').isVisible(), width <= 600);
+          assert.equal(await diagram.locator('.blog-art-wide').isVisible(), width > 600);
+        }
+        assert.deepEqual(await page.locator('.blog-illustration svg:visible').evaluateAll(figures => figures.flatMap(svg => {
+          const box = svg.getBoundingClientRect();
+          return [...svg.querySelectorAll('text')].filter(text => {
+            const bounds = text.getBoundingClientRect();
+            return bounds.left < box.left - 1 || bounds.right > box.right + 1 || bounds.top < box.top - 1 || bounds.bottom > box.bottom + 1;
+          }).map(text => text.textContent);
+        })), [], `diagram labels fit at ${width}px (${locale})`);
+        assert.deepEqual(await page.locator('.blog-illustration svg').evaluateAll(figures => figures.flatMap(svg => (svg.getAttribute('aria-labelledby') || '').split(/\s+/).filter(id => !svg.querySelector(`[id="${id}"]`)))), [], 'inline figures retain accessible titles and descriptions');
         if (width === 1440 || width === 390) {
           // Load responsive images and bring them into view before capture.
           await loadIllustrations(page);
-          const workflow = page.locator('.blog-illustration img');
-          if (await workflow.count()) assert.equal(await workflow.first().evaluate(image => image.currentSrc.includes('-compact.')), width === 390);
           for (const figure of await page.locator('.blog-figure').all()) await figure.scrollIntoViewIfNeeded();
-          if (width === 390) await page.locator('.blog-prose .blog-figure').last().screenshot({ path: `test-results/blog/notes-${locale}-mobile.png` });
+          if (width === 390) await page.locator('.blog-prose .blog-figure:has(picture)').last().screenshot({ path: `test-results/blog/notes-${locale}-mobile.png` });
           await page.evaluate(() => scrollTo(0, 0));
           await page.screenshot({ path: `test-results/blog/article-${locale}-${width}.png`, fullPage: true });
           if (width === 390) await page.screenshot({ path: `test-results/blog/article-${locale}-mobile-viewport.png` });
@@ -102,12 +140,14 @@ try {
       assert.deepEqual(await page.locator('.blog-figure img').evaluateAll(images => images.filter(image => getComputedStyle(image.closest('picture')).display !== 'none' && (!image.complete || !image.naturalWidth || !image.alt)).map(image => image.src)), []);
       const other = Object.keys(post.locales).find(code => code !== locale);
       if (other) {
-        await page.locator('.blog-language').click();
+        await page.locator('.blog-languages summary').click();
+        await page.locator(`.blog-language[hreflang="${other}"]`).click();
         assert.equal(new URL(page.url()).pathname, blogRoute(other, post.slug));
         assert.equal(await page.locator('h1').innerText(), post.locales[other].title);
       }
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
+    console.log(`PASS: ${locale} article/index, metadata, feeds, language links and responsive diagrams.`);
   }
   const interactive = await browser.newContext({ colorScheme: 'light', reducedMotion: 'reduce', viewport: { width: 390, height: 844 } });
   const theme = await interactive.newPage();
@@ -121,11 +161,12 @@ try {
   assert.equal(await theme.locator('.blog-theme').getAttribute('aria-pressed'), 'true');
   await loadIllustrations(theme);
   await theme.screenshot({ path: 'test-results/blog/article-dark-mobile.png', fullPage: true });
-  await theme.locator('.blog-language').click();
+  await theme.locator('.blog-languages summary').click();
+  await theme.locator('.blog-language[hreflang="zh-CN"]').click();
   assert.equal(await theme.locator('html').getAttribute('data-theme'), 'dark', 'theme persists across languages');
   await theme.locator('.blog-theme').click();
   assert.equal(await theme.locator('html').getAttribute('data-theme'), 'light');
   await interactive.close();
   assert.deepEqual(errors, []);
-  console.log('PASS: static bilingual blog, full no-JS content, canonical/hreflang/structured data, valid RSS, sitemap entries, image loading, language switching, dark mode, and 320/390/768/1440px layouts.');
+  console.log('PASS: static multilingual blog, full no-JS content, canonical/hreflang/structured data, valid RSS, sitemap entries, image loading, language switching, dark mode, and 320/390/768/1440px layouts.');
 } finally { await browser.close(); await server.close(); }

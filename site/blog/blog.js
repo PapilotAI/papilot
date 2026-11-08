@@ -19,3 +19,14 @@ if (button) {
     render();
   });
 }
+
+const languages = document.querySelector('.blog-languages');
+languages?.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { languages.open = false; languages.querySelector('summary').focus(); }
+});
+document.addEventListener('click', event => {
+  if (languages?.open && !languages.contains(event.target)) languages.open = false;
+});
+for (const link of document.querySelectorAll('.blog-language')) link.addEventListener('click', () => {
+  try { localStorage.setItem('papilot-lang', link.hreflang); } catch {}
+});

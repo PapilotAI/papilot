@@ -44,7 +44,7 @@ for (const locale of locales) {
   const translated = translatedSite(source, translations, locale);
   const title = translated.match(/<title>([^<]*)<\/title>/)[1];
   let html = translated
-    .replaceAll('<!-- blog-navigation -->', `<a href="${blogRoute(locale === 'zh-CN' ? 'zh-CN' : 'en')}">${blogLabels[locale]}</a>`)
+    .replaceAll('<!-- blog-navigation -->', `<a href="${blogRoute(locale)}">${blogLabels[locale]}</a>`)
     .replace('<!-- analytics -->', analytics)
     .replaceAll('{{version}}', release)
     .replace(/<link rel="alternate"[^>]*>/g, '')
