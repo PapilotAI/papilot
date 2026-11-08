@@ -6,14 +6,14 @@ import type { SystemRequirements } from '../shared.ts';
 
 type Probe = (file: string, args: string[], env: NodeJS.ProcessEnv, timeout: number) => Promise<boolean | 'timeout'>;
 type Result = Omit<SystemRequirements['checks'][number], 'id'>;
-const command: Probe = (file, args, env, timeout) => new Promise(resolve => {
+export const probeRequiredTool: Probe = (file, args, env, timeout) => new Promise(resolve => {
   const child = execFile(file, args, { env, cwd: os.homedir(), windowsHide: true, timeout, killSignal: 'SIGKILL', maxBuffer: 128 * 1024 }, error => {
     resolve(error?.killed && error.signal === 'SIGKILL' && error.code == null ? 'timeout' : !error);
   });
   child.stdin?.end();
 });
 
-export async function checkSystemRequirements(env = process.env, platform = process.platform, probe: Probe = command): Promise<SystemRequirements> {
+export async function checkSystemRequirements(env = process.env, platform = process.platform, probe: Probe = probeRequiredTool): Promise<SystemRequirements> {
   // Windows treats environment names as case-insensitive; match Node's choice
   // if a supplied environment contains both PATH and Path.
   const pathKey = platform === 'win32' ? Object.keys(env).sort().find(key => key.toLowerCase() === 'path') || 'PATH' : 'PATH';
