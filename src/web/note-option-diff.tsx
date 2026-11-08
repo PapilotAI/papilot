@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { Block, RoundDetail, Strip } from '../../engine/src/types.ts';
 import { PdfStrip } from '../../engine/src/web/PdfStrip.tsx';
+import { wordDiff } from '../../engine/src/web/model.ts';
 import { t } from './i18n.ts';
 
 // Clip only trailing blank page space. Scan the rendered image rather than
@@ -49,7 +50,7 @@ export function NoteOptionDiff({ detail, focus }: { detail: RoundDetail; focus: 
     <PdfStrip key={`${image.src}:${index}`} image={image} base={detail.files} label={label} clean={clean} focus={focus}/>);
   const block = (item: Block, index: number) => {
     if (item.kind === 'gap') return <div key={index} className="note-comparison-gap" role="separator">⋯</div>;
-    if (item.kind === 'context') return <CompactContext key={item.image.src} image={item.image} base={detail.files}/>;
+    if (item.kind === 'context') return <CompactContext key={detail.files + item.image.clean} image={item.image} base={detail.files}/>;
     const units = detail.units.filter(unit => item.units.includes(unit.id));
     return <div key={index} className="note-comparison-change" data-units={item.units.join(' ')} data-related={item.units.some(id => focus.includes(id))}>
       <div className="note-comparison-side before">
@@ -65,5 +66,24 @@ export function NoteOptionDiff({ detail, focus }: { detail: RoundDetail; focus: 
   return <div className="note-option-comparison" role="region" aria-label={t('Complete PDF comparison')} tabIndex={0} data-revision={detail.after}>
     {detail.sections.map((section, index) => <section key={`${section.node}:${index}`} aria-label={`${section.number} ${section.title}`}>{section.blocks.map(block)}</section>)}
     {detail.loose.map(block)}
+  </div>;
+}
+
+/** Read the same complete candidate as the PDF, including unrelated edits.
+ * Only the focused note receives colored source marks. */
+export function NoteOptionSource({ detail, focus }: { detail: RoundDetail; focus: string[] }) {
+  const lines = (start: number, end: number) => start === end ? String(start) : `${start}–${end}`;
+  return <div className="note-option-comparison note-option-source" role="region" aria-label={t('LaTeX comparison')} tabIndex={0} data-revision={detail.after}>
+    {detail.units.map(unit => {
+      const related = focus.includes(unit.id), parts = wordDiff(unit.old_text, unit.new_text);
+      return <section className="note-source-unit" key={unit.id} data-unit={unit.id} data-related={related}>
+        <header><code>{unit.file}</code><span>{lines(unit.old_start, unit.old_end)} → {lines(unit.new_start, unit.new_end)}</span></header>
+        {unit.kind === 'binary' ? <p>{t('Binary file changed.')}</p> : (['before', 'after'] as const).map(side => <div className={`note-source-side ${side}`} key={side}>
+          <span>{side === 'before' ? t('Before') : t('After')}</span>
+          <pre>{parts.filter(part => part.type !== (side === 'before' ? 'ins' : 'del')).map((part, index) => related && part.type === 'del' ? <del key={index}>{part.text}</del> : related && part.type === 'ins' ? <ins key={index}>{part.text}</ins> : <Fragment key={index}>{part.text}</Fragment>)}</pre>
+        </div>)}
+        {unit.truncated && <p>{t('Long change: the source is shortened.')}</p>}
+      </section>;
+    })}
   </div>;
 }

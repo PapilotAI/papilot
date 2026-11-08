@@ -24,12 +24,14 @@ const items = [
   { id: 'request-2', taskId: task.id, type: 'user', text: '', createdAt: 3, meta: { notes: [{ ...note('Keep the technical term.', 10, 'A shorter technical sentence.'), where: 'Round 1 · Page 1 · main.tex line 10', anchor: { round: 1, sources: [{ file: 'main.tex', lines: [10, 12] }] } }] } },
 ];
 const runs = [{ id: 'request-1', taskId: task.id, reviewRound: 1, status: 'completed' }, { id: 'request-2', taskId: task.id, reviewRound: 2, status: 'completed' }];
-const unit = (id, line, old, revised) => ({ id, file: 'main.tex', old_start: line, old_end: line + 2, old_text: old, new_text: revised });
+const unit = (id, line, old, revised) => ({ id, file: 'main.tex', kind: 'text', status: 'modified', old_start: line, old_end: line + 2, new_start: line, new_end: line + 2, old_text: old, new_text: revised });
 const units = { 1: [unit('c1', 10, 'The original technical sentence.', 'A shorter technical sentence.'), unit('c2', 20, 'A second original sentence.', 'Our contribution is now explicit.')], 2: [unit('c1', 11, 'A shorter technical sentence.', 'A shorter sentence preserving the technical term.')] };
 const rounds = Object.fromEntries([1, 2].map(round => [round, { round, units: units[round], sections: [], loose: units[round].map(unit => ({ kind: 'change', units: [unit.id], before: [{ text: [{ text: unit.old_text }] }] })) }]));
 const decisions = { 1: { c1: 'pending', c2: 'rejected' }, 2: { c1: 'pending' } };
 const client = { get: async route => route.includes('/rounds/') ? rounds[Number(route.split('/').at(-1))] : { decisions: decisions[Number(new URL(route, origin).searchParams.get('round'))] } };
 let failResults = true;
+const optionWrites = [];
+const alternateSource = '\\emph{A concise alternative preserving the technical term.}';
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
   if (url.pathname.startsWith('/review/')) return route.fallback();
@@ -40,10 +42,18 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items } });
   if (url.pathname.endsWith('/note-results')) return route.fulfill(failResults ? { status: 503, json: { error: 'Temporary failure' } } : { json: { notes: await taskNoteResults(task, items, runs, client) } });
   if (url.pathname.endsWith('/note-options/preview')) {
-    const round = Number(url.searchParams.get('round'));
-    return route.fulfill({ json: { ...rounds[round], task: task.name, before: 'before', after: 'after', files: '', warnings: [], loose: units[round].map(unit => ({ kind: 'change', units: [unit.id], before: [], after: [] })) } });
+    const round = Number(url.searchParams.get('round')), option = url.searchParams.get('option');
+    const candidate = round === 2 ? [...units[round].map(unit => ({ ...unit, new_text: option === 'brief' ? alternateSource : unit.new_text })), unit('other', 80, 'Three datasets.', 'Five datasets.')] : units[round];
+    return route.fulfill({ json: { ...rounds[round], units: candidate, task: task.name, before: 'before', after: `candidate-${option}`, files: '', warnings: [], loose: candidate.map(unit => ({ kind: 'change', units: [unit.id], before: [], after: [] })) } });
   }
-  if (url.pathname.endsWith('/note-options')) return route.fulfill({ json: { round: url.searchParams.get('key')?.startsWith('request-1:') ? 1 : 2, key: url.searchParams.get('key'), options: [], locked: 'Options are not available for this source range yet.' } });
+  if (url.pathname.endsWith('/note-options')) {
+    if (route.request().method() !== 'GET') optionWrites.push(route.request().postData());
+    const round = url.searchParams.get('key')?.startsWith('request-1:') ? 1 : 2;
+    return route.fulfill({ json: { round, key: url.searchParams.get('key'), ...(round === 1 ? { options: [], locked: 'Options are not available for this source range yet.' } : { options: [
+      { id: 'current', label: 'Current proposal', edits: [{ unit: 'c1', text: units[2][0].new_text }] },
+      { id: 'brief', label: 'Concise', reason: 'Keep the technical term in a shorter sentence.', edits: [{ unit: 'c1', text: alternateSource }] },
+    ] }) } });
+  }
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname.endsWith('/git')) return route.fulfill({ json: { files: [], branch: 'main' } });
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
@@ -93,6 +103,23 @@ try {
   await frame().locator('.papilot-linked-change[data-stop="0"]').waitFor();
   assert.doesNotMatch(await page.locator('.review-frame').getAttribute('src'), /[?&](history|round)=/);
   assert.deepEqual(await page.locator('[data-note-result]').allTextContents(), original, 'review operations never add content to original messages');
+  await controls().getByRole('region', { name: 'Complete PDF comparison', exact: true }).waitFor();
+  const sourceToggle = controls().getByRole('button', { name: 'Show LaTeX source', exact: true });
+  assert.equal(await sourceToggle.getAttribute('aria-pressed'), 'false', 'PDF remains the default');
+  await sourceToggle.click();
+  await controls().getByRole('region', { name: 'LaTeX comparison', exact: true }).waitFor();
+  await controls().getByRole('tab', { name: 'Concise', exact: true }).click();
+  const sourceView = controls().locator('.note-option-source[data-revision="candidate-brief"]');
+  await sourceView.waitFor();
+  assert.ok((await sourceView.locator('.note-source-unit[data-unit="c1"]').textContent()).includes(alternateSource), 'source follows the selected alternative');
+  assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"] pre').allTextContents().then(values => values.join('|')), 'Three datasets.|Five datasets.');
+  assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"] ins, .note-source-unit[data-unit="other"] del').count(), 0, 'unrelated edits retain context without focused colors');
+  assert.deepEqual(optionWrites, [], 'source and option switches never generate or apply a proposal');
+  fs.mkdirSync('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/note-options-latex.png', fullPage: true });
+  await sourceToggle.click();
+  await controls().getByRole('region', { name: 'Complete PDF comparison', exact: true }).waitFor();
+  assert.equal(await controls().locator('.note-option-source').count(), 0, 'toggle restores the selected candidate PDF');
   assert.equal(await controls().getByRole('button', { name: 'Show all changes', exact: true }).count(), 0);
   await page.locator('.review-host-bar').getByRole('button', { name: 'Show all changes', exact: true }).click();
   await frame().locator('.papilot-linked-change').waitFor({ state: 'hidden' });
@@ -117,6 +144,20 @@ try {
   const box = await controls().boundingBox();
   assert.ok(box.x >= 0 && box.x + box.width <= 390, 'note controls stay inside the PDF pane on mobile');
   await page.screenshot({ path: 'test-results/note-results-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await currentNote.click();
+  await sourceToggle.click();
+  await controls().getByRole('region', { name: 'LaTeX comparison', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390, 'LaTeX wraps within the narrow PDF pane');
+  const toolbar = await controls().locator('.note-option-navigation').boundingBox();
+  assert.ok(toolbar.height < 50, 'tabs, pager, review actions and LaTeX toggle stay in one row');
+  const tabs = await controls().getByRole('tablist').boundingBox(), selectedTab = await controls().getByRole('tab', { selected: true }).boundingBox();
+  assert.ok(selectedTab.x >= tabs.x - 1 && selectedTab.x + selectedTab.width <= tabs.x + tabs.width + 1, 'the remembered selected option stays visible in the narrow tab strip');
+  for (const button of await controls().locator('.note-option-actions button').all()) {
+    const bounds = await button.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390, 'every action remains reachable on mobile');
+  }
+  await page.screenshot({ path: 'test-results/note-options-latex-mobile.png', fullPage: true });
   assert.deepEqual(errors, []);
-  console.log('PASS: Original messages preserved; note controls in PDF pane; note associations; load retry; panel comparisons; mobile navigation');
+  console.log('PASS: Original messages preserved; PDF note controls; load retry; selected candidate PDF/LaTeX comparisons; no writes on option switches; single-row mobile actions');
 } finally { await browser.close(); await server.close(); }

@@ -43,7 +43,7 @@ export function nextPending(
 export function commentScope(units: (Unit & Partial<VisualUnit>)[]) {
   const before = units.every(unit => !unit.new_text);
   return {
-    where: `${before ? "Before" : "After"} · ${describeLocation(units)}`,
+    where: `${before ? "Before" : "After"} · ${describeLocation(before ? units.map(unit => ({ ...unit, new_start: unit.old_start, new_end: unit.old_end })) : units)}`,
     quote: units.map(unit => unit.new_text || unit.old_text).filter(Boolean).join("\n"),
   };
 }

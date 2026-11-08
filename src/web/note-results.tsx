@@ -2,7 +2,7 @@ import type { RoundDetail } from '../../engine/src/types.ts';
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { NoteChange, NoteResult, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
 import { readNotesInstructions } from '../notes.ts';
-import { NoteOptionDiff } from './note-option-diff.tsx';
+import { NoteOptionDiff, NoteOptionSource } from './note-option-diff.tsx';
 import { Icon } from './icons.tsx';
 import { errorText, t } from './i18n.ts';
 import { reviewDraft, useReviewDraft } from './review-draft.ts';
@@ -205,6 +205,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
 function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: ReactNode }) {
   const links = useNoteResults()!, request = links.optionsRequest, task = links.task;
   const tabsId = useId();
+  const tabs = useRef<HTMLDivElement>(null);
   const storageKey = `papilot:note-choice:${task?.id}:${note.key}`;
   const decisionKey = note.changes.map(change => `${change.round}:${change.stop}:${change.state}`).join(',');
   const optionsKey = JSON.stringify([task?.id, note.key, note.round, decisionKey]);
@@ -212,6 +213,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const draft = reviewDraft(task?.id || ''), feedback = useReviewDraft(task?.id || '');
   const [editor, setEditor] = useState<string | null>(null), commentInput = useRef<HTMLTextAreaElement>(null);
   const [actingOption, setActingOption] = useState('');
+  const [source, setSource] = useState(false);
   const [data, setData] = useState<NoteOptions | null>(remembered || null), [selected, setSelected] = useState(() => rememberedChoice(storageKey, remembered));
   const [busy, setBusy] = useState(false), [generating, setGenerating] = useState(false), [applying, setApplying] = useState(false), [error, setError] = useState('');
   const [baseline, setBaseline] = useState<RoundDetail | null>(() => task && remembered ? links.cachedPreview(task.id, note.key, remembered.round, remembered.selected || 'current') || null : null), [baselineError, setBaselineError] = useState('');
@@ -259,6 +261,20 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     return () => { ++previewSequence.current; };
   }, [task?.id, note.key, data?.round, data?.locked, selected, saved, retry, links.focus?.key]);
   const optionIds = data?.options.map(option => option.id).join(',');
+  useLayoutEffect(() => {
+    const list = tabs.current;
+    if (!list) return;
+    const reveal = () => {
+      const chosen = list.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!chosen) return;
+      const item = chosen.getBoundingClientRect(), viewport = list.getBoundingClientRect();
+      if (item.width > viewport.width || item.left < viewport.left) list.scrollLeft += item.left - viewport.left;
+      else if (item.right > viewport.right) list.scrollLeft += item.right - viewport.right;
+    };
+    reveal();
+    const resize = new ResizeObserver(reveal); resize.observe(list);
+    return () => resize.disconnect();
+  }, [selected, optionIds]);
   useEffect(() => {
     if (!task || !data || data.locked || !links.previewRequest) return;
     // Existing alternatives compile in the background; this never asks an AI
@@ -326,7 +342,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const commented = Boolean(active && optionFeedback(active.id, 'comment'));
   return <div className="note-options" onClick={event => event.stopPropagation()}>
     <div className="note-option-navigation">
-    {data && <div className="note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
+    {data && <div ref={tabs} className="note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
       {data.options.map((option, index) => {
         const name = label(option.id, option.label);
         return <button type="button" className="note-option-tab" role="tab" key={option.id} id={`${tabsId}-${option.id}`} aria-controls={`${tabsId}-panel`} data-option={option.id} data-rejected={Boolean(optionFeedback(option.id, 'reject'))} aria-selected={selected === option.id} tabIndex={selected === option.id ? 0 : -1} disabled={saving || Boolean(locked) || busy} aria-label={name} onClick={() => choose(option.id)} onKeyDown={event => {
@@ -343,6 +359,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
       <button type="button" className="icon-button accept" aria-label={t('Accept {label}', { label: name })} title={t('Accept')} disabled={saving || Boolean(locked) || busy} onClick={() => void apply(active)}>{saving && actingOption === active.id ? <span className="spinner"/> : <Icon name="check" size={18}/>}</button>
       <button type="button" className="icon-button reject" aria-label={t('Reject {label}', { label: name })} aria-pressed={rejected} title={rejected ? t('Undo rejection') : t('Reject')} disabled={saving || feedback.busy} onClick={() => reject(active)}><Icon name="close" size={18}/></button>
       <button type="button" className="icon-button comment" aria-label={t('Comment on {label}', { label: name })} aria-expanded={editing?.option?.id === active.id} data-commented={commented} title={t('Comment')} disabled={saving || feedback.busy} onClick={() => comment(active)}><Icon name="chat" size={18}/></button>
+      <button type="button" className="icon-button source" aria-label={t('Show LaTeX source')} aria-pressed={source} title={t('Show LaTeX source')} disabled={!comparison} onClick={() => setSource(value => !value)}><Icon name="code" size={18}/></button>
     </div>}
     </div>
     <div className="note-option-content" role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={active ? `${tabsId}-${active.id}` : undefined}>
@@ -351,7 +368,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
       <textarea ref={commentInput} rows={2} aria-label={t('Comment on {label}', { label: editing.option!.label })} placeholder={t('What should change here?')} value={editing.comment} readOnly={feedback.busy} onChange={event => draft.edit(editing.id, event.target.value)} onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') setEditor(null); }}/>
       <button type="button" className="icon-button" aria-label={t('Close comment')} title={t('Close comment')} onClick={() => setEditor(null)}><Icon name="close" size={14}/></button>
     </div>}
-    {comparison && <NoteOptionDiff detail={comparison} focus={focusedUnits}/>}
+    {comparison && (source ? <NoteOptionSource detail={comparison} focus={focusedUnits}/> : <NoteOptionDiff detail={comparison} focus={focusedUnits}/>)}
     {!comparison && !baselineError && !error && <p className="note-option-hint" role="status"><span className="spinner"/>{t('Loading PDF comparison…')}</p>}
     {baselineError && !comparison && <p className="note-option-error" role="alert">{baselineError} <button type="button" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></p>}
     {data && data.options.length <= 1 && !locked && <button type="button" className="note-options-generate" disabled={generating || saving} onClick={() => void generate()}>{generating ? <><span className="spinner"/>{t('Preparing two alternatives…')}</> : t('Generate alternatives')}</button>}

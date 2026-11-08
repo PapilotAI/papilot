@@ -83,9 +83,9 @@ it("pending navigation wraps within the focused units and skips unrelated pendin
   expect(nextPending(stops, decisions, 0, [])).toBe(-1);
 });
 it("scoped comments quote only the selected source units, including deletions", () => {
-  const unit = { id: "c001", file: "main.tex", status: "modified", new_start: 10, new_end: 10, old_text: "fast", new_text: "efficient" } as Unit;
+  const unit = { id: "c001", file: "main.tex", status: "modified", old_start: 9, old_end: 9, new_start: 10, new_end: 10, old_text: "fast", new_text: "efficient" } as Unit;
   expect(commentScope([unit])).toEqual({ where: "After · main.tex:10", quote: "efficient" });
-  expect(commentScope([{ ...unit, new_text: "" }])).toEqual({ where: "Before · main.tex:10", quote: "fast" });
+  expect(commentScope([{ ...unit, new_text: "" }])).toEqual({ where: "Before · main.tex:9", quote: "fast" });
 });
 it("keeps selected stop during scrolling when it remains visible", () => {
   const regions = [

@@ -1,7 +1,6 @@
 {
   "After": "修改后",
   "Before": "修改前",
-  "Each option needs a brief, specific reason. Try again.": "每个方案都需要具体、简短的理由，请重试。",
   "Loading PDF comparison…": "正在加载 PDF 对比…",
   "Unchanged context": "未修改的上下文",
   "Complete PDF comparison": "完整 PDF 前后对比",
@@ -91,7 +90,6 @@
   "Offline": "离线",
   "All changes": "全部修改",
   "Review scope": "审阅范围",
-  "Close options": "关闭方案",
   "Show all changes": "显示全部修改",
   "Options for this note": "此条批注的方案",
   "Notes": "批注",
@@ -110,18 +108,16 @@
   "Undo rejection": "撤销拒绝",
   "Close comment": "收起评论",
   "Do not use this option.": "不采用此方案。",
-  "Accept changes for this note": "接受当前批注的修改",
   "Generate alternatives": "生成备选方案",
   "The choice could not be saved.": "未能保存选择。",
   "Saving choice…": "正在保存选择…",
   "Preparing this option’s PDF diff…": "正在生成此方案的 PDF diff…",
   "Preparing two alternatives…": "正在生成两种备选…",
-  "Rebuilding PDF…": "正在重新编译…",
-  "Use this option": "使用此方案",
-  "Remove this fragment": "删除这段内容",
-  "Shared with {notes}": "也关联到 {notes}",
   "This note includes a reviewed change. Undo that decision before replacing it.": "此批注包含已审阅的修改。请先撤销该决定，再替换方案。",
   "Options are available on the latest open review.": "可在最新一轮审阅中选择备选方案。",
   "Options are not available for this source range yet.": "这处修改暂不支持独立备选。",
-  "Wait for the current task and review actions to finish.": "请等待当前任务和审阅操作完成。"
+  "Wait for the current task and review actions to finish.": "请等待当前任务和审阅操作完成。",
+  "Binary file changed.": "二进制文件已更改。",
+  "LaTeX comparison": "LaTeX 对比",
+  "Long change: the source is shortened.": "修改较长，源码已截断显示。"
 }

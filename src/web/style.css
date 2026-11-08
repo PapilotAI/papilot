@@ -1080,6 +1080,7 @@ body.resizing iframe{pointer-events:none}
 .note-option-actions .reject:hover:not(:disabled), .note-option-actions .reject[aria-pressed="true"] { color: var(--red); background: var(--red-soft); }
 .note-option-actions .comment { color: var(--accent); }
 .note-option-actions .comment:hover:not(:disabled), .note-option-actions .comment[data-commented="true"] { color: var(--accent); background: var(--accent-soft); }
+.note-option-actions .source[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
 .note-option-comment { display: flex; align-items: flex-start; gap: 4px; flex-shrink: 0; }
 .note-option-comment textarea { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 8px; background: var(--bg-subtle); font-size: 12px; line-height: 1.4; }
 .note-option-comment textarea:focus-visible { border-color: var(--accent); }
@@ -1106,3 +1107,16 @@ body.resizing iframe{pointer-events:none}
 .note-comparison-context { position: relative; height: 0; overflow: hidden; }
 .note-comparison-context > div { position: absolute; top: 0; left: 0; width: 100%; }
 .note-option-comparison .pdf-focus-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.note-option-source { background: var(--bg); padding: 0; }
+.note-source-unit + .note-source-unit { margin-top: 8px; }
+.note-source-unit header { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px; color: var(--text-3); font-size: 10px; }
+.note-source-unit header code { overflow-wrap: anywhere; }
+.note-source-unit header span { flex-shrink: 0; font-family: var(--mono); }
+.note-source-unit p { padding: 0 8px; font-size: 11px; color: var(--text-3); }
+.note-source-side { display: flex; gap: 8px; padding: 4px 8px; border-left: 2px solid transparent; }
+.note-source-side > span { width: 38px; flex-shrink: 0; color: var(--text-3); font-size: 10px; line-height: 18px; }
+.note-source-side pre { min-width: 0; margin: 0; color: var(--text); font: 11px/18px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-source-unit[data-related="true"] .before { border-color: var(--red); background: var(--red-soft); }
+.note-source-unit[data-related="true"] .after { border-color: var(--green); background: var(--green-soft); }
+.note-source-side del { color: var(--red); background: var(--red-soft); }
+.note-source-side ins { color: var(--green); background: var(--green-soft); text-decoration: none; }
