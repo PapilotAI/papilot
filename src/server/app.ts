@@ -21,7 +21,7 @@ import { registerSkillRoutes } from './skill-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
 import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type NoteSummary, type QuickNote } from '../shared.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
-import { noteOptionContext, noteOptionsKey, parseNoteOptions } from './note-options.ts';
+import { noteOptionContext } from './note-options.ts';
 import { taskNoteResults } from './note-results.ts';
 import type { Updates } from './updates.ts';
 import { Diagnostics } from './diagnostics.ts';
@@ -99,7 +99,6 @@ export async function buildApp(options: AppOptions) {
   // Task rounds and the manuscript's Changes both follow it.
   const indirectChanges = () => store.preference<boolean>('indirect-changes') === true;
   workspace.indirectChanges = changes.indirectChanges = indirectChanges;
-  const optionRequests = new Map<string, Promise<unknown>>();
   const app = Fastify({ logger: false, bodyLimit: Number.MAX_SAFE_INTEGER });
   guard(app, { listener, csrf: options.csrf });
   const updateRequests = new WeakMap<object, () => void>();
@@ -227,6 +226,13 @@ export async function buildApp(options: AppOptions) {
     return { quickNotes: quickNotes || null };
   });
   app.get('/api/indirect-changes', () => ({ indirectChanges: indirectChanges() }));
+  app.get('/api/note-alternatives', () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') !== false }));
+  app.post('/api/note-alternatives', (request, reply) => {
+    const value = (request.body as any)?.noteAlternatives;
+    if (typeof value !== 'boolean') return reply.code(400).send({ error: 'Send noteAlternatives as true or false.' });
+    store.savePreference('note-alternatives', value);
+    return { noteAlternatives: value };
+  });
   app.post('/api/indirect-changes', (request, reply) => {
     const value = (request.body as any)?.indirectChanges;
     if (typeof value !== 'boolean') return reply.code(400).send({ error: 'Send indirectChanges as true or false.' });
@@ -348,16 +354,7 @@ export async function buildApp(options: AppOptions) {
       if (value.error) throw new Error(value.error);
       return { building: true };
     }
-    if (context.options.options.length > 1) return context.options;
-    const cacheKey = noteOptionsKey(current.id, body.key, body.round);
-    const pending = optionRequests.get(cacheKey);
-    if (pending) return pending;
-    const generating = workspace.generateNoteOptions(current.id, JSON.stringify({ note: context.note.note, fragments: context.units.map(unit => ({ unit: unit.id, before: unit.old_text, current: unit.new_text, context: unit.old_context?.text })) })).then(reply => {
-      const result = { ...context.options, options: [...context.options.options, ...parseNoteOptions(reply, context.options.options[0])] };
-      if (!store.taskDeleted(current.id)) store.savePreference(cacheKey, result); return result;
-    }).finally(() => optionRequests.delete(cacheKey));
-    optionRequests.set(cacheKey, generating);
-    return generating;
+    throw new Error('Select an existing option.');
   });
   app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
     const task = store.task(request.params.id), project = store.project(task.projectId);

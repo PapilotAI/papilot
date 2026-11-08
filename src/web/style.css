@@ -1085,7 +1085,6 @@ body.resizing iframe{pointer-events:none}
 .note-option-comment textarea { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 8px; background: var(--bg-subtle); font-size: 12px; line-height: 1.4; }
 .note-option-comment textarea:focus-visible { border-color: var(--accent); }
 .note-option-comment .icon-button { width: 24px; height: 24px; }
-.note-options-generate { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; color: var(--accent); font-size: 12px; }
 .note-options button:disabled { opacity: .5; cursor: default; }
 
 .note-option-comparison { --pdf-filter: var(--review-filter); --pdf-page: var(--review-page); min-height: 50px; max-height: 180px; overflow: auto; overscroll-behavior: contain; flex: 1 1 auto; border-radius: 4px; padding: 3px 0; background: var(--pdf-page); }

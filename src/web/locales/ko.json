@@ -1271,7 +1271,6 @@
   "Complete PDF comparison": "전체 PDF 비교",
   "Current proposal": "현재 제안",
   "Do not use this option.": "이 옵션을 사용하지 않습니다.",
-  "Generate alternatives": "대안 생성",
   "Initial proposal": "초기 제안",
   "Loading PDF comparison…": "PDF 비교 불러오는 중…",
   "Next note": "다음 주석",
@@ -1282,7 +1281,6 @@
   "Options are not available for this source range yet.": "이 소스 범위에서는 아직 대안을 사용할 수 없습니다.",
   "Options for this note": "이 주석의 옵션",
   "Preparing this option’s PDF diff…": "이 옵션의 PDF 차이 준비 중…",
-  "Preparing two alternatives…": "두 가지 대안 준비 중…",
   "Previous note": "이전 주석",
   "Reject": "거부",
   "Reject {label}": "{label} 거부",
@@ -1297,5 +1295,7 @@
   "Wait for the current task and review actions to finish.": "현재 작업과 검토 작업이 끝날 때까지 기다려 주세요.",
   "Binary file changed.": "바이너리 파일이 변경되었습니다.",
   "LaTeX comparison": "LaTeX 비교",
-  "Long change: the source is shortened.": "긴 변경 사항: 소스가 축약되었습니다."
+  "Long change: the source is shortened.": "긴 변경 사항: 소스가 축약되었습니다.",
+  "Prepare alternatives by default": "기본적으로 대안 준비",
+  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "PDF 주석을 수정할 때 AI가 같은 작업에서 두 가지 대안과 간단한 이유를 준비합니다. 검토할 때 AI에 다시 요청하지 않고 선택할 수 있습니다."
 }

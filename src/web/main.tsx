@@ -46,6 +46,7 @@ import { workspaceModifier, workspaceShortcutLabel } from './workspace-switch.ts
 import { useSystemRequirements, missingTools, RequirementsBanner } from './system-requirements.tsx';
 import { connectStamps } from './stamps.ts';
 import { connectIndirectChanges } from './effect-preferences.ts';
+import { connectNoteAlternatives } from './note-option-preferences.ts';
 import type { DiagnosticReport, SystemRequirements } from '../shared.ts';
 import { CommitDialog } from './commit-dialog.tsx';
 import { TaskCommit } from './task-commit.tsx';
@@ -101,6 +102,7 @@ async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal,
 }
 connectStamps(api);
 connectIndirectChanges(api);
+connectNoteAlternatives(api);
 const uploadAttachment = (projectId: string, file: File, signal: AbortSignal) => api<Attachment>(`/projects/${projectId}/attachments`, file, signal, 120000);
 const detectLatexInstallation = (signal: AbortSignal) => api<LatexInstallation | null>('/runtime/latex', undefined, signal, 30000);
 const loadRequirements = (signal: AbortSignal) => api<SystemRequirements>('/runtime/requirements', undefined, signal, 35000);

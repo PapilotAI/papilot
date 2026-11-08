@@ -256,5 +256,11 @@
   "Each option needs a brief, specific reason. Try again.": "各案には短く具体的な理由が必要です。もう一度お試しください。",
   "The option includes an invalid change. Try again.": "この案には無効な変更が含まれています。もう一度お試しください。",
   "The agent repeated an option. Try again.": "エージェントが同じ案を繰り返しました。もう一度お試しください。",
-  "This note has no linked changes.": "この注釈に関連付けられた変更はありません。"
+  "This note has no linked changes.": "この注釈に関連付けられた変更はありません。",
+  "Send noteAlternatives as true or false.": "代替案の設定には true または false を指定してください。",
+  "Select an existing option.": "既存の案を選択してください。",
+  "The option targets an unrelated source file.": "この案は関係のないソースファイルを対象としています。",
+  "The option source is missing or ambiguous.": "この案のソースが見つからないか、一意に特定できません。",
+  "The option changes source outside this note.": "この案はこの注釈の範囲外のソースを変更します。",
+  "The option has overlapping patches.": "この案には重複する変更が含まれています。"
 }

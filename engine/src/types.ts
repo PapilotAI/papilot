@@ -446,7 +446,7 @@ export interface RoundDetail extends Omit<RenderedRound, "units"> {
   round: number;
   before: string;
   after: string;
-  units: (Unit & Partial<VisualUnit> & { history?: History[] })[];
+  units: (Unit & Partial<VisualUnit> & { history?: History[]; formattingFor?: string })[];
   warnings: string[];
   files: string;
   references?: References;

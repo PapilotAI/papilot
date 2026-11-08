@@ -215,7 +215,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const [actingOption, setActingOption] = useState('');
   const [source, setSource] = useState(false);
   const [data, setData] = useState<NoteOptions | null>(remembered || null), [selected, setSelected] = useState(() => rememberedChoice(storageKey, remembered));
-  const [busy, setBusy] = useState(false), [generating, setGenerating] = useState(false), [applying, setApplying] = useState(false), [error, setError] = useState('');
+  const [busy, setBusy] = useState(false), [applying, setApplying] = useState(false), [error, setError] = useState('');
   const [baseline, setBaseline] = useState<RoundDetail | null>(() => task && remembered ? links.cachedPreview(task.id, note.key, remembered.round, remembered.selected || 'current') || null : null), [baselineError, setBaselineError] = useState('');
   const [retry, setRetry] = useState(0), [previewBusy, setPreviewBusy] = useState(false);
   const [shown, setShown] = useState<RoundDetail | null>(() => task && remembered ? links.cachedPreview(task.id, note.key, remembered.round, selected) || baseline : null);
@@ -228,7 +228,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   useEffect(() => {
     if (!request || !task) return;
     let cancelled = false; setBusy(true); setError('');
-    // Opening a note only reads existing choices; asking the agent is explicit.
+    // Opening a note reads the choices prepared in the original editing turn.
     void request(task.id, note.key).then(result => {
       if (cancelled || !('options' in result)) return;
       rememberOptions(optionsKey, result);
@@ -291,15 +291,6 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     if (!data || applying) return;
     links.setScope('note'); setSelected(option); setEditor(null); requestId.current = null; setError('');
     browserStorage.setItem(storageKey, JSON.stringify({ round: data.round, option }));
-  };
-  const generate = async () => {
-    if (!data || generating || locked) return;
-    setGenerating(true); setError('');
-    try {
-      const result = await request(task.id, note.key, { round: data.round });
-      if ('options' in result) { rememberOptions(optionsKey, result); setData(result); }
-    } catch (error) { setError((error as Error).message); }
-    finally { setGenerating(false); }
   };
   const apply = async (option: NoteOption) => {
     if (!data || applying || locked || !links.previewRequest) return;
@@ -371,7 +362,6 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     {comparison && (source ? <NoteOptionSource detail={comparison} focus={focusedUnits}/> : <NoteOptionDiff detail={comparison} focus={focusedUnits}/>)}
     {!comparison && !baselineError && !error && <p className="note-option-hint" role="status"><span className="spinner"/>{t('Loading PDF comparison…')}</p>}
     {baselineError && !comparison && <p className="note-option-error" role="alert">{baselineError} <button type="button" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></p>}
-    {data && data.options.length <= 1 && !locked && <button type="button" className="note-options-generate" disabled={generating || saving} onClick={() => void generate()}>{generating ? <><span className="spinner"/>{t('Preparing two alternatives…')}</> : t('Generate alternatives')}</button>}
     {(saving || previewBusy) && <span className="sr-only" role="status">{saving ? t('Saving choice…') : t('Preparing this option’s PDF diff…')}</span>}
     {locked && !saving && <p className="note-option-hint">{optionLockText(locked)}</p>}
     {error && <p role="alert" className="note-option-error">{errorText(error)} <button type="button" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></p>}

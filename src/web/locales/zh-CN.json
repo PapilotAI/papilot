@@ -108,16 +108,16 @@
   "Undo rejection": "撤销拒绝",
   "Close comment": "收起评论",
   "Do not use this option.": "不采用此方案。",
-  "Generate alternatives": "生成备选方案",
   "The choice could not be saved.": "未能保存选择。",
   "Saving choice…": "正在保存选择…",
   "Preparing this option’s PDF diff…": "正在生成此方案的 PDF diff…",
-  "Preparing two alternatives…": "正在生成两种备选…",
   "This note includes a reviewed change. Undo that decision before replacing it.": "此批注包含已审阅的修改。请先撤销该决定，再替换方案。",
   "Options are available on the latest open review.": "可在最新一轮审阅中选择备选方案。",
   "Options are not available for this source range yet.": "这处修改暂不支持独立备选。",
   "Wait for the current task and review actions to finish.": "请等待当前任务和审阅操作完成。",
   "Binary file changed.": "二进制文件已更改。",
   "LaTeX comparison": "LaTeX 对比",
-  "Long change: the source is shortened.": "修改较长，源码已截断显示。"
+  "Long change: the source is shortened.": "修改较长，源码已截断显示。",
+  "Prepare alternatives by default": "默认提供备选方案",
+  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "处理 PDF 批注时，让 AI 在同一次任务中准备两种备选和简短理由。审阅时直接选择，无需再次请求 AI。"
 }

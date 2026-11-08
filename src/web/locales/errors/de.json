@@ -256,5 +256,11 @@
   "Each option needs a brief, specific reason. Try again.": "Jede Option benötigt eine kurze, konkrete Begründung. Versuchen Sie es erneut.",
   "The option includes an invalid change. Try again.": "Die Option enthält eine ungültige Änderung. Versuchen Sie es erneut.",
   "The agent repeated an option. Try again.": "Der Agent hat eine Option wiederholt. Versuchen Sie es erneut.",
-  "This note has no linked changes.": "Mit dieser Anmerkung sind keine Änderungen verknüpft."
+  "This note has no linked changes.": "Mit dieser Anmerkung sind keine Änderungen verknüpft.",
+  "Send noteAlternatives as true or false.": "Die Einstellung für Alternativen muss true oder false sein.",
+  "Select an existing option.": "Wählen Sie eine vorhandene Option.",
+  "The option targets an unrelated source file.": "Die Option betrifft eine nicht zugehörige Quelldatei.",
+  "The option source is missing or ambiguous.": "Die Quelle der Option fehlt oder ist nicht eindeutig.",
+  "The option changes source outside this note.": "Die Option ändert Quelltext außerhalb dieser Anmerkung.",
+  "The option has overlapping patches.": "Die Option enthält überlappende Änderungen."
 }

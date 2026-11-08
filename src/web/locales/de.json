@@ -1271,7 +1271,6 @@
   "Complete PDF comparison": "Vollständiger PDF-Vergleich",
   "Current proposal": "Aktueller Vorschlag",
   "Do not use this option.": "Diese Option nicht verwenden.",
-  "Generate alternatives": "Alternativen erstellen",
   "Initial proposal": "Ursprünglicher Vorschlag",
   "Loading PDF comparison…": "PDF-Vergleich wird geladen…",
   "Next note": "Nächste Anmerkung",
@@ -1282,7 +1281,6 @@
   "Options are not available for this source range yet.": "Für diesen Quelltextbereich sind noch keine Optionen verfügbar.",
   "Options for this note": "Optionen für diese Anmerkung",
   "Preparing this option’s PDF diff…": "PDF-Vergleich für diese Option wird vorbereitet…",
-  "Preparing two alternatives…": "Zwei Alternativen werden vorbereitet…",
   "Previous note": "Vorherige Anmerkung",
   "Reject": "Ablehnen",
   "Reject {label}": "{label} ablehnen",
@@ -1297,5 +1295,7 @@
   "Wait for the current task and review actions to finish.": "Warten Sie, bis die aktuelle Aufgabe und die Überprüfungsaktionen abgeschlossen sind.",
   "Binary file changed.": "Binärdatei geändert.",
   "LaTeX comparison": "LaTeX-Vergleich",
-  "Long change: the source is shortened.": "Umfangreiche Änderung: Der Quelltext ist gekürzt."
+  "Long change: the source is shortened.": "Umfangreiche Änderung: Der Quelltext ist gekürzt.",
+  "Prepare alternatives by default": "Standardmäßig Alternativen vorbereiten",
+  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "Beim Bearbeiten von PDF-Anmerkungen erstellt die KI in derselben Aufgabe zwei Alternativen mit kurzen Begründungen. Bei der Prüfung stehen sie ohne weitere KI-Anfrage bereit."
 }

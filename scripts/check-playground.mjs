@@ -150,9 +150,8 @@ try {
   await expect(notePanel.getByRole('button', { name: 'Reject Initial proposal', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await notePanel.getByRole('button', { name: 'Comment on Initial proposal', exact: true }).click();
   await expect(notePanel.getByRole('textbox', { name: 'Comment on Initial proposal', exact: true })).toHaveValue('Keep the author’s emphasis here.');
-  await notePanel.getByRole('button', { name: 'Generate alternatives', exact: true }).click();
-  await expect(download).toBeVisible();
-  await download.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(notePanel.getByRole('button', { name: 'Generate alternatives', exact: true })).toHaveCount(0);
+  await expect(download).toHaveCount(0);
   await openManuscript();
   await expect(input).toHaveValue('Make the design philosophy more concrete.');
   await presets.getByRole('button', { name: 'More prepared tasks', exact: true }).click();

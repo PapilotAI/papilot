@@ -256,5 +256,11 @@
   "Each option needs a brief, specific reason. Try again.": "每个方案都需要简短、具体的理由，请重试。",
   "The option includes an invalid change. Try again.": "方案包含无效修改，请重试。",
   "The agent repeated an option. Try again.": "智能体返回了重复方案，请重试。",
-  "This note has no linked changes.": "此批注没有关联的修改。"
+  "This note has no linked changes.": "此批注没有关联的修改。",
+  "Send noteAlternatives as true or false.": "备选方案设置必须为开启或关闭。",
+  "Select an existing option.": "请选择已有方案。",
+  "The option targets an unrelated source file.": "该方案涉及无关的源文件。",
+  "The option source is missing or ambiguous.": "无法唯一定位该方案的源码。",
+  "The option changes source outside this note.": "该方案修改了本批注范围之外的源码。",
+  "The option has overlapping patches.": "该方案包含重叠的修改。"
 }

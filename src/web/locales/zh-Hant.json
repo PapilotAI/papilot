@@ -1271,7 +1271,6 @@
   "Complete PDF comparison": "完整 PDF 對比",
   "Current proposal": "目前方案",
   "Do not use this option.": "不使用此方案。",
-  "Generate alternatives": "產生備選方案",
   "Initial proposal": "初始方案",
   "Loading PDF comparison…": "正在載入 PDF 對比…",
   "Next note": "下一則註解",
@@ -1282,7 +1281,6 @@
   "Options are not available for this source range yet.": "此來源範圍暫不支援備選方案。",
   "Options for this note": "此註解的方案",
   "Preparing this option’s PDF diff…": "正在準備此方案的 PDF 差異對比…",
-  "Preparing two alternatives…": "正在準備兩個備選方案…",
   "Previous note": "上一則註解",
   "Reject": "拒絕",
   "Reject {label}": "拒絕「{label}」",
@@ -1297,5 +1295,7 @@
   "Wait for the current task and review actions to finish.": "請等待目前任務和審閱操作完成。",
   "Binary file changed.": "二進位檔案已變更。",
   "LaTeX comparison": "LaTeX 對比",
-  "Long change: the source is shortened.": "變更較長：原始碼已縮略。"
+  "Long change: the source is shortened.": "變更較長：原始碼已縮略。",
+  "Prepare alternatives by default": "預設提供備選方案",
+  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "處理 PDF 批註時，讓 AI 在同一次任務中準備兩種備選和簡短理由。審閱時直接選擇，無需再次請求 AI。"
 }

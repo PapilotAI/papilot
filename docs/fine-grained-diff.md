@@ -24,9 +24,22 @@ below and dismisses on an outside click or Escape. It adds measured bottom scrol
 space to the review and reveals covered highlights without changing PDF geometry,
 so edits at the end of the document remain reachable above it. The conversation keeps only the
 original sent annotations; clicking one focuses its changes without inserting any
-controls, status, or option text into that message. One icon-only accept, reject and comment group at the right of that row acts on the selected option, with no shared-edit hint. Acceptance uses that option and only the current note’s edits. Rejection records feedback against that particular option and can be toggled off without rejecting other alternatives. Comments open an editor inside the PDF panel. Both rejection feedback and comments remain in the existing unsent review draft until the author sends them. Scope controls live in the PDF toolbar. Opening a note only reads cached choices. The explicit **Generate alternatives** action asks the task's configured agent in a read-only
-helper turn, must include a brief concrete reason, are validated against the exact
-set of allowed units, and are cached.
+controls, status, or option text into that message. One icon-only accept, reject and comment group at the right of that row acts on the selected option, with no shared-edit hint. Acceptance uses that option and only the current note’s edits. Rejection records feedback against that particular option and can be toggled off without rejecting other alternatives. Comments open an editor inside the PDF panel. Both rejection feedback and comments remain in the existing unsent review draft until the author sends them. Scope controls live in the PDF toolbar. Opening a note only reads cached choices. **Settings → Review preferences → Prepare alternatives by default** is on by default.
+When an editing turn receives PDF notes, its prompt requests the main revision and two
+alternatives with concise titles and reasons together. The agent appends structured
+option data to its response; Papilot preserves the original response and displays only
+the human summary in the conversation. Before making the review available, it validates
+the prepared source patches against the exact units linked to each note and saves the
+choices. Context may disambiguate a patch but cannot authorize changes to another note.
+The preference is saved on the server and applies to subsequently submitted notes.
+There is no generation button or inference request when reviewing. Missing or invalid
+optional data leaves the main proposal available; it never starts a fallback AI call.
+
+Invisible space/newline adjustments in ordinary prose are grouped with the closest
+substantive change in the same paragraph, including existing saved rounds. Exact unit
+IDs, source patches, and decisions are preserved. Paragraph breaks, verbatim content,
+and formatting without a related substantive edit remain separate.
+
 The panel defaults to the complete compiled PDF comparison, including its
 surrounding context, directly below the option labels and reasons. The LaTeX toggle
 shows source before/after changes for the selected candidate, with file and line
@@ -46,7 +59,7 @@ source revision, edits and renderer version. The browser also shares in-flight p
 the current proposal intact. Applying a choice still uses the existing source-save
 compilation and recovery flow. Repeated ambiguous
 fragments keep historical links instead of guessing their new location. The full
-AI generation path requires a connected agent; the demo below has authored options
+Editing turns need a connected agent to supply alternatives; the demo below has authored options
 so the interaction can be tried offline.
 
 The browser fixture below shows the source view and its single-row controls.

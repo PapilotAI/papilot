@@ -21,6 +21,55 @@ function deferred<T>() {
   return { promise, resolve };
 }
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test('note alternatives are requested in the editing turn, respect the saved default, and preserve the original message', async () => {
+  const f = fixture();
+  try {
+    f.codex.ready = false;
+    const notes = [{ where: 'main.tex line 1', quote: 'The model is fast.', comment: 'Clarify speed.' }];
+    const on = await f.workspace.enqueue(f.task.id, 'Keep the facts.', 'with-options', false, { reviewNotes: notes });
+    assert.equal(on.noteOptionsRequested, true);
+    assert.match(on.prompt, /exactly two distinct alternatives now/);
+    assert.match(on.prompt, /papilot-note-options/);
+    const original = f.store.items(f.task.id).find(item => item.id === on.id)!;
+    assert.equal(original.text, 'Keep the facts.');
+    assert.deepEqual(original.meta?.notes, notes);
+    f.store.saveRun({ ...on, status: 'completed' });
+    f.store.savePreference('note-alternatives', false);
+    const off = await f.workspace.enqueue(f.task.id, 'Keep the facts.', 'without-options', false, { reviewNotes: notes });
+    assert.equal(off.noteOptionsRequested, undefined);
+    assert.doesNotMatch(off.prompt, /papilot-note-options/);
+    f.store.saveRun({ ...off, status: 'completed' });
+    f.store.savePreference('note-alternatives', true);
+    const plain = await f.workspace.enqueue(f.task.id, 'Explain the result.', 'no-notes', false);
+    assert.equal(plain.noteOptionsRequested, undefined);
+  } finally { f.close(); }
+});
+
+test('the editing response carries prepared choices into publication without putting JSON in the conversation', async () => {
+  const f = fixture();
+  try {
+    f.codex.ready = false;
+    const run = await f.workspace.enqueue(f.task.id, 'Polish this.', 'prepared-response', false, { reviewNotes: [{ where: 'main.tex line 1', quote: 'fast', comment: 'Clarify.' }] });
+    (f.workspace as any).active.set(f.task.id, run);
+    f.store.updateTask(f.task.id, { status: 'running', turnId: 'editing-turn' });
+    const choices = [{ note: 1, current: { label: 'Clear', reason: 'Clarify speed.' }, options: ['quick', 'efficient'].map(text => ({ label: text, reason: 'Use ' + text + '.', edits: [{ file: 'main.tex', find: 'fast', replace: text }] })) }];
+    const reply = 'Clarified the wording.\n\n```papilot-note-options\n' + JSON.stringify({ notes: choices }) + '\n```';
+    const params = { threadId: 'thread', turnId: 'editing-turn', itemId: 'reply' };
+    await (f.workspace as any).notification({ method: 'item/agentMessage/delta', params: { ...params, delta: reply } });
+    (f.workspace as any).flush();
+    assert.equal(f.store.items(f.task.id).find(item => item.type === 'assistant')?.text, 'Clarified the wording.');
+    await (f.workspace as any).notification({ method: 'item/completed', params: { ...params, item: { id: 'reply', type: 'agentMessage', text: reply } } });
+    let published = false;
+    f.workspace.publish = async (_id, submitted) => { published = true; assert.deepEqual(submitted?.noteOptions, choices); };
+    await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'editing-turn', status: 'completed' } } });
+    assert.equal(published, true);
+    assert.deepEqual(f.store.runByKey('prepared-response')?.noteOptions, choices);
+    const assistant = f.store.items(f.task.id).find(item => item.type === 'assistant')!;
+    assert.equal(assistant.text, 'Clarified the wording.');
+    assert.equal(assistant.rawText, reply);
+  } finally { f.close(); }
+});
 const feedback = { cursor: 7, feedback: [{ body: 'Preserve the boundary condition.' }] };
 const summary = { state: 'reviewing', round: 1, counts: { pending: 1 } };
 

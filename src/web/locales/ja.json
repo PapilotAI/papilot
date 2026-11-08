@@ -1271,7 +1271,6 @@
   "Complete PDF comparison": "PDF 全体の比較",
   "Current proposal": "現在の案",
   "Do not use this option.": "この案は使用しない。",
-  "Generate alternatives": "代替案を生成",
   "Initial proposal": "最初の案",
   "Loading PDF comparison…": "PDF の比較を読み込み中…",
   "Next note": "次の注釈",
@@ -1282,7 +1281,6 @@
   "Options are not available for this source range yet.": "このソース範囲では、まだ代替案を利用できません。",
   "Options for this note": "この注釈への案",
   "Preparing this option’s PDF diff…": "この案の PDF 差分を準備中…",
-  "Preparing two alternatives…": "2 つの代替案を準備中…",
   "Previous note": "前の注釈",
   "Reject": "却下",
   "Reject {label}": "「{label}」を却下",
@@ -1297,5 +1295,7 @@
   "Wait for the current task and review actions to finish.": "現在のタスクとレビュー操作が完了するまでお待ちください。",
   "Binary file changed.": "バイナリファイルが変更されました。",
   "LaTeX comparison": "LaTeX の比較",
-  "Long change: the source is shortened.": "長い変更: ソースは省略されています。"
+  "Long change: the source is shortened.": "長い変更: ソースは省略されています。",
+  "Prepare alternatives by default": "既定で代替案を用意する",
+  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "PDF の注釈を編集する際、同じタスクで AI に 2 つの代替案と短い理由を用意してもらいます。レビュー時に AI へ再依頼せず選択できます。"
 }

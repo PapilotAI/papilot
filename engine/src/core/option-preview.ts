@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { App } from "../server.ts";
 import type { Op, RenderedRound, RoundDetail, Unit } from "../types.ts";
+import { groupFormattingChanges } from "./formatting-changes.ts";
 import { codeVersion } from "../runtime.ts";
 import { Builder, buildDate } from "./build.ts";
 import { readJson, writeJson } from "./files.ts";
@@ -94,9 +95,9 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
     const rendered = readJson<RenderedRound>(path.join(output, "round.json"), { units: {}, sections: [], loose: [] });
     fs.copyFileSync(next.pdf, path.join(output, "preview.pdf"));
     const files = `/option-files/${name}/${round.number}/${key}/`;
-    const detail: RoundDetail = { ...rendered, task: name, round: round.number, before: round.before, after,
+    const detail: RoundDetail = groupFormattingChanges({ ...rendered, task: name, round: round.number, before: round.before, after,
       units: candidate.units.map(unit => ({ ...unit, ...rendered.units[unit.id] })),
-      warnings: [...old.warnings, ...next.warnings], files, pdf: files + "preview.pdf", build: { key: next.key, targets: ["full"] } };
+      warnings: [...old.warnings, ...next.warnings], files, pdf: files + "preview.pdf", build: { key: next.key, targets: ["full"] } }, file => app.repo.blob(round.before, file)?.toString("utf8") ?? null);
     writeJson(path.join(output, "preview.json"), detail);
     return detail;
   })();
