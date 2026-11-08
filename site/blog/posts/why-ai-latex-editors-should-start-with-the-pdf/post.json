@@ -29,7 +29,7 @@
       "description": "Papilot は組版済み PDF を主作業領域とし、ローカルの LaTeX プロジェクト上で紙面の注釈から AI に修正意図を伝え、変更前後の組版結果をその場で確認できます。",
       "hero": "/assets/blog/review.en.png",
       "heroAlt": "Papilot の製品画面イメージ：組版後の修正前後の比較表示と、承認・却下・コメントの操作。",
-      "heroCaption": "Papilot の論文ページ上で、修正前後の組版結果を直接比較・査読する。",
+      "heroCaption": "Papilot の論文ページ上で、修正前後の組版結果を直接比較・確認する。",
       "lead": "Papilot：人間と AI が協業して LaTeX を書く方法を再定義する",
       "title": "PDF が AI との対話インターフェースになるとき"
     },

@@ -31,7 +31,7 @@ Preserve the author's first-person voice and chosen argument. In the opening exa
 
 ## SEO and validation
 
-English lives at `/blog/`; other languages live at `/<locale>/blog/`. Every index has its own RSS feed. Each article has a self-referencing canonical URL, reciprocal language alternatives (including itself), an English `x-default`, localized Open Graph/Twitter metadata, `BlogPosting` and breadcrumb structured data, and a sitemap entry. The language menu uses ordinary links without automatic redirection. Each localized homepage links to its own Blog index.
+English lives at `/blog/`; other languages live at `/<locale>/blog/`. Every index has its own RSS feed. Each article has a self-referencing canonical URL, reciprocal language alternatives (including itself), an `x-default` pointing to English when available (otherwise the first published locale), localized Open Graph/Twitter metadata, `BlogPosting` and breadcrumb structured data, and a sitemap entry. The language menu uses ordinary links without automatic redirection. Each localized homepage links to its own Blog index.
 
 The index stays a simple article list. Its concise visible introduction and descriptive search metadata are separate fields (`indexDescription`, `indexSeoTitle`, `indexSeoDescription`). Article metadata should accurately summarize the article; do not add unsupported claims or arbitrary keyword lists.
 

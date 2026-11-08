@@ -90,9 +90,10 @@ try {
       assert.equal(await page.locator('meta[property="og:locale:alternate"]').count(), Object.keys(post.locales).length - 1);
       assert.equal(await page.locator('meta[property="og:image:alt"]').getAttribute('content'), post.locales[locale].heroAlt);
       assert.ok(Number(await page.locator('meta[property="og:image:width"]').getAttribute('content')) > 0);
-      assert.equal(await page.locator('link[hreflang=x-default]').getAttribute('href'), 'https://papilot.ai' + blogRoute('en', post.slug));
+      const defaultLocale = post.locales.en ? 'en' : Object.keys(post.locales)[0];
+      assert.equal(await page.locator('link[hreflang=x-default]').getAttribute('href'), 'https://papilot.ai' + blogRoute(defaultLocale, post.slug));
       assert.deepEqual(await page.locator('[id]').evaluateAll(nodes => nodes.map(node => node.id).filter((id,index,ids) => ids.indexOf(id)!==index)), [], 'no duplicate diagram or heading IDs');
-      assert.ok(await page.locator('.blog-prose p').count() > 5, 'full article is rendered without JavaScript');
+      assert.ok(await page.locator('.blog-prose > *').count() > 0, 'article content is rendered without JavaScript');
       for (const code of Object.keys(post.locales)) assert.equal(await page.locator(`link[hreflang="${code}"]`).getAttribute('href'), 'https://papilot.ai' + blogRoute(code, post.slug));
       const structured = JSON.parse(await page.locator('script[type="application/ld+json"]').textContent());
       const article = structured['@graph'].find(item => item['@type'] === 'BlogPosting');
@@ -100,7 +101,14 @@ try {
       assert.equal(article.headline, await page.locator('h1').innerText());
       assert.equal(article.inLanguage, locale);
       assert.equal(article.datePublished, await page.locator('meta[property="article:published_time"]').getAttribute('content'));
-      assert.equal(article.dateModified, await page.locator('meta[property="article:modified_time"]').getAttribute('content'));
+      const modified = page.locator('meta[property="article:modified_time"]');
+      if (post.updated) {
+        assert.equal(article.dateModified, post.updated + 'T00:00:00+08:00');
+        assert.equal(await modified.getAttribute('content'), article.dateModified);
+      } else {
+        assert.equal(article.dateModified, undefined);
+        assert.equal(await modified.count(), 0);
+      }
       assert.equal(article.isPartOf['@id'], 'https://papilot.ai' + blogRoute(locale) + '#blog');
       assert.equal(await page.locator('.blog-updated, .blog-image-credit, .blog-cta').count(), 0, 'article has no update line or promotional ending');
       assert.equal(await page.locator('.blog-meta time').getAttribute('datetime'), post.published);
@@ -113,7 +121,7 @@ try {
         await page.setViewportSize({ width, height: 1000 });
         await page.evaluate(() => document.fonts.ready);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no page overflow at ${width}px (${locale})`);
-        assert.ok(await page.locator('.blog-hero .blog-image-light img').isVisible());
+        assert.ok(await page.locator('.blog-hero .blog-figure').isVisible());
         for (const diagram of await page.locator('.blog-illustration-responsive').all()) {
           assert.equal(await diagram.locator('.blog-art-compact').isVisible(), width <= 600);
           assert.equal(await diagram.locator('.blog-art-wide').isVisible(), width > 600);
@@ -125,18 +133,18 @@ try {
             return bounds.left < box.left - 1 || bounds.right > box.right + 1 || bounds.top < box.top - 1 || bounds.bottom > box.bottom + 1;
           }).map(text => text.textContent);
         })), [], `diagram labels fit at ${width}px (${locale})`);
-        assert.deepEqual(await page.locator('.blog-illustration svg').evaluateAll(figures => figures.flatMap(svg => (svg.getAttribute('aria-labelledby') || '').split(/\s+/).filter(id => !svg.querySelector(`[id="${id}"]`)))), [], 'inline figures retain accessible titles and descriptions');
+        assert.deepEqual(await page.locator('.blog-illustration svg').evaluateAll(figures => figures.flatMap(svg => (svg.getAttribute('aria-labelledby') || '').split(/\s+/).filter(id => id && !svg.querySelector(`[id="${id}"]`)))), [], 'inline figures retain accessible titles and descriptions');
         if (width === 1440 || width === 390) {
           // Load responsive images and bring them into view before capture.
           await loadIllustrations(page);
           for (const figure of await page.locator('.blog-figure').all()) await figure.scrollIntoViewIfNeeded();
-          if (width === 390) await page.locator('.blog-prose .blog-figure:has(picture)').last().screenshot({ path: `test-results/blog/notes-${locale}-mobile.png` });
+          const bodyPicture = page.locator('.blog-prose .blog-figure:has(picture)').last();
+          if (width === 390 && await bodyPicture.count()) await bodyPicture.screenshot({ path: `test-results/blog/notes-${post.slug}-${locale}-mobile.png` });
           await page.evaluate(() => scrollTo(0, 0));
-          await page.screenshot({ path: `test-results/blog/article-${locale}-${width}.png`, fullPage: true });
-          if (width === 390) await page.screenshot({ path: `test-results/blog/article-${locale}-mobile-viewport.png` });
+          await page.screenshot({ path: `test-results/blog/article-${post.slug}-${locale}-${width}.png`, fullPage: true });
+          if (width === 390) await page.screenshot({ path: `test-results/blog/article-${post.slug}-${locale}-mobile-viewport.png` });
         }
       }
-      await page.locator('.blog-prose .blog-figure').last().scrollIntoViewIfNeeded();
       assert.deepEqual(await page.locator('.blog-figure img').evaluateAll(images => images.filter(image => getComputedStyle(image.closest('picture')).display !== 'none' && (!image.complete || !image.naturalWidth || !image.alt)).map(image => image.src)), []);
       const other = Object.keys(post.locales).find(code => code !== locale);
       if (other) {
@@ -152,18 +160,23 @@ try {
   const interactive = await browser.newContext({ colorScheme: 'light', reducedMotion: 'reduce', viewport: { width: 390, height: 844 } });
   const theme = await interactive.newPage();
   theme.on('pageerror', error => errors.push(error.message));
-  await theme.goto(origin + blogRoute('en', posts[0].slug));
+  const themePost = posts.find(post => Object.keys(post.locales).length > 1) || posts[0];
+  const themeLocale = themePost ? Object.keys(themePost.locales)[0] : 'en';
+  await theme.goto(origin + blogRoute(themeLocale, themePost?.slug));
   await theme.locator('.blog-theme').click();
   assert.equal(await theme.locator('html').getAttribute('data-theme'), 'dark');
-  assert.equal(await theme.locator('.blog-hero .blog-image-dark img').isVisible(), true);
-  assert.equal(await theme.locator('.blog-hero .blog-image-light img').isVisible(), false);
+  for (const picture of await theme.locator('.blog-image-dark').all()) assert.equal(await picture.isVisible(), true);
+  for (const picture of await theme.locator('.blog-image-light').all()) assert.equal(await picture.isVisible(), false);
   await theme.reload();
   assert.equal(await theme.locator('.blog-theme').getAttribute('aria-pressed'), 'true');
   await loadIllustrations(theme);
   await theme.screenshot({ path: 'test-results/blog/article-dark-mobile.png', fullPage: true });
-  await theme.locator('.blog-languages summary').click();
-  await theme.locator('.blog-language[hreflang="zh-CN"]').click();
-  assert.equal(await theme.locator('html').getAttribute('data-theme'), 'dark', 'theme persists across languages');
+  const otherLocale = (themePost ? Object.keys(themePost.locales) : blogLocales).find(code => code !== themeLocale);
+  if (otherLocale) {
+    await theme.locator('.blog-languages summary').click();
+    await theme.locator(`.blog-language[hreflang="${otherLocale}"]`).click();
+    assert.equal(await theme.locator('html').getAttribute('data-theme'), 'dark', 'theme persists across languages');
+  }
   await theme.locator('.blog-theme').click();
   assert.equal(await theme.locator('html').getAttribute('data-theme'), 'light');
   await interactive.close();

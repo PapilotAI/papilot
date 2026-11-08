@@ -157,9 +157,12 @@ try {
 
   // Opt-out is available only on the untracked privacy page, and reaches open tabs.
   const privacyPage = await context.newPage();
-  const beforePrivacy = externalCount();
+  const privacyProviderRequests = [];
+  privacyPage.on('request', request => {
+    if (new URL(request.url()).origin === 'https://statistics.example') privacyProviderRequests.push(request.url());
+  });
   await privacyPage.goto('https://papilot.ai/privacy/');
-  assert.equal(externalCount(), beforePrivacy, 'privacy page makes no provider requests');
+  assert.deepEqual(privacyProviderRequests, [], 'privacy page makes no provider requests');
   await privacyPage.locator('#statistics-disable').click();
   await page.waitForFunction(() => !window.papilotStatistics.enabled());
   const stopped = (await visits()).length;
