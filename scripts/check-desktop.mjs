@@ -46,9 +46,9 @@ async function dismissInitialSetup(page) {
   const requirements = await (await fetch(`${new URL(page.url()).origin}/api/runtime/requirements`)).json();
   assertInstalledTools(requirements, env);
   if (requirements.checks.some(check => !check.ok)) {
-    const setup = page.getByRole('dialog', { name: /^(Get ready to write|准备开始写作)$/ });
+    const setup = page.getByRole('dialog', { name: /^(Git|LaTeX)$/ });
     await expect(setup).toBeVisible();
-    await setup.getByRole('button', { name: /^(Set up later|稍后设置)$/ }).click();
+    await setup.getByRole('button', { name: /^(Close|关闭)$/ }).click();
     await expect(setup).toHaveCount(0);
   }
 }
