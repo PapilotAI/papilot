@@ -509,9 +509,13 @@ export class Builder {
     // sources differ least from this one, or a full build from the author's
     // own latexmk output, as latexmk does when a folder is compiled again:
     // unchanged files are cloned and LaTeX keeps its state, so it reruns
-    // only as often as the edit requires. Manual recompilation starts
-    // clean, and so does a retry when leftover state broke a build.
-    const start = options.force ? null : (await this.closest(context, targets, tree)) ?? (partial ? null : "author");
+    // only as often as the edit requires. The first build of a set of
+    // chapters continues from its seed, whose auxiliary files it reads
+    // anyway: latexmk's record and the state packages keep in the folder,
+    // such as minted's cache, come along, so it reruns only what leaving out
+    // the other chapters changes. Manual recompilation starts clean, and so
+    // does a retry when leftover state broke a build.
+    const start = options.force ? null : (await this.closest(context, targets, tree)) ?? (partial ? (seed && { info: seed, date: null }) : "author");
     const waiters = [...(waiting.get(requestKey) ?? [])],
       priority = waiters.reduce<BuildPriority>((top, w) => (RANK[w.priority] > RANK[top] ? w.priority : top), "background");
     const run: Active = { key: requestKey, priority, paused: false, watchers: new Set(waiters.flatMap((w) => (w.pass ? [w.pass] : []))) };
@@ -640,12 +644,18 @@ export class Builder {
     await Promise.all(included.map((target) => fs.promises.mkdir(path.join(out, path.dirname(target)), { recursive: true })));
     // Preview outputs carry across days. A dated comparison can still use
     // older auxiliary state, but TeX must refresh the date on its pages.
-    const reused = base !== null && (!dated || (start !== "author" && start?.date === date.SOURCE_DATE_EPOCH));
+    // Pages of other targets, such as a chapter build's full seed, are never
+    // this build's output: without them latexmk has to run TeX.
+    const reused = base !== null && JSON.stringify(base.targets) === JSON.stringify(targets)
+      && (!dated || (start !== "author" && start?.date === date.SOURCE_DATE_EPOCH));
     if (base) {
       const previous = path.dirname(base.pdf);
       await Promise.all((await filesIn(previous))
         .filter((file) => !/\.fls$/i.test(file) && (reused || !OUTPUT.test(file)))
         .map((file) => clone(file, path.join(out, path.relative(previous, file)))));
+      // latexmk names files below this folder relative to it; one it named
+      // absolutely must be checked here, not in the build this continues.
+      await relocate(path.join(out, job + ".fdb_latexmk"), path.dirname(base.root), folder);
     } else if (start === "author") {
       // Only this job's state: the author's folder may hold other editions.
       const own = path.join(p.root, p.doc_dir, "build");
