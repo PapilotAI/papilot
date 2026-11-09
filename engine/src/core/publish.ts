@@ -230,6 +230,22 @@ export class Publisher {
   attend() {
     reprioritize();
   }
+  // What the author reads in each task's review page, as the page reports
+  // it: its changes or the paper as decided so far.
+  private looking = new Map<string, "changes" | "pdf">();
+  /** The review page shows `mode` of the task. */
+  look(task: string, mode: "changes" | "pdf") {
+    this.looking.set(task, mode);
+    this.app.viewers.set(task, now());
+    reprioritize();
+  }
+  /** How much work for `mode` of a task matters to the author now: what is
+   *  on screen comes first, the rest of an open task next, a task nobody
+   *  reads last. */
+  attention(task: string, mode: "changes" | "pdf"): BuildPriority {
+    if (now() - (this.app.viewers.get(task) ?? 0) >= VIEWING) return "background";
+    return (this.looking.get(task) ?? "changes") === mode ? "foreground" : "normal";
+  }
   // Viewing ends without a request, so running builds are looked at again.
   private watching: NodeJS.Timeout | null = null;
   // Each task whose agent's writes are being compiled ahead, whether newer

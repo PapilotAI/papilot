@@ -818,11 +818,15 @@ export class Review {
         });
       }
     });
-    if (action.kind === "accept")
+    if (action.kind === "accept") {
       await app.repo.updateRefAsync(
         `refs/latex-review/${action.task}/accepted`,
         accepted!,
       );
+      // The paper as decided compiles at once, replacing the compilation
+      // of the decisions before this one.
+      app.applied.refresh(action.task);
+    }
   }
   message(
     name: string,

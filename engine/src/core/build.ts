@@ -374,29 +374,11 @@ export class Builder {
     // by the normal build cache, even if it was made earlier today.
     return this.build(rev, ["full"], null, { ...options, ...(incomplete ? { force: true } : {}) });
   }
-  async build(
-    rev: string,
-    targets = ["full"],
-    seed: BuildInfo | null = null,
-    options: {
-      force?: boolean;
-      progress?: (progress: BuildProgress) => void;
-      priority?: WantedPriority;
-      pass?: (preview: PassPreview) => void;
-      date?: ReturnType<typeof buildDate>;
-      /** The caller no longer needs this build: it rejects with Cancelled.
-       *  The compilation stops once nobody else waits for it, unless TeX
-       *  already finished: then its result stays, to continue from. */
-      signal?: AbortSignal;
-      /** Called once this request waits for its build key, so that a
-       *  request it replaces can be cancelled without stopping a
-       *  compilation both need. */
-      onKey?: (key: string) => void;
-    } = {},
-  ): Promise<BuildInfo> {
+  /** What identifies the build of `rev`: its cache key, and the tree and
+   *  date that it compiles. */
+  async resolve(rev: string, targets: string[], seed: BuildInfo | null, options: { date?: ReturnType<typeof buildDate> } = {}) {
     const p = this.project,
-      partial = JSON.stringify(targets) !== '["full"]',
-      priority = options.priority ?? "normal";
+      partial = JSON.stringify(targets) !== '["full"]';
     if (partial && !seed)
       throw new BuildError(
         "A partial build needs a completed full build to start from.",
@@ -426,7 +408,39 @@ export class Builder {
           dated ? date : null,
           SELF,
         ]),
-      ).slice(0, 32),
+      ).slice(0, 32);
+    return { partial, tree, date, dated, context, cacheKey };
+  }
+  /** The completed build of `rev`, if there is one, without compiling. */
+  async cached(rev: string, targets: string[], seed: BuildInfo | null, options: { date?: ReturnType<typeof buildDate> } = {}) {
+    const { cacheKey } = await this.resolve(rev, targets, seed, options),
+      preferred = this.preferred(cacheKey);
+    // A refresh replaced the build of this key (see build()).
+    return this.finished(path.join(this.cache, preferred ?? cacheKey));
+  }
+  async build(
+    rev: string,
+    targets = ["full"],
+    seed: BuildInfo | null = null,
+    options: {
+      force?: boolean;
+      progress?: (progress: BuildProgress) => void;
+      priority?: WantedPriority;
+      pass?: (preview: PassPreview) => void;
+      date?: ReturnType<typeof buildDate>;
+      /** The caller no longer needs this build: it rejects with Cancelled.
+       *  The compilation stops once nobody else waits for it, unless TeX
+       *  already finished: then its result stays, to continue from. */
+      signal?: AbortSignal;
+      /** Called once this request waits for its build key, so that a
+       *  request it replaces can be cancelled without stopping a
+       *  compilation both need. */
+      onKey?: (key: string) => void;
+    } = {},
+  ): Promise<BuildInfo> {
+    const p = this.project,
+      priority = options.priority ?? "normal",
+      { partial, tree, date, dated, context, cacheKey } = await this.resolve(rev, targets, seed, options),
       // Manual recompilation gets a fresh output directory. Other previews
       // and review rounds may still be reading the previous cached PDF.
       key = options.force ? hash(JSON.stringify([cacheKey, randomUUID()])).slice(0, 32) : cacheKey,
