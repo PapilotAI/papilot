@@ -944,7 +944,44 @@ test('inline source writes use the review token and reserve the task while its P
   } finally { finish({ status: 'done' }); engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); await f.close(); }
 });
 
-test('writing a paper compiles its manuscript, while pending chapter proposals do not precompile the whole paper', async () => {
+test('save previews and status checks do not compile an unapplied manuscript', async () => {
+  const f = await fixture();
+  let refreshes = 0;
+  f.manuscripts.refresh = async () => { refreshes++; };
+  const headers = { ...LOCAL, 'x-papilot-token': 'local-csrf' };
+  try {
+    for (const result of [
+      { commitReview: { token: 'confirm', diff: 'Review these changes first.' } },
+      { reconciliation: { id: 'merge', ready: true } },
+      { delivery: { mode: 'workspace', pending: true } },
+      { delivery: { mode: 'branch' } },
+    ]) {
+      f.workspace.applyTask = async () => result as any;
+      f.workspace.commitTask = async () => result as any;
+      for (const route of ['apply', 'commit']) {
+        const response = await f.local.inject({ method: 'POST', url: `/api/tasks/thesis-task/${route}`, headers, payload: { mode: 'commit', message: 'Save changes' } });
+        assert.equal(response.statusCode, 200, response.body);
+        assert.equal(refreshes, 0, `${route} must wait for confirmed manuscript delivery`);
+      }
+    }
+    // A successful status check can merely confirm a decision or agent run.
+    f.store.updateTask('thesis-task', { deferred: true, review: { state: 'done', round: 1, counts: { pending: 0 }, unsent: 0 } });
+    f.workspace.reconcile = async () => f.store.task('thesis-task');
+    const checked = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/reconcile', headers, payload: {} });
+    assert.equal(checked.statusCode, 200, checked.body);
+    assert.equal(refreshes, 0);
+    // Recovering a lost decision response obeys the same batching boundary.
+    for (const [deferred, pending, expected] of [[true, 0, 0], [false, 1, 0], [false, 0, 1]] as const) {
+      f.store.updateTask('thesis-task', { deferred, status: 'uncertain', pendingReview: { route: '/api/tasks/p-thesis-task/decide', body: { id: 'lost', action: 'accept' }, previousStatus: 'reviewing' } });
+      f.workspace.reconcile = async () => f.store.updateTask('thesis-task', { status: 'reviewing', pendingReview: null, review: { state: pending ? 'reviewing' : 'done', round: 1, counts: { pending }, unsent: 0 } });
+      const recovered = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/reconcile', headers, payload: {} });
+      assert.equal(recovered.statusCode, 200, recovered.body);
+      assert.equal(refreshes, expected);
+    }
+  } finally { await f.close(); }
+});
+
+test('review decisions wait until application to compile the manuscript', async () => {
   const f = await fixture();
   try {
     const refreshed: string[][] = [], predicted: [string, string, Record<string, string | null>][] = [];
@@ -960,30 +997,48 @@ test('writing a paper compiles its manuscript, while pending chapter proposals d
     assert.equal(failed.statusCode, 400);
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(refreshed.length, 1, 'a request that changed nothing compiles nothing');
-    // A review action through the review page, which may write the manuscript.
-    const engine = http.createServer((_request, response) => { response.setHeader('Content-Type', 'application/json'); response.end('{}'); });
+    // Exercise the real review proxy, including its response hook, rather
+    // than just emitting the event that previously started speculative builds.
+    let pending = 2;
+    f.store.updateTask('thesis-task', { deferred: true });
+    f.workspace.refresh = async () => {
+      f.store.updateTask('thesis-task', { review: { state: pending ? 'reviewing' : 'done', round: 1, counts: { pending }, unsent: 0 } });
+    };
+    const engine = http.createServer((_request, response) => {
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify({ task: 'p-thesis-task', csrf: 'review-token', closed: false, decisions: {}, job: null }));
+    });
     await new Promise<void>(resolve => engine.listen(0, '127.0.0.1', resolve));
     f.review.url = `http://127.0.0.1:${(engine.address() as { port: number }).port}`;
     try {
-      const noted = await f.local.inject({ method: 'POST', url: '/review/thesis/api/tasks/p-thesis-task/note', headers: { ...LOCAL, 'x-review-token': 'review-token' }, payload: { body: 'A note.' } });
-      assert.equal(noted.statusCode, 200, noted.body);
+      const review = async (route: string, action?: string) => {
+        const response = await f.local.inject({ method: 'POST', url: `/review/thesis/api/tasks/p-thesis-task/${route}`, headers: { ...LOCAL, 'x-review-token': 'review-token' }, payload: { id: crypto.randomUUID(), action, body: 'A note.' } });
+        assert.equal(response.statusCode, 200, response.body);
+        await new Promise(resolve => setImmediate(resolve));
+      };
+      for (const [route, action, remaining] of [['decide', 'accept', 1], ['decide', 'reject', 0], ['undo', undefined, 1], ['decide', 'accept', 0], ['note', undefined, 0]] as const) {
+        pending = remaining;
+        await review(route, action);
+        assert.equal(refreshed.length, 1, `${route} does not refresh the manuscript`);
+        assert.deepEqual(predicted, [], `${route} does not speculate on a result that can still be undone`);
+      }
+      f.workspace.applyTask = async () => ({ delivery: { mode: 'workspace', accepted: 'accepted' } }) as any;
+      const applied = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers, payload: { mode: 'workspace' } });
+      assert.equal(applied.statusCode, 200, applied.body);
       await new Promise(resolve => setImmediate(resolve));
-      assert.deepEqual(refreshed[1], ['thesis', '/unused/thesis'], 'a review action through the review page compiles too');
-    } finally { engine.close(); }
-    f.store.updateTask('thesis-task', { deferred: true, review: { state: 'reviewing', round: 1, counts: { pending: 1 }, unsent: 0 } } as any);
-    f.review.get = async (route: string) => (route.endsWith('/preview') ? { files: { 'main.tex': Buffer.from('Applied.\n').toString('base64'), 'old.tex': null } } : {}) as any;
-    f.workspace.emit('publishing', 'thesis-task', 'proposed-revision');
-    f.workspace.emit('reviewed', 'thesis-task');
-    await new Promise(resolve => setTimeout(resolve, 20));
-    assert.deepEqual(predicted, [], 'undecided proposals do not start a speculative full manuscript build');
-    f.store.updateTask('thesis-task', { review: { state: 'done', round: 1, counts: { accepted: 1 }, unsent: 0 } });
-    f.workspace.emit('reviewed', 'thesis-task');
-    for (let i = 0; i < 20 && !predicted.length; i++) await new Promise(resolve => setTimeout(resolve, 5));
-    assert.deepEqual(predicted, [['thesis', '/unused/thesis', { 'main.tex': 'Applied.\n', 'old.tex': null }]], 'once, though two listeners serve the workspace');
-    f.store.updateTask('thesis-task', { deferred: false } as any);
-    f.workspace.emit('reviewed', 'thesis-task');
-    await new Promise(resolve => setTimeout(resolve, 20));
-    assert.equal(predicted.length, 1, 'a task that applies as it is reviewed needs no prediction');
+      assert.equal(refreshed.length, 2, 'application starts one manuscript refresh');
+
+      // Legacy tasks write to the manuscript while reviewing. They refresh
+      // only once the selection is complete, and never for a note or undo.
+      f.store.updateTask('thesis-task', { deferred: false });
+      pending = 1; await review('decide', 'accept');
+      assert.equal(refreshed.length, 2);
+      pending = 0; await review('decide', 'reject');
+      assert.equal(refreshed.length, 3);
+      pending = 1; await review('undo');
+      await review('note');
+      assert.equal(refreshed.length, 3);
+    } finally { engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); }
   } finally { await f.close(); }
 });
 

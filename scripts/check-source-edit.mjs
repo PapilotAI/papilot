@@ -19,6 +19,7 @@ await server.listen({ host: '127.0.0.1', port: 0 });
 app.url = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1200, height: 850 } });
+page.setDefaultTimeout(15000);
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const edit = () => page.locator('.source-editor').getByRole('button', { name: '编辑', exact: true });
 const field = () => page.getByRole('textbox', { name: '编辑 LaTeX 源码' });
@@ -26,13 +27,13 @@ const save = () => page.getByRole('button', { name: '保存并更新 PDF', exact
 const waitRound = number => expect.poll(() => app.review.latestRound(task.name)?.number, { timeout: 90000 }).toBe(number);
 const open = async () => {
   const source = page.locator('.source');
-  if (!await source.isVisible()) await page.getByRole('button', { name: 'LaTeX', exact: true }).click();
+  if (!await source.isVisible()) await page.locator('.change.current').getByRole('button', { name: 'LaTeX', exact: true }).click();
   await edit().click();
 };
 try {
   await page.goto(app.url + '/?task=manual&lang=zh-Hans');
-  await expect(page.locator('.change')).toBeVisible();
-  await page.getByRole('button', { name: 'LaTeX', exact: true }).click();
+  await expect(page.locator('.change.current')).toBeVisible();
+  await page.locator('.change.current').getByRole('button', { name: 'LaTeX', exact: true }).click();
   const originalBox = await page.locator('.source-code').boundingBox();
   await open();
   await expect(page.locator('.source-code')).toHaveCount(1);
@@ -113,6 +114,10 @@ Literal symbols: \% and \$; \verb|% $ { }|.
   assert.equal(f.read(METHOD, task.worktree), f.read(METHOD));
   assert.deepEqual(errors, []);
   console.log('Source editing passed: one source surface, in-place edit and diff switching, header icons, syntax highlighting, wrapping and scrolling, draft recovery, keyboard save, real PDF rebuild, stale write refusal, compilation repair, mobile layout, empty review.');
+} catch (error) {
+  console.error(error);
+  await page.screenshot({ path: 'test-results/source-edit-error.png' }).catch(() => {});
+  throw error;
 } finally {
   await browser.close(); await server.close(); await f.close();
 }

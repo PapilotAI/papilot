@@ -36,8 +36,6 @@ import { systemRequirements } from './system-requirements.ts';
 import { findExecutable } from '../../bin/agent-paths.mjs';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
-// Each workspace compiles predicted manuscripts once, however many listeners serve it.
-const predicting = new WeakSet<Workspace>();
 
 // Git writes to one repository run one at a time; each returns the new status.
 // Concurrent requests from browser tabs share the same queue.
@@ -119,33 +117,28 @@ export async function buildApp(options: AppOptions) {
     if (id) projectRequests.set(request, workspace.enterProjectRequest(id));
   });
   app.addHook('onSend', async (request, _reply, payload) => { projectRequests.get(request)?.(); return payload; });
-  // Whatever may have written a paper's files compiles its manuscript right
-  // away: committing or applying a task, a Git action, a review decision. The
-  // PDF is on its way before anyone opens it, and a tree that did not change
-  // costs one snapshot.
+  // Compile after applying the reviewed result. Individual decisions only
+  // update the proposal; they must not start manuscript or speculative builds.
   const WRITES = /^\/api\/projects\/:id\/git\/|^\/api\/tasks\/:id\/(?:commit|apply|reconcile)$|^\/review\/:projectId\/(?:api\/changes\/(?:decide|undo)|\*)$/;
+  const completedTaskWrites = new WeakSet<object>();
   app.addHook('onResponse', async (request, reply) => {
     if (request.method !== 'POST' || reply.statusCode >= 400 || !WRITES.test(request.routeOptions.url || '')) return;
     const params = (request.params || {}) as Record<string, string>;
     try {
+      // Save routes can return a confirmation or merge suggestion without
+      // changing the manuscript. A status check is not itself a write either.
+      if (request.routeOptions.url?.startsWith('/api/tasks/') && !completedTaskWrites.has(request)) return;
+      if (request.routeOptions.url === '/review/:projectId/*') {
+        // Older tasks write accepted edits directly into the manuscript.
+        // Batch those too, until the last decision; notes never need a build.
+        const task = store.tasks().find(task => task.projectId === params.projectId && task.name === params['*']?.split('/')[2]);
+        if (!task || task.deferred || !/\/(decide|undo)$/.test(params['*'] || '')
+          || (request.body as any)?.action === 'comment' || !task.review || (task.review.counts.pending ?? 0) > 0) return;
+      }
       const project = store.project(params.projectId ?? (request.routeOptions.url!.startsWith('/api/tasks/') ? store.task(params.id).projectId : params.id));
       void manuscripts.refresh(project.id, project.path).catch(() => undefined);
     } catch { /* The paper or task is gone. */ }
   });
-  // Prepare the manuscript only after the author has decided the proposal.
-  // Pending chapter edits must not trigger speculative full-paper builds.
-  const predict = async (taskId: string) => {
-    const task = store.task(taskId), project = store.project(task.projectId);
-    if (!task.deferred || task.mode === 'review' || task.delivery?.pending || task.status === 'deleting' || (task.review?.counts.pending ?? 0) > 0) return;
-    const client = await connectReview(project.path);
-    const preview = await client.get<{ files: Record<string, string | null> | null }>(`${taskRoute(task.name)}/preview`);
-    if (preview.files) await manuscripts.predict(project.id, project.path, Object.fromEntries(Object.entries(preview.files).map(([file, data]) => [file, data === null ? null : Buffer.from(data, 'base64')])));
-  };
-  if (!predicting.has(workspace)) {
-    predicting.add(workspace);
-    workspace.on('reviewed', (taskId: string) => void predict(taskId).catch(() => undefined));
-    // The review's complete PDF is compiled on demand when opened.
-  }
   app.addHook('onError', async request => { projectRequests.get(request)?.(); });
   await app.register(compress);
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
@@ -355,7 +348,7 @@ export async function buildApp(options: AppOptions) {
           return value;
         }, { route, body: input });
         if (result.error) throw new Error(result.error);
-        await workspace.refresh(current.id); workspace.emit('reviewed', current.id);
+        await workspace.refresh(current.id);
         return (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
       }
       const route = `${taskRoute(current.name)}/source/options`, input = { id: string(body.id, 'Option request ID', 80), round: body.round, edits: option.edits, ...(body.accept ? { accept: true } : {}) };
@@ -413,14 +406,18 @@ export async function buildApp(options: AppOptions) {
     return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, reviewNotes, attachments });
   });
   // Commits what the author accepted from this task, with the message they confirmed.
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/commit', task, request => {
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/commit', task, async request => {
     const task = store.task(request.params.id), b = request.body as any;
-    return serialGit(task.projectId, () => workspace.commitTask(task.id, string(b.message, 'Commit message', 5000), b.push === true));
+    const result = await serialGit(task.projectId, () => workspace.commitTask(task.id, string(b.message, 'Commit message', 5000), b.push === true));
+    if (result.commit) completedTaskWrites.add(request);
+    return result;
   });
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/apply', task, request => {
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/apply', task, async request => {
     const task = store.task(request.params.id), b = (request.body || {}) as any;
     if (b.mode !== undefined && b.mode !== 'workspace' && b.mode !== 'commit') throw new Error('Invalid save action.');
-    return serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined));
+    const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined));
+    if (result.delivery && !result.delivery.pending && result.delivery.mode !== 'branch') completedTaskWrites.add(request);
+    return result;
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit-message', task, request => {
     const task = store.task(request.params.id);
@@ -443,7 +440,13 @@ export async function buildApp(options: AppOptions) {
     if ((request.body as any)?.confirm !== true) throw new Error('Confirm permanent task deletion before continuing.');
     return workspace.deleteTask(request.params.id);
   });
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/reconcile', task, request => workspace.reconcile(request.params.id));
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/reconcile', task, async request => {
+    const before = store.task(request.params.id), result = await workspace.reconcile(before.id);
+    // A recovered final decision can write directly to a legacy manuscript.
+    if (!before.deferred && before.pendingReview && /\/(decide|undo)$/.test(before.pendingReview.route)
+      && !result.pendingReview && !result.error && result.review?.state === 'done' && !result.review.counts.pending) completedTaskWrites.add(request);
+    return result;
+  });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/publish', task, request => {
     const task = store.task(request.params.id); if (['running', 'waiting_input', 'building'].includes(task.status)) throw new Error('This task is busy. Wait for it to finish or pause it first.');
     void workspace.publish(task.id); return { ok: true };
@@ -705,8 +708,6 @@ export async function buildApp(options: AppOptions) {
             if (task) {
               store.updateTask(task.id, { error: null });
               await workspace.refresh(task.id);
-              // A decision changes what applying the task will write.
-              workspace.emit('reviewed', task.id);
             }
           }
           // A round's new version as one complete PDF, which Papilot compiles,
