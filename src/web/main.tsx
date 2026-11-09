@@ -1,4 +1,4 @@
-import { requestApi } from './api.ts';
+import { requestApi, requestState } from './api.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { GroupCard, GroupInstruction } from './note-groups.tsx';
@@ -1044,9 +1044,11 @@ function App() {
   const timelineCache = useRef(new Map<string, TimelineItem[]>());
   const timelineRevisions = useRef(new Map<string, string>());
   const snapshotText = useRef('');
+  // The server's tag for snapshotText; sent only while that text is what the app shows.
+  const snapshotTag = useRef('');
   const composers = useRef(new Map<string, ComposerDraft>());
   const answerDrafts = useRef(new Map<string, Record<string, string>>());
-  const [snapshotRequest] = useState(() => new ReadRequest<Snapshot & { csrf: string }>());
+  const [snapshotRequest] = useState(() => new ReadRequest<{ value: (Snapshot & { csrf: string }) | null; tag: string }>());
   const [timelineRequest] = useState(() => new ReadRequest<{ items: TimelineItem[]; revision?: string; partial?: boolean }>());
   const [online, setOnline] = useState(true), [error, setError] = useState('');
   const [connectionError, setConnectionError] = useState('');
@@ -1213,9 +1215,13 @@ function App() {
   const refresh = useCallback(async (fresh = false) => {
     try {
       if (fresh) snapshotRequest.cancel();
-      await snapshotRequest.run('state', signal => api('/state', undefined, signal), next => {
+      const load = (signal: AbortSignal) => import.meta.env.MODE === 'playground' ? api<Snapshot & { csrf: string }>('/state', undefined, signal).then(value => ({ value, tag: '' }))
+        : requestState<Snapshot & { csrf: string }>(token, snapshotText.current && snapshotRef.current ? snapshotTag.current : '', signal);
+      await snapshotRequest.run('state', load, ({ value: next, tag }) => {
         // Most polls find nothing new; an identical snapshot leaves the app as it is.
+        if (!next) { setOnline(true); setConnectionError(''); return; }
         const text = JSON.stringify(next);
+        snapshotTag.current = tag;
         if (text === snapshotText.current && snapshotRef.current) { setOnline(true); setConnectionError(''); return; }
         snapshotText.current = text;
         const selection = selectedRef.current, previous = snapshotRef.current;
