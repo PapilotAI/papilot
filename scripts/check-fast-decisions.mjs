@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, webkit, expect } from '../engine/node_modules/@playwright/test/index.mjs';
 import { annotateReviewState } from '../src/server/review.ts';
 
 fs.mkdirSync('test-results', { recursive: true });
@@ -14,7 +14,8 @@ const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('engine/dist/web') });
 await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
-const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
+// PAPILOT_BROWSER=webkit runs the same checks in Safari's engine.
+const browser = process.env.PAPILOT_BROWSER === 'webkit' ? await webkit.launch({ headless: true }) : await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const ids = ['c1', 'c2', 'c3', 'c4'];
 const detail = {
   task: 'flow', round: 1, before: 'before', after: 'after', warnings: [], files: '/files/flow/1/', sections: [],
@@ -190,10 +191,10 @@ try {
   const first = await profile.newPage();
   first.on('pageerror', error => errors.push(error.message));
   reset(); await open(first); hold = true;
-  await first.keyboard.press('a');
-  await first.keyboard.press('a');
-  await first.keyboard.press('a');
-  await expect(current(first)).toHaveAttribute('data-stop', '3');
+  for (const next of ['1', '2', '3']) {
+    await first.keyboard.press('a');
+    await expect(current(first)).toHaveAttribute('data-stop', next);
+  }
   hold = false;
   await first.close({ runBeforeUnload: true });
   for (const release of held.splice(0)) release();
@@ -205,6 +206,8 @@ try {
     if (round) return route.fulfill({ json: { ...detail, round: Number(round[1]) } });
     if (route.request().method() !== 'POST') return route.fulfill({ json: view() });
     if (url.pathname.endsWith('/look')) return route.fulfill({ json: { ok: true } });
+    // As Papilot's proxy does, a write needs the page's token.
+    if (route.request().headers()['x-review-token'] !== 'fixture') return route.fulfill({ status: 403, json: { error: 'This review page has expired. Refresh it and try again.' } });
     const body = route.request().postDataJSON();
     posts.push({ route: url.pathname.split('/').at(-1), ...body });
     return route.fulfill({ json: view(apply(url.pathname, body)) });

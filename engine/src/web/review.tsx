@@ -233,11 +233,18 @@ export function ReviewApp({
     retries: changes ? 0 : 4,
     ...(queueKey ? { storage: { key: queueKey } } : {}),
   });
+  // What an earlier page decided and never had confirmed goes out once this
+  // page has its state: the server takes decisions only with the token in it.
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!queueKey || transport || restored.current || !state?.csrf) return;
+    restored.current = true;
+    const saved = DecisionQueue.saved<Queued>(queueKey).filter((entry) => !queue.current!.pending.some((queued) => queued.id === entry.id));
+    for (const entry of saved) queue.current!.push(entry);
+    if (saved.length) { setQueued(queue.current!.pending); setSettling(true); }
+  }, [Boolean(state?.csrf)]);
   useEffect(() => {
     if (!queueKey || transport) return;
-    // What an earlier page decided and never had confirmed goes out first.
-    for (const entry of DecisionQueue.saved<Queued>(queueKey)) queue.current!.push(entry);
-    if (queue.current!.pending.length) { setQueued(queue.current!.pending); setSettling(true); }
     // A page that goes away sends what is left at once; the browser finishes
     // those requests even after the page is gone.
     const listener = (event: Event) => {
@@ -477,8 +484,11 @@ export function ReviewApp({
     });
     if (!response.ok) {
       const message = value.error || `HTTP ${response.status}`;
-      // A gateway or a restarting host did not answer for the server.
-      throw [502, 503, 504].includes(response.status) ? new Unreachable(message) : new Error(message);
+      // A gateway or a restarting host did not answer for the server. The
+      // same decision sent again by a page that came back, while the server
+      // still applies the first send, is refused for now: it is sent again
+      // too, and then confirmed as applied.
+      throw [502, 503, 504].includes(response.status) || (response.status === 400 && /review action is already in progress/i.test(message)) ? new Unreachable(message) : new Error(message);
     }
     return value as T;
   }
@@ -1470,12 +1480,13 @@ export function ReviewApp({
   useEffect(() => {
     if (changes || transport || !task) return;
     const mode = paperView ? "pdf" : "changes";
-    const look = () => { if (!document.hidden) void api("/look", { mode }).catch(() => undefined); };
+    // Only with the page's token, which the first state brings.
+    const look = () => { if (!document.hidden && snapshot.current.state?.csrf) void api("/look", { mode }).catch(() => undefined); };
     look();
     const timer = setInterval(look, 5000);
     document.addEventListener("visibilitychange", look);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", look); };
-  }, [task, paperView, changes]);
+  }, [task, paperView, changes, Boolean(state?.csrf)]);
   // A host shows its own switch while the whole paper can be shown.
   useEffect(() => {
     const root = document.documentElement;
