@@ -149,6 +149,30 @@ it.skipIf(!posix)("stops the newest of two normal runs for foreground work", asy
   await until(() => !stopped(newerGroup));
 });
 
+it.skipIf(!posix)("gives a borrowed slot back once its lender matters more, and continues when a slot is free again", async () => {
+  let wanted: "background" | "foreground" = "background";
+  const lender = new Lease(() => wanted);
+  leases.push(lender);
+  await lender.ready;
+  const lenderGroup = compiler(lender), busy = lease("normal");
+  await busy.ready;
+  compiler(busy);
+  const borrower = lease("normal");
+  await borrower.ready;
+  const borrowerGroup = compiler(borrower);
+  expect(borrower.borrowed).toBe(true);
+  await until(() => stopped(lenderGroup));
+  // Someone starts waiting for the lent build.
+  wanted = "foreground";
+  lender.update();
+  await until(() => borrower.revoked && stopped(borrowerGroup));
+  await until(() => !stopped(lenderGroup));
+  // A free slot again: the borrower continues on it.
+  await busy.release();
+  await until(() => !borrower.revoked && !stopped(borrowerGroup));
+  expect([borrower.borrowed, borrower.slot >= 0]).toEqual([false, true]);
+});
+
 it.skipIf(!posix)("continues a lent run when its borrower dies", async () => {
   const lender = lease("background");
   await lender.ready;

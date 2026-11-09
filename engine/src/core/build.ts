@@ -114,7 +114,7 @@ const stops = new Map<string, AbortController>();
 function schedule() {
   if (process.platform === "win32") return;
   for (const build of active) {
-    const pause = Boolean(build.lease?.lent);
+    const pause = Boolean(build.lease?.lent || build.lease?.revoked);
     if (pause === build.paused || !build.child?.pid || build.child.exitCode !== null) continue;
     try {
       process.kill(-build.child.pid, pause ? "SIGSTOP" : "SIGCONT");

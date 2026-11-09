@@ -109,9 +109,10 @@ test('each TeX pass that latexmk follows with more work is shown before the buil
   } finally { f.close(); }
 });
 
-test('a background build stops while another build compiles, and someone waiting for it promotes it', { skip: process.platform === 'win32' && 'uses POSIX signals', timeout: 60000 }, async () => {
+test('a background build compiles beside another at full speed, lends its slot only when none is free, and gets it back once someone waits for it', { skip: process.platform === 'win32' && 'uses POSIX signals', timeout: 60000 }, async () => {
   const f = paper({ 'main.tex': document('Text.\n') });
-  const bin = path.join(f.base, 'bin'), previousPath = process.env.PATH;
+  const bin = path.join(f.base, 'bin'), previousPath = process.env.PATH, previousPool = process.env.PAPILOT_TEX_POOL;
+  const pool = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-pool-'));
   try {
     // A latexmk that records its process ID and finishes when told to, or
     // after a minute, so that a test stopped midway leaves nothing running.
@@ -119,6 +120,7 @@ test('a background build stops while another build compiles, and someone waiting
     fs.writeFileSync(path.join(bin, 'pdflatex'), '#!/bin/sh\necho "pdfTeX 3.14 (fake)"\n', { mode: 0o755 });
     fs.writeFileSync(path.join(bin, 'latexmk'), `#!/bin/sh\necho $$ > "${f.base}/pid-$(basename "$(dirname "$PWD")")"\ni=0; while [ ! -e "${f.base}/go-$(basename "$(dirname "$PWD")")" ] && [ $i -lt 1200 ]; do sleep 0.05; i=$((i+1)); done\nmkdir -p build && echo pdf > build/main.pdf\n`, { mode: 0o755 });
     process.env.PATH = `${bin}:${previousPath}`;
+    process.env.PAPILOT_TEX_POOL = pool;
     const builder = new Builder(loadProject(f.root), f.repo), keyOf = (folder: string) => path.basename(path.dirname(folder));
     const state = (pid: string) => execFileSync('ps', ['-o', 'stat=', '-p', pid]).toString().trim();
     const waitFor = async (check: () => boolean) => { for (let i = 0; i < 400 && !check(); i++) await new Promise(r => setTimeout(r, 25)); assert.ok(check()); };
@@ -127,28 +129,39 @@ test('a background build stops while another build compiles, and someone waiting
     const background = builder.build(f.repo.rev('HEAD'), ['full'], null, { priority: 'background' });
     await waitFor(() => pids().length === 1);
     const [speculative] = pids();
-    assert.doesNotMatch(state(pidOf(speculative)), /T/);
+    // Another build takes the free slot; both compile.
     const other = f.commit({ 'main.tex': document('Other.\n') });
     const normal = builder.build(other);
     await waitFor(() => pids().length === 2);
-    const [foreground] = pids().filter(key => key !== speculative);
-    await waitFor(() => /T/.test(state(pidOf(speculative))));
-    fs.writeFileSync(path.join(f.base, `go-${foreground}`), '');
-    assert.equal(keyOf((await normal).root), foreground);
-    await waitFor(() => !/T/.test(state(pidOf(speculative))));
-    // Waiting for the same build promotes it: another build no longer stops it.
+    const [busy] = pids().filter(key => key !== speculative);
+    await new Promise(r => setTimeout(r, 400));
+    assert.doesNotMatch(state(pidOf(speculative)), /T/, 'a free slot is used at full speed');
+    // A third finds no free slot and borrows the background build's.
     const third = builder.build(f.commit({ 'main.tex': document('Third.\n') }));
     await waitFor(() => pids().length === 3);
+    const [borrower] = pids().filter(key => key !== speculative && key !== busy);
     await waitFor(() => /T/.test(state(pidOf(speculative))));
+    // Someone starts waiting for the lent build: it gets its slot back, and
+    // the borrower waits, stopped, for a slot of its own.
     f.repo.run(['checkout', '-q', 'HEAD~2']);
     const waiting = builder.build(f.repo.rev('HEAD'), ['full'], null, { priority: 'foreground' });
     await waitFor(() => !/T/.test(state(pidOf(speculative))));
+    await waitFor(() => /T/.test(state(pidOf(borrower))));
     fs.writeFileSync(path.join(f.base, `go-${speculative}`), '');
     const [first, again] = await Promise.all([background, waiting]);
     assert.equal(first.key, again.key, 'the foreground request received the speculative build');
-    fs.writeFileSync(path.join(f.base, `go-${pids().find(key => key !== speculative && key !== foreground)}`), '');
+    // The borrower continues on the slot that became free.
+    await waitFor(() => !/T/.test(state(pidOf(borrower))));
+    fs.writeFileSync(path.join(f.base, `go-${busy}`), '');
+    assert.equal(keyOf((await normal).root), busy);
+    fs.writeFileSync(path.join(f.base, `go-${borrower}`), '');
     await third;
-  } finally { process.env.PATH = previousPath; f.close(); }
+  } finally {
+    for (const key of fs.readdirSync(f.base).filter(n => n.startsWith('pid-')).map(n => n.slice(4))) fs.writeFileSync(path.join(f.base, `go-${key}`), '');
+    process.env.PATH = previousPath;
+    if (previousPool === undefined) delete process.env.PAPILOT_TEX_POOL; else process.env.PAPILOT_TEX_POOL = previousPool;
+    f.close(); fs.rmSync(pool, { recursive: true, force: true });
+  }
 });
 
 test('a foreground waiter promotes recovery of a pruned preferred build and receives its progress', { skip: process.platform === 'win32' && 'uses POSIX signals', timeout: 60000 }, async () => {
@@ -185,7 +198,9 @@ echo result > build/main.pdf
     assert.notEqual(target.key, first.key, 'Recovery writes fresh immutable output');
     const competing = builder.build(other); pending.push(competing);
     await waitFor(() => pids().length === 2);
-    await waitFor(() => /T/.test(state(target.pid)));
+    // Both compile, each on its own slot.
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.doesNotMatch(state(target.pid), /T/);
     const progress: number[] = [];
     const foreground = builder.build(rev, ['full'], null, { priority: 'foreground', progress: value => progress.push(value.pass) }); pending.push(foreground);
     await waitFor(() => !/T/.test(state(target.pid)));

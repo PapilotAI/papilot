@@ -136,8 +136,11 @@ export class Lease {
   borrowed = false;
   /** This run's slot is lent: it must stay stopped. */
   lent = false;
-  /** Told when `lent` changes. Without it, the lease stops and continues
-   *  the attached run itself. */
+  /** This run gave back the slot it borrowed, because its lender now
+   *  matters more: it stays stopped until it has a slot again. */
+  revoked = false;
+  /** Told when `lent` or `revoked` changes. Without it, the lease stops and
+   *  continues the attached run itself. */
   onLent?: () => void;
   private priority: PoolPriority;
   private pgid: number | null = null;
@@ -156,6 +159,10 @@ export class Lease {
   // Keeps the waiter file and the borrow claim fresh (see readKept).
   private heartbeat?: NodeJS.Timeout;
   private claim: string | null = null;
+  // While borrowing: watches whether the lender came to matter more.
+  private guarding?: NodeJS.Timeout;
+  // Waiting for a slot again after giving a borrowed one back.
+  private again: Promise<void> | null = null;
   constructor(private wanted: () => PoolPriority) {
     this.priority = wanted();
     this.ready = this.acquire();
@@ -231,7 +238,7 @@ export class Lease {
             this.watch();
             return;
           }
-        if (first && signals && this.priority !== "background" && await this.borrow(state)) return;
+        if (first && signals && this.priority !== "background" && await this.borrow(state)) { this.guard(); return; }
         await delay(40 + Math.random() * 80);
       }
     } finally {
@@ -305,10 +312,54 @@ export class Lease {
     if (acknowledged) await fs.promises.writeFile(ackFile(dir, this.slot), acknowledged);
     else await fs.promises.rm(ackFile(dir, this.slot), { force: true });
   }
+  private stopped() {
+    if (this.onLent) this.onLent();
+    else signal(this.pgid, this.lent || this.revoked ? "SIGSTOP" : "SIGCONT");
+  }
+  // A borrower gives the slot back as soon as its lender matters more than
+  // it, as when someone starts waiting for the lent build: the lender
+  // continues at once, and the borrower waits for a slot again, stopped,
+  // keeping its place in line.
+  private guard() {
+    if (!signals) return;
+    this.guarding = setInterval(() => void (async () => {
+      if (this.released || !this.borrowed || this.revoked) return;
+      const holder = await readJson<Holder>(infoFile(this.settings.dir, this.slot));
+      if (holder && alive(holder.pid) && RANK[holder.priority] > RANK[this.priority]) await this.revoke();
+    })().catch(() => undefined), 150);
+    this.guarding.unref();
+  }
+  private async revoke() {
+    clearInterval(this.guarding);
+    this.revoked = true;
+    this.stopped();
+    const { dir } = this.settings, file = borrowFile(dir, this.slot);
+    if ((await readJson<Borrow>(file))?.id === this.id) {
+      await fs.promises.rm(file, { force: true });
+      await fs.promises.rm(ackFile(dir, this.slot), { force: true });
+    }
+    this.claim = null;
+    clearInterval(this.heartbeat);
+    this.borrowed = false;
+    this.slot = -1;
+    this.waiting = true;
+    this.again = this.acquire();
+    try {
+      await this.again;
+    } catch {
+      return;
+    } finally {
+      this.again = null;
+    }
+    this.revoked = false;
+    this.stopped();
+  }
   async release() {
     if (this.released) return;
     this.released = true;
     await this.ready.catch(() => undefined);
+    clearInterval(this.guarding);
+    await this.again?.catch(() => undefined);
     if (this.watching) clearInterval(this.watching);
     clearInterval(this.heartbeat);
     await this.writes;
