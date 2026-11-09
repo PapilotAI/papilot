@@ -451,7 +451,9 @@ export class Publisher {
   private async work(job: Job) {
     try {
       const result = await this.publish(job);
-      await acceptNoteOption(this.app, job.task, job.id);
+      // A newer round replaced this one before its PDF was ready: the note
+      // option's checkmark waits for the author to review that round.
+      if (!result.superseded) await acceptNoteOption(this.app, job.task, job.id);
       const verdict = this.verdicts.get(job.id);
       this.update(job.id, { status: "done", result: verdict ? { ...result, prefetch: verdict } : result, finished: now() });
     } catch (error) {
