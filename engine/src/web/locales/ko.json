@@ -216,8 +216,6 @@
   "Updating the comparison with your latest edits. You can keep staging and reverting meanwhile.": "최신 편집 내용으로 비교를 업데이트하는 중입니다. 그 동안 계속 스테이징하고 되돌릴 수 있습니다.",
   "Verified": "확인됨",
   "Viewing earlier changes.": "이전 변경 사항을 보고 있습니다.",
-  "Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.": "변경 사항을 수락, 거부 또는 실행 취소하기 전에 PDF 빌드가 완료될 때까지 기다리세요. 의견은 계속 추가할 수 있습니다.",
-  "Wait for the PDF build before editing source.": "PDF 빌드가 완료된 후 소스를 편집하세요.",
   "Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.": "변경 사항을 수락, 거부 또는 실행 취소하기 전에 현재 검토 작업이 완료될 때까지 기다리세요. 의견은 계속 추가할 수 있습니다.",
   "Wait for the merge suggestion before changing review decisions.": "검토 결정을 변경하기 전에 병합 제안을 기다려 주세요.",
   "Waiting for the agent to publish its changes.": "에이전트가 변경 사항을 게시하기를 기다리는 중입니다.",

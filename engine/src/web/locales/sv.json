@@ -216,8 +216,6 @@
   "Updating the comparison with your latest edits. You can keep staging and reverting meanwhile.": "Uppdaterar jämförelsen med dina senaste ändringar. Du kan fortsätta köa och återställa under tiden.",
   "Verified": "Verifierad",
   "Viewing earlier changes.": "Visar tidigare ändringar.",
-  "Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.": "Vänta tills PDF-bygget är klart innan du godkänner, avvisar eller ångrar ändringar. Du kan fortfarande lägga till kommentarer.",
-  "Wait for the PDF build before editing source.": "Vänta tills PDF-bygget är klart innan du redigerar källkoden.",
   "Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.": "Vänta på den pågående granskningsåtgärden innan du godkänner, avvisar eller ångrar ändringar. Du kan fortfarande lägga till kommentarer.",
   "Wait for the merge suggestion before changing review decisions.": "Vänta på sammanfogningsförslaget innan du ändrar granskningsbeslut.",
   "Waiting for the agent to publish its changes.": "Väntar på att agenten ska publicera sina ändringar.",

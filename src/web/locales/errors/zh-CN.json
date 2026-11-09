@@ -106,7 +106,6 @@
   "Papilot restarted. Retry compilation to continue this import.": "Papilot 已重启。请重试编译以继续此次导入。",
   "Pause Codex before building a review.": "构建审阅前，请先暂停 Codex。",
   "Pause the task and wait for its current work or review action to finish before deleting it. Resolve any uncertain action first.": "删除任务前，请先暂停该任务并等待其当前工作或审阅操作完成。请先处理所有待确认的操作。",
-  "Pause the task before accepting, rejecting, or undoing changes. Wait for any PDF build to finish.": "接受、拒绝或撤销修改前，请先暂停任务，并等待所有 PDF 构建完成。",
   "Pause this paper’s active tasks and wait for current work to finish before changing its path or removing it. Resolve any uncertain action first.": "更改此论文的路径或将其移除前，请先暂停其活动任务并等待当前工作完成。请先处理所有待确认的操作。",
   "Resolve the merge conflicts in the selected files before committing.": "提交前请先解决所选文件中的合并冲突。",
   "Restore repositories with submodules using Git.": "含有子模块的仓库请使用 Git 恢复。",
@@ -181,7 +180,6 @@
   "There is no new review feedback to send.": "没有新的审阅反馈可供发送。",
   "This PDF has no selectable text to review.": "此 PDF 没有可供审阅的可选文本。",
   "This agent does not report usage.": "此智能体不报告用量。",
-  "This attachment is already being sent to another task.": "此附件正在发送至另一个任务。",
   "This attachment is not available for this task.": "此附件不可用于该任务。",
   "This branch does not track a remote branch yet.": "此分支尚未跟踪远程分支。",
   "This comparison is out of date. Refresh the page.": "此对比已过期，请刷新页面。",
@@ -213,7 +211,6 @@
   "This task already applies accepted changes to the working directory.": "此任务已将接受的修改应用到工作目录。",
   "This task already has queued instructions. Wait or pause it first.": "此任务已有排队中的指令，请先等待或暂停任务。",
   "This task has no accepted changes left to commit.": "此任务已没有可供提交的已接受修改。",
-  "This task is being created. Refresh in a moment.": "正在创建此任务，请稍后刷新。",
   "This task is being deleted.": "正在删除此任务。",
   "This task is being deleted. Retry deletion to finish cleanup.": "正在删除此任务。请重试删除以完成清理。",
   "This task is being deleted. Your instructions were not queued.": "正在删除此任务，您的指令未加入队列。",
@@ -264,5 +261,10 @@
   "The option changes source outside this note.": "该方案修改了本批注范围之外的源码。",
   "The option has overlapping patches.": "该方案包含重叠的修改。",
   "Invalid review action.": "无效的审阅操作。",
-  "Send noteAlternativeRange as few, balanced or many.": "请将 noteAlternativeRange 设为 few、balanced 或 many。"
+  "Send noteAlternativeRange as few, balanced or many.": "请将 noteAlternativeRange 设为 few、balanced 或 many。",
+  "Pause the task before accepting, rejecting, or undoing changes.": "请先暂停任务，再接受、拒绝或撤销修改。",
+  "Retry preparing this task before sending more instructions.": "请先重试准备此任务，再发送更多指令。",
+  "The agent is editing this task's files. Pause the task before rejecting or editing changes.": "智能体正在编辑此任务的文件。请先暂停任务，再拒绝或编辑修改。",
+  "This task has not started yet.": "此任务尚未启动。",
+  "This task is still being prepared. Send more instructions once it starts.": "任务仍在准备中，启动后即可发送更多指令。"
 }

@@ -216,8 +216,6 @@
   "Updating the comparison with your latest edits. You can keep staging and reverting meanwhile.": "正在使用您的最新編輯更新比對。在此期間您仍可繼續暫存與還原。",
   "Verified": "已驗證",
   "Viewing earlier changes.": "正在檢視較早的變更。",
-  "Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.": "在接受、拒絕或復原變更前，請先等待 PDF 建置完成。您仍可新增評論。",
-  "Wait for the PDF build before editing source.": "請等待 PDF 建置完成後再編輯原始碼。",
   "Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.": "在接受、拒絕或復原變更前，請先等待目前的審閱操作完成。您仍可新增評論。",
   "Wait for the merge suggestion before changing review decisions.": "請先等待合併建議，再變更審閱決定。",
   "Waiting for the agent to publish its changes.": "正在等待智慧代理發布變更。",

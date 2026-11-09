@@ -216,8 +216,6 @@
   "Updating the comparison with your latest edits. You can keep staging and reverting meanwhile.": "Actualizando la comparación con tus últimos cambios. Mientras tanto, puedes seguir preparando y revirtiendo.",
   "Verified": "Verificada",
   "Viewing earlier changes.": "Viendo cambios anteriores.",
-  "Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.": "Espera a que se compile el PDF antes de aceptar, rechazar o deshacer cambios. Aún puedes añadir comentarios.",
-  "Wait for the PDF build before editing source.": "Espera a que termine la compilación del PDF antes de editar el código fuente.",
   "Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.": "Espera a que termine la acción de revisión actual antes de aceptar, rechazar o deshacer cambios. Aún puedes añadir comentarios.",
   "Wait for the merge suggestion before changing review decisions.": "Espera la sugerencia de fusión antes de cambiar las decisiones de revisión.",
   "Waiting for the agent to publish its changes.": "Esperando a que el agente publique sus cambios.",

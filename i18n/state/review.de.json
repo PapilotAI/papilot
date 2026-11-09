@@ -54,16 +54,6 @@
     "textHash": "fd4bac30084b77f02fc3ae7d5993c3d6ac34feceb2bf8abd53d1594fab4f300e",
     "model": "gemini-4-argon-medium"
   },
-  "Affects {n} place": {
-    "revision": "886089a93c8b7db2c8d713000f740e2bda17a508b0694f48f00571ef90ff8c56",
-    "textHash": "87483c20b072814b3b60a50d1a64cd77d6f48af40f012fa44489b3c4d1457c45",
-    "model": "gemini-4-argon-medium"
-  },
-  "Affects {n} places": {
-    "revision": "1f0a6b9a4375fdf2546d13248596506edd24ee5f4cec856bd56282bebf4bc9e0",
-    "textHash": "b2ca5cc3fbf2213c3a6d31432c32aa24de8adc9ac6b822f76aa2fd19ee04b6e2",
-    "model": "gemini-4-argon-medium"
-  },
   "After": {
     "revision": "67a95d8cdce0c423618bca599f95f46a6260a64cd4495ca5e890e61ef569eb3e",
     "textHash": "8a28e290218847dff31dd6576e0da78456f2f73bb1a505757d9fbf2084315d5d",
@@ -1022,11 +1012,6 @@
   "Viewing earlier changes.": {
     "revision": "509af24e3da956fc3e148f2c998a0fa1f23218ec97f9a01f8db95d3288315036",
     "textHash": "6ed5a892b6763a56a967f5a37dc67714068fa3ef7b9a664bdfa9b5428949eb6f",
-    "model": "gemini-4-argon-medium"
-  },
-  "Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.": {
-    "revision": "9d9dbc1003d5eb5fd0af630ec19e1a826bee7e1c48ffd2455a6dfd3bba3368c8",
-    "textHash": "9b40d6d4db5bd32bff83dd4dd725f355badb362ef79222a89bd00c1a6846e183",
     "model": "gemini-4-argon-medium"
   },
   "Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.": {

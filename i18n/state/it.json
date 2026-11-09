@@ -99,11 +99,6 @@
     "textHash": "328de0a5194093510fdc094c7e8b0ba0c83284f2e0c306fcbc7a7a5b6c76eada",
     "model": "gemini-4-argon-medium"
   },
-  "Accepted": {
-    "revision": "be7a8e9ec84ac3298b5e3ac627c9ee0f3f7db3a74a55838fbbd101c11c1df1af",
-    "textHash": "d4cfde4e561e91c9af29de8ff6a94cddd545897b2f1f2229b72b93dd98c923d9",
-    "model": "gemini-4-argon-medium"
-  },
   "Accepted changes in your manuscript stay in place. Other tasks are not affected.": {
     "revision": "b15583aa1ff28494b4d709a7741897d85379d32c720822be549f8ac4d3c15927",
     "textHash": "cf259f445f62460e9cab72529aecd7cdfd3f4ca6181db2f460360cece0f9affe",
@@ -487,11 +482,6 @@
   "Change shortcut: {action}": {
     "revision": "080346341e8db4289adfa0f7797aa26120a6dbc27b8ac73542ba028643f7e9ce",
     "textHash": "c2b30d8838a0a6ccc26d9bca7a37aa9f7a0e1ef82335e7b3961465b8731b27ea",
-    "model": "gemini-4-argon-medium"
-  },
-  "Change {n}": {
-    "revision": "ae595946a68f84756cd24621e35c35238c8b6a57752d85eaa8981e293b0e6502",
-    "textHash": "c56ad6f0b9bb531c3e3794cbaba80f300fd6481df96db9ccf71b6b54c08af3e7",
     "model": "gemini-4-argon-medium"
   },
   "Changed files in {branch}": {
@@ -2919,11 +2909,6 @@
     "textHash": "51af418185d19d1fd3cc275cf1cdc6621071d9b8d3b59470aa61899335519d77",
     "model": "gemini-4-argon-medium"
   },
-  "Partly reviewed": {
-    "revision": "a15cd401e181c4df3894218a1f5400d0b5a827b645c7079c867b878b4b73d117",
-    "textHash": "06f8b595174227246b5f96b0807c65df0878625a5bdb1fff7e24641bc8697ca6",
-    "model": "gemini-4-argon-medium"
-  },
   "Passed": {
     "revision": "3a94816a6ce1f99fd6fbaa447abaf294f625fddc58d21128352d87af92704669",
     "textHash": "f597362bd400b2eea125fe407f66e9b97253d040917cd00552a802e335b82417",
@@ -2957,11 +2942,6 @@
   "Pen": {
     "revision": "90ff00be35395a22a8d364a2b3b4b825a120d63e7ffa83942bdf0767b8b53c8b",
     "textHash": "fd5ddf23b10abed6545b2ae74fc4e355ddc39b3530912e9b822db81c43ed3613",
-    "model": "gemini-4-argon-medium"
-  },
-  "Pending review": {
-    "revision": "00c919bf085d0b7b601dd3675a4ef1aeb11f9567cf7b014534a320ccb6b95e4c",
-    "textHash": "9ebbd53a744a759bb6f5088694c48487cf5ef428f2da6636b5d79462428a065f",
     "model": "gemini-4-argon-medium"
   },
   "Personal": {
@@ -3277,11 +3257,6 @@
   "Reject the current proposal. In Changes, revert it.": {
     "revision": "fd7cfd8cb3842f99507e501481ca0802ae7e0a9122656f4a202f9cc238b9aea7",
     "textHash": "ce9ec38fe996d94c0cea97bb091509e31af4d1d02e9f44d615315b01431b646e",
-    "model": "gemini-4-argon-medium"
-  },
-  "Rejected": {
-    "revision": "9ac3e016226152dcf605b4829851c10d77ffa7f93e3fb17be60d014a4f9fc3d9",
-    "textHash": "3d72b59f79a6a02046e6b01d227e6cd8276c6ac4e700070435b9d74908374bb8",
     "model": "gemini-4-argon-medium"
   },
   "Reload review": {
@@ -3622,11 +3597,6 @@
   "Revise for reviewer comments and draft a point-by-point reply": {
     "revision": "ba46d2549e1927948114ae25f19db56b5b269f7a315233cf5ca7d8dd5f48f704",
     "textHash": "26df5da29363c72c2003fa0b19bd6793fc4704e2f177a6b1b2736a593a127b58",
-    "model": "gemini-4-argon-medium"
-  },
-  "Revision requested": {
-    "revision": "a84de432d08321cc684880fb09d168e75acf4c6f8f8bae3437cef5d188007aa5",
-    "textHash": "c44512042a39adc2483a562a11f3c3792d878ba68e65e320dd198f4b908819cf",
     "model": "gemini-4-argon-medium"
   },
   "Run command": {

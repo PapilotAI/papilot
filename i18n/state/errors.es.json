@@ -499,11 +499,6 @@
     "textHash": "34bd0290d1a3b8163205d4d7fb0466c4010b837c7a566dc0cd715f33c5302357",
     "model": "gemini-4-argon-medium"
   },
-  "Pause the task before accepting, rejecting, or undoing changes. Wait for any PDF build to finish.": {
-    "revision": "8b7afa9705af74553b4597ff6b61784c244a2abf1beb1d5f9baecd721770da5c",
-    "textHash": "812d6842d2e085a7d77321224f9382217be5e90a534568af768db15ec3d7ba4f",
-    "model": "gemini-4-argon-medium"
-  },
   "Pause this paper’s active tasks and wait for current work to finish before changing its path or removing it. Resolve any uncertain action first.": {
     "revision": "5de7ca34fa892387f377b4f508865db37ee823faa078e1cb11f623dee007c861",
     "textHash": "012c0c38e71d42dc39170ab8f1007dc1d4aa0ca75dd72fb4bb63a4a59a0bdd7b",
@@ -839,11 +834,6 @@
     "textHash": "88d050212ad0a81e29acfc37f464b04ca079236534bd0a41d4de8530838413d4",
     "model": "gemini-4-argon-medium"
   },
-  "This attachment is already being sent to another task.": {
-    "revision": "7f2d7eea0f98c2d9bdfabbd2c344697b23476e114e31cebeb64169f551674013",
-    "textHash": "0e7ff5f5656d5a710cc193b1ccde54ca77e596e1ebb37ddc3715acd665f3da73",
-    "model": "gemini-4-argon-medium"
-  },
   "This attachment is not available for this task.": {
     "revision": "ee04fef73d19db6530a3e900142f88e80b770069f82ddea6180331d266c7fa65",
     "textHash": "a33a2bd6823cb7d1c5493b94c745d9fcb131b615adfbd01d06b02621ca754a0b",
@@ -992,11 +982,6 @@
   "This task has no accepted changes left to commit.": {
     "revision": "607eeaf9816a2dc69323303326ae5cbca7030fd5066d878eec7dbd2a1f39b364",
     "textHash": "792dffda136e6f1228ae8a778e7015dd59c007fa4f75b00b183c4d8c559cb23c",
-    "model": "gemini-4-argon-medium"
-  },
-  "This task is being created. Refresh in a moment.": {
-    "revision": "377fc50d10b855c83c99e4c3de9ba481778ebce624b33bdb87239441691fbf21",
-    "textHash": "4ec16b758c026e6b679b739b288c532a974b0ebb32d6d828d19608ed9362568a",
     "model": "gemini-4-argon-medium"
   },
   "This task is being deleted.": {

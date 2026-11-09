@@ -216,8 +216,6 @@
   "Updating the comparison with your latest edits. You can keep staging and reverting meanwhile.": "最新の編集内容で比較を更新しています。その間もステージや元に戻す操作を続けられます。",
   "Verified": "確認済み",
   "Viewing earlier changes.": "以前の変更を表示しています。",
-  "Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.": "変更の承認、却下、または取り消しを行う前に、PDFのビルドが完了するまでお待ちください。コメントの追加は引き続き可能です。",
-  "Wait for the PDF build before editing source.": "PDF のビルドが完了してからソースを編集してください。",
   "Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.": "変更の承認、却下、または取り消しを行う前に、現在のレビュー操作が完了するまでお待ちください。コメントの追加は引き続き可能です。",
   "Wait for the merge suggestion before changing review decisions.": "レビューの決定を変更する前に、マージ提案を待ってください。",
   "Waiting for the agent to publish its changes.": "エージェントが変更を公開するのを待っています。",
