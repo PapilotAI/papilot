@@ -370,14 +370,18 @@ try {
     for (const width of [1440, 1100, 900]) {
       await page.setViewportSize({ width, height: 1000 });
       const bar = viewer().locator('.bar');
-      await expect.poll(() => bar.evaluate(el => el.offsetHeight)).toBe(44);
+      await expect(bar.locator('.status[data-state="building"]')).toHaveCount(0);
+      await bar.evaluate(el => el.ownerDocument.fonts.ready);
+      // Platform fonts can wrap the ready toolbar at narrow desktop widths.
+      // Compilation must preserve that layout, whatever its initial height.
+      const height = await bar.evaluate(el => el.offsetHeight);
       task.status = 'building'; task.review.state = 'building';
       task.review.job = { id: 'toolbar-build', status: 'running', phase: 'build' };
       await sync();
       await expect(page.locator('.review-rebuild')).toHaveAttribute('aria-busy', 'true');
       await expect(bar.locator('.status[data-state="building"]')).toHaveCSS('clip-path', 'inset(50%)');
       await expect(bar.locator('.accept-all')).toBeDisabled();
-      assert.equal(await bar.evaluate(el => el.offsetHeight), 44, 'compilation does not add a toolbar row');
+      assert.equal(await bar.evaluate(el => el.offsetHeight), height, `compilation preserves the ${language} toolbar at ${width}px`);
       if (language === 'zh-CN' && width === 1100) await page.screenshot({ path: 'test-results/review-building-zh.png' });
       task.status = 'reviewing'; delete task.review.job; update(); await sync();
       await expect(bar.locator('.accept-all')).toBeEnabled();
