@@ -981,6 +981,29 @@ test('save previews and status checks do not compile an unapplied manuscript', a
   } finally { await f.close(); }
 });
 
+test('deferred commits refresh only after a completed manuscript delivery, even without a commit hash', async () => {
+  const f = await fixture();
+  let refreshes = 0;
+  f.manuscripts.refresh = async () => { refreshes++; };
+  f.store.updateTask('thesis-task', { deferred: true });
+  try {
+    // Use the real commitTask adapter: current-branch engine deliveries can
+    // omit the commit hash, while branch-only deliveries can include one.
+    for (const [result, expected] of [
+      [{ commitReview: { token: 'confirm', diff: 'Confirm earlier edits.' } }, 0],
+      [{ reconciliation: { id: 'merge', ready: true } }, 0],
+      [{ delivery: { mode: 'commit', accepted: 'accepted', pending: true } }, 0],
+      [{ delivery: { mode: 'branch', accepted: 'accepted', commit: 'branch-commit' } }, 0],
+      [{ delivery: { mode: 'commit', accepted: 'accepted' } }, 1],
+    ] as const) {
+      f.workspace.applyTask = async () => result as any;
+      const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/commit', headers: { ...LOCAL, 'x-papilot-token': 'local-csrf' }, payload: { message: 'Save reviewed changes' } });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.equal(refreshes, expected, JSON.stringify(result));
+    }
+  } finally { await f.close(); }
+});
+
 test('review decisions wait until application to compile the manuscript', async () => {
   const f = await fixture();
   try {

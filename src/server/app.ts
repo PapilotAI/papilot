@@ -20,7 +20,7 @@ import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
-import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type NoteSummary, type QuickNote } from '../shared.ts';
+import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type NoteSummary, type QuickNote, type Task } from '../shared.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
 import { noteOptionContext, noteOptionsKey } from './note-options.ts';
 import { taskNoteResults } from './note-results.ts';
@@ -36,6 +36,7 @@ import { systemRequirements } from './system-requirements.ts';
 import { findExecutable } from '../../bin/agent-paths.mjs';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
+const deliveredToManuscript = (delivery: Task['delivery']) => Boolean(delivery && !delivery.pending && delivery.mode !== 'branch');
 
 // Git writes to one repository run one at a time; each returns the new status.
 // Concurrent requests from browser tabs share the same queue.
@@ -410,14 +411,14 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit', task, async request => {
     const task = store.task(request.params.id), b = request.body as any;
     const result = await serialGit(task.projectId, () => workspace.commitTask(task.id, string(b.message, 'Commit message', 5000), b.push === true));
-    if (result.commit) completedTaskWrites.add(request);
+    if ('delivery' in result ? deliveredToManuscript(result.delivery) : result.commit) completedTaskWrites.add(request);
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/apply', task, async request => {
     const task = store.task(request.params.id), b = (request.body || {}) as any;
     if (b.mode !== undefined && b.mode !== 'workspace' && b.mode !== 'commit') throw new Error('Invalid save action.');
     const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined));
-    if (result.delivery && !result.delivery.pending && result.delivery.mode !== 'branch') completedTaskWrites.add(request);
+    if (deliveredToManuscript(result.delivery)) completedTaskWrites.add(request);
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit-message', task, request => {
