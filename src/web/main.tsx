@@ -113,7 +113,7 @@ const preparingLabel = (task: Task) => task.mode === 'review' ? t('Preparing the
 function Status({ task }: { task: Task }) {
   const answered = noManuscriptChanges(task), done = task.status === 'reviewing' && task.review?.state === 'done';
   const saved = taskSaveStatus(task);
-  return <span className={`status ${task.status}${done || answered ? ' done' : ''}`}><i/>{saved === 'pushed' ? t('Committed and pushed') : saved === 'committed' ? t('Committed') : saved === 'applied' ? t('Applied to manuscript') : answered ? t('Completed') : done ? t('Review complete') : task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : task.status === 'preparing' ? preparingLabel(task) : statusNames()[task.status] || task.status}</span>;
+  return <span className={`status ${task.status}${done || answered ? ' done' : ''}`}><i/>{saved === 'pushed' ? t('Committed and pushed') : saved === 'committed' ? t('Committed') : saved === 'applied' ? t('Applied to manuscript') : answered ? t('Completed') : done ? t('Review complete') : task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : task.status === 'preparing' ? preparingLabel(task) : task.status === 'building' && task.review?.ready ? t('Ready for review') : statusNames()[task.status] || task.status}</span>;
 }
 function time(timestamp: number) { return new Date(timestamp).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }); }
 function ago(timestamp: number) {

@@ -165,9 +165,11 @@ it("action retry is idempotent but conflicting reuse is rejected", async () => {
 });
 it("old rounds stay inspectable while stale decisions are rejected", async () => {
   two();
+  f.edit(task, METHOD, "Agent A.", "Agent A, revised.");
   fakeRound(app, task.name);
   expect(app.review.pageState(task.name, 1).round).toBe(1);
   expect(app.review.pageState(task.name, 1).latest).toBe(2);
+  // The revised change is another version: deciding the old one is refused.
   await expect(
     app.review.decide(task.name, {
       action: "accept",
@@ -175,6 +177,44 @@ it("old rounds stay inspectable while stale decisions are rejected", async () =>
       round: 1,
     }),
   ).rejects.toThrow("newer round");
+});
+it("applies a decision naming an older round to the same version in the latest round", async () => {
+  two();
+  // Another edit shifts the numbering: the old c001 is c002 now.
+  f.edit(task, METHOD, "Method sentence 0.", "Agent first.");
+  const latest = fakeRound(app, task.name),
+    old = app.review.round(task.name, 1);
+  const moved = latest.units.find((u) => u.new_text === old.units[0].new_text)!;
+  expect(moved.id).not.toBe(old.units[0].id);
+  const state = await app.review.decide(task.name, { action: "accept", id: "from-round-1", changes: [old.units[0].id], round: 1 });
+  expect(state.round).toBe(2);
+  expect(state.decisions[moved.id]).toBe("accepted");
+  expect(app.review.decisions(task.name, old)[old.units[0].id]).toBe("pending");
+  const action = app.store.one<{ round: number; changes: string[]; detail: { requested?: unknown } }>("SELECT round,changes,detail FROM actions WHERE id='from-round-1'")!;
+  // The action belongs to the round it applies to; the request is kept.
+  expect(action.round).toBe(2);
+  expect(action.changes).toEqual([moved.id]);
+  expect(action.detail.requested).toEqual({ round: 1, changes: [old.units[0].id] });
+  // A lost response is retried as it was sent.
+  await app.review.decide(task.name, { action: "accept", id: "from-round-1", changes: [old.units[0].id], round: 1 });
+  expect(app.store.all("SELECT id FROM actions")).toHaveLength(1);
+  // Undo stays within the latest round.
+  expect(app.review.undoEntry(task.name)?.id).toBe("from-round-1");
+  // A change already decided in the latest round is not decided again.
+  await expect(app.review.decide(task.name, { action: "reject", changes: [old.units[0].id], round: 1 })).rejects.toThrow("newer round");
+});
+it("refuses an older-round decision when its version is ambiguous in the latest round", async () => {
+  f.write("paper/twins.tex", "Alpha.\nRepeated line.\nOmega.\n\nAlpha.\nRepeated line.\nOmega.\n");
+  f.repo.run(["add", "."]);
+  f.repo.run(["commit", "-qm", "Twins"]);
+  const twins = app.tasks.create("twins", "Twins", [], ["paper"]);
+  f.edit(twins, "paper/twins.tex", "Repeated line.", "Changed line.");
+  fakeRound(app, twins.name);
+  // The same edit on identical lines elsewhere cannot be told apart.
+  f.edit(twins, "paper/twins.tex", "Repeated line.", "Changed line.");
+  const latest = fakeRound(app, twins.name);
+  expect(new Set(latest.units.map((u) => u.new_text)).size).toBe(1);
+  await expect(app.review.decide(twins.name, { action: "accept", changes: ["c001"], round: 1 })).rejects.toThrow("newer round");
 });
 it("recovery completes a journaled accept after restart", async () => {
   const round = two(),

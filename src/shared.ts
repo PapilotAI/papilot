@@ -21,7 +21,7 @@ export interface UpdateStatus {
 // ones that ask for a revision. files are the manuscript files this task's
 // accepted changes touched since its last commit, relative to the repository root.
 export interface ReviewJob { id?: string; phase: string; status: string; error?: string; details?: string[]; createdAt?: number; options?: { completed: number; total: number }; progress?: Partial<Record<'baseline' | 'revised', Omit<BuildProgress, 'startedAt'>>> }
-export interface ReviewSummary { state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: ReviewJob | null }
+export interface ReviewSummary { ready?: number; state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: ReviewJob | null }
 export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
 export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
 // A task is saved with its first message queued before its manuscript copy

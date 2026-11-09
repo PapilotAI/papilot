@@ -28,13 +28,13 @@ test('viewer receives the agent lifecycle and remaining feedback separately from
 });
 
 test('active task state blocks every file decision while preserving comments', () => {
-  for (const status of ['running', 'waiting_input', 'queued', 'building', 'uncertain'] as const) {
+  for (const status of ['running', 'waiting_input', 'queued', 'uncertain'] as const) {
     const result = annotate([task(status)]);
     assert.ok(result.decisionLock, status);
     assert.equal(result.commentLock, null, status);
     assert.match(result.decisionLock, /accepting, rejecting, or undoing/);
   }
-  assert.match(annotate([task('building')]).decisionLock!, /PDF build/);
+  assert.equal(annotate([task('building')]).decisionLock, null, 'the engine gates each comparison during a build');
   assert.match(annotate([task('uncertain')]).decisionLock!, /Check status/);
 });
 

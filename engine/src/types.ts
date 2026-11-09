@@ -79,6 +79,10 @@ export interface Unit {
   old_context?: { text: string; start: number; source_hash?: string };
   new_text: string;
   truncated: boolean;
+  /** Identifies this version of the change across rounds: its file and
+   * complete old and new content with the lines around it. Absent in older
+   * rounds, which compute it when needed. */
+  hash?: string;
 }
 export interface Round {
   task: string;
@@ -95,8 +99,13 @@ export interface Round {
     /** Whether the round lists indirect changes; absent in older rounds,
      * which did. */
     indirect?: boolean;
+    /** The build job that inserted the round. */
+    job?: string;
   };
   created: number;
+  /** Whether its PDF comparison is rendered. A round is inserted first and
+   * rendered afterwards; older rounds were inserted rendered. */
+  visuals?: "pending" | "ready" | "failed";
 }
 export type ActionKind = "accept" | "reject" | "comment";
 export type Decision = "accepted" | "rejected" | "commented" | "pending";
@@ -104,6 +113,11 @@ export interface ActionDetail {
   accepted_before?: string;
   accepted_after?: string;
   not_reverted?: string[];
+  /** A decision that named an earlier round, applied to the latest one. */
+  requested?: { round: number; changes: string[] };
+  /** The comparison each change was decided with, when it came from another
+   * round than the one the decision belongs to. */
+  seen?: Record<string, { round: number; change: string }>;
 }
 export interface Action {
   seq: number;
@@ -153,6 +167,8 @@ export interface JobResult {
   /** Whether the baseline compiled ahead while the agent wrote was the one
    *  this round needed. */
   prefetch?: "hit" | "miss";
+  /** A newer round replaced this job's round before it was rendered. */
+  superseded?: boolean;
 }
 export interface Job {
   id: string;
@@ -244,7 +260,10 @@ export interface ChangeBlock {
   moved?: boolean;
   before: Strip[];
   after: Strip[];
-
+  /** Its PDF comparison is not rendered yet. */
+  waiting?: boolean;
+  /** The round whose comparison it shows while its own renders. */
+  carried?: number;
 }
 export type Block =
   ChangeBlock | { kind: "context"; image: Strip } | { kind: "gap" };
@@ -278,6 +297,9 @@ export interface RenderedRound {
   sections: { node: string; number: string; title: string; blocks: Block[] }[];
   loose: ChangeBlock[];
   references?: References;
+  /** Changes shown with an earlier round's comparison while the round
+   * renders: the round and change that rendered it. */
+  carried?: Record<string, { round: number; change: string }>;
 }
 /** One field of a changed bibliography entry, before and after; null
  * where the entry lacks it. `resolved` is the new value with @string
@@ -450,8 +472,10 @@ export interface RoundDetail extends Omit<RenderedRound, "units"> {
   round: number;
   before: string;
   after: string;
-  units: (Unit & Partial<VisualUnit> & { history?: History[]; formattingFor?: string })[];
+  units: (Unit & Partial<VisualUnit> & { history?: History[]; formattingFor?: string; waiting?: boolean; carried?: number })[];
   warnings: string[];
+  /** The round's own comparison is still rendering, or failed. */
+  rendering?: "pending" | "failed";
   files: string;
   references?: References;
   /** The new version's complete PDF, when the host serves one, so the review
@@ -460,6 +484,8 @@ export interface RoundDetail extends Omit<RenderedRound, "units"> {
   /** The build whose PDF the strips come from, and the chapters it compiled
    * (["full"] when it is the whole paper). */
   build?: { key: string; targets: string[] };
+  /** Seed (when present), baseline and revised build keys. */
+  builds?: string[];
   /** While that PDF compiles, a host may show each TeX pass of it: this URL
    * answers `?after=N` with `{ pass }`, a later pass whose PDF is `pdf?pass=`
    * that number, `{ pass: null }` once `pdf` is complete, or `{}` to ask
@@ -474,6 +500,8 @@ export interface Summary {
   state: TaskState;
   round: number | null;
   counts: Record<Decision, number>;
+  /** Undecided changes of the latest round that have a PDF comparison. */
+  ready?: number;
   next: string;
 }
 export interface PageState {
@@ -510,6 +538,12 @@ export interface PageState {
   revision: string | null;
   decisions: Record<string, Decision>;
   comments: Record<string, string>;
+  /** The round's own comparison is still rendering, or failed. */
+  rendering?: "pending" | "failed";
+  /** Changes still waiting for a comparison, even though the round exists. */
+  waiting?: string[];
+  /** Decided changes whose comparison changed after the decision. */
+  reviewAgain?: string[];
   undo: { id: string; kind: ActionKind; changes: string[] } | null;
   job:
     | (Pick<Job, "id" | "status" | "phase" | "created"> &

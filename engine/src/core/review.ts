@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { applyUnits, revertUnits } from "./changes.ts";
+import { applyUnits, revertUnits, withHashesAsync } from "./changes.ts";
+import { comparable, fingerprint, origin, rendered } from "./carry.ts";
 import { groupFormattingChanges } from "./formatting-changes.ts";
 import { now, readBytes, readJson, same, writeOrDelete } from "./files.ts";
 import { cleanPath, merge3Async } from "./git.ts";
@@ -113,11 +114,24 @@ export class Review {
       pending: values.filter((v) => v === "pending").length,
     };
   }
-  lastChange(name: string) {
-    return this.app.store.one<{ id: number | null }>(
-      "SELECT MAX(id) AS id FROM messages WHERE task=? AND kind IN ('accept','reject','undo')",
-      name,
-    )!.id;
+  /** Undecided changes of a round that have a PDF comparison to decide with. */
+  ready(name: string, round: Round, decisions = this.decisions(name, round)) {
+    const shown = (round.visuals ?? "ready") === "ready" ? null : rendered(this.app, name, round.number);
+    return round.units.filter((u) => decisions[u.id] === "pending" && (!shown || comparable(round, shown, u.id))).length;
+  }
+  /** Decided changes whose own comparison, rendered after the decision,
+   *  looks different from the earlier round's comparison they were decided
+   *  with. */
+  reviewAgain(name: string, round: Round) {
+    if ((round.visuals ?? "ready") !== "ready") return [];
+    const result = new Set<string>();
+    for (const action of this.actions(name, round.number)) {
+      if (!LIVE.has(action.status) || !action.detail.seen) continue;
+      const now = rendered(this.app, name, round.number);
+      for (const [id, seen] of Object.entries(action.detail.seen))
+        if (fingerprint(rendered(this.app, name, seen.round), seen.change) !== fingerprint(now, id)) result.add(id);
+    }
+    return [...result];
   }
   undoEntry(name: string) {
     const latest = this.latestRound(name),
@@ -133,7 +147,8 @@ export class Review {
       latest = this.latestRound(name),
       job = this.app.publisher.current(name),
       counts = this.counts(name, latest),
-      number = latest?.number ?? null;
+      number = latest?.number ?? null,
+      ready = latest && counts.pending ? this.ready(name, latest) : 0;
     const notes =
       latest &&
       this.app.store.one(
@@ -155,7 +170,7 @@ export class Review {
       next = "A round is being built. Run `publish` again to wait for it.";
     } else if (
       job?.status === "failed" &&
-      (!latest || job.created > latest.created)
+      (!latest || job.created > latest.created || latest.summary.job === job.id)
     ) {
       state = "build_failed";
       next =
@@ -183,6 +198,7 @@ export class Review {
       state,
       round: number,
       counts,
+      ready,
       next,
     };
   }
@@ -195,7 +211,8 @@ export class Review {
         round && latest && number === latest.number
           ? this.undoEntry(name)
           : null,
-      job = this.app.publisher.current(name);
+      job = this.app.publisher.current(name),
+      again = round ? this.reviewAgain(name, round) : [];
     this.app.viewers.set(name, now());
     return {
       csrf: this.app.csrf,
@@ -213,6 +230,9 @@ export class Review {
       revision: round?.after ?? null,
       decisions: round ? this.decisions(name, round) : {},
       comments: round ? this.comments(name, round.number) : {},
+      ...(round && (round.visuals ?? "ready") !== "ready" ? { rendering: round.visuals as "pending" | "failed" } : {}),
+      waiting: round ? round.units.filter(unit => !comparable(round, rendered(this.app, name, round.number), unit.id)).map(unit => unit.id) : [],
+      ...(again.length ? { reviewAgain: again } : {}),
       undo: undo
         ? { id: undo.id, kind: undo.kind, changes: undo.changes }
         : null,
@@ -269,7 +289,8 @@ export class Review {
         ),
         { units: {}, sections: [], loose: [] },
       ),
-      history = this.history(name, round);
+      history = this.history(name, round),
+      rendering = (round.visuals ?? "ready") !== "ready" ? (round.visuals as "pending" | "failed") : undefined;
     // Earlier releases stored a single after strip as an object. Keep those rounds readable.
     for (const block of [
       ...render.sections
@@ -302,11 +323,15 @@ export class Review {
         ...u,
         ...context(u),
         ...render.units[u.id],
+        ...(rendering && !render.units[u.id] ? { waiting: true } : {}),
+        ...(rendering && render.carried?.[u.id] ? { carried: render.carried[u.id].round } : {}),
         ...(history[u.id] ? { history: history[u.id] } : {}),
       })),
+      ...(rendering ? { rendering } : {}),
       sections: render.sections,
       loose: render.loose,
       warnings: round.summary.warnings ?? [],
+      builds: round.summary.builds ?? [],
       files: `/files/${name}/${number}/`,
       ...(round.summary.builds?.length
         ? { build: { key: round.summary.builds.at(-1)!, targets: round.summary.targets ?? ["full"] } }
@@ -431,8 +456,10 @@ export class Review {
       round: number;
       body?: string;
     },
+    // A note option's checkmark was given with the option's own PDF preview.
+    options: { previewed?: boolean } = {},
   ) {
-    return this.app.exclusive(() => this.decideNow(name, data));
+    return this.app.exclusive(() => this.decideNow(name, data, options));
   }
   private async decideNow(
     name: string,
@@ -443,6 +470,7 @@ export class Review {
       round: number;
       body?: string;
     },
+    options: { previewed?: boolean },
   ) {
     const task = this.app.tasks.get(name),
       kind = data.action;
@@ -461,12 +489,14 @@ export class Review {
       ),
       chosen = data.changes;
     if (previous) {
+      // A decision that named an earlier round is retried as it was sent.
+      const sent = previous.detail.requested ?? { round: previous.round, changes: previous.changes };
       if (
         previous.task !== name ||
-        previous.round !== data.round ||
+        sent.round !== data.round ||
         previous.kind !== kind ||
         (kind === "comment" && previous.body !== (data.body || "").trim()) ||
-        JSON.stringify(previous.changes) !== JSON.stringify(chosen)
+        JSON.stringify(sent.changes) !== JSON.stringify(chosen)
       )
         throw new Error(
           "This action id was already used for another decision.",
@@ -475,22 +505,40 @@ export class Review {
         throw new Error("That decision was undone or failed. Make it again.");
       return this.pageState(name);
     }
-    const latest = this.latestRound(name);
-    if (!latest || data.round !== latest.number)
-      throw new Error("A newer round is available. Reload the page.");
+    const latest = this.latestRound(name),
+      valid = Array.isArray(chosen) && chosen.length > 0 && new Set(chosen).size === chosen.length;
+    if (!latest) throw new Error("A newer round is available. Reload the page.");
+    let ids = chosen,
+      seen: Record<string, { round: number; change: string }> = {},
+      requested: ActionDetail["requested"];
+    if (data.round !== latest.number) {
+      // Changes decided on an earlier round's page apply to their exact
+      // versions in the latest round, when each has exactly one there.
+      const translated = valid && data.round < latest.number ? await this.translate(name, data.round, chosen, latest) : null;
+      if (!translated) throw new Error("A newer round is available. Reload the page.");
+      ({ ids, seen } = translated);
+      requested = { round: data.round, changes: chosen };
+    }
     const decisions = this.decisions(name, latest);
-    if (
-      !Array.isArray(chosen) ||
-      !chosen.length ||
-      new Set(chosen).size !== chosen.length ||
-      chosen.some((c) => decisions[c] !== "pending")
-    )
+    if (!valid || ids.some((c) => decisions[c] !== "pending"))
       throw new Error("These changes were already decided. Reload the page.");
     const body = (data.body || "").trim();
     if (kind === "comment" && !body) throw new Error("Write a comment first.");
-    const selected = chosen.map((c) => latest.units.find((u) => u.id === c)!);
-    if (kind === "accept") await this.accept(task, latest, identity, selected);
-    else if (kind === "reject") await this.reject(task, latest, identity, selected);
+    if (!requested && (latest.visuals ?? "ready") !== "ready") {
+      // The author decides with a PDF comparison: the round's own, or one an
+      // earlier round rendered of the same version, until its own arrives.
+      const shown = rendered(this.app, name, latest.number);
+      if (kind !== "comment" && !options.previewed && ids.some((id) => !comparable(latest, shown, id)))
+        throw new Error("Wait for the PDF comparison of this change before accepting or rejecting it.");
+      for (const id of ids) {
+        const found = origin(latest, shown, id);
+        if (found) seen[id] = found;
+      }
+    }
+    const extra: ActionDetail = { ...(requested ? { requested } : {}), ...(Object.keys(seen).length ? { seen } : {}) };
+    const selected = ids.map((c) => latest.units.find((u) => u.id === c)!);
+    if (kind === "accept") await this.accept(task, latest, identity, selected, extra);
+    else if (kind === "reject") await this.reject(task, latest, identity, selected, extra);
     else
       this.app.store.transaction(() => {
         this.record(
@@ -498,25 +546,49 @@ export class Review {
           task,
           latest,
           kind,
-          chosen,
+          ids,
           body,
-          {},
+          extra,
           [],
           "applied",
           false,
         );
         this.message(name, latest.number, "comment", identity, body, {
-          changes: chosen,
+          changes: ids,
         });
       });
     return this.pageState(name);
+  }
+  // The latest round's changes with the exact versions of `chosen` in round
+  // `number`, and the comparison each was seen with, or null unless each has
+  // exactly one undecided match.
+  private async translate(name: string, number: number, chosen: string[], latest: Round) {
+    const round = this.app.store.one<Round>("SELECT * FROM rounds WHERE task=? AND number=?", name, number);
+    if (!round) return null;
+    const [older, newer] = await Promise.all([round, latest].map((r) => withHashesAsync(this.app.repo, r.before, r.after, r.units))),
+      then = this.decisions(name, round),
+      now = this.decisions(name, latest),
+      shown = rendered(this.app, name, round.number),
+      ids: string[] = [],
+      seen: Record<string, { round: number; change: string }> = {};
+    for (const id of chosen) {
+      const unit = older.find((u) => u.id === id);
+      if (!unit || then[id] !== "pending" || older.filter((u) => u.hash === unit.hash).length !== 1) return null;
+      const matches = newer.filter((u) => u.hash === unit.hash && now[u.id] === "pending"),
+        found = origin(round, shown, id);
+      // Its page offered no decision without a comparison.
+      if (matches.length !== 1 || !found) return null;
+      ids.push(matches[0].id);
+      seen[matches[0].id] = found;
+    }
+    return { ids, seen };
   }
   byFile(units: Unit[]) {
     const groups: Record<string, Unit[]> = {};
     for (const unit of units) (groups[unit.file] ??= []).push(unit);
     return groups;
   }
-  private async accept(task: Task, round: Round, identity: string, units: Unit[]) {
+  private async accept(task: Task, round: Round, identity: string, units: Unit[], extra: ActionDetail = {}) {
     const app = this.app,
       writes: [string, Buffer | null, Buffer | null][] = [],
       accepted: Record<string, Buffer | null> = {},
@@ -554,12 +626,12 @@ export class Review {
       "accept",
       units.map((u) => u.id),
       "",
-      { accepted_before: task.accepted, accepted_after: afterCommit },
+      { accepted_before: task.accepted, accepted_after: afterCommit, ...extra },
       writes,
     );
     await this.carryOut(identity, "apply");
   }
-  private async reject(task: Task, round: Round, identity: string, units: Unit[]) {
+  private async reject(task: Task, round: Round, identity: string, units: Unit[], extra: ActionDetail = {}) {
     const writes: [string, Buffer | null, Buffer | null][] = [],
       kept: string[] = [],
       groups = this.byFile(units),
@@ -580,7 +652,7 @@ export class Review {
       "reject",
       units.map((u) => u.id),
       "",
-      { not_reverted: kept },
+      { not_reverted: kept, ...extra },
       writes,
     );
     await this.carryOut(identity, "apply");

@@ -4,6 +4,8 @@ export interface Stop {
   key: string;
   units: string[];
   section: number | null;
+  /** Its PDF comparison is still rendering: it cannot be decided yet. */
+  waiting?: boolean;
 }
 export function buildStops(
   detail: Pick<RoundDetail, "sections" | "loose">,
@@ -12,7 +14,7 @@ export function buildStops(
     ...detail.sections.flatMap((section, s) =>
       section.blocks.flatMap((b, i) =>
         b.kind === "change"
-          ? [{ key: `s${s}b${i}`, units: b.units, section: s }]
+          ? [{ key: `s${s}b${i}`, units: b.units, section: s, ...(b.waiting ? { waiting: true } : {}) }]
           : [],
       ),
     ),
@@ -20,6 +22,7 @@ export function buildStops(
       key: `l${l}`,
       units: b.units,
       section: null,
+      ...(b.waiting ? { waiting: true } : {}),
     })),
   ];
 }
@@ -27,17 +30,23 @@ export const pendingUnits = (
   stop: Stop | undefined,
   decisions: Record<string, Decision>,
 ) => (stop?.units ?? []).filter((id) => decisions[id] === "pending");
+// The next undecided change after `current`, preferring one whose PDF
+// comparison is ready over one still rendering.
 export function nextPending(
   stops: Stop[],
   decisions: Record<string, Decision>,
   current = -1,
   focused?: readonly string[],
 ) {
+  let waiting = -1;
   for (let step = 1; step <= stops.length; step++) {
     const index = ((current < 0 ? -1 : current) + step) % stops.length;
-    if (pendingUnits(stops[index], decisions).some(id => !focused || focused.includes(id))) return index;
+    if (pendingUnits(stops[index], decisions).some(id => !focused || focused.includes(id))) {
+      if (!stops[index].waiting) return index;
+      if (waiting < 0) waiting = index;
+    }
   }
-  return -1;
+  return waiting;
 }
 // The host drafts comments from these exact units, not the merged PDF block.
 export function commentScope(units: (Unit & Partial<VisualUnit>)[]) {

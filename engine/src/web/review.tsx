@@ -201,7 +201,7 @@ export function ReviewApp({
     // How far into the current change the author had read, restored once
     // when the review reopens on it in the same view.
     returning = useRef<{ index: number; offset: number; paper: boolean } | null>(null),
-    snapshot = useRef({ state, detail: publishedDetail, busy, composer, current }),
+    snapshot = useRef({ state, detail: publishedDetail, busy, composer, current, open: openSource }),
     // Polls again at once, after the last queued decision is confirmed.
     pollNow = useRef(() => {}),
     failures = useRef(0),
@@ -278,11 +278,19 @@ export function ReviewApp({
   function showHelp() {
     if (window.dispatchEvent(new Event('latex-review:help', { cancelable: true }))) setHelp(true);
   }
-  snapshot.current = { state, detail: publishedDetail, busy, composer, current };
+  snapshot.current = { state, detail: publishedDetail, busy, composer, current, open: openSource };
   const units = useMemo(
       () => new Map(detail?.units.map((u) => [u.id, u]) ?? []),
       [detail],
     ),
+    // Changes whose PDF comparison has not arrived: the author decides with
+    // the comparison, so these cannot be accepted or rejected yet.
+    waiting = useMemo(
+      () => new Set(detail?.units.filter((u) => u.waiting).map((u) => u.id) ?? []),
+      [detail],
+    ),
+    // Decided changes whose comparison changed after the decision.
+    again = new Set(state?.round === detail?.round ? state?.reviewAgain ?? [] : []),
     stops = useMemo(() => (detail ? buildStops(detail) : []), [detail]),
     // The change blocks in the order and numbering of the changes view.
     placed = useMemo(() => {
@@ -316,7 +324,7 @@ export function ReviewApp({
     decisions = useMemo(() => withQueued(state?.decisions ?? {}, queued), [state?.decisions, queued]),
     count = progress(decisions),
     undecided = Object.keys(decisions).filter(
-      (id) => decisions[id] === "pending" && inFocus(id),
+      (id) => decisions[id] === "pending" && inFocus(id) && !waiting.has(id),
     ),
     references = useReferenceChecks(detail, api),
     hazards = useMemo(
@@ -338,18 +346,19 @@ export function ReviewApp({
   // What each button acts on: undecided changes, or in changes mode the
   // staged ones for Unstage and every change still on disk for Revert.
   const targets = (units: string[], kind: Kind) =>
-    units.filter(inFocus).filter((id) =>
+    units.filter(inFocus).filter((id) => (kind === "comment" || !waiting.has(id)) && (
       kind === "unstage"
         ? decisions[id] === "accepted"
         : changes && kind === "reject"
           ? ["pending", "accepted"].includes(decisions[id])
-          : decisions[id] === "pending",
+          : decisions[id] === "pending"),
     );
   // Only undecided changes can be decided: a decided one is changed back
-  // with Undo while that is possible.
+  // with Undo while that is possible. One still waiting for its comparison
+  // can only be commented on.
   const kinds = (units: string[]): Kind[] =>
     !changes
-      ? targets(units, "accept").length ? ["accept", "reject", "comment"] : []
+      ? targets(units, "accept").length ? ["accept", "reject", "comment"] : targets(units, "comment").length ? ["comment"] : []
       : targets(units, "accept").length
         ? ["accept", "reject"]
         : targets(units, "unstage").length
@@ -357,7 +366,7 @@ export function ReviewApp({
           : [];
   const navigation = stops
     .map((stop, index) => ({ stop, index }))
-    .filter(({ stop, index }) => stop.units.some(inFocus) && (browsing || index === linkedChange || pendingUnits(stop, decisions).some(inFocus)))
+    .filter(({ stop, index }) => stop.units.some(inFocus) && (browsing || index === linkedChange || pendingUnits(stop, decisions).some(inFocus) || stop.units.some((id) => again.has(id))))
     .map(({ index }) => index);
   const adjacent = (index: number, direction: number) =>
     navigation[navigation.indexOf(index) + direction] ?? -1;
@@ -376,6 +385,13 @@ export function ReviewApp({
     if (changes && current < 0 && stops.length)
       setCurrent(Math.max(nextPending(stops, decisions), 0));
   }, [detail]);
+  // What a change without its comparison shows instead of Accept and Reject.
+  const waitingLabel = () =>
+    detail?.rendering === "failed"
+      ? t("PDF comparison failed")
+      : detail && detail.round === state?.latest
+        ? t("PDF comparison in progress")
+        : t("No PDF comparison");
   // Lock reasons come from the host in English; known ones are translated.
   // Rejecting and editing source write the task's files, which a host can
   // lock on their own while its agent edits them; undoing a rejection too.
@@ -503,7 +519,9 @@ export function ReviewApp({
         if (
           target &&
           (target !== previous.detail?.round ||
-            (next.revision && next.revision !== previous.detail?.after)) &&
+            (next.revision && next.revision !== previous.detail?.after) ||
+            // The round's own comparison arrived, or failed.
+            (next.round === previous.detail?.round && (next.rendering ?? null) !== (previous.detail?.rendering ?? null))) &&
           !snapshot.current.composer && !paper.current?.querySelector('.source-editor[data-dirty="true"]')
         ) {
           const [loadedState, loaded] = await Promise.all([
@@ -531,6 +549,16 @@ export function ReviewApp({
           )
             index = nextPending(nextStops, loadedState.decisions, index);
           if (linkedChange >= 0 && nextStops[linkedChange]) index = linkedChange;
+          // The same round with its comparisons in place keeps the change the
+          // author is on, and the changes whose source is open.
+          const same = previous.detail?.round === loaded.round,
+            oldStops = same ? buildStops(previous.detail!) : [],
+            moved = (old: number) => {
+              const ids = oldStops[old]?.units ?? [];
+              return nextStops.findIndex((stop) => stop.units.some((id) => ids.includes(id)));
+            },
+            article = same ? paper.current?.querySelector<HTMLElement>(`[data-stop="${previous.current}"]`) : null;
+          if (same && moved(previous.current) >= 0) index = moved(previous.current);
           if (index < 0) index = pinned && nextStops.length ? 0 : -1;
           const edited = editedPlace.current;
           if (edited) {
@@ -539,7 +567,7 @@ export function ReviewApp({
             if (candidates.length) index = candidates[0].index;
           }
           returning.current =
-            edited && index >= 0 ? { index, offset: edited.offset, paper: edited.paper } : !previous.detail && index >= 0 && saved.round === target && nextStops[index].key === saved.stop && saved.offset
+            edited && index >= 0 ? { index, offset: edited.offset, paper: edited.paper } : article && index >= 0 ? { index, offset: past(article), paper: Boolean(saved.paper) } : !previous.detail && index >= 0 && saved.round === target && nextStops[index].key === saved.stop && saved.offset
               ? { index, offset: saved.offset, paper: Boolean(saved.paper) }
               : null;
           if (
@@ -551,9 +579,14 @@ export function ReviewApp({
           setState(loadedState);
           setDetail(loaded);
           setCurrent(index);
-          setOpenSource(new Set(edited && index >= 0 ? [index] : []));
+          setOpenSource(new Set(same ? [...previous.open].map(moved).filter((i) => i >= 0) : edited && index >= 0 ? [index] : []));
           editedPlace.current = null;
-          if (previous.detail)
+          if (same && index >= 0)
+            requestAnimationFrame(() => {
+              const shown = paper.current?.querySelector<HTMLElement>(`[data-stop="${index}"]`);
+              if (shown) reveal(shown);
+            });
+          else if (previous.detail)
             setToast(t("Changes are ready"));
         } else setState(next);
       } catch (e) {
@@ -648,14 +681,10 @@ export function ReviewApp({
       closeComposer();
     }
     const after = withQueued(snapshot.current.state?.decisions ?? {}, [...queue.current!.pending, entry]);
-    const target = pendingUnits(stops[current], after).some(inFocus)
-      ? current
-      : nextPending(stops, after, current, focused);
+    const target = pendingUnits(stops[current], after).some(inFocus) ? current : nextPending(stops, after, current, focused);
     if (target < 0)
       entry.done = changes
-        ? kind === "accept"
-          ? t("All changes are staged.")
-          : ""
+        ? (kind === "accept" ? t("All changes are staged.") : "")
         : focused ? t("Review complete") : t("All changes reviewed. Your decisions are saved.");
     epoch.current++;
     queue.current!.push(entry);
@@ -691,17 +720,13 @@ export function ReviewApp({
       epoch.current++;
       failures.current++;
       setQueued([]);
-      setToast(
-        dropped.length
-          ? `${error.message} ${tn(dropped.length, "{n} later decision was not sent.", "{n} later decisions were not sent.")}`
-          : error.message,
-      );
+      const message = dropped.length
+        ? `${error.message} ${tn(dropped.length, "{n} later decision was not sent.", "{n} later decisions were not sent.")}`
+        : error.message;
+      setToast(message);
       // Back to the change whose decision failed, still undecided.
       if (entry.round === snapshot.current.detail?.round && stops[entry.stop]) select(entry.stop);
-      if (entry.kind === "comment" && entry.draft && !snapshot.current.composer) {
-        setDraft(entry.body);
-        setComposer({ changes: entry.changes, stop: entry.stop, key: entry.draft });
-      }
+      if (entry.kind === "comment" && entry.draft && !snapshot.current.composer) { setDraft(entry.body); setComposer({ changes: entry.changes, stop: entry.stop, key: entry.draft }); }
       pollNow.current();
     },
   };
@@ -802,7 +827,10 @@ export function ReviewApp({
       const action = shortcutAction(event, shortcuts);
       if (!action || (changes && action === 'comment')) return;
       event.preventDefault();
-      if (action === 'accept')
+      const waits = !changes && (stops[current]?.units ?? []).some((id) => waiting.has(id) && decisions[id] === "pending");
+      if ((action === 'accept' || action === 'reject') && waits && !targets(stops[current]?.units ?? [], "accept").length)
+        setToast(waitingLabel());
+      else if (action === 'accept')
         void decide(kinds(stops[current]?.units ?? [])[0] ?? "accept");
       else if (action === 'reject') void decide("reject");
       else if (action === 'comment') beginComposer();
@@ -845,7 +873,8 @@ export function ReviewApp({
     if (index !== current || !state) return null;
     const units = stops[index].units.filter(inFocus),
       available = kinds(units),
-      remaining = nextPending(stops, decisions, current, focused);
+      remaining = nextPending(stops, decisions, current, focused),
+      waits = !changes && units.some((id) => waiting.has(id) && decisions[id] === "pending");
     return (
       <div className="dock">
         <nav className="actions" aria-label={t("Review the current change")}>
@@ -895,6 +924,11 @@ export function ReviewApp({
                   </button>
                 );
               })}
+              {waits && (
+                <span className="comparison-pending" data-state={detail?.rendering ?? "pending"} role="status">
+                  {waitingLabel()}
+                </span>
+              )}
             </>
           ) : remaining >= 0 ? (
             <button
@@ -1049,7 +1083,10 @@ export function ReviewApp({
       // Focusing a note may reveal its own decided group. It must not expand
       // unrelated accepted/rejected groups or turn the review into history.
       focusedBlock = Boolean(focused?.some(id => block.units.includes(id))),
-      expanded = focusedBlock || browsing || index === linkedChange,
+      // A decision made with an earlier comparison is shown again when this
+      // change's own comparison looks different.
+      reviewAgain = block.units.some((id) => again.has(id)),
+      expanded = focusedBlock || browsing || index === linkedChange || reviewAgain,
       // A reverted change shows the text that is back on disk; staged and
       // unstaged ones keep their before and after.
       resolved = focusedBlock || history || index === linkedChange
@@ -1062,7 +1099,7 @@ export function ReviewApp({
             (status === "commented" ? "after" : undefined),
       source =
         openSource.has(index) ||
-        (!bib.length &&
+        (!bib.length && !block.waiting &&
           (block.identical || (!block.before.length && !block.after.length))),
       remarks = [
         ...new Set(
@@ -1147,7 +1184,22 @@ export function ReviewApp({
             {location}
           </span>
           {actionBar(index)}
-          {kindLabel && <span className="change-kind" title={kindLabel}>{kindLabel}</span>}
+          {kindLabel && !block.waiting && <span className="change-kind" title={kindLabel}>{kindLabel}</span>}
+          {block.carried !== undefined && (() => {
+            // Rounds are named by when they were published, as in History.
+            const published = state?.history?.find((entry) => entry.number === block.carried)?.created,
+              time = published ? new Intl.DateTimeFormat(locale(), { timeStyle: "short" }).format(new Date(published * 1000)) : "";
+            return (
+              <span className="change-carried" title={t("This change's own PDF comparison is still rendering. This comparison was rendered for the same change in the changes published at {time}.", { time })}>
+                {time ? t("PDF from {time}", { time }) : t("Earlier PDF")}
+              </span>
+            );
+          })()}
+          {reviewAgain && (
+            <span className="change-again" title={t("The PDF comparison changed after your decision.")}>
+              {t("Review again")}
+            </span>
+          )}
           {status !== "pending" && (
             <span className="badge" title={stateLabel(status)}>{stateLabel(status)}</span>
           )}
@@ -1186,6 +1238,12 @@ export function ReviewApp({
                 </p>
               ))}
           </div>
+        )}
+        {block.waiting && (
+          <p className="comparison-waiting" data-state={detail?.rendering ?? "pending"}>
+            {detail?.rendering !== "failed" && detail?.round === state?.latest && <span className="pulse" aria-hidden="true" />}
+            {waitingLabel()}
+          </p>
         )}
         {!block.identical &&
           !block.reflow &&
@@ -1242,7 +1300,7 @@ export function ReviewApp({
                 <SourceEditor key={`${detail!.round}:${unit.id}`} task={task} round={detail!.round} change={unit.id} api={api}
                   editable={Boolean(!previewing && state?.sourceEditing && !changes && !pinned && unit.kind !== "binary")}
                   building={Boolean(state?.job && ["queued", "running"].includes(state.job.status))}
-                  locked={!latest ? t("A newer round is available. Reload the page.") : decisions[unit.id] === "rejected" ? t("This change was rejected. Undo that decision before editing it.") : actionLock("source") || (state?.job && ["queued", "running"].includes(state.job.status) ? t("Wait for the PDF build before editing source.") : null)}
+                  locked={!latest ? t("A newer round is available. Reload the page.") : decisions[unit.id] === "rejected" ? t("This change was rejected. Undo that decision before editing it.") : actionLock("source") || (waiting.has(unit.id) && detail!.rendering !== "failed" ? t("PDF comparison in progress") : null)}
                   onSaving={saving => { snapshot.current.busy = saving; setBusy(saving); }}
                   onSaved={next => {
                     const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${index}"]`);

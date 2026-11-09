@@ -3,7 +3,8 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, codeVersion } from "../runtime.ts";
 import { Builder, BuildError, auxiliaryBuildError, buildDate, reprioritize, type BuildPriority } from "./build.ts";
-import { diffUnitsAsync, scopeViolationsAsync, withUnits } from "./changes.ts";
+import { diffUnitsAsync, scopeViolationsAsync, withHashesAsync, withUnits } from "./changes.ts";
+import { provisional, roundFolder, writeProvisional } from "./carry.ts";
 import { acceptNoteOption, noteOptionUnits } from "./note-options.ts";
 import { isFigure } from "./config.ts";
 import { now, readJson, writeJson } from "./files.ts";
@@ -32,7 +33,6 @@ export class PublishError extends Error {
     super(message);
   }
 }
-class Stale extends Error {}
 // Seconds for which a review page that asked for its state counts as open.
 const VIEWING = 15;
 // Each rendering step takes its own share of the TeX pool, so a comparison
@@ -307,8 +307,11 @@ export class Publisher {
   private indirect = new Map<string, boolean>();
   private tracking = new Map<string, boolean>();
   constructor(public app: App) {
+    // A job whose round is inserted renders it after the restart (`recover`).
     app.store.execute(
-      "UPDATE jobs SET status='failed', finished=?, result=? WHERE status IN ('queued','running')",
+      `UPDATE jobs SET status='failed', finished=?, result=? WHERE status IN ('queued','running')
+        AND id NOT IN (SELECT json_extract(summary,'$.job') FROM rounds AS r WHERE visuals='pending'
+          AND json_extract(summary,'$.job') IS NOT NULL AND number=(SELECT MAX(number) FROM rounds WHERE task=r.task))`,
       now(),
       JSON.stringify({
         error: "The review server restarted during the build.",
@@ -447,17 +450,7 @@ export class Publisher {
   }
   private async work(job: Job) {
     try {
-      let result: JobResult;
-      for (;;) {
-        try {
-          result = await this.publish(job);
-          break;
-        } catch (error) {
-          if (!(error instanceof Stale)) throw error;
-          if (this.stopping)
-            throw new Error("Server stopped during publication.");
-        }
-      }
+      const result = await this.publish(job);
       await acceptNoteOption(this.app, job.task, job.id);
       const verdict = this.verdicts.get(job.id);
       this.update(job.id, { status: "done", result: verdict ? { ...result, prefetch: verdict } : result, finished: now() });
@@ -488,25 +481,34 @@ export class Publisher {
       if (!this.pending.size && !this.stopping) await this.pruneCache();
     }
   }
+  /** Publishes the task's worktree: inserts its round, then renders the
+   *  round's PDF comparison. */
   async publish(job: Pick<Job, "id" | "task">): Promise<JobResult> {
+    const app = this.app,
+      name = job.task;
+    if (app.reconciliation.get(name)?.ready === false) throw new Error("Retry applying to finish preparing the merge review.");
+    this.phase(job, "snapshot");
+    const inserted = await app.exclusive(() => this.insertNow(job));
+    return "result" in inserted ? inserted.result : this.renderRound(job, inserted.round);
+  }
+  /** Inserts a round for the worktree as it is now, with its comparison
+   *  pending. The caller holds the engine's write turn: the worktree, the
+   *  accepted text and the latest round are read together with the insert, so
+   *  a decision either comes before the round, or applies to it. */
+  async insertNow(job: Pick<Job, "id" | "task">): Promise<{ result: JobResult } | { round: Round }> {
     const app = this.app,
       name = job.task,
       project = app.project;
-    if (app.reconciliation.get(name)?.ready === false) throw new Error("Retry applying to finish preparing the merge review.");
-    let task = app.tasks.get(name);
+    const task = app.tasks.get(name);
     if (!fs.existsSync(task.worktree))
       throw new PublishError(
         `The task worktree ${task.worktree} no longer exists.`,
         [],
         "Run `finish --force`, then start a new task.",
       );
-    this.phase(job, "snapshot");
-    // The worktree and the decisions are read together, between writes.
-    const { after, before, latest, decided } = await app.exclusive(async () => {
-      const after = await app.tasks.snapshotAsync(task);
-      task = app.tasks.get(name);
-      return { after, before: task.accepted, latest: app.review.latestRound(name), decided: app.review.lastChange(name) };
-    });
+    const after = await app.tasks.snapshotAsync(task),
+      before = app.tasks.get(name).accepted,
+      latest = app.review.latestRound(name);
     const violations = await scopeViolationsAsync(app.repo, task.base, after, task.scope);
     const reconciliation = app.reconciliation.get(name);
     if (reconciliation) {
@@ -535,36 +537,96 @@ export class Publisher {
       latest.summary.renderer === codeVersion() &&
       (latest.summary.indirect ?? true) === indirect
     )
-      return {
-        outcome: "unchanged",
-        round: latest.number,
-        changes: latest.units.length,
-      };
+      // A round whose render failed or was interrupted renders again.
+      return (latest.visuals ?? "ready") === "ready"
+        ? { result: { outcome: "unchanged", round: latest.number, changes: latest.units.length } }
+        : { round: latest };
     const files = await app.repo.changedFilesAsync(before, after);
     const optionUnits = await noteOptionUnits(app, name, job.id, before, after);
+    const number = (latest?.number ?? 0) + 1,
+      final = roundFolder(app, name, number);
+    const insert = async (units: Unit[], summary: Round["summary"], visuals: Round["visuals"]) => {
+      // The ref comes first: a round in the store always keeps its version
+      // across Git's garbage collection.
+      await app.repo.updateRefAsync(`refs/latex-review/${name}/round-${number}`, after);
+      app.store.execute(
+        "INSERT INTO rounds(task,number,before,after,units,summary,created,visuals) VALUES(?,?,?,?,?,?,?,?)",
+        name,
+        number,
+        before,
+        after,
+        JSON.stringify(units),
+        JSON.stringify(summary),
+        now(),
+        visuals!,
+      );
+      return app.review.round(name, number);
+    };
     if (!files.length && !optionUnits) {
       // A manual correction can remove the final proposal altogether. Give
       // it an empty latest round so the viewer cannot keep offering the old
       // wording for acceptance after it has disappeared from the worktree.
       if (latest && app.store.one("SELECT id FROM build_requests WHERE job=? AND id LIKE 'source-%'", job.id)) {
-        this.phase(job, "build");
-        const built = await this.compile(job, "baseline", new Builder(project, app.repo), before), number = latest.number + 1;
-        await app.exclusive(async () => {
-          if (app.review.lastChange(name) !== decided) throw new Stale();
-          app.store.execute("INSERT INTO rounds(task,number,before,after,units,summary,created) VALUES(?,?,?,?,?,?,?)", name, number, before, after, "[]", JSON.stringify({ renderer: codeVersion(), indirect, warnings: [], targets: ["full"], builds: [built.key] }), now());
-          await app.repo.updateRefAsync(`refs/latex-review/${name}/round-${number}`, after);
-        });
-        return { outcome: "empty", round: number, changes: 0 };
+        await fs.promises.rm(final, { recursive: true, force: true });
+        await insert([], { renderer: codeVersion(), indirect, warnings: [], targets: ["full"], builds: [], job: job.id }, "ready");
+        return { result: { outcome: "empty", round: number, changes: 0 } };
       }
-      return { outcome: "empty", round: null, changes: 0 };
+      return { result: { outcome: "empty", round: null, changes: 0 } };
     }
-    const units = optionUnits ?? await diffUnitsAsync(app.repo, before, after, (f) =>
+    const units = await withHashesAsync(app.repo, before, after, optionUnits ?? await diffUnitsAsync(app.repo, before, after, (f) =>
       isFigure(project, f),
-    );
+    ));
+    const targets = await new Builder(project, app.repo).planAsync(before, after, files),
+      shown = await provisional(app, name, latest, { before, after, units }),
+      pending = final + ".pending-" + randomBytes(4).toString("hex");
+    try {
+      await writeProvisional(pending, shown);
+      await fs.promises.rm(final, { recursive: true, force: true });
+      await fs.promises.rename(pending, final);
+    } finally {
+      await fs.promises.rm(pending, { recursive: true, force: true });
+    }
+    const round = await insert(units, { renderer: codeVersion(), indirect, warnings: [], targets, date: buildDate(), builds: [], job: job.id }, "pending");
+    return { round };
+  }
+  /** Inserts the worktree's round now when an earlier build of the task is
+   *  still running, so a source edit need not wait for it. The caller holds
+   *  the engine's write turn. Problems are reported when the job runs. */
+  async insertBehind(job: Pick<Job, "id" | "task" | "status">) {
+    if (job.status !== "queued" || !this.running.has(job.task)) return;
+    try {
+      await this.insertNow(job);
+    } catch {
+      /* The job inserts again when it starts, and fails with the reason. */
+    }
+  }
+  private roundSuperseded(round: Round) {
+    return this.app.review.latestRound(round.task)?.number !== round.number;
+  }
+  /** Compiles and renders a round's PDF comparison and attaches it to that
+   *  round. Running it again for the same round is safe. */
+  private async renderRound(job: Pick<Job, "id" | "task">, round: Round): Promise<JobResult> {
+    try {
+      return await this.renderComparison(job, round);
+    } catch (error) {
+      // A build the server stopped renders again after the restart.
+      if (!this.stopping) await this.app.exclusive(() => this.renderFailed(round)).catch((problem) => console.error("Marking a failed comparison:", problem));
+      throw error;
+    }
+  }
+  private async renderComparison(job: Pick<Job, "id" | "task">, round: Round): Promise<JobResult> {
+    const app = this.app,
+      name = job.task,
+      project = app.project,
+      { before, after, units } = round,
+      superseded = { outcome: "published" as const, round: round.number, changes: units.length, superseded: true };
+    // A newer round needs its own render; this one would only be replaced.
+    if (this.roundSuperseded(round)) return superseded;
     this.phase(job, "build");
     const builder = new Builder(project, app.repo),
-      date = buildDate(),
-      targets = await builder.planAsync(before, after, files);
+      targets = round.summary.targets?.length ? round.summary.targets : ["full"],
+      date = round.summary.date ?? buildDate(new Date(round.created * 1000)),
+      indirect = round.summary.indirect ?? true;
     if (targets[0] !== "full") this.revisions.set(job.id, after);
     const failed = (what: string) => (error: unknown) => {
       if (error instanceof BuildError)
@@ -576,7 +638,8 @@ export class Publisher {
         );
       throw error;
     };
-    let seed = targets[0] !== "full" ? await this.compile(job, "baseline", builder, task.base, ["full"], null, { asSeed: true }).catch(failed("The comparison baseline could not be compiled.")) : null;
+    const base = app.tasks.get(name).base;
+    let seed = targets[0] !== "full" ? await this.compile(job, "baseline", builder, base, ["full"], null, { asSeed: true }).catch(failed("The comparison baseline could not be compiled.")) : null;
     // Both versions compile at once: each needs only the seed.
     const versions = () => Promise.allSettled([
       this.compile(job, "baseline", builder, before, targets, seed, { date }),
@@ -587,24 +650,21 @@ export class Publisher {
       // An external package can invalidate readable aux files without
       // changing the source tree or engine version. Rebuild the seed once,
       // after both attempts finish, then use it for both comparison sides.
-      seed = await this.compile(job, "baseline", builder, task.base, ["full"], null, { asSeed: true, force: true }).catch(failed("The comparison baseline could not be compiled."));
+      seed = await this.compile(job, "baseline", builder, base, ["full"], null, { asSeed: true, force: true }).catch(failed("The comparison baseline could not be compiled."));
       builds = await versions();
     }
     // A failure of either is reported once both have settled, the baseline's first.
     const [baseline, revised] = builds,
       old = baseline.status === "fulfilled" ? baseline.value : failed("The comparison baseline could not be compiled.")(baseline.reason),
       next = revised.status === "fulfilled" ? revised.value : failed("The revised document could not be compiled.")(revised.reason);
-    if (app.review.lastChange(name) !== decided) throw new Stale();
+    if (this.roundSuperseded(round)) return superseded;
     const warnings = next.warnings.filter((w) => !old.warnings.includes(w));
     this.phase(job, "render");
-    const number = (latest?.number ?? 0) + 1,
-      rounds = path.join(app.state, "rounds", name),
-      final = path.join(rounds, String(number).padStart(3, "0")),
+    const final = roundFolder(app, name, round.number),
       output = final + ".pending-" + randomBytes(4).toString("hex");
     fs.mkdirSync(output, { recursive: true });
     const summary = {
-      renderer: codeVersion(),
-      indirect,
+      ...round.summary,
       warnings,
       targets,
       date,
@@ -635,22 +695,20 @@ export class Publisher {
           : undefined,
         () => this.priority(job),
       );
-      // No decision may come between this check and the new round.
+      // Decisions go on meanwhile; they never change a round's versions.
       await app.exclusive(async () => {
-        if (app.review.lastChange(name) !== decided) throw new Stale();
-        await fs.promises.rm(final, { recursive: true, force: true });
-        await fs.promises.rename(output, final);
+        await fs.promises.mkdir(final, { recursive: true });
+        // The page may still show the carried strips: keep them until it
+        // reloads, and replace round.json last.
+        for (const file of await fs.promises.readdir(output))
+          if (file !== "round.json") await fs.promises.rename(path.join(output, file), path.join(final, file));
+        await fs.promises.rename(path.join(output, "round.json"), path.join(final, "round.json"));
         app.store.execute(
-          "INSERT INTO rounds(task,number,before,after,units,summary,created) VALUES(?,?,?,?,?,?,?)",
-          name,
-          number,
-          before,
-          after,
-          JSON.stringify(units),
+          "UPDATE rounds SET visuals='ready', summary=? WHERE task=? AND number=?",
           JSON.stringify(summary),
-          now(),
+          name,
+          round.number,
         );
-        await app.repo.updateRefAsync(`refs/latex-review/${name}/round-${number}`, after);
       });
     } finally {
       fs.rmSync(output, { recursive: true, force: true });
@@ -665,11 +723,55 @@ export class Publisher {
       kinds[unit.visual] = (kinds[unit.visual] ?? 0) + 1;
     return {
       outcome: "published",
-      round: number,
+      round: round.number,
       changes: units.length,
       kinds,
       warnings,
     };
+  }
+  // Without its own comparison, each change that exactly matches one of the
+  // previous round shows that round's comparison, labelled with its round,
+  // rather than none: the old version is better than no version. The rest
+  // cannot be decided until a later round renders.
+  private async renderFailed(round: Round) {
+    const app = this.app,
+      current = app.review.round(round.task, round.number);
+    if ((current.visuals ?? "ready") !== "pending") return;
+    if (!this.roundSuperseded(round) && round.number > 1) {
+      const previous = app.review.round(round.task, round.number - 1);
+      await writeProvisional(roundFolder(app, round.task, round.number), await provisional(app, round.task, previous, round, true));
+    }
+    app.store.execute("UPDATE rounds SET visuals='failed' WHERE task=? AND number=?", round.task, round.number);
+  }
+  /** At start, after interrupted writes are finished: renders each task's
+   *  latest round whose comparison a restart interrupted, and restores round
+   *  refs a restart between a round's ref and its insert left behind. */
+  async recover() {
+    const app = this.app;
+    for (const task of app.tasks.list()) {
+      const rounds = app.store.all<Pick<Round, "number" | "after">>("SELECT number,after FROM rounds WHERE task=?", task.name),
+        refs = new Map(
+          (await app.repo.textAsync(["for-each-ref", "--format=%(refname) %(objectname)", `refs/latex-review/${task.name}/`]))
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => line.split(" ") as [string, string]),
+        );
+      for (const round of rounds) {
+        const ref = `refs/latex-review/${task.name}/round-${round.number}`;
+        if (refs.get(ref) !== round.after) await app.repo.updateRefAsync(ref, round.after);
+      }
+      const latest = app.review.latestRound(task.name);
+      if (!latest || latest.visuals !== "pending" || this.stopping) continue;
+      // The job that inserted it continues, so a host polling it sees the
+      // round it is waiting for.
+      const job = latest.summary.job ? app.store.one<Job>("SELECT * FROM jobs WHERE id=? AND status IN ('queued','running')", latest.summary.job) : null;
+      if (job && !this.pending.has(task.name)) {
+        this.update(job.id, { status: "queued" });
+        this.pending.set(task.name, job.id);
+        this.queue.push(job.id);
+        queueMicrotask(() => this.drain());
+      } else if (!this.pending.has(task.name)) this.submit(task.name);
+    }
   }
   async pruneCache() {
     if (this.pruning) return this.pruning;

@@ -10,7 +10,15 @@ export const zhCN: Record<string, string> = {
   "Save and update PDF": "保存并更新 PDF",
   "Reset to saved source": "恢复已保存的源码",
   "Source saved. Updating the PDF…": "源码已保存，正在更新 PDF…",
-  "Wait for the PDF build before editing source.": "请等待 PDF 构建完成后再编辑源码。",
+  "PDF comparison in progress": "正在生成 PDF 对比",
+  "PDF comparison failed": "PDF 对比生成失败",
+  "Wait for the PDF comparison of this change before accepting or rejecting it.": "请等待此修改的 PDF 对比生成后，再接受或拒绝它。",
+  "No PDF comparison": "暂无 PDF 对比",
+  "PDF from {time}": "{time} 的 PDF",
+  "Earlier PDF": "先前的 PDF",
+  "This change's own PDF comparison is still rendering. This comparison was rendered for the same change in the changes published at {time}.": "此修改的 PDF 对比仍在生成中。当前显示的是 {time} 发布时为同一修改生成的对比。",
+  "Review again": "请再次审阅",
+  "The PDF comparison changed after your decision.": "你作出决定后，PDF 对比发生了变化。",
   "This change was rejected. Undo that decision before editing it.": "这处改动已被拒绝，请先撤销该决定再编辑。",
   "The source changed while you were editing. Copy your draft before resetting to the saved source.": "编辑期间源码发生了变化。请复制保留需要的草稿，再恢复已保存的源码重新修改。草稿已保留。",
   "A newer round is available. Reload the page.": "有新一轮修改，请重新加载页面。",
@@ -187,8 +195,6 @@ export const zhCN: Record<string, string> = {
     "此任务正在删除，无法审阅或评论。",
   "Select Check status in Papilot before accepting, rejecting, or undoing changes. You can still add comments.":
     "请先在 Papilot 中选择“检查状态”，再接受、拒绝或撤销修改。你仍可以添加评论。",
-  "Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.":
-    "请等待 PDF 构建完成后再接受、拒绝或撤销修改。你仍可以添加评论。",
   "Pause this task in Papilot before accepting, rejecting, or undoing changes. You can still add comments.":
     "请先在 Papilot 中暂停此任务，再接受、拒绝或撤销修改。你仍可以添加评论。",
   "The agent is editing this task's files. Pause it before rejecting or editing changes. You can still accept and comment.":

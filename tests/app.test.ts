@@ -963,7 +963,7 @@ test('changing a relocated paper path recovers its preserved review PDF without 
   } finally { await f.close(); fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-test('inline source writes use the review token and reserve the task while its PDF rebuilds', async () => {
+test('inline source writes use the review token and track rebuilding without a round-wide lock', async () => {
   const f = await fixture();
   let writes = 0;
   const engine = http.createServer((_request, response) => {
@@ -989,7 +989,7 @@ test('inline source writes use the review token and reserve the task while its P
     assert.equal(writes, 1);
     assert.equal(f.store.task('thesis-task').status, 'building');
     assert.equal(f.store.task('thesis-task').pendingBuild?.job, 'source-job');
-    assert.match(response.json().decisionLock, /PDF build/);
+    assert.equal(response.json().decisionLock, null, 'the engine gates each comparison separately');
     finish({ status: 'done' });
     for (let i = 0; i < 20 && f.store.task('thesis-task').status === 'building'; i++) await new Promise(resolve => setImmediate(resolve));
   } finally { finish({ status: 'done' }); engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); await f.close(); }

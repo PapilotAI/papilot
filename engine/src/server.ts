@@ -62,6 +62,7 @@ export class App {
       await this.review.recover();
       await this.delivery.recover();
       await this.reconciliation.recover();
+      await this.publisher.recover();
     });
   }
   /** Settles once writes interrupted by a restart are finished. */

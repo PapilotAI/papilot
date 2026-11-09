@@ -932,7 +932,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (!besideAgent) throw new Error("The agent is editing this task's files. Pause the task before rejecting or editing changes.");
       if (task.pendingReview) throw new Error('A review action is already in progress. Wait for it to finish.');
     }
-    else if (this.active.has(taskId) || this.publishing.has(taskId) || BUSY.has(task.status) || task.status === 'queued') throw new Error('Pause the task before accepting, rejecting, or undoing changes. Wait for any PDF build to finish.');
+    else if (this.active.has(taskId) || (BUSY.has(task.status) && task.status !== 'building') || task.status === 'queued') throw new Error('Pause the task before accepting, rejecting, or undoing changes.');
     if (this.committing.has(task.projectId)) throw new Error('A commit is in progress. Try again when it finishes.');
     if (mergeInProgress(this.store.project(task.projectId).path)) throw new Error('Finish or abort the merge in the Git panel before accepting, rejecting, or undoing changes.');
     if (this.reviewWrites.has(taskId)) throw new Error('A review action is already in progress. Wait for it to finish.');
@@ -1056,7 +1056,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           this.emit('publishing', taskId, compiling);
         }
         const summary = await request(client => client.get(taskRoute(task.name)));
-        this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, job: { ...current, id: pending.job } } });
+        this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: { ...current, id: pending.job } } });
+        if (['done', 'completed', 'succeeded', 'failed'].includes(current.status)) {
+          const latest = this.store.task(taskId).pendingBuild;
+          if (latest && latest.job !== pending.job) { pending = latest; continue; }
+        }
         if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') {
           // Freeze the result round for these instructions. Later follow-ups
           // have their own results and cannot silently replace these links.
@@ -1070,6 +1074,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
             this.store.updateTask(taskId, { review: { ...review, job: { id: pending.job, status: 'running', phase: 'options', createdAt: current.createdAt, options: { completed, total } } } });
           }, () => this.closing);
           if (this.closing) return;
+          const latest = this.store.task(taskId).pendingBuild;
+          if (latest && latest.job !== pending.job) { pending = latest; continue; }
           this.store.updateTask(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null, pendingBuild: null,
             review: { ...this.store.task(taskId).review!, job: { ...current, id: pending.job } } });
           break;
@@ -1138,7 +1144,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const reconciliation = summary.reconciliation ?? null;
       const files = await acceptedFiles(project.path, task.name, deferred ? reconciliation?.base ?? (delivery && delivery.mode !== 'branch' ? delivery.accepted : undefined) : task.committed?.accepted);
       const current = this.store.task(taskId);
-      if (current.status !== 'deleting') this.store.updateTask(taskId, { deferred, delivery, reconciliation, review: { state: summary.state, round: summary.round, counts: summary.counts, job: current.review?.job, unsent, comments, files } });
+      if (current.status !== 'deleting') this.store.updateTask(taskId, { deferred, delivery, reconciliation, review: { state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: current.review?.job, unsent, comments, files } });
       // Recover an application interrupted after the engine prepared its
       // proposal but before Papilot persisted the agent run.
       if (reconciliation?.ready && (summary.round ?? 0) <= reconciliation.round && current.status === 'reviewing' && !this.committing.has(task.projectId) && !this.reviewWrites.has(taskId)

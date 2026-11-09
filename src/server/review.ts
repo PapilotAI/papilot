@@ -43,7 +43,6 @@ export function annotateReviewState(value: unknown, tasks: readonly Task[]): unk
   else if (state.closed) decisionLock = commentLock = 'This review is finished. Accepted changes are in your manuscript.';
   else if (task.status === 'deleting') decisionLock = commentLock = 'This task is being deleted. Review actions and comments are unavailable.';
   else if (task.status === 'uncertain') decisionLock = 'Select Check status in Papilot before accepting, rejecting, or undoing changes. You can still add comments.';
-  else if (task.status === 'building') decisionLock = 'Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.';
   else if (AGENT_TURN.includes(task.status) && !task.deferred) decisionLock = 'Pause this task in Papilot before accepting, rejecting, or undoing changes. You can still add comments.';
   else if (task.pendingReview) decisionLock = 'Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.';
   else if (task.reconciliation && (!task.reconciliation.ready || Number(state.round) <= task.reconciliation.round)) decisionLock = 'Wait for the merge suggestion before changing review decisions.';

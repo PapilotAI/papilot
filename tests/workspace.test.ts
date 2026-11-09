@@ -383,13 +383,39 @@ test('manual source saves track the existing build and never ask AI to repair co
     assert.equal(f.store.task(f.task.id).pendingReview, null);
     assert.equal(f.store.task(f.task.id).pendingBuild?.job, 'source-job');
     assert.equal(f.store.task(f.task.id).pendingBuild?.sendBack, false);
-    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => {}));
+    assert.equal(await f.workspace.reviewWrite(f.task.id, true, async () => 'reviewed'), 'reviewed');
     gate.resolve({ status: 'failed', error: 'The revised document could not be compiled.' });
     for (let i = 0; i < 20 && f.store.task(f.task.id).status === 'building'; i++) await tick();
     assert.equal(f.store.task(f.task.id).status, 'failed');
     assert.equal(f.store.runs().length, 0);
     assert.equal(f.calls.some(call => call.route.endsWith('/publish')), false);
   } finally { f.close(); }
+});
+
+for (const status of ['done', 'failed']) test(`a source save during a build survives the older job becoming ${status}`, async () => {
+  const old = deferred<unknown>(), next = deferred<unknown>(), started = deferred<void>(), followed = deferred<void>();
+  const f = fixture(async (_method, route) => {
+    if (route.endsWith('/publish')) return { job: 'old-job' };
+    if (route.endsWith('/jobs/old-job')) { started.resolve(); return old.promise; }
+    if (route.endsWith('/jobs/new-job')) { followed.resolve(); return next.promise; }
+    if (route.includes('/feedback')) return feedback;
+    return { ...summary, ready: 1 };
+  });
+  try {
+    const publishing = f.workspace.publish(f.task.id);
+    await started.promise;
+    await f.workspace.reviewWrite(f.task.id, true, async () => ({ ...pageState, job: { id: 'new-job', status: 'queued' } }), { route: '/api/tasks/p-task/source', body: { id: 'new-save' } });
+    old.resolve({ status, round: 1, error: 'The revised document could not be compiled.' });
+    await followed.promise;
+    assert.equal(f.store.task(f.task.id).pendingBuild?.job, 'new-job');
+    assert.equal(f.store.task(f.task.id).status, 'building');
+    assert.equal(f.store.task(f.task.id).review?.ready, 1);
+    next.resolve({ status: 'done', round: 2 });
+    await publishing;
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).pendingBuild, null);
+    assert.equal(f.calls.filter(call => call.route.endsWith('/publish')).length, 1);
+  } finally { old.resolve({ status: 'done' }); next.resolve({ status: 'done' }); f.close(); }
 });
 
 test('recovering a lost source save resumes its build before queued agent work', async () => {
@@ -491,14 +517,14 @@ test('a review write reserves the worktree until it finishes', async () => {
   } finally { gate.resolve(); f.close(); }
 });
 
-test('publication reserves the worktree and rejects duplicate builds and review writes', async () => {
+test('publication rejects duplicate builds and delays the next agent turn while allowing review writes', async () => {
   const gate = deferred<{ status: string }>();
   const f = fixture(async (_method, route) => route.includes('/jobs/') ? gate.promise : route.endsWith('/publish') ? { job: 'job' } : summary);
   try {
     f.codex.ready = true;
     const building = f.workspace.publish(f.task.id);
     assert.throws(() => f.workspace.publish(f.task.id));
-    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => {}));
+    assert.equal(await f.workspace.reviewWrite(f.task.id, true, async () => 'reviewed'), 'reviewed');
     await f.workspace.enqueue(f.task.id, 'Next revision.', 'next', false);
     await tick();
     assert.equal(f.codex.calls.length, 0);
@@ -701,7 +727,7 @@ test('an extended connection outage preserves the job and Check status recovers 
   } finally { f.close(); }
 });
 
-test('restart recovery resumes a saved job, preserves original run links, and reserves the worktree', async () => {
+test('restart recovery resumes a saved job and preserves original run links while allowing review writes', async () => {
   const gate = deferred<{ status: string; round: number }>();
   const f = fixture(async (_method, route) => route.includes('/jobs/') ? gate.promise : summary);
   try {
@@ -711,7 +737,7 @@ test('restart recovery resumes a saved job, preserves original run links, and re
     const recovering = f.workspace.resumeBuild(f.task.id);
     await tick();
     assert.equal(await f.workspace.resumeBuild(f.task.id), false);
-    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => {}));
+    assert.equal(await f.workspace.reviewWrite(f.task.id, true, async () => 'reviewed'), 'reviewed');
     gate.resolve({ status: 'done', round: 3 });
     assert.equal(await recovering, true);
     assert.equal(f.store.runByKey('old')?.reviewRound, 3);
