@@ -19,11 +19,13 @@ export function codexCandidates(env, data, root, wsl = isWsl(env)) {
 }
 
 /** The first candidate that runs, tried with the PATH Codex is started with. */
-export async function firstRunnable(candidates, env = process.env, { timeout = 15000, signal } = {}) {
+export async function firstRunnable(candidates, env = process.env, { timeout = 15000, budget = 30000, signal } = {}) {
   if (signal?.aborted) return null;
+  const deadline = Date.now() + budget;
   const probe = { ...env, PATH: agentPath(env) };
   for (const file of candidates) {
-    if (signal?.aborted) return null;
+    const remaining = deadline - Date.now();
+    if (signal?.aborted || remaining <= 0) return null;
     try {
       const runs = await new Promise(resolve => {
         const child = spawnCommand(file, ['--version'], { env: probe, stdio: 'ignore', detached: !WINDOWS });
@@ -38,7 +40,7 @@ export async function firstRunnable(candidates, env = process.env, { timeout = 1
           catch { try { child.kill('SIGKILL'); } catch { /* already stopped */ } }
           finally { finish(false); }
         };
-        const timer = setTimeout(stop, timeout);
+        const timer = setTimeout(stop, Math.min(timeout, remaining));
         child.once('exit', code => finish(code === 0));
         child.once('error', () => finish(false));
         signal?.addEventListener('abort', stop, { once: true });

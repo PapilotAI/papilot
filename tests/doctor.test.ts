@@ -238,6 +238,56 @@ test('desktop doctor distinguishes failed probes from candidates not checked bef
   } finally { f.cleanup(); }
 });
 
+test('desktop doctor gives login only the remaining probe budget, bounded to 3–10 seconds', async () => {
+  const f = fixture();
+  try {
+    f.baseTools();
+    const codex = f.tool('codex', 'console.log("codex-cli 0.1.0");');
+    const paths = path.join(f.app, 'bin/agent-paths.mjs'), timeoutFile = path.join(f.dir, 'login-timeout');
+    fs.renameSync(paths, path.join(f.app, 'bin/agent-paths-real.mjs'));
+    // Advance the clock after --version and record login's actual deadline
+    // without making each budget boundary cost twenty seconds.
+    fs.writeFileSync(paths, `
+      import { EventEmitter } from 'node:events';
+      import fs from 'node:fs';
+      import * as real from './agent-paths-real.mjs';
+      export * from './agent-paths-real.mjs';
+      const now = Date.now(), timer = globalThis.setTimeout;
+      let elapsed = 0, login, loginTimer = false;
+      Date.now = () => now + elapsed;
+      globalThis.setTimeout = (callback, timeout, ...args) => {
+        if (loginTimer) {
+          loginTimer = false;
+          fs.writeFileSync(${JSON.stringify(timeoutFile)}, String(timeout));
+          return timer(callback, 0, ...args);
+        }
+        return timer(callback, timeout, ...args);
+      };
+      export function spawnCommand(file, args, options) {
+        if (file !== process.env.PAPILOT_CODEX_BIN) return real.spawnCommand(file, args, options);
+        if (args[0] === '--version') {
+          const child = real.spawnCommand(file, args, options);
+          child.once('close', () => { elapsed += Number(process.env.PROBE_ELAPSED); });
+          return child;
+        }
+        login = new EventEmitter(); login.pid = -1; loginTimer = true;
+        return login;
+      }
+      export function killTree(pid, signal) {
+        if (pid !== -1) return real.killTree(pid, signal);
+        login.emit('close', 1, null);
+      }
+    `);
+    for (const [elapsed, timeout] of [[4000, 10000], [14000, 6000], [19500, 3000]]) {
+      const result = await f.run(['--json'], { PAPILOT_DESKTOP: '1', PAPILOT_CODEX_BIN: codex, PROBE_ELAPSED: String(elapsed) });
+      const check = item(result.report, 'agent.codex');
+      assert.equal(check.ok, false);
+      assert.match(check.detail, /timed out/);
+      assert.equal(Number(fs.readFileSync(timeoutFile, 'utf8')), timeout, `login budget after ${elapsed} ms of probing`);
+    }
+  } finally { f.cleanup(); }
+});
+
 test('desktop doctor skips a hanging Codex and probes the working candidate only once', { timeout: 50000 }, async () => {
   const f = fixture();
   const pidFile = path.join(f.dir, 'codex.pid');

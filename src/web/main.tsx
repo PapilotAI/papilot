@@ -1,5 +1,5 @@
 import { requestApi, requestState } from './api.ts';
-import { chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
+import { agentsSettled, chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { GroupCard, GroupInstruction } from './note-groups.tsx';
@@ -1044,9 +1044,8 @@ function App() {
   const snapshotRef = useRef<Snapshot | null>(null);
   const timelineCache = useRef(new Map<string, TimelineItem[]>());
   const timelineRevisions = useRef(new Map<string, string>());
+  // A tag (or untagged JSON); empty while the app shows a locally changed snapshot.
   const snapshotText = useRef('');
-  // The server's tag for snapshotText; sent only while that text is what the app shows.
-  const snapshotTag = useRef('');
   const composers = useRef(new Map<string, ComposerDraft>());
   const answerDrafts = useRef(new Map<string, Record<string, string>>());
   const [snapshotRequest] = useState(() => new ReadRequest<{ value: (Snapshot & { csrf: string }) | null; tag: string }>());
@@ -1217,12 +1216,11 @@ function App() {
     try {
       if (fresh) snapshotRequest.cancel();
       const load = (signal: AbortSignal) => import.meta.env.MODE === 'playground' ? api<Snapshot & { csrf: string }>('/state', undefined, signal).then(value => ({ value, tag: '' }))
-        : requestState<Snapshot & { csrf: string }>(token, snapshotText.current && snapshotRef.current ? snapshotTag.current : '', signal);
+        : requestState<Snapshot & { csrf: string }>(token, snapshotRef.current && /^(W\/)?"/.test(snapshotText.current) ? snapshotText.current : '', signal);
       await snapshotRequest.run('state', load, ({ value: next, tag }) => {
         // Most polls find nothing new; an identical snapshot leaves the app as it is.
         if (!next) { setOnline(true); setConnectionError(''); return; }
-        const text = JSON.stringify(next);
-        snapshotTag.current = tag;
+        const text = tag || JSON.stringify(next);
         if (text === snapshotText.current && snapshotRef.current) { setOnline(true); setConnectionError(''); return; }
         snapshotText.current = text;
         const selection = selectedRef.current, previous = snapshotRef.current;
@@ -1356,6 +1354,14 @@ function App() {
   // Fallbacks keep saved preferences intact in case they become available again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
   const offered = offeredAgents(runtimes), agentChoice = chosenAgent(savedAgent, offered, runtimes), missingAgent = noAgent(runtimes);
+  const settled = agentsSettled(runtimes);
+  useEffect(() => {
+    // A later disconnect must keep the chosen agent and show its notice.
+    // Nothing offered is not a choice: Codex is only the empty-state fallback.
+    if (savedAgent === null && settled && offered.includes(agentChoice)) {
+      setAgentChoice(agentChoice); browserStorage.setItem('papilot:agent', agentChoice);
+    }
+  }, [savedAgent, settled, agentChoice, offered]);
   const effectivePermissions = runtimes[agentChoice]?.permissionOptions?.some(option => option.value === newPermissions) ? newPermissions : 'workspace';
   const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;

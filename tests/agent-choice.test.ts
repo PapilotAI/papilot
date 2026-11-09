@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chosenAgent, noAgent, offeredAgents } from '../src/web/agent-choice.ts';
+import { agentsSettled, chosenAgent, noAgent, offeredAgents } from '../src/web/agent-choice.ts';
 import { AGENT_IDS, type RuntimeStatus } from '../src/shared.ts';
 
 const runtime = (installed?: boolean): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [], ...(installed === undefined ? {} : { installed }) });
@@ -20,17 +20,37 @@ test('a desktop host without Codex offers and picks the agents it has', () => {
   assert.equal(chosenAgent('claude', [], runtimes), 'codex', 'the internal fallback does not overwrite the saved choice');
 });
 
-test('without an offered saved choice, the first connected and authenticated agent is chosen', () => {
+test('automatic agent choice waits for every reported runtime to settle', () => {
   const ready = { ...runtime(true), connected: true, authenticated: true };
-  const runtimes = { codex: runtime(true), claude: ready, kimi: ready };
+  const runtimes = { codex: runtime(true), claude: ready, kimi: runtime(false) };
   const offered = offeredAgents(runtimes);
+  assert.equal(agentsSettled({}), false);
+  assert.equal(agentsSettled(runtimes), false);
+  assert.equal(chosenAgent(null, offered, runtimes), 'codex', 'another ready agent does not change the choice during startup');
+  assert.equal(chosenAgent(null, ['claude', 'codex'], runtimes), 'claude', 'startup follows the offered order');
+  assert.equal(chosenAgent(null, [], {}), 'codex');
+  assert.equal(chosenAgent('claude', offered, runtimes), 'claude', 'a saved choice wins during startup');
+  assert.equal(agentsSettled({ codex: runtime(false) }), true, 'missing installations have settled');
+  assert.equal(agentsSettled({ codex: { ...runtime(true), connected: true } }), true, 'authentication is not required to settle');
+});
+
+test('once settled, the first connected and authenticated agent is chosen unless a choice is saved', () => {
+  const ready = { ...runtime(true), connected: true, authenticated: true };
+  const runtimes = { codex: { ...runtime(true), error: 'Failed to start' }, claude: ready, kimi: ready };
+  const offered = offeredAgents(runtimes);
+  assert.equal(agentsSettled(runtimes), true);
   assert.equal(chosenAgent(null, offered, runtimes), 'claude', 'a fresh install skips a broken Codex');
   assert.equal(chosenAgent('codex', offered, runtimes), 'codex', 'an explicit choice wins even when it is not ready');
   assert.equal(chosenAgent('grok', offered, runtimes), 'claude', 'a missing saved agent falls back to a ready one');
-  const notReady = { codex: { ...ready, connected: false }, claude: { ...ready, authenticated: false } };
+  const notReady = { codex: runtimes.codex, claude: { ...ready, authenticated: false } };
+  assert.equal(agentsSettled(notReady), true);
   assert.equal(chosenAgent(null, ['codex', 'claude'], notReady), 'codex', 'nothing ready falls back to the first offered');
   assert.equal(chosenAgent(null, ['claude', 'codex'], notReady), 'claude', 'fallback respects the offered order');
   assert.equal(chosenAgent(null, [], runtimes), 'codex', 'only offered agents can be chosen');
+  const initial = { codex: ready, claude: ready };
+  const saved = chosenAgent(null, offeredAgents(initial), initial);
+  assert.equal(saved, 'codex');
+  assert.equal(chosenAgent(saved, offered, runtimes), 'codex', 'saving the automatic choice preserves it after a crash');
 });
 
 test('no agent is reported only after every runtime is known to be missing', () => {

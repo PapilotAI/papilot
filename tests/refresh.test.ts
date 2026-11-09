@@ -183,6 +183,9 @@ test('agent events find their task and message without reading the whole history
   assert.ok(plan.some(row => row.detail.includes('task_threads')), 'the thread lookup uses its index');
   assert.equal(store.findTask('new')?.id, 'new'); assert.equal(store.findTask('gone'), undefined);
   assert.equal(store.taskProject('new'), 'paper'); assert.equal(store.taskProject('gone'), undefined);
+  store.updateTask('new', { projectId: 'other-paper' });
+  assert.equal(store.taskProject('new'), 'other-paper', 'the project lookup follows a saved task move');
+  assert.equal(store.task('new').projectId, 'other-paper');
   store.saveItem({ id: 'new:1:a', taskId: 'new', type: 'command', text: 'ls', createdAt: 5, detail: 'x'.repeat(40000) });
   assert.equal(store.item('new', 'new:1:a')?.createdAt, 5);
   assert.equal(store.item('old', 'new:1:a'), undefined, 'messages stay with their task');

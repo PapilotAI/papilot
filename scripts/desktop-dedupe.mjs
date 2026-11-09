@@ -20,6 +20,12 @@ export function dedupeEngine(server) {
     if (!shared || !local || !local.version || local.version !== shared.version) continue;
     const identity = local.integrity || local.resolved;
     if (!identity || identity !== (shared.integrity || shared.resolved)) continue;
+    // Removing a package also moves where Node resolves its dependencies.
+    const dependencies = Object.keys({ ...local.dependencies, ...local.optionalDependencies, ...local.peerDependencies });
+    if (dependencies.some(dependency => {
+      const top = `node_modules/${dependency}`, nested = `node_modules/${name}/node_modules/${dependency}`;
+      return !engineLock[top]?.version || engineLock[top].version !== serverLock[top]?.version || engineLock[nested] || serverLock[nested];
+    })) continue;
     const own = version(path.join(inner, name));
     if (!own || own !== version(path.join(outer, name))) continue;
     bytes += size(path.join(inner, name));

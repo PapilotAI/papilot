@@ -133,7 +133,7 @@ export async function doctor(args) {
     const configured = process.env.PAPILOT_CODEX_BIN;
     const candidates = codexCandidates(process.env, data, root);
     const env = { ...process.env, PATH: agentPath(process.env) };
-    // Leave time for login and the other checks within the diagnostics deadline.
+    // Probes and login share a budget within the diagnostics deadline.
     const deadline = Date.now() + 20000;
     const tried = [];
     for (const file of candidates) {
@@ -143,7 +143,7 @@ export async function doctor(args) {
       const result = await command(file, ['--version'], { timeout: Math.min(10000, remaining), env });
       if (!result.ok) continue;
       const version = result.stdout.match(/\d+\.\d+\.\d+/)?.[0];
-      const login = await command(file, ['login', 'status'], { timeout: 10000, env });
+      const login = await command(file, ['login', 'status'], { timeout: Math.max(3000, Math.min(10000, deadline - Date.now())), env });
       const ready = login.ok && /^\s*logged in\b/im.test(login.stdout + '\n' + login.stderr);
       check('agent.codex', ready, 'warn', `${version ? `Codex ${version}` : 'Codex'} (${file}): ${ready ? 'signed in' : login.reason || 'login could not be confirmed'}.`, 'Run codex login, then select Reconnect.');
       return ready;

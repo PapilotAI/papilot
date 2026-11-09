@@ -166,6 +166,37 @@ test('a Codex wrapper with a waiting child times out and the next installation i
   }
 });
 
+test('Codex lookup shares a total budget and kills the hanging probe trees', { skip: !POSIX && 'uses POSIX process groups', timeout: 15000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-'));
+  const pidFiles = [path.join(root, 'first.pids'), path.join(root, 'second.pids')], tried = path.join(root, 'tried');
+  const pids = () => pidFiles.flatMap(file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split(' ').map(Number) : []);
+  try {
+    const wrappers = ['first', 'second'].map((name, index) => {
+      const file = path.join(root, name);
+      fs.writeFileSync(file, `#!/bin/sh\n/bin/sleep 30 &\necho "$$ $!" > "$PROBE_PIDS_${index}"\nwait\n`, { mode: 0o755 });
+      return file;
+    });
+    const next = path.join(root, 'next');
+    fs.writeFileSync(next, '#!/bin/sh\necho tried > "$PROBE_TRIED"\n', { mode: 0o755 });
+    const plain = { ...env(root), PROBE_PIDS_0: pidFiles[0], PROBE_PIDS_1: pidFiles[1], PROBE_TRIED: tried };
+    // Each probe gets long enough for a loaded machine to start its shell.
+    const started = Date.now(), budget = 3000;
+    assert.equal(await firstRunnable([...wrappers, next], plain, { timeout: 2000, budget }), null);
+    const elapsed = Date.now() - started;
+    // The upper bound only rules out waiting on every candidate; process start-up varies with load.
+    assert.ok(elapsed >= budget - 100 && elapsed < budget + 3000, `lookup took ${elapsed} ms for a ${budget} ms budget`);
+    assert.equal(fs.existsSync(tried), false, 'no candidate runs after the budget is exhausted');
+    const children = pids();
+    assert.ok(children.length >= 2, 'at least the first wrapper and its child started');
+    await waitFor(() => children.every(pid => { try { process.kill(pid, 0); return false; } catch { return true; } }));
+    assert.equal(await firstRunnable([next], plain, { budget: 0 }), null);
+    assert.equal(fs.existsSync(tried), false, 'an empty budget starts no probe');
+  } finally {
+    for (const pid of pids()) { try { killTree(pid, 'SIGKILL'); } catch { /* already stopped */ } }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('starting Codex again during a stopped lookup launches afresh and retains the new promise', { skip: !POSIX && 'uses a POSIX executable', timeout: 10000 }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-'));
   const probes = path.join(root, 'probes'), launches = path.join(root, 'launches');

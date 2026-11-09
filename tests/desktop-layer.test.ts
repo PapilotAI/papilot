@@ -118,3 +118,28 @@ test('engine deduplication requires matching lock identities and installed versi
     for (const [name, , , , kept] of cases) assert.equal(fs.existsSync(path.join(server, 'engine/node_modules', name)), kept, name);
   } finally { fs.rmSync(server, { recursive: true, force: true }); }
 });
+
+test('engine deduplication preserves dependency resolution for ordinary, optional and peer dependencies', () => {
+  for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+    for (const scenario of ['matching', 'different-version', 'nested-engine', 'nested-server', 'missing-engine', 'missing-server', 'missing-both']) {
+      const server = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-dedupe-'));
+      const name = '@scope/consumer', dependency = '@scope/dependency';
+      const entry = { version: '1.0.0', integrity: 'sha512-same', [field]: { [dependency]: '*' } };
+      const top = `node_modules/${dependency}`, nested = `node_modules/${name}/node_modules/${dependency}`;
+      const outer: Record<string, unknown> = { [`node_modules/${name}`]: entry, [top]: { version: '1.0.0' } };
+      const inner: Record<string, unknown> = { [`node_modules/${name}`]: entry, [top]: { version: '1.0.0' } };
+      if (scenario === 'different-version') inner[top] = { version: '2.0.0' };
+      if (scenario === 'nested-engine') inner[nested] = { version: '1.0.0' };
+      if (scenario === 'nested-server') outer[nested] = { version: '1.0.0' };
+      if (scenario === 'missing-engine' || scenario === 'missing-both') delete inner[top];
+      if (scenario === 'missing-server' || scenario === 'missing-both') delete outer[top];
+      try {
+        for (const folder of ['.', 'engine']) write(path.join(server, folder, 'node_modules', name, 'package.json'), { name, version: '1.0.0' });
+        write(path.join(server, 'package-lock.json'), { packages: outer });
+        write(path.join(server, 'engine/package-lock.json'), { packages: inner });
+        dedupeEngine(server);
+        assert.equal(fs.existsSync(path.join(server, 'engine/node_modules', name)), scenario !== 'matching', `${field}: ${scenario}`);
+      } finally { fs.rmSync(server, { recursive: true, force: true }); }
+    }
+  }
+});
