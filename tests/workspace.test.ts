@@ -2972,6 +2972,33 @@ test('a restart resumes a preparation with the same engine task, or fails it cle
   } finally { after.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('a resumed preparation waits while the engine is still making the copy it asked for before', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let asked = 0;
+  const f = fixture(async (_method, route, body: any) => {
+    if (route !== '/api/tasks') return summary;
+    // The engine kept running across the restart and is still checking out the copy.
+    if (++asked < 3) throw new Error(`Task ${JSON.stringify(body.name)} is being created. Try again in a moment.`);
+    return engineCopy('/unused/resumed');
+  });
+  try {
+    const input = { id: 'still-creating-0001', projectId: 'paper', title: 'Revise', instructions: 'Revise.' };
+    await f.workspace.createTask(input);
+    const job = preparation(f, input.id);
+    for (let i = 0; i < 2; i++) {
+      await until(() => asked === i + 1);
+      await tick(); await tick();
+      assert.equal(f.store.task(input.id).status, 'preparing');
+      t.mock.timers.tick(1000);
+    }
+    const prepared = await job;
+    assert.equal(asked, 3);
+    assert.equal(prepared.status, 'queued');
+    assert.equal(prepared.worktree, '/unused/resumed');
+    assert.equal(prepared.error, null);
+  } finally { f.close(); }
+});
+
 test('attachments are claimed when the task is saved, and deleting a failed preparation returns its notes', async () => {
   let listed: { task: string }[] = [];
   const f = fixture(async (method, route) => {

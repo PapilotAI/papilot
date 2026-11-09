@@ -411,8 +411,17 @@ export class Workspace extends EventEmitter {
     const client = await this.connectReview(this.store.project(task.projectId).path);
     if (!task.preparation?.submitted) task = this.store.updateTask(taskId, { preparation: { ...task.preparation, submitted: true } });
     // The engine answers with its open task of this name, so a retry or a
-    // restart reuses a copy it has already made.
-    const info = await client.post('/api/tasks', { name: task.name, title: task.title, deferred: true });
+    // restart reuses a copy it has already made. An engine that kept running
+    // across a restart may still be making the copy asked for before: wait
+    // for it rather than failing the task.
+    let info: { worktree: string; deferred?: boolean };
+    for (;;) {
+      try { info = await client.post('/api/tasks', { name: task.name, title: task.title, deferred: true }); break; }
+      catch (error) {
+        if (this.closing || !/ is being created\. Try again in a moment\.$/.test(errorText(error))) throw error;
+        await delay(1000);
+      }
+    }
     let snapshot: ReviewSnapshot | undefined;
     if (task.mode === 'review') try {
       const current = task, capture = this.reviewCopies.get(taskId) ?? ((worktree: string) => this.prepareReview(current, worktree));
