@@ -81,8 +81,8 @@ export function preparePaper(root: string, revision: string, priority: Priority 
   return created;
 }
 
-// A round does not change; what the full paper needs of it is looked up once.
-interface RoundInfo { before: string; after: string; build?: { key: string; targets: string[] } }
+// Remember completed rounds; a pending round gains its build keys later.
+interface RoundInfo { before: string; after: string; build?: { key: string; targets: string[] }; builds?: string[]; rendering?: string }
 const rounds = new Map<string, Promise<RoundInfo>>();
 function roundInfo(connect: Connect, root: string, name: string, round: number) {
   const key = JSON.stringify([root, name, round]);
@@ -92,7 +92,8 @@ function roundInfo(connect: Connect, root: string, name: string, round: number) 
       .then(client => client.get<RoundInfo>(`${taskRoute(name)}/rounds/${round}`))
       .then(detail => {
         if (typeof detail?.before !== 'string' || typeof detail.after !== 'string') throw notFound();
-        return { before: detail.before, after: detail.after, ...(detail.build ? { build: detail.build } : {}) };
+        if (detail.rendering) rounds.delete(key);
+        return detail;
       });
     rounds.set(key, found);
     found.catch(() => rounds.delete(key));
@@ -118,8 +119,9 @@ async function chaptersPdf(root: string, info: RoundInfo) {
 // new version. The full paper shows that build rather than compiling the same
 // version again under another cache key, one without the round's fixed date.
 const adopted = new Map<string, Promise<void>>();
-function adopt(root: string, revision: string, info: RoundInfo) {
-  const build = info.build;
+function adopt(root: string, revision: string, info: RoundInfo, side: 'before' | 'after' = 'after') {
+  const keyForSide = side === 'before' ? info.builds?.at(-2) : info.build?.key;
+  const build = info.build && keyForSide ? { ...info.build, key: keyForSide } : undefined;
   if (!build || JSON.stringify(build.targets) !== '["full"]' || !/^[0-9a-f]{32}$/.test(build.key)) return Promise.resolve();
   const key = JSON.stringify([root, revision, build.key]);
   let found = adopted.get(key);
@@ -154,7 +156,7 @@ async function ready(root: string, revision: string, follow = false) {
 /** The complete PDF of a round's version, once it has compiled. */
 export async function fullPaperPdf(connect: Connect, root: string, name: string, round: number, side: 'before' | 'after'): Promise<string> {
   const info = await roundInfo(connect, root, name, round);
-  if (side === 'after') await adopt(root, info.after, info);
+  await adopt(root, info[side], info, side);
   return ready(root, info[side]);
 }
 

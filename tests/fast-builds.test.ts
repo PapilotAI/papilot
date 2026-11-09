@@ -319,10 +319,14 @@ test('the full paper of a round that compiled the whole paper is that round\'s o
     const published = await publish('d'.repeat(32), rev), whole = round(rev, 'd'.repeat(32));
     assert.deepEqual(await nextPaperPass(whole, f.root, 'p-task', 1, 0, 0), { pass: null }, 'the complete PDF is there at once');
     assert.equal(await fullPaperPdf(whole, f.root, 'p-task', 1, 'after'), published);
+    const baseline = await publish('b'.repeat(32), other);
+    const both = async () => ({ get: async () => ({ before: other, after: rev, builds: ['b'.repeat(32), 'd'.repeat(32)], build: { key: 'd'.repeat(32), targets: ['full'] } }) as any });
+    assert.equal(await fullPaperPdf(both, f.root, 'p-task', 3, 'before'), baseline, 'the before side adopts its dated baseline PDF too');
     assert.ok(!fs.existsSync(calls), 'nothing compiled that version again');
     // A published build of another version, such as an empty round's
     // baseline, is not shown for this one.
-    const stray = round(other, 'e'.repeat(32));
+    const different = f.commit({ 'main.tex': document('Different.\n') });
+    const stray = round(different, 'e'.repeat(32));
     await publish('e'.repeat(32), rev);
     assert.notEqual(await fullPaperPdf(stray, f.root, 'p-task', 2, 'after'), published);
     assert.equal(fs.readFileSync(calls, 'utf8').trim().split('\n').length, 1);
