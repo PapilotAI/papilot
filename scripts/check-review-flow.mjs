@@ -21,7 +21,7 @@ const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', n
 let latest = 1, serial = 0, undo = null;
 let effectFixture = true, effectRequests = 0;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
-const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [], archiveRequests = [], deleteRequests = [];
+const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [], archiveRequests = [], deleteRequests = [], predictRequests = [];
 let gitFiles = [];
 let pushError, conflictOnApply = false, combinedOnCommit = false;
 let timeline = [];
@@ -65,6 +65,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: timeline } });
+  if (url.pathname.endsWith('/predict')) { predictRequests.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } }); }
   if (url.pathname.endsWith('/delete')) {
     deleteRequests.push(route.request().postDataJSON());
     snapshot.tasks = snapshot.tasks.filter(item => item.id !== task.id);
@@ -433,6 +434,7 @@ try {
   await sync();
   const applyButton = () => card.getByRole('button', { name: 'Apply to workspace', exact: true });
   const commitButton = () => card.getByRole('button', { name: 'Commit to manuscript', exact: true });
+  await expect.poll(() => predictRequests.length).toBeGreaterThan(0);
   const messageBefore = messageRequests.length;
   await expect(applyButton()).toBeVisible();
   await expect(commitButton()).toBeEnabled();

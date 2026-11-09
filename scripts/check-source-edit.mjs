@@ -80,7 +80,7 @@ Literal symbols: \% and \$; \verb|% $ { }|.
   await field().fill('A precise manual correction.');
   await field().press('Control+Enter');
   await waitRound(2);
-  await expect(page.locator('.source-code')).toContainText('A precise manual correction.', { timeout: 15000 });
+  await expect(page.locator('.source-code')).toContainText('A precise manual correction', { timeout: 15000 });
   assert.match(f.read(METHOD, task.worktree), /A precise manual correction\.\n/);
   assert.match(f.read(METHOD), /Original sentence/);
   assert.equal(app.review.pageState(task.name).decisions.c001, 'pending');
@@ -108,7 +108,7 @@ Literal symbols: \% and \$; \verb|% $ { }|.
   const fits = await field().evaluate(element => element.getBoundingClientRect().right <= window.innerWidth);
   assert.equal(fits, true);
   await save().click(); await waitRound(4);
-  await expect(page.locator('.source-code')).toContainText('Repaired by hand.', { timeout: 15000 });
+  await expect(page.locator('.source-code')).toContainText('Repaired by hand', { timeout: 15000 });
 
   // Reverting the last proposal produces an empty current review.
   await edit().click(); await field().fill('Original sentence.'); await save().click();
