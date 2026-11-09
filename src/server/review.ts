@@ -47,11 +47,13 @@ export function annotateReviewState(value: unknown, tasks: readonly Task[]): unk
   else if (task.pendingReview) decisionLock = 'Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.';
   else if (task.reconciliation && (!task.reconciliation.ready || Number(state.round) <= task.reconciliation.round)) decisionLock = 'Wait for the merge suggestion before changing review decisions.';
   else if (task.delivery?.pending) decisionLock = 'Retry the pending delivery before changing review decisions.';
-  // While the agent works, accepting a deferred task writes only review refs.
-  // Rejecting, undoing a rejection and editing source write its files.
-  if (task && !decisionLock && AGENT_TURN.includes(task.status)) rejectLock = "The agent is editing this task's files. Pause it before rejecting or editing changes. You can still accept and comment.";
+  // While the agent works, accepting a deferred task writes only review refs,
+  // and a reject waits for the turn to end before it reverts the agent's
+  // files. Undoing an applied rejection and editing source write them now.
+  const queueRejects = Boolean(task && !decisionLock && task.deferred && AGENT_TURN.includes(task.status));
+  if (task && !decisionLock && AGENT_TURN.includes(task.status)) rejectLock = "The agent is editing this task's files. Pause it before editing changes or undoing a rejection. You can still accept, reject and comment.";
   // Task-branch commits from older versions still need manuscript application.
-  return { ...state, decisionLock, commentLock, rejectLock, ...(task ? { workspace: { ...(task.reconciliation ? { merging: true } : {}), status: task.status, unsent: task.review?.unsent ?? 0, comments: task.review?.comments ?? 0, accepted: task.review?.files?.length || (task.committed || task.delivery?.pending || task.delivery?.mode === 'branch' ? 1 : 0), ...(task.deferred ? { deferred: true, destination: task.delivery?.pending ? undefined : task.delivery?.mode } : {}) } } : {}) };
+  return { ...state, decisionLock, commentLock, rejectLock, ...(queueRejects ? { queueRejects: true } : {}), ...(task ? { workspace: { ...(task.reconciliation ? { merging: true } : {}), status: task.status, unsent: task.review?.unsent ?? 0, comments: task.review?.comments ?? 0, accepted: task.review?.files?.length || (task.committed || task.delivery?.pending || task.delivery?.mode === 'branch' ? 1 : 0), ...(task.deferred ? { deferred: true, destination: task.delivery?.pending ? undefined : task.delivery?.mode } : {}) } } : {}) };
 }
 
 export function allowedReviewRoute(route: string, method: string): boolean {

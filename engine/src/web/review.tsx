@@ -435,7 +435,7 @@ export function ReviewApp({
   const lockOf = (value: PageState | null | undefined, kind: Kind | "source") =>
     kind === "comment"
       ? value?.commentLock
-      : value?.decisionLock || (kind === "reject" || kind === "source" ? value?.rejectLock : null);
+      : value?.decisionLock || ((kind === "reject" && !value?.queueRejects) || kind === "source" ? value?.rejectLock : null);
   const actionLock = (kind: Kind | "source") => {
     if (previewing) return t("Confirm this option before reviewing its changes.");
     const reason = lockOf(state, kind);
@@ -443,8 +443,10 @@ export function ReviewApp({
   };
   // Undoing an accept of an earlier round publishes the task's files as a
   // new round, so like a rejection it waits while the agent edits them.
-  const undoKind = (value: PageState | null | undefined): Kind => value?.undo?.kind === "reject" || value?.undo?.republish ? "reject" : "accept";
-  function blocked(kind: Kind): boolean {
+  // Undoing an applied rejection writes the task's files, like a source
+  // edit; a reject still waiting for the agent's turn to end touched none.
+  const undoKind = (value: PageState | null | undefined): Kind | "source" => (value?.undo?.kind === "reject" && !value.undo.queued) || value?.undo?.republish ? "source" : "accept";
+  function blocked(kind: Kind | "source"): boolean {
     if (previewNow.current) { setToast(t("Confirm this option before reviewing its changes.")); return true; }
     const reason = lockOf(snapshot.current.state, kind);
     if (reason) setToast(t(reason));
@@ -1257,7 +1259,9 @@ export function ReviewApp({
             </span>
           )}
           {status !== "pending" && (
-            <span className="badge" title={stateLabel(status)}>{stateLabel(status)}</span>
+            block.units.some((id) => state?.queued?.includes(id)) && status === "rejected"
+              ? <span className="badge" title={t("Rejected; reverted when the agent stops")}>{t("Rejected · reverted when the agent stops")}</span>
+              : <span className="badge" title={stateLabel(status)}>{stateLabel(status)}</span>
           )}
           <button
             className="link copy-reference"

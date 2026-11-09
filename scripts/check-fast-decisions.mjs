@@ -216,34 +216,36 @@ try {
   await profile.close();
   console.log('PASS: decisions a page left unconfirmed are sent by the next page, once each');
 
-  // While the agent edits a deferred task, accepting goes on and rejecting waits.
+  // While the agent edits a deferred task, accepting and rejecting go on (a
+  // reject waits in the engine for the turn to end); undoing an applied
+  // rejection and editing source wait.
   hold = false; refuse = null;
   await reloadFresh(page, 'running');
   await expect(page.locator('#review-lock')).toContainText("The agent is editing this task's files");
   await expect(current(page).locator('button.accept')).toBeEnabled();
   await expect(current(page).locator('button.comment')).toBeEnabled();
-  await expect(current(page).locator('button.reject')).toBeDisabled();
-  await expect(page.locator('.reject-all')).toBeDisabled();
+  await expect(current(page).locator('button.reject')).toBeEnabled();
+  await expect(page.locator('.reject-all')).toBeEnabled();
   await expect(page.locator('.accept-all')).toBeEnabled();
   await page.keyboard.press('r');
-  await expect(page.locator('.toast')).toContainText('Pause it before rejecting');
-  assert.equal(posts.length, 0);
+  await expect.poll(() => decisions.c1).toBe('rejected');
   await page.keyboard.press('a');
-  await expect.poll(() => decisions.c1).toBe('accepted');
+  await expect.poll(() => decisions.c2).toBe('accepted');
   await page.keyboard.press(undoKey);
-  await expect.poll(() => decisions.c1).toBe('pending');
+  await expect.poll(() => decisions.c2).toBe('pending');
+  // An undo of a rejection the engine already applied writes files: it waits.
   task.status = 'reviewing';
   await page.waitForTimeout(1700);
   await page.keyboard.press('r');
-  await expect.poll(() => decisions.c1).toBe('rejected');
+  await expect.poll(() => decisions.c2).toBe('rejected');
   task.status = 'running';
   await expect(page.locator('#review-lock')).toBeVisible({ timeout: 4000 });
   await page.keyboard.press(undoKey);
-  await expect(page.locator('.toast')).toContainText('Pause it before rejecting');
+  await expect(page.locator('.toast')).toContainText('Pause it before editing changes or undoing a rejection');
   await settle();
-  assert.equal(posts.filter(post => post.route === 'undo').length, 1, 'Undoing a rejection waits for the agent');
+  assert.equal(posts.filter(post => post.route === 'undo').length, 1, 'Undoing an applied rejection waits for the agent');
   await page.screenshot({ path: 'test-results/fast-decisions-agent-running.png' });
-  console.log('PASS: during the agent turn accept, comment and undoing an accept stay available; reject and undoing a rejection say why they wait');
+  console.log('PASS: during the agent turn accept, reject, comment and undoing an accept stay available; undoing an applied rejection says why it waits');
 
   // A comment written while a newer round arrives goes out on its own round.
   await reloadFresh(page);

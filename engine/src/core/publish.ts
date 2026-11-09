@@ -315,7 +315,9 @@ export class Publisher {
   private async follow(name: string, signal: AbortSignal, replace: () => void) {
     const app = this.app, task = app.tasks.get(name), project = app.project;
     if (!fs.existsSync(task.worktree)) return replace();
-    const after = await app.tasks.snapshotAsync(task), before = task.accepted,
+    // The files as the turn's end will leave them: rejects queued meanwhile
+    // reverted.
+    const after = await app.review.queuedTree(name, await app.tasks.snapshotAsync(task)), before = task.accepted,
       files = await app.repo.changedFilesAsync(before, after);
     if (!files.length || signal.aborted) return replace();
     const builder = new Builder(project, app.repo), targets = await builder.planAsync(before, after, files),
@@ -597,7 +599,12 @@ export class Publisher {
       name = job.task;
     if (app.reconciliation.get(name)?.ready === false) throw new Error("Retry applying to finish preparing the merge review.");
     this.phase(job, "snapshot");
-    const inserted = await app.exclusive(() => this.insertNow(job));
+    // The agent's turn has ended: rejects made meanwhile are reverted first,
+    // so the round compares the files as the author decided.
+    const inserted = await app.exclusive(async () => {
+      await app.review.applyQueued(name);
+      return this.insertNow(job);
+    });
     return "result" in inserted ? inserted.result : this.renderRound(job, inserted.round);
   }
   /** Inserts a round for the worktree as it is now, with its comparison

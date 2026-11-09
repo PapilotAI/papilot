@@ -739,10 +739,13 @@ export async function buildApp(options: AppOptions) {
       // accept or a comment: these go ahead while the agent edits it. Undoing
       // an accept of an earlier round publishes a round of the worktree, so
       // it waits like rejecting.
+      // A reject waits for the turn to end in the engine, and so does
+      // undoing one still waiting.
       const besideAgent = Boolean(reviewTask?.deferred && AGENT_TURN.includes(reviewTask.status)) && (route.endsWith('/decide')
-        ? (request.body as any)?.action === 'accept'
-        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
-          .then(state => state.undo?.id === (request.body as any)?.id && state.undo?.kind !== 'reject' && !state.undo?.republish, () => false));
+        ? ['accept', 'reject'].includes((request.body as any)?.action)
+        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean; queued?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
+          .then(state => state.undo?.id === (request.body as any)?.id && (state.undo?.kind !== 'reject' || Boolean(state.undo?.queued)) && !state.undo?.republish, () => false));
+      if (besideAgent && route.endsWith('/decide') && (request.body as any)?.action === 'reject') (request.body as any).queue = true;
       let settles: string | undefined;
       const forward = async () => {
         const search = new URL(request.url, 'http://localhost').search;

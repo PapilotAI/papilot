@@ -1056,7 +1056,7 @@ test('a review decision replies before the task summary is read again, and the n
   } finally { for (const entry of refreshes) entry.release(); await engine.close(); await f.close(); }
 });
 
-test('accepting goes ahead while the agent edits a deferred task; rejecting, undoing a rejection and editing source wait', async () => {
+test('accepting and rejecting go ahead while the agent edits a deferred task; undoing an applied rejection and editing source wait', async () => {
   let undo: { id: string; kind: string; republish?: boolean } | null = { id: 'accept-1', kind: 'accept' };
   const f = await fixture(), engine = await decisionEngine(route => route.endsWith('/undo') ? { restored: ['c001'] } : {});
   f.review.url = engine.url;
@@ -1074,11 +1074,18 @@ test('accepting goes ahead while the agent edits a deferred task; rejecting, und
     assert.equal(f.store.task('thesis-task').pendingReview, null);
     const undone = await post('/undo', { id: 'accept-1' });
     assert.equal(undone.statusCode, 200, undone.body);
-    for (const [route, payload] of [['/decide', { id: 'reject-1', action: 'reject', round: 1, changes: ['c001'] }], ['/source', { id: 'source-1' }]] as const) {
-      const refused = await post(route, payload);
-      assert.equal(refused.statusCode, 400, route);
-      assert.match(refused.json().error, /agent is editing this task's files\. Pause the task before rejecting or editing changes/);
-    }
+    // A reject goes to the engine marked to wait for the turn to end.
+    const queued = await post('/decide', { id: 'reject-1', action: 'reject', round: 1, changes: ['c001'] });
+    assert.equal(queued.statusCode, 200, queued.body);
+    assert.equal(engine.calls.at(-1)?.body?.queue, true, 'the reject waits in the engine for the turn to end');
+    assert.equal(f.store.task('thesis-task').status, 'running', 'the agent keeps working');
+    // So does undoing a reject that is still waiting.
+    undo = { id: 'reject-1', kind: 'reject', queued: true } as typeof undo;
+    const dropped = await post('/undo', { id: 'reject-1' });
+    assert.equal(dropped.statusCode, 200, dropped.body);
+    const refused = await post('/source', { id: 'source-1' });
+    assert.equal(refused.statusCode, 400);
+    assert.match(refused.json().error, /agent is editing this task's files\. Pause the task before rejecting or editing changes/);
     undo = { id: 'reject-0', kind: 'reject' };
     const reverting = await post('/undo', { id: 'reject-0' });
     assert.equal(reverting.statusCode, 400);
@@ -1094,7 +1101,7 @@ test('accepting goes ahead while the agent edits a deferred task; rejecting, und
     const waiting = await post('/decide', { id: 'accept-2', action: 'accept', round: 1, changes: ['c001'] });
     assert.equal(waiting.statusCode, 400);
     assert.match(waiting.json().error, /Pause the task before accepting/);
-    assert.deepEqual(engine.calls.map(call => call.route.split('/').at(-1) + ' ' + call.body?.id), ['decide accept-1', 'undo accept-1', 'decide comment-1']);
+    assert.deepEqual(engine.calls.map(call => call.route.split('/').at(-1) + ' ' + call.body?.id), ['decide accept-1', 'undo accept-1', 'decide reject-1', 'undo reject-1', 'decide comment-1']);
   } finally { await engine.close(); await f.close(); }
 });
 

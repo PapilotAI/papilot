@@ -121,6 +121,8 @@ export interface ActionDetail {
   /** An accept undone after newer rounds: the round its undo inserts, with
    *  the change pending again. */
   republish?: number;
+  /** A reject made while the agent worked, which waited for its turn to end. */
+  queued?: true;
 }
 export interface Action {
   seq: number;
@@ -130,7 +132,8 @@ export interface Action {
   kind: ActionKind;
   changes: string[];
   body: string;
-  status: "applying" | "applied" | "undoing" | "undone" | "failed";
+  /** queued: a reject made while the agent works, applied once its turn ends. */
+  status: "queued" | "applying" | "applied" | "undoing" | "undone" | "failed";
   detail: ActionDetail;
   created: number;
 }
@@ -522,6 +525,9 @@ export interface PageState {
    *  editing source, which write the task's files, are unavailable while
    *  accepting and comments remain. */
   rejectLock?: string | null;
+  /** Optional host-provided: the agent works, so a reject waits for its turn
+   *  to end before it reverts the task's files; rejecting is available. */
+  queueRejects?: boolean;
   /**
    * Host activity, undelivered feedback (all updates, and the comments among them),
    * and how many manuscript files this task's accepted changes touched.
@@ -551,7 +557,10 @@ export interface PageState {
   reviewAgain?: string[];
   /** republish: the decision belongs to an earlier round, so undoing it
    *  inserts a round with its change pending again. */
-  undo: { id: string; kind: ActionKind; changes: string[]; republish?: true } | null;
+  undo: { id: string; kind: ActionKind; changes: string[]; republish?: true; queued?: true } | null;
+  /** Changes rejected while the agent works: shown rejected, reverted in its
+   *  files once its turn ends. */
+  queued?: string[];
   job:
     | (Pick<Job, "id" | "status" | "phase" | "created"> &
         JobResult & { ahead: number })
