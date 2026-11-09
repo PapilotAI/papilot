@@ -995,6 +995,104 @@ test('inline source writes use the review token and reserve the task while its P
   } finally { finish({ status: 'done' }); engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); await f.close(); }
 });
 
+// A review engine that answers decisions with a page state, and records them.
+async function decisionEngine(state: (route: string, body: any) => Record<string, unknown> = () => ({})) {
+  const calls: { method: string; route: string; body: any }[] = [];
+  const engine = http.createServer(async (request, response) => {
+    let text = '';
+    for await (const chunk of request) text += chunk;
+    const body = text ? JSON.parse(text) : undefined;
+    calls.push({ method: request.method!, route: request.url!, body });
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ task: 'p-thesis-task', csrf: 'review-token', closed: false, decisions: { c001: 'pending' }, comments: {}, undo: null, job: null, ...state(request.url!, body) }));
+  });
+  await new Promise<void>(resolve => engine.listen(0, '127.0.0.1', resolve));
+  return { calls, url: `http://127.0.0.1:${(engine.address() as { port: number }).port}`, async close() { engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); } };
+}
+
+test('a review decision replies before the task summary is read again, and the next poll waits for that read', async () => {
+  const f = await fixture(), engine = await decisionEngine();
+  f.review.url = engine.url;
+  const refreshes: { done: boolean; release: () => void }[] = [], reviewed: string[] = [];
+  f.workspace.refresh = async () => {
+    const entry = { done: false, release: () => {} };
+    refreshes.push(entry);
+    await new Promise<void>(resolve => { entry.release = resolve; });
+    entry.done = true;
+  };
+  f.workspace.on('reviewed', (id: string) => reviewed.push(id));
+  const headers = { ...LOCAL, 'x-review-token': 'review-token' }, base = '/review/thesis/api/tasks/p-thesis-task';
+  const settled = async <T>(work: Promise<T>) => {
+    let done = false;
+    void work.then(() => { done = true; }, () => { done = true; });
+    for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+    return done;
+  };
+  try {
+    const decided = await f.local.inject({ method: 'POST', url: base + '/decide', headers, payload: { id: 'accept-1', action: 'accept', round: 1, changes: ['c001'] } });
+    assert.equal(decided.statusCode, 200, decided.body);
+    assert.equal(refreshes.length, 1, 'the summary is read again right after the reply');
+    assert.equal(refreshes[0].done, false, 'the reply did not wait for it');
+    assert.deepEqual(reviewed, []);
+    const poll = f.local.inject({ url: base + '/state', headers: LOCAL });
+    const workspacePoll = f.local.inject({ url: '/api/state', headers: LOCAL });
+    assert.equal(await settled(poll), false, 'the review page poll waits for the summary');
+    assert.equal(await settled(workspacePoll), false, 'so does the workspace poll');
+    // A second decision meanwhile reads the summary once more, after the first read.
+    const second = await f.local.inject({ method: 'POST', url: base + '/decide', headers, payload: { id: 'comment-1', action: 'comment', round: 1, changes: ['c001'], body: 'Shorter.' } });
+    assert.equal(second.statusCode, 200, second.body);
+    assert.equal(refreshes.length, 1, 'one read at a time');
+    refreshes[0].release();
+    for (let i = 0; i < 20 && refreshes.length < 2; i++) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(refreshes.length, 2);
+    assert.equal(await settled(poll), false, 'the poll waits for the read that covers both decisions');
+    refreshes[1].release();
+    assert.equal((await poll).statusCode, 200);
+    assert.equal((await workspacePoll).statusCode, 200);
+    assert.deepEqual(reviewed, [], 'decisions refresh summaries without triggering speculative builds');
+    assert.deepEqual(engine.calls.map(call => call.method + ' ' + call.route), ['POST /api/tasks/p-thesis-task/decide', 'POST /api/tasks/p-thesis-task/decide', 'GET /api/tasks/p-thesis-task/state']);
+    // A poll with nothing to wait for answers at once.
+    assert.equal(await settled(f.local.inject({ url: base + '/state', headers: LOCAL })), true);
+  } finally { for (const entry of refreshes) entry.release(); await engine.close(); await f.close(); }
+});
+
+test('accepting goes ahead while the agent edits a deferred task; rejecting, undoing a rejection and editing source wait', async () => {
+  let undo: { id: string; kind: string } | null = { id: 'accept-1', kind: 'accept' };
+  const f = await fixture(), engine = await decisionEngine(route => route.endsWith('/undo') ? { restored: ['c001'] } : {});
+  f.review.url = engine.url;
+  f.review.get = async (route: string) => (route.endsWith('/state') ? { undo } : {}) as any;
+  f.workspace.refresh = async () => {};
+  const headers = { ...LOCAL, 'x-review-token': 'review-token' }, base = '/review/thesis/api/tasks/p-thesis-task';
+  const post = (route: string, payload: Record<string, unknown>) => f.local.inject({ method: 'POST', url: base + route, headers, payload });
+  try {
+    f.store.updateTask('thesis-task', { status: 'running', deferred: true });
+    const accepted = await post('/decide', { id: 'accept-1', action: 'accept', round: 1, changes: ['c001'] });
+    assert.equal(accepted.statusCode, 200, accepted.body);
+    assert.equal(accepted.json().decisionLock, null);
+    assert.match(accepted.json().rejectLock, /agent is editing this task's files/);
+    assert.equal(f.store.task('thesis-task').status, 'running', 'the agent keeps working');
+    assert.equal(f.store.task('thesis-task').pendingReview, null);
+    const undone = await post('/undo', { id: 'accept-1' });
+    assert.equal(undone.statusCode, 200, undone.body);
+    for (const [route, payload] of [['/decide', { id: 'reject-1', action: 'reject', round: 1, changes: ['c001'] }], ['/source', { id: 'source-1' }]] as const) {
+      const refused = await post(route, payload);
+      assert.equal(refused.statusCode, 400, route);
+      assert.match(refused.json().error, /agent is editing this task's files\. Pause the task before rejecting or editing changes/);
+    }
+    undo = { id: 'reject-0', kind: 'reject' };
+    const reverting = await post('/undo', { id: 'reject-0' });
+    assert.equal(reverting.statusCode, 400);
+    assert.match(reverting.json().error, /agent is editing/);
+    assert.equal((await post('/decide', { id: 'comment-1', action: 'comment', round: 1, changes: ['c001'], body: 'Shorter.' })).statusCode, 200);
+    // A task that applies decisions to the manuscript as they are made waits for the agent.
+    f.store.updateTask('thesis-task', { deferred: false });
+    const waiting = await post('/decide', { id: 'accept-2', action: 'accept', round: 1, changes: ['c001'] });
+    assert.equal(waiting.statusCode, 400);
+    assert.match(waiting.json().error, /Pause the task before accepting/);
+    assert.deepEqual(engine.calls.map(call => call.route.split('/').at(-1) + ' ' + call.body?.id), ['decide accept-1', 'undo accept-1', 'decide comment-1']);
+  } finally { await engine.close(); await f.close(); }
+});
+
 test('writing a paper compiles its manuscript, while pending chapter proposals do not precompile the whole paper', async () => {
   const f = await fixture();
   try {

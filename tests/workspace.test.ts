@@ -510,6 +510,85 @@ test('publication reserves the worktree and rejects duplicate builds and review 
   } finally { gate.resolve({ status: 'done' }); f.close(); }
 });
 
+// A deferred task whose agent is in the middle of a turn.
+async function agentTurn(f: ReturnType<typeof fixture>) {
+  f.store.updateTask(f.task.id, { deferred: true });
+  f.codex.ready = true;
+  await f.workspace.enqueue(f.task.id, 'Revise the introduction.', 'turn', false);
+  await tick(); await tick();
+  assert.equal(f.store.task(f.task.id).status, 'running');
+  return () => (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } });
+}
+const accept = { route: '/api/tasks/p-task/decide', body: { id: 'accept-during-turn', action: 'accept', round: 1, changes: ['change-1'] } };
+
+test('accepting during the agent\'s turn leaves it running, and the build after the turn waits for the accept', async () => {
+  const gate = deferred<typeof pageState>();
+  const f = fixture();
+  try {
+    const complete = await agentTurn(f);
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => pageState, { ...accept, body: { ...accept.body, action: 'reject' } }), /agent is editing this task's files/);
+    const accepting = f.workspace.reviewWrite(f.task.id, true, () => gate.promise, accept, true);
+    assert.equal(f.store.task(f.task.id).status, 'running');
+    assert.equal(f.store.task(f.task.id).pendingReview?.previousStatus, 'interrupted', 'a restart during the turn leaves it interrupted');
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => pageState, accept, true), /already in progress/);
+    // The turn ends while the accept is still being written.
+    const completed = complete();
+    for (let i = 0; i < 5; i++) await tick();
+    assert.equal(f.store.task(f.task.id).status, 'building');
+    assert.equal(f.calls.some(call => call.route.endsWith('/publish')), false, 'the build waits for the accept');
+    gate.resolve(pageState);
+    assert.deepEqual(await accepting, pageState);
+    await completed;
+    assert.equal(f.calls.filter(call => call.route.endsWith('/publish')).length, 1);
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).pendingReview, null);
+  } finally { gate.resolve(pageState); f.close(); }
+});
+
+test('an accept the review engine did not confirm during the turn holds the build until Check status replays it', async () => {
+  const server = await reviewServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(pageState));
+  });
+  const f = fixture(undefined, { reviewUrl: server.url });
+  try {
+    const complete = await agentTurn(f);
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => { throw new Error('fetch failed'); }, accept, true));
+    assert.equal(f.store.task(f.task.id).status, 'running', 'the agent keeps its turn');
+    assert.ok(f.store.task(f.task.id).pendingReview);
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => pageState, { ...accept, body: { ...accept.body, id: 'another' } }, true), /already in progress/);
+    await complete();
+    assert.equal(f.store.task(f.task.id).status, 'uncertain');
+    assert.equal(f.store.task(f.task.id).pendingReview?.previousStatus, 'building');
+    assert.ok(f.store.task(f.task.id).pendingBuild, 'the build is kept for after the check');
+    assert.equal(f.calls.some(call => call.route.endsWith('/publish')), false);
+    await f.workspace.reconcile(f.task.id);
+    assert.deepEqual(server.calls.map(call => call.body?.id), ['accept-during-turn'], 'Check status replays the same action');
+    for (let i = 0; i < 20 && f.store.task(f.task.id).status !== 'reviewing'; i++) await tick();
+    assert.equal(f.calls.filter(call => call.route.endsWith('/publish')).length, 1);
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).pendingReview, null);
+  } finally { f.close(); await server.close(); }
+});
+
+test('an unconfirmed accept from a turn that was interrupted asks for Check status, then returns to interrupted', async () => {
+  const server = await reviewServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(pageState));
+  });
+  const f = fixture(undefined, { reviewUrl: server.url });
+  try {
+    await agentTurn(f);
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => { throw new Error('fetch failed'); }, accept, true));
+    await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'interrupted' } } });
+    assert.equal(f.store.task(f.task.id).status, 'uncertain');
+    await f.workspace.reconcile(f.task.id);
+    assert.equal(f.store.task(f.task.id).status, 'interrupted');
+    assert.equal(f.store.task(f.task.id).pendingReview, null);
+    assert.equal(f.calls.some(call => call.route.endsWith('/publish')), false);
+  } finally { f.close(); await server.close(); }
+});
+
 test('while a round compiles its changed chapters, its new version is announced once, so the whole paper compiles meanwhile', async () => {
   let polls = 0;
   const f = fixture(async (_method, route) => route.includes('/jobs/')

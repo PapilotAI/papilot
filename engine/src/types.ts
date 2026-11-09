@@ -485,6 +485,10 @@ export interface PageState {
   /** Optional host-provided reason that file decisions or comments are unavailable. */
   decisionLock?: string | null;
   commentLock?: string | null;
+  /** Optional host-provided reason that rejecting, undoing a rejection and
+   *  editing source, which write the task's files, are unavailable while
+   *  accepting and comments remain. */
+  rejectLock?: string | null;
   /**
    * Host activity, undelivered feedback (all updates, and the comments among them),
    * and how many manuscript files this task's accepted changes touched.

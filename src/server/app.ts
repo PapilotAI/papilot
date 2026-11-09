@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { registerFrontend } from './frontend.ts';
 import type { Store } from './store.ts';
 import type { Workspace } from './workspace.ts';
-import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
+import { AGENT_TURN, reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
 import { fullPaperPdf, nextPaperPass, paperPassPdf } from './pdf.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { bibliography, confirmEntry } from './references.ts';
@@ -36,6 +36,27 @@ import { systemRequirements } from './system-requirements.ts';
 import { findExecutable } from '../../bin/agent-paths.mjs';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
+// A review write's reply does not wait for the task's summary to be read
+// again: that runs right after it, once at a time per task, and once more
+// for writes that arrive meanwhile. Reads of the task wait for it, so the
+// next poll shows what the reply used to.
+const settling = new WeakMap<Workspace, Map<string, { done: Promise<void>; again: boolean }>>();
+function settle(workspace: Workspace, taskId: string) {
+  let tasks = settling.get(workspace);
+  if (!tasks) settling.set(workspace, tasks = new Map());
+  const running = tasks.get(taskId);
+  if (running) { running.again = true; return; }
+  const entry = { done: Promise.resolve(), again: false };
+  entry.done = (async () => {
+    try { do { entry.again = false; await workspace.refresh(taskId); } while (entry.again); }
+    finally { tasks.delete(taskId); }
+  })().catch(() => undefined);
+  tasks.set(taskId, entry);
+}
+async function settled(workspace: Workspace, taskId?: string) {
+  const tasks = settling.get(workspace);
+  if (tasks) await Promise.all([...tasks].filter(([id]) => !taskId || id === taskId).map(([, entry]) => entry.done));
+}
 
 // Git writes to one repository run one at a time; each returns the new status.
 // Concurrent requests from browser tabs share the same queue.
@@ -200,6 +221,7 @@ export async function buildApp(options: AppOptions) {
   }
   app.get('/api/state', async () => {
     await options.prepareDemo?.();
+    await settled(workspace);
     // Check the backend environment (Linux when using WSL), again on each poll
     // so installing Git unlocks version management without a page reload.
     return { ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), csrf: options.csrf };
@@ -687,6 +709,18 @@ export async function buildApp(options: AppOptions) {
       const reviewTask = request.method === 'POST' ? store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]) : undefined;
       const writesFiles = /\/source(?:\/options)?$/.test(route) || route.endsWith('/undo') || (route.endsWith('/decide') && (request.body as any)?.action !== 'comment');
       if (request.method === 'POST' && writesFiles) string((request.body as any)?.id, 'Review action ID', 80);
+      // The next poll waits for the summary a write is still reading.
+      if (request.method === 'GET' && /^\/api\/tasks\/[a-z0-9-]+\/state$/.test(route)) {
+        const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
+        if (task) await settled(workspace, task.id);
+      }
+      // Accepting leaves the task's worktree alone, and so does undoing an
+      // accept or a comment: these go ahead while the agent edits it.
+      const besideAgent = Boolean(reviewTask?.deferred && AGENT_TURN.includes(reviewTask.status)) && (route.endsWith('/decide')
+        ? (request.body as any)?.action === 'accept'
+        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string } | null }>(`${taskRoute(reviewTask!.name)}/state`)
+          .then(state => state.undo?.id === (request.body as any)?.id && state.undo?.kind !== 'reject', () => false));
+      let settles: string | undefined;
       const forward = async () => {
         const search = new URL(request.url, 'http://localhost').search;
         const response = await fetch(client.url + route + search, {
@@ -708,7 +742,7 @@ export async function buildApp(options: AppOptions) {
             const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
             if (task) {
               store.updateTask(task.id, { error: null });
-              await workspace.refresh(task.id);
+              settles = task.id;
             }
           }
           // A round's new version as one complete PDF, which Papilot compiles,
@@ -725,7 +759,9 @@ export async function buildApp(options: AppOptions) {
         return Buffer.from(await response.arrayBuffer());
       };
       if (request.method === 'POST' && !reviewTask) throw new Error('This review task does not belong to this workspace.');
-      const result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown> } : undefined) : forward());
+      let result: unknown;
+      try { result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown> } : undefined, besideAgent) : forward()); }
+      finally { if (settles) settle(workspace, settles); }
       return annotateReviewState(result, store.tasks().filter(task => task.projectId === project.id));
     },
   });

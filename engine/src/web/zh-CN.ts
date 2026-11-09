@@ -172,6 +172,8 @@ export const zhCN: Record<string, string> = {
     "所有修改均已审阅，你的决定已保存。",
   "Last decision undone. The restored changes need review again.":
     "已撤销上一次决定，恢复的修改需要重新审阅。",
+  "{n} later decision was not sent.": "之后的 {n} 项决定未发送。",
+  "{n} later decisions were not sent.": "之后的 {n} 项决定未发送。",
   "Copied selected text with file, lines and PDF page.":
     "已复制选中的文本及其文件、行号和 PDF 页码。",
   "Copied the change location.": "已复制修改的位置。",
@@ -189,6 +191,8 @@ export const zhCN: Record<string, string> = {
     "请等待 PDF 构建完成后再接受、拒绝或撤销修改。你仍可以添加评论。",
   "Pause this task in Papilot before accepting, rejecting, or undoing changes. You can still add comments.":
     "请先在 Papilot 中暂停此任务，再接受、拒绝或撤销修改。你仍可以添加评论。",
+  "The agent is editing this task's files. Pause it before rejecting or editing changes. You can still accept and comment.":
+    "智能体正在编辑此任务的文件。请先暂停它，再拒绝或编辑修改。你仍可以接受修改和添加评论。",
   "Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.":
     "请等待当前审阅操作完成后再接受、拒绝或撤销修改。你仍可以添加评论。",
 

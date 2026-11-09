@@ -38,6 +38,20 @@ test('active task state blocks every file decision while preserving comments', (
   assert.match(annotate([task('uncertain')]).decisionLock!, /Check status/);
 });
 
+test('while the agent edits a deferred task, only rejecting and source edits are locked, and they say why', () => {
+  for (const status of ['running', 'waiting_input', 'queued'] as const) {
+    const result = annotate([{ ...task(status), deferred: true }]);
+    assert.equal(result.decisionLock, null, status);
+    assert.equal(result.commentLock, null, status);
+    assert.match(result.rejectLock!, /agent is editing this task's files\. Pause it before rejecting or editing changes\. You can still accept and comment\./, status);
+    assert.equal(annotate([task(status)]).rejectLock, null, 'a task that writes the manuscript as it is reviewed stays fully locked');
+  }
+  const pending = { ...task('running'), deferred: true, pendingReview: { route: '/decide', body: { id: 'accept-1' }, previousStatus: 'interrupted' as const } };
+  assert.match(annotate([pending]).decisionLock!, /current review action/);
+  assert.equal(annotate([pending]).rejectLock, null);
+  for (const status of ['reviewing', 'building', 'uncertain'] as const) assert.equal(annotate([{ ...task(status), deferred: true }]).rejectLock, null, status);
+});
+
 test('a pending review action remains locked and fresh ready state clears stale locks', () => {
   const pending = { ...task(), pendingReview: { route: '/decide', body: { id: 'decision-1' }, previousStatus: 'reviewing' as const } };
   assert.match(annotate([pending]).decisionLock!, /current review action/);

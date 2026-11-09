@@ -1773,6 +1773,12 @@ try {
   assert.equal(await page.locator('.task-link.active').count(), 0);
   assert.equal(await prompt.isVisible(), true);
   const preparingTask = createResult;
+  const selectPreparing = async () => {
+    const row = page.locator(`[data-task="${preparingTask.id}"] .task-link`);
+    if (!await row.isVisible()) await page.getByRole('button', { name: 'Show task list', exact: true }).click();
+    await row.click();
+    await expect(row).toHaveClass(/active/);
+  };
   await expect(page.locator(`[data-task="${preparingTask.id}"] .status`)).toHaveText('Preparing…');
   await page.locator(`[data-task="${preparingTask.id}"] .task-link`).click();
   await expect(page.getByRole('button', { name: 'Send instructions', exact: true })).toBeDisabled();
@@ -1780,9 +1786,11 @@ try {
     await page.setViewportSize({ width, height: 844 });
     preparingTask.mode = 'review';
     await page.reload();
+    await selectPreparing();
     await expect(page.locator('.status.preparing').first()).toHaveText('Preparing the review PDF…');
     preparingTask.status = 'failed'; preparingTask.error = 'The review PDF could not be prepared.';
     await page.reload();
+    await selectPreparing();
     const details = page.getByRole('button', { name: 'View details', exact: true });
     if (await details.isVisible()) await details.click();
     const actions = page.locator('.task-error-actions');

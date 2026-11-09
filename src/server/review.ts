@@ -28,6 +28,8 @@ export function confirmedReviewResponse(status: number, value: unknown, task: st
     && result.decisions !== null && typeof result.decisions === 'object' && !Array.isArray(result.decisions);
 }
 
+/** The statuses of a task whose agent is working or about to. */
+export const AGENT_TURN: readonly string[] = ['running', 'waiting_input', 'queued'];
 /** Add current workspace availability to viewer state; standalone engine state stays unchanged. */
 export function annotateReviewState(value: unknown, tasks: readonly Task[]): unknown {
   if (!value || typeof value !== 'object' || typeof (value as any).task !== 'string'
@@ -36,17 +38,21 @@ export function annotateReviewState(value: unknown, tasks: readonly Task[]): unk
   const task = tasks.find(task => task.name === state.task);
   let decisionLock: string | null = null;
   let commentLock: string | null = null;
+  let rejectLock: string | null = null;
   if (!task) decisionLock = commentLock = 'This task is no longer available in Papilot. Return to the workspace.';
   else if (state.closed) decisionLock = commentLock = 'This review is finished. Accepted changes are in your manuscript.';
   else if (task.status === 'deleting') decisionLock = commentLock = 'This task is being deleted. Review actions and comments are unavailable.';
   else if (task.status === 'uncertain') decisionLock = 'Select Check status in Papilot before accepting, rejecting, or undoing changes. You can still add comments.';
   else if (task.status === 'building') decisionLock = 'Wait for the PDF build before accepting, rejecting, or undoing changes. You can still add comments.';
-  else if (['running', 'waiting_input', 'queued'].includes(task.status)) decisionLock = 'Pause this task in Papilot before accepting, rejecting, or undoing changes. You can still add comments.';
+  else if (AGENT_TURN.includes(task.status) && !task.deferred) decisionLock = 'Pause this task in Papilot before accepting, rejecting, or undoing changes. You can still add comments.';
   else if (task.pendingReview) decisionLock = 'Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.';
   else if (task.reconciliation && (!task.reconciliation.ready || Number(state.round) <= task.reconciliation.round)) decisionLock = 'Wait for the merge suggestion before changing review decisions.';
   else if (task.delivery?.pending) decisionLock = 'Retry the pending delivery before changing review decisions.';
+  // While the agent works, accepting a deferred task writes only review refs.
+  // Rejecting, undoing a rejection and editing source write its files.
+  if (task && !decisionLock && AGENT_TURN.includes(task.status)) rejectLock = "The agent is editing this task's files. Pause it before rejecting or editing changes. You can still accept and comment.";
   // Task-branch commits from older versions still need manuscript application.
-  return { ...state, decisionLock, commentLock, ...(task ? { workspace: { ...(task.reconciliation ? { merging: true } : {}), status: task.status, unsent: task.review?.unsent ?? 0, comments: task.review?.comments ?? 0, accepted: task.review?.files?.length || (task.committed || task.delivery?.pending || task.delivery?.mode === 'branch' ? 1 : 0), ...(task.deferred ? { deferred: true, destination: task.delivery?.pending ? undefined : task.delivery?.mode } : {}) } } : {}) };
+  return { ...state, decisionLock, commentLock, rejectLock, ...(task ? { workspace: { ...(task.reconciliation ? { merging: true } : {}), status: task.status, unsent: task.review?.unsent ?? 0, comments: task.review?.comments ?? 0, accepted: task.review?.files?.length || (task.committed || task.delivery?.pending || task.delivery?.mode === 'branch' ? 1 : 0), ...(task.deferred ? { deferred: true, destination: task.delivery?.pending ? undefined : task.delivery?.mode } : {}) } } : {}) };
 }
 
 export function allowedReviewRoute(route: string, method: string): boolean {
