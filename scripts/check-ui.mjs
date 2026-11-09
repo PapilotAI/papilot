@@ -1772,43 +1772,13 @@ try {
   releaseState();
   assert.equal(await page.locator('.task-link.active').count(), 0);
   assert.equal(await prompt.isVisible(), true);
-  const preparingTask = createResult;
-  const selectPreparing = async () => {
-    const row = page.locator(`[data-task="${preparingTask.id}"] .task-link`);
-    if (!await row.isVisible()) await page.getByRole('button', { name: 'Show task list', exact: true }).click();
-    await row.click();
-    await expect(row).toHaveClass(/active/);
-  };
-  await expect(page.locator(`[data-task="${preparingTask.id}"] .status`)).toHaveText('Preparing…');
-  await page.locator(`[data-task="${preparingTask.id}"] .task-link`).click();
-  await expect(page.getByRole('button', { name: 'Send instructions', exact: true })).toBeDisabled();
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 844 });
-    preparingTask.mode = 'review';
-    await page.reload();
-    await selectPreparing();
-    await expect(page.locator('.status.preparing').first()).toHaveText('Preparing the review PDF…');
-    preparingTask.status = 'failed'; preparingTask.error = 'The review PDF could not be prepared.';
-    await page.reload();
-    await selectPreparing();
-    const details = page.getByRole('button', { name: 'View details', exact: true });
-    if (await details.isVisible()) await details.click();
-    const actions = page.locator('.task-error-actions');
-    await expect(actions.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
-    await expect(actions.getByRole('button', { name: 'Delete task…', exact: true })).toBeVisible();
-    await actions.getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(page.locator('.task-error-actions')).toHaveCount(0);
-    assert.equal(preparingTask.status, 'preparing');
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    await page.screenshot({ path: `test-results/preparing-task-${width}.png`, fullPage: true });
-  }
-  await page.setViewportSize({ width: 1440, height: 900 });
-  preparingTask.status = 'reviewing'; preparingTask.preparation = null;
-  delete preparingTask.mode;
-  await page.reload();
-  console.log('PASS: Preparing tasks appear at once, with Retry and Delete after failure on desktop and phone');
+  await expect(page.locator(`[data-task="${createResult.id}"] .status`)).toHaveText('Preparing…');
+  // Retry, failure and phone layouts are covered by check-task-preparation.
+  createResult.status = 'reviewing'; createResult.preparation = null;
+  createResult.review = secondTask.review; createResult.worktree = secondTask.worktree;
   createResult = task;
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
+  await selectWorkspaceView('Split');
   console.log('PASS: A stale pre-creation snapshot cannot erase the new task or navigate away from the manuscript');
 
   await page.frameLocator('.review-frame').locator('#paper').waitFor({ state: 'visible' });
