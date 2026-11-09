@@ -1463,6 +1463,9 @@ export function ReviewApp({
       if (!block || stops[index].waiting || !pendingUnits(stops[index], decided).length) continue;
       seen++;
       for (const image of [...(block.before ?? []), ...(block.after ?? [])]) wanted.push(detail.files + (focused ? image.clean : image.src));
+      // The strips on the page load now too, rather than when the scroll
+      // to them nears: the next change is complete the moment it is current.
+      paper.current?.querySelectorAll<HTMLImageElement>(`[data-stop="${index}"] .pdf-strip img`).forEach((img) => { img.loading = "eager"; });
     }
     const keep = new Set(wanted);
     for (const url of [...preloaded.current.keys()]) if (!keep.has(url)) preloaded.current.delete(url);
