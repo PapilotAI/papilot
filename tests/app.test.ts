@@ -971,9 +971,9 @@ test('save previews and status checks do not compile an unapplied manuscript', a
     assert.equal(checked.statusCode, 200, checked.body);
     assert.equal(refreshes, 0);
     // Recovering a lost decision response obeys the same batching boundary.
-    for (const [deferred, pending, expected] of [[true, 0, 0], [false, 1, 0], [false, 0, 1]] as const) {
+    for (const [deferred, pending, state, expected] of [[true, 0, 'revise', 0], [false, 1, 'reviewing', 0], [false, 0, 'done', 1], [false, 0, 'revise', 2]] as const) {
       f.store.updateTask('thesis-task', { deferred, status: 'uncertain', pendingReview: { route: '/api/tasks/p-thesis-task/decide', body: { id: 'lost', action: 'accept' }, previousStatus: 'reviewing' } });
-      f.workspace.reconcile = async () => f.store.updateTask('thesis-task', { status: 'reviewing', pendingReview: null, review: { state: pending ? 'reviewing' : 'done', round: 1, counts: { pending }, unsent: 0 } });
+      f.workspace.reconcile = async () => f.store.updateTask('thesis-task', { status: 'reviewing', pendingReview: null, review: { state, round: 1, counts: { pending }, unsent: 0 } });
       const recovered = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/reconcile', headers, payload: {} });
       assert.equal(recovered.statusCode, 200, recovered.body);
       assert.equal(refreshes, expected);
@@ -999,10 +999,10 @@ test('review decisions wait until application to compile the manuscript', async 
     assert.equal(refreshed.length, 1, 'a request that changed nothing compiles nothing');
     // Exercise the real review proxy, including its response hook, rather
     // than just emitting the event that previously started speculative builds.
-    let pending = 2;
+    let pending = 2, commented = false;
     f.store.updateTask('thesis-task', { deferred: true });
     f.workspace.refresh = async () => {
-      f.store.updateTask('thesis-task', { review: { state: pending ? 'reviewing' : 'done', round: 1, counts: { pending }, unsent: 0 } });
+      f.store.updateTask('thesis-task', { review: { state: pending ? 'reviewing' : commented ? 'revise' : 'done', round: 1, counts: { pending }, unsent: 0 } });
     };
     const engine = http.createServer((_request, response) => {
       response.setHeader('Content-Type', 'application/json');
@@ -1038,6 +1038,12 @@ test('review decisions wait until application to compile the manuscript', async 
       pending = 1; await review('undo');
       await review('note');
       assert.equal(refreshed.length, 3);
+      // A final comment resolves the last pending choice without writing a
+      // file, but must flush changes accepted earlier in this legacy batch.
+      await review('decide', 'accept');
+      assert.equal(refreshed.length, 3);
+      pending = 0; commented = true; await review('decide', 'comment');
+      assert.equal(refreshed.length, 4);
     } finally { engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); }
   } finally { await f.close(); }
 });

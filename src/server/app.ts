@@ -130,10 +130,11 @@ export async function buildApp(options: AppOptions) {
       if (request.routeOptions.url?.startsWith('/api/tasks/') && !completedTaskWrites.has(request)) return;
       if (request.routeOptions.url === '/review/:projectId/*') {
         // Older tasks write accepted edits directly into the manuscript.
-        // Batch those too, until the last decision; notes never need a build.
+        // A final comment also flushes any earlier accepted changes. Notes
+        // do not resolve a pending choice and need no refresh of their own.
         const task = store.tasks().find(task => task.projectId === params.projectId && task.name === params['*']?.split('/')[2]);
         if (!task || task.deferred || !/\/(decide|undo)$/.test(params['*'] || '')
-          || (request.body as any)?.action === 'comment' || !task.review || (task.review.counts.pending ?? 0) > 0) return;
+          || !task.review || (task.review.counts.pending ?? 0) > 0) return;
       }
       const project = store.project(params.projectId ?? (request.routeOptions.url!.startsWith('/api/tasks/') ? store.task(params.id).projectId : params.id));
       void manuscripts.refresh(project.id, project.path).catch(() => undefined);
@@ -444,7 +445,7 @@ export async function buildApp(options: AppOptions) {
     const before = store.task(request.params.id), result = await workspace.reconcile(before.id);
     // A recovered final decision can write directly to a legacy manuscript.
     if (!before.deferred && before.pendingReview && /\/(decide|undo)$/.test(before.pendingReview.route)
-      && !result.pendingReview && !result.error && result.review?.state === 'done' && !result.review.counts.pending) completedTaskWrites.add(request);
+      && !result.pendingReview && !result.error && result.review && !result.review.counts.pending) completedTaskWrites.add(request);
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/publish', task, request => {
