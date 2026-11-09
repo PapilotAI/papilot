@@ -31,8 +31,13 @@ test('rejecting a note restores its source even when previewing an alternative; 
     return { ...unit, old_context: { text: lines[unit.old_start - 1], start } };
   }), sections: [], loose: round.units.map(unit => ({ kind: 'change', units: [unit.id] })) };
   const previews: unknown[] = [];
+  let previewFailure: Error | null = null, failOnce = false, connections = 0;
   const client = { url: transport.url, token: transport.token, get: async <T>(route: string) => route.includes('/rounds/') ? { ...detail, round: 1 } as T : transport.get<T>(route), post: async <T>(route: string, body?: unknown) => {
-    if (route.endsWith('/source/options/preview')) { previews.push(body); return { ...detail, round: 1, after: 'respects-rejection' } as T; }
+    if (route.endsWith('/source/options/preview')) {
+      previews.push(body);
+      if (previewFailure) { const error = previewFailure; if (failOnce) previewFailure = null; throw error; }
+      return { ...detail, round: 1, after: 'respects-rejection' } as T;
+    }
     return transport.post<T>(route, body);
   } };
   const store = new Store(':memory:');
@@ -45,7 +50,7 @@ test('rejecting a note restores its source even when previewing an alternative; 
     { id: 'current', label: 'Main', edits: [{ unit: word.id, text: word.new_text }] },
     { id: 'alternative', label: 'Alternative', reason: 'Another wording.', edits: [{ unit: word.id, text: 'Procedure' }] },
   ] });
-  const local = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts: new Manuscripts(), csrf: 'test-csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => client });
+  const local = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts: new Manuscripts(), csrf: 'test-csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => { connections++; return client; } });
   const headers = { host: '127.0.0.1:7274', origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'test-csrf' };
   try {
     const options = async () => (await local.inject({ method: 'GET', url: '/api/tasks/task/note-options?key=run:0', headers })).json();
@@ -60,6 +65,18 @@ test('rejecting a note restores its source even when previewing an alternative; 
     assert.equal(currentPreview.json().after, 'respects-rejection', 'Current proposal also uses a decision-aware preview');
     assert.equal(previews.length, 1);
     assert.deepEqual((previews[0] as { rejected: string[] }).rejected, [neighbor.id], 'The engine must validate the same rejection state as the browser comparison key');
+    for (const [message, transient, expectedStatus] of [['fetch failed', true, 200], ['fetch failed', false, 400], ['Invalid optional LaTeX', false, 400]] as const) {
+      previewFailure = new Error(message); failOnce = transient;
+      const beforeConnections: number = connections, beforePreviews: number = previews.length;
+      const response = await local.inject({ method: 'GET', url: url + rejectedKey, headers });
+      assert.equal(response.statusCode, expectedStatus, response.body);
+      const attempts = message === 'fetch failed' ? 2 : 1;
+      assert.equal(connections - beforeConnections, attempts, 'Only connection failures reconnect, at most once');
+      assert.equal(previews.length - beforePreviews, attempts);
+      assert.equal(engine.review.decisions(task.name, round)[word.id], 'pending', 'Preview recovery never saves a decision');
+      if (expectedStatus === 200) assert.equal(response.json().after, 'respects-rejection');
+    }
+    previewFailure = null;
     await engine.review.undo(task.name, 'reject-other');
     assert.equal((await options()).comparisonKey, initialKey, 'Undo restores the reusable preview identity');
     for (const option of ['current', 'alternative']) {

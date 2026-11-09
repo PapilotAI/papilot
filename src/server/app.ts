@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { registerFrontend } from './frontend.ts';
 import type { Store } from './store.ts';
 import type { Workspace } from './workspace.ts';
-import { reviewClient, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
+import { reviewClient, readReview, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
 import { fullPaperPdf, nextPaperPass, paperPassPdf } from './pdf.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { bibliography, confirmEntry } from './references.ts';
@@ -305,25 +305,29 @@ export async function buildApp(options: AppOptions) {
     return { notes: await taskNoteResults(task, store.items(task.id), store.runs().filter(run => run.taskId === task.id), client) };
   });
   app.get<{ Params: { id: string }; Querystring: { key: string } }>('/api/tasks/:id/note-options', task, async request => {
-    const current = store.task(request.params.id), client = await connectReview(store.project(current.projectId).path);
-    return (await noteOptionContext(store, current, string(request.query.key, 'Note key', 200), client)).options;
+    const project = store.project(store.task(request.params.id).projectId);
+    return readReview(connectReview, project.path, async client =>
+      (await noteOptionContext(store, store.task(request.params.id), string(request.query.key, 'Note key', 200), client)).options);
   });
   app.get<{ Params: { id: string }; Querystring: { key: string; round: string; option: string; retry?: string; comparison?: string } }>('/api/tasks/:id/note-options/preview', task, async request => {
-    const current = store.task(request.params.id), client = await connectReview(store.project(current.projectId).path);
-    const context = await noteOptionContext(store, current, string(request.query.key, 'Note key', 200), client);
-    if (context.options.round !== Number(request.query.round)) throw new Error('The review changed. Reload the options.');
-    if (request.query.comparison && request.query.comparison !== context.options.comparisonKey) throw new Error('The review changed. Reload the options.');
-    if (request.query.option === context.options.selected && (!context.rejected.length || context.options.locked)) return rewriteReviewJson(context.detail, `/review/${current.projectId}`);
-    if (context.options.locked) throw new Error(context.options.locked);
-    const option = context.options.options.find(option => option.id === request.query.option);
-    if (!option) throw new Error('This option is no longer available.');
-    if (option.previewError && request.query.retry !== '1') throw new Error(option.previewError);
-    const detail = await client.post(`${taskRoute(current.name)}/source/options/preview`, { id: option.id, round: context.options.round, edits: option.edits, rejected: context.rejected }, 120000);
-    if (option.previewError) {
-      delete option.previewError;
-      store.savePreference(noteOptionsKey(current.id, context.options.key, context.options.round), context.options);
-    }
-    return rewriteReviewJson(detail, `/review/${current.projectId}`);
+    const project = store.project(store.task(request.params.id).projectId);
+    return readReview(connectReview, project.path, async client => {
+      const current = store.task(request.params.id);
+      const context = await noteOptionContext(store, current, string(request.query.key, 'Note key', 200), client);
+      if (context.options.round !== Number(request.query.round)) throw new Error('The review changed. Reload the options.');
+      if (request.query.comparison && request.query.comparison !== context.options.comparisonKey) throw new Error('The review changed. Reload the options.');
+      if (request.query.option === context.options.selected && (!context.rejected.length || context.options.locked)) return rewriteReviewJson(context.detail, `/review/${current.projectId}`);
+      if (context.options.locked) throw new Error(context.options.locked);
+      const option = context.options.options.find(option => option.id === request.query.option);
+      if (!option) throw new Error('This option is no longer available.');
+      if (option.previewError && request.query.retry !== '1') throw new Error(option.previewError);
+      const detail = await client.post(`${taskRoute(current.name)}/source/options/preview`, { id: option.id, round: context.options.round, edits: option.edits, rejected: context.rejected }, 120000);
+      if (option.previewError) {
+        delete option.previewError;
+        store.savePreference(noteOptionsKey(current.id, context.options.key, context.options.round), context.options);
+      }
+      return rewriteReviewJson(detail, `/review/${current.projectId}`);
+    });
   });
   app.post<{ Params: { id: string }; Body: { key: string; round: number; option?: string; id?: string; accept?: boolean; reject?: boolean } }>('/api/tasks/:id/note-options', task, async request => {
     const current = store.task(request.params.id), client = await connectReview(store.project(current.projectId).path), body = request.body;

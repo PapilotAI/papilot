@@ -65,6 +65,8 @@ jobs:
         run: |
           node --import tsx scripts/check-review-batching.mjs
           node --import tsx scripts/check-review-flow.mjs
+          node --import tsx scripts/check-note-results.mjs
+          node --import tsx scripts/check-note-options-flow.mjs
         env:
           PAPILOT_BROWSER_CHANNEL: chromium
       # Checks the generated UI demos and local asset links before main.

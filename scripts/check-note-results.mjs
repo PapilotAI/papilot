@@ -251,8 +251,8 @@ try {
   assert.equal(decisions[2].c1, 'pending');
   rejectFails = false;
   await controls().getByRole('button', { name: 'Reject Concise', exact: true }).click();
-  await controls().waitFor({ state: 'hidden' });
-  assert.equal(decisions[2].c1, 'rejected');
+  await expect.poll(() => decisions[2].c1).toBe('rejected');
+  await expect(controls()).toHaveAttribute('data-open', 'true');
   await frame().locator('.papilot-note-options button').waitFor({ state: 'hidden' });
   assert.equal(optionWrites.length, 2);
   assert.ok(optionWrites.every(body => body.reject === true && body.accept === undefined && body.option === 'brief'));

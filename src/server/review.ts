@@ -20,6 +20,16 @@ export function reviewConnectionError(error: unknown): boolean {
   return ['AbortError', 'TimeoutError'].includes(error.name) || /fetch failed|ECONNREFUSED|ECONNRESET|socket hang up|The review server failed to start/.test(error.message);
 }
 
+// A preview is a repeatable read, even when the engine prepares its cache.
+// Reconnect once if the engine restarts between connecting and reading it.
+export async function readReview<T>(connect: (root: string) => Promise<ReviewClient>, root: string, read: (client: ReviewClient) => Promise<T>): Promise<T> {
+  try { return await read(await connect(root)); }
+  catch (error) {
+    if (!reviewConnectionError(error)) throw error;
+    return read(await connect(root));
+  }
+}
+
 export function confirmedReviewResponse(status: number, value: unknown, task: string): boolean {
   if (!value || typeof value !== 'object') return false;
   const result = value as Record<string, unknown>;
