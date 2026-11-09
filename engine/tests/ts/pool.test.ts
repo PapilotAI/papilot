@@ -168,3 +168,104 @@ it.skipIf(!posix)("runs at most two latexmk at once when three builds start toge
     await f.close();
   }
 });
+
+// pid 1 answers kill(1, 0) with EPERM, so it looks alive, as a process ID
+// that a crashed process left and the system has since reused.
+const ghost = (name: string, value: object, age: number) => {
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, JSON.stringify(value));
+  const then = new Date(Date.now() - age);
+  fs.utimesSync(file, then, then);
+  return file;
+};
+const files = (pattern: RegExp) => fs.readdirSync(dir).filter((name) => pattern.test(name));
+const staleAfter = async (ms: string, work: () => Promise<void>) => {
+  process.env.PAPILOT_TEX_POOL_STALE = ms;
+  try { await work(); } finally { delete process.env.PAPILOT_TEX_POOL_STALE; }
+};
+
+it("ignores a waiter whose process stopped keeping its file fresh, even when its process ID is in use", async () => {
+  const left = ghost("wait-00dead00.json", { id: "00dead00", pid: 1, priority: "foreground", since: 0 }, 60000);
+  const next = lease("normal");
+  let acquired = false;
+  void next.ready.then(() => { acquired = true; });
+  await until(() => acquired, 3000);
+  expect(fs.existsSync(left)).toBe(false);
+});
+
+it("keeps a waiter's place while it waits longer than a stale lock takes", () => staleAfter("2000", async () => {
+  const first = lease("normal"), second = lease("normal");
+  await Promise.all([first.ready, second.ready]);
+  const order: string[] = [];
+  const older = lease("normal");
+  void older.ready.then(() => order.push("older"), () => undefined);
+  await sleep(3000);
+  const newer = lease("normal");
+  void newer.ready.then(() => order.push("newer"), () => undefined);
+  await sleep(200);
+  await first.release();
+  await until(() => order.length === 1);
+  expect(order).toEqual(["older"]);
+}), 15000);
+
+it("leaves no waiter file behind when its priority changes as it gets a slot or gives up", async () => {
+  const first = lease("normal"), second = lease("normal");
+  await Promise.all([first.ready, second.ready]);
+  // A priority change whose write is still on its way when the slot comes.
+  let priority: "normal" | "foreground" = "normal";
+  const changing = new Lease(() => priority);
+  leases.push(changing);
+  await until(() => files(/^wait-/).length === 1);
+  const rename = fs.promises.rename;
+  fs.promises.rename = (async (from: fs.PathLike, to: fs.PathLike) => {
+    if (/wait-[0-9a-f]+\.json$/.test(String(to))) await sleep(300);
+    return rename(from, to);
+  }) as typeof rename;
+  try {
+    priority = "foreground";
+    changing.update();
+    await first.release();
+    await changing.ready;
+    await sleep(500);
+    expect(files(/^wait-/)).toEqual([]);
+  } finally { fs.promises.rename = rename; }
+  // A priority change after a waiting lease was given up.
+  let wanted: "normal" | "foreground" = "normal";
+  const abandoned = new Lease(() => wanted);
+  await until(() => files(/^wait-/).length === 1);
+  await abandoned.release();
+  wanted = "foreground";
+  abandoned.update();
+  await sleep(200);
+  expect(files(/^wait-/)).toEqual([]);
+});
+
+it("ignores a borrow claim nobody keeps fresh, for a free slot and for its lender", () => staleAfter("2000", async () => {
+  for (let slot = 0; slot < SLOTS; slot++) ghost(`borrow-${slot}.json`, { id: "00dead00", pid: 1, pgid: null }, 60000);
+  const free = lease("normal");
+  let acquired = false;
+  void free.ready.then(() => { acquired = true; });
+  await until(() => acquired, 3000);
+  await free.release();
+  if (!posix) return;
+  // A lender stops for a claim, and continues once nobody refreshes it.
+  const lender = lease("background");
+  await lender.ready;
+  const pgid = compiler(lender);
+  ghost(`borrow-${lender.slot}.json`, { id: "00dead00", pid: 1, pgid }, 0);
+  await until(() => stopped(pgid));
+  await until(() => !stopped(pgid), 6000);
+}), 20000);
+
+it.skipIf(!posix)("keeps a borrow for longer than a stale lock takes", () => staleAfter("2000", async () => {
+  const lender = await holder("background", "2000"), busy = lease("normal");
+  await busy.ready;
+  const urgent = lease("foreground");
+  await urgent.ready;
+  expect([urgent.borrowed, urgent.slot]).toEqual([true, lender.slot]);
+  await sleep(3500);
+  expect(stopped(lender.pgid)).toBe(true);
+  await urgent.release();
+  await until(() => !stopped(lender.pgid));
+}), 20000);
+

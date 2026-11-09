@@ -19,7 +19,9 @@ const signals = process.platform !== "win32";
 // (PAPILOT_TEX_POOL), so every process of one installation shares it. A
 // process started without one has a pool of its own. A process holds a slot
 // with a lock file that it keeps fresh; one that crashed leaves a lock that
-// goes stale, and its slot is taken over.
+// goes stale, and its slot is taken over. Waiting for a slot and borrowing
+// one are files kept fresh the same way: the folder outlives the processes,
+// and a process ID alone may since name another process.
 let own: string | null = null;
 function settings() {
   if (!process.env.PAPILOT_TEX_POOL && !own) {
@@ -55,6 +57,13 @@ async function readJson<T>(file: string): Promise<T | null> {
   try { return JSON.parse(await fs.promises.readFile(file, "utf8")) as T; }
   catch { return null; }
 }
+// A waiter's or borrower's file, and whether its process still keeps it:
+// it lives, and refreshed the file within `stale`.
+async function readKept<T extends { pid: number }>(file: string, stale: number): Promise<{ value: T | null; kept: boolean }> {
+  const [value, stat] = await Promise.all([readJson<T>(file), fs.promises.stat(file).catch(() => null)]);
+  return { value, kept: Boolean(value && stat && Date.now() - stat.mtimeMs <= stale && alive(value.pid)) };
+}
+const touch = (file: string) => { const now = new Date(); return fs.promises.utimes(file, now, now); };
 // Whether every process of a group is stopped. An empty group has ended.
 async function groupState(pgid: number): Promise<"stopped" | "running" | "gone"> {
   const lines = (await capture("ps", ["-A", "-o", "pgid=,stat="], { check: false })).stdout.toString().split("\n");
@@ -84,13 +93,13 @@ async function readState(dir: string, stale: number): Promise<State> {
     if (!borrowed && !waiting) return;
     const file = path.join(dir, name);
     if (waiting) {
-      const waiter = await readJson<Waiter>(file);
-      if (waiter && alive(waiter.pid)) waiters.push(waiter);
+      const { value: waiter, kept } = await readKept<Waiter>(file, stale);
+      if (waiter && kept) waiters.push(waiter);
       else if (waiter) await fs.promises.rm(file, { force: true });
       return;
     }
-    const slot = Number(borrowed![1]), borrow = await readJson<Borrow>(file);
-    if (borrow && alive(borrow.pid)) { borrows.set(slot, borrow); return; }
+    const slot = Number(borrowed![1]), { value: borrow, kept } = await readKept<Borrow>(file, stale);
+    if (borrow && kept) { borrows.set(slot, borrow); return; }
     // A borrower that died leaves its lender to resume. The lender does that
     // itself while it lives; a lender that died too is resumed here, so its
     // compiler can end.
@@ -135,6 +144,14 @@ export class Lease {
   private watching?: NodeJS.Timeout;
   private acknowledged = "";
   private settings = settings();
+  // Until acquire() ends, the waiter file is this lease's to write.
+  private waiting = true;
+  // The lease's writes of its waiter and holder files, in order, so that
+  // none lands after the file is removed.
+  private writes: Promise<unknown> = Promise.resolve();
+  // Keeps the waiter file and the borrow claim fresh (see readKept).
+  private heartbeat?: NodeJS.Timeout;
+  private claim: string | null = null;
   constructor(private wanted: () => PoolPriority) {
     this.priority = wanted();
     this.ready = this.acquire();
@@ -146,27 +163,42 @@ export class Lease {
     const next = this.wanted();
     if (next === this.priority) return;
     this.priority = next;
-    if (this.slot >= 0 && !this.borrowed) void this.describe().catch(() => undefined);
-    else if (this.slot < 0) void writeAtomic(this.waiterFile, this.waiter()).catch(() => undefined);
+    if (this.slot >= 0 && !this.borrowed) this.describe();
+    else if (this.slot < 0) this.write(() => this.waiting ? writeAtomic(this.waiterFile, this.waiter()) : undefined);
   }
   /** The process group of the run, which a borrower stops. */
   attach(child: ChildProcess) {
     this.pgid = child.pid ?? null;
-    if (this.slot >= 0 && !this.borrowed) void this.describe().catch(() => undefined);
+    if (this.slot >= 0 && !this.borrowed) this.describe();
   }
   detach() {
     this.pgid = null;
-    if (this.slot >= 0 && !this.borrowed && !this.released) void this.describe().catch(() => undefined);
+    if (this.slot >= 0 && !this.borrowed) this.describe();
+  }
+  private write(work: () => Promise<unknown> | undefined) {
+    this.writes = this.writes.then(work).catch(() => undefined);
   }
   private waiter(): Waiter { return { id: this.id, pid: process.pid, priority: this.priority, since: this.since }; }
   private describe() {
-    const holder: Holder = { id: this.id, pid: process.pid, pgid: this.pgid, priority: this.priority };
-    return writeAtomic(infoFile(this.settings.dir, this.slot), holder);
+    this.write(() => {
+      if (this.released) return;
+      const holder: Holder = { id: this.id, pid: process.pid, pgid: this.pgid, priority: this.priority };
+      return writeAtomic(infoFile(this.settings.dir, this.slot), holder);
+    });
+    return this.writes;
+  }
+  private beat() {
+    const files = [this.waiting ? this.waiterFile : null, this.claim].filter((file) => file !== null);
+    if (!files.length) clearInterval(this.heartbeat);
+    for (const file of files) void touch(file).catch(() => undefined);
   }
   private async acquire() {
     const { dir, stale, update } = this.settings;
     await fs.promises.mkdir(dir, { recursive: true });
-    await writeAtomic(this.waiterFile, this.waiter());
+    this.write(() => writeAtomic(this.waiterFile, this.waiter()));
+    await this.writes;
+    this.heartbeat = setInterval(() => this.beat(), update);
+    this.heartbeat.unref();
     try {
       for (;;) {
         if (this.released) throw new ProcessError("The build no longer needs to compile.");
@@ -192,6 +224,9 @@ export class Lease {
         await delay(40 + Math.random() * 80);
       }
     } finally {
+      this.waiting = false;
+      if (!this.claim) clearInterval(this.heartbeat);
+      await this.writes;
       await fs.promises.rm(this.waiterFile, { force: true });
     }
   }
@@ -202,6 +237,7 @@ export class Lease {
       const file = borrowFile(dir, slot), claim: Borrow = { id: this.id, pid: process.pid, pgid: holder.pgid };
       try { await fs.promises.writeFile(file, JSON.stringify(claim), { flag: "wx" }); }
       catch { continue; }
+      this.claim = file;
       signal(holder.pgid, "SIGSTOP");
       let confirmed: "stopped" | "running" | "gone" = "running";
       for (let i = 0; i < 60 && confirmed === "running"; i++) {
@@ -223,6 +259,7 @@ export class Lease {
       }
       // The run ended meanwhile, would not stop, or its owner never saw the
       // claim: continue it as it was.
+      this.claim = null;
       await fs.promises.rm(file, { force: true });
       if ((await fs.promises.readFile(ackFile(dir, slot), "utf8").catch(() => "")) !== this.id) signal(holder.pgid, "SIGCONT");
     }
@@ -237,9 +274,9 @@ export class Lease {
   }
   private async check() {
     if (this.released) return;
-    const { dir } = this.settings, file = borrowFile(dir, this.slot), borrow = await readJson<Borrow>(file);
+    const { dir, stale } = this.settings, file = borrowFile(dir, this.slot), { value: borrow, kept } = await readKept<Borrow>(file, stale);
     let lent = Boolean(borrow);
-    if (borrow && !alive(borrow.pid)) {
+    if (borrow && !kept) {
       await fs.promises.rm(file, { force: true });
       lent = false;
     }
@@ -259,9 +296,12 @@ export class Lease {
     this.released = true;
     await this.ready.catch(() => undefined);
     if (this.watching) clearInterval(this.watching);
+    clearInterval(this.heartbeat);
+    await this.writes;
     const { dir } = this.settings;
     if (this.slot < 0) return;
     if (this.borrowed) {
+      this.claim = null;
       const file = borrowFile(dir, this.slot), borrow = await readJson<Borrow>(file);
       if (borrow?.id === this.id) {
         await fs.promises.rm(file, { force: true });
