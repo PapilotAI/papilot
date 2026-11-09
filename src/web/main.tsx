@@ -1816,7 +1816,7 @@ function App() {
     pending={task.delivery?.pending && task.delivery.mode !== 'branch' ? task.delivery.mode : undefined}
     apply={() => saveTask('workspace')} commit={(message, confirmation) => saveTask('commit', message, confirmation)}
     generate={() => api<{ message: string }>(`/tasks/${task.id}/commit-message`, { fresh: true }).then(result => result.message)}
-    shown={() => void api(`/tasks/${task.id}/predict`, {}).catch(() => undefined)}/>
+    started={() => void api(`/tasks/${task.id}/predict`, {}).catch(() => undefined)}/>
     : merging ? <TaskConflict status={task.status} waiting={mergeWaiting} onChat={() => selectLayout('conversation')}/>
     : saved === 'committed' && task.delivery ? savedResult(t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' }))
     : !task.deferred ? legacySave : saved === 'applied' ? savedResult(t('Applied to manuscript')) : null);
