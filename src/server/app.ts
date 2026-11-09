@@ -721,11 +721,13 @@ export async function buildApp(options: AppOptions) {
         if (task) await settled(workspace, task.id);
       }
       // Accepting leaves the task's worktree alone, and so does undoing an
-      // accept or a comment: these go ahead while the agent edits it.
+      // accept or a comment: these go ahead while the agent edits it. Undoing
+      // an accept of an earlier round publishes a round of the worktree, so
+      // it waits like rejecting.
       const besideAgent = Boolean(reviewTask?.deferred && AGENT_TURN.includes(reviewTask.status)) && (route.endsWith('/decide')
         ? (request.body as any)?.action === 'accept'
-        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string } | null }>(`${taskRoute(reviewTask!.name)}/state`)
-          .then(state => state.undo?.id === (request.body as any)?.id && state.undo?.kind !== 'reject', () => false));
+        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
+          .then(state => state.undo?.id === (request.body as any)?.id && state.undo?.kind !== 'reject' && !state.undo?.republish, () => false));
       let settles: string | undefined;
       const forward = async () => {
         const search = new URL(request.url, 'http://localhost').search;

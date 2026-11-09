@@ -133,14 +133,29 @@ export class Review {
     }
     return [...result];
   }
-  undoEntry(name: string) {
+  /** The decision Undo takes back: the latest one, unless it was applied or
+   *  merged since. Rounds never change, so a decision of an earlier round is
+   *  undone only when it is an accept that no decision followed, as when the
+   *  author accepts while the agent works and the agent's round follows: the
+   *  newer round's baseline is that accept, and the undo inserts the next
+   *  round, with the change pending again (`republish`). */
+  undoEntry(name: string): (Action & { republish?: true }) | null {
     const latest = this.latestRound(name),
       action = this.app.store.one<Action>(
         "SELECT * FROM actions WHERE task=? AND status='applied' ORDER BY seq DESC LIMIT 1",
         name,
       );
     const delivered = this.app.delivery.get(name), reconciliation = this.app.reconciliation.get(name);
-    return action && latest && (!reconciliation || action.round > reconciliation.round) && action.round === latest.number && (!delivered || action.seq > delivered.seq) ? action : null;
+    if (!action || !latest || (reconciliation && action.round <= reconciliation.round) || (delivered && action.seq <= delivered.seq)) return null;
+    if (action.round === latest.number) return action;
+    const followed = this.app.store.one(
+      "SELECT 1 FROM actions WHERE task=? AND round>? AND status IN ('applying','applied','undoing') LIMIT 1",
+      name,
+      action.round,
+    );
+    return action.kind === "accept" && !followed && action.detail.accepted_after === latest.before && this.app.tasks.get(name).accepted === latest.before
+      ? { ...action, republish: true }
+      : null;
   }
   summary(name: string): Summary {
     const task = this.app.tasks.get(name),
@@ -247,7 +262,7 @@ export class Review {
       waiting: round ? round.units.filter(unit => !comparable(round, rendered(this.app, name, round.number), unit.id)).map(unit => unit.id) : [],
       ...(again.length ? { reviewAgain: again } : {}),
       undo: undo
-        ? { id: undo.id, kind: undo.kind, changes: undo.changes }
+        ? { id: undo.id, kind: undo.kind, changes: undo.changes, ...(undo.republish ? { republish: true as const } : {}) }
         : null,
       job: job
         ? {
@@ -846,13 +861,22 @@ export class Review {
   undo(name: string, identity: string) {
     return this.app.exclusive(() => this.undoNow(name, identity));
   }
-  private async undoNow(name: string, identity: string) {
+  private async undoNow(name: string, identity: string): Promise<PageState & { restored: string[]; republished?: true }> {
     this.app.delivery.assertReady(name);
     const app = this.app,
       task = app.tasks.get(name),
       action = this.undoEntry(name);
-    if (!action || action.id !== identity)
+    if (!action || action.id !== identity) {
+      // A lost reply to an undo that inserted a round is answered again.
+      const done = app.store.one<Action>("SELECT * FROM actions WHERE id=? AND task=?", identity, name);
+      if (done?.status === "undone" && done.detail.republish) return { ...this.pageState(name), restored: done.changes, republished: true as const };
       throw new Error("Nothing to undo here any more. Reload the page.");
+    }
+    const latest = this.latestRound(name)!;
+    // The round it inserts compares the task's files as the newest round has
+    // them, so nothing else is published with it, such as an agent's edits.
+    if (action.republish && (await app.repo.treeIdAsync(await app.tasks.snapshotAsync(task))) !== (await app.repo.treeIdAsync(latest.after)))
+      throw new Conflict("The task's files changed since the newest round. Nothing was undone.");
     if (
       action.kind === "accept" &&
       task.accepted !== action.detail.accepted_after
@@ -878,7 +902,8 @@ export class Review {
       );
     app.store.transaction(() => {
       app.store.execute(
-        "UPDATE actions SET status='undoing' WHERE id=?",
+        "UPDATE actions SET status='undoing', detail=? WHERE id=?",
+        JSON.stringify(action.republish ? { ...action.detail, republish: latest.number + 1 } : action.detail),
         identity,
       );
       for (const [file, expected, target] of restores)
@@ -891,7 +916,12 @@ export class Review {
         );
     });
     await this.carryOut(identity, "undo");
-    return { ...this.pageState(name), restored: action.changes };
+    if (!action.republish) return { ...this.pageState(name), restored: action.changes };
+    // Like a source edit's, the round is inserted now and compiles in the
+    // background; a restart before the insert submits it (publisher.recover).
+    const job = app.publisher.submit(name, undefined, latest.summary.indirect ?? true);
+    await app.publisher.insertNow(job).catch(() => { /* The job inserts again when it starts, and fails with the reason. */ });
+    return { ...this.pageState(name), restored: action.changes, republished: true as const };
   }
   // At start, before any other write.
   async recover() {

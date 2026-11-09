@@ -32,6 +32,9 @@ import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeS
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Source saves start a build in the review engine, and so does undoing an
+// accept of an earlier round, which inserts the next round.
+const startsBuild = (route: string, value: unknown) => /\/source(?:\/options)?$/.test(route) || (route.endsWith('/undo') && (value as { republished?: unknown } | null)?.republished === true);
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 // A Codex model/list entry with the reasoning efforts it supports.
 export const agentModel = (m: any): AgentModel => {
@@ -915,7 +918,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const value = await response.json() as { error?: string };
       if (!confirmedReviewResponse(response.status, value, task.name)) throw new Error('The review engine could not confirm this action. Check again when it is available.');
       await this.refresh(task.id);
-      const sourceBuild = response.ok && /\/source(?:\/options)?$/.test(pending.route);
+      const sourceBuild = response.ok && startsBuild(pending.route, value);
       this.store.transaction(() => {
         // The status the task reached meanwhile, recorded by holdForReview. A
         // turn or build still in progress ends on its own.
@@ -964,7 +967,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (pending) this.store.updateTask(taskId, { pendingReview: { ...pending, previousStatus: turn ? 'interrupted' : task.status } });
     try {
       const result = await operation();
-      const sourceBuild = Boolean(pending && /\/source(?:\/options)?$/.test(pending.route)) && confirmedReviewResponse(200, result, task.name);
+      const sourceBuild = Boolean(pending && startsBuild(pending.route, result)) && confirmedReviewResponse(200, result, task.name);
       this.store.transaction(() => {
         if (pending) this.store.updateTask(taskId, { pendingReview: null });
         if (sourceBuild) this.rememberSourceBuild(taskId, result, pending);

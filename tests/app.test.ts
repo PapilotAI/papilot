@@ -1057,7 +1057,7 @@ test('a review decision replies before the task summary is read again, and the n
 });
 
 test('accepting goes ahead while the agent edits a deferred task; rejecting, undoing a rejection and editing source wait', async () => {
-  let undo: { id: string; kind: string } | null = { id: 'accept-1', kind: 'accept' };
+  let undo: { id: string; kind: string; republish?: boolean } | null = { id: 'accept-1', kind: 'accept' };
   const f = await fixture(), engine = await decisionEngine(route => route.endsWith('/undo') ? { restored: ['c001'] } : {});
   f.review.url = engine.url;
   f.review.get = async (route: string) => (route.endsWith('/state') ? { undo } : {}) as any;
@@ -1083,6 +1083,11 @@ test('accepting goes ahead while the agent edits a deferred task; rejecting, und
     const reverting = await post('/undo', { id: 'reject-0' });
     assert.equal(reverting.statusCode, 400);
     assert.match(reverting.json().error, /agent is editing/);
+    // Undoing an accept of an earlier round publishes the next round, so it waits too.
+    undo = { id: 'accept-0', kind: 'accept', republish: true };
+    const republishing = await post('/undo', { id: 'accept-0' });
+    assert.equal(republishing.statusCode, 400);
+    assert.match(republishing.json().error, /agent is editing/);
     assert.equal((await post('/decide', { id: 'comment-1', action: 'comment', round: 1, changes: ['c001'], body: 'Shorter.' })).statusCode, 200);
     // A task that applies decisions to the manuscript as they are made waits for the agent.
     f.store.updateTask('thesis-task', { deferred: false });

@@ -404,7 +404,9 @@ export function ReviewApp({
     const reason = lockOf(state, kind);
     return reason ? t(reason) : reason;
   };
-  const undoKind = (value: PageState | null | undefined): Kind => value?.undo?.kind === "reject" ? "reject" : "accept";
+  // Undoing an accept of an earlier round publishes the task's files as a
+  // new round, so like a rejection it waits while the agent edits them.
+  const undoKind = (value: PageState | null | undefined): Kind => value?.undo?.kind === "reject" || value?.undo?.republish ? "reject" : "accept";
   function blocked(kind: Kind): boolean {
     if (previewNow.current) { setToast(t("Confirm this option before reviewing its changes.")); return true; }
     const reason = lockOf(snapshot.current.state, kind);
@@ -751,6 +753,8 @@ export function ReviewApp({
       });
       setState(next);
       window.dispatchEvent(new CustomEvent("latex-review:decided"));
+      // An undo of an earlier round's accept inserted the next round.
+      if (next.latest !== snapshot.current.detail?.round) pollNow.current();
       const target = stops.findIndex((s) =>
         s.units.some((id) => next.restored.includes(id)),
       );

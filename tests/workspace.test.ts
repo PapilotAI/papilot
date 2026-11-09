@@ -417,6 +417,25 @@ test('manual source saves track the existing build and never ask AI to repair co
   } finally { f.close(); }
 });
 
+test("undoing an accept of an earlier round tracks the build of the round it inserts; other undos build nothing", async () => {
+  const gate = deferred<{ status: string; round: number }>();
+  const f = fixture(async (_method, route) => route.includes('/jobs/') ? gate.promise : summary);
+  try {
+    const undo = { route: '/api/tasks/p-task/undo', body: { id: 'accept-before-round' } };
+    await f.workspace.reviewWrite(f.task.id, true, async () => ({ ...pageState, restored: ['c001'] }), undo);
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).pendingBuild ?? null, null);
+    await f.workspace.reviewWrite(f.task.id, true, async () => ({ ...pageState, restored: ['c001'], republished: true, job: { id: 'undo-job', status: 'queued' } }), undo);
+    assert.equal(f.store.task(f.task.id).status, 'building');
+    assert.equal(f.store.task(f.task.id).pendingBuild?.job, 'undo-job');
+    assert.equal(f.store.task(f.task.id).pendingBuild?.sendBack, false);
+    gate.resolve({ status: 'done', round: 3 });
+    for (let i = 0; i < 20 && f.store.task(f.task.id).status === 'building'; i++) await tick();
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.calls.some(call => call.route.endsWith('/publish')), false);
+  } finally { gate.resolve({ status: 'done', round: 3 }); f.close(); }
+});
+
 for (const status of ['done', 'failed']) test(`a source save during a build survives the older job becoming ${status}`, async () => {
   const old = deferred<unknown>(), next = deferred<unknown>(), started = deferred<void>(), followed = deferred<void>();
   const f = fixture(async (_method, route) => {

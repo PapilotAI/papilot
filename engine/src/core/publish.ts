@@ -763,6 +763,13 @@ export class Publisher {
         if (refs.get(ref) !== round.after) await app.repo.updateRefAsync(ref, round.after);
       }
       const latest = app.review.latestRound(task.name);
+      // An undo that inserts a round stopped before the insert: its accept
+      // is undone, so the round with the change pending again follows now.
+      const undone = app.store.one<{ status: string; detail: { republish?: number } }>("SELECT status,detail FROM actions WHERE task=? ORDER BY seq DESC LIMIT 1", task.name);
+      if (undone?.status === "undone" && undone.detail.republish && (latest?.number ?? 0) < undone.detail.republish) {
+        if (!this.pending.has(task.name) && !this.stopping) this.submit(task.name, undefined, latest?.summary.indirect ?? true);
+        continue;
+      }
       if (!latest || latest.visuals !== "pending" || this.stopping) continue;
       // The job that inserted it continues, so a host polling it sees the
       // round it is waiting for. It lists indirect changes as the round
