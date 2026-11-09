@@ -121,8 +121,8 @@ it.skipIf(!posix)("continues a lent run when its borrower dies", async () => {
   expect(stopped(pgid)).toBe(true);
   borrower.child.kill("SIGKILL");
   await until(() => !stopped(pgid));
-  // The slot is the lender's again: nobody else can take it.
-  const next = lease("foreground");
+  // The slot is the lender's again: normal work cannot borrow it.
+  const next = lease("normal");
   let acquired = false;
   void next.ready.then(() => { acquired = true; });
   await sleep(400);

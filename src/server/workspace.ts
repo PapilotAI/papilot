@@ -122,6 +122,9 @@ export class Workspace extends EventEmitter {
   private flushTimer: NodeJS.Timeout | null = null;
   private connecting: Promise<void> | null = null;
   private usageTimers = new Map<AgentId, NodeJS.Timeout>();
+  // Tasks whose agent wrote files within the last moments: their next
+  // write asks once more for a prefetch when that moment ends.
+  private prefetches = new Map<string, { again: boolean }>();
   // Commit messages by agent, model and prompt, kept or still being written,
   // so one written ahead for a finished review is there when the dialog opens.
   private messages = new Map<string, Promise<{ message: string; agent: AgentId }>>();
@@ -571,6 +574,24 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     this.store.updateTask(run.taskId, { status: 'failed', turnId: null, pendingRunId: null, error: errorText(error) });
     this.schedule();
   }
+  // The agent writes files: the review engine compiles ahead what the round
+  // after this turn will compile first, in the background. The latest
+  // writes win; a burst of them asks once, and once more when it ends.
+  private prefetch(task: Task) {
+    const pending = this.prefetches.get(task.id);
+    if (pending) { pending.again = true; return; }
+    const entry = { again: false };
+    this.prefetches.set(task.id, entry);
+    void this.connectReview(this.store.project(task.projectId).path)
+      .then(client => client.post(`${taskRoute(task.name)}/prefetch`, {}))
+      .catch(() => { /* Speculation only: the round compiles what it needs. */ });
+    setTimeout(() => {
+      this.prefetches.delete(task.id);
+      if (entry.again && !this.closing) {
+        try { this.prefetch(this.store.task(task.id)); } catch { /* The task is gone. */ }
+      }
+    }, 2000).unref();
+  }
   private flush() {
     if (this.flushTimer) clearTimeout(this.flushTimer); this.flushTimer = null;
     for (const item of this.liveItems.values()) this.store.saveItem(item);
@@ -634,6 +655,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         if (item.success === false) entry.status = 'failed';
       }
       if (entry.text || entry.detail || entry.rawText) this.store.saveItem(entry);
+      if (method === 'item/completed' && item.type === 'fileChange' && task.mode !== 'review') this.prefetch(task);
     } else if (method === 'serverRequest/resolved') {
       const buffered = this.earlyRequests.get(task.id);
       if (buffered) this.earlyRequests.set(task.id, buffered.filter(request => String(request.id) !== String(p.requestId)));
@@ -968,8 +990,6 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         await delay(1500);
       }
       await this.refresh(taskId);
-      // What applying the new round will write can now be compiled ahead.
-      this.emit('reviewed', taskId);
     } catch (e) {
       if (this.closing) return;
       if (reviewConnectionError(e)) {

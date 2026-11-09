@@ -112,7 +112,7 @@ async function readState(dir: string, stale: number): Promise<State> {
 
 /** One TeX run's share of the machine. A slot is taken in priority order,
  *  oldest first within a priority. Background work never holds more than
- *  one slot. When no slot is free, someone waiting at a higher priority
+ *  one slot. When no slot is free, someone waiting at foreground priority
  *  stops a background run (SIGSTOP, confirmed before it starts) and borrows
  *  its slot until it is done; the lender continues then, also if the
  *  borrower died. Call `release` exactly once. */
@@ -188,7 +188,7 @@ export class Lease {
             this.watch();
             return;
           }
-        if (first && signals && this.priority !== "background" && await this.borrow(state)) return;
+        if (first && signals && this.priority === "foreground" && await this.borrow(state)) return;
         await delay(40 + Math.random() * 80);
       }
     } finally {

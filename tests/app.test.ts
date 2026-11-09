@@ -970,19 +970,34 @@ test('writing a paper compiles its manuscript, while pending chapter proposals d
       await new Promise(resolve => setImmediate(resolve));
       assert.deepEqual(refreshed[1], ['thesis', '/unused/thesis'], 'a review action through the review page compiles too');
     } finally { engine.close(); }
-    f.store.updateTask('thesis-task', { deferred: true, review: { state: 'reviewing', round: 1, counts: { pending: 1 }, unsent: 0 } } as any);
+    assert.deepEqual(predicted, [], 'review actions start no speculative manuscript build');
+  } finally { await f.close(); }
+});
+
+test('the Apply and Commit step compiles what applying the decided task writes, and nothing else does', async () => {
+  const f = await fixture();
+  try {
+    const predicted: [string, string, Record<string, string | null>][] = [];
+    f.manuscripts.predict = async (id: string, root: string, files: Record<string, Buffer | null>) => { predicted.push([id, root, Object.fromEntries(Object.entries(files).map(([file, data]) => [file, data?.toString() ?? null]))]); };
     f.review.get = async (route: string) => (route.endsWith('/preview') ? { files: { 'main.tex': Buffer.from('Applied.\n').toString('base64'), 'old.tex': null } } : {}) as any;
+    const headers = { ...LOCAL, 'x-papilot-token': 'local-csrf' }, predict = async () => {
+      const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/predict', headers });
+      assert.equal(response.statusCode, 200, response.body);
+      await new Promise(resolve => setTimeout(resolve, 20));
+    };
+    f.store.updateTask('thesis-task', { deferred: true, review: { state: 'reviewing', round: 1, counts: { pending: 1 }, unsent: 0 } } as any);
     f.workspace.emit('publishing', 'thesis-task', 'proposed-revision');
     f.workspace.emit('reviewed', 'thesis-task');
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await predict();
     assert.deepEqual(predicted, [], 'undecided proposals do not start a speculative full manuscript build');
     f.store.updateTask('thesis-task', { review: { state: 'done', round: 1, counts: { accepted: 1 }, unsent: 0 } });
     f.workspace.emit('reviewed', 'thesis-task');
-    for (let i = 0; i < 20 && !predicted.length; i++) await new Promise(resolve => setTimeout(resolve, 5));
-    assert.deepEqual(predicted, [['thesis', '/unused/thesis', { 'main.tex': 'Applied.\n', 'old.tex': null }]], 'once, though two listeners serve the workspace');
-    f.store.updateTask('thesis-task', { deferred: false } as any);
-    f.workspace.emit('reviewed', 'thesis-task');
     await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(predicted, [], 'the last decision itself starts nothing');
+    await predict();
+    assert.deepEqual(predicted, [['thesis', '/unused/thesis', { 'main.tex': 'Applied.\n', 'old.tex': null }]], 'the step on screen compiles the result once');
+    f.store.updateTask('thesis-task', { deferred: false } as any);
+    await predict();
     assert.equal(predicted.length, 1, 'a task that applies as it is reviewed needs no prediction');
   } finally { await f.close(); }
 });

@@ -150,6 +150,9 @@ export interface JobResult {
   details?: string[];
   next?: string;
   log?: string;
+  /** Whether the baseline compiled ahead while the agent wrote was the one
+   *  this round needed. */
+  prefetch?: "hit" | "miss";
 }
 export interface Job {
   id: string;

@@ -396,6 +396,12 @@ export function createServer(app: App) {
         return { job: job.id, status: job.status };
       },
     );
+    // The task's agent is writing files: what its round will compile first
+    // is compiled ahead in the background. Answers at once.
+    server.post<{ Params: { name: string } }>("/api/tasks/:name/prefetch", (request) => {
+      app.publisher.prefetch(request.params.name);
+      return { ok: true };
+    });
     // The task's typeset pages as images, for its agent to look at.
     server.post<{ Params: { name: string }; Body: ViewRequest }>(
       "/api/tasks/:name/view",

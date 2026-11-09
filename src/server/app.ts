@@ -36,8 +36,6 @@ import { systemRequirements } from './system-requirements.ts';
 import { findExecutable } from '../../bin/agent-paths.mjs';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
-// Each workspace compiles predicted manuscripts once, however many listeners serve it.
-const predicting = new WeakSet<Workspace>();
 
 // Git writes to one repository run one at a time; each returns the new status.
 // Concurrent requests from browser tabs share the same queue.
@@ -132,20 +130,6 @@ export async function buildApp(options: AppOptions) {
       void manuscripts.refresh(project.id, project.path).catch(() => undefined);
     } catch { /* The paper or task is gone. */ }
   });
-  // Prepare the manuscript only after the author has decided the proposal.
-  // Pending chapter edits must not trigger speculative full-paper builds.
-  const predict = async (taskId: string) => {
-    const task = store.task(taskId), project = store.project(task.projectId);
-    if (!task.deferred || task.mode === 'review' || task.delivery?.pending || task.status === 'deleting' || (task.review?.counts.pending ?? 0) > 0) return;
-    const client = await connectReview(project.path);
-    const preview = await client.get<{ files: Record<string, string | null> | null }>(`${taskRoute(task.name)}/preview`);
-    if (preview.files) await manuscripts.predict(project.id, project.path, Object.fromEntries(Object.entries(preview.files).map(([file, data]) => [file, data === null ? null : Buffer.from(data, 'base64')])));
-  };
-  if (!predicting.has(workspace)) {
-    predicting.add(workspace);
-    workspace.on('reviewed', (taskId: string) => void predict(taskId).catch(() => undefined));
-    // The review's complete PDF is compiled on demand when opened.
-  }
   app.addHook('onError', async request => { projectRequests.get(request)?.(); });
   await app.register(compress);
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
@@ -355,7 +339,7 @@ export async function buildApp(options: AppOptions) {
           return value;
         }, { route, body: input });
         if (result.error) throw new Error(result.error);
-        await workspace.refresh(current.id); workspace.emit('reviewed', current.id);
+        await workspace.refresh(current.id);
         return (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
       }
       const route = `${taskRoute(current.name)}/source/options`, input = { id: string(body.id, 'Option request ID', 80), round: body.round, edits: option.edits, ...(body.accept ? { accept: true } : {}) };
@@ -375,6 +359,21 @@ export async function buildApp(options: AppOptions) {
       return { building: true };
     }
     throw new Error('Select an existing option.');
+  });
+  // The Apply and Commit step is on screen: compile in the background what
+  // applying the decided task will write, so the manuscript's PDF is ready or
+  // on its way when the author saves it. Individual decisions start no build.
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/predict', task, request => {
+    const current = store.task(request.params.id), project = store.project(current.projectId);
+    if (!current.deferred || current.mode === 'review' || current.delivery?.pending || current.status === 'deleting' || (current.review?.counts.pending ?? 0) > 0) return { ok: true };
+    void (async () => {
+      const client = await connectReview(project.path);
+      // What applying writes: the accepted text merged with the files on
+      // disk as the application merges them, or nothing while it would conflict.
+      const preview = await client.get<{ files: Record<string, string | null> | null }>(`${taskRoute(current.name)}/preview`);
+      if (preview.files) await manuscripts.predict(project.id, project.path, Object.fromEntries(Object.entries(preview.files).map(([file, data]) => [file, data === null ? null : Buffer.from(data, 'base64')])));
+    })().catch(() => undefined);
+    return { ok: true };
   });
   app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
     const task = store.task(request.params.id), project = store.project(task.projectId);
@@ -705,8 +704,6 @@ export async function buildApp(options: AppOptions) {
             if (task) {
               store.updateTask(task.id, { error: null });
               await workspace.refresh(task.id);
-              // A decision changes what applying the task will write.
-              workspace.emit('reviewed', task.id);
             }
           }
           // A round's new version as one complete PDF, which Papilot compiles,

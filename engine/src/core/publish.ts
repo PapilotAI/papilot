@@ -238,13 +238,64 @@ export class Publisher {
   }
   // Viewing ends without a request, so running builds are looked at again.
   private watching: NodeJS.Timeout | null = null;
+  // Each task whose agent's writes are being compiled ahead, whether newer
+  // writes came meanwhile, the baseline it built, and whether the round
+  // after it needed that very build.
+  private speculating = new Map<string, { again: boolean }>();
+  private speculations = new Set<Promise<void>>();
+  private guesses = new Map<string, string>();
+  private verdicts = new Map<string, "hit" | "miss">();
+  /** A task's agent is writing files. Compiles in the background what its
+   *  next round will compile first: the seed of its base and the baseline of
+   *  the chapters that `planAsync` chooses for the edits so far. Writes made
+   *  meanwhile are planned again once that is done. */
+  prefetch(name: string) {
+    this.app.tasks.get(name);
+    const running = this.speculating.get(name);
+    if (running) { running.again = true; return; }
+    const entry = { again: true };
+    this.speculating.set(name, entry);
+    const promise = (async () => {
+      try {
+        while (entry.again && !this.stopping) {
+          entry.again = false;
+          // A guess that does not compile is no error: the round reports it.
+          await this.speculate(name).catch(() => undefined);
+        }
+      } finally { this.speculating.delete(name); }
+    })();
+    this.speculations.add(promise);
+    void promise.finally(() => this.speculations.delete(promise));
+  }
+  private async speculate(name: string) {
+    // A round being built compiles the real thing.
+    if (this.busy(name)) return;
+    const app = this.app, task = app.tasks.get(name);
+    if (!fs.existsSync(task.worktree)) return;
+    const after = await app.tasks.snapshotAsync(task), before = task.accepted,
+      files = await app.repo.changedFilesAsync(before, after);
+    if (!files.length) return;
+    const builder = new Builder(app.project, app.repo), targets = await builder.planAsync(before, after, files);
+    const seed = targets[0] !== "full" ? await builder.buildSeed(task.base, { priority: "background" }) : null;
+    if (this.busy(name) || this.stopping) return;
+    const date = buildDate();
+    const baseline = await builder.build(before, targets, seed, { date, priority: "background" });
+    this.guesses.set(name, baseline.key);
+    // Only chapter-sized revised speculation is approved. A finished run
+    // also supplies the next observed edit with compatible warm state.
+    if (targets[0] !== "full" && !this.busy(name) && !this.stopping && !this.speculating.get(name)?.again)
+      await builder.build(after, targets, seed, { date, priority: "background" });
+  }
   private async compile(job: Pick<Job, "id" | "task">, side: "baseline" | "revised", builder: Builder, rev: string, targets = ["full"], seed: BuildInfo | null = null, { asSeed = false, force = false, date }: { asSeed?: boolean; force?: boolean; date?: ReturnType<typeof buildDate> } = {}) {
     const progress = this.builds.get(job.id) ?? {};
     this.builds.set(job.id, progress);
     progress[side] = { step: "tex", pass: 0, pages: 0, total: null };
     try {
       const options = { force, date, priority: () => this.priority(job), progress: (value: BuildProgress) => { progress[side] = value; } };
-      return await (asSeed ? builder.buildSeed(rev, options) : builder.build(rev, targets, seed, options));
+      const result = await (asSeed ? builder.buildSeed(rev, options) : builder.build(rev, targets, seed, options));
+      const guess = this.guesses.get(job.task);
+      if (side === "baseline" && !asSeed && guess) this.verdicts.set(job.id, guess === result.key ? "hit" : "miss");
+      return result;
     } finally {
       delete progress[side];
       if (!Object.keys(progress).length) this.builds.delete(job.id);
@@ -357,9 +408,10 @@ export class Publisher {
   }
   async join() {
     await Promise.resolve();
-    while (this.running.size || this.pruning)
+    while (this.running.size || this.pruning || this.speculations.size)
       await Promise.allSettled([
         ...this.running.values(),
+        ...this.speculations,
         ...(this.pruning ? [this.pruning] : []),
       ]);
   }
@@ -407,7 +459,8 @@ export class Publisher {
         }
       }
       await acceptNoteOption(this.app, job.task, job.id);
-      this.update(job.id, { status: "done", result, finished: now() });
+      const verdict = this.verdicts.get(job.id);
+      this.update(job.id, { status: "done", result: verdict ? { ...result, prefetch: verdict } : result, finished: now() });
     } catch (error) {
       // A build the server stopped stays unfinished: the next server marks it
       // as interrupted by a restart, and the app builds it again.
@@ -426,6 +479,8 @@ export class Publisher {
       this.revisions.delete(job.id);
       this.builds.delete(job.id);
       this.indirect.delete(job.id);
+      // A guess serves the round after the writes it saw, once.
+      if (this.verdicts.delete(job.id)) this.guesses.delete(job.task);
       this.running.delete(job.task);
       if (this.pending.get(job.task) === job.id) this.pending.delete(job.task);
       else if (!this.stopping) this.queue.push(this.pending.get(job.task)!);
