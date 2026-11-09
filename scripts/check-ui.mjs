@@ -226,6 +226,11 @@ await page.route('**/api/**', async route => {
     if (!snapshot.tasks.some(t => t.id === createResult.id)) snapshot.tasks.push(createResult);
     return json(createResult);
   }
+  if (url.pathname.endsWith('/prepare')) {
+    const pending = snapshot.tasks.find(t => t.id === url.pathname.split('/')[3]);
+    pending.status = 'preparing'; pending.error = null;
+    return json(pending);
+  }
   throw new Error(`Unexpected fixture request: ${url.pathname}`);
 });
 await page.route('**/review/**', route => reviewFailure ? route.fulfill({ status: 503, json: { error: 'Review server unavailable.' } }) : reviewStarting ? route.fulfill({ contentType: 'text/html', body: '<html><head></head><body><div id="root"></div></body></html>' }) : route.fulfill({ contentType: 'text/html', body: '<html lang="en"><head></head><body><div class="bar">Review round 1</div><main id="paper"><h2>Introduction</h2><p>PDF review fixture</p></main></body></html>' }));
@@ -1758,7 +1763,7 @@ try {
   const stateCaptured = new Promise(resolve => { stateStarted = resolve; });
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await stateCaptured;
-  createResult = { ...secondTask, id: 'fixture-task-0003', title: 'A newly created task' };
+  createResult = { ...secondTask, id: 'fixture-task-0003', title: 'A newly created task', status: 'preparing', preparation: {}, review: null, worktree: '' };
   await page.locator('.manuscript-link').click();
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
   await prompt.fill(createResult.title + '\nKeep the manuscript open.');
@@ -1767,6 +1772,33 @@ try {
   releaseState();
   assert.equal(await page.locator('.task-link.active').count(), 0);
   assert.equal(await prompt.isVisible(), true);
+  const preparingTask = createResult;
+  await expect(page.locator(`[data-task="${preparingTask.id}"] .status`)).toHaveText('Preparing…');
+  await page.locator(`[data-task="${preparingTask.id}"] .task-link`).click();
+  await expect(page.getByRole('button', { name: 'Send instructions', exact: true })).toBeDisabled();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    preparingTask.mode = 'review';
+    await page.reload();
+    await expect(page.locator('.status.preparing').first()).toHaveText('Preparing the review PDF…');
+    preparingTask.status = 'failed'; preparingTask.error = 'The review PDF could not be prepared.';
+    await page.reload();
+    const details = page.getByRole('button', { name: 'View details', exact: true });
+    if (await details.isVisible()) await details.click();
+    const actions = page.locator('.task-error-actions');
+    await expect(actions.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+    await expect(actions.getByRole('button', { name: 'Delete task…', exact: true })).toBeVisible();
+    await actions.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(page.locator('.task-error-actions')).toHaveCount(0);
+    assert.equal(preparingTask.status, 'preparing');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: `test-results/preparing-task-${width}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  preparingTask.status = 'reviewing'; preparingTask.preparation = null;
+  delete preparingTask.mode;
+  await page.reload();
+  console.log('PASS: Preparing tasks appear at once, with Retry and Delete after failure on desktop and phone');
   createResult = task;
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   console.log('PASS: A stale pre-creation snapshot cannot erase the new task or navigate away from the manuscript');

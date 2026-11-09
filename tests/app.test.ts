@@ -354,6 +354,57 @@ test('task and PDF note submissions both carry the chosen service tier', async (
   } finally { await f.close(); }
 });
 
+test('Start task answers at once: the task is listed as preparing with its first message, and a retry returns it', async () => {
+  const f = await fixture();
+  let release!: (value: unknown) => void;
+  const held = new Promise(resolve => { release = resolve; });
+  try {
+    const creates: unknown[] = [];
+    f.review.post = async (route: string, body?: unknown) => { if (route === '/api/tasks') { creates.push(body); return held as any; } return {} as any; };
+    const payload = { id: 'instant-route-task-01', projectId: 'thesis', title: 'Shorten', instructions: 'Shorten the abstract.' };
+    const sent = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
+    assert.equal(sent.statusCode, 200, sent.body);
+    assert.equal(sent.json().status, 'preparing');
+    const listed = (await f.local.inject({ url: '/api/state', headers: LOCAL })).json().tasks.find((task: Task) => task.id === payload.id);
+    assert.equal(listed.status, 'preparing');
+    const items = (await f.local.inject({ url: `/api/tasks/${payload.id}/items`, headers: f.as })).json().items;
+    assert.deepEqual(items.map((item: { type: string; text: string }) => [item.type, item.text]), [['user', 'Shorten the abstract.']]);
+    const retried = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
+    assert.equal(retried.json().id, payload.id);
+    assert.equal(retried.json().status, 'preparing');
+    const message = await f.local.inject({ method: 'POST', url: `/api/tasks/${payload.id}/messages`, headers: f.as, payload: { text: 'And the conclusion.', requestKey: 'second-message-01' } });
+    assert.equal(message.statusCode, 400); assert.match(message.json().error, /still being prepared/);
+    release({ worktree: '/unused/instant', deferred: true });
+    await f.workspace.prepareTask(payload.id);
+    assert.equal(f.store.task(payload.id).status, 'queued');
+    assert.equal(f.store.items(payload.id).length, 1);
+    assert.equal(creates.length, 1);
+  } finally { release({ worktree: '/unused/instant' }); await f.close(); }
+});
+
+test('a failed preparation shows its error and is retried by its route', async () => {
+  const f = await fixture();
+  try {
+    let fail = true;
+    f.review.post = async (route: string) => { if (route === '/api/tasks' && fail) throw new Error('The review engine is busy.'); return { worktree: '/unused/retried', deferred: true } as any; };
+    const payload = { id: 'failed-route-task-01', projectId: 'thesis', title: 'Shorten', instructions: 'Shorten the abstract.' };
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload })).json().status, 'preparing');
+    await assert.rejects(f.workspace.prepareTask(payload.id), /engine is busy/);
+    const failed = (await f.local.inject({ url: '/api/state', headers: LOCAL })).json().tasks.find((task: Task) => task.id === payload.id);
+    assert.equal(failed.status, 'failed'); assert.equal(failed.error, 'The review engine is busy.'); assert.ok(failed.preparation);
+    const publish = await f.local.inject({ method: 'POST', url: `/api/tasks/${payload.id}/publish`, headers: f.as, payload: {} });
+    assert.equal(publish.statusCode, 400);
+    fail = false;
+    const retried = await f.local.inject({ method: 'POST', url: `/api/tasks/${payload.id}/prepare`, headers: f.as, payload: {} });
+    assert.equal(retried.statusCode, 200, retried.body);
+    assert.equal(retried.json().status, 'preparing');
+    const prepared = await f.workspace.prepareTask(payload.id);
+    assert.equal(prepared.status, 'queued'); assert.equal(prepared.worktree, '/unused/retried'); assert.equal(prepared.error, null);
+    assert.equal((await f.local.inject({ method: 'POST', url: `/api/tasks/${payload.id}/prepare`, headers: f.as, payload: {} })).json().status, 'queued', 'Retry leaves a prepared task alone');
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/tasks/grant-task/prepare', headers: f.as, payload: {} })).statusCode, 200);
+  } finally { await f.close(); }
+});
+
 test('the note-send route requires explicit IDs and leaves reading notes alone', async () => {
   const f = await fixture();
   try {

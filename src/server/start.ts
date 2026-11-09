@@ -52,7 +52,9 @@ console.log(`Papilot is running at ${localUrl}${PUBLIC_ORIGIN ? `\nRemote: ${PUB
 if (!process.env.PAPILOT_UPDATE_PROBE) { void workspace.connect(); updates.start(); }
 // Recompute cached feedback counts, including decisions from before this restart.
 for (const task of store.tasks()) {
-  if (task.pendingBuild || (task.review?.job?.id && (task.status === 'building' || (task.status === 'failed' && task.error === 'fetch failed')))) {
+  // A task saved but not yet prepared continues; a failure shows on the task.
+  if (task.status === 'preparing') void workspace.prepareTask(task.id);
+  else if (task.pendingBuild || (task.review?.job?.id && (task.status === 'building' || (task.status === 'failed' && task.error === 'fetch failed')))) {
     void workspace.resumeBuild(task.id);
   } else if (task.status === 'building') {
     store.updateTask(task.id, { status: 'interrupted', error: 'The server restarted during the PDF build. Check the review and rebuild it if needed.' });

@@ -22,6 +22,12 @@ function deferred<T>() {
   return { promise, resolve };
 }
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+// The preparation a new task started, while it is still in progress.
+const preparation = (f: { workspace: Workspace }, id: string) => {
+  const job = (f.workspace as any).preparing.get(id) as Promise<Task> | undefined;
+  assert.ok(job, 'The task is being prepared');
+  return job;
+};
 
 test('publication stays building until all saved option comparisons are ready', async () => {
   const gate = deferred<unknown>(), started = deferred<void>();
@@ -1227,7 +1233,8 @@ test('deletion rejects active, queued, building, uncertain, and reserved tasks w
       else if (reservation === 'queued-run') {
         await f.workspace.enqueue(f.task.id, 'Queued instruction.', 'queued', false);
         f.store.updateTask(f.task.id, { status: 'reviewing' });
-      } else (f.workspace as any)[reservation].add(f.task.id);
+      } else if (reservation === 'preparing') (f.workspace as any).preparing.set(f.task.id, new Promise(() => {}));
+      else (f.workspace as any)[reservation].add(f.task.id);
       await assert.rejects(f.workspace.deleteTask(f.task.id));
       assert.equal(f.calls.length, 0);
     } finally { f.close(); }
@@ -1576,24 +1583,31 @@ test('a sent skill keeps its chosen icon in the stored conversation', async () =
   } finally { f.close(); }
 });
 
-test('a failed task keeps its notes, and concurrent submissions cannot send the same note twice', async () => {
-  const gate = deferred<any>();
+test('a failed preparation keeps its notes for Retry, and concurrent submissions cannot send the same note twice', async () => {
+  const gate = deferred<void>();
   let fail = true;
-  const f = fixture(async () => { if (fail) throw new Error('Review service unavailable'); return gate.promise; });
+  const f = fixture(async () => { await gate.promise; if (fail) throw new Error('Review service unavailable'); return { worktree: '/unused/notes-task' }; });
   try {
     const note = { id: 'draft-note', projectId: f.task.projectId, key: 'pdf', page: 0, rect: [0, 0, 1, 1] as [number, number, number, number], quote: 'A sentence.', comment: 'Clarify.', source: null, createdAt: 1 };
     f.store.saveAnnotation(note);
     const input = { id: 'notes-retry-task-01', projectId: f.task.projectId, title: 'Clarify', instructions: '', annotations: [note.id] };
-    await assert.rejects(f.workspace.createTask(input), /Review service unavailable/);
-    assert.equal(f.store.annotations(note.projectId)[0].taskId, undefined);
-    fail = false;
-    const creating = f.workspace.createTask(input);
+    assert.equal((await f.workspace.createTask(input)).status, 'preparing');
+    assert.equal(f.store.annotation(note.projectId, note.id).taskId, input.id, 'the note is claimed when the task is saved');
     await assert.rejects(f.workspace.createTask({ ...input, id: 'notes-other-task-01' }), /already being sent/);
-    gate.resolve({ worktree: '/unused/notes-task' });
-    const created = await creating;
-    assert.equal(created.id, input.id);
-    assert.equal(f.store.annotations(note.projectId)[0].taskId, input.id);
+    const failing = preparation(f, input.id);
+    gate.resolve();
+    await assert.rejects(failing, /Review service unavailable/);
+    assert.equal(f.store.task(input.id).status, 'failed');
+    assert.equal(f.store.task(input.id).error, 'Review service unavailable');
+    assert.equal(f.store.annotation(note.projectId, note.id).taskId, input.id, 'Retry sends the same note');
+    await assert.rejects(f.workspace.createTask({ ...input, id: 'notes-other-task-01' }), /no longer available/);
+    fail = false;
+    assert.equal((await f.workspace.createTask(input)).status, 'preparing', 'a retried request prepares the task again');
+    const created = await preparation(f, input.id);
+    assert.equal(created.status, 'queued');
+    assert.equal(created.worktree, '/unused/notes-task');
     assert.equal(f.store.items(input.id).length, 1);
+    assert.equal(f.store.runs().filter(run => run.taskId === input.id).length, 1);
     assert.equal((await f.workspace.createTask(input)).id, input.id);
     await assert.rejects(f.workspace.createTask({ ...input, id: 'notes-other-task-01' }), /no longer available/);
   } finally { f.close(); }
@@ -2263,7 +2277,8 @@ test('creating an AI review skill task persists its snapshot and queues review-o
   try {
     const reviewInput = { key: 'pdf-at-start', lines: [{ id: 'p1-l1', page: 0, text: 'Read this claim.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async () => reviewInput };
-    const created = await f.workspace.createTask(input);
+    assert.equal((await f.workspace.createTask(input)).status, 'preparing');
+    const created = await f.workspace.prepareTask(input.id);
     assert.equal(created.mode, 'review');
     assert.equal(created.worktree, '/isolated-review');
     assert.equal(created.status, 'queued');
@@ -2279,6 +2294,7 @@ test('creating an AI review skill task persists its snapshot and queues review-o
       const task = await f.workspace.createTask({ ...input, id: `ai-review-client-${agent}`, agent });
       assert.equal(task.agent, agent);
       assert.equal(task.mode, 'review');
+      await f.workspace.prepareTask(task.id);
     }
   } finally { f.close(); }
 });
@@ -2289,13 +2305,18 @@ test('an AI review whose manuscript copy cannot be read discards the copy, so a 
     const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The fixed copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     let fail = true;
     const input = { id: 'ai-review-retry-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async () => { if (fail) throw new Error('The manuscript could not be compiled for AI review.'); return captured; } };
-    await assert.rejects(f.workspace.createTask(input), /could not be compiled/);
-    assert.equal(f.store.tasks().some(task => task.id === input.id), false);
+    await f.workspace.createTask(input);
+    await assert.rejects(preparation(f, input.id), /could not be compiled/);
+    assert.equal(f.store.task(input.id).status, 'failed');
+    assert.match(f.store.task(input.id).error!, /could not be compiled/);
+    assert.deepEqual(f.store.task(input.id).preparation, {}, 'the engine finished the copy, so deleting the task needs no engine');
     assert.deepEqual(f.calls.map(call => call.route), ['/api/tasks', '/api/tasks/p-ai-review-retry-task/finish']);
     assert.deepEqual(f.calls[1].body, { force: true });
     fail = false;
-    const created = await f.workspace.createTask(input);
+    await f.workspace.createTask(input);
+    const created = await preparation(f, input.id);
     assert.equal(created.aiReview?.key, 'task-pdf');
+    assert.match(f.store.runs().find(run => run.taskId === input.id)!.prompt, /The fixed copy/);
     assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 2);
   } finally { f.close(); }
 });
@@ -2306,7 +2327,8 @@ test('AI review captures the task worktree before enqueueing and retries keep th
     const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The task copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     let calls = 0;
     const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async (worktree: string) => { calls++; assert.equal(worktree, '/task-copy'); return captured; } };
-    const created = await f.workspace.createTask(input);
+    await f.workspace.createTask(input);
+    const created = await f.workspace.prepareTask(input.id);
     assert.equal(created.aiReview?.key, 'task-pdf');
     assert.deepEqual(f.store.reviewInput(created.id), captured);
     assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /The task copy/);
@@ -2559,3 +2581,194 @@ for (const permissions of ['workspace', 'full'] as const) {
     } finally { f.close(); }
   });
 }
+
+// Start task answers at once and makes the task's copy in the background.
+const engineCopy = (worktree = '/unused/new-task') => ({ worktree, deferred: true });
+async function until(check: () => boolean) {
+  for (let i = 0; i < 100 && !check(); i++) await tick();
+  assert.ok(check());
+}
+
+test('Start task saves the task and its first message at once, then prepares it in the background', async () => {
+  const copy = deferred<any>();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? copy.promise : summary);
+  try {
+    f.codex.ready = true;
+    const input = { id: 'instant-start-task-01', projectId: 'paper', title: 'Shorten', instructions: 'Shorten the abstract.' };
+    const created = await f.workspace.createTask(input);
+    assert.equal(created.status, 'preparing');
+    assert.ok(created.preparation);
+    assert.equal(created.worktree, '');
+    assert.equal(f.workspace.snapshot().tasks.find(task => task.id === input.id)?.status, 'preparing', 'the task list shows it at once');
+    assert.deepEqual(f.store.items(input.id).map(item => [item.type, item.text]), [['user', 'Shorten the abstract.']]);
+    const run = f.store.runByKey('initial-' + input.id)!;
+    assert.equal(run.status, 'queued');
+    await until(() => f.calls.some(call => call.route === '/api/tasks'));
+    assert.deepEqual(f.calls.find(call => call.route === '/api/tasks')!.body, { name: 'p-instant-start-task-01', title: 'Shorten', deferred: true });
+    assert.equal(f.store.task(input.id).preparation?.submitted, true, 'saved before the engine is asked for the copy');
+    await tick(); await tick();
+    assert.ok(!f.codex.calls.some(call => call.method === 'turn/start' && call.params.clientUserMessageId === run.id), 'the first message waits for the copy');
+    copy.resolve(engineCopy());
+    const prepared = await f.workspace.prepareTask(input.id);
+    assert.equal(prepared.preparation, null);
+    assert.equal(prepared.worktree, '/unused/new-task');
+    assert.equal(prepared.status, 'queued');
+    await until(() => f.codex.calls.some(call => call.method === 'turn/start' && call.params.clientUserMessageId === run.id));
+    assert.equal(f.codex.calls.find(call => call.method === 'turn/start' && call.params.clientUserMessageId === run.id)!.params.cwd, '/unused/new-task');
+  } finally { copy.resolve(engineCopy()); f.close(); }
+});
+
+test('a task being prepared refuses more messages and pausing, keeps its archive and title, and permissions wait', async () => {
+  const copy = deferred<any>();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? copy.promise : summary);
+  try {
+    const input = { id: 'preparing-guards-01', projectId: 'paper', title: 'Shorten', instructions: 'Shorten the abstract.' };
+    await f.workspace.createTask(input);
+    await assert.rejects(f.workspace.enqueue(input.id, 'And the conclusion.', 'second-message', true), /still being prepared/);
+    assert.equal(f.store.runByKey('initial-' + input.id)!.requestKey, 'initial-' + input.id, 'a retried first message is idempotent');
+    assert.equal((await f.workspace.enqueue(input.id, 'Shorten the abstract.', 'initial-' + input.id, false)).requestKey, 'initial-' + input.id);
+    await assert.rejects(f.workspace.interrupt(input.id), /not started yet/);
+    assert.throws(() => f.workspace.updateTaskPermissions(input.id, 'full'), /Pause the task/);
+    await assert.rejects(f.workspace.deleteTask(input.id), /Wait for task creation to finish/);
+    f.workspace.archiveTask(input.id, true);
+    f.workspace.renameTask(input.id, 'A shorter abstract');
+    copy.resolve(engineCopy());
+    const prepared = await f.workspace.prepareTask(input.id);
+    assert.ok(prepared.archivedAt);
+    assert.equal(prepared.title, 'A shorter abstract');
+    assert.equal(prepared.status, 'queued');
+    assert.equal(f.store.runs().filter(run => run.taskId === input.id).length, 1);
+  } finally { copy.resolve(engineCopy()); f.close(); }
+});
+
+for (const stage of ['connect', 'engine', 'review'] as const) {
+  test(`a failure while ${stage === 'connect' ? 'connecting' : stage === 'engine' ? 'making the copy' : 'reading the review PDF'} leaves the task for Retry`, async () => {
+    let fail = true;
+    const f = fixture(async (_method, route) => {
+      if (route === '/api/tasks') { if (fail && stage === 'engine') throw new Error('The review engine is busy.'); return engineCopy(); }
+      if (route.endsWith('/finish')) return { task: 'p-failed-stage-task', finished: true };
+      return summary;
+    });
+    const connect = (f.workspace as any).connectReview;
+    if (stage === 'connect') (f.workspace as any).connectReview = async (...args: any[]) => { if (fail) throw new Error('The review server failed to start.'); return connect(...args); };
+    const snapshot = { key: 'review-pdf', lines: [{ id: 'p1-l1', page: 0, text: 'A claim.', rect: [0, 0, 1, 1] as [number, number, number, number] }] };
+    f.workspace.prepareReview = async () => { if (fail) throw new Error('The manuscript could not be compiled for AI review.'); return snapshot; };
+    try {
+      f.codex.ready = true;
+      const input = { id: 'failed-stage-task', projectId: 'paper', title: 'Revise', instructions: stage === 'review' ? '' : 'Revise.', ...(stage === 'review' ? { skill: 'ai-review', prepareReview: (worktree: string) => f.workspace.prepareReview(f.store.task('failed-stage-task'), worktree) } : {}) };
+      await f.workspace.createTask(input);
+      await assert.rejects(preparation(f, input.id), stage === 'connect' ? /failed to start/ : stage === 'engine' ? /engine is busy/ : /could not be compiled/);
+      const failed = f.store.task(input.id);
+      assert.equal(failed.status, 'failed');
+      assert.ok(failed.error);
+      assert.deepEqual(failed.preparation, stage === 'engine' ? { submitted: true } : {});
+      assert.equal(f.store.runByKey('initial-' + input.id)!.status, 'queued');
+      await tick(); await tick();
+      assert.ok(!f.codex.calls.some(call => call.method === 'thread/start' && !call.params.ephemeral), 'the first message does not run without a copy');
+      await assert.rejects(f.workspace.enqueue(input.id, 'More.', 'more-instructions', false), /Retry preparing/);
+      fail = false;
+      assert.equal(f.workspace.retryTask(input.id).status, 'preparing');
+      assert.equal(f.workspace.retryTask(input.id).status, 'preparing', 'a second Retry joins the first');
+      const prepared = await preparation(f, input.id);
+      assert.equal(prepared.status, 'queued');
+      assert.equal(prepared.error, null);
+      assert.equal(prepared.worktree, '/unused/new-task');
+      if (stage === 'review') {
+        assert.deepEqual(f.store.reviewInput(input.id), snapshot);
+        assert.equal(prepared.aiReview?.key, 'review-pdf');
+        assert.match(f.store.runByKey('initial-' + input.id)!.prompt, /A claim\./);
+      }
+      assert.equal(f.store.runs().filter(run => run.taskId === input.id).length, 1);
+      assert.equal(f.store.items(input.id).length, 1);
+      await until(() => f.codex.calls.some(call => call.method === 'turn/start' && call.params.cwd === '/unused/new-task'));
+    } finally { f.close(); }
+  });
+}
+
+test('a restart resumes a preparation with the same engine task, or fails it cleanly', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-prepare-')), file = path.join(dir, 'papilot.sqlite');
+  const held = deferred<any>();
+  const before = fixture(async (_method, route) => route === '/api/tasks' ? held.promise : summary, { file });
+  try {
+    for (const id of ['resumed-task-000001', 'failed-on-restart-01']) {
+      await before.workspace.createTask({ id, projectId: 'paper', title: 'Revise', instructions: 'Revise.' });
+      await until(() => before.calls.filter(call => call.route === '/api/tasks').length === (id === 'resumed-task-000001' ? 1 : 2));
+    }
+  } finally { before.close(); held.resolve(engineCopy()); }
+  const after = fixture(async (_method, route, body: any) => {
+    if (route !== '/api/tasks') return summary;
+    if (body.name === 'p-failed-on-restart-01') throw new Error('The review engine is busy.');
+    return engineCopy('/unused/resumed');
+  }, { file });
+  try {
+    after.store.recover();
+    assert.equal(after.store.task('resumed-task-000001').status, 'preparing', 'recovery keeps the task for start.ts to resume');
+    const resumed = await after.workspace.prepareTask('resumed-task-000001');
+    assert.equal(resumed.status, 'queued');
+    assert.equal(resumed.worktree, '/unused/resumed');
+    assert.deepEqual(after.calls.find(call => call.route === '/api/tasks')!.body, { name: 'p-resumed-task-000001', title: 'Revise', deferred: true });
+    await assert.rejects(after.workspace.prepareTask('failed-on-restart-01'), /engine is busy/);
+    assert.equal(after.store.task('failed-on-restart-01').status, 'failed');
+    assert.equal(after.store.task('failed-on-restart-01').error, 'The review engine is busy.');
+    assert.equal(after.store.runByKey('initial-failed-on-restart-01')!.status, 'queued');
+  } finally { after.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('attachments are claimed when the task is saved, and deleting a failed preparation returns its notes', async () => {
+  let listed: { task: string }[] = [];
+  const f = fixture(async (method, route) => {
+    if (route === '/api/tasks') { if (method === 'GET') return { tasks: listed }; throw new Error('The review engine is busy.'); }
+    if (route.endsWith('/finish')) return { task: 'p-claims-task-000001', finished: true };
+    return summary;
+  });
+  try {
+    const file = await f.workspace.attachments.upload('paper', 'results.csv', Buffer.from('x,y\n1,2'));
+    const note = { id: 'claimed-note', projectId: 'paper', key: 'pdf', page: 0, rect: [0, 0, 1, 1] as [number, number, number, number], quote: 'A sentence.', comment: 'Clarify.', source: null, createdAt: 1 };
+    f.store.saveAnnotation(note);
+    const input = { id: 'claims-task-000001', projectId: 'paper', title: 'Use the data', instructions: 'Use the attached data.', attachments: [file.id], annotations: [note.id] };
+    const created = await f.workspace.createTask(input);
+    assert.equal(created.status, 'preparing');
+    assert.deepEqual(f.store.items(input.id)[0].meta?.attachments?.map(item => item.id), [file.id]);
+    assert.throws(() => f.workspace.attachments.resolve('paper', [file.id], 'other-task-000001'), /not available/);
+    await assert.rejects(f.workspace.createTask({ ...input, id: 'other-task-000001', annotations: [] }), /not available/);
+    f.workspace.attachments.discard('paper', file.id);
+    assert.ok(fs.existsSync(f.workspace.attachments.path(file)), 'a claimed attachment cannot be discarded');
+    await assert.rejects(preparation(f, input.id), /engine is busy/);
+    // The engine made the copy, but its answer was lost.
+    listed = [{ task: 'p-claims-task-000001' }];
+    await f.workspace.deleteTask(input.id);
+    assert.ok(f.calls.some(call => call.route === '/api/tasks/p-claims-task-000001/finish'), 'a copy the engine made is finished');
+    assert.equal(f.store.tasks().some(task => task.id === input.id), false);
+    assert.equal(f.store.annotation('paper', note.id).taskId, undefined, 'the note goes back to the manuscript');
+    assert.equal(fs.existsSync(f.workspace.attachments.path(file)), false);
+  } finally { f.close(); }
+});
+
+test('deleting a task the engine never saw needs no engine', async () => {
+  const f = fixture();
+  try {
+    (f.workspace as any).connectReview = async () => { throw new Error('The review server failed to start.'); };
+    await f.workspace.createTask({ id: 'never-submitted-01', projectId: 'paper', title: 'Revise', instructions: 'Revise.' });
+    await assert.rejects(preparation(f, 'never-submitted-01'), /failed to start/);
+    await f.workspace.deleteTask('never-submitted-01');
+    assert.equal(f.store.tasks().some(task => task.id === 'never-submitted-01'), false);
+    assert.equal(f.store.runByKey('initial-never-submitted-01'), undefined);
+    await assert.rejects(f.workspace.createTask({ id: 'never-submitted-01', projectId: 'paper', title: 'Revise', instructions: 'Revise.' }), /was deleted/);
+  } finally { f.close(); }
+});
+
+test('duplicate Start task requests save one task, one message and one copy', async () => {
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? engineCopy() : summary);
+  try {
+    const input = { id: 'duplicate-start-01', projectId: 'paper', title: 'Revise', instructions: 'Revise.' };
+    const [first, second] = await Promise.all([f.workspace.createTask(input), f.workspace.createTask(input)]);
+    assert.equal(first.id, second.id);
+    await f.workspace.prepareTask(input.id);
+    assert.equal((await f.workspace.createTask(input)).status, 'queued');
+    assert.equal(f.store.tasks().filter(task => task.id === input.id).length, 1);
+    assert.equal(f.store.runs().filter(run => run.taskId === input.id).length, 1);
+    assert.equal(f.store.items(input.id).length, 1);
+    assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 1);
+    await assert.rejects(f.workspace.createTask({ ...input, projectId: 'other-paper' }), /Invalid task ID/);
+  } finally { f.close(); }
+});
