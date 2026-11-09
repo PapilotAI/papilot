@@ -269,3 +269,44 @@ it.skipIf(!posix)("keeps a borrow for longer than a stale lock takes", () => sta
   await until(() => !stopped(lender.pgid));
 }), 20000);
 
+it.skipIf(!posix)("compiles a round's two sides at once while a speculative build waits stopped on its slot", async () => {
+  const f = new Fixture(), bin = path.join(f.base, "bin"), gates = path.join(f.base, "gates"), previousPath = process.env.PATH;
+  fs.mkdirSync(bin); fs.mkdirSync(gates);
+  // A latexmk that records its process ID and finishes when told to, or
+  // after a minute, so that a test stopped midway leaves nothing running.
+  fs.writeFileSync(path.join(bin, "pdflatex"), "#!/bin/sh\necho 'pdfTeX 3.14 (fake)'\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, "latexmk"), `#!/bin/sh\nkey=$(basename "$(dirname "$PWD")")\necho $$ > "${gates}/pid-$key"\ni=0; while [ ! -e "${gates}/go-$key" ] && [ $i -lt 1200 ]; do sleep 0.05; i=$((i+1)); done\nmkdir -p build && echo pdf > build/main.pdf\n`, { mode: 0o755 });
+  process.env.PATH = `${bin}${path.delimiter}${previousPath}`;
+  const started = () => fs.readdirSync(gates).filter((name) => name.startsWith("pid-")).map((name) => name.slice(4));
+  const pidOf = (key: string) => Number(fs.readFileSync(path.join(gates, `pid-${key}`), "utf8"));
+  const go = (key: string) => fs.writeFileSync(path.join(gates, `go-${key}`), "");
+  const builds: Promise<unknown>[] = [];
+  try {
+    const builder = new Builder((await import("../../src/core/config.ts")).loadProject(f.root), f.repo), revisions = [f.repo.rev("HEAD")];
+    for (const text of ["Second.", "Third."]) {
+      f.write("paper/main.tex", f.read("paper/main.tex").replace("We conclude.", `We conclude. ${text}`));
+      f.repo.run(["commit", "-qam", text]);
+      revisions.push(f.repo.rev("HEAD"));
+    }
+    builds.push(builder.build(revisions[0], ["full"], null, { priority: "background" }));
+    await until(() => started().length === 1);
+    const [speculative] = started();
+    builds.push(builder.build(revisions[1]));
+    await until(() => started().length === 2);
+    await until(() => stopped(pidOf(speculative)));
+    // The round's other side borrows the stopped build's slot.
+    builds.push(builder.build(revisions[2]));
+    await until(() => started().length === 3);
+    expect(stopped(pidOf(speculative))).toBe(true);
+    for (const key of started().filter((key) => key !== speculative)) go(key);
+    await Promise.all(builds.slice(1));
+    await until(() => !stopped(pidOf(speculative)));
+    go(speculative);
+    await builds[0];
+  } finally {
+    for (const key of fs.readdirSync(gates).filter((name) => name.startsWith("pid-")).map((name) => name.slice(4))) go(key);
+    await Promise.allSettled(builds);
+    process.env.PATH = previousPath;
+    await f.close();
+  }
+}, 60000);

@@ -108,8 +108,10 @@ const waiting = new Map<string, Set<Waiter>>();
 const building = new Map<string, Promise<BuildInfo>>();
 // A background build's compiler stops while any other build of this process
 // compiles, and continues once none does, so speculation never slows down a
-// PDF someone is waiting for. It also stops while another process borrows
-// its slot of the TeX pool. A build that someone waits for is promoted.
+// PDF someone is waiting for. Its slot of the TeX pool then says so, and a
+// build waiting for a slot, also in this process, borrows it meanwhile. It
+// also stops while another process borrows its slot. A build that someone
+// waits for is promoted.
 function schedule() {
   if (process.platform === "win32") return;
   const top = Math.max(-1, ...[...active].filter((a) => a.child).map((a) => RANK[a.priority]));
@@ -119,6 +121,7 @@ function schedule() {
     try {
       process.kill(-build.child.pid, pause ? "SIGSTOP" : "SIGCONT");
       build.paused = pause;
+      build.lease?.pause(pause);
     } catch { /* The compiler has exited. */ }
   }
   watchOthers();

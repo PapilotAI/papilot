@@ -39,7 +39,9 @@ const borrowFile = (dir: string, slot: number) => path.join(dir, `borrow-${slot}
 // The lender writes the borrow's ID here once it keeps its run stopped for
 // it, so that it resumes the run when the borrow ends, however short.
 const ackFile = (dir: string, slot: number) => path.join(dir, `borrow-${slot}.ack`);
-interface Holder { id: string; pid: number; pgid: number | null; priority: PoolPriority }
+// paused: the holder's own process keeps its run stopped meanwhile, for a
+// build of its own that matters more (build.ts schedule).
+interface Holder { id: string; pid: number; pgid: number | null; priority: PoolPriority; paused?: boolean }
 interface Borrow { id: string; pid: number; pgid: number | null }
 interface Waiter { id: string; pid: number; priority: PoolPriority; since: number }
 
@@ -124,7 +126,8 @@ async function readState(dir: string, stale: number): Promise<State> {
  *  one slot. When no slot is free, someone waiting at foreground priority
  *  stops a background run (SIGSTOP, confirmed before it starts) and borrows
  *  its slot until it is done; the lender continues then, also if the
- *  borrower died. Call `release` exactly once. */
+ *  borrower died. Normal work borrows only a background run that its own
+ *  process keeps stopped anyway. Call `release` exactly once. */
 export class Lease {
   readonly id = randomBytes(8).toString("hex");
   readonly ready: Promise<void>;
@@ -146,6 +149,7 @@ export class Lease {
   private settings = settings();
   // Until acquire() ends, the waiter file is this lease's to write.
   private waiting = true;
+  private paused = false;
   // The lease's writes of its waiter and holder files, in order, so that
   // none lands after the file is removed.
   private writes: Promise<unknown> = Promise.resolve();
@@ -175,6 +179,13 @@ export class Lease {
     this.pgid = null;
     if (this.slot >= 0 && !this.borrowed) this.describe();
   }
+  /** Says whether this process keeps the run stopped for a build of its
+   *  own, so that normal work elsewhere may borrow the slot meanwhile. */
+  pause(paused: boolean) {
+    if (paused === this.paused) return;
+    this.paused = paused;
+    if (this.slot >= 0 && !this.borrowed) this.describe();
+  }
   private write(work: () => Promise<unknown> | undefined) {
     this.writes = this.writes.then(work).catch(() => undefined);
   }
@@ -182,7 +193,7 @@ export class Lease {
   private describe() {
     this.write(() => {
       if (this.released) return;
-      const holder: Holder = { id: this.id, pid: process.pid, pgid: this.pgid, priority: this.priority };
+      const holder: Holder = { id: this.id, pid: process.pid, pgid: this.pgid, priority: this.priority, ...(this.paused ? { paused: true } : {}) };
       return writeAtomic(infoFile(this.settings.dir, this.slot), holder);
     });
     return this.writes;
@@ -220,7 +231,7 @@ export class Lease {
             this.watch();
             return;
           }
-        if (first && signals && this.priority === "foreground" && await this.borrow(state)) return;
+        if (first && signals && this.priority !== "background" && await this.borrow(state)) return;
         await delay(40 + Math.random() * 80);
       }
     } finally {
@@ -234,6 +245,7 @@ export class Lease {
     const { dir } = this.settings;
     for (const { slot, holder } of state.held) {
       if (!holder?.pgid || holder.priority !== "background" || state.borrows.has(slot)) continue;
+      if (this.priority !== "foreground" && !holder.paused) continue;
       const file = borrowFile(dir, slot), claim: Borrow = { id: this.id, pid: process.pid, pgid: holder.pgid };
       try { await fs.promises.writeFile(file, JSON.stringify(claim), { flag: "wx" }); }
       catch { continue; }
