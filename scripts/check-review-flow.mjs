@@ -434,16 +434,12 @@ try {
   await sync();
   const applyButton = () => card.getByRole('button', { name: 'Apply to workspace', exact: true });
   const commitButton = () => card.getByRole('button', { name: 'Commit to manuscript', exact: true });
+  await expect.poll(() => predictRequests.length).toBeGreaterThan(0);
   const messageBefore = messageRequests.length;
   await expect(applyButton()).toBeVisible();
   await expect(commitButton()).toBeEnabled();
   await expect(card.getByRole('button', { name: 'Archive task', exact: true })).toHaveCount(0);
-  // The step appears on its own after the last decision; only the author
-  // starting on it compiles ahead what saving writes.
-  await page.waitForTimeout(500);
-  assert.equal(predictRequests.length, 0, 'the Apply step appearing starts no manuscript build');
   await card.getByRole('textbox', { name: 'Commit message' }).fill('My reviewed task');
-  await expect.poll(() => predictRequests.length).toBe(1);
   await expect(card.getByText('Choose how to save the accepted changes to your manuscript.', { exact: true })).toBeHidden();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Apply to workspace', exact: true })).toBeVisible();

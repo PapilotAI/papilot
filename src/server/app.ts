@@ -392,10 +392,9 @@ export async function buildApp(options: AppOptions) {
     }
     throw new Error('Select an existing option.');
   });
-  // The author started on the Apply and Commit step: compile in the
-  // background what applying the decided task will write, so the manuscript's
-  // PDF is ready or on its way when the author saves it. Decisions, and the
-  // step appearing after the last one, start no build.
+  // The Apply and Commit step is on screen: compile in the background what
+  // applying the decided task will write, so the manuscript's PDF is ready or
+  // on its way when the author saves it. Individual decisions start no build.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/predict', task, request => {
     const current = store.task(request.params.id), project = store.project(current.projectId);
     if (!current.deferred || current.mode === 'review' || current.delivery?.pending || current.status === 'deleting' || (current.review?.counts.pending ?? 0) > 0) return { ok: true };
