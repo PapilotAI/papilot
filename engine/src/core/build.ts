@@ -10,6 +10,7 @@ import { readJson, writeJsonAsync, withLock, now } from "./files.ts";
 import { stripComments } from "./outline.ts";
 import { signature, type Project } from "./config.ts";
 import { capture, commandVersion, runAsync } from "./process.ts";
+import { Lease } from "./pool.ts";
 import { progressReader, writtenPages } from "./progress.ts";
 import type { BuildInfo, BuildProgress } from "../types.ts";
 export class BuildError extends Error {
@@ -80,11 +81,17 @@ export async function relocate(file: string, from: string, to: string) {
 /** How much a build matters to the person waiting: the PDF on screen comes
  *  first, a speculative build last. */
 export type BuildPriority = "foreground" | "normal" | "background";
+/** A priority, or how to find the current one: a review build matters more
+ *  while its page is open, and less once a newer round supersedes it. */
+export type WantedPriority = BuildPriority | (() => BuildPriority);
 const RANK: Record<BuildPriority, number> = { background: 0, normal: 1, foreground: 2 };
+const current = (priority: WantedPriority) => (typeof priority === "function" ? priority() : priority);
 interface Active {
   key: string;
   priority: BuildPriority;
   child?: ChildProcess;
+  // Its share of the TeX pool, while the compiler runs or waits to.
+  lease?: Lease;
   paused: boolean;
   yielding?: boolean;
   // Who is shown each pass, and the latest pass that more work followed.
@@ -96,17 +103,18 @@ const active = new Set<Active>();
 // Everyone in this process who waits for each build key. A build runs at the
 // highest priority among them and shows its passes to all of them, also to
 // those who asked before it started compiling.
-interface Waiter { priority: BuildPriority; pass?: (preview: PassPreview) => void; progress?: (progress: BuildProgress) => void }
+interface Waiter { priority: WantedPriority; pass?: (preview: PassPreview) => void; progress?: (progress: BuildProgress) => void }
 const waiting = new Map<string, Set<Waiter>>();
 const building = new Map<string, Promise<BuildInfo>>();
 // A background build's compiler stops while any other build of this process
 // compiles, and continues once none does, so speculation never slows down a
-// PDF someone is waiting for. A build that someone waits for is promoted.
+// PDF someone is waiting for. It also stops while another process borrows
+// its slot of the TeX pool. A build that someone waits for is promoted.
 function schedule() {
   if (process.platform === "win32") return;
   const top = Math.max(-1, ...[...active].filter((a) => a.child).map((a) => RANK[a.priority]));
   for (const build of active) {
-    const pause = build.priority === "background" && top > RANK.background;
+    const pause = (build.priority === "background" && top > RANK.background) || Boolean(build.lease?.lent);
     if (pause === build.paused || !build.child?.pid || build.child.exitCode !== null) continue;
     try {
       process.kill(-build.child.pid, pause ? "SIGSTOP" : "SIGCONT");
@@ -120,9 +128,26 @@ function promote(key: string, priority: BuildPriority) {
   for (const build of active)
     if (build.key === key && RANK[priority] > RANK[build.priority]) {
       build.priority = priority;
+      build.lease?.update();
       if (build.yielding) void yieldTo(build, false);
       changed = true;
     }
+  if (changed) schedule();
+}
+/** Runs every build of this process at the current priority of those who
+ *  wait for it, raised or lowered: call it after one of them changed. */
+export function reprioritize() {
+  let changed = false;
+  for (const build of active) {
+    const waiters = [...(waiting.get(build.key) ?? [])];
+    if (!waiters.length) continue;
+    const priority = waiters.reduce<BuildPriority>((top, w) => (RANK[current(w.priority)] > RANK[top] ? current(w.priority) : top), "background");
+    if (priority === build.priority) continue;
+    build.priority = priority;
+    build.lease?.update();
+    if (build.yielding && priority !== "background") void yieldTo(build, false);
+    changed = true;
+  }
   if (changed) schedule();
 }
 // On macOS a background build also yields to TeX that runs elsewhere, such as
@@ -356,7 +381,7 @@ export class Builder {
   /** A chapter comparison needs the fixed baseline's auxiliary files, not a
    *  freshly dated full PDF. Reuse that exact snapshot even across days and
    *  app upgrades, with the same compatibility checks as incremental builds. */
-  async buildSeed(rev: string, options: { force?: boolean; progress?: (progress: BuildProgress) => void } = {}): Promise<BuildInfo> {
+  async buildSeed(rev: string, options: { force?: boolean; progress?: (progress: BuildProgress) => void; priority?: WantedPriority } = {}): Promise<BuildInfo> {
     if (options.force) return this.build(rev, ["full"], null, options);
     let version: string;
     try { version = await commandVersion(this.project.engine); }
@@ -394,7 +419,7 @@ export class Builder {
     rev: string,
     targets = ["full"],
     seed: BuildInfo | null = null,
-    options: { force?: boolean; progress?: (progress: BuildProgress) => void; priority?: BuildPriority; pass?: (preview: PassPreview) => void; date?: ReturnType<typeof buildDate> } = {},
+    options: { force?: boolean; progress?: (progress: BuildProgress) => void; priority?: WantedPriority; pass?: (preview: PassPreview) => void; date?: ReturnType<typeof buildDate> } = {},
   ): Promise<BuildInfo> {
     const p = this.project,
       partial = JSON.stringify(targets) !== '["full"]',
@@ -440,7 +465,7 @@ export class Builder {
     if (!waiters) waiting.set(key, (waiters = new Set()));
     waiters.add(waiter);
     try {
-      promote(key, priority);
+      promote(key, current(priority));
       for (const build of active) {
         if (build.key !== key) continue;
         if (options.pass) { build.watchers.add(options.pass); build.followed?.(); }
@@ -517,7 +542,7 @@ export class Builder {
     // does a retry when leftover state broke a build.
     const start = options.force ? null : (await this.closest(context, targets, tree)) ?? (partial ? (seed && { info: seed, date: null }) : "author");
     const waiters = [...(waiting.get(requestKey) ?? [])],
-      priority = waiters.reduce<BuildPriority>((top, w) => (RANK[w.priority] > RANK[top] ? w.priority : top), "background");
+      priority = waiters.reduce<BuildPriority>((top, w) => (RANK[current(w.priority)] > RANK[top] ? current(w.priority) : top), "background");
     const run: Active = { key: requestKey, priority, paused: false, watchers: new Set(waiters.flatMap((w) => (w.pass ? [w.pass] : []))) };
     active.add(run);
     // Keep the latest update even when nobody initially requested progress:
@@ -747,7 +772,6 @@ export class Builder {
     args.push(main);
     const transcript = path.join(folder, "latexmk.log"),
       log = await fs.promises.open(transcript, "w"),
-      started = now(),
       // Pages are counted against the build this one continues from.
       read = progress
         ? progressReader(
@@ -760,6 +784,19 @@ export class Builder {
           )
         : null;
     let failure: Error | null = null, writing = Promise.resolve();
+    // A share of the TeX pool for as long as latexmk runs; another process
+    // borrowing it stops this build meanwhile (see schedule).
+    const lease = new Lease(() => scheduled?.priority ?? "normal");
+    if (scheduled) { scheduled.lease = lease; lease.onLent = schedule; }
+    try {
+      await lease.ready;
+    } catch (error) {
+      if (scheduled) scheduled.lease = undefined;
+      await lease.release();
+      await log.close();
+      throw error;
+    }
+    const ran = now();
     try {
       await runAsync("latexmk", args, {
         cwd,
@@ -770,6 +807,7 @@ export class Builder {
         },
         timeout: 1800000,
         started: (child) => {
+          lease.attach(child);
           if (!scheduled) return;
           scheduled.child = child;
           schedule();
@@ -783,7 +821,9 @@ export class Builder {
     } catch (error) {
       failure = error as Error;
     } finally {
-      if (scheduled) { scheduled.child = undefined; scheduled.paused = false; schedule(); }
+      if (scheduled) { scheduled.child = undefined; scheduled.paused = false; scheduled.lease = undefined; schedule(); }
+      lease.detach();
+      await lease.release();
       await writing;
       await log.close();
       await previewing;
@@ -822,7 +862,7 @@ export class Builder {
       root: source,
       cwd,
       pdf,
-      seconds: Math.round((now() - started) * 10) / 10,
+      seconds: Math.round((now() - ran) * 10) / 10,
       warnings: warnings(logText),
     };
     await writeJsonAsync(path.join(folder, "result.json"), result);

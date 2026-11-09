@@ -55,6 +55,8 @@ export function startTracked<T extends ChildProcess>(start: () => T): T {
   child.once("error", () => running.delete(child));
   return child;
 }
+/** Whether this process is stopping: nothing new may start. */
+export const stopping = () => stopped;
 export function stopAll() {
   stopped = true;
   for (const child of running) terminateTree(child);

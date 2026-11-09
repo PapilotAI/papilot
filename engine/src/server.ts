@@ -190,13 +190,17 @@ export function createServer(app: App) {
     );
     server.get<{ Params: { name: string }; Querystring: { round?: string } }>(
       "/api/tasks/:name/state",
-      (request) =>
-        app.review.pageState(
+      (request) => {
+        const state = app.review.pageState(
           request.params.name,
           request.query.round && /^\d+$/.test(request.query.round)
             ? Number(request.query.round)
             : undefined,
-        ),
+        );
+        // The page is open: its round compiles in the foreground.
+        app.publisher.attend();
+        return state;
+      },
     );
     server.get<{ Params: { name: string }; Querystring: { round: number; change: string } }>(
       "/api/tasks/:name/source",

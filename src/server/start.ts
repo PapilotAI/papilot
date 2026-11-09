@@ -11,6 +11,9 @@ import { Updates } from './updates.ts';
 import { readJson } from '../../bin/installation.mjs';
 import { desktopDemo } from './desktop-demo.ts';
 
+// One TeX pool for this installation: the review engines this server starts
+// inherit the folder, so their builds and the manuscript's share two slots.
+process.env.PAPILOT_TEX_POOL ||= path.join(DATA, 'tex-pool');
 const store = new Store(path.join(DATA, 'papilot.sqlite'));
 const workspace = new Workspace(store);
 const manuscripts = new Manuscripts(), changes = new Changes();

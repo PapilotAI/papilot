@@ -2,12 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, codeVersion } from "../runtime.ts";
-import { Builder, BuildError, auxiliaryBuildError, buildDate } from "./build.ts";
+import { Builder, BuildError, auxiliaryBuildError, buildDate, reprioritize, type BuildPriority } from "./build.ts";
 import { diffUnitsAsync, scopeViolationsAsync, withUnits } from "./changes.ts";
 import { acceptNoteOption, noteOptionUnits } from "./note-options.ts";
 import { isFigure } from "./config.ts";
 import { now, readJson, writeJson } from "./files.ts";
 import { runAsync } from "./process.ts";
+import { Lease } from "./pool.ts";
 import type { App } from "../server.ts";
 import type {
   BuildInfo,
@@ -32,18 +33,24 @@ export class PublishError extends Error {
   }
 }
 class Stale extends Error {}
-async function work(output: string, request: object) {
+// Seconds for which a review page that asked for its state counts as open.
+const VIEWING = 15;
+// Each rendering step takes its own share of the TeX pool, so a comparison
+// waiting for variant builds between steps never holds one meanwhile.
+async function work(output: string, request: object, priority: () => BuildPriority = () => "normal") {
   // Its own name, as several requests may render into one round's folder.
   const file = path.join(
     output,
     `request-${randomBytes(4).toString("hex")}.json`,
   );
   writeJson(file, request);
+  const lease = new Lease(priority);
   try {
+    await lease.ready;
     await runAsync(
       process.execPath,
       ["--import", "tsx", path.join(ROOT, "src/render/worker.ts"), file],
-      { cwd: ROOT, timeout: 1200000 },
+      { cwd: ROOT, timeout: 1200000, started: (child) => lease.attach(child) },
     );
   } catch (error) {
     throw new PublishError(
@@ -58,6 +65,7 @@ async function work(output: string, request: object) {
       "Fix the renderer error, then publish again.",
     );
   } finally {
+    await lease.release();
     fs.rmSync(file, { force: true });
   }
 }
@@ -148,8 +156,9 @@ export async function render(
   output: string,
   request: RenderRequest,
   variant?: (units: Unit[]) => Promise<BuildInfo>,
+  priority: () => BuildPriority = () => "normal",
 ) {
-  await work(output, request);
+  await work(output, request, priority);
   const file = path.join(output, "attribute.json");
   if (!fs.existsSync(file)) return;
   const { changes, silent, cards } = readJson<{
@@ -166,7 +175,7 @@ export async function render(
             final: request.new,
             new: await variant(units),
             effects,
-          });
+          }, priority);
           const shown = path.join(output, "shown.json"),
             result = readJson<boolean[] | null>(shown, null);
           fs.rmSync(shown, { force: true });
@@ -175,7 +184,7 @@ export async function render(
       : changes.map((c) =>
           c.within.length ? [] : request.units.map((u) => u.id),
         );
-  await work(output, { ...request, causes, cards });
+  await work(output, { ...request, causes, cards }, priority);
 }
 // The places of an edit past those rendered with its round.
 export async function more(output: string, unit: string) {
@@ -192,7 +201,8 @@ export async function more(output: string, unit: string) {
         [],
         "Publish again to see every place.",
       );
-    await work(output, { more: unit });
+    // The review page waits for these places.
+    await work(output, { more: unit }, () => "foreground");
   }
   return readJson<PlaceView[]>(file, []);
 }
@@ -210,12 +220,30 @@ export class Publisher {
   // for every page of a long baseline or either parallel comparison build.
   private builds = new Map<string, Partial<Record<"baseline" | "revised", BuildProgress>>>();
   progress(id: string) { return this.builds.get(id); }
-  private async compile(job: Pick<Job, "id">, side: "baseline" | "revised", builder: Builder, rev: string, targets = ["full"], seed: BuildInfo | null = null, { asSeed = false, force = false, date }: { asSeed?: boolean; force?: boolean; date?: ReturnType<typeof buildDate> } = {}) {
+  /** Whether a newer job of the same task will publish after this one. */
+  superseded(job: Pick<Job, "id" | "task">) {
+    const latest = this.pending.get(job.task);
+    return latest !== undefined && latest !== job.id;
+  }
+  /** A job compiles in the foreground while its review page is open. Once a
+   *  newer job of its task supersedes it, it continues in the background:
+   *  that job can still continue from its builds. */
+  priority(job: Pick<Job, "id" | "task">): BuildPriority {
+    if (this.superseded(job)) return "background";
+    return now() - (this.app.viewers.get(job.task) ?? 0) < VIEWING ? "foreground" : "normal";
+  }
+  /** Someone opened or still reads a task's review page. */
+  attend() {
+    reprioritize();
+  }
+  // Viewing ends without a request, so running builds are looked at again.
+  private watching: NodeJS.Timeout | null = null;
+  private async compile(job: Pick<Job, "id" | "task">, side: "baseline" | "revised", builder: Builder, rev: string, targets = ["full"], seed: BuildInfo | null = null, { asSeed = false, force = false, date }: { asSeed?: boolean; force?: boolean; date?: ReturnType<typeof buildDate> } = {}) {
     const progress = this.builds.get(job.id) ?? {};
     this.builds.set(job.id, progress);
     progress[side] = { step: "tex", pass: 0, pages: 0, total: null };
     try {
-      const options = { force, date, progress: (value: BuildProgress) => { progress[side] = value; } };
+      const options = { force, date, priority: () => this.priority(job), progress: (value: BuildProgress) => { progress[side] = value; } };
       return await (asSeed ? builder.buildSeed(rev, options) : builder.build(rev, targets, seed, options));
     } finally {
       delete progress[side];
@@ -275,6 +303,8 @@ export class Publisher {
     );
     this.pending.set(name, id);
     if (!this.running.has(name)) this.queue.push(id);
+    // The running job of this task is superseded now.
+    else reprioritize();
     queueMicrotask(() => this.drain());
     return remember(this.job(id));
   }
@@ -340,12 +370,28 @@ export class Publisher {
       this.queue.length &&
       this.running.size < this.app.project.build_workers
     ) {
-      const id = this.queue.shift()!,
-        job = this.job(id);
-      this.update(id, { status: "running" });
+      const job = this.next();
+      this.update(job.id, { status: "running" });
       const promise = Promise.resolve().then(() => this.work(job));
       this.running.set(job.task, promise);
     }
+    if (this.running.size && !this.watching) {
+      this.watching = setInterval(() => reprioritize(), 5000);
+      this.watching.unref();
+    } else if (!this.running.size && this.watching) {
+      clearInterval(this.watching);
+      this.watching = null;
+    }
+  }
+  // The queued job whose review page was looked at most recently, and of
+  // those the oldest: the author waits for what they read.
+  private next() {
+    const jobs = this.queue.map((id) => this.job(id)),
+      viewed = (job: Job) => this.app.viewers.get(job.task) ?? 0;
+    let best = 0;
+    for (let i = 1; i < jobs.length; i++) if (viewed(jobs[i]) > viewed(jobs[best])) best = i;
+    this.queue.splice(best, 1);
+    return jobs[best];
   }
   private async work(job: Job) {
     try {
@@ -529,9 +575,10 @@ export class Publisher {
                 withUnits(app.repo, before, after, subset),
                 targets,
                 seed,
-                { date },
+                { date, priority: () => this.priority(job) },
               )
           : undefined,
+        () => this.priority(job),
       );
       // No decision may come between this check and the new round.
       await app.exclusive(async () => {

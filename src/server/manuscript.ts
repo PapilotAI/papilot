@@ -363,14 +363,14 @@ async function pageSizes(mupdf: any, pdf: string) {
 }
 
 async function engine() {
-  const [{ Builder, BuildError }, { Repo, gitBinary }, { loadProject }, { mupdf, PdfDocument, containsCenter, walkText }, { opcodesWithin }] = await Promise.all([
+  const [{ Builder, BuildError, reprioritize }, { Repo, gitBinary }, { loadProject }, { mupdf, PdfDocument, containsCenter, walkText }, { opcodesWithin }] = await Promise.all([
     import(pathToFileURL(path.join(ENGINE, 'src/core/build.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/git.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/render/pdf.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/diff.ts')).href),
   ]);
-  return { Builder, BuildError, Repo, gitBinary, loadProject, mupdf, PdfDocument, containsCenter, walkText, opcodesWithin: opcodesWithin as (a: string[], b: string[], timeout: number) => LineOp[] | null };
+  return { Builder, BuildError, reprioritize, Repo, gitBinary, loadProject, mupdf, PdfDocument, containsCenter, walkText, opcodesWithin: opcodesWithin as (a: string[], b: string[], timeout: number) => LineOp[] | null };
 }
 
 // `synctex edit` maps a PDF position (big points from the top-left corner) to
@@ -504,6 +504,9 @@ interface Build {
 export class Manuscripts extends EventEmitter {
   private reviewSnapshots = new ReviewSnapshots();
   private builds = new Map<string, Build>();
+  // When each paper's view last asked for its manuscript: the build of a
+  // manuscript on screen compiles in the foreground, others behind it.
+  private viewed = new Map<string, number>();
   private oldPdfs = new Map<string, string | null>();
   // Every PDF the view may still be showing, by paper and key: each pass and
   // each finished build. The author marks the pages on screen, which a newer
@@ -631,6 +634,8 @@ export class Manuscripts extends EventEmitter {
 
   async state(projectId: string, root: string, rebuild = false): Promise<{ git: GitStatus; build: ManuscriptBuild }> {
     const current = this.builds.get(projectId), building = current?.status === 'building';
+    this.viewed.set(projectId, Date.now());
+    if (building) void engine().then(({ reprioritize }) => reprioritize()).catch(() => undefined);
     if (current?.previewOnly) {
       const matches = current.previewOnly();
       const error = rebuild || !matches ? 'Install Git to compile changes to the example paper.' : undefined;
@@ -709,7 +714,7 @@ export class Manuscripts extends EventEmitter {
           Object.assign(build, { key, pdf: preview.pdf, root: preview.root, sourceDir: project!.source_dir || '', pages, builtAt: Date.now() });
           this.emit('change', projectId);
         };
-        const result = await new Builder(project, new Repo(root)).build(tree, ['full'], null, { force, priority: 'foreground', pass: (preview: { pdf: string; root: string }) => void pass(preview).catch(() => undefined), progress: (progress: Omit<BuildProgress, 'startedAt'>) => { if (this.builds.get(projectId) === build) build.progress = { ...progress, startedAt }; } });
+        const result = await new Builder(project, new Repo(root)).build(tree, ['full'], null, { force, priority: () => Date.now() - (this.viewed.get(projectId) ?? 0) < 15000 ? 'foreground' : 'normal', pass: (preview: { pdf: string; root: string }) => void pass(preview).catch(() => undefined), progress: (progress: Omit<BuildProgress, 'startedAt'>) => { if (this.builds.get(projectId) === build) build.progress = { ...progress, startedAt }; } });
         const pages = await sizes(result.pdf);
         const key = createHash('sha256').update(result.key + result.pdf).digest('hex').slice(0, 16);
         this.remember(projectId, key, result.pdf, result.root, project!.source_dir || '');
