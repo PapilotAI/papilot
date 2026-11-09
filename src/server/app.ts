@@ -38,8 +38,10 @@ import { findExecutable } from '../../bin/agent-paths.mjs';
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
 // A review write's reply does not wait for the task's summary to be read
 // again: that runs right after it, once at a time per task, and once more
-// for writes that arrive meanwhile. Reads of the task wait for it, so the
-// next poll shows what the reply used to.
+// for writes that arrive meanwhile. The review page's reads of the task wait
+// for it, so its next poll shows what the reply used to. The workspace does
+// not wait, since one slow engine would hold every paper's state: the
+// summary's update announces itself through the event stream.
 const settling = new WeakMap<Workspace, Map<string, { done: Promise<void>; again: boolean }>>();
 function settle(workspace: Workspace, taskId: string) {
   let tasks = settling.get(workspace);
@@ -53,9 +55,8 @@ function settle(workspace: Workspace, taskId: string) {
   })().catch(() => undefined);
   tasks.set(taskId, entry);
 }
-async function settled(workspace: Workspace, taskId?: string) {
-  const tasks = settling.get(workspace);
-  if (tasks) await Promise.all([...tasks].filter(([id]) => !taskId || id === taskId).map(([, entry]) => entry.done));
+async function settled(workspace: Workspace, taskId: string) {
+  await settling.get(workspace)?.get(taskId)?.done;
 }
 
 // Git writes to one repository run one at a time; each returns the new status.
@@ -226,7 +227,6 @@ export async function buildApp(options: AppOptions) {
   }
   app.get('/api/state', async () => {
     await options.prepareDemo?.();
-    await settled(workspace);
     // Check the backend environment (Linux when using WSL), again on each poll
     // so installing Git unlocks version management without a page reload.
     return { ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), csrf: options.csrf };
