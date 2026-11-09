@@ -360,9 +360,10 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const active = data?.options.find(option => option.id === selected);
   const name = active ? label(active.id, active.label) : '';
   const commented = Boolean(active && optionFeedback(active.id, 'comment'));
+  const multiple = (data?.options.length || 0) > 1;
   return <div className="note-options" onClick={event => event.stopPropagation()}>
     <div className="note-option-navigation">
-    {data && <div ref={tabs} className="note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
+    {data && (multiple ? <div ref={tabs} className="note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
       {data.options.map((option, index) => {
         const name = label(option.id, option.label);
         return <button type="button" className="note-option-tab" role="tab" key={option.id} id={`${tabsId}-${option.id}`} aria-controls={`${tabsId}-panel`} data-option={option.id} aria-selected={selected === option.id} tabIndex={selected === option.id ? 0 : -1} disabled={saving || Boolean(locked) || busy} aria-label={name} onClick={() => choose(option.id)} onKeyDown={event => {
@@ -373,7 +374,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
           choose(data.options[next].id); (event.currentTarget.parentElement!.children[next] as HTMLButtonElement).focus();
         }}><span className="note-option-label">{name}{selected === option.id && previewBusy && <span className="spinner"/>}</span></button>;
       })}
-    </div>}
+    </div> : <span className="note-option-title" id={active ? `${tabsId}-${active.id}` : undefined} title={name}>{name}</span>)}
     {navigation}
     {active && <div className="note-option-actions" role="group" aria-label={t('Review {label}', { label: name })}>
       <button type="button" className="icon-button accept" aria-label={t('Accept {label}', { label: name })} title={t('Accept')} disabled={saving || Boolean(locked) || busy} onClick={() => void decide(active, 'accept')}>{saving && actingOption === active.id && actingKind === 'accept' ? <span className="spinner"/> : <Icon name="check" size={18}/>}</button>
@@ -382,7 +383,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
       <button type="button" className="icon-button source" aria-label={t('Show LaTeX source')} aria-pressed={source} title={t('Show LaTeX source')} disabled={!comparison} onClick={() => setSource(value => !value)}><Icon name="code" size={18}/></button>
     </div>}
     </div>
-    <div className="note-option-content" role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={active ? `${tabsId}-${active.id}` : undefined}>
+    <div className="note-option-content" role={multiple ? 'tabpanel' : undefined} id={`${tabsId}-panel`} aria-labelledby={active ? `${tabsId}-${active.id}` : undefined}>
     {active?.reason && <p className="note-option-reason">{active.reason}</p>}
     {editing && <div className="note-option-comment">
       <textarea ref={commentInput} rows={2} aria-label={t('Comment on {label}', { label: editing.option!.label })} placeholder={t('What should change here?')} value={editing.comment} readOnly={feedback.busy} onChange={event => draft.edit(editing.id, event.target.value)} onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') setEditor(null); }}/>

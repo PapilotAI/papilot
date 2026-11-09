@@ -18,8 +18,8 @@ attached to the bottom edge of the central PDF review pane, with no side margins
 rounded outer card or nested comparison frame. A single row holds option tabs on the left, then
 previous/next note arrows with the current position, and accept/reject/comment actions plus a LaTeX toggle on the right.
 There is no separate header or note icon. The arrows stop at the first and last notes.
-Short option titles use folder-style tabs;
-the active tab shares a continuous background with its content, with no divider or accent stripe. Only the
+Multiple options use short folder-style tabs; a single proposal is a plain toolbar title.
+The active tab shares a continuous background with its content, with no divider or accent stripe. Only the
 selected tab’s brief explanation appears beneath them. The drawer slides in from
 below and dismisses on an outside click or Escape. It adds measured bottom scroll
 space to the review and reveals covered highlights without changing PDF geometry,

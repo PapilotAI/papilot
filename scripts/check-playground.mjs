@@ -130,7 +130,8 @@ try {
   await sentNotes.first().click();
   await expect(page.frameLocator('iframe.review-frame').locator('.change.current')).toBeVisible();
   const notePanel = page.getByRole('region', { name: 'Options for this note', exact: true });
-  await expect(notePanel.getByRole('tab', { name: 'Initial proposal', exact: true })).toBeVisible();
+  await expect(notePanel.locator('.note-option-title')).toHaveText('Initial proposal');
+  await expect(notePanel.getByRole('tab')).toHaveCount(0);
   await expect(notePanel.getByRole('region', { name: 'Complete PDF comparison', exact: true }).locator('.pdf-strip img').first()).toBeVisible();
   await expect(notePanel.getByText('Loading PDF comparison…', { exact: true })).toHaveCount(0);
   await expect(download).not.toBeVisible();

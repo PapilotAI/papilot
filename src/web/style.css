@@ -1059,10 +1059,11 @@ body.resizing iframe{pointer-events:none}
 .note-options { --note-folder: var(--bg); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .note-option-navigation { display: flex; align-items: end; gap: 8px; flex-shrink: 0; min-width: 0; padding: 6px 8px 0; background: var(--bg-muted); }
 .note-option-tabs { min-width: 0; flex: 1; display: flex; align-items: end; gap: 2px; overflow-x: auto; overflow-y: hidden; }
+.note-option-title { min-width: 0; flex: 1; padding: 0 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; color: var(--text-2); }
 .note-option-tab { position: relative; flex-shrink: 0; padding: 7px 12px 8px; border: 0; border-radius: 5px 5px 0 0; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; white-space: nowrap; }
 .note-option-tab:hover:not(:disabled) { color: var(--text); }
 .note-option-tab[aria-selected="true"] { background: var(--note-folder); color: var(--text); }
-.note-option-tab[aria-selected="true"] .note-option-label { font-weight: 600; }
+.note-option-tab[aria-selected="true"] .note-option-label { font-weight: 500; }
 .note-option-tab[data-rejected="true"] .note-option-label { text-decoration: line-through; color: var(--text-3); }
 .note-option-content { display: flex; flex-direction: column; min-height: 0; overflow: auto; padding: 0; background: var(--note-folder); }
 .note-option-label { display: flex; align-items: center; gap: 6px; font-weight: 500; }
