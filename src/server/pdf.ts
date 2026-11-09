@@ -82,18 +82,20 @@ export function preparePaper(root: string, revision: string, priority: Priority 
 }
 
 // Remember completed rounds; a pending round gains its build keys later.
-interface RoundInfo { before: string; after: string; build?: { key: string; targets: string[] }; builds?: string[]; rendering?: string }
+// Only the versions and builds: a round's detail also carries every change.
+interface RoundInfo { before: string; after: string; build?: { key: string; targets: string[] }; builds?: string[] }
 const rounds = new Map<string, Promise<RoundInfo>>();
 function roundInfo(connect: Connect, root: string, name: string, round: number) {
   const key = JSON.stringify([root, name, round]);
   let found = rounds.get(key);
   if (!found) {
     found = connect(root)
-      .then(client => client.get<RoundInfo>(`${taskRoute(name)}/rounds/${round}`))
-      .then(detail => {
-        if (typeof detail?.before !== 'string' || typeof detail.after !== 'string') throw notFound();
-        if (detail.rendering) rounds.delete(key);
-        return detail;
+      .then(client => client.get<RoundInfo & { rendering?: string }>(`${taskRoute(name)}/rounds/${round}`))
+      .then((detail): RoundInfo => {
+        const { before, after, build, builds, rendering } = detail ?? {};
+        if (typeof before !== 'string' || typeof after !== 'string') throw notFound();
+        if (rendering) rounds.delete(key);
+        return { before, after, build, builds };
       });
     rounds.set(key, found);
     found.catch(() => rounds.delete(key));

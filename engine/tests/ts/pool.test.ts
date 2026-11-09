@@ -168,3 +168,145 @@ it.skipIf(!posix)("runs at most two latexmk at once when three builds start toge
     await f.close();
   }
 });
+
+// pid 1 answers kill(1, 0) with EPERM, so it looks alive, as a process ID
+// that a crashed process left and the system has since reused.
+const ghost = (name: string, value: object, age: number) => {
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, JSON.stringify(value));
+  const then = new Date(Date.now() - age);
+  fs.utimesSync(file, then, then);
+  return file;
+};
+const files = (pattern: RegExp) => fs.readdirSync(dir).filter((name) => pattern.test(name));
+const staleAfter = async (ms: string, work: () => Promise<void>) => {
+  process.env.PAPILOT_TEX_POOL_STALE = ms;
+  try { await work(); } finally { delete process.env.PAPILOT_TEX_POOL_STALE; }
+};
+
+it("ignores a waiter whose process stopped keeping its file fresh, even when its process ID is in use", async () => {
+  const left = ghost("wait-00dead00.json", { id: "00dead00", pid: 1, priority: "foreground", since: 0 }, 60000);
+  const next = lease("normal");
+  let acquired = false;
+  void next.ready.then(() => { acquired = true; });
+  await until(() => acquired, 3000);
+  expect(fs.existsSync(left)).toBe(false);
+});
+
+it("keeps a waiter's place while it waits longer than a stale lock takes", () => staleAfter("2000", async () => {
+  const first = lease("normal"), second = lease("normal");
+  await Promise.all([first.ready, second.ready]);
+  const order: string[] = [];
+  const older = lease("normal");
+  void older.ready.then(() => order.push("older"), () => undefined);
+  await sleep(3000);
+  const newer = lease("normal");
+  void newer.ready.then(() => order.push("newer"), () => undefined);
+  await sleep(200);
+  await first.release();
+  await until(() => order.length === 1);
+  expect(order).toEqual(["older"]);
+}), 15000);
+
+it("leaves no waiter file behind when its priority changes as it gets a slot or gives up", async () => {
+  const first = lease("normal"), second = lease("normal");
+  await Promise.all([first.ready, second.ready]);
+  // A priority change whose write is still on its way when the slot comes.
+  let priority: "normal" | "foreground" = "normal";
+  const changing = new Lease(() => priority);
+  leases.push(changing);
+  await until(() => files(/^wait-/).length === 1);
+  const rename = fs.promises.rename;
+  fs.promises.rename = (async (from: fs.PathLike, to: fs.PathLike) => {
+    if (/wait-[0-9a-f]+\.json$/.test(String(to))) await sleep(300);
+    return rename(from, to);
+  }) as typeof rename;
+  try {
+    priority = "foreground";
+    changing.update();
+    await first.release();
+    await changing.ready;
+    await sleep(500);
+    expect(files(/^wait-/)).toEqual([]);
+  } finally { fs.promises.rename = rename; }
+  // A priority change after a waiting lease was given up.
+  let wanted: "normal" | "foreground" = "normal";
+  const abandoned = new Lease(() => wanted);
+  await until(() => files(/^wait-/).length === 1);
+  await abandoned.release();
+  wanted = "foreground";
+  abandoned.update();
+  await sleep(200);
+  expect(files(/^wait-/)).toEqual([]);
+});
+
+it("ignores a borrow claim nobody keeps fresh, for a free slot and for its lender", () => staleAfter("2000", async () => {
+  for (let slot = 0; slot < SLOTS; slot++) ghost(`borrow-${slot}.json`, { id: "00dead00", pid: 1, pgid: null }, 60000);
+  const free = lease("normal");
+  let acquired = false;
+  void free.ready.then(() => { acquired = true; });
+  await until(() => acquired, 3000);
+  await free.release();
+  if (!posix) return;
+  // A lender stops for a claim, and continues once nobody refreshes it.
+  const lender = lease("background");
+  await lender.ready;
+  const pgid = compiler(lender);
+  ghost(`borrow-${lender.slot}.json`, { id: "00dead00", pid: 1, pgid }, 0);
+  await until(() => stopped(pgid));
+  await until(() => !stopped(pgid), 6000);
+}), 20000);
+
+it.skipIf(!posix)("keeps a borrow for longer than a stale lock takes", () => staleAfter("2000", async () => {
+  const lender = await holder("background", "2000"), busy = lease("normal");
+  await busy.ready;
+  const urgent = lease("foreground");
+  await urgent.ready;
+  expect([urgent.borrowed, urgent.slot]).toEqual([true, lender.slot]);
+  await sleep(3500);
+  expect(stopped(lender.pgid)).toBe(true);
+  await urgent.release();
+  await until(() => !stopped(lender.pgid));
+}), 20000);
+
+it.skipIf(!posix)("compiles a round's two sides at once while a speculative build waits stopped on its slot", async () => {
+  const f = new Fixture(), bin = path.join(f.base, "bin"), gates = path.join(f.base, "gates"), previousPath = process.env.PATH;
+  fs.mkdirSync(bin); fs.mkdirSync(gates);
+  // A latexmk that records its process ID and finishes when told to, or
+  // after a minute, so that a test stopped midway leaves nothing running.
+  fs.writeFileSync(path.join(bin, "pdflatex"), "#!/bin/sh\necho 'pdfTeX 3.14 (fake)'\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, "latexmk"), `#!/bin/sh\nkey=$(basename "$(dirname "$PWD")")\necho $$ > "${gates}/pid-$key"\ni=0; while [ ! -e "${gates}/go-$key" ] && [ $i -lt 1200 ]; do sleep 0.05; i=$((i+1)); done\nmkdir -p build && echo pdf > build/main.pdf\n`, { mode: 0o755 });
+  process.env.PATH = `${bin}${path.delimiter}${previousPath}`;
+  const started = () => fs.readdirSync(gates).filter((name) => name.startsWith("pid-")).map((name) => name.slice(4));
+  const pidOf = (key: string) => Number(fs.readFileSync(path.join(gates, `pid-${key}`), "utf8"));
+  const go = (key: string) => fs.writeFileSync(path.join(gates, `go-${key}`), "");
+  const builds: Promise<unknown>[] = [];
+  try {
+    const builder = new Builder((await import("../../src/core/config.ts")).loadProject(f.root), f.repo), revisions = [f.repo.rev("HEAD")];
+    for (const text of ["Second.", "Third."]) {
+      f.write("paper/main.tex", f.read("paper/main.tex").replace("We conclude.", `We conclude. ${text}`));
+      f.repo.run(["commit", "-qam", text]);
+      revisions.push(f.repo.rev("HEAD"));
+    }
+    builds.push(builder.build(revisions[0], ["full"], null, { priority: "background" }));
+    await until(() => started().length === 1);
+    const [speculative] = started();
+    builds.push(builder.build(revisions[1]));
+    await until(() => started().length === 2);
+    await until(() => stopped(pidOf(speculative)));
+    // The round's other side borrows the stopped build's slot.
+    builds.push(builder.build(revisions[2]));
+    await until(() => started().length === 3);
+    expect(stopped(pidOf(speculative))).toBe(true);
+    for (const key of started().filter((key) => key !== speculative)) go(key);
+    await Promise.all(builds.slice(1));
+    await until(() => !stopped(pidOf(speculative)));
+    go(speculative);
+    await builds[0];
+  } finally {
+    for (const key of fs.readdirSync(gates).filter((name) => name.startsWith("pid-")).map((name) => name.slice(4))) go(key);
+    await Promise.allSettled(builds);
+    process.env.PATH = previousPath;
+    await f.close();
+  }
+}, 60000);

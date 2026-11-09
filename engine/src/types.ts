@@ -118,6 +118,9 @@ export interface ActionDetail {
   /** The comparison each change was decided with, when it came from another
    * round than the one the decision belongs to. */
   seen?: Record<string, { round: number; change: string }>;
+  /** An accept undone after newer rounds: the round its undo inserts, with
+   *  the change pending again. */
+  republish?: number;
 }
 export interface Action {
   seq: number;
@@ -544,7 +547,9 @@ export interface PageState {
   waiting?: string[];
   /** Decided changes whose comparison changed after the decision. */
   reviewAgain?: string[];
-  undo: { id: string; kind: ActionKind; changes: string[] } | null;
+  /** republish: the decision belongs to an earlier round, so undoing it
+   *  inserts a round with its change pending again. */
+  undo: { id: string; kind: ActionKind; changes: string[]; republish?: true } | null;
   job:
     | (Pick<Job, "id" | "status" | "phase" | "created"> &
         JobResult & { ahead: number })

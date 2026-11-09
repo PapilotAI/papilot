@@ -38,8 +38,10 @@ import { findExecutable } from '../../bin/agent-paths.mjs';
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
 // A review write's reply does not wait for the task's summary to be read
 // again: that runs right after it, once at a time per task, and once more
-// for writes that arrive meanwhile. Reads of the task wait for it, so the
-// next poll shows what the reply used to.
+// for writes that arrive meanwhile. The review page's reads of the task wait
+// for it, so its next poll shows what the reply used to. The workspace does
+// not wait, since one slow engine would hold every paper's state: the
+// summary's update announces itself through the event stream.
 const settling = new WeakMap<Workspace, Map<string, { done: Promise<void>; again: boolean }>>();
 function settle(workspace: Workspace, taskId: string) {
   let tasks = settling.get(workspace);
@@ -53,9 +55,8 @@ function settle(workspace: Workspace, taskId: string) {
   })().catch(() => undefined);
   tasks.set(taskId, entry);
 }
-async function settled(workspace: Workspace, taskId?: string) {
-  const tasks = settling.get(workspace);
-  if (tasks) await Promise.all([...tasks].filter(([id]) => !taskId || id === taskId).map(([, entry]) => entry.done));
+async function settled(workspace: Workspace, taskId: string) {
+  await settling.get(workspace)?.get(taskId)?.done;
 }
 
 // Git writes to one repository run one at a time; each returns the new status.
@@ -226,7 +227,6 @@ export async function buildApp(options: AppOptions) {
   }
   app.get('/api/state', async () => {
     await options.prepareDemo?.();
-    await settled(workspace);
     // Check the backend environment (Linux when using WSL), again on each poll
     // so installing Git unlocks version management without a page reload.
     return { ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), csrf: options.csrf };
@@ -392,9 +392,10 @@ export async function buildApp(options: AppOptions) {
     }
     throw new Error('Select an existing option.');
   });
-  // The Apply and Commit step is on screen: compile in the background what
-  // applying the decided task will write, so the manuscript's PDF is ready or
-  // on its way when the author saves it. Individual decisions start no build.
+  // The author started on the Apply and Commit step: compile in the
+  // background what applying the decided task will write, so the manuscript's
+  // PDF is ready or on its way when the author saves it. Decisions, and the
+  // step appearing after the last one, start no build.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/predict', task, request => {
     const current = store.task(request.params.id), project = store.project(current.projectId);
     if (!current.deferred || current.mode === 'review' || current.delivery?.pending || current.status === 'deleting' || (current.review?.counts.pending ?? 0) > 0) return { ok: true };
@@ -720,11 +721,13 @@ export async function buildApp(options: AppOptions) {
         if (task) await settled(workspace, task.id);
       }
       // Accepting leaves the task's worktree alone, and so does undoing an
-      // accept or a comment: these go ahead while the agent edits it.
+      // accept or a comment: these go ahead while the agent edits it. Undoing
+      // an accept of an earlier round publishes a round of the worktree, so
+      // it waits like rejecting.
       const besideAgent = Boolean(reviewTask?.deferred && AGENT_TURN.includes(reviewTask.status)) && (route.endsWith('/decide')
         ? (request.body as any)?.action === 'accept'
-        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string } | null }>(`${taskRoute(reviewTask!.name)}/state`)
-          .then(state => state.undo?.id === (request.body as any)?.id && state.undo?.kind !== 'reject', () => false));
+        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
+          .then(state => state.undo?.id === (request.body as any)?.id && state.undo?.kind !== 'reject' && !state.undo?.republish, () => false));
       let settles: string | undefined;
       const forward = async () => {
         const search = new URL(request.url, 'http://localhost').search;

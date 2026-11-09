@@ -167,6 +167,31 @@ function uncertainRun(f: ReturnType<typeof fixture>, active = true) {
   return run;
 }
 
+test('an older summary read that answers last cannot replace a newer one', async () => {
+  const replies: { round: number; reply: ReturnType<typeof deferred<unknown>> }[] = [];
+  let round = 1;
+  const f = fixture(async (_method, route) => {
+    if (route.includes('/feedback')) return { cursor: 0, feedback: [] };
+    const reply = deferred<unknown>();
+    replies.push({ round, reply });
+    return reply.promise;
+  });
+  try {
+    const first = f.workspace.refresh(f.task.id);
+    await tick();
+    round = 2;
+    const second = f.workspace.refresh(f.task.id);
+    for (let i = 0; i < 5; i++) await tick();
+    // Whichever reads are in flight answer newest first.
+    for (const { round, reply } of [...replies].reverse()) reply.resolve({ state: 'reviewing', round, counts: { pending: round } });
+    for (let i = 0; i < 200 && replies.length < 2; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    for (const { round, reply } of [...replies].reverse()) reply.resolve({ state: 'reviewing', round, counts: { pending: round } });
+    await Promise.all([first, second]);
+    assert.equal(f.store.task(f.task.id).review?.round, 2);
+    assert.ok(replies.length <= 2, 'reads of one task run one at a time');
+  } finally { for (const { reply } of replies) reply.resolve(summary); f.close(); }
+});
+
 test('comparison progress reaches workspace snapshots and clears when the build finishes', async () => {
   const progress = { baseline: { step: 'tex', pass: 2, pages: 23, total: 180 } };
   let finished = false;
@@ -392,6 +417,25 @@ test('manual source saves track the existing build and never ask AI to repair co
   } finally { f.close(); }
 });
 
+test("undoing an accept of an earlier round tracks the build of the round it inserts; other undos build nothing", async () => {
+  const gate = deferred<{ status: string; round: number }>();
+  const f = fixture(async (_method, route) => route.includes('/jobs/') ? gate.promise : summary);
+  try {
+    const undo = { route: '/api/tasks/p-task/undo', body: { id: 'accept-before-round' } };
+    await f.workspace.reviewWrite(f.task.id, true, async () => ({ ...pageState, restored: ['c001'] }), undo);
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).pendingBuild ?? null, null);
+    await f.workspace.reviewWrite(f.task.id, true, async () => ({ ...pageState, restored: ['c001'], republished: true, job: { id: 'undo-job', status: 'queued' } }), undo);
+    assert.equal(f.store.task(f.task.id).status, 'building');
+    assert.equal(f.store.task(f.task.id).pendingBuild?.job, 'undo-job');
+    assert.equal(f.store.task(f.task.id).pendingBuild?.sendBack, false);
+    gate.resolve({ status: 'done', round: 3 });
+    for (let i = 0; i < 20 && f.store.task(f.task.id).status === 'building'; i++) await tick();
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.calls.some(call => call.route.endsWith('/publish')), false);
+  } finally { gate.resolve({ status: 'done', round: 3 }); f.close(); }
+});
+
 for (const status of ['done', 'failed']) test(`a source save during a build survives the older job becoming ${status}`, async () => {
   const old = deferred<unknown>(), next = deferred<unknown>(), started = deferred<void>(), followed = deferred<void>();
   const f = fixture(async (_method, route) => {
@@ -416,6 +460,35 @@ for (const status of ['done', 'failed']) test(`a source save during a build surv
     assert.equal(f.store.task(f.task.id).pendingBuild, null);
     assert.equal(f.calls.filter(call => call.route.endsWith('/publish')).length, 1);
   } finally { old.resolve({ status: 'done' }); next.resolve({ status: 'done' }); f.close(); }
+});
+
+for (const status of ['done', 'failed']) test(`a source save during the build after the agent's turn keeps that turn's result and repair (${status})`, async () => {
+  const old = deferred<unknown>(), started = deferred<void>();
+  const f = fixture(async (_method, route) => {
+    if (route.endsWith('/publish')) return { job: 'old-job' };
+    if (route.endsWith('/jobs/old-job')) { started.resolve(); return old.promise; }
+    if (route.endsWith('/jobs/new-job')) return status === 'done' ? { status: 'done', outcome: 'published', round: 2 } : { status: 'failed', error: 'The revised document could not be compiled.', details: ['! Undefined control sequence.'] };
+    if (route.includes('/feedback')) return feedback;
+    return { ...summary, round: 2 };
+  });
+  try {
+    const run: Run = { id: 'agent-run', taskId: f.task.id, requestKey: 'agent-request', prompt: 'Revise.', status: 'completed', createdAt: 1, finishedAt: 2, reviewRound: 0 };
+    f.store.saveRun(run);
+    const publishing = f.workspace.publish(f.task.id, run);
+    await started.promise;
+    await f.workspace.reviewWrite(f.task.id, true, async () => ({ ...pageState, job: { id: 'new-job', status: 'queued' } }), { route: '/api/tasks/p-task/source', body: { id: 'new-save' } });
+    assert.deepEqual(f.store.task(f.task.id).pendingBuild?.runs, ['agent-run'], "the newer build still carries the agent's turn");
+    assert.equal(f.store.task(f.task.id).pendingBuild?.sendBack, true);
+    old.resolve({ status: 'done', outcome: 'published', round: 1 });
+    await publishing;
+    if (status === 'done') {
+      assert.equal(f.store.runByKey('agent-request')?.reviewRound, 2, "the turn's result is the round that has its changes");
+      assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    } else {
+      assert.ok(f.store.runByKey('build-fix-new-job'), 'a build the turn broke goes back to the agent');
+      assert.equal(f.store.task(f.task.id).status, 'queued');
+    }
+  } finally { old.resolve({ status: 'done' }); f.close(); }
 });
 
 test('recovering a lost source save resumes its build before queued agent work', async () => {
@@ -612,6 +685,105 @@ test('an unconfirmed accept from a turn that was interrupted asks for Check stat
     assert.equal(f.store.task(f.task.id).status, 'interrupted');
     assert.equal(f.store.task(f.task.id).pendingReview, null);
     assert.equal(f.calls.some(call => call.route.endsWith('/publish')), false);
+  } finally { f.close(); await server.close(); }
+});
+
+// A build whose job finishes once `finish` resolves, with an engine that
+// confirms a replayed review action.
+async function buildWithReplay(outcome: { status: string; error?: string }) {
+  const job = deferred<void>();
+  let done = false;
+  void job.promise.then(() => { done = true; });
+  const server = await reviewServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(pageState));
+  });
+  const f = fixture(async (_method, route) => {
+    if (route.endsWith('/publish')) return { job: 'job' };
+    if (route.includes('/jobs/')) return done ? { ...outcome, round: 1 } : { status: 'running', phase: 'build' };
+    if (route.includes('/feedback')) return feedback;
+    return summary;
+  }, { reviewUrl: server.url });
+  const building = f.workspace.publish(f.task.id);
+  await tick();
+  assert.equal(f.store.task(f.task.id).status, 'building');
+  return { f, server, building, finish: async () => { job.resolve(); await building; }, async close() { job.resolve(); await building.catch(() => {}); f.close(); await server.close(); } };
+}
+const decide = { route: '/api/tasks/p-task/decide', body: { id: 'during-build', action: 'accept', round: 1, changes: ['change-1'] } };
+
+for (const outcome of [{ status: 'done' }, { status: 'failed', error: 'The revised document could not be compiled.' }]) test(`a decision the engine did not confirm during a build asks for Check status once the build is ${outcome.status}`, async () => {
+  const b = await buildWithReplay(outcome);
+  const { f } = b;
+  try {
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => { throw new Error('fetch failed'); }, decide));
+    assert.equal(f.store.task(f.task.id).status, 'building', 'the build keeps its status; its end asks to check the action');
+    await b.finish();
+    assert.equal(f.store.task(f.task.id).status, 'uncertain');
+    assert.equal(f.store.task(f.task.id).pendingReview?.previousStatus, outcome.status === 'done' ? 'reviewing' : 'failed');
+    await f.workspace.reconcile(f.task.id);
+    assert.deepEqual(b.server.calls.map(call => call.body?.id), ['during-build'], 'Check status replays the same action');
+    assert.equal(f.store.task(f.task.id).pendingReview, null);
+    assert.equal(f.store.task(f.task.id).status, outcome.status === 'done' ? 'reviewing' : 'failed');
+    if (outcome.error) assert.match(f.store.task(f.task.id).error || '', /could not be compiled/, 'the build error is shown again after the check');
+    else assert.equal(f.store.task(f.task.id).error, null);
+    assert.equal(await f.workspace.reviewWrite(f.task.id, true, async () => 'next decision'), 'next decision');
+  } finally { await b.close(); }
+});
+
+test('a decision whose response is lost after the build ended returns to the status the build reached', async () => {
+  const b = await buildWithReplay({ status: 'done' });
+  const { f } = b;
+  const lost = deferred<void>();
+  try {
+    const writing = f.workspace.reviewWrite(f.task.id, true, async () => { await lost.promise; throw new Error('fetch failed'); }, decide);
+    await b.finish();
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    lost.resolve();
+    await assert.rejects(writing);
+    assert.equal(f.store.task(f.task.id).status, 'uncertain');
+    assert.equal(f.store.task(f.task.id).pendingReview?.previousStatus, 'reviewing', 'not the building status the write started in');
+    await f.workspace.reconcile(f.task.id);
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    assert.equal(f.store.task(f.task.id).pendingReview, null);
+  } finally { lost.resolve(); await b.close(); }
+});
+
+for (const ending of ['disconnected', 'failed to start'] as const) test(`an accept the engine did not confirm asks for Check status when the agent ${ending}`, async () => {
+  const server = await reviewServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(pageState));
+  });
+  const f = fixture(undefined, { reviewUrl: server.url });
+  try {
+    await agentTurn(f);
+    await assert.rejects(f.workspace.reviewWrite(f.task.id, true, async () => { throw new Error('fetch failed'); }, accept, true));
+    assert.equal(f.store.task(f.task.id).status, 'running');
+    const run = (f.workspace as any).active.get(f.task.id) as Run;
+    if (ending === 'disconnected') f.codex.emit('disconnected', new Error('closed'));
+    else (f.workspace as any).failRun(run, new Error('The agent could not start.'));
+    const expected = ending === 'disconnected' ? 'interrupted' : 'failed';
+    assert.equal(f.store.task(f.task.id).status, 'uncertain');
+    assert.equal(f.store.task(f.task.id).pendingReview?.previousStatus, expected);
+    await f.workspace.reconcile(f.task.id);
+    assert.deepEqual(server.calls.map(call => call.body?.id), ['accept-during-turn']);
+    assert.equal(f.store.task(f.task.id).status, expected);
+    assert.equal(f.store.task(f.task.id).pendingReview, null);
+    assert.match(f.store.task(f.task.id).error || '', ending === 'disconnected' ? /disconnected/ : /could not start/);
+  } finally { f.close(); await server.close(); }
+});
+
+test('Check status replays an unconfirmed review action whatever the task status, once no write is in flight', async () => {
+  const server = await reviewServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(pageState));
+  });
+  const f = fixture(undefined, { reviewUrl: server.url });
+  try {
+    f.store.updateTask(f.task.id, { status: 'reviewing', pendingReview });
+    await f.workspace.reconcile(f.task.id);
+    assert.deepEqual(server.calls.map(call => call.body?.id), ['decision-123']);
+    assert.equal(f.store.task(f.task.id).pendingReview, null);
+    assert.equal(f.store.task(f.task.id).status, 'reviewing');
   } finally { f.close(); await server.close(); }
 });
 
@@ -2817,6 +2989,33 @@ test('a restart resumes a preparation with the same engine task, or fails it cle
     assert.equal(after.store.task('failed-on-restart-01').error, 'The review engine is busy.');
     assert.equal(after.store.runByKey('initial-failed-on-restart-01')!.status, 'queued');
   } finally { after.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a resumed preparation waits while the engine is still making the copy it asked for before', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let asked = 0;
+  const f = fixture(async (_method, route, body: any) => {
+    if (route !== '/api/tasks') return summary;
+    // The engine kept running across the restart and is still checking out the copy.
+    if (++asked < 3) throw new Error(`Task ${JSON.stringify(body.name)} is being created. Try again in a moment.`);
+    return engineCopy('/unused/resumed');
+  });
+  try {
+    const input = { id: 'still-creating-0001', projectId: 'paper', title: 'Revise', instructions: 'Revise.' };
+    await f.workspace.createTask(input);
+    const job = preparation(f, input.id);
+    for (let i = 0; i < 2; i++) {
+      await until(() => asked === i + 1);
+      await tick(); await tick();
+      assert.equal(f.store.task(input.id).status, 'preparing');
+      t.mock.timers.tick(1000);
+    }
+    const prepared = await job;
+    assert.equal(asked, 3);
+    assert.equal(prepared.status, 'queued');
+    assert.equal(prepared.worktree, '/unused/resumed');
+    assert.equal(prepared.error, null);
+  } finally { f.close(); }
 });
 
 test('attachments are claimed when the task is saved, and deleting a failed preparation returns its notes', async () => {

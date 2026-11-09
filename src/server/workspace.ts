@@ -28,10 +28,13 @@ import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../n
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
 import { AGENT_IDS, isTaskReviewNote } from '../shared.ts';
-import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview } from '../shared.ts';
+import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Source saves start a build in the review engine, and so does undoing an
+// accept of an earlier round, which inserts the next round.
+const startsBuild = (route: string, value: unknown) => /\/source(?:\/options)?$/.test(route) || (route.endsWith('/undo') && (value as { republished?: unknown } | null)?.republished === true);
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 // A Codex model/list entry with the reasoning efforts it supports.
 export const agentModel = (m: any): AgentModel => {
@@ -115,6 +118,7 @@ export class Workspace extends EventEmitter {
   private reviewWrites = new Set<string>();
   // Settles when the task's review write in reviewWrite finishes.
   private reviewWriting = new Map<string, Promise<void>>();
+  private refreshes = new Map<string, { done: Promise<void>; again: boolean }>();
   // Papers with a commit in progress: no review write may change their files meanwhile.
   private committing = new Set<string>();
   private commentWrites = new Map<string, number>();
@@ -172,7 +176,7 @@ export class Workspace extends EventEmitter {
       if (task.threadId) this.loaded.delete(task.threadId);
       this.earlyCompletions.delete(taskId); this.earlyRequests.delete(taskId); this.active.delete(taskId);
       this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
-      this.store.updateTask(taskId, { status: 'interrupted', turnId: null, error: `${AGENT_NAMES[id]} disconnected. You can resume the same task.` });
+      this.holdForReview(taskId, { status: 'interrupted', turnId: null, error: `${AGENT_NAMES[id]} disconnected. You can resume the same task.` });
     }
     if (id === 'codex') this.loaded.clear();
     this.emit('change');
@@ -410,8 +414,17 @@ export class Workspace extends EventEmitter {
     const client = await this.connectReview(this.store.project(task.projectId).path);
     if (!task.preparation?.submitted) task = this.store.updateTask(taskId, { preparation: { ...task.preparation, submitted: true } });
     // The engine answers with its open task of this name, so a retry or a
-    // restart reuses a copy it has already made.
-    const info = await client.post('/api/tasks', { name: task.name, title: task.title, deferred: true });
+    // restart reuses a copy it has already made. An engine that kept running
+    // across a restart may still be making the copy asked for before: wait
+    // for it rather than failing the task.
+    let info: { worktree: string; deferred?: boolean };
+    for (;;) {
+      try { info = await client.post('/api/tasks', { name: task.name, title: task.title, deferred: true }); break; }
+      catch (error) {
+        if (this.closing || !/ is being created\. Try again in a moment\.$/.test(errorText(error))) throw error;
+        await delay(1000);
+      }
+    }
     let snapshot: ReviewSnapshot | undefined;
     if (task.mode === 'review') try {
       const current = task, capture = this.reviewCopies.get(taskId) ?? ((worktree: string) => this.prepareReview(current, worktree));
@@ -639,7 +652,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     this.active.delete(run.taskId);
     this.earlyCompletions.delete(run.taskId); this.earlyRequests.delete(run.taskId);
     this.store.saveRun({ ...run, status: 'failed', finishedAt: Date.now() });
-    this.store.updateTask(run.taskId, { status: 'failed', turnId: null, pendingRunId: null, error: errorText(error) });
+    this.holdForReview(run.taskId, { status: 'failed', turnId: null, pendingRunId: null, error: errorText(error) });
     this.schedule();
   }
   // The agent writes files: the review engine compiles ahead what the round
@@ -752,8 +765,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       for (const [key, r] of this.requests) if (r.taskId === task.id) this.requests.delete(key);
       const status = p.turn.status === 'completed' ? 'completed' : p.turn.status === 'interrupted' ? 'interrupted' : 'failed';
       this.store.saveRun({ ...run, status, finishedAt: Date.now() });
-      this.store.updateTask(task.id, { turnId: null, pendingRunId: null, status: status === 'completed' ? 'building' : status, error: p.turn.error?.message || null });
-      if (status !== 'completed') this.holdForReview(task.id, status);
+      const ended = { turnId: null, pendingRunId: null, error: p.turn.error?.message || null };
+      // A completed turn builds; publish() holds that build for the action.
+      if (status === 'completed') this.store.updateTask(task.id, { ...ended, status: 'building' });
+      else this.holdForReview(task.id, { ...ended, status });
       this.schedule();
       if (status === 'completed') {
         if (task.mode === 'review') this.finishAiReview(task, run, eventTurn);
@@ -858,9 +873,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   async reconcile(taskId: string) {
     const task = this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('Retry deletion to confirm this task was removed.');
-    if (task.pendingBuild && !task.pendingReview) { void this.resumeBuild(taskId); return this.store.task(taskId); }
-    if (task.status !== 'uncertain') return task;
+    // An unconfirmed review action is replayed whatever the status, once no
+    // write is in flight, so no status can leave it blocking the task.
     if (task.pendingReview) return this.reconcileReview(task);
+    if (task.pendingBuild) { void this.resumeBuild(taskId); return this.store.task(taskId); }
+    if (task.status !== 'uncertain') return task;
     const run = this.active.get(taskId) || this.store.runs().find(r => r.id === task.pendingRunId && r.taskId === taskId);
     const name = AGENT_NAMES[this.agentOf(task)];
     if (!run || !task.threadId) throw new Error(`The pending turn could not be identified. Reconnect ${name} and check again.`);
@@ -901,13 +918,19 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const value = await response.json() as { error?: string };
       if (!confirmedReviewResponse(response.status, value, task.name)) throw new Error('The review engine could not confirm this action. Check again when it is available.');
       await this.refresh(task.id);
-      const sourceBuild = response.ok && /\/source(?:\/options)?$/.test(pending.route);
+      const sourceBuild = response.ok && startsBuild(pending.route, value);
       this.store.transaction(() => {
-        this.store.updateTask(task.id, { pendingReview: null, status: this.store.runs().some(r => r.taskId === task.id && r.status === 'queued') ? 'queued' : pending.previousStatus, error: response.ok ? null : value.error || 'Check the review result before continuing.' });
+        // The status the task reached meanwhile, recorded by holdForReview. A
+        // turn or build still in progress ends on its own.
+        const current = this.store.task(task.id), reached = current.pendingReview ?? pending;
+        const going = this.active.has(task.id) || (this.publishing.has(task.id) && current.status === 'building');
+        const status = going ? current.status : this.store.runs().some(r => r.taskId === task.id && r.status === 'queued') ? 'queued' : reached.previousStatus;
+        this.store.updateTask(task.id, { pendingReview: null, status, error: !response.ok ? value.error || 'Check the review result before continuing.' : going ? null : reached.previousError ?? null });
         if (sourceBuild) this.rememberSourceBuild(task.id, value, pending);
       });
-      // So does the build held after the agent's turn for this action.
-      if (sourceBuild || pending.previousStatus === 'building') void this.resumeBuild(task.id);
+      // So does the build held after the agent's turn for this action, and a
+      // build whose connection was lost meanwhile.
+      if (sourceBuild || this.store.task(task.id).pendingBuild) void this.resumeBuild(task.id);
       return this.store.task(task.id);
     } finally { this.reviewWrites.delete(task.id); this.schedule(); }
   }
@@ -944,7 +967,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (pending) this.store.updateTask(taskId, { pendingReview: { ...pending, previousStatus: turn ? 'interrupted' : task.status } });
     try {
       const result = await operation();
-      const sourceBuild = Boolean(pending && /\/source(?:\/options)?$/.test(pending.route)) && confirmedReviewResponse(200, result, task.name);
+      const sourceBuild = Boolean(pending && startsBuild(pending.route, result)) && confirmedReviewResponse(200, result, task.name);
       this.store.transaction(() => {
         if (pending) this.store.updateTask(taskId, { pendingReview: null });
         if (sourceBuild) this.rememberSourceBuild(taskId, result, pending);
@@ -952,8 +975,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (sourceBuild) void this.resumeBuild(taskId);
       return result;
     } catch (error) {
-      // A running turn keeps its status; its end asks to check the action.
-      if (pending) this.store.updateTask(taskId, { ...(this.active.has(taskId) ? {} : { status: 'uncertain' as const }), error: 'The review action could not be confirmed. Select Check status before continuing. ' + errorText(error) });
+      // A running turn or build keeps its status; its end asks to check the
+      // action (holdForReview). Otherwise Check status returns the task to
+      // the status it has reached.
+      const going = this.active.has(taskId) || (this.publishing.has(taskId) && this.store.task(taskId).status === 'building');
+      if (pending) this.store.updateTask(taskId, { ...(going ? {} : { status: 'uncertain' as const }), error: 'The review action could not be confirmed. Select Check status before continuing. ' + errorText(error) });
       throw error;
     }
     finally { this.reviewWrites.delete(taskId); this.reviewWriting.delete(taskId); written(); this.schedule(); }
@@ -962,21 +988,30 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   private async reviewIdle(taskId: string) {
     while (this.reviewWrites.has(taskId)) await (this.reviewWriting.get(taskId) ?? delay(50));
   }
-  // A review action whose outcome is unknown is checked before the task moves
-  // on: Check status replays it, then returns the task to `status`.
-  private holdForReview(taskId: string, status: Task['status']) {
+  // Every turn and build ends here. A review action whose outcome is unknown
+  // is checked before the task moves on: Check status replays it, then
+  // returns the task to the status and error of `update`. While the action's
+  // write is still in flight the task moves on, and records where a lost
+  // response returns it. Returns whether the task waits for the check.
+  private holdForReview(taskId: string, update: Partial<Task> & { status: Task['status'] }) {
     const task = this.store.task(taskId);
-    if (!task.pendingReview || this.reviewWrites.has(taskId)) return false;
-    this.store.updateTask(taskId, { status: 'uncertain', pendingReview: { ...task.pendingReview, previousStatus: status }, error: 'The review engine could not confirm this action. Select Check status before continuing.' });
+    if (!task.pendingReview) { this.store.updateTask(taskId, update); return false; }
+    const pendingReview = { ...task.pendingReview, previousStatus: update.status, previousError: 'error' in update ? update.error ?? null : task.error };
+    if (this.reviewWrites.has(taskId)) { this.store.updateTask(taskId, { ...update, pendingReview }); return false; }
+    this.store.updateTask(taskId, { ...update, status: 'uncertain', pendingReview, error: 'The review engine could not confirm this action. Select Check status before continuing.' });
     return true;
   }
   // Source saves start a build in the engine. Track that exact job, including
   // across a lost save response, without handing the author's text to an agent.
+  // A save during the build after the agent's turn replaces that build's job,
+  // which includes the turn's edits: the newer job keeps the turn's result
+  // links and its repair of a build the turn broke.
   private rememberSourceBuild(taskId: string, value: unknown, pending?: { route: string; body: Record<string, unknown> }) {
     const job = (value as { job?: { id?: string } } | null)?.job;
     if (!job?.id) throw new Error('The review engine could not confirm this action. Select Check status before continuing.');
     const runs = pending?.route.endsWith('/source/options') ? this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && run.reviewRound === pending.body.round).map(run => run.id) : [];
-    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs, sendBack: false, restarts: 0 } });
+    const building = this.store.task(taskId).pendingBuild;
+    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs: [...new Set([...building?.runs ?? [], ...runs])], sendBack: building?.sendBack ?? false, restarts: 0 } });
   }
   // A build is automatic after the agent's run `after` completes. When its
   // edits break the build, the agent gets the error in a new turn, once.
@@ -993,7 +1028,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), runs, sendBack: Boolean(after && !after.requestKey.startsWith(BUILD_FIX)), restarts: 0 } });
     return (async () => {
       await this.reviewIdle(taskId);
-      if (!this.holdForReview(taskId, 'building')) await this.buildReview(task);
+      if (!this.holdForReview(taskId, { status: 'building' })) await this.buildReview(task);
     })().finally(() => { this.publishing.delete(taskId); this.schedule(); });
   }
   // Resume a persisted job, including jobs saved by versions before pendingBuild.
@@ -1038,6 +1073,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         }
       }
     };
+    // A source save replaced the job: follow the newer one, which also has
+    // this build's edits, with their result links and repair.
+    const follow = (latest: PendingBuild): PendingBuild => {
+      const merged = { ...latest, runs: [...new Set([...pending.runs, ...latest.runs])], sendBack: latest.sendBack || pending.sendBack };
+      this.store.updateTask(taskId, { pendingBuild: merged });
+      return merged;
+    };
     try {
       for (;;) {
         if (this.closing) return;
@@ -1059,7 +1101,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: { ...current, id: pending.job } } });
         if (['done', 'completed', 'succeeded', 'failed'].includes(current.status)) {
           const latest = this.store.task(taskId).pendingBuild;
-          if (latest && latest.job !== pending.job) { pending = latest; continue; }
+          if (latest && latest.job !== pending.job) { pending = follow(latest); continue; }
         }
         if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') {
           // Freeze the result round for these instructions. Later follow-ups
@@ -1075,8 +1117,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           }, () => this.closing);
           if (this.closing) return;
           const latest = this.store.task(taskId).pendingBuild;
-          if (latest && latest.job !== pending.job) { pending = latest; continue; }
-          this.store.updateTask(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null, pendingBuild: null,
+          if (latest && latest.job !== pending.job) { pending = follow(latest); continue; }
+          this.holdForReview(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null, pendingBuild: null,
             review: { ...this.store.task(taskId).review!, job: { ...current, id: pending.job } } });
           break;
         }
@@ -1089,7 +1131,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           const failure: BuildFailure = { error: current.error || 'PDF build failed.', details: current.details || [], ...(current.log ? { log: current.log } : {}) };
           // Instructions the author queued meanwhile go first; the build after them sends any error that remains.
           if (pending.sendBack && FIXABLE.test(failure.error) && await this.enqueue(taskId, '', BUILD_FIX + pending.job, false, { build: failure }).then(() => true, () => false)) {
-            this.store.updateTask(taskId, { status: 'queued', error: null, pendingBuild: null });
+            this.holdForReview(taskId, { status: 'queued', error: null, pendingBuild: null });
             return;
           }
           throw new Error([failure.error, ...failure.details].join('\n'));
@@ -1101,10 +1143,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (this.closing) return;
       if (reviewConnectionError(e)) {
         console.warn('PDF comparison recovery pending:', task.name, pending.job || pending.requestId, e);
-        this.store.updateTask(taskId, { status: 'uncertain', pendingBuild: pending,
+        this.holdForReview(taskId, { status: 'uncertain', pendingBuild: pending,
           error: 'The PDF comparison service could not be reached. Your edits are saved. Select Check status to recover the existing build.' });
       }
-      else this.store.updateTask(taskId, { status: 'failed', pendingBuild: null, error: errorText(e) });
+      else this.holdForReview(taskId, { status: 'failed', pendingBuild: null, error: errorText(e) });
     }
   }
   private finishAiReview(task: Task, run: Run, turnId: string) {
@@ -1129,7 +1171,22 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     }
     this.schedule();
   }
-  async refresh(taskId: string) {
+  // Reads the task's review summary again. Reads of one task run one at a
+  // time, and a call during a read reads once more after it, so an older
+  // answer never replaces a newer one. Each call resolves after a read that
+  // started after it.
+  refresh(taskId: string): Promise<void> {
+    const running = this.refreshes.get(taskId);
+    if (running) { running.again = true; return running.done; }
+    const entry = { done: Promise.resolve(), again: false };
+    entry.done = (async () => {
+      try { do { entry.again = false; await this.readReview(taskId); } while (entry.again); }
+      finally { this.refreshes.delete(taskId); }
+    })();
+    this.refreshes.set(taskId, entry);
+    return entry.done;
+  }
+  private async readReview(taskId: string) {
     let release: (() => void) | undefined;
     try {
       const task = this.store.task(taskId);

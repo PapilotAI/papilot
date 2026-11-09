@@ -23,7 +23,9 @@ export interface UpdateStatus {
 export interface ReviewJob { id?: string; phase: string; status: string; error?: string; details?: string[]; createdAt?: number; options?: { completed: number; total: number }; progress?: Partial<Record<'baseline' | 'revised', Omit<BuildProgress, 'startedAt'>>> }
 export interface ReviewSummary { ready?: number; state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: ReviewJob | null }
 export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
-export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus }
+// previousStatus and previousError are where Check status returns the task
+// once the engine confirms the action.
+export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus; previousError?: string | null }
 // A task is saved with its first message queued before its manuscript copy
 // exists, and prepared in the background: the review engine checks out the
 // copy, and an AI review also compiles its PDF. A failed preparation keeps
