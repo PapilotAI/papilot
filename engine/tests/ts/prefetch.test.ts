@@ -5,7 +5,7 @@ import { which } from "../../src/core/process.ts";
 import { Fixture } from "./helpers.ts";
 
 const latexmk = which("latexmk");
-it.skipIf(!latexmk || !which("pdflatex"))("agent-write prefetch warms the exact baseline and revised chapter used by publication", async () => {
+it.skipIf(!latexmk || !which("pdflatex"))("agent writes compile and render the round ahead, and the round reuses both", async () => {
   const f = new Fixture(), previousPath = process.env.PATH;
   try {
     f.write("paper/main.tex", String.raw`\documentclass{book}
@@ -31,11 +31,18 @@ it.skipIf(!latexmk || !which("pdflatex"))("agent-write prefetch warms the exact 
     await app.publisher.join();
     const before = fs.readFileSync(calls, "utf8").trim().split("\n");
     expect(before).toHaveLength(3); // full seed, chapter baseline, chapter revised
+    // The comparison is rendered too, before the turn ends.
+    const renders = path.join(app.state, "cache/renders"), ahead = fs.readdirSync(renders);
+    expect(ahead).toHaveLength(1);
+    const comparison = fs.readFileSync(path.join(renders, ahead[0], "round.json"), "utf8");
     const job = app.publisher.submit(task.name);
     await app.publisher.join();
     expect(app.publisher.job(job.id)).toMatchObject({ status: "done", result: { prefetch: "hit", outcome: "published" } });
     expect(fs.readFileSync(calls, "utf8").trim().split("\n")).toEqual(before);
     expect(app.review.latestRound(task.name)?.summary.targets).toEqual(["chapters/two"]);
+    // The round shows the comparison rendered ahead, rendering nothing again.
+    expect(fs.readdirSync(renders)).toEqual(ahead);
+    expect(fs.readFileSync(path.join(app.state, "rounds", task.name, "001", "round.json"), "utf8")).toBe(comparison);
   } finally {
     await f.close();
     process.env.PATH = previousPath;

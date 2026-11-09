@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { ROOT, codeVersion } from "../runtime.ts";
 import { Builder, BuildError, auxiliaryBuildError, buildDate, reprioritize, type BuildPriority } from "./build.ts";
 import { diffUnitsAsync, scopeViolationsAsync, withHashesAsync, withUnits } from "./changes.ts";
@@ -8,7 +8,7 @@ import { provisional, roundFolder, writeProvisional } from "./carry.ts";
 import { acceptNoteOption, noteOptionUnits } from "./note-options.ts";
 import { isFigure } from "./config.ts";
 import { now, readJson, writeJson } from "./files.ts";
-import { runAsync } from "./process.ts";
+import { Cancelled, runAsync } from "./process.ts";
 import { Lease } from "./pool.ts";
 import type { App } from "../server.ts";
 import type {
@@ -33,26 +33,38 @@ export class PublishError extends Error {
     super(message);
   }
 }
+const RANK: Record<BuildPriority, number> = { background: 0, normal: 1, foreground: 2 };
 // Seconds for which a review page that asked for its state counts as open.
 const VIEWING = 15;
 // Each rendering step takes its own share of the TeX pool, so a comparison
 // waiting for variant builds between steps never holds one meanwhile.
-async function work(output: string, request: object, priority: () => BuildPriority = () => "normal") {
+const rendering = new Set<Lease>();
+/** Rereads the priority of every rendering step under way, after someone
+ *  started or stopped waiting for one. */
+export function reprioritizeRenders() {
+  for (const lease of rendering) lease.update();
+}
+async function work(output: string, request: object, priority: () => BuildPriority = () => "normal", signal?: AbortSignal) {
+  if (signal?.aborted) throw new Cancelled();
   // Its own name, as several requests may render into one round's folder.
   const file = path.join(
     output,
     `request-${randomBytes(4).toString("hex")}.json`,
   );
   writeJson(file, request);
-  const lease = new Lease(priority);
+  const lease = new Lease(priority), release = () => void lease.release();
+  rendering.add(lease);
+  signal?.addEventListener("abort", release, { once: true });
   try {
     await lease.ready;
+    if (signal?.aborted) throw new Cancelled();
     await runAsync(
       process.execPath,
       ["--import", "tsx", path.join(ROOT, "src/render/worker.ts"), file],
-      { cwd: ROOT, timeout: 1200000, started: (child) => lease.attach(child) },
+      { cwd: ROOT, timeout: 1200000, signal, started: (child) => lease.attach(child) },
     );
   } catch (error) {
+    if (error instanceof Cancelled || signal?.aborted) throw new Cancelled();
     throw new PublishError(
       "Rendering the PDF comparison failed.",
       [
@@ -65,6 +77,8 @@ async function work(output: string, request: object, priority: () => BuildPriori
       "Fix the renderer error, then publish again.",
     );
   } finally {
+    signal?.removeEventListener("abort", release);
+    rendering.delete(lease);
     await lease.release();
     fs.rmSync(file, { force: true });
   }
@@ -157,8 +171,9 @@ export async function render(
   request: RenderRequest,
   variant?: (units: Unit[]) => Promise<BuildInfo>,
   priority: () => BuildPriority = () => "normal",
+  signal?: AbortSignal,
 ) {
-  await work(output, request, priority);
+  await work(output, request, priority, signal);
   const file = path.join(output, "attribute.json");
   if (!fs.existsSync(file)) return;
   const { changes, silent, cards } = readJson<{
@@ -175,7 +190,7 @@ export async function render(
             final: request.new,
             new: await variant(units),
             effects,
-          }, priority);
+          }, priority, signal);
           const shown = path.join(output, "shown.json"),
             result = readJson<boolean[] | null>(shown, null);
           fs.rmSync(shown, { force: true });
@@ -184,7 +199,22 @@ export async function render(
       : changes.map((c) =>
           c.within.length ? [] : request.units.map((u) => u.id),
         );
-  await work(output, { ...request, causes, cards }, priority);
+  await work(output, { ...request, causes, cards }, priority, signal);
+}
+// A comparison depends only on what it renders: the two builds, the edits
+// with their contents, and how it lists changes. It is the same whichever
+// round asks for it, so one rendered ahead while the agent worked serves the
+// round its turn then publishes.
+export function renderKey(request: RenderRequest) {
+  return createHash("sha256").update(JSON.stringify([codeVersion(), request.main, request.source_dir, request.figures, request.old.key, request.new.key, request.units, request.indirect ?? true])).digest("hex").slice(0, 32);
+}
+async function cloneTree(from: string, to: string) {
+  await fs.promises.mkdir(to, { recursive: true });
+  for (const entry of await fs.promises.readdir(from, { withFileTypes: true })) {
+    const source = path.join(from, entry.name), target = path.join(to, entry.name);
+    if (entry.isDirectory()) await cloneTree(source, target);
+    else await fs.promises.copyFile(source, target, fs.constants.COPYFILE_FICLONE);
+  }
 }
 // The places of an edit past those rendered with its round.
 export async function more(output: string, unit: string) {
@@ -248,53 +278,121 @@ export class Publisher {
   }
   // Viewing ends without a request, so running builds are looked at again.
   private watching: NodeJS.Timeout | null = null;
-  // Each task whose agent's writes are being compiled ahead, whether newer
-  // writes came meanwhile, the baseline it built, and whether the round
-  // after it needed that very build.
-  private speculating = new Map<string, { again: boolean }>();
+  // Each task whose agent's writes are being followed: the run under way,
+  // which the next write cancels, and the baseline it built.
+  private following = new Map<string, AbortController>();
   private speculations = new Set<Promise<void>>();
   private guesses = new Map<string, string>();
   private verdicts = new Map<string, "hit" | "miss">();
-  /** A task's agent is writing files. Compiles in the background what its
-   *  next round will compile first: the seed of its base and the baseline of
-   *  the chapters that `planAsync` chooses for the edits so far. Writes made
-   *  meanwhile are planned again once that is done. */
+  /** How much following a task's agent matters: more while the author has
+   *  the task open, though less than what is on their screen. */
+  private followPriority(name: string): BuildPriority {
+    return this.attention(name, "changes") === "background" ? "background" : "normal";
+  }
+  /** A task's agent wrote files. Compiles and renders, at once, what the
+   *  round its turn publishes will show for the worktree as it is now: the
+   *  revised version first, the accepted one if it is not compiled yet, then
+   *  the comparison. A newer write cancels this, as latexmk's live mode
+   *  does, as soon as its own build waits; whatever this left compiled is
+   *  where the next build continues. Answers at once. */
   prefetch(name: string) {
     this.app.tasks.get(name);
-    const running = this.speculating.get(name);
-    if (running) { running.again = true; return; }
-    const entry = { again: true };
-    this.speculating.set(name, entry);
-    const promise = (async () => {
-      try {
-        while (entry.again && !this.stopping) {
-          entry.again = false;
-          // A guess that does not compile is no error: the round reports it.
-          await this.speculate(name).catch(() => undefined);
-        }
-      } finally { this.speculating.delete(name); }
-    })();
+    if (this.stopping) return;
+    const previous = this.following.get(name), stop = new AbortController();
+    this.following.set(name, stop);
+    const promise = this.follow(name, stop.signal, () => previous?.abort())
+      // A guess that does not compile is no error: the round reports it.
+      .catch(() => previous?.abort())
+      .finally(() => { if (this.following.get(name) === stop) this.following.delete(name); });
     this.speculations.add(promise);
     void promise.finally(() => this.speculations.delete(promise));
   }
-  private async speculate(name: string) {
-    // A round being built compiles the real thing.
-    if (this.busy(name)) return;
-    const app = this.app, task = app.tasks.get(name);
-    if (!fs.existsSync(task.worktree)) return;
+  /** The accepted text changed while the agent's writes were being
+   *  followed: the round its turn publishes compares against the new one. */
+  refollow(name: string) {
+    if (this.following.has(name) || this.guesses.has(name)) this.prefetch(name);
+  }
+  private async follow(name: string, signal: AbortSignal, replace: () => void) {
+    const app = this.app, task = app.tasks.get(name), project = app.project;
+    if (!fs.existsSync(task.worktree)) return replace();
     const after = await app.tasks.snapshotAsync(task), before = task.accepted,
       files = await app.repo.changedFilesAsync(before, after);
-    if (!files.length) return;
-    const builder = new Builder(app.project, app.repo), targets = await builder.planAsync(before, after, files);
-    const seed = targets[0] !== "full" ? await builder.buildSeed(task.base, { priority: "background" }) : null;
-    if (this.busy(name) || this.stopping) return;
-    const date = buildDate();
-    const baseline = await builder.build(before, targets, seed, { date, priority: "background" });
-    this.guesses.set(name, baseline.key);
-    // Only chapter-sized revised speculation is approved. A finished run
-    // also supplies the next observed edit with compatible warm state.
-    if (targets[0] !== "full" && !this.busy(name) && !this.stopping && !this.speculating.get(name)?.again)
-      await builder.build(after, targets, seed, { date, priority: "background" });
+    if (!files.length || signal.aborted) return replace();
+    const builder = new Builder(project, app.repo), targets = await builder.planAsync(before, after, files),
+      priority = () => this.followPriority(name);
+    const seed = targets[0] !== "full" ? await builder.buildSeed(task.base, { priority }) : null;
+    if (signal.aborted || this.stopping) return replace();
+    const date = buildDate(), options = { date, signal, priority };
+    const [old, next] = await Promise.all([
+      builder.build(before, targets, seed, options),
+      builder.build(after, targets, seed, { ...options, onKey: replace }),
+    ]);
+    this.guesses.set(name, old.key);
+    const indirect = this.tracking.get(name) ?? false;
+    const units = await withHashesAsync(app.repo, before, after, await diffUnitsAsync(app.repo, before, after, (f) => isFigure(project, f)));
+    if (signal.aborted) return;
+    await this.renderCached(
+      { main: project.main, source_dir: project.source_dir, figures: project.figures, old, new: next, units, indirect },
+      indirect ? (subset) => builder.build(withUnits(app.repo, before, after, subset), targets, seed, options) : undefined,
+      priority,
+      signal,
+    );
+  }
+  // Comparisons rendering now, by key, with how much each matters to whoever
+  // waits for it.
+  private renders = new Map<string, { done: Promise<string>; wanted: Set<() => BuildPriority>; stop: AbortController }>();
+  /** The folder of a rendered comparison: one rendered before, the one under
+   *  way, or a new one. A caller that cancels stops waiting; the rendering
+   *  stops once nobody waits for it. */
+  private async renderCached(request: RenderRequest, variant: ((units: Unit[]) => Promise<BuildInfo>) | undefined, priority: () => BuildPriority, signal?: AbortSignal): Promise<string> {
+    const key = renderKey(request), folder = path.join(this.app.state, "cache/renders", key);
+    if (fs.existsSync(path.join(folder, "round.json"))) {
+      const time = new Date();
+      await fs.promises.utimes(folder, time, time).catch(() => undefined);
+      return folder;
+    }
+    if (signal?.aborted) throw new Cancelled();
+    let entry = this.renders.get(key);
+    if (!entry) {
+      const wanted = new Set<() => BuildPriority>(), stop = new AbortController(),
+        top = () => [...wanted].reduce<BuildPriority>((best, get) => (RANK[get()] > RANK[best] ? get() : best), "background"),
+        output = folder + ".pending-" + randomBytes(4).toString("hex");
+      const done = (async () => {
+        await fs.promises.mkdir(output, { recursive: true });
+        try {
+          await render(output, request, variant, top, stop.signal);
+          await fs.promises.rm(folder, { recursive: true, force: true });
+          await fs.promises.rename(output, folder);
+          return folder;
+        } finally {
+          await fs.promises.rm(output, { recursive: true, force: true });
+        }
+      })();
+      const created = { done, wanted, stop };
+      entry = created;
+      this.renders.set(key, created);
+      void done.catch(() => undefined).finally(() => { if (this.renders.get(key) === created) this.renders.delete(key); });
+    }
+    const shared = entry;
+    shared.wanted.add(priority);
+    reprioritizeRenders();
+    let leave = () => {};
+    const cancelled = new Promise<never>((_, reject) => {
+      leave = () => {
+        shared.wanted.delete(priority);
+        if (!shared.wanted.size) shared.stop.abort();
+        else reprioritizeRenders();
+        reject(new Cancelled());
+      };
+      signal?.addEventListener("abort", leave, { once: true });
+    });
+    cancelled.catch(() => undefined);
+    try {
+      return await (signal ? Promise.race([shared.done, cancelled]) : shared.done);
+    } finally {
+      signal?.removeEventListener("abort", leave);
+      shared.wanted.delete(priority);
+    }
   }
   private async compile(job: Pick<Job, "id" | "task">, side: "baseline" | "revised", builder: Builder, rev: string, targets = ["full"], seed: BuildInfo | null = null, { asSeed = false, force = false, date }: { asSeed?: boolean; force?: boolean; date?: ReturnType<typeof buildDate> } = {}) {
     const progress = this.builds.get(job.id) ?? {};
@@ -412,6 +510,7 @@ export class Publisher {
   }
   stop() {
     this.stopping = true;
+    for (const run of this.following.values()) run.abort();
   }
   private phase(job: Pick<Job, "id">, phase: string) {
     if (this.stopping) throw new Error("Server stopped during publication.");
@@ -681,8 +780,9 @@ export class Publisher {
       builds: [seed, old, next].filter((b) => b !== null).map((b) => b.key),
     };
     try {
-      await render(
-        output,
+      // The comparison the agent's writes were rendered into ahead, when it
+      // shows exactly these builds and edits; otherwise it renders now.
+      const rendered = await this.renderCached(
         {
           main: project.main,
           source_dir: project.source_dir,
@@ -705,6 +805,7 @@ export class Publisher {
           : undefined,
         () => this.priority(job),
       );
+      await cloneTree(rendered, output);
       // Decisions go on meanwhile; they never change a round's versions.
       await app.exclusive(async () => {
         await fs.promises.mkdir(final, { recursive: true });
@@ -793,6 +894,20 @@ export class Publisher {
       } else if (!this.pending.has(task.name)) this.submit(task.name, undefined, indirect);
     }
   }
+  // Comparisons rendered ahead and not used for three days, and folders a
+  // rendering stopped by a restart left after an hour.
+  private async pruneRenders(maxAge = 3 * 86400) {
+    const root = path.join(this.app.state, "cache/renders");
+    let entries: fs.Dirent[];
+    try { entries = await fs.promises.readdir(root, { withFileTypes: true }); }
+    catch { return; }
+    for (const entry of entries) {
+      const folder = path.join(root, entry.name), pending = entry.name.includes(".pending-");
+      if (!entry.isDirectory() || (!pending && this.renders.has(entry.name))) continue;
+      const stat = await fs.promises.stat(folder).catch(() => null);
+      if (stat && now() - stat.mtimeMs / 1000 > (pending ? 3600 : maxAge)) await fs.promises.rm(folder, { recursive: true, force: true });
+    }
+  }
   async pruneCache() {
     if (this.pruning) return this.pruning;
     if (this.busy()) return;
@@ -803,7 +918,7 @@ export class Publisher {
         )
         .flatMap((r) => r.summary.builds ?? []),
     );
-    this.pruning = new Builder(this.app.project, this.app.repo).prune(keep);
+    this.pruning = Promise.all([new Builder(this.app.project, this.app.repo).prune(keep), this.pruneRenders()]).then(() => undefined);
     try {
       await this.pruning;
     } catch (error) {
