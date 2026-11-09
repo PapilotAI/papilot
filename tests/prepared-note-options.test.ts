@@ -23,6 +23,14 @@ const prepared: PreparedNoteOptions = { note: 1, current: { label: 'Efficient', 
 ] };
 const response = (notes: unknown = [prepared]) => 'Revised the speed description.\n\n```papilot-note-options\n' + JSON.stringify({ notes }) + '\n```';
 
+test('prepared choice counts are guidance, with a bounded response size', () => {
+  for (const count of [0, 1, 2, 3, 5, 6]) {
+    const entry = { ...prepared, options: Array.from({ length: count }, (_, index) => ({ ...prepared.options[0], label: `Choice ${index}` })) };
+    assert.deepEqual(readPreparedNoteOptions(response([entry]), 1), [entry]);
+  }
+  assert.deepEqual(readPreparedNoteOptions(response([{ ...prepared, options: Array(7).fill(prepared.options[0]) }]), 1), []);
+});
+
 test('prepared choices are extracted once and streaming preserves the conversational summary', () => {
   assert.deepEqual(readPreparedNoteOptions(response(), 1), [prepared]);
   assert.deepEqual(readPreparedNoteOptions(response(), 0), []);

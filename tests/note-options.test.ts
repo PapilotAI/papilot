@@ -21,6 +21,12 @@ test('options must be distinct and cover exactly the supplied edits', () => {
   const current = { id: 'current', label: 'Current', edits: [{ unit: 'a', text: 'efficient' }] };
   const valid = { options: ['quick', 'fast'].map(text => ({ label: text, reason: `Use ${text} to describe speed directly.`, edits: [{ unit: 'a', text }] })) };
   assert.equal(parseNoteOptions(JSON.stringify(valid), current).length, 2);
+  for (const count of [1, 3, 5, 6]) {
+    const options = Array.from({ length: count }, (_, index) => ({ ...valid.options[0], edits: [{ unit: 'a', text: `wording ${index}` }] }));
+    assert.equal(parseNoteOptions(JSON.stringify({ options }), current).length, count);
+  }
+  assert.deepEqual(parseNoteOptions('{"options":[]}', current, true), []);
+  assert.throws(() => parseNoteOptions(JSON.stringify({ options: Array(7).fill(valid.options[0]) }), current), /incomplete/);
   assert.equal(parseNoteOptions(JSON.stringify(valid), current)[0].reason, valid.options[0].reason);
   for (const reason of [undefined, '', ' ', 'x'.repeat(181)]) assert.throws(() => parseNoteOptions(JSON.stringify({ options: [{ ...valid.options[0], reason }, valid.options[1]] }), current), /reason/);
   assert.throws(() => parseNoteOptions(JSON.stringify({ options: [valid.options[0], valid.options[0]] }), current), /repeated/);

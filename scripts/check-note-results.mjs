@@ -93,6 +93,10 @@ try {
   await controls().getByRole('button', { name: 'Retry linking changes', exact: true }).click();
   await frame().getByRole('button', { name: 'Show note 1: Keep the technical term.', exact: true }).waitFor();
   assert.equal(await frame().getByRole('button', { name: 'Show note 1: Shorten the opening.', exact: true }).count(), 0, 'an older note must not label a newer round');
+  await frame().getByRole('button', { name: 'Other options · 1', exact: true }).click();
+  await controls().getByRole('tab', { name: 'Concise', exact: true }).waitFor();
+  await frame().locator('.source-fixture p').first().click();
+  await controls().waitFor({ state: 'hidden' });
   const original = await page.locator('[data-note-result]').allTextContents();
   assert.equal(await page.locator('#conversation-panel .note-result-links, #conversation-panel .note-options').count(), 0);
   assert.equal(await controls().locator('.note-result-link').count(), 0);
@@ -102,6 +106,7 @@ try {
   await sent(1).click();
   await frame().locator('html[data-papilot-round="1"]').waitFor();
   await frame().locator('.papilot-linked-change[data-stop="1"]').waitFor();
+  assert.equal(await frame().locator('.papilot-note-options button').count(), 0, 'Historical changes do not advertise unavailable alternatives');
   assert.equal(await controls().locator('.review-note-position').textContent(), '2 / 3');
   assert.equal(await controls().getByRole('button', { name: 'Previous note', exact: true }).isEnabled(), true);
   assert.equal(await controls().getByRole('button', { name: 'Next note', exact: true }).isEnabled(), true);
@@ -190,6 +195,7 @@ try {
   await controls().getByRole('button', { name: 'Reject Concise', exact: true }).click();
   await controls().waitFor({ state: 'hidden' });
   assert.equal(decisions[2].c1, 'rejected');
+  await frame().locator('.papilot-note-options button').waitFor({ state: 'hidden' });
   assert.equal(optionWrites.length, 2);
   assert.ok(optionWrites.every(body => body.reject === true && body.accept === undefined && body.option === 'brief'));
   assert.equal(optionWrites[0].id, optionWrites[1].id, 'A retry keeps the same decision identity');

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { NoteOption, NoteOptions, Task } from '../shared.ts';
+import { MAX_NOTE_ALTERNATIVES } from '../shared.ts';
 import type { Store } from './store.ts';
 import { sameFragment, taskNoteResults, type NoteRound } from './note-results.ts';
 import { taskRoute, type ReviewClient } from './review.ts';
@@ -29,7 +30,7 @@ export function selectedNoteOptions(choices: NoteOption[], current: NoteOption) 
 
 export function parseNoteOptions(text: string, current: NoteOption, partial = false): NoteOption[] {
   const value = JSON.parse(text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, ''));
-  if (!Array.isArray(value.options) || (partial ? value.options.length > 2 : value.options.length !== 2)) throw new Error('The agent did not return two usable options. Try again.');
+  if (!Array.isArray(value.options) || value.options.length > MAX_NOTE_ALTERNATIVES || (!partial && !value.options.length)) throw new Error('The agent returned an incomplete option. Try again.');
   const signatures = new Set([JSON.stringify(current.edits)]);
   return value.options.flatMap((entry: any) => {
     try {

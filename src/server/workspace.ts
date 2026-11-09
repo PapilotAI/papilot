@@ -403,7 +403,7 @@ export class Workspace extends EventEmitter {
     if (files.length) prompt = (prompt || 'The user attached reference material without an instruction. Briefly identify the material and ask what they would like to do with it. Do not change the manuscript yet.') + this.attachments.prompt(files);
     if (task.mode === 'review') prompt = reviewPrompt(prompt, this.store.reviewInput(taskId));
     const noteOptionsRequested = task.mode !== 'review' && Boolean(options.notes?.length || options.reviewNotes?.length) && this.store.preference<boolean>('note-alternatives') !== false;
-    if (noteOptionsRequested) prompt += '\n\n' + preparedNoteOptionsInstructions;
+    if (noteOptionsRequested) prompt += '\n\n' + preparedNoteOptionsInstructions(this.store.preference('note-alternative-range'));
     const run: Run = { id: randomUUID(), taskId, requestKey, prompt, ...(noteOptionsRequested ? { noteOptionsRequested } : {}), ...(files.length ? { attachments: files } : {}), feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null, reviewRound: 0 };
     const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name, ...(options.skill.icon ? { icon: options.skill.icon } : {}) } } : {}), ...(options.notes?.length ? { notes: summarizeNotes(options.notes) } : options.reviewNotes?.length ? { notes: options.reviewNotes } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}) };
     if (options.groupInstructions && Object.keys(options.groupInstructions).length) meta.groupInstructions = options.groupInstructions;

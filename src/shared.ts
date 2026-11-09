@@ -81,6 +81,11 @@ export interface NoteSummary { group?: NoteGroup; kind?: MarkKind; stamp?: strin
 export interface NoteChange { round: number; stop: number; units: string[]; state: 'pending' | 'accepted' | 'rejected' | 'commented' | 'mixed'; match: 'source' | 'quote' }
 export interface NoteResult { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
 export interface NoteOption { id: string; label: string; reason?: string; previewError?: string; edits: { unit: string; text: string }[] }
+export const NOTE_ALTERNATIVE_RANGES = { few: [1, 2], balanced: [2, 3], many: [3, 5] } as const;
+export type NoteAlternativeRange = keyof typeof NOTE_ALTERNATIVE_RANGES;
+export const noteAlternativeRange = (value: unknown): NoteAlternativeRange => typeof value === 'string' && Object.hasOwn(NOTE_ALTERNATIVE_RANGES, value) ? value as NoteAlternativeRange : 'few';
+// The requested range is guidance. Keep useful responses outside it bounded.
+export const MAX_NOTE_ALTERNATIVES = 6;
 // Prepared by the editing agent in the same turn, before review-unit IDs exist.
 export interface PreparedNoteOptions { note: number; current: { label: string; reason: string }; options: { label: string; reason: string; edits: { file: string; find: string; replace: string }[] }[] }
 export interface NoteOptions { before?: Record<string, string>; round: number; key: string; options: NoteOption[]; selected?: string; locked?: string; comparisonKey?: string }

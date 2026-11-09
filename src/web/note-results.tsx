@@ -61,6 +61,7 @@ interface Links {
   notes: NoteResult[]; error: boolean; loading: boolean; selected: string; reveal: number;
   focus: NoteFocus | null; scope: 'all' | 'note'; setScope: (scope: 'all' | 'note') => void; reload: () => void;
   clearFocus: () => void;
+  alternativeCounts: Record<string, number>;
   focusNote: (key: string) => void;
   showChange: (key: string, change: NoteChange) => void; showNote: (key: string) => void;
 }
@@ -75,6 +76,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
   const [selected, setSelected] = useState(''), [focus, setFocus] = useState<NoteFocus | null>(null);
   const [reveal, setReveal] = useState(0), [scope, setScope] = useState<'all' | 'note'>('all');
   const [preview, setPreview] = useState<Preview>(null);
+  const [available, setAvailable] = useState<Record<string, { round: number; count: number }>>({});
   const sequence = useRef(0), actions = useRef({ read, openReview, openChat }); actions.current = { read, openReview, openChat };
   const signature = items.filter(item => item.type === 'user' && (item.meta?.notes?.length || readNotesInstructions(item.text))).map(item => item.id).join(',');
   const id = task?.id;
@@ -85,7 +87,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
   }, [id, signature]);
   const decisions = JSON.stringify(task?.review?.counts);
   useEffect(() => { reload(); return () => { ++sequence.current; }; }, [reload, task?.review?.round, task?.status, task?.updatedAt, decisions]);
-  useEffect(() => { setNotes([]); setScope('all'); setPreview(null); setFocus(null); setSelected(''); setError(false); }, [id]);
+  useEffect(() => { setNotes([]); setAvailable({}); setScope('all'); setPreview(null); setFocus(null); setSelected(''); setError(false); }, [id]);
   const showNote = (key: string) => {
     setSelected(key); setReveal(value => value + 1); actions.current.openChat();
     requestAnimationFrame(() => {
@@ -123,7 +125,10 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
         if (note.round !== task.review?.round || !note.changes.length) continue;
         try {
           const options = await optionsRequest(id, note.key);
-          if (cancelled || !('options' in options) || options.locked) continue;
+          if (cancelled || !('options' in options)) continue;
+          const count = options.locked ? 0 : Math.max(0, options.options.length - 1);
+          setAvailable(previous => previous[note.key]?.round === options.round && previous[note.key]?.count === count ? previous : { ...previous, [note.key]: { round: options.round, count } });
+          if (options.locked) continue;
           rememberOptions(optionStateKey(task, notes, note), options);
           await Promise.allSettled(options.options.filter(option => !option.previewError).map(option =>
             comparisonCache.read(previewKey(id, note.key, options.round, option.id, options.comparisonKey), () => previewRequest(id, note.key, options.round, option.id, false, options.comparisonKey).then(warmComparison))));
@@ -133,6 +138,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     return () => { cancelled = true; };
   }, [id, task?.status, task?.review?.round, task?.updatedAt, decisions, noteSignature]);
   const value: Links = { task, optionsRequest, previewRequest: previewRequest && ((id, key, round, option, retry, version) => comparisonCache.read(previewKey(id, key, round, option, version), () => previewRequest(id, key, round, option, retry, version).then(warmComparison))), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
+    alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); }, showChange };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
@@ -167,7 +173,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     if (!note) return;
     const outside = (event: MouseEvent) => {
       const target = event.target as Element | null;
-      if (!event.isTrusted || !target || panel.current?.contains(target) || target.closest('[data-note-result], .papilot-note-links, .note-review-scope')) return;
+      if (!event.isTrusted || !target || panel.current?.contains(target) || target.closest('[data-note-result], .papilot-note-links, .papilot-note-options, .note-review-scope')) return;
       latest.current?.clearFocus();
     };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) latest.current?.clearFocus(); };

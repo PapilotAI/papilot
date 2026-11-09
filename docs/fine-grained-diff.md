@@ -13,7 +13,10 @@ keyboard actions and batch actions operate on the focused note's pending units.
 The default still reviews the whole displayed change. TeX constructs and bibliography
 entries remain atomic; ambiguous PDF locations use the coarse renderer.
 
-A selected note offers the current proposal and two alternatives in a compact bottom drawer
+Each pending diff group with prepared alternatives has an **Other options · N** entry beside its change number.
+Groups with only the main proposal have no extra entry. Shared groups open the relevant note with the existing drawer pager.
+
+A selected note offers the current proposal and prepared alternatives in a compact bottom drawer
 attached to the bottom edge of the central PDF review pane, with no side margins,
 rounded outer card or nested comparison frame. A single row holds option tabs on the left, then
 previous/next note arrows with the current position, and accept/reject/comment actions plus a LaTeX toggle on the right.
@@ -25,9 +28,11 @@ below and dismisses on an outside click or Escape. It adds measured bottom scrol
 space to the review and reveals covered highlights without changing PDF geometry,
 so edits at the end of the document remain reachable above it. The conversation keeps only the
 original sent annotations; clicking one focuses its changes without inserting any
-controls, status, or option text into that message. One icon-only accept, reject and comment group at the right of that row acts on the selected option, with no shared-edit hint. Acceptance uses that option and only the current note’s edits. Rejection immediately restores this note’s original source through the review journal and can be undone. Comments open an editor inside the PDF panel and remain in the existing unsent review draft until the author sends them. Scope controls live in the PDF toolbar. Opening a note only reads cached choices. **Settings → Review preferences → Prepare alternatives by default** is on by default.
-When an editing turn receives PDF notes, its prompt requests the main revision and two
-alternatives with concise titles and reasons together. The agent appends structured
+controls, status, or option text into that message. One icon-only accept, reject and comment group at the right of that row acts on the selected option, with no shared-edit hint. Acceptance uses that option and only the current note’s edits. Rejection immediately restores this note’s original source through the review journal and can be undone. Comments open an editor inside the PDF panel and remain in the existing unsent review draft until the author sends them. Scope controls live in the PDF toolbar. Opening a note only reads cached choices. **Settings → Review preferences → Prepare alternatives for PDF notes** is on by default.
+When an editing turn receives PDF notes, its prompt requests the main revision and alternatives with concise titles and reasons together.
+A three-stop slider sets the target extra choices per note: Few (1–2, default), Balanced (2–3), or More (3–5).
+The range excludes the main proposal and is guidance rather than a quota; the AI should not pad weak or repetitive choices.
+The parser accepts up to six well-formed alternatives, including useful responses outside the target range. The agent appends structured
 option data to its response; Papilot preserves the original response and displays only
 the human summary in the conversation. Before making the review available, it validates
 the prepared source patches against the exact units linked to each note and saves the

@@ -1295,7 +1295,14 @@
   "Binary file changed.": "Binärfil har ändrats.",
   "LaTeX comparison": "LaTeX-jämförelse",
   "Long change: the source is shortened.": "Omfattande ändring: källkoden har förkortats.",
-  "Prepare alternatives by default": "Förbered alternativ som standard",
-  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "Be AI:n förbereda två alternativ med korta motiveringar i samma uppgift när PDF-anteckningar redigeras. Alternativen finns redo vid granskning utan en ny AI-förfrågan.",
-  "No visible change": "Ingen synlig ändring"
+  "No visible change": "Ingen synlig ändring",
+  "Prepare alternatives for PDF notes": "Förbered alternativ för PDF-anteckningar",
+  "When editing from PDF notes, prepare other wording and brief reasons alongside the main proposal. Applies to future requests.": "Vid redigering utifrån PDF-anteckningar förbereds andra formuleringar och korta motiveringar tillsammans med huvudförslaget. Gäller framtida förfrågningar.",
+  "Extra alternatives per note": "Extra alternativ per anteckning",
+  "Few": "Få",
+  "Balanced": "Balanserat",
+  "More": "Fler",
+  "{min}–{max} alternatives": "{min}–{max} alternativ",
+  "A target range, excluding the main proposal. The AI may return fewer or more useful choices. More choices take longer to prepare.": "Ett riktmärke som inte räknar med huvudförslaget. AI:n kan ge färre eller fler användbara alternativ. Fler alternativ tar längre tid att förbereda.",
+  "Other options · {n}": "Andra alternativ · {n}"
 }

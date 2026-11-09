@@ -1,4 +1,5 @@
 import { isNoteGroup } from '../note-groups.ts';
+import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES } from '../shared.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
 import rateLimit from '@fastify/rate-limit';
@@ -226,12 +227,18 @@ export async function buildApp(options: AppOptions) {
     return { quickNotes: quickNotes || null };
   });
   app.get('/api/indirect-changes', () => ({ indirectChanges: indirectChanges() }));
-  app.get('/api/note-alternatives', () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') !== false }));
+  const alternativePreferences = () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') !== false, noteAlternativeRange: noteAlternativeRange(store.preference('note-alternative-range')) });
+  app.get('/api/note-alternatives', alternativePreferences);
   app.post('/api/note-alternatives', (request, reply) => {
     const value = (request.body as any)?.noteAlternatives;
+    const range = (request.body as any)?.noteAlternativeRange;
     if (typeof value !== 'boolean') return reply.code(400).send({ error: 'Send noteAlternatives as true or false.' });
-    store.savePreference('note-alternatives', value);
-    return { noteAlternatives: value };
+    if (range !== undefined && (typeof range !== 'string' || !Object.hasOwn(NOTE_ALTERNATIVE_RANGES, range))) return reply.code(400).send({ error: 'Send noteAlternativeRange as few, balanced or many.' });
+    store.transaction(() => {
+      store.savePreference('note-alternatives', value);
+      if (range !== undefined) store.savePreference('note-alternative-range', range);
+    });
+    return alternativePreferences();
   });
   app.post('/api/indirect-changes', (request, reply) => {
     const value = (request.body as any)?.indirectChanges;

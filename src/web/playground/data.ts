@@ -157,7 +157,7 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
     if (path === '/indirect-changes') return { indirectChanges: false };
     if (path === '/note-alternatives') {
       if (body !== undefined && typeof (body as { noteAlternatives?: unknown }).noteAlternatives === 'boolean') storage.setItem('playground:note-alternatives', JSON.stringify(body));
-      return JSON.parse(storage.getItem('playground:note-alternatives') || '{"noteAlternatives":true}');
+      return { noteAlternativeRange: 'few', ...JSON.parse(storage.getItem('playground:note-alternatives') || '{"noteAlternatives":true}') };
     }
     // The note drawer uses the same prepared comparison and local decision
     // journal as the iframe. Opening a note never calls an AI or asks for a download.

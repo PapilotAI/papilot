@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { PreparedNoteOptions, Run, Task } from '../shared.ts';
+import { MAX_NOTE_ALTERNATIVES, NOTE_ALTERNATIVE_RANGES, noteAlternativeRange } from '../shared.ts';
 import type { Store } from './store.ts';
 import type { ReviewClient } from './review.ts';
 import { noteOptionContext, noteOptionsKey, parseNoteOptions } from './note-options.ts';
@@ -10,10 +11,13 @@ import { textEdits } from '../../engine/src/core/text-edits.ts';
 
 const execute = promisify(execFile);
 const marker = '```papilot-note-options';
-export const preparedNoteOptionsInstructions = `For manuscript edits the author requests, prepare alternatives during this editing turn, together with the main revision, for the numbered PDF notes in this message. Apply only the preferred proposal to the source. Respect requests for discussion or explanation without editing; this preference does not authorize extra manuscript changes. For each edited note with a meaningful wording choice, also prepare exactly two distinct alternatives now; do not leave generation for the review UI. Do not invent alternatives to factual corrections, deletions, or changes that have only one valid result.
+export function preparedNoteOptionsInstructions(range: unknown = 'few') {
+  const [min, max] = NOTE_ALTERNATIVE_RANGES[noteAlternativeRange(range)];
+  return `For manuscript edits the author requests, prepare alternatives during this editing turn, together with the main revision, for the numbered PDF notes in this message. Apply only the preferred proposal to the source. Respect requests for discussion or explanation without editing; this preference does not authorize extra manuscript changes. For each edited note with a meaningful wording choice, aim for ${min}–${max} extra alternatives, excluding the main proposal, now; do not leave generation for the review UI. This is a target range, not a quota: fewer or more useful choices are fine, up to ${MAX_NOTE_ALTERNATIVES}. Never pad the response with repetitive or weak choices. Do not invent alternatives to factual corrections, deletions, or changes that have only one valid result.
 After your normal concise summary, append one fenced block whose language is papilot-note-options, containing JSON in this shape:
 {"notes":[{"note":1,"current":{"label":"short title","reason":"one concrete sentence"},"options":[{"label":"short title","reason":"one concrete sentence","edits":[{"file":"relative/path.tex","find":"exact source in the final proposed file","replace":"alternative source"}]},{"label":"another short title","reason":"one concrete sentence","edits":[{"file":"relative/path.tex","find":"exact source in the final proposed file","replace":"alternative source"}]}]}]}
-Use the note numbers in this message (1-based). Use short titles and specific reasons in the note's language, at most 80 and 180 characters respectively. Each find string must occur exactly once in the final source; include unchanged surrounding text to disambiguate it when needed and preserve that context verbatim in replace. Only vary source you changed for that note; keep all other notes' edits, whitespace, citations, facts, quantities, and mathematical meaning intact. Compare your main revision to the original source and keep every unchanged prefix and suffix unchanged in each alternative. For example, if you change "The estimates are stable." to "The estimates exhibit stability.", vary "exhibit stability"; do not add "resulting" before the unchanged word "estimates". For overlapping notes, prepare each note's alternatives against the same final proposed file. Do not apply alternatives or write metadata files. This block is application data shown as choices in the PDF pane, not part of the conversational summary. Omit notes with no meaningful alternatives.`;
+The JSON shape above illustrates two alternatives; use the requested range for the actual options array. Use the note numbers in this message (1-based). Use short titles and specific reasons in the note's language, at most 80 and 180 characters respectively. Each find string must occur exactly once in the final source; include unchanged surrounding text to disambiguate it when needed and preserve that context verbatim in replace. Only vary source you changed for that note; keep all other notes' edits, whitespace, citations, facts, quantities, and mathematical meaning intact. Compare your main revision to the original source and keep every unchanged prefix and suffix unchanged in each alternative. For example, if you change "The estimates are stable." to "The estimates exhibit stability.", vary "exhibit stability"; do not add "resulting" before the unchanged word "estimates". For overlapping notes, prepare each note's alternatives against the same final proposed file. Do not apply alternatives or write metadata files. This block is application data shown as choices in the PDF pane, not part of the conversational summary. Omit notes with no meaningful alternatives.`;
+}
 
 // Keep the original response in rawText while streaming only the human summary.
 // A partly received marker must not briefly flash JSON in the conversation.
@@ -39,7 +43,7 @@ export function readPreparedNoteOptions(text: string, count: number): PreparedNo
   return value.notes.filter((entry: any) => {
     if (!Number.isInteger(entry?.note) || entry.note < 1 || entry.note > count || seen.has(entry.note)) return false;
     seen.add(entry.note);
-    return title(entry.current) && Array.isArray(entry.options) && entry.options.length === 2 && entry.options.every((option: any) =>
+    return title(entry.current) && Array.isArray(entry.options) && entry.options.length <= MAX_NOTE_ALTERNATIVES && entry.options.every((option: any) =>
       title(option) && Array.isArray(option.edits) && option.edits.length > 0 && option.edits.length <= 64 && option.edits.every((edit: any) =>
         typeof edit?.file === 'string' && edit.file.length <= 500 && typeof edit.find === 'string' && edit.find.length > 0 && edit.find.length <= 20000
         && typeof edit.replace === 'string' && edit.replace.length <= 20000 && ![edit.file, edit.find, edit.replace].some(text => text.includes('\0'))));

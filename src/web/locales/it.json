@@ -1295,7 +1295,14 @@
   "Binary file changed.": "File binario modificato.",
   "LaTeX comparison": "Confronto LaTeX",
   "Long change: the source is shortened.": "Modifica estesa: il sorgente è stato abbreviato.",
-  "Prepare alternatives by default": "Preparare alternative per impostazione predefinita",
-  "When editing PDF notes, ask the AI to prepare two alternatives with brief reasons in the same task. Review choices are ready without another AI request.": "Durante la modifica delle annotazioni PDF, chiedere all’IA due alternative con brevi motivazioni nella stessa attività. Saranno disponibili per la revisione senza un’altra richiesta all’IA.",
-  "No visible change": "Nessuna modifica visibile"
+  "No visible change": "Nessuna modifica visibile",
+  "Prepare alternatives for PDF notes": "Prepara alternative per le note PDF",
+  "When editing from PDF notes, prepare other wording and brief reasons alongside the main proposal. Applies to future requests.": "Quando modifichi in base alle note PDF, prepara altre formulazioni e brevi motivazioni insieme alla proposta principale. Si applica alle richieste future.",
+  "Extra alternatives per note": "Alternative aggiuntive per nota",
+  "Few": "Poche",
+  "Balanced": "Equilibrato",
+  "More": "Più",
+  "{min}–{max} alternatives": "{min}–{max} alternative",
+  "A target range, excluding the main proposal. The AI may return fewer or more useful choices. More choices take longer to prepare.": "Un intervallo indicativo, esclusa la proposta principale. L’IA può fornire meno o più alternative utili. Più alternative richiedono più tempo di preparazione.",
+  "Other options · {n}": "Altre opzioni · {n}"
 }
