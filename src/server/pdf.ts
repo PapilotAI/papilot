@@ -114,6 +114,32 @@ async function chaptersPdf(root: string, info: RoundInfo) {
   } catch { return null; }
 }
 
+// A round that compiled the whole paper published its complete PDF of the
+// new version. The full paper shows that build rather than compiling the same
+// version again under another cache key, one without the round's fixed date.
+const adopted = new Map<string, Promise<void>>();
+function adopt(root: string, revision: string, info: RoundInfo) {
+  const build = info.build;
+  if (!build || JSON.stringify(build.targets) !== '["full"]' || !/^[0-9a-f]{32}$/.test(build.key)) return Promise.resolve();
+  const key = JSON.stringify([root, revision, build.key]);
+  let found = adopted.get(key);
+  if (!found) {
+    found = (async () => {
+      const b = await builder(root);
+      const [published, tree] = await Promise.all([b.completed(build.key), b.repo.treeIdAsync(revision, b.project.source_dir)]);
+      // Only that very version: a round's build of another tree, such as an
+      // empty round's baseline, is not this revision's PDF.
+      if (!published || published.tree !== tree || JSON.stringify(published.targets) !== '["full"]') return;
+      const paperKey = JSON.stringify([root, revision]);
+      if (papers.get(paperKey)) return;
+      papers.set(paperKey, { priority: 'foreground', following: false, passes: new Map(), pdf: published.pdf, failure: null, done: Promise.resolve(), changed: new Set() });
+    })().catch(() => undefined);
+    adopted.set(key, found);
+    if (adopted.size > 256) adopted.delete(adopted.keys().next().value!);
+  }
+  return found;
+}
+
 async function ready(root: string, revision: string, follow = false) {
   for (let attempt = 0; ; attempt++) {
     const paper = preparePaper(root, revision, 'foreground', follow);
@@ -127,7 +153,9 @@ async function ready(root: string, revision: string, follow = false) {
 
 /** The complete PDF of a round's version, once it has compiled. */
 export async function fullPaperPdf(connect: Connect, root: string, name: string, round: number, side: 'before' | 'after'): Promise<string> {
-  return ready(root, (await roundInfo(connect, root, name, round))[side]);
+  const info = await roundInfo(connect, root, name, round);
+  if (side === 'after') await adopt(root, info.after, info);
+  return ready(root, info[side]);
 }
 
 /** What the review's full paper shows next, after version `after`: a later
@@ -136,6 +164,7 @@ export async function fullPaperPdf(connect: Connect, root: string, name: string,
  *  when the round compiled only those), then each TeX pass of the whole. */
 export async function nextPaperPass(connect: Connect, root: string, name: string, round: number, after: number, wait = 20000): Promise<{ pass?: number | null }> {
   const info = await roundInfo(connect, root, name, round), chapters = await chaptersPdf(root, info), offset = chapters ? 1 : 0;
+  await adopt(root, info.after, info);
   if (chapters && after < 1) {
     // A complete PDF that is already there, or nearly, comes first.
     const paper = preparePaper(root, info.after, 'foreground', true);

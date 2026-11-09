@@ -297,6 +297,38 @@ test('the review full paper shows the round\'s changed chapters at once, then ea
   } finally { teX.restore(); f.close(); }
 });
 
+test('the full paper of a round that compiled the whole paper is that round\'s own PDF', { skip: process.platform === 'win32' && 'uses a POSIX shell script', timeout: 60000 }, async () => {
+  const { nextPaperPass, fullPaperPdf } = await import('../src/server/pdf.ts');
+  const f = paper({ 'main.tex': document('Text.\n') });
+  const bin = path.join(f.base, 'bin'), calls = path.join(f.base, 'calls'), previousPath = process.env.PATH;
+  try {
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'pdflatex'), '#!/bin/sh\necho "pdfTeX 3.14 (fake)"\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, 'latexmk'), `#!/bin/sh\necho run >> "${calls}"\nmkdir -p build && echo pdf > build/main.pdf\n`, { mode: 0o755 });
+    process.env.PATH = `${bin}${path.delimiter}${previousPath}`;
+    const project = loadProject(f.root), rev = f.repo.rev('HEAD'), other = f.commit({ 'main.tex': document('Other.\n') });
+    // A build the round published, with its own date, as the publisher leaves it.
+    const publish = async (key: string, revision: string) => {
+      const folder = path.join(project.state, 'cache/builds', key), pdf = path.join(folder, 'src/build/main.pdf');
+      fs.mkdirSync(path.dirname(pdf), { recursive: true });
+      fs.writeFileSync(pdf, '%PDF-1.4 round');
+      fs.writeFileSync(path.join(folder, 'result.json'), JSON.stringify({ key, tree: await f.repo.treeIdAsync(revision, project.source_dir), targets: ['full'], root: path.join(folder, 'src'), cwd: path.join(folder, 'src'), pdf, seconds: 1, warnings: [] }));
+      return pdf;
+    };
+    const round = (after: string, key: string) => async () => ({ get: async () => ({ before: after, after, build: { key, targets: ['full'] } }) as any });
+    const published = await publish('d'.repeat(32), rev), whole = round(rev, 'd'.repeat(32));
+    assert.deepEqual(await nextPaperPass(whole, f.root, 'p-task', 1, 0, 0), { pass: null }, 'the complete PDF is there at once');
+    assert.equal(await fullPaperPdf(whole, f.root, 'p-task', 1, 'after'), published);
+    assert.ok(!fs.existsSync(calls), 'nothing compiled that version again');
+    // A published build of another version, such as an empty round's
+    // baseline, is not shown for this one.
+    const stray = round(other, 'e'.repeat(32));
+    await publish('e'.repeat(32), rev);
+    assert.notEqual(await fullPaperPdf(stray, f.root, 'p-task', 2, 'after'), published);
+    assert.equal(fs.readFileSync(calls, 'utf8').trim().split('\n').length, 1);
+  } finally { process.env.PATH = previousPath; f.close(); }
+});
+
 test('a delivery preview is exactly what applying the task writes, with pending changes accepted', async () => {
   const disk = new Fixture(), app = disk.app();
   try {
