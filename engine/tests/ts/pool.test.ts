@@ -62,20 +62,21 @@ it("lets two TeX runs hold slots at once, and the next one waits for a slot", as
   expect(third.slot).toBe(first.slot);
 });
 
-it("never gives background work more than one slot", async () => {
+it("lets background work use every free slot, and work someone waits for borrows one at once", async () => {
   const speculative = lease("background");
   await speculative.ready;
   const another = lease("background");
-  let acquired = false;
-  void another.ready.then(() => { acquired = true; });
-  await sleep(400);
-  expect(acquired).toBe(false);
-  // The free slot is still there for work someone waits for.
+  await another.ready;
+  expect(new Set([speculative.slot, another.slot])).toEqual(new Set([0, 1]));
+  if (!posix) return;
+  const group = compiler(another);
+  // Work someone waits for stops the newest background run and takes its slot.
   const wanted = lease("normal");
   await wanted.ready;
-  await speculative.release();
-  await another.ready;
-  expect(another.slot).toBe(speculative.slot);
+  expect([wanted.borrowed, wanted.slot]).toEqual([true, another.slot]);
+  expect(stopped(group)).toBe(true);
+  await wanted.release();
+  await until(() => !stopped(group));
 });
 
 it("gives a free slot to the highest priority first, then to whoever waited longest", async () => {

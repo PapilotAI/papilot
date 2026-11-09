@@ -123,11 +123,11 @@ async function readState(dir: string, stale: number): Promise<State> {
 }
 
 /** One TeX run's share of the machine. A slot is taken in priority order,
- *  oldest first within a priority. Background work never holds more than
- *  one slot. When no slot is free, someone waiting stops a run that matters
- *  less (SIGSTOP, confirmed before it starts), the newest of the least
- *  important ones, and borrows its slot until it is done; the lender
- *  continues then, also if the borrower died. Call `release` exactly once. */
+ *  oldest first within a priority; a free slot is never left idle. When no
+ *  slot is free, someone waiting stops a run that matters less (SIGSTOP,
+ *  confirmed before it starts), the newest of the least important ones, and
+ *  borrows its slot until it is done; the lender continues then, also if
+ *  the borrower died. Call `release` exactly once. */
 export class Lease {
   readonly id = randomBytes(8).toString("hex");
   readonly ready: Promise<void>;
@@ -218,8 +218,9 @@ export class Lease {
         // Someone who asked at a higher priority, or earlier at the same
         // priority, goes first.
         const first = !state.waiters.some((w) => w.id !== this.id && (RANK[w.priority] > mine || (RANK[w.priority] === mine && (w.since < this.since || (w.since === this.since && w.id < this.id)))));
-        const background = state.held.filter((h) => h.holder?.priority === "background").length;
-        if (first && (this.priority !== "background" || background === 0))
+        // Any free slot is used, also by background work: whoever needs one
+        // more later borrows it (see borrow).
+        if (first)
           for (const slot of state.free) {
             await fs.promises.writeFile(slotFile(dir, slot), "", { flag: "a" });
             try {
