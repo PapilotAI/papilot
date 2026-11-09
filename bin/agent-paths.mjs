@@ -69,9 +69,9 @@ export function findExecutable(command, env = process.env) {
 }
 // Every executable PATH offers for a command, in order, each installation once
 // (links to the same file count once). An early one may be broken.
-export function findExecutables(command, env = process.env, extra = []) {
+export function findExecutables(command, env = process.env, extra = [], include = () => true) {
   const seen = new Set();
-  return [...agentPath(env).split(path.delimiter), ...extra].filter(Boolean).map(dir => findExecutable(path.join(dir.replace(/^"|"$/g, ''), command), env)).filter(file => {
+  return [...agentPath(env).split(path.delimiter), ...extra].filter(Boolean).filter(include).map(dir => findExecutable(path.join(dir.replace(/^"|"$/g, ''), command), env)).filter(file => {
     if (!file) return false;
     let real = file; try { real = fs.realpathSync(file); } catch { /* compared as it is */ }
     return !seen.has(real) && Boolean(seen.add(real));

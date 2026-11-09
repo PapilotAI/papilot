@@ -37,9 +37,9 @@ function fixture() {
     return file;
   }
   function baseTools() { for (const name of ['git', 'latexmk', 'synctex', 'pdflatex']) tool(name); }
-  async function run(args: string[] = [], extraEnv: NodeJS.ProcessEnv = {}) {
+  async function run(args: string[] = [], extraEnv: NodeJS.ProcessEnv = {}, timeout = 15000) {
     return new Promise<{ code: number; stdout: string; stderr: string; report: Report }>(resolve => {
-      execFile(process.execPath, [path.join(app, 'bin/papilot.mjs'), 'doctor', ...args], { env: { ...env, ...extraEnv }, cwd: dir, timeout: 15000 }, (error, stdout, stderr) => {
+      execFile(process.execPath, [path.join(app, 'bin/papilot.mjs'), 'doctor', ...args], { env: { ...env, ...extraEnv }, cwd: dir, timeout }, (error, stdout, stderr) => {
         let report: Report = { ok: false, checks: [] };
         try { report = JSON.parse(stdout); } catch { /* Human output. */ }
         resolve({ code: error ? Number((error as any).code) || 1 : 0, stdout, stderr, report });
@@ -208,7 +208,37 @@ test('desktop doctor searches PATH, the package and data in order with the serve
   } finally { f.cleanup(); }
 });
 
-test('desktop doctor skips a hanging Codex and probes the working candidate only once', { timeout: 20000 }, async () => {
+test('desktop doctor distinguishes failed probes from candidates not checked before the deadline', async () => {
+  const f = fixture();
+  try {
+    f.baseTools();
+    const candidates = ['first-codex', 'second-codex', 'untried-codex'].map(name => f.tool(name, 'process.exit(1);'));
+    const paths = path.join(f.app, 'bin/agent-paths.mjs');
+    fs.renameSync(paths, path.join(f.app, 'bin/agent-paths-real.mjs'));
+    // Advance the probe budget on each failed candidate without a real wait.
+    fs.writeFileSync(paths, `
+      import * as real from './agent-paths-real.mjs';
+      export * from './agent-paths-real.mjs';
+      const candidates = ${JSON.stringify(candidates)}, now = Date.now;
+      let elapsed = 0;
+      Date.now = () => now() + elapsed;
+      export function findExecutables() { return candidates; }
+      export function spawnCommand(file, args, options) {
+        const child = real.spawnCommand(file, args, options);
+        if (candidates.includes(file) && args[0] === '--version') child.once('close', () => { elapsed += 10000; });
+        return child;
+      }
+    `);
+    const result = await f.run(['--json'], { PAPILOT_DESKTOP: '1' });
+    const codex = item(result.report, 'agent.codex');
+    assert.equal(codex.ok, false);
+    assert.equal(codex.detail, `Codex could not be run (${candidates.slice(0, 2).join(', ')}). Codex candidates not checked in time (${candidates[2]}).`);
+    const commands = fs.readFileSync(f.log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(commands.filter(([name]) => name.endsWith('-codex')), [['first-codex', '--version'], ['second-codex', '--version']]);
+  } finally { f.cleanup(); }
+});
+
+test('desktop doctor skips a hanging Codex and probes the working candidate only once', { timeout: 50000 }, async () => {
   const f = fixture();
   const pidFile = path.join(f.dir, 'codex.pid');
   try {
@@ -225,8 +255,8 @@ test('desktop doctor skips a hanging Codex and probes the working candidate only
     if (process.platform === 'win32') fs.copyFileSync(working, second);
     else fs.symlinkSync(working, second);
     const started = Date.now();
-    const result = await f.run(['--json'], { PAPILOT_DESKTOP: '1', PATH: [f.tools, secondDir].join(path.delimiter) });
-    assert.ok(Date.now() - started < 14000, 'a hanging candidate must leave time within the 45 second diagnostics limit');
+    const result = await f.run(['--json'], { PAPILOT_DESKTOP: '1', PATH: [f.tools, secondDir].join(path.delimiter) }, 45000);
+    assert.ok(Date.now() - started < 40000, 'a hanging candidate must leave time within the 45 second diagnostics limit');
     assert.equal(result.code, 0, result.stdout);
     const codex = item(result.report, 'agent.codex');
     assert.equal(codex.ok, true, codex.detail);

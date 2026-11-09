@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { killTree } from '../bin/agent-paths.mjs';
-import { codexCandidates, firstRunnable } from '../bin/codex-lookup.mjs';
+import { codexCandidates, firstRunnable, isWsl, windowsDrive } from '../bin/codex-lookup.mjs';
 import { codexBinary, resolveCodex } from '../src/server/codex-binary.ts';
 import { Codex } from '../src/server/codex.ts';
 
@@ -20,6 +20,36 @@ function fakeCodex(dir: string, version: string | null, delay = 0) {
 // Only the given folders: the host's own Codex must not answer for the test.
 const env = (root: string, ...dirs: string[]): NodeJS.ProcessEnv => ({ PATH: dirs.join(path.delimiter), Path: dirs.join(path.delimiter), HOME: root, USERPROFILE: root,
   SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec, PATHEXT: process.env.PATHEXT });
+
+test('WSL is detected only on Linux from its environment or kernel release', () => {
+  assert.equal(isWsl({ WSL_DISTRO_NAME: 'Ubuntu' }, 'linux', ''), true);
+  assert.equal(isWsl({ WSL_INTEROP: '/run/WSL/1_interop' }, 'linux', ''), true);
+  assert.equal(isWsl({}, 'linux', '6.6.87.2-Microsoft-standard-WSL2'), true);
+  assert.equal(isWsl({}, 'linux', '6.6.87'), false);
+  assert.equal(isWsl({}, 'linux', ''), false);
+  for (const platform of ['darwin', 'win32'] as const) {
+    assert.equal(isWsl({ WSL_DISTRO_NAME: 'Ubuntu', WSL_INTEROP: '/run/WSL/1_interop' }, platform, 'microsoft'), false);
+  }
+});
+
+test('only a single-letter Windows drive mount is excluded from WSL Codex discovery', () => {
+  for (const dir of ['/mnt/c', '/mnt/c/', '/mnt/C/Users/u/AppData/Roaming/npm', '"/mnt/d/Program Files/nodejs"']) assert.equal(windowsDrive(dir), true, dir);
+  for (const dir of ['/usr/local/bin', '/mnt/data-disk-not-a-letter/bin', '/mnt/cc/bin', '/mnt/1/bin', '/home/u/mnt/c/bin']) assert.equal(windowsDrive(dir), false, dir);
+});
+
+test('WSL Codex discovery skips Windows folders before probing the filesystem, while other hosts keep them', t => {
+  const folders = ['/mnt/c/Users/u/AppData/Roaming/npm', '/usr/local/bin', '/mnt/data-disk-not-a-letter/bin'];
+  const plain = env('/home/papilot-test', ...folders), scanned: string[] = [];
+  t.mock.method(fs, 'statSync', (file: fs.PathLike) => { scanned.push(String(file)); throw new Error('ENOENT'); });
+  const wasScanned = (dir: string) => scanned.some(file => file === path.join(dir, 'codex') || file.startsWith(path.join(dir, 'codex') + '.'));
+  codexCandidates(plain, '/data', '/checkout', isWsl({ ...plain, WSL_DISTRO_NAME: 'Ubuntu' }, 'linux', ''));
+  assert.equal(wasScanned(folders[0]), false);
+  assert.equal(wasScanned(folders[1]), true);
+  assert.equal(wasScanned(folders[2]), true);
+  scanned.length = 0;
+  codexCandidates(plain, '/data', '/checkout', isWsl(plain, 'linux', '6.6.87'));
+  for (const dir of folders) assert.equal(wasScanned(dir), true, dir);
+});
 
 test('the first Codex that runs is used, whatever its version', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-'));

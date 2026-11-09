@@ -8,8 +8,8 @@ export function offeredAgents(runtimes: Partial<Record<AgentId, RuntimeStatus>>)
 export function noAgent(runtimes: Partial<Record<AgentId, RuntimeStatus>>) {
   return AGENT_IDS.every(id => runtimes[id]?.installed === false);
 }
-// A remembered agent that is not found falls back to the first one offered,
-// Codex when it is there, without forgetting the choice.
-export function chosenAgent(saved: AgentId, offered: AgentId[]): AgentId {
-  return offered.includes(saved) ? saved : offered[0] || 'codex';
+// Keep an explicit choice; otherwise prefer an agent ready for the first task.
+export function chosenAgent(saved: AgentId | null, offered: AgentId[], runtimes: Partial<Record<AgentId, RuntimeStatus>>): AgentId {
+  return saved && offered.includes(saved) ? saved
+    : offered.find(id => runtimes[id]?.connected && runtimes[id]?.authenticated) || offered[0] || 'codex';
 }

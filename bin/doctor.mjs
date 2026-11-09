@@ -135,9 +135,11 @@ export async function doctor(args) {
     const env = { ...process.env, PATH: agentPath(process.env) };
     // Leave time for login and the other checks within the diagnostics deadline.
     const deadline = Date.now() + 20000;
+    const tried = [];
     for (const file of candidates) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
+      tried.push(file);
       const result = await command(file, ['--version'], { timeout: Math.min(10000, remaining), env });
       if (!result.ok) continue;
       const version = result.stdout.match(/\d+\.\d+\.\d+/)?.[0];
@@ -146,7 +148,9 @@ export async function doctor(args) {
       check('agent.codex', ready, 'warn', `${version ? `Codex ${version}` : 'Codex'} (${file}): ${ready ? 'signed in' : login.reason || 'login could not be confirmed'}.`, 'Run codex login, then select Reconnect.');
       return ready;
     }
-    check('agent.codex', false, 'warn', configured ? 'PAPILOT_CODEX_BIN does not point to an executable.' : !candidates.length ? 'Codex is not installed.' : `Codex could not be run (${candidates.join(', ')}).`,
+    const untried = candidates.slice(tried.length);
+    const failure = [tried.length ? `Codex could not be run (${tried.join(', ')}).` : '', untried.length ? `Codex candidates not checked in time (${untried.join(', ')}).` : ''].filter(Boolean).join(' ');
+    check('agent.codex', false, 'warn', configured ? 'PAPILOT_CODEX_BIN does not point to an executable.' : !candidates.length ? 'Codex is not installed.' : failure,
       process.env.PAPILOT_INSTALL_METHOD === 'nix' ? 'Install a supported Codex separately with Nix or set PAPILOT_CODEX_BIN to an existing installation.'
         : configured ? 'Correct PAPILOT_CODEX_BIN.'
         : `${candidates.length ? 'Reinstall' : 'Install'} Codex (npm install -g @openai/codex), then select Reconnect.`);
@@ -158,14 +162,12 @@ export async function doctor(args) {
     const minimum = pkg.devDependencies['@openai/codex'];
     const configured = process.env.PAPILOT_CODEX_BIN;
     const managed = path.join(data, 'agents/node_modules/.bin');
-    const env = { ...process.env, PATH: agentPath(process.env) };
     const candidates = configured ? [configured] : ['codex', path.join(managed, 'codex')];
     const found = [];
     for (const candidate of candidates) {
       const file = agentExecutable(candidate);
       if (!file) continue;
-      // As long as the server waits, so a slow start on a busy machine counts as running.
-      const result = await command(file, ['--version'], { timeout: 15000, env });
+      const result = await command(file, ['--version']);
       const version = result.stdout.match(/\d+\.\d+\.\d+/)?.[0];
       found.push(file);
       if (!result.ok || (minimum && (!version || !atLeast(version, minimum)))) {

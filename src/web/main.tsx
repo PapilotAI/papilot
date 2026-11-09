@@ -1069,7 +1069,7 @@ function App() {
   // The agent, and each agent's model and reasoning effort, are remembered for
   // every new task, whether it starts from the composer or from PDF notes.
   const [newPermissions, setNewPermissions] = useState<TaskPermissions>('workspace');
-  const [savedAgent, setAgentChoice] = useState<AgentId>(() => { const saved = browserStorage.getItem('papilot:agent'); return isAgentId(saved) ? saved : 'codex'; });
+  const [savedAgent, setAgentChoice] = useState<AgentId | null>(() => { const saved = browserStorage.getItem('papilot:agent'); return isAgentId(saved) ? saved : null; });
   const [agentPrefs, setAgentPrefs] = useState(() => Object.fromEntries(AGENT_IDS.map(id => [id, {
     model: browserStorage.getItem(`papilot:model:${id}`) ?? (id === 'codex' ? browserStorage.getItem('papilot:model') : null) ?? '',
     // null until an effort is chosen; '' is an explicit choice of the model's default.
@@ -1353,10 +1353,9 @@ function App() {
     if (!snapshotRef.current?.tasks.some(task => task.id === id && task.status !== 'deleting')) return;
     setSelected(id); setSidebar(false); setSettings(false);
   }), []);
-  // A remembered choice the host no longer offers falls back to its default;
-  // the preference is kept in case another model offers it again.
+  // Fallbacks keep saved preferences intact in case they become available again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
-  const offered = offeredAgents(runtimes), agentChoice = chosenAgent(savedAgent, offered), missingAgent = noAgent(runtimes);
+  const offered = offeredAgents(runtimes), agentChoice = chosenAgent(savedAgent, offered, runtimes), missingAgent = noAgent(runtimes);
   const effectivePermissions = runtimes[agentChoice]?.permissionOptions?.some(option => option.value === newPermissions) ? newPermissions : 'workspace';
   const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;

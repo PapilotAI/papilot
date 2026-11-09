@@ -1,9 +1,21 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { agentPath, findExecutables, killTree, spawnCommand, WINDOWS } from './agent-paths.mjs';
 
+const kernelRelease = (() => {
+  try { return process.platform === 'linux' ? fs.readFileSync('/proc/sys/kernel/osrelease', 'utf8') : ''; }
+  catch { return ''; }
+})();
+export function isWsl(env = process.env, platform = process.platform, release = kernelRelease) {
+  return platform === 'linux' && Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP || /microsoft/i.test(release));
+}
+export function windowsDrive(dir) {
+  return /^\/mnt\/[a-z](?:\/|$)/i.test(dir.replace(/^"|"$/g, ''));
+}
 // Try PATH in order, then the checkout and the copy installed by the npm command.
-export function codexCandidates(env, data, root) {
-  return env.PAPILOT_CODEX_BIN ? [env.PAPILOT_CODEX_BIN] : findExecutables('codex', env, [path.join(root, 'node_modules', '.bin'), path.join(data, 'agents', 'node_modules', '.bin')]);
+export function codexCandidates(env, data, root, wsl = isWsl(env)) {
+  // Windows shims do not supply WSL's Codex; avoid their slow 9P folders too.
+  return env.PAPILOT_CODEX_BIN ? [env.PAPILOT_CODEX_BIN] : findExecutables('codex', env, [path.join(root, 'node_modules', '.bin'), path.join(data, 'agents', 'node_modules', '.bin')], dir => !wsl || !windowsDrive(dir));
 }
 
 /** The first candidate that runs, tried with the PATH Codex is started with. */
