@@ -509,6 +509,8 @@ export interface Summary {
 }
 export interface PageState {
   sourceEditing?: boolean;
+  /** Accepting collects changes for the paper as decided, applied at the end. */
+  deferred?: boolean;
   csrf: string;
   task: string;
   title: string;
@@ -594,4 +596,12 @@ export interface TaskInfo extends Summary {
   url: string;
   viewing: boolean;
   scope: { sections: string[]; files: string[] };
+}
+
+/** The paper as decided so far (engine core/applied.ts), as the review page reads it. */
+export interface AppliedView {
+  accepted: string;
+  shown: { accepted: string; key: string; targets: string[]; round: number; at: number; current: boolean; pdf: string } | null;
+  building: boolean;
+  error?: { message: string; details: string[]; log?: string };
 }

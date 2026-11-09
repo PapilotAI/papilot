@@ -407,6 +407,16 @@ export async function buildApp(options: AppOptions) {
     })().catch(() => undefined);
     return { ok: true };
   });
+  // Where a note on the task's PDF of its decisions is in the task's files.
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/locate', task, async request => {
+    const current = store.task(request.params.id), project = store.project(current.projectId), b = request.body as any;
+    const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] >= value[0] && value[3] >= value[1];
+    const page = Number(b?.page);
+    if (!isRect(b?.rect) || !Number.isSafeInteger(page) || page < 0 || !current.worktree) throw new Error('Mark text on a page first.');
+    const rects = Array.isArray(b.rects) ? b.rects.filter(isRect).slice(0, 200) : [];
+    const located = await manuscripts.locateBuild(project.path, string(b.key, 'PDF key', 32), page, b.rect, rects, typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '', current.worktree);
+    return { source: located?.source ? { file: located.source.file, lines: located.source.lines } : null };
+  });
   app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
     const task = store.task(request.params.id), project = store.project(task.projectId);
     const round = request.query.round === undefined ? task.review?.round : Number(request.query.round);
@@ -745,7 +755,8 @@ export async function buildApp(options: AppOptions) {
             const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
             if (task) store.updateTask(task.id, { error: 'Review action failed: ' + (value as any).error });
           }
-          if (response.ok && request.method === 'POST' && !route.endsWith('/references/confirm')) {
+          // Saying what the page shows changes nothing about the task.
+          if (response.ok && request.method === 'POST' && !route.endsWith('/references/confirm') && !route.endsWith('/look')) {
             const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
             if (task) {
               store.updateTask(task.id, { error: null });
@@ -761,7 +772,7 @@ export async function buildApp(options: AppOptions) {
         if (reviewTask && writesFiles) throw new Error('The review engine returned an unexpected response. Select Check status before continuing.');
         reply.type(type);
         if (type.includes('text/html')) return rewriteReviewHtml(await response.text(), prefix);
-        const cache = response.headers.get('cache-control'); if (cache && route.startsWith('/files/')) reply.header('Cache-Control', cache);
+        const cache = response.headers.get('cache-control'); if (cache && (route.startsWith('/files/') || route.startsWith('/applied/'))) reply.header('Cache-Control', cache);
         if (route.startsWith('/assets/')) reply.header('Cache-Control', 'private, max-age=31536000, immutable');
         return Buffer.from(await response.arrayBuffer());
       };

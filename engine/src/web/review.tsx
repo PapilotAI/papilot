@@ -10,6 +10,7 @@ import {
 } from "react";
 import type {
   ActionKind,
+  AppliedView,
   ChangeBlock,
   PageState,
   PlaceView,
@@ -24,6 +25,15 @@ import { ChangeMap } from "./ChangeMap.tsx";
 import { placeable, type PlacedChange } from "./paper.ts";
 // pdf.js loads only when the full paper is shown.
 const FullPaper = lazy(() => import("./FullPaper.tsx").then((module) => ({ default: module.FullPaper })));
+const AppliedPaper = lazy(() => import("./AppliedPaper.tsx").then((module) => ({ default: module.AppliedPaper })));
+// A hidden tab or a locked phone still polls; the server then knows nobody reads it.
+const stateRoute = (round?: number | null) => {
+  const query = new URLSearchParams();
+  if (round) query.set("round", String(round));
+  if (typeof document !== "undefined" && document.hidden) query.set("hidden", "1");
+  const text = query.toString();
+  return `/state${text ? `?${text}` : ""}`;
+};
 import { EFFECTS_EVENT, EFFECTS_STORAGE, readExpandedEffects } from "./effect-preferences.ts";
 import { readView, VIEW_EVENT, VIEW_CHOSEN_EVENT, VIEW_STORAGE, type ReviewView } from "./view-preferences.ts";
 import { STATUS } from "./overview.tsx";
@@ -506,7 +516,7 @@ export function ReviewApp({
         const previous = snapshot.current,
           number = pinned || previous.detail?.round,
           next = await api<PageState>(
-            `/state${number ? `?round=${number}` : ""}`,
+            stateRoute(number),
           );
         if (
           cancelled ||
@@ -527,7 +537,7 @@ export function ReviewApp({
           !snapshot.current.composer && !paper.current?.querySelector('.source-editor[data-dirty="true"]')
         ) {
           const [loadedState, loaded] = await Promise.all([
-            api<PageState>(`/state?round=${target}`),
+            api<PageState>(stateRoute(target)),
             api<RoundDetail>(`/rounds/${target}`),
           ]);
           if (
@@ -1382,8 +1392,23 @@ export function ReviewApp({
       </article>
     );
   }
-  const fullPaper = !pinnedView && Boolean(detail?.pdf) && placeable(placed),
+  // A deferred task's PDF is the paper as decided so far, compiled after each
+  // decision: switching to it never starts a compilation.
+  const appliedPaper = Boolean(state?.deferred ?? state?.workspace?.deferred) && !changes && Boolean(detail),
+    fullPaper = !pinnedView && (appliedPaper || (Boolean(detail?.pdf) && placeable(placed))),
     paperView = fullPaper && view === "paper";
+  const applied = useApplied(appliedPaper && paperView, api);
+  // What the author reads now compiles first: the page says which view it
+  // shows while it is on screen.
+  useEffect(() => {
+    if (changes || transport || !task) return;
+    const mode = paperView ? "pdf" : "changes";
+    const look = () => { if (!document.hidden) void api("/look", { mode }).catch(() => undefined); };
+    look();
+    const timer = setInterval(look, 5000);
+    document.addEventListener("visibilitychange", look);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", look); };
+  }, [task, paperView, changes]);
   // A host shows its own switch while the whole paper can be shown.
   useEffect(() => {
     const root = document.documentElement;
@@ -1795,7 +1820,23 @@ export function ReviewApp({
               />
             )}
           <div className="document">
-            {detail && paperView ? (
+            {detail && paperView && appliedPaper ? (
+              <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
+                {applied?.shown ? (
+                  <AppliedPaper
+                    key={`${placeKey}:applied`}
+                    url={applied.shown.pdf}
+                    buildKey={applied.shown.key}
+                    scrollRoot={paper}
+                    status={<AppliedStatus applied={applied} />}
+                  />
+                ) : (
+                  <div className="paper-status" role={applied?.error ? "alert" : "status"}>
+                    {applied?.error ? <AppliedStatus applied={applied} /> : <><div className="pulse" /><p>{t("Compiling your decisions…")}</p></>}
+                  </div>
+                )}
+              </Suspense>
+            ) : detail && paperView ? (
               <>
                 <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
                 <FullPaper
@@ -2023,5 +2064,45 @@ export function ReviewApp({
         </div>
       )}
     </>
+  );
+}
+
+// The paper as decided so far, polled while it is on screen.
+function useApplied(active: boolean, api: <T>(route: string, body?: unknown) => Promise<T>) {
+  const [applied, setApplied] = useState<AppliedView | null>(null), request = useRef(api);
+  request.current = api;
+  useEffect(() => {
+    if (!active) return;
+    let live = true, timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const next = await request.current<AppliedView>("/applied");
+        if (live) setApplied((previous) => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
+      } catch { /* The next poll tries again. */ }
+      if (live) timer = setTimeout(poll, document.hidden ? 10000 : 1500);
+    };
+    void poll();
+    return () => { live = false; clearTimeout(timer); };
+  }, [active]);
+  return applied;
+}
+// Beside the pages while they are not the current decisions: updating, or
+// why the accepted changes did not compile together.
+function AppliedStatus({ applied }: { applied: AppliedView }) {
+  const [open, setOpen] = useState(false);
+  if (applied.error && !applied.building)
+    return (
+      <div className="paper-updating applied-error" role="alert">
+        <span>{t("Your accepted changes do not compile together.")}</span>
+        <button type="button" className="ghost" onClick={() => setOpen(!open)}>{t("Details")}</button>
+        {open && <pre className="applied-details">{[applied.error.message, ...applied.error.details].join("\n")}</pre>}
+      </div>
+    );
+  if (applied.shown?.current && !applied.building) return null;
+  return (
+    <div className="paper-updating" role="status">
+      <span className="pulse" />
+      <span>{t("Updating with your latest decisions…")}</span>
+    </div>
   );
 }

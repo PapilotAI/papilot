@@ -231,7 +231,8 @@ export class Review {
     }
     return { decisions, comments };
   }
-  pageState(name: string, number?: number): PageState {
+  /** `seen`: the page asking is on screen, so the author reads this task. */
+  pageState(name: string, number?: number, seen = true): PageState {
     const task = this.app.tasks.get(name, false),
       latest = this.latestRound(name);
     number ||= latest?.number;
@@ -242,10 +243,11 @@ export class Review {
           : null,
       job = this.app.publisher.current(name),
       again = round ? this.reviewAgain(name, round) : [];
-    this.app.viewers.set(name, now());
+    if (seen) this.app.viewers.set(name, now());
     return {
       csrf: this.app.csrf,
       sourceEditing: true,
+      deferred: Boolean(task.deferred),
       task: name,
       title: task.title,
       closed: Boolean(task.closed),

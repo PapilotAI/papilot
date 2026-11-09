@@ -195,17 +195,20 @@ export function createServer(app: App) {
     server.get<{ Params: { name: string } }>("/api/tasks/:name", (request) =>
       app.taskInfo(request.params.name),
     );
-    server.get<{ Params: { name: string }; Querystring: { round?: string } }>(
+    server.get<{ Params: { name: string }; Querystring: { round?: string; hidden?: string } }>(
       "/api/tasks/:name/state",
       (request) => {
+        // A page in a hidden tab or a locked phone still polls, but nobody reads it.
+        const seen = request.query.hidden !== "1";
         const state = app.review.pageState(
           request.params.name,
           request.query.round && /^\d+$/.test(request.query.round)
             ? Number(request.query.round)
             : undefined,
+          seen,
         );
         // The page is open: its round compiles in the foreground.
-        app.publisher.attend();
+        if (seen) app.publisher.attend();
         return state;
       },
     );
@@ -220,9 +223,10 @@ export function createServer(app: App) {
       },
     );
     // The paper as decided so far: every accepted change, no other.
-    server.get<{ Params: { name: string } }>("/api/tasks/:name/applied", (request) =>
-      app.applied.state(app.tasks.get(request.params.name, false).name),
-    );
+    server.get<{ Params: { name: string } }>("/api/tasks/:name/applied", async (request) => {
+      const name = app.tasks.get(request.params.name, false).name, state = await app.applied.state(name);
+      return { ...state, shown: state.shown && { ...state.shown, pdf: `/applied/${name}/${state.shown.key}.pdf` } };
+    });
     server.get<{ Params: { name: string; key: string } }>("/applied/:name/:key", async (request, reply) => {
       const { name, key } = request.params, match = /^([0-9a-f]{32})\.pdf$/.exec(key);
       app.tasks.get(name, false);

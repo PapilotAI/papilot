@@ -907,6 +907,17 @@ export class Manuscripts extends EventEmitter {
   // The pages may be those of an earlier pass or build than the latest: the
   // place is found in the PDF that was marked, then followed to the file as it
   // is now.
+  /** Where a mark on a page of any build of the paper is in the source, in
+   *  `working`'s files: a task's PDF of its decisions, located in its worktree. */
+  async locateBuild(root: string, key: string, page: number, rect: Rect, rects: Rect[], selected: string, working: string) {
+    if (!/^[0-9a-f]{32}$/.test(key)) throw Object.assign(new Error('Unknown PDF.'), { statusCode: 404 });
+    const { loadProject } = await engine(), project = loadProject(root);
+    let info: { pdf?: unknown; root?: unknown };
+    try { info = JSON.parse(await fs.promises.readFile(path.join(project.state, 'cache/builds', key, 'result.json'), 'utf8')); }
+    catch { throw Object.assign(new Error('This PDF is no longer available.'), { statusCode: 404 }); }
+    if (typeof info.pdf !== 'string' || typeof info.root !== 'string') throw Object.assign(new Error('This PDF is no longer available.'), { statusCode: 404 });
+    return this.pdfReader.locate({ pdf: info.pdf, page, rect, rects, selected, root: info.root, sourceDir: project.source_dir || '', working });
+  }
   async locate(projectId: string, key: string, page: number, rect: Rect, rects: Rect[] = [], selected = '') {
     const pdf = this.pdf(projectId, key), build = this.shownBuild(projectId, key)!;
     const located = await this.pdfReader.locate({ pdf, page, rect, rects, selected, root: build.root, sourceDir: build.sourceDir, working: this.roots.get(projectId) });
