@@ -4,7 +4,7 @@ import { opcodes } from "./diff.ts";
 import { splitLines, textOf, withHashesAsync } from "./changes.ts";
 import { isFigure } from "./config.ts";
 import { atomicWriteAsync, readJson } from "./files.ts";
-import { bodyFiles, structuralSource } from "./tex-source.ts";
+import { bodyFiles, readingOrder, structuralSource, type ReadingOrder } from "./tex-source.ts";
 import { revisionReaderAsync } from "./tasks.ts";
 import type { App } from "../server.ts";
 import type { ChangeBlock, PlaceView, RenderedRound, Round, Strip, Unit } from "../types.ts";
@@ -13,6 +13,15 @@ import type { ChangeBlock, PlaceView, RenderedRound, Round, Strip, Unit } from "
 // a change whose exact version an earlier round already rendered can show
 // that comparison, when nothing else the new round changed can have moved it.
 // The round's own render replaces every carried comparison when it arrives.
+//
+// A passage that changed since the earlier round can move anything from its
+// own page on: text pushes or pulls the text after it, floats and footnotes
+// travel, and definitions, counters and settings apply to what follows. A
+// change keeps its comparison only when it comes before every such passage
+// in reading order and ends on an earlier page, outside the passage's
+// paragraph, which TeX breaks into lines as a whole. A float, or a passage
+// whose page is unknown, also holds the rest of its page run back to the
+// previous forced page break.
 
 export const roundFolder = (app: App, name: string, number: number) =>
   path.join(app.state, "rounds", name, String(number).padStart(3, "0"));
@@ -63,20 +72,25 @@ export function origin(round: Pick<Round, "number" | "visuals">, shown: Rendered
   return shown.carried?.[id] ?? null;
 }
 
-type Pages = { before: Set<number>; after: Set<number> };
-// The physical pages of each change's strips and places, on each side.
+type Side = "before" | "after";
+type Pages = Record<Side, Set<number>>;
+const SIDES: Side[] = ["before", "after"];
+const pagesOf = (): Pages => ({ before: new Set(), after: new Set() });
+/** The physical pages of a change's own lines, and of its places elsewhere,
+ *  on each side. */
+type Shown = { lines: Pages; places: Pages };
 function unitPages(round: RenderedRound) {
-  const pages = new Map<string, Pages>(),
-    add = (id: string, before: Strip[], after: Strip[]) => {
-      const entry = pages.get(id) ?? { before: new Set<number>(), after: new Set<number>() };
-      for (const strip of before) entry.before.add(strip.page);
-      for (const strip of after) entry.after.add(strip.page);
-      if (entry.before.size || entry.after.size) pages.set(id, entry);
+  const pages = new Map<string, Shown>(),
+    add = (id: string, kind: keyof Shown, before: Strip[], after: Strip[]) => {
+      const entry = pages.get(id) ?? { lines: pagesOf(), places: pagesOf() };
+      for (const strip of before) entry[kind].before.add(strip.page);
+      for (const strip of after) entry[kind].after.add(strip.page);
+      if (SIDES.some((side) => entry.lines[side].size || entry.places[side].size)) pages.set(id, entry);
     };
   for (const { block } of changeBlocks(round))
-    if (!block.waiting) for (const id of block.units) add(id, list(block.before), list(block.after));
+    if (!block.waiting) for (const id of block.units) add(id, "lines", list(block.before), list(block.after));
   for (const [id, unit] of Object.entries(round.units))
-    for (const place of unit.effects?.shown ?? []) add(id, list(place.before), list(place.after));
+    for (const place of unit.effects?.shown ?? []) add(id, "places", list(place.before), list(place.after));
   return pages;
 }
 
@@ -163,20 +177,21 @@ export async function provisional(
   if (previous && prior && Object.keys(prior.units).length) {
     const pages = unitPages(prior);
     let local: (file: string) => boolean = () => true,
-      touched: Set<number> | null = null;
+      changed: Changed | null = null;
     if (!relaxed) {
       const [now, then] = await Promise.all([next.after, previous.after].map((rev) => revisionReaderAsync(app.repo, rev, project.doc_dir))),
-        body = new Set([...bodyFiles(now, project.main), ...bodyFiles(then, project.main)]);
+        current = version(now, project.main),
+        body = new Set([...current.order.files, ...bodyFiles(then, project.main)]);
       // Other files, such as packages, macros read in the preamble and
       // bibliographies, can change any page.
       local = (file) => isFigure(project, file) || (file.endsWith(".tex") && body.has(file));
-      touched = await touchedPages(app, previous, earlier, pages, next, local);
+      changed = await changedPassages(app, previous, earlier, pages, next, local, current);
     }
     for (const unit of next.units) {
       const found = match(unit),
         at = found && pages.get(found.id);
       if (!found || !at || !prior.units[found.id] || !local(unit.file)) continue;
-      if (!relaxed && (!touched || [...at.before, ...at.after].some((page) => touched!.has(page)))) continue;
+      if (!relaxed && (!changed || SIDES.some((side) => movable(side, unit, at, changed![side])))) continue;
       back.set(found.id, unit.id);
     }
     // A comparison drawn for several changes together is carried only with
@@ -256,18 +271,61 @@ export async function provisional(
   return { rendered: result, files: [...files], from: previous ? roundFolder(app, name, previous.number) : null };
 }
 
-// The pages of the previous round that what changed since then falls on, or
-// null when some change cannot be placed or can move any page: the preamble,
-// a file outside the document body, or a passage no earlier change covers.
-async function touchedPages(
+/** A passage changed since the previous round, on one side. */
+interface Passage {
+  file: string;
+  /** Its first line in the new version, counted from 0. */
+  start: number;
+  /** The pages its earlier changes showed on in the previous round, and the
+   *  first page of their own lines, Infinity when no earlier change shows it. */
+  pages: Set<number>;
+  first: number;
+  /** Inside a float, whose page TeX chooses. */
+  float: boolean;
+}
+interface Version {
+  order: ReadingOrder;
+  lines: (file: string) => string[];
+}
+function version(read: (file: string) => string | null, main: string): Version {
+  const cache = new Map<string, string[]>();
+  return {
+    order: readingOrder(read, main),
+    lines: (file) => cache.get(file) ?? cache.set(file, splitLines(read(file) ?? "")).get(file)!,
+  };
+}
+type Changed = Record<Side, { passages: Passage[]; version: Version | null }>;
+
+// Commands whose count or arguments number, label or cite things across the
+// document: changing them can change any page. References only read them.
+const NUMBERED =
+  /\\(?:begin|end)\s*\{[^}]*\}|\\[A-Za-z]*(?:cite|label)[A-Za-z]*\*?(?:\s*\[[^\]]*\])*\s*\{[^}]*\}|\\(?:part|chapter|(?:sub)*section|(?:sub)?paragraph|caption|footnote(?:mark|text)?|item|bibitem|tag|notag|nonumber|(?:ref)?stepcounter|addtocounter|setcounter|input|include|subfile)(?![A-Za-z@])\*?|\\\\/g;
+const numbering = (text: string) => (structuralSource(text).match(NUMBERED) ?? []).map((token) => token.replace(/\s+/g, "")).join("\n");
+const FLOAT = /figure|table|algorithm|listing/i;
+// Whether `offset` of a file lies inside a float environment.
+function inFloat(text: string, offset: number) {
+  const open: string[] = [];
+  for (const match of structuralSource(text).slice(0, offset).matchAll(/\\(begin|end)\s*\{([^}]*)\}/g)) {
+    if (!FLOAT.test(match[2])) continue;
+    if (match[1] === "begin") open.push(match[2]);
+    else open.splice(open.lastIndexOf(match[2]), 1);
+  }
+  return open.length > 0;
+}
+
+// The passages that changed since the previous round, on each side, or null
+// when some change can move any page: the preamble, a file outside the
+// document body, a figure, or numbering.
+async function changedPassages(
   app: App,
   previous: Round,
   earlier: Unit[],
-  pages: Map<string, Pages>,
+  pages: Map<string, Shown>,
   next: { before: string; after: string },
   local: (file: string) => boolean,
-) {
-  const result = new Set<number>(),
+  after: Version,
+): Promise<Changed | null> {
+  const result: Changed = { before: { passages: [], version: null }, after: { passages: [], version: null } },
     project = app.project;
   for (const [side, from, to] of [
     ["before", previous.before, next.before],
@@ -275,36 +333,90 @@ async function touchedPages(
   ] as const) {
     const files = await app.repo.changedFilesAsync(from, to);
     if (!files.length) continue;
+    if (side === "after") result.after.version = after;
+    else result.before.version = version(await revisionReaderAsync(app.repo, to, project.doc_dir), project.main);
     const [old, fresh] = await Promise.all([app.repo.blobsAsync(from, files), app.repo.blobsAsync(to, files)]);
     for (const file of files) {
-      if (!local(file)) return null;
-      const a = textOf(old[file] ?? null),
-        b = textOf(fresh[file] ?? null);
-      if (file === project.main && (a === null || b === null || preamble(a) !== preamble(b))) return null;
-      const regions: [number, number][] =
-        a === null || b === null || !old[file] || !fresh[file] || isFigure(project, file)
-          ? [[0, Infinity]]
-          : opcodes(splitLines(a), splitLines(b))
-              .filter((op) => op[0] !== "equal")
-              .map((op) => [op[1], op[2]]);
-      for (const [i, j] of regions) {
+      // A figure's size can move its float to any page from its anchor on.
+      if (!local(file) || isFigure(project, file) || !fresh[file]) return null;
+      const a = old[file] ? textOf(old[file]) : "",
+        b = textOf(fresh[file]);
+      if (a === null || b === null) return null;
+      if (file === project.main && preamble(a) !== preamble(b)) return null;
+      const before = splitLines(a),
+        lines = splitLines(b);
+      for (const [, i, j, x, y] of opcodes(before, lines).filter((op) => op[0] !== "equal")) {
+        if (numbering(before.slice(i, j).join("")) !== numbering(lines.slice(x, y).join(""))) return null;
         // Line ranges of the earlier round's changes in this version.
         const found = earlier
           .filter((unit) => {
             if (unit.file !== file) return false;
             const [start, end] = side === "before" ? [unit.old_start - 1, unit.old_end] : [unit.new_start - 1, unit.new_end];
             return i <= end && start <= j;
-          })
-          .flatMap((unit) => {
-            const at = pages.get(unit.id);
-            return at ? [...at.before, ...at.after] : [];
           });
-        if (!found.length) return null;
-        for (const page of found) result.add(page);
+        const passage: Passage = {
+          file,
+          // A deletion lies after the line before it.
+          start: y > x ? x : Math.max(0, x - 1),
+          pages: new Set(),
+          first: Infinity,
+          float: inFloat(b, lines.slice(0, x).join("").length),
+        };
+        for (const unit of found) {
+          const where = pages.get(unit.id);
+          for (const page of where?.lines[side] ?? []) {
+            passage.pages.add(page);
+            passage.first = Math.min(passage.first, page);
+          }
+          for (const page of where?.places[side] ?? []) passage.pages.add(page);
+        }
+        result[side].passages.push(passage);
       }
     }
   }
   return result;
+}
+
+const span = (start: number, end: number): [number, number] => (end > start ? [start, end - 1] : [Math.max(0, start - 1), start]);
+const blank = (line: string) => /^\s*$/.test(line);
+// Whether TeX breaks the lines up to `end` of one file and from `start` of a
+// later one as a single paragraph: no blank line separates them.
+function oneParagraph(version: Version, file: string, end: number, later: string, start: number) {
+  if (file === later) return !version.lines(file).slice(end + 1, start).some(blank);
+  return !version.lines(file).slice(end + 1).some(blank) && !version.lines(later).slice(0, start).some(blank);
+}
+
+// Text that shows page numbers or titles from elsewhere in the paper, which
+// any passage can change.
+const VOLATILE = /\\(?:[A-Za-z]*pageref|[vV]ref(?:range)?|fullref|[nN]ameref|titleref|thepage)(?![A-Za-z@])/;
+
+/** Whether a passage that changed on `side` since the previous round can
+ *  change what the earlier comparison of `unit` shows on that side. */
+function movable(side: Side, unit: Unit, shown: Shown, changed: Changed[Side]) {
+  const lines = shown.lines[side],
+    places = shown.places[side];
+  if (!changed.passages.length || (!lines.size && !places.size)) return false;
+  const version = changed.version!,
+    order = version.order,
+    [start, end] = side === "after" ? span(unit.new_start - 1, unit.new_end) : span(unit.old_start - 1, unit.old_end),
+    from = order.at(unit.file, start),
+    to = order.at(unit.file, end),
+    last = Math.max(...lines, ...places);
+  if (VOLATILE.test(version.lines(unit.file).slice(start, end + 1).join(""))) return true;
+  for (const passage of changed.passages) {
+    // A page the passage shows on, its own lines or places elsewhere.
+    if ([...lines, ...places].some((page) => passage.pages.has(page))) return true;
+    // Everything from the passage's first page on can move. When that page
+    // is unknown, only a forced break between them, below, proves this
+    // change's lines come earlier; its places elsewhere cannot be placed.
+    if (passage.first === Infinity ? places.size > 0 : last >= passage.first) return true;
+    const first = order.at(passage.file, passage.start);
+    if (from === null || to === null || first === null || to >= first) return true;
+    if (order.broken(to, first)) continue;
+    if (passage.float || passage.first === Infinity) return true;
+    if (oneParagraph(version, unit.file, end, passage.file, passage.start)) return true;
+  }
+  return false;
 }
 
 /** Writes a round's provisional comparisons into `folder`. */

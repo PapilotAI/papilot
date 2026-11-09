@@ -41,13 +41,14 @@ function holdBuilds() {
 it.skipIf(!tex)("inserts before rendering, gates only waiting changes, and keeps decisions without restarting publication", async () => {
   const { f, app, task } = await fixture(), held = holdBuilds();
   try {
-    f.edit(task, FILE, "Proposed first paragraph.", "A corrected first paragraph.");
+    // The change before the corrected one, on an earlier page, keeps its comparison.
+    f.edit(task, FILE, "Proposed second paragraph.", "A corrected second paragraph.");
     const job = app.publisher.submit(task.name); await held.started;
     const pending = app.review.latestRound(task.name)!;
     expect(pending).toMatchObject({ number: 2, visuals: "pending" });
     const detail = app.review.roundDetail(task.name, 2), waiting = detail.units.find(unit => unit.waiting)!, carried = detail.units.find(unit => unit.carried)!;
-    expect(waiting.id).toBe("c001");
-    expect(carried.id).toBe("c002");
+    expect(waiting.id).toBe("c002");
+    expect(carried.id).toBe("c001");
     expect(app.review.summary(task.name).ready).toBe(1);
     await expect(app.review.decide(task.name, { action: "accept", round: 2, changes: [waiting.id] })).rejects.toThrow("PDF comparison");
     await app.review.decide(task.name, { id: "carried-accept", action: "accept", round: 2, changes: [carried.id] });
@@ -57,8 +58,8 @@ it.skipIf(!tex)("inserts before rendering, gates only waiting changes, and keeps
     expect(app.review.latestRound(task.name)?.number).toBe(2);
     expect(app.tasks.get(task.name).accepted).toBe(accepted);
     const text = app.repo.blob(accepted, FILE)!.toString();
-    expect(text).toContain("Original first paragraph.");
-    expect(text).toContain("Proposed second paragraph.");
+    expect(text).toContain("Proposed first paragraph.");
+    expect(text).toContain("Original second paragraph.");
     // Seen evidence remains tied to the comparison the author actually saw.
     const action = app.store.one<any>("SELECT * FROM actions WHERE id=?", "carried-accept");
     expect(action.detail.seen[carried.id]).toEqual({ round: 1, change: carried.id });
