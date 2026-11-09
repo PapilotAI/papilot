@@ -115,6 +115,7 @@ export class Workspace extends EventEmitter {
   private reviewWrites = new Set<string>();
   // Settles when the task's review write in reviewWrite finishes.
   private reviewWriting = new Map<string, Promise<void>>();
+  private refreshes = new Map<string, { done: Promise<void>; again: boolean }>();
   // Papers with a commit in progress: no review write may change their files meanwhile.
   private committing = new Set<string>();
   private commentWrites = new Map<string, number>();
@@ -1158,7 +1159,22 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     }
     this.schedule();
   }
-  async refresh(taskId: string) {
+  // Reads the task's review summary again. Reads of one task run one at a
+  // time, and a call during a read reads once more after it, so an older
+  // answer never replaces a newer one. Each call resolves after a read that
+  // started after it.
+  refresh(taskId: string): Promise<void> {
+    const running = this.refreshes.get(taskId);
+    if (running) { running.again = true; return running.done; }
+    const entry = { done: Promise.resolve(), again: false };
+    entry.done = (async () => {
+      try { do { entry.again = false; await this.readReview(taskId); } while (entry.again); }
+      finally { this.refreshes.delete(taskId); }
+    })();
+    this.refreshes.set(taskId, entry);
+    return entry.done;
+  }
+  private async readReview(taskId: string) {
     let release: (() => void) | undefined;
     try {
       const task = this.store.task(taskId);

@@ -167,6 +167,31 @@ function uncertainRun(f: ReturnType<typeof fixture>, active = true) {
   return run;
 }
 
+test('an older summary read that answers last cannot replace a newer one', async () => {
+  const replies: { round: number; reply: ReturnType<typeof deferred<unknown>> }[] = [];
+  let round = 1;
+  const f = fixture(async (_method, route) => {
+    if (route.includes('/feedback')) return { cursor: 0, feedback: [] };
+    const reply = deferred<unknown>();
+    replies.push({ round, reply });
+    return reply.promise;
+  });
+  try {
+    const first = f.workspace.refresh(f.task.id);
+    await tick();
+    round = 2;
+    const second = f.workspace.refresh(f.task.id);
+    for (let i = 0; i < 5; i++) await tick();
+    // Whichever reads are in flight answer newest first.
+    for (const { round, reply } of [...replies].reverse()) reply.resolve({ state: 'reviewing', round, counts: { pending: round } });
+    for (let i = 0; i < 200 && replies.length < 2; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    for (const { round, reply } of [...replies].reverse()) reply.resolve({ state: 'reviewing', round, counts: { pending: round } });
+    await Promise.all([first, second]);
+    assert.equal(f.store.task(f.task.id).review?.round, 2);
+    assert.ok(replies.length <= 2, 'reads of one task run one at a time');
+  } finally { for (const { reply } of replies) reply.resolve(summary); f.close(); }
+});
+
 test('comparison progress reaches workspace snapshots and clears when the build finishes', async () => {
   const progress = { baseline: { step: 'tex', pass: 2, pages: 23, total: 180 } };
   let finished = false;
