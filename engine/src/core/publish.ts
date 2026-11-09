@@ -763,14 +763,17 @@ export class Publisher {
       const latest = app.review.latestRound(task.name);
       if (!latest || latest.visuals !== "pending" || this.stopping) continue;
       // The job that inserted it continues, so a host polling it sees the
-      // round it is waiting for.
-      const job = latest.summary.job ? app.store.one<Job>("SELECT * FROM jobs WHERE id=? AND status IN ('queued','running')", latest.summary.job) : null;
+      // round it is waiting for. It lists indirect changes as the round
+      // does, so it renders that round rather than inserting another.
+      const job = latest.summary.job ? app.store.one<Job>("SELECT * FROM jobs WHERE id=? AND status IN ('queued','running')", latest.summary.job) : null,
+        indirect = latest.summary.indirect ?? true;
       if (job && !this.pending.has(task.name)) {
         this.update(job.id, { status: "queued" });
+        this.indirect.set(job.id, indirect);
         this.pending.set(task.name, job.id);
         this.queue.push(job.id);
         queueMicrotask(() => this.drain());
-      } else if (!this.pending.has(task.name)) this.submit(task.name);
+      } else if (!this.pending.has(task.name)) this.submit(task.name, undefined, indirect);
     }
   }
   async pruneCache() {

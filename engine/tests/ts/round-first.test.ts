@@ -108,6 +108,27 @@ it.skipIf(!tex)("recovers an inserted pending round and restores its missing Git
   } finally { await f.close(); }
 }, 120000);
 
+for (const resumed of ["its job", "a new job"])
+  it.skipIf(!tex)(`renders a pending round that lists indirect changes after restart with ${resumed}, without inserting another`, async () => {
+    const f = new Fixture();
+    try {
+      const app = f.app(); await app.ready;
+      const task = app.tasks.create("recover", "Recover", [], ["paper"], true);
+      f.edit(task, FILE, "Method sentence 2.", "Recovered wording.");
+      const job = app.publisher.submit(task.name, undefined, true);
+      app.publisher.stop();
+      await app.exclusive(() => app.publisher.insertNow(job));
+      expect(app.review.latestRound(task.name)?.summary.indirect).toBe(true);
+      // A job that no longer runs: recovery submits the task again.
+      if (resumed === "a new job") app.store.execute("UPDATE jobs SET status='failed' WHERE id=?", job.id);
+      await app.close(); f.apps.splice(f.apps.indexOf(app), 1);
+      const restarted = f.app(); await restarted.ready; await restarted.publisher.join();
+      const rounds = restarted.store.all<{ number: number; visuals: string }>("SELECT number,visuals FROM rounds WHERE task=?", task.name);
+      expect(rounds).toEqual([{ number: 1, visuals: "ready" }]);
+      expect(restarted.review.latestRound(task.name)?.summary.indirect).toBe(true);
+    } finally { await f.close(); }
+  }, 120000);
+
 it.skipIf(!tex)("a failed render retains exact earlier comparisons and leaves the changed source repairable", async () => {
   const { f, app, task } = await fixture();
   try {
