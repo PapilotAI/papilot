@@ -14,7 +14,8 @@ The default still reviews the whole displayed change. TeX constructs and bibliog
 entries remain atomic; ambiguous PDF locations use the coarse renderer.
 
 A selected note offers the current proposal and two alternatives in a compact bottom drawer
-inside the central PDF review pane. A single row holds option tabs on the left, then
+attached to the bottom edge of the central PDF review pane, with no side margins,
+rounded outer card or nested comparison frame. A single row holds option tabs on the left, then
 previous/next note arrows with the current position, and accept/reject/comment actions plus a LaTeX toggle on the right.
 There is no separate header or note icon. The arrows stop at the first and last notes.
 Short option titles use folder-style tabs;
@@ -50,8 +51,9 @@ only that note’s replacements substituted. Other edits within the same group r
 note’s exact marks are highlighted. Unrelated groups remain in the main review and
 keep their existing expanded or collapsed state. Choosing an option keeps the note focus. There are no separate word-fragment diff
 cards. Candidates compile in isolation and keep native PDF layout and full context.
-The panel clips trailing blank page space by scanning rendered image pixels, keeping
-figures as well as text, and caps its scrollable comparison height. Previewing leaves the task checkout and review decisions unchanged. Selecting a choice is a local draft, remembered across note switches, panel closure and refresh for that review round; it neither applies edits nor calls the agent. The main review continues showing the published proposal. The checkmark accepts only the current note’s source ranges. The cross rejects those ranges through the same undoable journal and restores the original source immediately, even while an alternative is selected; it does not create a feedback draft or wait for a preview build. A successful rejection closes the drawer, while an error keeps it open for retry. For an alternative, it writes the selected fragments, publishes their PDF and completes the scoped acceptance through the normal undoable review journal. Other source changes and decisions remain intact. Choices are retained across option builds, and the selected state is derived from actual source wording. Shared edits are identified, and any option crossing a reviewed edit
+The panel bounds adjacent context to the edge nearest the change and scans rendered
+pixels to remove trailing blank space and distant footers. The document itself is
+unchanged, and the comparison scrolls within a compact maximum height. Previewing leaves the task checkout and review decisions unchanged. Selecting a choice is a local draft, remembered across note switches, panel closure and refresh for that review round; it neither applies edits nor calls the agent. The main review continues showing the published proposal. The checkmark accepts only the current note’s source ranges. The cross rejects those ranges through the same undoable journal and restores the original source immediately, even while an alternative is selected; it does not create a feedback draft or wait for a preview build. A successful rejection closes the drawer, while an error keeps it open for retry. For an alternative, it writes the selected fragments, publishes their PDF and completes the scoped acceptance through the normal undoable review journal. Other source changes and decisions remain intact. Choices are retained across option builds, and the selected state is derived from actual source wording. Shared edits are identified, and any option crossing a reviewed edit
 is blocked. Original note associations are retained through option rebuilds.
 
 This is a prototype for precisely mapped text edits. Candidate PDFs are cached by

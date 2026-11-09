@@ -160,7 +160,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
   // Keep the contents mounted just long enough for the drawer to slide away.
   useEffect(() => {
     if (note) { setRetained(note); return; }
-    const timer = setTimeout(() => setRetained(undefined), 180);
+    const timer = setTimeout(() => setRetained(undefined), 280);
     return () => clearTimeout(timer);
   }, [note]);
   useEffect(() => {
@@ -187,7 +187,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
       if (!note) return;
       const frame = doc.defaultView?.frameElement?.getBoundingClientRect();
       const viewport = element.parentElement!.getBoundingClientRect();
-      const bottom = viewport.bottom - element.offsetHeight - 24 - (frame?.top || 0);
+      const bottom = viewport.bottom - element.offsetHeight - 12 - (frame?.top || 0);
       const marks = [...paper.querySelectorAll<SVGRectElement>('.papilot-linked-change .pdf-focus-marks rect')].map(mark => mark.getBoundingClientRect());
       if (!marks.length) return;
       const top = Math.min(...marks.map(mark => mark.top)), end = Math.max(...marks.map(mark => mark.bottom));
@@ -198,7 +198,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     };
     const sync = () => {
       root.setAttribute('data-papilot-note-drawer', '');
-      root.style.setProperty('--papilot-note-inset', `${element.offsetHeight + 24}px`);
+      root.style.setProperty('--papilot-note-inset', `${element.offsetHeight + 12}px`);
       cancelAnimationFrame(pending); pending = requestAnimationFrame(reveal);
     };
     const resize = new ResizeObserver(sync); resize.observe(element); sync();
