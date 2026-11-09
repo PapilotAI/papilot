@@ -202,6 +202,20 @@ export class Review {
       next,
     };
   }
+  // A round's decisions and comments as its page shows them: also those made
+  // on that page and applied to a later round (see decideNow).
+  private shown(name: string, round: Round) {
+    const decisions = this.decisions(name, round), comments: Record<string, string> = this.comments(name, round.number);
+    for (const action of this.app.store.all<Action>("SELECT * FROM actions WHERE task=? AND round>? ORDER BY seq", name, round.number)) {
+      if (!LIVE.has(action.status) || action.detail.requested?.round !== round.number) continue;
+      for (const change of action.detail.requested.changes) {
+        if (!Object.hasOwn(decisions, change)) continue;
+        decisions[change] = DECIDED[action.kind];
+        if (action.kind === "comment") comments[change] = action.body;
+      }
+    }
+    return { decisions, comments };
+  }
   pageState(name: string, number?: number): PageState {
     const task = this.app.tasks.get(name, false),
       latest = this.latestRound(name);
@@ -228,8 +242,7 @@ export class Review {
       ),
       round: number ?? null,
       revision: round?.after ?? null,
-      decisions: round ? this.decisions(name, round) : {},
-      comments: round ? this.comments(name, round.number) : {},
+      ...(round ? this.shown(name, round) : { decisions: {}, comments: {} }),
       ...(round && (round.visuals ?? "ready") !== "ready" ? { rendering: round.visuals as "pending" | "failed" } : {}),
       waiting: round ? round.units.filter(unit => !comparable(round, rendered(this.app, name, round.number), unit.id)).map(unit => unit.id) : [],
       ...(again.length ? { reviewAgain: again } : {}),
@@ -503,7 +516,7 @@ export class Review {
         );
       if (previous.status !== "applied")
         throw new Error("That decision was undone or failed. Make it again.");
-      return this.pageState(name);
+      return this.pageState(name, data.round);
     }
     const latest = this.latestRound(name),
       valid = Array.isArray(chosen) && chosen.length > 0 && new Set(chosen).size === chosen.length;
@@ -557,7 +570,8 @@ export class Review {
           changes: ids,
         });
       });
-    return this.pageState(name);
+    // The page that sent it shows its own round, with this decision.
+    return this.pageState(name, data.round);
   }
   // The latest round's changes with the exact versions of `chosen` in round
   // `number`, and the comparison each was seen with, or null unless each has

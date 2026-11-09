@@ -187,8 +187,12 @@ it("applies a decision naming an older round to the same version in the latest r
   const moved = latest.units.find((u) => u.new_text === old.units[0].new_text)!;
   expect(moved.id).not.toBe(old.units[0].id);
   const state = await app.review.decide(task.name, { action: "accept", id: "from-round-1", changes: [old.units[0].id], round: 1 });
-  expect(state.round).toBe(2);
-  expect(state.decisions[moved.id]).toBe("accepted");
+  // The page that sent it still shows round 1, with the decision made there.
+  expect([state.round, state.latest]).toEqual([1, 2]);
+  expect(state.decisions[old.units[0].id]).toBe("accepted");
+  expect(Object.values(state.decisions).filter((d) => d !== "pending")).toHaveLength(1);
+  expect(app.review.pageState(task.name).decisions[moved.id]).toBe("accepted");
+  expect(app.review.pageState(task.name, 1).decisions[old.units[0].id]).toBe("accepted");
   expect(app.review.decisions(task.name, old)[old.units[0].id]).toBe("pending");
   const action = app.store.one<{ round: number; changes: string[]; detail: { requested?: unknown } }>("SELECT round,changes,detail FROM actions WHERE id='from-round-1'")!;
   // The action belongs to the round it applies to; the request is kept.
@@ -225,8 +229,13 @@ it("carries a comment from an unrendered earlier round without permitting a deci
   for (const action of ["accept", "reject"] as const)
     await expect(app.review.decide(task.name, { action, round: 1, changes: ["c001"] })).rejects.toThrow("newer round");
   const result = await app.review.decide(task.name, { id: "early-comment", action: "comment", round: 1, changes: ["c001"], body: "Please explain this wording." });
+  expect(result.round).toBe(1);
   expect(result.decisions.c001).toBe("commented");
   expect(result.comments.c001).toBe("Please explain this wording.");
+  // Undone in the latest round, it is undecided on round 1's page too.
+  await app.review.undo(task.name, "early-comment");
+  expect(app.review.pageState(task.name, 1).decisions.c001).toBe("pending");
+  expect(app.review.pageState(task.name, 1).comments.c001).toBeUndefined();
   expect(app.tasks.get(task.name).accepted).toBe(accepted);
   expect(f.read(METHOD, task.worktree)).toBe(source);
 });

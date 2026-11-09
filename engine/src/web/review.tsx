@@ -658,10 +658,13 @@ export function ReviewApp({
     body = "",
     confirmed = false,
   ) {
+    // A comment written while a newer round arrived goes out on the round it
+    // was written on: the server carries it to the same change there.
+    const sendable = latest || (kind === "comment" && Boolean(detail && state && !state.closed && !previewing));
     if (
       !chosen.length ||
       snapshot.current.busy ||
-      !latest ||
+      !sendable ||
       !detail ||
       blocked(kind)
     )

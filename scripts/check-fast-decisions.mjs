@@ -23,14 +23,14 @@ const detail = {
 };
 const DECIDED = { accept: 'accepted', reject: 'rejected', comment: 'commented' };
 // The review engine: decisions keyed by action ID, applied once each.
-let task, decisions, actions, applied, posts, held, hold, refuse, unreachable, lose;
+let task, decisions, actions, applied, posts, held, hold, refuse, unreachable, lose, newest;
 function reset(status = 'reviewing') {
   task = { id: 'flow-task', projectId: 'paper', name: 'flow', title: 'Flow', status, deferred: true, createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: {}, unsent: 0, comments: 0, files: [] } };
   decisions = Object.fromEntries(ids.map(id => [id, 'pending']));
-  actions = []; applied = new Map(); posts = []; held = []; hold = false; refuse = null; unreachable = 0; lose = 0;
+  actions = []; applied = new Map(); posts = []; held = []; hold = false; refuse = null; unreachable = 0; lose = 0; newest = 1;
 }
 const last = () => actions.at(-1);
-const view = (extra = {}) => annotateReviewState({ task: 'flow', title: 'Flow', csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, round: 1, revision: 'after', decisions: { ...decisions }, comments: {}, undo: last() ? { id: last().id, kind: last().kind, changes: last().changes } : null, job: null, ...extra }, [task]);
+const view = (extra = {}) => annotateReviewState({ task: 'flow', title: 'Flow', csrf: 'fixture', closed: false, state: 'reviewing', latest: newest, round: 1, revision: 'after', decisions: { ...decisions }, comments: {}, undo: last() ? { id: last().id, kind: last().kind, changes: last().changes } : null, job: null, ...extra }, [task]);
 function apply(route, body) {
   if (route.endsWith('/decide')) {
     if (applied.has(body.id)) return {};
@@ -48,7 +48,8 @@ function apply(route, body) {
 async function open(page) {
   await page.route('**/api/tasks/flow/**', async route => {
     const url = new URL(route.request().url());
-    if (url.pathname.endsWith('/rounds/1')) return route.fulfill({ json: detail });
+    const round = /\/rounds\/(\d+)$/.exec(url.pathname);
+    if (round) return route.fulfill({ json: { ...detail, round: Number(round[1]) } });
     if (route.request().method() !== 'POST') return route.fulfill({ json: view() });
     const body = route.request().postDataJSON();
     posts.push({ route: url.pathname.split('/').at(-1), ...body });
@@ -195,6 +196,19 @@ try {
   assert.equal(posts.filter(post => post.route === 'undo').length, 1, 'Undoing a rejection waits for the agent');
   await page.screenshot({ path: 'test-results/fast-decisions-agent-running.png' });
   console.log('PASS: during the agent turn accept, comment and undoing an accept stay available; reject and undoing a rejection say why they wait');
+
+  // A comment written while a newer round arrives goes out on its own round.
+  await reloadFresh(page);
+  await current(page).locator('button.comment').click();
+  await page.locator('#composer-text').fill('Keep the original wording here.');
+  newest = 2;
+  await expect(current(page).locator('button.accept')).toBeDisabled({ timeout: 4000 });
+  await page.locator('.composer-send').click();
+  await expect.poll(() => decides().length).toBe(1);
+  assert.deepEqual([decides()[0].action, decides()[0].round, decides()[0].changes], ['comment', 1, ['c1']], 'The comment names the round it was written on');
+  await expect(page.locator('.composer')).toHaveCount(0);
+  await expect(page.locator('.toast')).toContainText('Changes are ready');
+  console.log('PASS: a comment written while a newer round arrives is sent on the round it was written on');
 
   // The same flow by touch on a phone.
   const phone = await browser.newPage({ locale: 'en-US', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
