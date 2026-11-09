@@ -148,7 +148,7 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
     }
     if (path === '/playground/reset' && body !== undefined) {
       local = seed(); persist();
-      for (const key of ['papilot:new-task', 'papilot:new-task-request', 'papilot:task', ...[...plans, reviewPlan].flatMap(plan => [`papilot:review-notes:${plan.id}`, `papilot:draft:${plan.id}`])]) {
+      for (const key of ['papilot:new-task', 'papilot:new-task-request', 'papilot:task', 'papilot:page', 'papilot:selected-notes', `papilot:commit:${projectId}`, ...[...plans, reviewPlan].flatMap(plan => [`papilot:review-notes:${plan.id}`, `papilot:draft:${plan.id}`])]) {
         try { storage.setItem(key, ''); } catch { /* A reload also resets tab-local drafts. */ }
       }
       return { ok: true };

@@ -127,10 +127,16 @@ test('AI suggestions copy to the manuscript once, and reset restores the initial
   storage.setItem('papilot:review-notes:example-clarity', '{"notes":[{}]}');
   storage.setItem('papilot:draft:example-math', 'Follow up');
   storage.setItem('papilot:new-task', 'My task');
+  storage.setItem('papilot:page', 'git');
+  storage.setItem(`papilot:commit:${projectId}`, 'Draft commit');
+  storage.setItem('papilot:selected-notes', JSON.stringify({ [projectId]: ['note-claim'] }));
   await api('/playground/reset', {});
   assert.equal(storage.getItem('papilot:review-notes:example-clarity'), '');
   assert.equal(storage.getItem('papilot:draft:example-math'), '');
   assert.equal(storage.getItem('papilot:new-task'), '');
+  assert.equal(storage.getItem('papilot:page'), '');
+  assert.equal(storage.getItem(`papilot:commit:${projectId}`), '');
+  assert.equal(storage.getItem('papilot:selected-notes'), '');
   const manuscript = await api<Manuscript>(`${base}/manuscript`);
   assert.equal(manuscript.annotations.length, 7);
   assert.ok(manuscript.annotations.some(note => note.kind === 'delete'));
