@@ -69,7 +69,7 @@ export function optionCandidate(units: Unit[], edits: OptionInput["edits"], sour
 }
 
 const pending = new Map<string, Promise<RoundDetail>>();
-export async function previewNoteOption(app: App, name: string, input: OptionInput): Promise<RoundDetail> {
+export async function previewNoteOption(app: App, name: string, input: OptionInput & { rejected?: string[] }): Promise<RoundDetail> {
   if (!input || !Array.isArray(input.edits) || !input.edits.length || input.edits.length > 100
     || input.edits.some(edit => !edit || typeof edit.unit !== "string" || typeof edit.text !== "string" || edit.text.includes("\0") || edit.text.length > 20000))
     throw new Error("Invalid note option.");
@@ -92,6 +92,11 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
   const date = round.summary.date ?? buildDate(new Date(round.created * 1000), {});
   const targets = round.summary.targets.length ? round.summary.targets : ["full"];
   const rejected = round.units.filter(unit => decisions[unit.id] === "rejected").map(unit => unit.id).sort();
+  // The host's comparison key describes the state it read before this request.
+  // Check that state again here, before any await or cache lookup, so a racing
+  // rejection/undo cannot put a different comparison under the browser's key.
+  if (input.rejected !== undefined && JSON.stringify(input.rejected) !== JSON.stringify(rejected))
+    throw new Error("The review changed. Reload the options.");
   const key = createHash("sha256").update(JSON.stringify([3, round.before, round.after, input.edits, rejected, project, targets, date])).digest("hex");
   const output = path.join(app.state, "cache/option-previews", name, String(round.number), key);
   const cached = readJson<RoundDetail | null>(path.join(output, "preview.json"), null);

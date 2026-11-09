@@ -323,7 +323,7 @@ export async function buildApp(options: AppOptions) {
     const option = context.options.options.find(option => option.id === request.query.option);
     if (!option) throw new Error('This option is no longer available.');
     if (option.previewError && request.query.retry !== '1') throw new Error(option.previewError);
-    const detail = await client.post(`${taskRoute(current.name)}/source/options/preview`, { id: option.id, round: context.options.round, edits: option.edits }, 120000);
+    const detail = await client.post(`${taskRoute(current.name)}/source/options/preview`, { id: option.id, round: context.options.round, edits: option.edits, rejected: context.rejected }, 120000);
     if (option.previewError) {
       delete option.previewError;
       store.savePreference(noteOptionsKey(current.id, context.options.key, context.options.round), context.options);

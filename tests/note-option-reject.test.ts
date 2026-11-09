@@ -59,6 +59,7 @@ test('rejecting a note restores its source even when previewing an alternative; 
     assert.equal(currentPreview.statusCode, 200, currentPreview.body);
     assert.equal(currentPreview.json().after, 'respects-rejection', 'Current proposal also uses a decision-aware preview');
     assert.equal(previews.length, 1);
+    assert.deepEqual((previews[0] as { rejected: string[] }).rejected, [neighbor.id], 'The engine must validate the same rejection state as the browser comparison key');
     await engine.review.undo(task.name, 'reject-other');
     assert.equal((await options()).comparisonKey, initialKey, 'Undo restores the reusable preview identity');
     for (const option of ['current', 'alternative']) {

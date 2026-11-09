@@ -276,16 +276,21 @@ it('preview caches follow rejection and undo without resurrecting a neighboring 
   vi.spyOn(publisher, 'render').mockImplementation(async out => {
     fs.writeFileSync(path.join(out, 'round.json'), JSON.stringify({ units: {}, sections: [], loose: [] }));
   });
-  const input = { id: 'respect-rejection', round: 1, edits: [{ unit: selected.id, text: 'Procedure' }] };
+  const input = { id: 'respect-rejection', round: 1, edits: [{ unit: selected.id, text: 'Procedure' }], rejected: [] as string[] };
   const first = await previewNoteOption(app, task.name, input);
   expect(app.repo.blob(first.after, METHOD)?.toString()).toContain('Procedure sentence two.');
   await app.review.decide(task.name, { id: 'reject-neighbor', round: 1, changes: [neighbor.id], action: 'reject' });
-  const second = await previewNoteOption(app, task.name, input);
+  // A rejection can land after the host checks its comparison key but before
+  // the engine receives the preview request. Never cache that new state under
+  // the browser's old key, which becomes reusable after undo.
+  await expect(previewNoteOption(app, task.name, input)).rejects.toThrow('The review changed. Reload the options.');
+  const second = await previewNoteOption(app, task.name, { ...input, rejected: [neighbor.id] });
   expect(second.files).not.toBe(first.files);
   expect(app.repo.blob(second.after, METHOD)?.toString()).toContain('Procedure sentence 2.');
   expect(second.units.map(unit => unit.id)).toEqual(first.units.filter(unit => unit.id !== neighbor.id).map(unit => unit.id));
   expect(f.read(METHOD, task.worktree)).toContain('Approach sentence 2.');
   await app.review.undo(task.name, 'reject-neighbor');
+  await expect(previewNoteOption(app, task.name, { ...input, rejected: [neighbor.id] })).rejects.toThrow('The review changed. Reload the options.');
   expect((await previewNoteOption(app, task.name, input)).files).toBe(first.files);
   expect(build).toHaveBeenCalledTimes(4);
 });
