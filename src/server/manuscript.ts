@@ -12,9 +12,11 @@ import { ENGINE, ROOT } from './paths.ts';
 import type { Annotation, BuildProblem, BuildProgress, GitDiffScope, GitFile, GitStatus, ManuscriptBuild, ManuscriptProblems } from '../shared.ts';
 import { notesInstructions } from '../notes.ts';
 import { ignorePattern } from '../commit.ts';
-import { AnnotationPages, placeAnnotation } from './annotation-placement.ts';
+import { PdfReader } from './pdf-reader.ts';
 import { annotatePdf, type ExportNote } from './annotated-pdf.ts';
 import { collectProblems, countProblems, locateProblems, scrubLog, sortProblems, type StoredProblem } from './build-problems.ts';
+// Where a note comes from in the source, worked out in the PDF reader's worker.
+export { anchor, followLines, parseSynctex, settleLines, sourceExcerpt, type Anchor } from './note-location.ts';
 
 type Rect = [number, number, number, number];
 
@@ -363,21 +365,13 @@ async function pageSizes(mupdf: any, pdf: string) {
 }
 
 async function engine() {
-  const [{ Builder, BuildError, reprioritize }, { Repo, gitBinary }, { loadProject }, { mupdf, PdfDocument, containsCenter, walkText }, { opcodesWithin }] = await Promise.all([
+  const [{ Builder, BuildError, reprioritize }, { Repo, gitBinary }, { loadProject }, { mupdf, PdfDocument, containsCenter, walkText }] = await Promise.all([
     import(pathToFileURL(path.join(ENGINE, 'src/core/build.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/git.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/render/pdf.ts')).href),
-    import(pathToFileURL(path.join(ENGINE, 'src/core/diff.ts')).href),
   ]);
-  return { Builder, BuildError, reprioritize, Repo, gitBinary, loadProject, mupdf, PdfDocument, containsCenter, walkText, opcodesWithin: opcodesWithin as (a: string[], b: string[], timeout: number) => LineOp[] | null };
-}
-
-// `synctex edit` maps a PDF position (big points from the top-left corner) to
-// the source file and line that produced it.
-export function parseSynctex(output: string) {
-  const input = /^Input:(.*)$/m.exec(output)?.[1], line = Number(/^Line:(\d+)$/m.exec(output)?.[1]);
-  return input && line > 0 ? { input: path.normalize(input), line } : null;
+  return { Builder, BuildError, reprioritize, Repo, gitBinary, loadProject, mupdf, PdfDocument, containsCenter, walkText };
 }
 
 // One task for every pending note, quoting the marked text and its source so
@@ -386,81 +380,6 @@ export function annotationTask(notes: Annotation[]) {
   const lead = notes[0], first = lead.kind === 'delete' ? lead.comment.trim() ? 'Replace marked text' : 'Delete marked text' : lead.comment.split('\n').find(line => line.trim())?.trim() || 'Address a PDF note';
   const title = notes.length === 1 ? (first.length > 80 ? first.slice(0, 79).replace(/\s+\S*$/, '') + '…' : first) : `Address ${notes.length} PDF notes`;
   return { title, instructions: notesInstructions(notes) };
-}
-
-// The LaTeX the marked region came from, read from the exact tree that was
-// compiled. Long ranges keep their first lines.
-// Where one end of a selection sits in its printed line: the line's letters and
-// the index of the marked letter among them.
-export interface Anchor { line: string; at: number }
-const letters = (text: string) => text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-
-// The printed line around a marked character, for settleLines.
-export function anchor(chars: { text: string }[], index: number, end: boolean): Anchor | null {
-  const line = letters(chars.map(c => c.text).join(''));
-  if (!line) return null;
-  const at = end ? letters(chars.slice(0, index + 1).map(c => c.text).join('')).length - 1 : letters(chars.slice(0, index).map(c => c.text).join('')).length;
-  return { line, at: Math.min(Math.max(at, 0), line.length - 1) };
-}
-
-// SyncTeX records spaces and boxes rather than characters, so a word that
-// starts a printed line is often credited to the source line before it, whose
-// line break made the space. Settle each end of the selection by finding its
-// printed line among the source lines around SyncTeX's answer; text that does
-// not match, such as formulas, keeps SyncTeX's lines.
-export function settleLines(source: string[], [start, end]: [number, number], first: Anchor | null, last: Anchor | null): [number, number] {
-  const low = Math.max(1, start - 4), high = Math.min(source.length, end + 4);
-  let text = '';
-  const owner: number[] = [];
-  for (let number = low; number <= high; number++) {
-    const plain = letters(source[number - 1].replace(/(^|[^\\])%.*$/, '$1').replace(/\\[a-zA-Z@]+\*?/g, ' '));
-    text += plain; owner.push(...Array<number>(plain.length).fill(number));
-  }
-  const distance = (line: number) => Math.max(0, start - line, line - end);
-  const locate = (mark: Anchor | null) => {
-    if (!mark) return null;
-    // The whole printed line pins the place best; shorter context around the
-    // mark still matches when part of the line does not appear in the source.
-    for (const reach of [Infinity, 24, 10]) {
-      const from = Math.max(0, mark.at - reach), needle = mark.line.slice(from, mark.at + reach + 1);
-      let best: number | null = null;
-      for (let index = text.indexOf(needle); index >= 0; index = text.indexOf(needle, index + 1)) {
-        const line = owner[index + mark.at - from];
-        if (best === null || distance(line) < distance(best)) best = line;
-      }
-      if (best !== null) return best;
-    }
-    return null;
-  };
-  const from = locate(first) ?? start, to = locate(last) ?? end;
-  return from <= to ? [from, to] : [start, end];
-}
-
-type LineOp = [string, number, number, number, number];
-/** Lines `[start, end]` (1-based, inclusive) of `before`, followed into
- *  `after` through the opcodes between them. Edits elsewhere shift them; an
- *  edit inside stays inside, and lines added just outside stay outside. Null
- *  when the passage is gone, or when an edit crosses its first or last line:
- *  then the text that replaced it may be something else. */
-export function followLines(ops: LineOp[], [start, end]: [number, number]): [number, number] | null {
-  const map = (at: number, right: boolean) => {
-    const places: number[] = [];
-    for (const [kind, a, b, x, y] of ops) {
-      if (at < a || at > b) continue;
-      if (kind === 'equal') places.push(x + at - a);
-      else if (a < at && at < b) return null;
-      else places.push(...(a === b ? [x, y] : [at === a ? x : y]));
-    }
-    return places.length ? (right ? Math.min(...places) : Math.max(...places)) : null;
-  };
-  const from = map(start - 1, false), to = map(end, true);
-  return from === null || to === null || to <= from ? null : [from + 1, to];
-}
-
-export function sourceExcerpt(file: string, [start, end]: [number, number], limit = 20) {
-  if (!fs.existsSync(file)) return undefined;
-  const lines = fs.readFileSync(file, 'utf8').split('\n').slice(start - 1, end).map(line => line.trimEnd());
-  return (lines.length > limit ? [...lines.slice(0, limit), '…'] : lines).join('\n');
 }
 
 // Every word on a page with its exact place, for the PDF view's selection
@@ -503,6 +422,8 @@ interface Build {
 
 export class Manuscripts extends EventEmitter {
   private reviewSnapshots = new ReviewSnapshots();
+  // Notes are located and placed on PDFs off the event loop.
+  private pdfReader = new PdfReader();
   private builds = new Map<string, Build>();
   // When each paper's view last asked for its manuscript: the build of a
   // manuscript on screen compiles in the foreground, others behind it.
@@ -532,7 +453,7 @@ export class Manuscripts extends EventEmitter {
   /** Stops every compiler this process started, also paused ones, so that
    *  nothing keeps running after Papilot quits. */
   async stop() {
-    const stopping = this.reviewSnapshots.stop();
+    const stopping = Promise.all([this.reviewSnapshots.stop(), this.pdfReader.stop()]);
     const { stopAll } = await import(pathToFileURL(path.join(ENGINE, 'src/core/process.ts')).href);
     stopAll();
     await stopping;
@@ -781,36 +702,31 @@ export class Manuscripts extends EventEmitter {
   }
   private reanchoring = new Map<string, Promise<Annotation[]>>();
   private async place(projectId: string, root: string, notes: Annotation[], pdfFile: string, buildKey: string, cacheKey: (note: Annotation) => string): Promise<Annotation[]> {
-    const { PdfDocument } = await engine();
-    const current = new PdfDocument(pdfFile), target = new AnnotationPages(current);
-    const old = new Map<string, { document: InstanceType<typeof PdfDocument>; pages: AnnotationPages }>();
-    try {
-      const output: Annotation[] = [];
-      for (const note of notes) {
-        if (note.key === buildKey) { output.push(note); continue; }
-        const key = cacheKey(note);
-        if (!this.placements.has(key)) {
-          let placement: Pick<Annotation, 'key' | 'page' | 'rect' | 'rects' | 'source'> | null = null;
-          try {
-            const pdf = await this.cachedPdf(root, note.key);
-            if (pdf) {
-              if (!old.has(pdf)) { const document = new PdfDocument(pdf); old.set(pdf, { document, pages: new AnnotationPages(document) }); }
-              const match = await placeAnnotation(note, old.get(pdf)!.pages, target);
-              if (match) {
-                const { source } = await this.locate(projectId, buildKey, match.page, match.rect, match.rects, note.quote);
-                placement = { ...match, key: buildKey, source };
-              }
-            }
-          } catch { /* Keep the annotation intact when its position cannot be verified. */ }
-          this.placements.set(key, placement);
-        }
-        const placement = this.placements.get(key);
-        output.push(placement ? { ...note, ...placement } : note);
-      }
-      if (this.placements.size > 2000) this.placements.clear();
-      if (this.oldPdfs.size > 500) this.oldPdfs.clear();
-      return this.builds.get(projectId)?.key === buildKey ? output : notes;
-    } finally { current.close(); for (const entry of old.values()) entry.document.close(); }
+    // Each note to place, with the earlier PDF it was written on.
+    const wanted = new Map<string, { note: Annotation; previous: string | null }>();
+    for (const note of notes) {
+      const key = cacheKey(note);
+      if (note.key === buildKey || this.placements.has(key) || wanted.has(key)) continue;
+      wanted.set(key, { note, previous: await this.cachedPdf(root, note.key).catch(() => null) });
+    }
+    const readable = [...wanted.values()].filter((entry): entry is { note: Annotation; previous: string } => entry.previous !== null);
+    const matches = await this.pdfReader.place(pdfFile, readable), found = new Map(readable.map((entry, index) => [entry.note, matches[index]]));
+    for (const [key, { note }] of wanted) {
+      let placement: Pick<Annotation, 'key' | 'page' | 'rect' | 'rects' | 'source'> | null = null;
+      const match = found.get(note);
+      if (match) try {
+        const { source } = await this.locate(projectId, buildKey, match.page, match.rect, match.rects, note.quote);
+        placement = { ...match, key: buildKey, source };
+      } catch { /* Keep the annotation intact when its position cannot be verified. */ }
+      this.placements.set(key, placement);
+    }
+    const output = notes.map(note => {
+      const placement = note.key === buildKey ? null : this.placements.get(cacheKey(note));
+      return placement ? { ...note, ...placement } : note;
+    });
+    if (this.placements.size > 2000) this.placements.clear();
+    if (this.oldPdfs.size > 500) this.oldPdfs.clear();
+    return this.builds.get(projectId)?.key === buildKey ? output : notes;
   }
 
   // Every problem of the last finished build, placed on its PDF when there is
@@ -916,16 +832,12 @@ export class Manuscripts extends EventEmitter {
   async placeReviewNote(projectId: string, root: string, note: Annotation, pdf: string): Promise<Annotation> {
     const state = await this.state(projectId, root);
     if (!state.build.current || !state.build.key) throw new Error('Wait for the current manuscript PDF to finish compiling, then copy the suggestion again.');
-    const key = state.build.key, { PdfDocument } = await engine();
-    const original = new PdfDocument(pdf), current = new PdfDocument(this.pdf(projectId, key));
-    try {
-      const match = await placeAnnotation(note, new AnnotationPages(original), new AnnotationPages(current));
-      if (!match) throw new Error('This passage could not be located reliably in the current manuscript. The suggestion remains in the review task.');
-      const { source } = await this.locate(projectId, key, match.page, match.rect, match.rects, note.quote);
-      const latest = await this.state(projectId, root);
-      if (!latest.build.current || latest.build.key !== key) throw new Error('The manuscript changed while copying this suggestion. Try again.');
-      return { ...note, ...match, key, source };
-    } finally { original.close(); current.close(); }
+    const key = state.build.key, [match] = await this.pdfReader.place(this.pdf(projectId, key), [{ note, previous: pdf }]);
+    if (!match) throw new Error('This passage could not be located reliably in the current manuscript. The suggestion remains in the review task.');
+    const { source } = await this.locate(projectId, key, match.page, match.rect, match.rects, note.quote);
+    const latest = await this.state(projectId, root);
+    if (!latest.build.current || latest.build.key !== key) throw new Error('The manuscript changed while copying this suggestion. Try again.');
+    return { ...note, ...match, key, source };
   }
 
   snapshotPdf(pdf: string, key?: string): Promise<ReviewSnapshot> {
@@ -997,52 +909,9 @@ export class Manuscripts extends EventEmitter {
   // is now.
   async locate(projectId: string, key: string, page: number, rect: Rect, rects: Rect[] = [], selected = '') {
     const pdf = this.pdf(projectId, key), build = this.shownBuild(projectId, key)!;
-    const { PdfDocument, containsCenter, opcodesWithin } = await engine();
-    const document = new PdfDocument(pdf);
-    try {
-      if (!Number.isInteger(page) || page < 0 || page >= document.length) throw Object.assign(new Error('That page is not part of the manuscript.'), { statusCode: 400 });
-      const current = document.page(page), [x0, y0, x1, y1] = current.bounds, width = x1 - x0, height = y1 - y0;
-      const toPage = (r: Rect) => [x0 + r[0] * width, y0 + r[1] * height, x0 + r[2] * width, y0 + r[3] * height];
-      const clips = (rects.length ? rects : [rect]).map(toPage);
-      const quote = (selected || clips.map(clip => current.text(clip)).join(' ')).replace(/\uFFFD/g, '').replace(/\s+/g, ' ').trim();
-      // Ask SyncTeX about the first and last marked character of every line, so
-      // the source range covers the whole selection rather than its first line.
-      const points: [number, number][] = [], centre = (r: number[]): [number, number] => [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2];
-      let first: Anchor | null = null, last: Anchor | null = null;
-      for (const line of current.lines as { chars: { text: string; rect: number[] }[] }[]) {
-        const marked = line.chars.flatMap((c, index) => clips.some(clip => containsCenter(clip, c.rect)) ? [index] : []);
-        if (!marked.length) continue;
-        if (!first && !last) first = anchor(line.chars, marked[0], false);
-        last = anchor(line.chars, marked[marked.length - 1], true);
-        if (points.length >= 24) continue;
-        points.push(centre(line.chars[marked[0]].rect));
-        if (marked.length > 1) points.push(centre(line.chars[marked[marked.length - 1]].rect));
-      }
-      if (!points.length) points.push(...clips.slice(0, 12).map(centre));
-      const hits = (await Promise.all(points.map(([x, y]) => exec('synctex', ['edit', '-o', `${page + 1}:${(x - x0).toFixed(1)}:${(y - y0).toFixed(1)}:${pdf}`]).then(r => parseSynctex(r.stdout), () => null)))).filter(hit => hit !== null);
-      const files = new Map<string, { input: string; lines: number[] }>();
-      for (const hit of hits) {
-        const relative = path.relative(build.root || path.dirname(hit.input), hit.input);
-        const file = path.posix.join(build.sourceDir || '', (relative.startsWith('..') ? path.basename(hit.input) : relative).split(path.sep).join('/'));
-        files.set(file, { input: hit.input, lines: [...(files.get(file)?.lines || []), hit.line] });
-      }
-      const [file, found] = [...files].sort((a, b) => b[1].lines.length - a[1].lines.length)[0] || [];
-      if (!file || !found) return { quote, source: null };
-      const source = fs.existsSync(found.input) ? fs.readFileSync(found.input, 'utf8').split('\n') : [];
-      const lines = settleLines(source, [Math.min(...found.lines), Math.max(...found.lines)], first, last);
-      // The build compiled a copy of the source; the working tree may have
-      // moved on since, by later edits or because these are older pages.
-      const root = this.roots.get(projectId), working = root && path.join(root, ...file.split('/'));
-      if (working && path.resolve(working) !== path.resolve(found.input) && fs.existsSync(working)) {
-        const now = fs.readFileSync(working, 'utf8').split('\n');
-        const ops = now.length === source.length && now.every((line, index) => line === source[index]) ? null : opcodesWithin(source, now, 1000);
-        if (ops) {
-          const followed = followLines(ops, lines);
-          return { quote, source: followed && { file, lines: followed, excerpt: sourceExcerpt(working, followed) } };
-        }
-      }
-      return { quote, source: { file, lines, excerpt: sourceExcerpt(found.input, lines) } };
-    } finally { document.close(); }
+    const located = await this.pdfReader.locate({ pdf, page, rect, rects, selected, root: build.root, sourceDir: build.sourceDir, working: this.roots.get(projectId) });
+    if (!located) throw Object.assign(new Error('That page is not part of the manuscript.'), { statusCode: 400 });
+    return located;
   }
 
 }
