@@ -197,8 +197,8 @@ export const zhCN: Record<string, string> = {
     "请先在 Papilot 中选择“检查状态”，再接受、拒绝或撤销修改。你仍可以添加评论。",
   "Pause this task in Papilot before accepting, rejecting, or undoing changes. You can still add comments.":
     "请先在 Papilot 中暂停此任务，再接受、拒绝或撤销修改。你仍可以添加评论。",
-  "The agent is editing this task's files. Pause it before rejecting or editing changes. You can still accept and comment.":
-    "智能体正在编辑此任务的文件。请先暂停它，再拒绝或编辑修改。你仍可以接受修改和添加评论。",
+  "The agent is editing this task's files. Pause it before editing changes or undoing a rejection. You can still accept, reject and comment.":
+    "智能体正在编辑此任务的文件。请先暂停它，再编辑修改或撤销拒绝。你仍可以接受、拒绝修改和添加评论。",
   "Wait for the current review action before accepting, rejecting, or undoing changes. You can still add comments.":
     "请等待当前审阅操作完成后再接受、拒绝或撤销修改。你仍可以添加评论。",
 
@@ -326,4 +326,11 @@ export const zhCN: Record<string, string> = {
   "You checked this entry yourself.": "你已人工确认过这个条目。",
   "I checked it myself": "我已人工确认",
   "{n} checked by you": "{n} 个已人工确认",
+  "Compiling your decisions…": "正在编译你的决定…",
+  "Your accepted changes do not compile together.": "已接受的修改合在一起无法编译。",
+  "Details": "详情",
+  "Updating with your latest decisions…": "正在按你最新的决定更新…",
+  "PDF page {page}": "PDF 第 {page} 页",
+  "Rejected; reverted when the agent stops": "已拒绝；智能体停下后撤回",
+  "Rejected · reverted when the agent stops": "已拒绝 · 智能体停下后撤回",
 };
