@@ -3,7 +3,7 @@ import { now } from "../../src/core/files.ts";
 import { Fixture } from "./helpers.ts";
 import type { Job } from "../../src/types.ts";
 
-it("builds the queued round whose review page was read last first, and a superseded round in the background", async () => {
+it("builds the queued round whose review page was read last first, and a superseded round at its successor's priority", async () => {
   const f = new Fixture(), app = f.app();
   try {
     for (const name of ["first", "second", "third"]) app.tasks.create(name);
@@ -25,11 +25,11 @@ it("builds the queued round whose review page was read last first, and a superse
     app.publisher.submit("third");
     // The author reads the third task's review: it is built next.
     app.viewers.set("third", now());
-    // A newer round of the first task supersedes the running one, which
-    // goes on in the background as a build the newer one continues from.
+    // A newer round of the first task supersedes the running one. The newer
+    // one starts only when it ends and continues from its builds, so it
+    // keeps the newer one's priority rather than waiting in the background.
     const newer = app.publisher.submit("first");
-    expect(app.publisher.superseded(running)).toBe(true);
-    expect(app.publisher.priority(running)).toBe("background");
+    expect(app.publisher.priority(running)).toBe("foreground");
     expect(app.publisher.priority(newer)).toBe("foreground");
     open();
     await app.publisher.join();

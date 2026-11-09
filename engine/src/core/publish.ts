@@ -220,16 +220,10 @@ export class Publisher {
   // for every page of a long baseline or either parallel comparison build.
   private builds = new Map<string, Partial<Record<"baseline" | "revised", BuildProgress>>>();
   progress(id: string) { return this.builds.get(id); }
-  /** Whether a newer job of the same task will publish after this one. */
-  superseded(job: Pick<Job, "id" | "task">) {
-    const latest = this.pending.get(job.task);
-    return latest !== undefined && latest !== job.id;
-  }
-  /** A job compiles in the foreground while its review page is open. Once a
-   *  newer job of its task supersedes it, it continues in the background:
-   *  that job can still continue from its builds. */
-  priority(job: Pick<Job, "id" | "task">): BuildPriority {
-    if (this.superseded(job)) return "background";
+  /** A job compiles in the foreground while its review page is open. A job
+   *  that a newer one of its task supersedes keeps that priority: the newer
+   *  job starts only when it ends, and continues from its builds. */
+  priority(job: Pick<Job, "task">): BuildPriority {
     return now() - (this.app.viewers.get(job.task) ?? 0) < VIEWING ? "foreground" : "normal";
   }
   /** Someone opened or still reads a task's review page. */
@@ -357,8 +351,6 @@ export class Publisher {
     );
     this.pending.set(name, id);
     if (!this.running.has(name)) this.queue.push(id);
-    // The running job of this task is superseded now.
-    else reprioritize();
     queueMicrotask(() => this.drain());
     return remember(this.job(id));
   }
