@@ -41,6 +41,8 @@ const wait = (attempt: number) =>
 export class DecisionQueue<T extends QueuedDecision, R> {
   private entries: T[] = [];
   private running = false;
+  // The decision being sent now, which can no longer be taken back here.
+  private sending: T | null = null;
   private idle: (() => void)[] = [];
   constructor(
     private options: {
@@ -52,14 +54,52 @@ export class DecisionQueue<T extends QueuedDecision, R> {
       /** Requests that may not have arrived are sent again this often. */
       retries?: number;
       delay?: (attempt: number) => Promise<void>;
+      /** Keeps unconfirmed decisions here, so that a reload, a closed tab or a
+       *  phone that froze the page sends them later (their IDs make a resend
+       *  safe). */
+      storage?: { key: string; area?: Pick<Storage, "getItem" | "setItem" | "removeItem"> };
     },
   ) {}
   get pending(): readonly T[] {
     return this.entries;
   }
+  private save() {
+    const store = this.options.storage;
+    if (!store) return;
+    const area = store.area ?? globalThis.localStorage;
+    try {
+      if (this.entries.length) area.setItem(store.key, JSON.stringify(this.entries));
+      else area.removeItem(store.key);
+    } catch { /* Storage may be full or unavailable; the queue still sends. */ }
+  }
+  /** Decisions a page that closed before they were confirmed left behind. */
+  static saved<T>(key: string, area: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): T[] {
+    try {
+      const value = JSON.parse(area?.getItem(key) || "[]");
+      return Array.isArray(value) ? value : [];
+    } catch { return []; }
+  }
   push(entry: T) {
     this.entries = [...this.entries, entry];
+    this.save();
     void this.run();
+  }
+  /** Takes back the latest decision while it waits to be sent: it never
+   *  reaches the server. False once it is being sent. */
+  withdraw(): T | null {
+    const last = this.entries.at(-1);
+    if (!last || last === this.sending) return null;
+    this.entries = this.entries.slice(0, -1);
+    this.save();
+    return last;
+  }
+  /** The page is going away: sends the next unconfirmed decision once more
+   *  by `send`, with fetch keepalive, which the browser finishes after the
+   *  page freezes. A resent decision applies once. Decisions after it stay
+   *  stored and go out in order when the page is back; sending them all at
+   *  once would race against each other on the server. */
+  flush(send: (entry: T) => void) {
+    if (this.entries.length) send(this.entries[0]);
   }
   /** Settles once every queued decision is confirmed or the queue stopped. */
   drained(): Promise<void> {
@@ -73,19 +113,25 @@ export class DecisionQueue<T extends QueuedDecision, R> {
     try {
       while (this.entries.length) {
         const entry = this.entries[0];
+        this.sending = entry;
         let reply: R;
         try {
           reply = await this.attempt(entry);
         } catch (error) {
           const dropped = this.entries.slice(1);
           this.entries = [];
+          this.sending = null;
+          this.save();
           this.options.failed(entry, error instanceof Error ? error : new Error(String(error)), dropped);
           break;
         }
         this.entries = this.entries.slice(1);
+        this.sending = null;
+        this.save();
         this.options.confirmed(entry, reply, this.entries);
       }
     } finally {
+      this.sending = null;
       this.running = false;
       for (const resolve of this.idle.splice(0)) resolve();
     }

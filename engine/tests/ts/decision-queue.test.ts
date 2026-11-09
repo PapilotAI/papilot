@@ -146,3 +146,50 @@ it("shows queued decisions over the confirmed ones until they are confirmed", ()
   ])).toEqual({ a: "accepted", b: "rejected", c: "pending", d: "commented" });
   expect(confirmed.a).toBe("pending");
 });
+
+// A page that goes away, such as a locked phone or a closed tab, loses no decision.
+function memory() {
+  const values = new Map<string, string>();
+  return { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => void values.set(k, v), removeItem: (k: string) => void values.delete(k), values };
+}
+it("keeps unconfirmed decisions in storage until each is confirmed, for a later page to send", async () => {
+  const area = memory(), sent: string[] = [], answers: ReturnType<typeof gate<string>>[] = [];
+  const queue = new DecisionQueue<QueuedDecision, string>({
+    send: (decision) => { sent.push(decision.id); const answer = gate<string>(); answers.push(answer); return answer.promise; },
+    confirmed: () => undefined, failed: () => undefined, delay: async () => {},
+    storage: { key: "queue", area },
+  });
+  queue.push(entry("a"));
+  queue.push(entry("b"));
+  expect(DecisionQueue.saved<QueuedDecision>("queue", area).map((e) => e.id)).toEqual(["a", "b"]);
+  await tick();
+  answers[0].resolve("ok");
+  await tick();
+  expect(DecisionQueue.saved<QueuedDecision>("queue", area).map((e) => e.id)).toEqual(["b"]);
+  // The page goes away: the next decision goes out once more; later ones
+  // stay stored for when it is back.
+  queue.push(entry("c"));
+  const flushed: string[] = [];
+  queue.flush((decision) => flushed.push(decision.id));
+  expect(flushed).toEqual(["b"]);
+  expect(DecisionQueue.saved<QueuedDecision>("queue", area).map((e) => e.id)).toEqual(["b", "c"]);
+  answers[1].resolve("ok");
+  await tick();
+  answers[2].resolve("ok");
+  await queue.drained();
+  expect(area.values.has("queue")).toBe(false);
+});
+it("takes back the latest decision while it waits, never sending it, but not one being sent", async () => {
+  const { queue, sent, events } = fixture();
+  queue.push(entry("a"));
+  queue.push(entry("b"));
+  await tick();
+  expect(queue.withdraw()?.id).toBe("b");
+  expect(queue.pending.map((e) => e.id)).toEqual(["a"]);
+  // "a" is on its way: Undo must ask the server instead.
+  expect(queue.withdraw()).toBeNull();
+  sent[0].answer.resolve("state-a");
+  await queue.drained();
+  expect(sent.map((s) => s.entry.id)).toEqual(["a"]);
+  expect(events).toEqual(["confirmed a state-a []"]);
+});

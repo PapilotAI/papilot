@@ -223,12 +223,39 @@ export function ReviewApp({
     queue = useRef<DecisionQueue<Queued, PageState> | null>(null);
   // Decisions go out one at a time, in order; the review moves on at once.
   // Uncommitted changes have no action journal to make a retry safe.
+  // Unconfirmed decisions are kept in the browser, so that a reload, a closed
+  // tab or a locked phone sends them later rather than losing them.
+  const queueKey = changes ? null : `latex-review:queue:${location.pathname}:${task}`;
   queue.current ??= new DecisionQueue<Queued, PageState>({
     send: entry => settle.current!.send(entry),
     confirmed: (entry, next, remaining) => settle.current!.confirmed(entry, next, remaining),
     failed: (entry, error, dropped) => settle.current!.failed(entry, error, dropped),
     retries: changes ? 0 : 4,
+    ...(queueKey ? { storage: { key: queueKey } } : {}),
   });
+  useEffect(() => {
+    if (!queueKey || transport) return;
+    // What an earlier page decided and never had confirmed goes out first.
+    for (const entry of DecisionQueue.saved<Queued>(queueKey)) queue.current!.push(entry);
+    if (queue.current!.pending.length) { setQueued(queue.current!.pending); setSettling(true); }
+    // A page that goes away sends what is left at once; the browser finishes
+    // those requests even after the page is gone.
+    const listener = (event: Event) => {
+      if (document.visibilityState !== "hidden" && event.type !== "pagehide") return;
+      const csrf = snapshot.current.state?.csrf ?? "";
+      queue.current!.flush((entry) => {
+        void fetch(`/api/tasks/${encodeURIComponent(task)}/decide`, {
+          method: "POST",
+          keepalive: true,
+          headers: { "Content-Type": "application/json", "X-Review-Token": csrf },
+          body: JSON.stringify({ id: entry.id, action: entry.kind, round: entry.round, changes: entry.changes, body: entry.body }),
+        }).catch(() => undefined);
+      });
+    };
+    document.addEventListener("visibilitychange", listener);
+    window.addEventListener("pagehide", listener);
+    return () => { document.removeEventListener("visibilitychange", listener); window.removeEventListener("pagehide", listener); };
+  }, []);
   // Where each review was left; a host's uncommitted changes are kept per paper.
   const placeKey = `latex-review:${location.pathname}:${changes ? 'changes' : task}`;
   const [shortcuts, setShortcuts] = useState(readShortcuts);
@@ -748,6 +775,18 @@ export function ReviewApp({
   async function undo() {
     if ((!state?.undo && !queue.current!.pending.length) || !latest || snapshot.current.busy)
       return;
+    // The latest decision has not been sent yet: it is simply dropped, and
+    // nothing reaches the server or compiles.
+    const withdrawn = queue.current!.withdraw();
+    if (withdrawn) {
+      epoch.current++;
+      setQueued(queue.current!.pending);
+      if (withdrawn.draft) store(withdrawn.draft, withdrawn.body);
+      setHistory(false);
+      if (withdrawn.round === detail?.round && stops[withdrawn.stop]) select(withdrawn.stop);
+      setToast(changes ? t("Revert undone. The changes are back in your files.") : t("Last decision undone. The restored changes need review again."));
+      return;
+    }
     epoch.current++;
     setBusy(true);
     snapshot.current.busy = true;
@@ -1398,6 +1437,30 @@ export function ReviewApp({
     fullPaper = !pinnedView && (appliedPaper || (Boolean(detail?.pdf) && placeable(placed))),
     paperView = fullPaper && view === "paper";
   const applied = useApplied(appliedPaper && paperView, api);
+  // The comparisons of the next few undecided changes are fetched and decoded
+  // ahead, so the next one is on screen the moment a decision moves on. A
+  // small window keeps a phone's memory free.
+  const preloaded = useRef(new Map<string, HTMLImageElement>());
+  useEffect(() => {
+    if (!detail || paperView) return;
+    const decided = withQueued(state?.decisions ?? {}, queued), wanted: string[] = [];
+    for (let step = 0, seen = 0; step < stops.length && seen < 4; step++) {
+      const index = ((current < 0 ? 0 : current) + step) % stops.length, block = placed[index]?.block;
+      if (!block || stops[index].waiting || !pendingUnits(stops[index], decided).length) continue;
+      seen++;
+      for (const image of [...(block.before ?? []), ...(block.after ?? [])]) wanted.push(detail.files + (focused ? image.clean : image.src));
+    }
+    const keep = new Set(wanted);
+    for (const url of [...preloaded.current.keys()]) if (!keep.has(url)) preloaded.current.delete(url);
+    for (const url of wanted) {
+      if (preloaded.current.has(url)) continue;
+      const image = new Image();
+      image.decoding = "async";
+      image.src = url;
+      void image.decode().catch(() => undefined);
+      preloaded.current.set(url, image);
+    }
+  }, [detail, stops, placed, current, queued, state?.decisions, focused, paperView]);
   // What the author reads now compiles first: the page says which view it
   // shows while it is on screen.
   useEffect(() => {

@@ -51,6 +51,8 @@ async function open(page) {
     const round = /\/rounds\/(\d+)$/.exec(url.pathname);
     if (round) return route.fulfill({ json: { ...detail, round: Number(round[1]) } });
     if (route.request().method() !== 'POST') return route.fulfill({ json: view() });
+    // Which view the page shows is no decision.
+    if (url.pathname.endsWith('/look')) return route.fulfill({ json: { ok: true } });
     const body = route.request().postDataJSON();
     posts.push({ route: url.pathname.split('/').at(-1), ...body });
     if (hold) await new Promise(resolve => held.push(resolve));
@@ -72,7 +74,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 400));
 const undoKey = process.platform === 'darwin' ? 'Meta+z' : 'Control+z';
 
 try {
-  const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 1000 } });
+  let page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 1000 } });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
 
   // Fast successive decisions advance at once and go out one at a time.
@@ -139,34 +141,80 @@ try {
   await expect(page.locator('.toast')).toHaveCount(0);
   console.log('PASS: retries keep the action ID and apply the decision once');
 
-  // Undo waits for the queue, then undoes the last decision.
+  // Undo takes back a decision that is not sent yet at once, without the server.
   await reloadFresh(page); hold = true;
   await page.keyboard.press('a');
   await page.keyboard.press('a');
   await page.keyboard.press(undoKey);
-  await settle();
-  assert.equal(posts.filter(post => post.route === 'undo').length, 0, 'Undo waits for queued decisions');
-  held.shift()(); await expect.poll(() => decides().length).toBe(2);
-  held.shift()();
-  await expect.poll(() => posts.filter(post => post.route === 'undo').length).toBe(1);
-  assert.equal(posts.at(-1).id, decides()[1].id, 'It undoes the last decision');
-  held.shift()();
   await expect(page.locator('.toast')).toContainText('Last decision undone');
   await expect(current(page)).toHaveAttribute('data-stop', '1');
+  await expect(stateOf(page, 1)).toHaveAttribute('data-state', 'pending');
+  held.shift()();
+  await expect.poll(() => decisions.c1).toBe('accepted');
+  await settle();
+  assert.equal(decides().length, 1, 'The withdrawn decision never reached the server');
+  assert.equal(posts.filter(post => post.route === 'undo').length, 0, 'Nothing was undone on the server');
   assert.deepEqual(decisions, { c1: 'accepted', c2: 'pending', c3: 'pending', c4: 'pending' });
-  // If a queued decision fails, Undo has nothing of the author's to undo.
+  // The decision being sent cannot be withdrawn: Undo waits for it, then
+  // undoes it on the server.
   await reloadFresh(page); hold = true;
   await page.keyboard.press('a');
-  await page.keyboard.press('a');
+  await expect.poll(() => decides().length).toBe(1);
   await page.keyboard.press(undoKey);
-  refuse = body => body.changes?.[0] === 'c2' ? 'These changes were already decided. Reload the page.' : null;
-  held.shift()(); await expect.poll(() => decides().length).toBe(2);
+  await settle();
+  assert.equal(posts.filter(post => post.route === 'undo').length, 0, 'Undo waits for the decision in flight');
+  held.shift()();
+  await expect.poll(() => posts.filter(post => post.route === 'undo').length).toBe(1);
+  assert.equal(posts.at(-1).id, decides()[0].id, 'It undoes that decision');
+  held.shift()();
+  await expect(page.locator('.toast')).toContainText('Last decision undone');
+  assert.deepEqual(decisions, { c1: 'pending', c2: 'pending', c3: 'pending', c4: 'pending' });
+  // If the decision in flight fails, Undo has nothing of the author's to undo.
+  await reloadFresh(page); hold = true;
+  await page.keyboard.press('a');
+  await expect.poll(() => decides().length).toBe(1);
+  await page.keyboard.press(undoKey);
+  refuse = body => body.changes?.[0] === 'c1' ? 'These changes were already decided. Reload the page.' : null;
   held.shift()();
   await expect(page.locator('.toast')).toContainText('already decided');
   await settle();
   assert.equal(posts.filter(post => post.route === 'undo').length, 0);
-  assert.deepEqual(decisions, { c1: 'accepted', c2: 'pending', c3: 'pending', c4: 'pending' });
-  console.log('PASS: undo waits for the queue to drain and is dropped if a queued decision fails');
+  assert.deepEqual(decisions, { c1: 'pending', c2: 'pending', c3: 'pending', c4: 'pending' });
+  console.log('PASS: undo drops an unsent decision at once, waits for one in flight, and is dropped if that one fails');
+
+  // Decisions not confirmed when the page goes away (a locked phone, a closed
+  // tab) are sent by the next page, and each applies once.
+  // One browser profile: the next page reads what the first one stored.
+  refuse = null;
+  const profile = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 1000 } });
+  const first = await profile.newPage();
+  first.on('pageerror', error => errors.push(error.message));
+  reset(); await open(first); hold = true;
+  await first.keyboard.press('a');
+  await first.keyboard.press('a');
+  await first.keyboard.press('a');
+  await expect(current(first)).toHaveAttribute('data-stop', '3');
+  hold = false;
+  await first.close({ runBeforeUnload: true });
+  for (const release of held.splice(0)) release();
+  const again = await profile.newPage();
+  again.on('pageerror', error => errors.push(error.message));
+  await again.route('**/api/tasks/flow/**', async route => {
+    const url = new URL(route.request().url());
+    const round = /\/rounds\/(\d+)$/.exec(url.pathname);
+    if (round) return route.fulfill({ json: { ...detail, round: Number(round[1]) } });
+    if (route.request().method() !== 'POST') return route.fulfill({ json: view() });
+    if (url.pathname.endsWith('/look')) return route.fulfill({ json: { ok: true } });
+    const body = route.request().postDataJSON();
+    posts.push({ route: url.pathname.split('/').at(-1), ...body });
+    return route.fulfill({ json: view(apply(url.pathname, body)) });
+  });
+  await again.goto(`${origin}/?task=flow`);
+  await expect.poll(() => [decisions.c1, decisions.c2, decisions.c3].join()).toBe('accepted,accepted,accepted');
+  assert.equal(actions.length, 3, 'Each decision applied once');
+  await expect.poll(() => again.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('latex-review:queue:')).length)).toBe(0);
+  await profile.close();
+  console.log('PASS: decisions a page left unconfirmed are sent by the next page, once each');
 
   // While the agent edits a deferred task, accepting goes on and rejecting waits.
   hold = false; refuse = null;
