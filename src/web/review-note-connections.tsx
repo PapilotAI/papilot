@@ -84,9 +84,12 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
     else latest.current?.focusNote(note.key);
   };
   return <>{createPortal(<style>{`
-    .papilot-note-links{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px;order:5}
-    .papilot-note-links button{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg-muted);color:var(--text-2);font:12px/1.5 var(--sans);cursor:pointer}
-    .papilot-note-links button:hover,.papilot-note-links button:focus-visible{color:var(--primary);border-color:var(--primary)}
+    .papilot-note-links{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:1px;order:5;flex-shrink:0;padding:2px;border-radius:5px;background:var(--bg-muted)}
+    .papilot-note-links>svg{flex:none;margin:0 3px;color:var(--text-2)}
+    .papilot-note-links>span{display:flex;min-width:0;max-width:112px;overflow-x:auto;scrollbar-width:thin}
+    .papilot-note-links button{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px;padding:2px 5px;border:0;border-radius:3px;background:transparent;color:var(--text-2);font:11px/1.5 var(--sans);cursor:pointer}
+    .papilot-note-links button:hover,.papilot-note-links button[aria-pressed=true]{color:var(--primary);background:var(--accent-soft)}
+    .papilot-note-links button:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
     .papilot-note-options{display:inline-flex;flex:none;order:3;margin-left:4px}
     .papilot-note-options:empty{display:none}
     .papilot-note-options button{display:inline-flex;align-items:center;gap:3px;padding:4px;border:0;border-radius:5px;background:transparent;color:var(--accent);font:11px/1.5 var(--sans);white-space:nowrap;cursor:pointer}
@@ -94,8 +97,8 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
     .papilot-note-options button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
     .papilot-linked-change{outline:2px solid var(--primary);outline-offset:-2px}
     .papilot-linked-target>.change-head{background:var(--accent-soft);box-shadow:inset 3px 0 var(--primary)}
-    @media(max-width:680px){.papilot-note-links button{min-height:32px}}
-  `}</style>, doc.head)}{places.map(place => createPortal(<>{place.notes.map(note => <button key={note.key} type="button" title={note.note.comment} aria-pressed={links.focus?.key === note.key} aria-label={t('Show note {n}: {comment}', { n: note.index + 1, comment: note.note.comment })} onClick={event => { event.stopPropagation(); focusAt(place, note); }}><Icon name="notes" size={12}/>{note.index + 1}</button>)}</>, place.slot, `${place.round}:${place.stop}`))}{places.map(place => {
+    @media(pointer:coarse){.papilot-note-links button{min-height:32px;min-width:28px}}
+  `}</style>, doc.head)}{places.map(place => createPortal(<><Icon name="notes" size={12}/><span>{place.notes.map(note => <button key={note.key} type="button" title={note.note.comment} aria-pressed={links.focus?.key === note.key} aria-label={t('Show note {n}: {comment}', { n: note.index + 1, comment: note.note.comment })} onClick={event => { event.stopPropagation(); focusAt(place, note); }}>{note.index + 1}</button>)}</span></>, place.slot, `${place.round}:${place.stop}`))}{places.map(place => {
     const available = place.notes.filter(note => links.alternativeCounts[note.key] > 0);
     const note = available.find(note => note.key === links.focus?.key) || available[0];
     return createPortal(note ? <button type="button" aria-expanded={links.focus?.key === note.key} onClick={event => { event.stopPropagation(); focusAt(place, note); }}>{t('Other options · {n}', { n: links.alternativeCounts[note.key] })}<Icon name="chevronDown" size={12}/></button> : null, place.optionsSlot, `options:${place.round}:${place.stop}`);

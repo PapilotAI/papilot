@@ -30,6 +30,9 @@ const items = [
   { id: 'request-2', taskId: task.id, type: 'user', text: '', createdAt: 3, meta: { notes: [{ ...note('Keep the technical term.', 10, 'A shorter technical sentence.'), where: 'Round 1 · Page 1 · main.tex line 10', anchor: { round: 1, sources: [{ file: 'main.tex', lines: [10, 12] }] } }] } },
 ];
 const runs = [{ id: 'request-1', taskId: task.id, reviewRound: 1, status: 'completed' }, { id: 'request-2', taskId: task.id, reviewRound: 2, status: 'completed' }];
+// Several annotations can legitimately share a PDF group. Its links stay
+// compact and individually usable instead of wrapping into tall cards.
+items[2].meta.notes.push(...['Keep the definition precise.', 'Avoid unnecessary repetition.'].map(comment => ({ ...items[2].meta.notes[0], comment })));
 const unit = (id, line, old, revised) => ({ id, file: 'main.tex', kind: 'text', status: 'modified', old_start: line, old_end: line + 2, new_start: line, new_end: line + 2, old_text: old, new_text: revised });
 const units = { 1: [unit('c1', 10, 'The original technical sentence.', 'A shorter technical sentence.'), unit('c2', 20, 'A second original sentence.', 'Our contribution is now explicit.'), unit('c3', 12, 'The original technical sentence.', 'A clearer technical sentence.')], 2: [unit('c1', 11, 'A shorter technical sentence.', 'A shorter sentence preserving the technical term.')] };
 const rounds = Object.fromEntries([1, 2].map(round => [round, { round, units: units[round], sections: [], loose: units[round].map(unit => ({ kind: 'change', units: [unit.id], before: [{ text: [{ text: unit.old_text }] }] })) }]));
@@ -149,6 +152,11 @@ try {
   await frame().locator('html[data-papilot-round="2"]').waitFor();
   await frame().locator('.papilot-linked-change[data-stop="0"]').waitFor();
   await expect(controls().locator('.note-review-targets button')).toHaveText(['Change 1']);
+  const noteLinks = frame().locator('.change[data-stop="0"] .papilot-note-links');
+  await expect(noteLinks.locator('button')).toHaveCount(3);
+  await expect(noteLinks.locator('svg')).toHaveCount(1);
+  const linkBounds = await noteLinks.locator('button').evaluateAll(buttons => buttons.map(button => { const box = button.getBoundingClientRect(); return { top: box.top, bottom: box.bottom }; }));
+  assert.ok(linkBounds.every(box => box.top === linkBounds[0].top && box.bottom === linkBounds[0].bottom), 'Shared note numbers stay on one compact row');
   assert.doesNotMatch(await page.locator('.review-frame').getAttribute('src'), /[?&](history|round)=/);
   assert.deepEqual(await page.locator('[data-note-result]').allTextContents(), original, 'review operations never add content to original messages');
   await controls().getByRole('region', { name: 'Complete PDF comparison', exact: true }).waitFor();
