@@ -264,5 +264,7 @@
   "The option changes source outside this note.": "该方案修改了本批注范围之外的源码。",
   "The option has overlapping patches.": "该方案包含重叠的修改。",
   "Invalid review action.": "无效的审阅操作。",
-  "Send noteAlternativeRange as few, balanced or many.": "请将 noteAlternativeRange 设为 few、balanced 或 many。"
+  "Send noteAlternativeRange as few, balanced or many.": "请将 noteAlternativeRange 设为 few、balanced 或 many。",
+  "Codex was not found on this computer. Install Codex, then select Reconnect.": "本机未找到 Codex。安装 Codex 后点“重新连接”。",
+  "Codex is installed but could not be run. Reinstall Codex, then select Reconnect.": "Codex 已安装，但无法运行。重新安装 Codex 后点“重新连接”。"
 }

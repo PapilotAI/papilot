@@ -3,7 +3,8 @@ import { type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
 import type { TaskPermissions, TaskPermissionOption } from '../shared.ts';
-import { CODEX, ROOT, VERSION } from './paths.ts';
+import { ROOT, VERSION } from './paths.ts';
+import { codexBinary, codexCandidates } from './codex-binary.ts';
 import { taskAccessInstructions } from './task-permissions.ts';
 
 export class RpcResponseError extends Error {}
@@ -41,7 +42,9 @@ export class Codex extends EventEmitter {
   private starting: Promise<void> | null = null;
   ready = false;
   stderr = '';
-  constructor(private binary = CODEX, private args = ['app-server', '--listen', 'stdio://'], private env: NodeJS.ProcessEnv = process.env) { super(); }
+  // Without a binary of its own, this host's Codex is used (see codex-binary.ts).
+  constructor(private binary?: string, private args = ['app-server', '--listen', 'stdio://'], private env: NodeJS.ProcessEnv = process.env) { super(); }
+  detect() { return Boolean(this.binary || codexCandidates(this.env).length); }
   start(): Promise<void> {
     if (this.ready) return Promise.resolve();
     if (this.starting) return this.starting;
@@ -50,7 +53,8 @@ export class Codex extends EventEmitter {
   }
   private async launch() {
     this.stderr = '';
-    const child = spawnCommand(this.binary, this.args, { cwd: ROOT, env: { ...this.env, PATH: agentPath(this.env) }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const binary = this.binary || await codexBinary(this.env);
+    const child = spawnCommand(binary, this.args, { cwd: ROOT, env: { ...this.env, PATH: agentPath(this.env) }, stdio: ['pipe', 'pipe', 'pipe'] });
     this.child = child;
     const lines = createInterface({ input: child.stdout! });
     lines.on('line', line => { try { this.receive(JSON.parse(line)); } catch { /* non-protocol stdout is ignored */ } });

@@ -4,7 +4,7 @@ The desktop app reuses the existing React + TypeScript + Vite interface. Electro
 
 ## Build and run
 
-Use macOS, Linux or Windows and an official Node.js distribution, version 22.22 or newer. The build bundles the Node and npm used by the build command. It includes the tested Codex version; Git, LaTeX and other agent CLIs remain host tools.
+Use macOS, Linux or Windows and an official Node.js distribution, version 22.22 or newer. The build bundles the Node and npm used by the build command. Codex is not included: like Git, LaTeX and the other agent CLIs it is a host tool.
 
 ```sh
 npm ci

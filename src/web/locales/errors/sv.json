@@ -264,5 +264,7 @@
   "The option changes source outside this note.": "Alternativet ändrar källtext utanför den här anteckningen.",
   "The option has overlapping patches.": "Alternativet innehåller överlappande ändringar.",
   "Invalid review action.": "Ogiltig granskningsåtgärd.",
-  "Send noteAlternativeRange as few, balanced or many.": "Ange noteAlternativeRange som few, balanced eller many."
+  "Send noteAlternativeRange as few, balanced or many.": "Ange noteAlternativeRange som few, balanced eller many.",
+  "Codex was not found on this computer. Install Codex, then select Reconnect.": "Codex hittades inte på den här datorn. Installera Codex och välj sedan Återanslut.",
+  "Codex is installed but could not be run. Reinstall Codex, then select Reconnect.": "Codex är installerat men kunde inte köras. Installera om Codex och välj sedan Återanslut."
 }

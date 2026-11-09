@@ -157,6 +157,12 @@ test('doctor uses the supported managed Codex and never leaks login output or kn
     assert.equal(item(unavailable.report, 'agent.codex').ok, false);
     assert.match(item(unavailable.report, 'agent.codex').fix!, /papilot codex login/);
     assert.doesNotMatch(unavailable.stdout + unavailable.stderr, /top-secret-login/);
+    // The desktop app uses any installed Codex that runs, whatever its version.
+    fs.rmSync(managed, { recursive: true, force: true });
+    const desktop = item((await f.run(['--json'], { PAPILOT_DESKTOP: '1' })).report, 'agent.codex');
+    assert.match(desktop.detail, /^Codex 0\.1\.0 /, 'an older version is not refused');
+    assert.match(desktop.fix!, /^Run codex login/);
+    assert.doesNotMatch(desktop.fix!, /papilot/);
   } finally { f.cleanup(); }
 });
 

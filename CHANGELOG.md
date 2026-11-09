@@ -4,6 +4,11 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Changed
+
+- **A much smaller desktop installer.** The desktop app no longer includes Codex: it uses the Codex installed on the computer, and **Settings → Runtime → Agents** says when none is found or none runs, so you can install it and select **Reconnect**. The review engine also no longer carries its own copy of dependencies the app already has.
+- **Quicker with a long history.** Each streamed agent message updates one task and one message instead of reading every task and the whole conversation again, and the app's state poll gets an empty answer when nothing changed instead of every task again.
+
 ## [0.9.4] - 2026-11-09
 
 Review edits by PDF note, compare prepared alternatives in context, and choose how many alternatives future requests should prepare.

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { desktopVersion, INSTALLER_SUFFIXES, reusableInstallers, shellFingerprint } from '../scripts/desktop-layer.mjs';
+import { dedupeEngine, desktopVersion, INSTALLER_SUFFIXES, reusableInstallers, shellFingerprint } from '../scripts/desktop-layer.mjs';
 
 const write = (file: string, value: unknown) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value)); };
 function checkout() {
@@ -28,6 +28,7 @@ test('the shell fingerprint changes exactly when an update would need a new inst
     same(() => write(path.join(root, 'desktop/README.md'), 'changed docs'), 'Documentation is not part of the shell');
     const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
     same(() => { lock.packages['node_modules/typescript'].version = '7.1.0'; write(path.join(root, 'package-lock.json'), lock); }, 'Development dependencies are not installed');
+    same(() => { const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')); pkg.devDependencies['@openai/codex'] = '0.165.0'; write(path.join(root, 'package.json'), pkg); }, 'Codex is a host tool, not part of the shell');
     for (const [message, change] of [
       ['a new Node major', () => {}],
       ['a production dependency', () => { lock.packages['node_modules/fastify'].version = '5.1.0'; write(path.join(root, 'package-lock.json'), lock); }],
@@ -35,7 +36,6 @@ test('the shell fingerprint changes exactly when an update would need a new inst
       ['the Electron app', () => write(path.join(root, 'desktop/main.ts'), 'changed main')],
       ['a helper copied into Electron', () => write(path.join(root, 'engine/src/core/platform.mjs'), 'updated process handling')],
       ['how the installer is staged', () => write(path.join(root, 'scripts/desktop.mjs'), 'changed stage')],
-      ['Codex', () => { const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')); pkg.devDependencies['@openai/codex'] = '0.165.0'; write(path.join(root, 'package.json'), pkg); }],
     ] as const) {
       const before = shellFingerprint(root, '24.11.0');
       change();
@@ -60,4 +60,25 @@ test('a dev build reuses the published installers only for the same shell', () =
   assert.equal(reusableInstallers({ ...previous, format: 2 }, assets, fingerprint), null);
   assert.equal(reusableInstallers(previous, assets.slice(0, -1), fingerprint), null, 'An installer is missing from the release');
   assert.equal(reusableInstallers({ ...previous, installers: installers.slice(1) }, assets, fingerprint), null, 'Every platform needs an installer');
+});
+
+test('the engine keeps only dependencies the server does not already provide', () => {
+  const server = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-dedupe-'));
+  const pkg = (folder: string, name: string, version: string) => write(path.join(server, folder, 'node_modules', name, 'package.json'), { name, version });
+  try {
+    pkg('.', 'mupdf', '1.28.1'); pkg('.', '@fastify/static', '10.1.9'); pkg('.', 'react', '19.3.1');
+    pkg('engine', 'mupdf', '1.28.1'); pkg('engine', '@fastify/static', '10.1.9'); pkg('engine', 'react', '19.2.0'); pkg('engine', 'only-engine', '1.0.0');
+    write(path.join(server, 'engine/node_modules/mupdf/dist/mupdf.wasm'), 'x'.repeat(1000));
+    const bin = path.join(server, 'engine/node_modules/.bin');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.symlinkSync('../mupdf/cli.js', path.join(bin, 'mupdf'));
+    fs.symlinkSync('../only-engine/cli.js', path.join(bin, 'only-engine'));
+    write(path.join(bin, 'static.cmd'), '@"%dp0%\\..\\@fastify\\static\\cli.js" %*');
+    write(path.join(server, 'engine/node_modules/only-engine/cli.js'), '');
+    assert.ok(dedupeEngine(server) >= 1000, 'reports what it removed');
+    const left = (name: string) => fs.existsSync(path.join(server, 'engine/node_modules', name));
+    assert.ok(!left('mupdf') && !left('@fastify'), 'identical versions resolve from the server');
+    assert.ok(left('react') && left('only-engine'), 'other versions and engine-only packages stay');
+    assert.deepEqual(fs.readdirSync(bin), ['only-engine'], 'executables of removed packages are gone');
+  } finally { fs.rmSync(server, { recursive: true, force: true }); }
 });

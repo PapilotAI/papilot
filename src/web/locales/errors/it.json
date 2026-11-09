@@ -264,5 +264,7 @@
   "The option changes source outside this note.": "L’opzione modifica il sorgente al di fuori di questa annotazione.",
   "The option has overlapping patches.": "L’opzione contiene modifiche sovrapposte.",
   "Invalid review action.": "Azione di revisione non valida.",
-  "Send noteAlternativeRange as few, balanced or many.": "Imposta noteAlternativeRange su few, balanced o many."
+  "Send noteAlternativeRange as few, balanced or many.": "Imposta noteAlternativeRange su few, balanced o many.",
+  "Codex was not found on this computer. Install Codex, then select Reconnect.": "Codex non è stato trovato su questo computer. Installa Codex, quindi seleziona Riconnetti.",
+  "Codex is installed but could not be run. Reinstall Codex, then select Reconnect.": "Codex è installato, ma non è stato possibile avviarlo. Reinstalla Codex, quindi seleziona Riconnetti."
 }
