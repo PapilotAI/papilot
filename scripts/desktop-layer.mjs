@@ -65,7 +65,7 @@ export function dedupeEngine(server) {
   if (fs.existsSync(bin)) for (const name of fs.readdirSync(bin)) {
     const file = path.join(bin, name);
     const targets = fs.lstatSync(file).isSymbolicLink() ? [path.resolve(bin, fs.readlinkSync(file))]
-      : [...fs.readFileSync(file, 'utf8').matchAll(/\.\.[\\/]((?:@[^\\/"']+[\\/])?[^\\/"']+)[\\/]/g)].map(match => path.join(inner, match[1]));
+      : [...fs.readFileSync(file, 'utf8').matchAll(/\.\.[\\/]((?:@[^\\/"']+[\\/])?[^\\/"']+)[\\/]/g)].map(match => path.join(inner, ...match[1].split(/[\\/]/)));
     if (targets.some(target => !fs.existsSync(target))) fs.rmSync(file, { force: true });
   }
   return bytes;

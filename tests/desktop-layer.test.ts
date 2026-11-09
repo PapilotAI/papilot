@@ -74,11 +74,13 @@ test('the engine keeps only dependencies the server does not already provide', (
     fs.symlinkSync('../mupdf/cli.js', path.join(bin, 'mupdf'));
     fs.symlinkSync('../only-engine/cli.js', path.join(bin, 'only-engine'));
     write(path.join(bin, 'static.cmd'), '@"%dp0%\\..\\@fastify\\static\\cli.js" %*');
+    write(path.join(bin, 'keep.cmd'), '@"%dp0%\\..\\@scope\\kept\\cli.js" %*');
+    pkg('engine', '@scope/kept', '2.0.0'); pkg('.', '@scope/kept', '1.0.0');
     write(path.join(server, 'engine/node_modules/only-engine/cli.js'), '');
     assert.ok(dedupeEngine(server) >= 1000, 'reports what it removed');
     const left = (name: string) => fs.existsSync(path.join(server, 'engine/node_modules', name));
     assert.ok(!left('mupdf') && !left('@fastify'), 'identical versions resolve from the server');
-    assert.ok(left('react') && left('only-engine'), 'other versions and engine-only packages stay');
-    assert.deepEqual(fs.readdirSync(bin), ['only-engine'], 'executables of removed packages are gone');
+    assert.ok(left('react') && left('only-engine') && left('@scope/kept'), 'other versions and engine-only packages stay');
+    assert.deepEqual(fs.readdirSync(bin).sort(), ['keep.cmd', 'only-engine'], 'executables of removed packages are gone, Windows shims too');
   } finally { fs.rmSync(server, { recursive: true, force: true }); }
 });

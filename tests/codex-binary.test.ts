@@ -3,43 +3,59 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { codexBinary, codexCandidates } from '../src/server/codex-binary.ts';
+import { codexBinary, codexCandidates, firstRunnable } from '../src/server/codex-binary.ts';
 import { Codex } from '../src/server/codex.ts';
 
-// A stand-in Codex that only reports its version.
-function fakeCodex(dir: string, version: string) {
+const POSIX = process.platform !== 'win32';
+// A stand-in Codex that reports a version, or fails like a broken installation.
+function fakeCodex(dir: string, version: string | null, delay = 0) {
   fs.mkdirSync(dir, { recursive: true });
-  if (process.platform === 'win32') { fs.writeFileSync(path.join(dir, 'codex.cmd'), `@echo codex-cli ${version}\r\n`); return path.join(dir, 'codex.cmd'); }
-  fs.writeFileSync(path.join(dir, 'codex'), `#!/bin/sh\necho "codex-cli ${version}"\n`, { mode: 0o755 });
+  if (!POSIX) { fs.writeFileSync(path.join(dir, 'codex.cmd'), version ? `@echo codex-cli ${version}\r\n` : '@exit /b 1\r\n'); return path.join(dir, 'codex.cmd'); }
+  fs.writeFileSync(path.join(dir, 'codex'), `#!/bin/sh\n${delay ? `sleep ${delay}\n` : ''}${version ? `echo "codex-cli ${version}"` : 'exit 1'}\n`, { mode: 0o755 });
   return path.join(dir, 'codex');
 }
+// Only the given folders: the host's own Codex must not answer for the test.
+const env = (root: string, ...dirs: string[]): NodeJS.ProcessEnv => ({ PATH: dirs.join(path.delimiter), Path: dirs.join(path.delimiter), HOME: root, USERPROFILE: root,
+  SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec, PATHEXT: process.env.PATHEXT });
 
-test('Papilot uses the first Codex on this computer that runs', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-')), data = path.join(root, 'data');
-  // Only the given folder: the host's own Codex must not answer for the test.
-  const env = (dir: string): NodeJS.ProcessEnv => ({ PATH: dir, Path: dir, HOME: root, USERPROFILE: root, SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec, PATHEXT: process.env.PATHEXT });
+test('the first Codex that runs is used, whatever its version', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-'));
   try {
+    const broken = fakeCodex(path.join(root, 'broken'), null), old = fakeCodex(path.join(root, 'old'), '0.1.0'), recent = fakeCodex(path.join(root, 'recent'), '0.170.0');
+    const plain = env(root);
+    assert.equal(await firstRunnable([broken, old, recent], plain), old, 'a broken installation is skipped; no version is required');
+    assert.equal(await firstRunnable([broken], plain), null);
+    assert.equal(await codexBinary({ ...plain, PAPILOT_CODEX_BIN: '/configured/codex' }), '/configured/codex', 'the npm command chose already');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('Codex is looked for on PATH first, then in the checkout and the data folder', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-')), data = path.join(root, 'data'), checkout = path.join(root, 'checkout');
+  try {
+    const first = fakeCodex(path.join(root, 'a'), null), second = fakeCodex(path.join(root, 'b'), '0.170.0');
+    const dev = fakeCodex(path.join(checkout, 'node_modules/.bin'), '0.164.0'), own = fakeCodex(path.join(data, 'agents/node_modules/.bin'), '0.164.0');
+    const found = codexCandidates(env(root, path.dirname(first), path.dirname(second)), data, checkout);
+    // Standard install folders (Homebrew, /usr/local/bin) sit between PATH and the copies.
+    assert.deepEqual(found.slice(0, 2), [first, second]);
+    assert.ok(found.indexOf(dev) > 1 && found.indexOf(own) > found.indexOf(dev));
     const none = path.join(root, 'empty'); fs.mkdirSync(none);
-    // Standard install folders are searched too; a host with Codex there skips this part.
-    if (!codexCandidates(env(none), data).length) {
-      assert.equal(new Codex(undefined, undefined, env(none)).detect(), false, 'a missing Codex is not offered');
-      await assert.rejects(codexBinary(env(none), data), /not found/);
+    if (!codexCandidates(env(root, none), path.join(root, 'nothing'), path.join(root, 'nothing')).length) {
+      assert.equal(new Codex(undefined, undefined, env(root, none)).detect(), false, 'a missing Codex is not offered');
+      await assert.rejects(codexBinary(env(root, none), path.join(root, 'nothing')), /not found on this computer/);
     }
-    assert.equal(await codexBinary({ ...env(none), PAPILOT_CODEX_BIN: '/configured/codex' }, data), '/configured/codex');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
-    const recent = fakeCodex(path.join(root, 'recent'), '0.170.0');
-    assert.equal(await codexBinary(env(path.dirname(recent)), data), recent);
-
-    const old = fakeCodex(path.join(root, 'old'), '0.1.0');
-    assert.equal(await codexBinary(env(path.dirname(old)), data), old, 'any version that runs is used');
-    const broken = path.join(root, 'broken'); fs.mkdirSync(broken);
-    if (process.platform === 'win32') fs.writeFileSync(path.join(broken, 'codex.cmd'), '@exit /b 1\r\n');
-    else fs.writeFileSync(path.join(broken, 'codex'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-    assert.equal(new Codex(undefined, undefined, env(broken)).detect(), true, 'a broken Codex is offered, to say why it cannot be used');
-    await assert.rejects(codexBinary(env(broken), path.join(root, 'none')), /could not be run\. Reinstall Codex/);
-    const both = [broken, path.dirname(recent)].join(path.delimiter);
-    assert.equal(await codexBinary(env(both), data), recent, 'a working Codex later on PATH is used');
-    const own = fakeCodex(path.join(data, 'agents/node_modules/.bin'), '0.164.0');
-    assert.equal(await codexBinary(env(broken), data), own, 'the copy papilot codex login installed still counts');
+test('stopping Codex while it looks for an installation starts no app-server', { skip: !POSIX && 'uses a POSIX sleep' }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-'));
+  try {
+    const slow = fakeCodex(path.join(root, 'slow'), '0.170.0', 1);
+    const codex = new Codex(undefined, undefined, env(root, path.dirname(slow)));
+    const starting = codex.start();
+    codex.close();
+    await starting;
+    assert.equal(codex.child, null);
+    assert.equal(codex.ready, false);
+    await assert.rejects(codex.request('account/read', {}), /not connected/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

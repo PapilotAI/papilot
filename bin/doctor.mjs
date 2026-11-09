@@ -141,7 +141,8 @@ export async function doctor(args) {
     for (const candidate of candidates) {
       const file = agentExecutable(candidate);
       if (!file) continue;
-      const result = await command(file, ['--version']);
+      // As long as the server waits, so a slow start on a busy machine counts as running.
+      const result = await command(file, ['--version'], { timeout: 15000 });
       const version = result.stdout.match(/\d+\.\d+\.\d+/)?.[0];
       found.push(file);
       if (!result.ok || (minimum && (!version || !atLeast(version, minimum)))) {

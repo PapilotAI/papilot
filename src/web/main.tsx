@@ -1,4 +1,5 @@
 import { requestApi, requestState } from './api.ts';
+import { chosenAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { GroupCard, GroupInstruction } from './note-groups.tsx';
@@ -1355,10 +1356,7 @@ function App() {
   // A remembered choice the host no longer offers falls back to its default;
   // the preference is kept in case another model offers it again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
-  // Only agents found on the host are offered. A remembered agent that is not
-  // found falls back to Codex without forgetting the choice.
-  const offered = AGENT_IDS.filter(id => id === 'codex' || Boolean(runtimes[id] && runtimes[id]!.installed !== false));
-  const agentChoice = offered.includes(savedAgent) ? savedAgent : 'codex';
+  const offered = offeredAgents(runtimes), agentChoice = chosenAgent(savedAgent, offered);
   const effectivePermissions = runtimes[agentChoice]?.permissionOptions?.some(option => option.value === newPermissions) ? newPermissions : 'workspace';
   const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;

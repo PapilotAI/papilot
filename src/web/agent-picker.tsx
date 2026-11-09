@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } f
 import type { AgentId, RuntimeStatus, TaskPermissions } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
-import { t } from './i18n.ts';
+import { errorText, t } from './i18n.ts';
 import { browserStorage } from './storage.ts';
 import { EffortSlider, effortName } from './effort-slider.tsx';
 import { permissionText } from './task-permissions.tsx';
@@ -14,7 +14,7 @@ export function ModelLabel({ model, effort, fast }: { model: string; effort?: st
 
 export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect }: { name: string; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void }) {
   if (!runtime || (runtime.connected && runtime.authenticated)) return null;
-  const error = runtime.error || '', first = error.split(/:\s|\.\s/)[0];
+  const error = runtime.error ? errorText(runtime.error) : '', first = error.split(/:\s|\.\s/)[0];
   const connecting = runtime.installed !== false && !error && !runtime.connected;
   // An agent that was not found is not connecting: say so until it is installed and Reconnect finds it.
   const message = runtime.installed === false ? t('{agent} was not found on this computer. Install or set it up, then select Reconnect.', { agent: name })

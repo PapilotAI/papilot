@@ -51,9 +51,14 @@ export class Codex extends EventEmitter {
     this.starting = this.launch().finally(() => { this.starting = null; });
     return this.starting;
   }
+  // close() during the lookup must not be followed by a new app-server.
+  private generation = 0;
   private async launch() {
     this.stderr = '';
+    const generation = this.generation;
     const binary = this.binary || await codexBinary(this.env);
+    // Stopped meanwhile: start nothing; requests then report Codex as not connected.
+    if (generation !== this.generation) return;
     const child = spawnCommand(binary, this.args, { cwd: ROOT, env: { ...this.env, PATH: agentPath(this.env) }, stdio: ['pipe', 'pipe', 'pipe'] });
     this.child = child;
     const lines = createInterface({ input: child.stdout! });
@@ -93,5 +98,5 @@ export class Codex extends EventEmitter {
   notify(method: string, params: unknown) { this.child?.stdin?.write(JSON.stringify({ method, params }) + '\n'); }
   respond(id: string | number, result: unknown) { if (!this.child) throw new Error('Codex disconnected. Resume the task before retrying.'); this.child.stdin!.write(JSON.stringify({ id, result }) + '\n'); }
   reject(id: string | number, message: string) { this.child?.stdin?.write(JSON.stringify({ id, error: { code: -32601, message } }) + '\n'); }
-  close() { this.child?.stdin?.end(); this.child?.kill('SIGTERM'); }
+  close() { this.generation++; this.child?.stdin?.end(); this.child?.kill('SIGTERM'); }
 }
