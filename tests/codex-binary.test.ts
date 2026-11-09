@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { killTree } from '../bin/agent-paths.mjs';
-import { codexBinary, codexCandidates, firstRunnable, resolveCodex } from '../src/server/codex-binary.ts';
+import { codexCandidates, firstRunnable } from '../bin/codex-lookup.mjs';
+import { codexBinary, resolveCodex } from '../src/server/codex-binary.ts';
 import { Codex } from '../src/server/codex.ts';
 
 const POSIX = process.platform !== 'win32';
@@ -67,6 +68,56 @@ async function waitFor(check: () => boolean) {
   assert.ok(check(), 'the child process reached the expected state');
 }
 
+test('closing Codex cancels a hanging version probe and its children immediately', { skip: !POSIX && 'uses a POSIX process group', timeout: 6000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-')), pids = path.join(root, 'pids');
+  const codex = new Codex(undefined, undefined, { ...env(root, root), PROBE_PIDS: pids });
+  let starting: Promise<void> | undefined;
+  try {
+    fs.writeFileSync(path.join(root, 'codex'), '#!/bin/sh\n/bin/sleep 30 &\necho "$$ $!" > "$PROBE_PIDS"\nwait\n', { mode: 0o755 });
+    starting = codex.start();
+    const stopped = assert.rejects(starting, new Error('Codex is not connected.'));
+    await waitFor(() => fs.existsSync(pids) && fs.readFileSync(pids, 'utf8').trim().split(' ').length === 2);
+    const children = fs.readFileSync(pids, 'utf8').trim().split(' ').map(Number);
+    const closed = Date.now();
+    codex.close();
+    await stopped;
+    assert.ok(Date.now() - closed < 1000, 'close must not wait for the 15 second probe timeout');
+    await waitFor(() => children.every(pid => { try { process.kill(pid, 0); return false; } catch { return true; } }));
+    assert.equal(codex.child, null);
+    assert.equal(codex.ready, false);
+  } finally {
+    codex.close();
+    if (fs.existsSync(pids)) killTree(Number(fs.readFileSync(pids, 'utf8').split(' ')[0]), 'SIGKILL');
+    await starting?.catch(() => {});
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an aborted Codex lookup never probes the next candidate or starts an already aborted probe', { skip: !POSIX && 'uses a POSIX executable', timeout: 6000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-')), pidFile = path.join(root, 'pid'), tried = path.join(root, 'tried');
+  const controller = new AbortController();
+  let lookup: Promise<string | null> | undefined;
+  try {
+    const hanging = path.join(root, 'hanging'), next = path.join(root, 'next');
+    fs.writeFileSync(hanging, '#!/bin/sh\necho "$$" > "$PROBE_PID"\nexec /bin/sleep 30\n', { mode: 0o755 });
+    fs.writeFileSync(next, '#!/bin/sh\necho tried > "$PROBE_TRIED"\n', { mode: 0o755 });
+    const plain = { ...env(root), PROBE_PID: pidFile, PROBE_TRIED: tried };
+    lookup = firstRunnable([hanging, next], plain, { signal: controller.signal });
+    await waitFor(() => fs.existsSync(pidFile) && Boolean(fs.readFileSync(pidFile, 'utf8').trim()));
+    controller.abort();
+    assert.equal(await lookup, null);
+    assert.equal(await firstRunnable([next], plain, { signal: controller.signal }), null);
+    assert.equal(fs.existsSync(tried), false);
+    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+    await waitFor(() => { try { process.kill(pid, 0); return false; } catch { return true; } });
+  } finally {
+    controller.abort();
+    if (fs.existsSync(pidFile)) killTree(Number(fs.readFileSync(pidFile, 'utf8')), 'SIGKILL');
+    await lookup;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a Codex wrapper with a waiting child times out and the next installation is tried', { skip: !POSIX && 'uses a POSIX process group', timeout: 12000 }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-'));
   const pids = path.join(root, 'pids'), wrapper = path.join(root, 'codex');
@@ -74,7 +125,7 @@ test('a Codex wrapper with a waiting child times out and the next installation i
     fs.writeFileSync(wrapper, `#!/bin/sh\n/bin/sleep 30 &\necho "$$ $!" > "$PROBE_PIDS"\nwait\n`, { mode: 0o755 });
     const working = fakeCodex(path.join(root, 'working'), '0.1.0');
     const started = Date.now();
-    assert.equal(await firstRunnable([wrapper, working], { ...env(root), PROBE_PIDS: pids }, 2500), working);
+    assert.equal(await firstRunnable([wrapper, working], { ...env(root), PROBE_PIDS: pids }, { timeout: 2500 }), working);
     assert.ok(Date.now() - started < 8000, 'the wrapper cannot hold the lookup open');
     const children = fs.readFileSync(pids, 'utf8').trim().split(' ').map(Number);
     assert.equal(children.length, 2);

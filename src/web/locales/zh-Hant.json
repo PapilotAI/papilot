@@ -1,4 +1,7 @@
 {
+  "Add an agent": "新增智慧代理",
+  "No agent": "沒有智慧代理",
+  "No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.": "這台電腦上還沒有可用的智慧代理。請先新增一個，例如 Codex 或 Claude Code，然後選取「重新連線」。",
   "Preparing option comparisons…": "正在準備備選方案的比較…",
   ", ": "、",
   "/Users/you/papers/my-paper": "/Users/you/papers/my-paper",

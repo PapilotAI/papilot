@@ -1,4 +1,7 @@
 {
+  "Add an agent": "Lägg till en agent",
+  "No agent": "Ingen agent",
+  "No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.": "Ingen agent har konfigurerats på den här datorn än. Lägg till en, till exempel Codex eller Claude Code, och välj sedan Återanslut.",
   "Preparing option comparisons…": "Förbereder jämförelser av alternativen…",
   ", ": ", ",
   "/Users/you/papers/my-paper": "/Users/you/papers/my-paper",

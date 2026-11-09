@@ -1,4 +1,7 @@
 {
+  "Add an agent": "エージェントを追加",
+  "No agent": "エージェントなし",
+  "No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.": "このコンピュータにはまだエージェントが設定されていません。Codex や Claude Code などのエージェントを追加してから「再接続」を選択してください。",
   "Preparing option comparisons…": "選択肢の比較を準備中…",
   ", ": "、",
   "/Users/you/papers/my-paper": "/Users/you/papers/my-paper",

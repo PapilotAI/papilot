@@ -1,4 +1,7 @@
 {
+  "Add an agent": "에이전트 추가",
+  "No agent": "에이전트 없음",
+  "No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.": "이 컴퓨터에는 아직 에이전트가 설정되어 있지 않습니다. Codex 또는 Claude Code 같은 에이전트를 추가한 다음 “다시 연결”을 선택하세요.",
   "Preparing option comparisons…": "대안 비교 준비 중…",
   ", ": ", ",
   "/Users/you/papers/my-paper": "/Users/you/papers/my-paper",

@@ -1,4 +1,5 @@
-import { agentPath, findExecutable, findExecutables, killTree, spawnCommand } from './agent-paths.mjs';
+import { agentPath, findExecutable, killTree, spawnCommand } from './agent-paths.mjs';
+import { codexCandidates, firstRunnable } from './codex-lookup.mjs';
 // Deliberately uses only Node built-ins: diagnostics must work before npm setup.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -134,23 +135,25 @@ export async function doctor(args) {
     const desktop = process.env.PAPILOT_DESKTOP === '1';
     const minimum = desktop ? null : pkg.devDependencies['@openai/codex'];
     const configured = process.env.PAPILOT_CODEX_BIN;
-    // Like the server: the desktop app tries every codex on PATH, the npm command the first.
     const managed = path.join(data, 'agents/node_modules/.bin');
-    const candidates = configured ? [configured] : desktop ? findExecutables('codex', process.env, [path.join(root, 'node_modules/.bin'), managed]) : ['codex', path.join(managed, 'codex')];
-    const found = [];
+    const env = { ...process.env, PATH: agentPath(process.env) };
+    const discovered = desktop ? codexCandidates(process.env, data, root) : [];
+    const selected = desktop ? await firstRunnable(discovered, process.env) : null;
+    const candidates = desktop ? (selected ? [selected] : []) : configured ? [configured] : ['codex', path.join(managed, 'codex')];
+    const found = desktop && !selected ? discovered : [];
     for (const candidate of candidates) {
-      const file = agentExecutable(candidate);
+      const file = desktop ? candidate : agentExecutable(candidate);
       if (!file) continue;
       // As long as the server waits, so a slow start on a busy machine counts as running.
-      const result = await command(file, ['--version'], { timeout: 15000, env: { ...process.env, PATH: agentPath(process.env) } });
+      const result = await command(file, ['--version'], { timeout: 15000, env });
       const version = result.stdout.match(/\d+\.\d+\.\d+/)?.[0];
       found.push(file);
-      if (!result.ok || (minimum && (!version || !atLeast(version, minimum)))) {
+      if (!desktop && (!result.ok || (minimum && (!version || !atLeast(version, minimum))))) {
         if (!configured) continue;
         check('agent.codex', false, 'warn', `Configured Codex ${result.ok ? 'is older than the supported version or its version is unknown' : result.reason}.`, minimum ? `Set PAPILOT_CODEX_BIN to Codex ${minimum} or newer.` : 'Correct PAPILOT_CODEX_BIN.');
         return false;
       }
-      const login = await command(file, ['login', 'status']);
+      const login = await command(file, ['login', 'status'], desktop ? { timeout: 15000, env } : {});
       const ready = login.ok && /^\s*logged in\b/im.test(login.stdout + '\n' + login.stderr);
       check('agent.codex', ready, 'warn', `${version ? `Codex ${version}` : 'Codex'} (${file}): ${ready ? 'signed in' : login.reason || 'login could not be confirmed'}.`, desktop ? 'Run codex login, then select Reconnect.' : 'Run papilot codex login, then rerun doctor.');
       return ready;

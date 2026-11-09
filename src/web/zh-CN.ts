@@ -387,6 +387,8 @@ export const zhCN: Record<string, string> = {
   'Split': '分栏', 'Review and chat side by side': '审阅和对话并排', 'Chat only': '只看对话',
   'This conversation has no manuscript changes.': '本次对话没有稿件修改。',
   'Connection lost. Showing the last update; your draft is kept.': '连接已断开。正在显示最近一次更新，你的草稿仍然保留。', 'Retry connection': '重新连接',
+  'No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.': '这台电脑上还没有可用的智能体。先添加一个，比如 Codex 或 Claude Code，然后点“重新连接”。',
+  'Add an agent': '添加智能体', 'No agent': '没有智能体',
   'Connecting to {agent}…': '正在连接 {agent}…', 'Connecting…': '正在连接…', 'Reconnect': '重新连接',
   'Resize chat panel': '调整对话面板宽度', 'Drag to resize · Double-click to reset': '拖动调整宽度 · 双击还原',
   'PDF review': 'PDF 审阅', 'Could not generate the PDF comparison.': 'PDF 对比生成失败。', 'Retry build': '重新生成',

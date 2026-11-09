@@ -1,5 +1,5 @@
 import { requestApi, requestState } from './api.ts';
-import { chosenAgent, offeredAgents } from './agent-choice.ts';
+import { chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { GroupCard, GroupInstruction } from './note-groups.tsx';
@@ -69,7 +69,7 @@ import { notificationState, notify, notifying, subscribeNotifications, taskAlert
 import { Markdown } from './markdown.tsx';
 import { ComparisonProgress } from './comparison-progress.tsx';
 import logo from './logo.svg';
-import { AgentConnectionNotice, AgentPicker } from './agent-picker.tsx';
+import { AgentConnectionNotice, AgentPicker, NoAgentNotice } from './agent-picker.tsx';
 import { taskEffort } from './task-effort.ts';
 import { PermissionOptions, TaskPermissionOptions } from './task-permissions.tsx';
 import { type TaskPermissions } from '../shared.ts';
@@ -1356,7 +1356,7 @@ function App() {
   // A remembered choice the host no longer offers falls back to its default;
   // the preference is kept in case another model offers it again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
-  const offered = offeredAgents(runtimes), agentChoice = chosenAgent(savedAgent, offered);
+  const offered = offeredAgents(runtimes), agentChoice = chosenAgent(savedAgent, offered), missingAgent = noAgent(runtimes);
   const effectivePermissions = runtimes[agentChoice]?.permissionOptions?.some(option => option.value === newPermissions) ? newPermissions : 'workspace';
   const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;
@@ -1371,7 +1371,7 @@ function App() {
     setAgentChoice(id); browserStorage.setItem('papilot:agent', id);
     setAgentPrefs(current => ({ ...current, [id]: { ...current[id], model } })); browserStorage.setItem(`papilot:model:${id}`, model);
   };
-  const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
+  const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} noAgent={missingAgent} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
     agents={offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] }))}
     permissionMode={newSkill?.output !== 'annotations' ? effectivePermissions : undefined}
     permissions={newSkill?.output !== 'annotations' && <PermissionOptions runtime={runtimes[agentChoice]} value={effectivePermissions} disabled={disabled} onChange={setNewPermissions}/>}
@@ -1389,6 +1389,7 @@ function App() {
     finally { setCreating(false); }
   }
   async function createTask() {
+    if (missingAgent) return;
     const text = newDraft.trim(), target = project?.id || projectId, skill = newSkill;
     const reviewing = skill?.output === 'annotations';
     const attached = reviewing ? [] : noteSelection.selected, files = reviewing ? [] : newFiles.draft.getSnapshot().files;
@@ -1888,13 +1889,14 @@ function App() {
     <div className="new-task-start">
     {!noteSelection.selected.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
     {newSkill?.output !== 'annotations' && attachments}
+    {missingAgent && <NoAgentNotice reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onAdd={() => setSettings('agents')}/>}
     <Composer attachments={newSkill?.output === 'annotations' ? undefined : newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
       skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
       footer={attach => <div className="composer-options">
         <SkillPicker onAttach={newSkill?.output === 'annotations' ? undefined : attach} skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
         {agentOptions(creating)}
       </div>}
-      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || reviewNoteBusy || noteEditing || history.busy || (newSkill?.output !== 'annotations' && (newFiles.blocked || marking > 0 || missingGroupDirections)) || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(actionable) && !Object.keys(groupDirections).length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
+      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={missingAgent || creating || reviewNoteBusy || noteEditing || history.busy || (newSkill?.output !== 'annotations' && (newFiles.blocked || marking > 0 || missingGroupDirections)) || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(actionable) && !Object.keys(groupDirections).length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {PlaygroundPresets && <Suspense fallback={null}><PlaygroundPresets selected={noteSelection.selected} open={id => openPreparedTask(id)} disabled={creating}/></Suspense>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}

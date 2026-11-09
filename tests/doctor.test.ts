@@ -182,8 +182,8 @@ test('desktop doctor searches PATH, the package and data in order with the serve
     fs.unlinkSync(path.join(f.app, 'node_modules'));
     const local = path.join(f.app, 'node_modules/.bin'), managed = path.join(f.data, 'agents/node_modules/.bin');
     const script = (version: string) => `
+      if (!process.env.PATH.split(${JSON.stringify(path.delimiter)}).includes(${JSON.stringify(path.join(f.env.HOME!, '.local/bin'))})) process.exit(2);
       if (process.argv.includes('--version')) {
-        if (!process.env.PATH.split(${JSON.stringify(path.delimiter)}).includes(${JSON.stringify(path.join(f.env.HOME!, '.local/bin'))})) process.exit(2);
         console.log('codex-cli ${version}');
       } else console.log('Logged in');
     `;

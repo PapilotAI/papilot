@@ -3,8 +3,9 @@ import { type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
 import type { TaskPermissions, TaskPermissionOption } from '../shared.ts';
-import { ROOT, VERSION } from './paths.ts';
-import { codexBinary, codexCandidates } from './codex-binary.ts';
+import { DATA, ROOT, VERSION } from './paths.ts';
+import { codexBinary } from './codex-binary.ts';
+import { codexCandidates } from '../../bin/codex-lookup.mjs';
 import { taskAccessInstructions } from './task-permissions.ts';
 
 export class RpcResponseError extends Error {}
@@ -40,11 +41,12 @@ export class Codex extends EventEmitter {
   private sequence = 0;
   private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private starting: Promise<void> | null = null;
+  private launchAbort: AbortController | null = null;
   ready = false;
   stderr = '';
   // Without a binary of its own, this host's Codex is used (see codex-binary.ts).
   constructor(private binary?: string, private args = ['app-server', '--listen', 'stdio://'], private env: NodeJS.ProcessEnv = process.env) { super(); }
-  detect() { return Boolean(this.binary || codexCandidates(this.env).length); }
+  detect() { return Boolean(this.binary || codexCandidates(this.env, DATA, ROOT).length); }
   start(): Promise<void> {
     if (this.ready) return Promise.resolve();
     if (this.starting) return this.starting;
@@ -56,8 +58,10 @@ export class Codex extends EventEmitter {
   private generation = 0;
   private async launch() {
     this.stderr = '';
+    const controller = new AbortController();
+    this.launchAbort = controller;
     const generation = this.generation;
-    const binary = this.binary || await codexBinary(this.env);
+    const binary = this.binary || await codexBinary(this.env, DATA, controller.signal);
     if (generation !== this.generation) throw new Error('Codex is not connected.');
     const child = spawnCommand(binary, this.args, { cwd: ROOT, env: { ...this.env, PATH: agentPath(this.env) }, stdio: ['pipe', 'pipe', 'pipe'] });
     this.child = child;
@@ -98,5 +102,5 @@ export class Codex extends EventEmitter {
   notify(method: string, params: unknown) { this.child?.stdin?.write(JSON.stringify({ method, params }) + '\n'); }
   respond(id: string | number, result: unknown) { if (!this.child) throw new Error('Codex disconnected. Resume the task before retrying.'); this.child.stdin!.write(JSON.stringify({ id, result }) + '\n'); }
   reject(id: string | number, message: string) { this.child?.stdin?.write(JSON.stringify({ id, error: { code: -32601, message } }) + '\n'); }
-  close() { this.generation++; this.starting = null; this.child?.stdin?.end(); this.child?.kill('SIGTERM'); }
+  close() { this.generation++; this.launchAbort?.abort(); this.launchAbort = null; this.starting = null; this.child?.stdin?.end(); this.child?.kill('SIGTERM'); }
 }

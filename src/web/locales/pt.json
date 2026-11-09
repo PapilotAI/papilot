@@ -1,4 +1,7 @@
 {
+  "Add an agent": "Adicionar um agente",
+  "No agent": "Nenhum agente",
+  "No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.": "Nenhum agente foi configurado neste computador ainda. Adicione um, como Codex ou Claude Code, e selecione Reconectar.",
   "Preparing option comparisons…": "Preparando as comparações das opções…",
   ", ": ", ",
   "/Users/you/papers/my-paper": "/Users/you/papers/my-paper",
