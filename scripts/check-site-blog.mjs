@@ -19,6 +19,12 @@ try {
   assert.throws(() => loadBlogPosts(temp), /Invalid blog date/);
   fs.writeFileSync(path.join(folder, 'post.json'), JSON.stringify({ published: '2026-01-01', locales: { xx: {} } }));
   assert.throws(() => loadBlogPosts(temp), /Unsupported blog locale/);
+  for (const aliases of ['old-title', ['../old-title'], [42]]) {
+    fs.writeFileSync(path.join(folder, 'post.json'), JSON.stringify({ aliases }));
+    assert.throws(() => loadBlogPosts(temp), /Invalid blog alias/);
+  }
+  fs.writeFileSync(path.join(folder, 'post.json'), JSON.stringify({ aliases: ['example'] }));
+  assert.throws(() => loadBlogPosts(temp), /Duplicate blog route/);
 } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 
 const server = Fastify();
@@ -80,6 +86,16 @@ try {
       const route = blogRoute(locale, post.slug), canonical = 'https://papilot.ai' + route;
       assert.ok(feedState.links.includes(canonical));
       assert.ok(sitemap.includes(`<loc>${canonical}</loc>`));
+      for (const alias of post.aliases || []) {
+        const legacy = blogRoute(locale, alias);
+        assert.ok(!sitemap.includes(`https://papilot.ai${legacy}`));
+        assert.ok(!feedState.links.includes('https://papilot.ai' + legacy));
+        const redirect = await (await fetch(origin + legacy)).text();
+        assert.ok(redirect.includes(`<link rel="canonical" href="${canonical}">`));
+        await page.goto(origin + legacy);
+        await page.waitForURL(origin + route);
+        assert.equal(await page.locator('h1').innerText(), post.locales[locale].title, 'old links redirect without JavaScript');
+      }
       await page.goto(origin + route);
       assert.equal(await page.locator('h1').count(), 1);
       assert.equal(await page.locator('h1').innerText(), post.locales[locale].title);
@@ -160,6 +176,11 @@ try {
   const interactive = await browser.newContext({ colorScheme: 'light', reducedMotion: 'reduce', viewport: { width: 390, height: 844 } });
   const theme = await interactive.newPage();
   theme.on('pageerror', error => errors.push(error.message));
+  for (const post of posts) for (const locale of Object.keys(post.locales)) for (const alias of post.aliases || []) {
+    const suffix = '?source=legacy#content';
+    await theme.goto(origin + blogRoute(locale, alias) + suffix);
+    await theme.waitForURL(origin + blogRoute(locale, post.slug) + suffix);
+  }
   const themePost = posts.find(post => Object.keys(post.locales).length > 1) || posts[0];
   const themeLocale = themePost ? Object.keys(themePost.locales)[0] : 'en';
   await theme.goto(origin + blogRoute(themeLocale, themePost?.slug));

@@ -26,13 +26,19 @@ function date(value, file) {
 
 export function loadBlogPosts(root) {
   const directory = path.join(root, 'site/blog/posts');
-  const posts = [];
+  const posts = [], routes = new Set();
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const slug = entry.name, file = path.join(directory, slug, 'post.json');
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error(`Invalid blog slug: ${slug}`);
     const post = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (post.draft === true) continue;
+    if (post.aliases !== undefined && !Array.isArray(post.aliases)) throw new Error(`Invalid blog aliases: ${slug}`);
+    for (const route of [slug, ...(post.aliases || [])]) {
+      if (typeof route !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route)) throw new Error(`Invalid blog alias: ${slug}`);
+      if (routes.has(route)) throw new Error(`Duplicate blog route: ${route}`);
+      routes.add(route);
+    }
     date(post.published, file);
     if (post.updated) { date(post.updated, file); if (post.updated < post.published) throw new Error(`Blog update predates publication: ${slug}`); }
     if (!post.locales || !Object.keys(post.locales).length) throw new Error(`Missing blog translations: ${slug}`);
@@ -192,6 +198,14 @@ ${published ? `<meta property="article:published_time" content="${published}T00:
         { '@type': 'BreadcrumbList', itemListElement: [{ '@type': 'ListItem', position: 1, name: t.blog, item: url(blogRoute(locale)) }, { '@type': 'ListItem', position: 2, name: entry.title, item: url(route) }] },
       ] };
       write(route, shell({ locale, title: entry.title, description: entry.description, route, routes, image: entry.hero, imageAlt: entry.heroAlt, published: post.published, updated: post.updated, main, schema, article: true }));
+      for (const alias of post.aliases || []) {
+        write(blogRoute(locale, alias), `<!doctype html>
+<html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escape(entry.title)} · Papilot</title><link rel="canonical" href="${url(route)}"><meta name="robots" content="noindex,follow">
+<script>location.replace(${json(route)} + location.search + location.hash);</script>
+<noscript><meta http-equiv="refresh" content="0;url=${escape(route)}"></noscript>
+</head><body><a href="${escape(route)}">${escape(entry.title)}</a></body></html>`);
+      }
       sitemap.push(sitemapEntry(route, routes, post.updated || post.published));
     }
   }
