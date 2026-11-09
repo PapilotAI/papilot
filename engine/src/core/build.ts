@@ -9,7 +9,7 @@ import { Repo } from "./git.ts";
 import { readJson, writeJsonAsync, withLock, now } from "./files.ts";
 import { stripComments } from "./outline.ts";
 import { signature, type Project } from "./config.ts";
-import { capture, commandVersion, runAsync } from "./process.ts";
+import { Cancelled, capture, commandVersion, runAsync } from "./process.ts";
 import { Lease } from "./pool.ts";
 import { progressReader, writtenPages } from "./progress.ts";
 import type { BuildInfo, BuildProgress } from "../types.ts";
@@ -105,6 +105,8 @@ const active = new Set<Active>();
 interface Waiter { priority: WantedPriority; pass?: (preview: PassPreview) => void; progress?: (progress: BuildProgress) => void }
 const waiting = new Map<string, Set<Waiter>>();
 const building = new Map<string, Promise<BuildInfo>>();
+// Stops the compilation under way for a key, once nobody waits for it.
+const stops = new Map<string, AbortController>();
 // Every build runs at full speed on its slot of the TeX pool, whatever its
 // priority: TeX is single-threaded, and the pool bounds how many run at once.
 // A build stops (SIGSTOP) only while its slot is lent to one that matters
@@ -376,7 +378,21 @@ export class Builder {
     rev: string,
     targets = ["full"],
     seed: BuildInfo | null = null,
-    options: { force?: boolean; progress?: (progress: BuildProgress) => void; priority?: WantedPriority; pass?: (preview: PassPreview) => void; date?: ReturnType<typeof buildDate> } = {},
+    options: {
+      force?: boolean;
+      progress?: (progress: BuildProgress) => void;
+      priority?: WantedPriority;
+      pass?: (preview: PassPreview) => void;
+      date?: ReturnType<typeof buildDate>;
+      /** The caller no longer needs this build: it rejects with Cancelled.
+       *  The compilation stops once nobody else waits for it, unless TeX
+       *  already finished: then its result stays, to continue from. */
+      signal?: AbortSignal;
+      /** Called once this request waits for its build key, so that a
+       *  request it replaces can be cancelled without stopping a
+       *  compilation both need. */
+      onKey?: (key: string) => void;
+    } = {},
   ): Promise<BuildInfo> {
     const p = this.project,
       partial = JSON.stringify(targets) !== '["full"]',
@@ -421,7 +437,27 @@ export class Builder {
     let waiters = waiting.get(key);
     if (!waiters) waiting.set(key, (waiters = new Set()));
     waiters.add(waiter);
+    const signal = options.signal;
+    let leave: (() => void) | null = null;
+    // Rejects once the caller cancels; the compilation goes on while someone
+    // else still waits for it.
+    const cancelled = new Promise<never>((_, reject) => {
+      leave = () => {
+        waiters.delete(waiter);
+        if (!waiters.size) {
+          if (waiting.get(key) === waiters) waiting.delete(key);
+          stops.get(key)?.abort();
+        } else reprioritize();
+        reject(new Cancelled());
+      };
+      if (signal?.aborted) leave();
+      else signal?.addEventListener("abort", leave, { once: true });
+    });
+    cancelled.catch(() => undefined);
+    const until = <T>(work: Promise<T>) => (signal ? Promise.race([work, cancelled]) : work);
     try {
+      options.onKey?.(key);
+      if (signal?.aborted) await cancelled;
       promote(key, current(priority));
       for (const build of active) {
         if (build.key !== key) continue;
@@ -433,9 +469,11 @@ export class Builder {
       // is ready. The lock keeps other processes from building it twice.
       const ongoing = building.get(key);
       if (ongoing) {
-        const result = await ongoing.catch(() => null);
+        const result = await until(ongoing.catch(() => null));
         if (result) return result;
       }
+      const stop = new AbortController();
+      stops.set(key, stop);
       const attempt = (async () => {
         // A refresh has a durable pointer independent of the bounded recent
         // list. If its output was pruned, rebuild rather than resurrecting
@@ -453,22 +491,24 @@ export class Builder {
               if (recovered) return recovered;
               const recovery = hash(JSON.stringify([cacheKey, randomUUID()])).slice(0, 32);
               return withLock(path.join(this.cache, recovery + ".lock"), () =>
-                this.compileOnce(rev, tree, recovery, cacheKey, context, targets, seed, date, dated, partial, { ...options, force: true }, key));
+                this.compileOnce(rev, tree, recovery, cacheKey, context, targets, seed, date, dated, partial, { ...options, force: true }, key, stop.signal));
             });
           }
         }
         return (await this.finished(folder)) ??
           withLock(path.join(this.cache, key + ".lock"), async () =>
-            (await this.finished(folder)) ?? this.compileOnce(rev, tree, key, cacheKey, context, targets, seed, date, dated, partial, options),
+            (await this.finished(folder)) ?? this.compileOnce(rev, tree, key, cacheKey, context, targets, seed, date, dated, partial, options, key, stop.signal),
           );
       })();
       building.set(key, attempt);
-      try {
-        return await attempt;
-      } finally {
+      // Others may still wait for it after this caller cancelled.
+      void attempt.catch(() => undefined).finally(() => {
         if (building.get(key) === attempt) building.delete(key);
-      }
+        if (stops.get(key) === stop) stops.delete(key);
+      });
+      return await until(attempt);
     } finally {
+      if (leave) signal?.removeEventListener("abort", leave);
       waiters.delete(waiter);
       if (!waiters.size && waiting.get(key) === waiters) waiting.delete(key);
     }
@@ -486,7 +526,9 @@ export class Builder {
     partial: boolean,
     options: { force?: boolean; progress?: (progress: BuildProgress) => void },
     requestKey = key,
+    signal?: AbortSignal,
   ) {
+    if (signal?.aborted) throw new Cancelled();
     // A build continues from the completed one with the same targets whose
     // sources differ least from this one, or a full build from the author's
     // own latexmk output, as latexmk does when a folder is compiled again:
@@ -511,10 +553,12 @@ export class Builder {
     let result: BuildInfo;
     try {
       try {
-        result = await this.compile(rev, tree, key, targets, seed, date, dated, start, progress, run);
+        result = await this.compile(rev, tree, key, targets, seed, date, dated, start, progress, run, signal);
       } catch (error) {
+        // A cancelled build is not a failure that a clean start could fix.
+        if (error instanceof Cancelled || signal?.aborted) throw error;
         if (!start || (error instanceof BuildError && !error.details.some(line => /(?:^|\s|\()(?:\.\/)?build\//.test(line)))) throw error;
-        result = await this.compile(rev, tree, key, targets, seed, date, dated, null, progress, run);
+        result = await this.compile(rev, tree, key, targets, seed, date, dated, null, progress, run, signal);
       }
     } finally {
       active.delete(run);
@@ -606,14 +650,22 @@ export class Builder {
     start: { info: BuildInfo; date: unknown } | "author" | null,
     progress?: (progress: BuildProgress) => void,
     scheduled?: Active,
+    signal?: AbortSignal,
   ): Promise<BuildInfo> {
     const p = this.project,
       partial = JSON.stringify(targets) !== '["full"]',
       folder = path.join(this.cache, key);
+    // A cancelled build leaves nothing behind: no result, log or folder, so
+    // that no later build continues from it or shows it.
+    const abandon = async () => {
+      await fs.promises.rm(folder, { recursive: true, force: true });
+      throw new Cancelled();
+    };
     await fs.promises.rm(folder, { recursive: true, force: true });
     const source = path.join(folder, "src");
     const base = start && start !== "author" ? start.info : null;
     await this.repo.export(rev, p.source_dir, source, base ? { root: base.root, tree: base.tree } : undefined);
+    if (signal?.aborted) return abandon();
     const cwd = path.join(
         source,
         path.posix.relative(p.source_dir || ".", p.doc_dir || "."),
@@ -654,6 +706,7 @@ export class Builder {
           }
         }));
     }
+    if (signal?.aborted) return abandon();
     const args = [
       "-norc",
       ...(p.latexmkrc
@@ -707,7 +760,7 @@ export class Builder {
       previewing = previewing.then(async () => {
         const dir = path.join(passes, String(number)), xdv = path.join(dir, job + ".xdv"), file = path.join(dir, job + ".pdf");
         if (fs.existsSync(xdv)) {
-          await capture("xdvipdfmx", ["-q", "-E", "-o", file, xdv], { cwd, env: { ...process.env, ...date }, timeout: 300000 });
+          await capture("xdvipdfmx", ["-q", "-E", "-o", file, xdv], { cwd, env: { ...process.env, ...date }, timeout: 300000, signal });
           await fs.promises.rm(xdv, { force: true });
         }
         await fs.promises.access(file);
@@ -745,14 +798,21 @@ export class Builder {
     // borrowing it stops this build meanwhile (see schedule).
     const lease = new Lease(() => scheduled?.priority ?? "normal");
     if (scheduled) { scheduled.lease = lease; lease.onLent = schedule; }
+    // Waiting for a slot ends at once.
+    const release = () => void lease.release();
+    signal?.addEventListener("abort", release, { once: true });
     try {
       await lease.ready;
+      if (signal?.aborted) throw new Cancelled();
     } catch (error) {
+      signal?.removeEventListener("abort", release);
       if (scheduled) scheduled.lease = undefined;
       await lease.release();
       await log.close();
+      if (signal?.aborted) return abandon();
       throw error;
     }
+    signal?.removeEventListener("abort", release);
     const ran = now();
     try {
       await runAsync("latexmk", args, {
@@ -763,6 +823,7 @@ export class Builder {
           ...(keeping ? { PAPILOT_PASS_DIR: passes.replaceAll("\\", "/"), PAPILOT_PASS_FILES: ["xdv", "pdf", "synctex.gz"].map((ext) => `build/${job}.${ext}`).join("\n") } : {}),
         },
         timeout: 1800000,
+        signal,
         started: (child) => {
           lease.attach(child);
           if (!scheduled) return;
@@ -785,6 +846,7 @@ export class Builder {
       await log.close();
       await previewing;
     }
+    if (failure instanceof Cancelled) return abandon();
     // Passes that were not shown are not needed.
     if (scheduled) scheduled.followed = undefined;
     if (keeping) for (let number = 1; number <= saved; number++) if (!kept.has(number)) await fs.promises.rm(path.join(passes, String(number)), { recursive: true, force: true });

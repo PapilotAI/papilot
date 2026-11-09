@@ -15,6 +15,13 @@ export class ProcessError extends Error {
     super(message);
   }
 }
+/** A build or command that its requester no longer needs, stopped before
+ *  it finished. Not a failure: nothing is reported or retried. */
+export class Cancelled extends Error {
+  constructor(message = "No longer needed.") {
+    super(message);
+  }
+}
 export function run(
   command: string,
   args: string[],
@@ -74,6 +81,8 @@ export function capture(
     check?: boolean;
     timeout?: number;
     maxBuffer?: number;
+    /** Kills the command and everything it started, with Cancelled. */
+    signal?: AbortSignal;
   } = {},
 ) {
   const { check = true, timeout = 300000, maxBuffer = 128 * 1024 * 1024 } = options;
@@ -94,6 +103,10 @@ export function capture(
       terminateTree(child, "SIGKILL");
     };
     const timer = setTimeout(() => stop(new ProcessError(`${command} timed out`)), timeout);
+    const cancel = () => stop(new Cancelled());
+    if (options.signal?.aborted) cancel();
+    else options.signal?.addEventListener("abort", cancel, { once: true });
+    child.once("close", () => options.signal?.removeEventListener("abort", cancel));
     const collect = (into: Buffer[]) => (data: Buffer) => {
       size += data.length;
       if (size > maxBuffer) stop(new ProcessError(`${command} produced more output than expected`));
@@ -129,6 +142,9 @@ export function runAsync(
     output?: (chunk: Buffer) => void;
     /** Receives the process group's leader, e.g. to pause and resume it. */
     started?: (child: ChildProcess) => void;
+    /** Kills the command and everything it started, also while stopped,
+     *  and rejects with Cancelled. */
+    signal?: AbortSignal;
   } = {},
 ) {
   return new Promise<Buffer>((resolve, reject) => {
@@ -142,11 +158,15 @@ export function runAsync(
     );
     options.started?.(child);
     const chunks: Buffer[] = [];
-    let timedOut = false;
+    let timedOut = false, cancelled = false;
     const timer = setTimeout(() => {
       timedOut = true;
       terminateTree(child, "SIGKILL");
     }, options.timeout ?? 300000);
+    // SIGKILL ends a stopped process group too, without continuing it first.
+    const cancel = () => { cancelled = true; terminateTree(child, "SIGKILL"); };
+    if (options.signal?.aborted) cancel();
+    else options.signal?.addEventListener("abort", cancel, { once: true });
     const receive = (data: Buffer) => {
       chunks.push(data);
       options.output?.(data);
@@ -159,8 +179,10 @@ export function runAsync(
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", cancel);
       const data = Buffer.concat(chunks);
-      if (code === 0 && !timedOut) resolve(data);
+      if (cancelled) reject(new Cancelled());
+      else if (code === 0 && !timedOut) resolve(data);
       else
         reject(
           new ProcessError(
