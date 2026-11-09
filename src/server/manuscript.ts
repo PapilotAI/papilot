@@ -363,13 +363,14 @@ async function pageSizes(mupdf: any, pdf: string) {
 }
 
 async function engine() {
-  const [{ Builder, BuildError }, { Repo, gitBinary }, { loadProject }, { mupdf, PdfDocument, containsCenter, walkText }] = await Promise.all([
+  const [{ Builder, BuildError }, { Repo, gitBinary }, { loadProject }, { mupdf, PdfDocument, containsCenter, walkText }, { opcodesWithin }] = await Promise.all([
     import(pathToFileURL(path.join(ENGINE, 'src/core/build.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/git.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href),
     import(pathToFileURL(path.join(ENGINE, 'src/render/pdf.ts')).href),
+    import(pathToFileURL(path.join(ENGINE, 'src/core/diff.ts')).href),
   ]);
-  return { Builder, BuildError, Repo, gitBinary, loadProject, mupdf, PdfDocument, containsCenter, walkText };
+  return { Builder, BuildError, Repo, gitBinary, loadProject, mupdf, PdfDocument, containsCenter, walkText, opcodesWithin: opcodesWithin as (a: string[], b: string[], timeout: number) => LineOp[] | null };
 }
 
 // `synctex edit` maps a PDF position (big points from the top-left corner) to
@@ -435,6 +436,27 @@ export function settleLines(source: string[], [start, end]: [number, number], fi
   return from <= to ? [from, to] : [start, end];
 }
 
+type LineOp = [string, number, number, number, number];
+/** Lines `[start, end]` (1-based, inclusive) of `before`, followed into
+ *  `after` through the opcodes between them. Edits elsewhere shift them; an
+ *  edit inside stays inside, and lines added just outside stay outside. Null
+ *  when the passage is gone, or when an edit crosses its first or last line:
+ *  then the text that replaced it may be something else. */
+export function followLines(ops: LineOp[], [start, end]: [number, number]): [number, number] | null {
+  const map = (at: number, right: boolean) => {
+    const places: number[] = [];
+    for (const [kind, a, b, x, y] of ops) {
+      if (at < a || at > b) continue;
+      if (kind === 'equal') places.push(x + at - a);
+      else if (a < at && at < b) return null;
+      else places.push(...(a === b ? [x, y] : [at === a ? x : y]));
+    }
+    return places.length ? (right ? Math.min(...places) : Math.max(...places)) : null;
+  };
+  const from = map(start - 1, false), to = map(end, true);
+  return from === null || to === null || to <= from ? null : [from + 1, to];
+}
+
 export function sourceExcerpt(file: string, [start, end]: [number, number], limit = 20) {
   if (!fs.existsSync(file)) return undefined;
   const lines = fs.readFileSync(file, 'utf8').split('\n').slice(start - 1, end).map(line => line.trimEnd());
@@ -483,6 +505,14 @@ export class Manuscripts extends EventEmitter {
   private reviewSnapshots = new ReviewSnapshots();
   private builds = new Map<string, Build>();
   private oldPdfs = new Map<string, string | null>();
+  // Every PDF the view may still be showing, by paper and key: each pass and
+  // each finished build. The author marks the pages on screen, which a newer
+  // pass may already have replaced; reading words, locating and exporting on
+  // those pages must still work. Builds keep their folders (and SyncTeX) until
+  // the cache is pruned days later.
+  private shown = new Map<string, { pdf: string; root?: string; sourceDir?: string }>();
+  // Each paper's working tree, where located lines are followed to.
+  private roots = new Map<string, string>();
   private placements = new Map<string, (Pick<Annotation, 'key' | 'page' | 'rect' | 'rects' | 'source'>) | null>();
   // Placed problems per problem list; a rebuild in progress shares its predecessor's list.
   private located = new WeakMap<StoredProblem[], Promise<BuildProblem[]>>();
@@ -527,6 +557,23 @@ export class Manuscripts extends EventEmitter {
     const { mupdf } = await engine(), key = await this.rememberPreview(root, tree, pdf), pages = await pageSizes(mupdf, pdf);
     this.builds.set(projectId, { tree, status: 'ready', key, pdf, root, sourceDir: '', pages, previewOnly,
       builtAt: (await fs.promises.stat(pdf)).mtimeMs, problems: [], problemsKey: key });
+    // Not remembered with the builds: once released, edited sources must not
+    // be paired with the bundled preview.
+    this.roots.set(projectId, root);
+  }
+
+  private remember(projectId: string, key: string, pdf: string, root?: string, sourceDir?: string) {
+    const id = `${projectId}:${key}`;
+    this.shown.delete(id);
+    this.shown.set(id, { pdf, root, sourceDir });
+    if (this.shown.size > 200) this.shown.delete(this.shown.keys().next().value!);
+  }
+
+  private shownBuild(projectId: string, key: string) {
+    const build = this.builds.get(projectId);
+    if (build?.pdf && build.key === key) return { pdf: build.pdf, root: build.root, sourceDir: build.sourceDir };
+    const shown = key ? this.shown.get(`${projectId}:${key}`) : undefined;
+    return shown && fs.existsSync(shown.pdf) ? shown : null;
   }
 
   // Demo previews live outside the compiler cache. Register their persisted
@@ -641,6 +688,7 @@ export class Manuscripts extends EventEmitter {
     if (previous?.key && previous.pdf) this.oldPdfs.set(`${root}:${previous.key}`, previous.pdf);
     const build: Build = { tree, status: 'building', key: previous?.key, pdf: previous?.pdf, root: previous?.root, sourceDir: previous?.sourceDir, pages: previous?.pages, builtAt: previous?.builtAt, problems: previous?.problems, problemsKey: previous?.problemsKey, log: previous?.log, logFolder: previous?.logFolder };
     this.builds.set(projectId, build);
+    this.roots.set(projectId, root);
     this.stale.delete(projectId);
     this.emit('change', projectId);
     void (async () => {
@@ -657,12 +705,14 @@ export class Manuscripts extends EventEmitter {
           const pages = await sizes(preview.pdf), key = createHash('sha256').update(preview.pdf).digest('hex').slice(0, 16);
           if (this.builds.get(projectId) !== build || build.status !== 'building') return;
           this.oldPdfs.set(`${root}:${key}`, preview.pdf);
+          this.remember(projectId, key, preview.pdf, preview.root, project!.source_dir || '');
           Object.assign(build, { key, pdf: preview.pdf, root: preview.root, sourceDir: project!.source_dir || '', pages, builtAt: Date.now() });
           this.emit('change', projectId);
         };
         const result = await new Builder(project, new Repo(root)).build(tree, ['full'], null, { force, priority: 'foreground', pass: (preview: { pdf: string; root: string }) => void pass(preview).catch(() => undefined), progress: (progress: Omit<BuildProgress, 'startedAt'>) => { if (this.builds.get(projectId) === build) build.progress = { ...progress, startedAt }; } });
         const pages = await sizes(result.pdf);
         const key = createHash('sha256').update(result.key + result.pdf).digest('hex').slice(0, 16);
+        this.remember(projectId, key, result.pdf, result.root, project!.source_dir || '');
         if (this.builds.get(projectId) !== build) return;
         const log = String(result.pdf).replace(/\.pdf$/, '.log');
         let problems: StoredProblem[] = [];
@@ -706,8 +756,9 @@ export class Manuscripts extends EventEmitter {
   // Old annotations keep their saved content. Only their proven PDF position
   // changes; ambiguous or missing content stays on the earlier version.
   async reanchor(projectId: string, root: string, notes: Annotation[]): Promise<Annotation[]> {
+    // The pages on screen, including a pass of a build still running.
     const build = this.builds.get(projectId);
-    if (!build?.pdf || !build.key || build.status !== 'ready' || !notes.some(note => note.key !== build.key)) return notes;
+    if (!build?.pdf || !build.key || !notes.some(note => note.key !== build.key)) return notes;
     // Every poll asks again; placements already checked need no PDF opened.
     const cacheKey = (note: Annotation) => JSON.stringify([projectId, build.key, note.key, note.page, note.rect, note.rects, note.quote]);
     if (notes.every(note => note.key === build.key || this.placements.has(cacheKey(note))))
@@ -877,9 +928,9 @@ export class Manuscripts extends EventEmitter {
   }
 
   pdf(projectId: string, key: string) {
-    const build = this.builds.get(projectId);
-    if (!build?.pdf || build.key !== key) throw Object.assign(new Error('This manuscript preview is out of date. Refresh it and try again.'), { statusCode: 404 });
-    return build.pdf;
+    const shown = this.shownBuild(projectId, key);
+    if (!shown) throw Object.assign(new Error('This manuscript preview is out of date. Refresh it and try again.'), { statusCode: 404 });
+    return shown.pdf;
   }
 
   // The PDF with the paper's notes drawn on it, to share with people outside Papilot.
@@ -903,9 +954,12 @@ export class Manuscripts extends EventEmitter {
     return result;
   }
 
+  // The pages may be those of an earlier pass or build than the latest: the
+  // place is found in the PDF that was marked, then followed to the file as it
+  // is now.
   async locate(projectId: string, key: string, page: number, rect: Rect, rects: Rect[] = [], selected = '') {
-    const pdf = this.pdf(projectId, key), build = this.builds.get(projectId)!;
-    const { PdfDocument, containsCenter } = await engine();
+    const pdf = this.pdf(projectId, key), build = this.shownBuild(projectId, key)!;
+    const { PdfDocument, containsCenter, opcodesWithin } = await engine();
     const document = new PdfDocument(pdf);
     try {
       if (!Number.isInteger(page) || page < 0 || page >= document.length) throw Object.assign(new Error('That page is not part of the manuscript.'), { statusCode: 400 });
@@ -938,6 +992,17 @@ export class Manuscripts extends EventEmitter {
       if (!file || !found) return { quote, source: null };
       const source = fs.existsSync(found.input) ? fs.readFileSync(found.input, 'utf8').split('\n') : [];
       const lines = settleLines(source, [Math.min(...found.lines), Math.max(...found.lines)], first, last);
+      // The build compiled a copy of the source; the working tree may have
+      // moved on since, by later edits or because these are older pages.
+      const root = this.roots.get(projectId), working = root && path.join(root, ...file.split('/'));
+      if (working && path.resolve(working) !== path.resolve(found.input) && fs.existsSync(working)) {
+        const now = fs.readFileSync(working, 'utf8').split('\n');
+        const ops = now.length === source.length && now.every((line, index) => line === source[index]) ? null : opcodesWithin(source, now, 1000);
+        if (ops) {
+          const followed = followLines(ops, lines);
+          return { quote, source: followed && { file, lines: followed, excerpt: sourceExcerpt(working, followed) } };
+        }
+      }
       return { quote, source: { file, lines, excerpt: sourceExcerpt(found.input, lines) } };
     } finally { document.close(); }
   }

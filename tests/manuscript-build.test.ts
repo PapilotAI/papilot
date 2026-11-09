@@ -170,3 +170,52 @@ test('AI review reports a task copy that does not compile and keeps no PDF for i
     assert.equal(await manuscript.savedReviewPdf(root, 'broken-copy'), null);
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
+
+test('a note on pages that a newer build replaced is still located, in the file as it is now', { skip: !latexmk && 'needs latexmk and pdflatex', timeout: 60000 }, async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-older-pages-'));
+  const root = path.join(base, 'paper'), file = path.join(root, 'main.tex');
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root }).toString().trim();
+  const tex = (...body: string[]) => ['\\documentclass{article}', '\\begin{document}', ...body, '\\end{document}', ''].join('\n');
+  const manuscripts = new Manuscripts();
+  async function settled() {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const { build } = await manuscripts.state('paper', root);
+      if (build.status !== 'building') return build;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Compilation did not finish');
+  }
+  try {
+    fs.mkdirSync(root);
+    fs.writeFileSync(file, tex('An opening paragraph.', '', 'Mark this sentence on the older pages.'));
+    git('init', '-q'); git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Initial paper');
+    const first = await settled();
+    assert.equal(first.status, 'ready', first.error);
+    const document = new PdfDocument(manuscripts.pdf('paper', first.key!)), page = document.page(0);
+    const rects = page.search('Mark this sentence on the older pages.').map(([x0, y0, x1, y1]): Annotation['rect'] => [x0 / page.width, y0 / page.height, x1 / page.width, y1 / page.height]);
+    document.close();
+    assert.equal(rects.length, 1);
+
+    // The author is still looking at the first pages while a newer build lands.
+    fs.writeFileSync(file, tex('A new first paragraph.', '', 'Another new paragraph.', '', 'An opening paragraph.', '', 'Mark this sentence on the older pages.'));
+    const second = await settled();
+    assert.equal(second.status, 'ready', second.error);
+    assert.notEqual(second.key, first.key);
+    assert.ok(fs.existsSync(manuscripts.pdf('paper', first.key!)), 'The pages on screen stay readable');
+    assert.ok((await manuscripts.words('paper', first.key!, 0)).words.length > 0, 'Their words stay selectable');
+    const located = await manuscripts.locate('paper', first.key!, 0, rects[0], rects);
+    assert.equal(located.quote, 'Mark this sentence on the older pages.');
+    assert.equal(located.source?.file, 'main.tex');
+    assert.deepEqual(located.source?.lines, [9, 9], 'Lines name the passage in the file as it is now');
+    assert.equal(located.source?.excerpt, 'Mark this sentence on the older pages.');
+
+    // A passage deleted since keeps its quote and names no lines.
+    fs.writeFileSync(file, tex('A new first paragraph.'));
+    const gone = await manuscripts.locate('paper', first.key!, 0, rects[0], rects);
+    assert.equal(gone.quote, 'Mark this sentence on the older pages.');
+    assert.equal(gone.source, null);
+  } finally {
+    await manuscripts.stop();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
