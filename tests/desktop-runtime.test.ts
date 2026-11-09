@@ -16,6 +16,30 @@ test('desktop backend environment clears legacy npm activation settings', () => 
   for (const key of ['PAPILOT_DESKTOP_SHELL', 'PAPILOT_DESKTOP_INSTALLER', 'PAPILOT_DESKTOP_CODEX', 'NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE']) assert.equal((env as NodeJS.ProcessEnv)[key], undefined);
 });
 
+test('desktop PATH includes Node/npm install folders without a shell environment', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-desktop-home-'));
+  const node = path.join(home, 'runtime/bin/node'), root = path.join(home, 'app'), data = path.join(home, 'data');
+  const paths = (extra: NodeJS.ProcessEnv = {}) => backendEnvironment(node, root, data, { HOME: home, PATH: path.join(home, 'inherited'), ...extra }).PATH.split(path.delimiter);
+  try {
+    const defaults = paths();
+    for (const dir of ['Library/pnpm', '.local/share/pnpm', '.local/share/mise/shims', '.yarn/bin',
+      '.local/share/fnm/aliases/default/bin', 'Library/Application Support/fnm/aliases/default/bin']) {
+      assert.ok(defaults.includes(path.join(home, dir)), dir);
+      assert.ok(defaults.indexOf(path.join(home, dir)) > defaults.indexOf(path.join(home, '.asdf/shims')), 'existing home folders keep their precedence');
+    }
+    fs.writeFileSync(path.join(home, '.npmrc'), '# user configuration\nprefix=~/custom npm\n');
+    const custom = paths({ PNPM_HOME: path.join(home, 'custom-pnpm'), FNM_DIR: path.join(home, 'custom-fnm') });
+    for (const dir of ['custom-pnpm', 'custom-fnm/aliases/default/bin', 'custom npm/bin']) assert.ok(custom.includes(path.join(home, dir)), dir);
+    assert.equal(custom[0], path.dirname(node), 'the bundled Node stays first');
+    assert.ok(custom.indexOf(path.join(home, 'inherited')) < custom.indexOf(path.join(home, 'custom-pnpm')));
+    fs.writeFileSync(path.join(home, '.npmrc'), `prefix="${path.join(home, 'absolute npm')}"\n`);
+    assert.ok(paths().includes(path.join(home, 'absolute npm/bin')), 'absolute and quoted prefixes work');
+    fs.rmSync(path.join(home, '.npmrc'));
+    fs.mkdirSync(path.join(home, '.npmrc'));
+    assert.deepEqual(paths(), defaults, 'an unreadable npmrc does not prevent startup');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
 test('the development desktop app ignores legacy web update state and rejects install and channel requests', async () => {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-desktop-runtime-')), root = process.cwd();
   const version = readJson(path.join(root, 'package.json')).version;

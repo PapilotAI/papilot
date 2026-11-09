@@ -4,7 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync, spawn } from 'node:child_process';
-import { buildLayer, dedupeEngine, desktopVersion, shellFingerprint } from './desktop-layer.mjs';
+import { buildLayer, desktopVersion, shellFingerprint } from './desktop-layer.mjs';
+import { dedupeEngine } from './desktop-dedupe.mjs';
 import { tarCommand } from '../bin/agent-paths.mjs';
 import { buildWindowsIcon } from './build-windows-icon.mjs';
 

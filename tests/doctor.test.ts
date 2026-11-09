@@ -166,6 +166,48 @@ test('doctor uses the supported managed Codex and never leaks login output or kn
   } finally { f.cleanup(); }
 });
 
+test('desktop doctor searches PATH, the package and data in order with the server probe PATH', async () => {
+  const f = fixture();
+  try {
+    f.baseTools();
+    // Keep real discovery, but exclude installations outside this fixture.
+    const paths = path.join(f.app, 'bin/agent-paths.mjs');
+    fs.renameSync(paths, path.join(f.app, 'bin/agent-paths-real.mjs'));
+    fs.writeFileSync(paths, `
+      import fs from 'node:fs';
+      import * as real from './agent-paths-real.mjs';
+      export * from './agent-paths-real.mjs';
+      export function findExecutables(...args) { return real.findExecutables(...args).filter(file => fs.realpathSync(file).startsWith(${JSON.stringify(fs.realpathSync(f.dir) + path.sep)})); }
+    `);
+    fs.unlinkSync(path.join(f.app, 'node_modules'));
+    const local = path.join(f.app, 'node_modules/.bin'), managed = path.join(f.data, 'agents/node_modules/.bin');
+    const script = (version: string) => `
+      if (process.argv.includes('--version')) {
+        if (!process.env.PATH.split(${JSON.stringify(path.delimiter)}).includes(${JSON.stringify(path.join(f.env.HOME!, '.local/bin'))})) process.exit(2);
+        console.log('codex-cli ${version}');
+      } else console.log('Logged in');
+    `;
+    const install = (dir: string, name: string, version: string) => {
+      fs.mkdirSync(dir, { recursive: true });
+      const file = f.tool(name, script(version));
+      if (process.platform === 'win32') fs.copyFileSync(file, path.join(dir, 'codex.cmd'));
+      else fs.symlinkSync(file, path.join(dir, 'codex'));
+    };
+    f.tool('codex', script('0.1.0'));
+    install(local, 'local-codex', '0.2.0'); install(managed, 'data-codex', '0.3.0');
+    const check = async (version: string) => {
+      const result = item((await f.run(['--json'], { PAPILOT_DESKTOP: '1' })).report, 'agent.codex');
+      assert.equal(result.ok, true, result.detail);
+      assert.ok(result.detail.startsWith(`Codex ${version} (`), result.detail);
+    };
+    await check('0.1.0');
+    f.tool('codex', 'process.exit(1);');
+    await check('0.2.0');
+    f.tool('local-codex', 'process.exit(1);');
+    await check('0.3.0');
+  } finally { f.cleanup(); }
+});
+
 test('doctor checks real repository configuration without changing files or making worktrees', { skip: process.platform === 'win32' && 'uses the POSIX which command and file links' }, async () => {
   const f = fixture();
   try {

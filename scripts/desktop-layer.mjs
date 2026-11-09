@@ -28,9 +28,9 @@ const production = lock => Object.entries(read(lock).packages || {}).filter(([na
 export function shellFingerprint(root = process.cwd(), node = process.versions.node) {
   const pkg = read(path.join(root, 'package.json'));
   const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-  // These sources are copied into Electron at compile time, so a layer
-  // cannot replace them. Older checkouts may not contain every helper.
-  const copied = ['scripts/desktop.mjs', 'scripts/desktop-agent-paths.mjs', 'bin/agent-paths.mjs', 'engine/src/core/platform.mjs'].map(file => path.join(root, file)).filter(file => fs.existsSync(file));
+  // These sources build the installer or are copied into Electron, so a layer
+  // cannot replace their effects. Older checkouts may not contain every helper.
+  const copied = ['scripts/desktop.mjs', 'scripts/desktop-dedupe.mjs', 'scripts/desktop-agent-paths.mjs', 'bin/agent-paths.mjs', 'engine/src/core/platform.mjs'].map(file => path.join(root, file)).filter(file => fs.existsSync(file));
   const shell = [...files(path.join(root, 'desktop')), ...copied]
     .map(file => [path.relative(root, file).split(path.sep).join('/'), hash(file)]).sort(([a], [b]) => a.localeCompare(b));
   const inputs = {
@@ -40,35 +40,6 @@ export function shellFingerprint(root = process.cwd(), node = process.versions.n
     dependencies: production(path.join(root, 'package-lock.json')), engine: production(path.join(root, 'engine/package-lock.json')), shell,
   };
   return createHash('sha256').update(JSON.stringify(inputs)).digest('hex');
-}
-
-// The review engine sits inside the server folder, so Node resolves a package
-// it lacks from the server's node_modules (also through a layer's links, see
-// linkBundle). Its own copies of the same versions (mupdf, esbuild, fastify,
-// React…) only made the installer larger.
-export function dedupeEngine(server) {
-  const outer = path.join(server, 'node_modules'), inner = path.join(server, 'engine/node_modules');
-  const version = folder => { try { return JSON.parse(fs.readFileSync(path.join(folder, 'package.json'), 'utf8')).version || null; } catch { return null; } };
-  const names = fs.readdirSync(inner).filter(name => !name.startsWith('.'))
-    .flatMap(name => name.startsWith('@') ? fs.readdirSync(path.join(inner, name)).map(child => `${name}/${child}`) : [name]);
-  let bytes = 0;
-  const size = file => { const stat = fs.lstatSync(file); return stat.isDirectory() ? fs.readdirSync(file).reduce((sum, name) => sum + size(path.join(file, name)), 0) : stat.size; };
-  for (const name of names) {
-    const own = version(path.join(inner, name));
-    if (!own || own !== version(path.join(outer, name))) continue;
-    bytes += size(path.join(inner, name));
-    fs.rmSync(path.join(inner, name), { recursive: true, force: true });
-  }
-  for (const name of fs.readdirSync(inner)) if (name.startsWith('@') && !fs.readdirSync(path.join(inner, name)).length) fs.rmdirSync(path.join(inner, name));
-  // Executables of removed packages: links on macOS and Linux, shims on Windows.
-  const bin = path.join(inner, '.bin');
-  if (fs.existsSync(bin)) for (const name of fs.readdirSync(bin)) {
-    const file = path.join(bin, name);
-    const targets = fs.lstatSync(file).isSymbolicLink() ? [path.resolve(bin, fs.readlinkSync(file))]
-      : [...fs.readFileSync(file, 'utf8').matchAll(/\.\.[\\/]((?:@[^\\/"']+[\\/])?[^\\/"']+)[\\/]/g)].map(match => path.join(inner, ...match[1].split(/[\\/]/)));
-    if (targets.some(target => !fs.existsSync(target))) fs.rmSync(file, { force: true });
-  }
-  return bytes;
 }
 
 // Nightly dev builds carry the commit, like the web server's GitHub dev channel.

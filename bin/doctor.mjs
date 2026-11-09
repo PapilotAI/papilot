@@ -1,4 +1,4 @@
-import { findExecutable, findExecutables, killTree, spawnCommand } from './agent-paths.mjs';
+import { agentPath, findExecutable, findExecutables, killTree, spawnCommand } from './agent-paths.mjs';
 // Deliberately uses only Node built-ins: diagnostics must work before npm setup.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -136,13 +136,13 @@ export async function doctor(args) {
     const configured = process.env.PAPILOT_CODEX_BIN;
     // Like the server: the desktop app tries every codex on PATH, the npm command the first.
     const managed = path.join(data, 'agents/node_modules/.bin');
-    const candidates = configured ? [configured] : desktop ? findExecutables('codex', process.env, [managed]) : ['codex', path.join(managed, 'codex')];
+    const candidates = configured ? [configured] : desktop ? findExecutables('codex', process.env, [path.join(root, 'node_modules/.bin'), managed]) : ['codex', path.join(managed, 'codex')];
     const found = [];
     for (const candidate of candidates) {
       const file = agentExecutable(candidate);
       if (!file) continue;
       // As long as the server waits, so a slow start on a busy machine counts as running.
-      const result = await command(file, ['--version'], { timeout: 15000 });
+      const result = await command(file, ['--version'], { timeout: 15000, env: { ...process.env, PATH: agentPath(process.env) } });
       const version = result.stdout.match(/\d+\.\d+\.\d+/)?.[0];
       found.push(file);
       if (!result.ok || (minimum && (!version || !atLeast(version, minimum)))) {

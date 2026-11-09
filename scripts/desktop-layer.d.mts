@@ -6,4 +6,3 @@ export function layerName(version: string): string;
 export function buildLayer(root?: string, output?: string, revision?: string): { format: number; version: string; fingerprint: string; layer: { name: string; size: number; sha256: string } };
 export const INSTALLER_SUFFIXES: string[];
 export function reusableInstallers(previous: any, assets: string[], fingerprint: string): string[] | null;
-export function dedupeEngine(server: string): number;

@@ -220,7 +220,7 @@ export async function buildApp(options: AppOptions) {
     // The app polls every second or two and most polls find nothing new: those
     // get an empty 304 instead of every task again to download and parse.
     const tag = `"${createHash('sha1').update(body).digest('base64url')}"`;
-    reply.header('ETag', tag).header('Cache-Control', 'no-cache');
+    reply.header('ETag', tag);
     if (request.headers['if-none-match']?.replace(/^W\//, '') === tag) return reply.code(304).send();
     return reply.type('application/json; charset=utf-8').send(body);
   });
