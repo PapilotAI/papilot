@@ -1117,10 +1117,37 @@ test('writing a paper compiles its manuscript, while pending chapter proposals d
       const noted = await f.local.inject({ method: 'POST', url: '/review/thesis/api/tasks/p-thesis-task/note', headers: { ...LOCAL, 'x-review-token': 'review-token' }, payload: { body: 'A note.' } });
       assert.equal(noted.statusCode, 200, noted.body);
       await new Promise(resolve => setImmediate(resolve));
-      assert.deepEqual(refreshed[1], ['thesis', '/unused/thesis'], 'a review action through the review page compiles too');
+      assert.equal(refreshed.length, 1, 'a note changes no manuscript files and starts no build');
     } finally { engine.close(); }
     assert.deepEqual(predicted, [], 'review actions start no speculative manuscript build');
   } finally { await f.close(); }
+});
+
+test('deferred decisions wait until application before refreshing the manuscript', async () => {
+  const f = await fixture(), engine = await decisionEngine(() => ({}));
+  f.review.url = engine.url;
+  f.workspace.refresh = async () => {};
+  const refreshed: string[] = [], predicted: string[] = [];
+  f.manuscripts.refresh = async id => { refreshed.push(id); };
+  f.manuscripts.predict = async id => { predicted.push(id); };
+  f.store.updateTask('thesis-task', { deferred: true });
+  const headers = { ...LOCAL, 'x-review-token': 'review-token' };
+  try {
+    for (const action of ['accept', 'reject', 'comment']) {
+      const response = await f.local.inject({ method: 'POST', url: '/review/thesis/api/tasks/p-thesis-task/decide', headers, payload: { id: action, round: 1, action, changes: ['c001'], ...(action === 'comment' ? { body: 'Shorter.' } : {}) } });
+      assert.equal(response.statusCode, 200, response.body);
+    }
+    const undone = await f.local.inject({ method: 'POST', url: '/review/thesis/api/tasks/p-thesis-task/undo', headers, payload: { id: 'accept' } });
+    assert.equal(undone.statusCode, 200, undone.body);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(refreshed, []);
+    assert.deepEqual(predicted, []);
+    f.store.updateTask('thesis-task', { deferred: false });
+    const legacy = await f.local.inject({ method: 'POST', url: '/review/thesis/api/tasks/p-thesis-task/decide', headers, payload: { id: 'legacy', round: 1, action: 'accept', changes: ['c001'] } });
+    assert.equal(legacy.statusCode, 200, legacy.body);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(refreshed, ['thesis']);
+  } finally { await engine.close(); await f.close(); }
 });
 
 test('the Apply and Commit step compiles what applying the decided task writes, and nothing else does', async () => {

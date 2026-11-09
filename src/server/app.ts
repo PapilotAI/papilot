@@ -140,13 +140,18 @@ export async function buildApp(options: AppOptions) {
     if (id) projectRequests.set(request, workspace.enterProjectRequest(id));
   });
   app.addHook('onSend', async (request, _reply, payload) => { projectRequests.get(request)?.(); return payload; });
-  // Whatever may have written a paper's files compiles its manuscript right
-  // away: committing or applying a task, a Git action, a review decision. The
-  // PDF is on its way before anyone opens it, and a tree that did not change
-  // costs one snapshot.
+  // Refresh when manuscript files can have changed. Deferred decisions and
+  // source edits affect only the task copy; its manuscript waits for Apply.
   const WRITES = /^\/api\/projects\/:id\/git\/|^\/api\/tasks\/:id\/(?:commit|apply|reconcile)$|^\/review\/:projectId\/(?:api\/changes\/(?:decide|undo)|\*)$/;
   app.addHook('onResponse', async (request, reply) => {
     if (request.method !== 'POST' || reply.statusCode >= 400 || !WRITES.test(request.routeOptions.url || '')) return;
+    if (request.url.startsWith('/review/')) {
+      const review = /^\/review\/[^/]+\/api\/tasks\/([^/]+)\/(decide|undo)(?:\?|$)/.exec(request.url);
+      if (review) {
+        const current = store.tasks().find(task => task.name === decodeURIComponent(review[1]));
+        if (current?.deferred || (request.body as { action?: string } | undefined)?.action === 'comment') return;
+      } else if (!/^\/review\/[^/]+\/api\/changes\/(decide|undo)(?:\?|$)/.test(request.url)) return;
+    }
     const params = (request.params || {}) as Record<string, string>;
     try {
       const project = store.project(params.projectId ?? (request.routeOptions.url!.startsWith('/api/tasks/') ? store.task(params.id).projectId : params.id));
