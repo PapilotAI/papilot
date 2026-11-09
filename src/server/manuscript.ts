@@ -855,7 +855,7 @@ export class Manuscripts extends EventEmitter {
     let result;
     try { result = await new Builder(loadProject(root), new Repo(root)).build(tree, ['full']); }
     catch (error) { throw error instanceof BuildError ? new Error('The manuscript could not be compiled for AI review. Fix the errors shown in the manuscript preview, then try again.') : error; }
-    const snapshot = await this.snapshotPdf(result.pdf);
+    const snapshot = await this.reviewSnapshot(loadProject(root).state, result);
     // The task does not exist yet, so a PDF kept by an earlier failed attempt is replaced.
     return { ...snapshot, pdf: await this.preserveReviewPdf(root, taskId, result.pdf, true) };
   }
@@ -925,6 +925,39 @@ export class Manuscripts extends EventEmitter {
 
   snapshotPdf(pdf: string, key?: string): Promise<ReviewSnapshot> {
     return this.reviewSnapshots.run(pdf, key);
+  }
+
+  // Reading the lines of every page takes tens of seconds on a long paper. A
+  // build's PDF never changes, so another review of the same build, also after
+  // a restart, reuses the lines kept beside the review PDFs.
+  private reviewLines = new Map<string, Promise<ReviewSnapshot>>();
+  private reviewSnapshot(state: string, build: { key: string; pdf: string }) {
+    const id = createHash('sha256').update(build.key + build.pdf).digest('hex').slice(0, 24);
+    const cached = this.reviewLines.get(id);
+    if (cached) return cached;
+    const folder = path.join(state, 'ai-reviews', 'snapshots'), file = path.join(folder, id + '.json');
+    const pending = (async () => {
+      try {
+        const saved = JSON.parse(await fs.promises.readFile(file, 'utf8')) as ReviewSnapshot;
+        if (typeof saved?.key === 'string' && Array.isArray(saved.lines) && saved.lines.length) return saved;
+      } catch { /* Not read before, or unreadable: read the PDF again. */ }
+      const snapshot = await this.snapshotPdf(build.pdf);
+      try {
+        await fs.promises.mkdir(folder, { recursive: true });
+        const temporary = path.join(folder, `${id}-${randomUUID()}.tmp`);
+        await fs.promises.writeFile(temporary, JSON.stringify(snapshot));
+        await fs.promises.rename(temporary, file);
+        // Only recent builds are reviewed again; keep the newest few.
+        const saved = await Promise.all((await fs.promises.readdir(folder)).filter(name => name.endsWith('.json'))
+          .map(async name => ({ name, at: (await fs.promises.stat(path.join(folder, name)).catch(() => null))?.mtimeMs ?? 0 })));
+        for (const old of saved.sort((a, b) => b.at - a.at).slice(8)) await fs.promises.rm(path.join(folder, old.name), { force: true });
+      } catch { /* The lines are still returned; the next review reads the PDF again. */ }
+      return snapshot;
+    })();
+    this.reviewLines.set(id, pending);
+    pending.catch(() => { if (this.reviewLines.get(id) === pending) this.reviewLines.delete(id); });
+    if (this.reviewLines.size > 2) this.reviewLines.delete(this.reviewLines.keys().next().value!);
+    return pending;
   }
 
   pdf(projectId: string, key: string) {

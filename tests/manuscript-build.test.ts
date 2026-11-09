@@ -136,6 +136,11 @@ test('AI review freezes the task copy and repositions only a surviving passage w
     fs.writeFileSync(path.join(root, 'main.tex'), changed);
     const captured = await manuscript.captureReview(root, worktree, 'review-copy');
     assert.ok(captured.pdf && fs.existsSync(captured.pdf));
+    // Another review of the same build, even after a restart, reuses its lines.
+    const restarted = new Manuscripts();
+    restarted.snapshotPdf = async () => { throw new Error('The pages were read again'); };
+    const again = await restarted.captureReview(root, worktree, 'review-copy-again');
+    assert.deepEqual([again.key, again.lines], [captured.key, captured.lines]);
     const originalPdf = fs.readFileSync(captured.pdf!);
     assert.ok(captured.lines.some(line => line.text === passage));
     assert.ok(!captured.lines.some(line => line.text.includes('New introductory')));
