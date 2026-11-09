@@ -1202,6 +1202,12 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const files = await acceptedFiles(project.path, task.name, deferred ? reconciliation?.base ?? (delivery && delivery.mode !== 'branch' ? delivery.accepted : undefined) : task.committed?.accepted);
       const current = this.store.task(taskId);
       if (current.status !== 'deleting') this.store.updateTask(taskId, { deferred, delivery, reconciliation, review: { state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: current.review?.job, unsent, comments, files } });
+      // The last pending change was just decided, or the decisions changed
+      // with none pending: what applying writes can compile now.
+      const decided = deferred && summary.counts?.pending === 0 && Object.values(summary.counts ?? {}).some(n => Number(n) > 0),
+        before = current.review;
+      if (decided && current.status !== 'deleting' && ((before?.counts?.pending ?? 1) > 0 || before?.round !== summary.round || JSON.stringify(before?.files) !== JSON.stringify(files) || JSON.stringify(before?.counts) !== JSON.stringify(summary.counts)))
+        this.emit('decided', taskId);
       // Recover an application interrupted after the engine prepared its
       // proposal but before Papilot persisted the agent run.
       if (reconciliation?.ready && (summary.round ?? 0) <= reconciliation.round && current.status === 'reviewing' && !this.committing.has(task.projectId) && !this.reviewWrites.has(taskId)

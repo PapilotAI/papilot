@@ -192,6 +192,25 @@ test('an older summary read that answers last cannot replace a newer one', async
   } finally { for (const { reply } of replies) reply.resolve(summary); f.close(); }
 });
 
+test('the last pending decision of a deferred task says the task is decided, once', async () => {
+  let counts: Record<string, number> = { pending: 2, accepted: 1 };
+  const f = fixture(async (_method, route) => route.includes('/feedback') ? { cursor: 0, feedback: [] } : { state: 'reviewing', round: 1, deferred: true, counts });
+  const decided: string[] = [];
+  f.workspace.on('decided', (id: string) => decided.push(id));
+  try {
+    await f.workspace.refresh(f.task.id);
+    assert.deepEqual(decided, [], 'pending changes are not decided yet');
+    counts = { pending: 0, accepted: 2, rejected: 1 };
+    await f.workspace.refresh(f.task.id);
+    assert.deepEqual(decided, [f.task.id], 'the last decision says so at once');
+    await f.workspace.refresh(f.task.id);
+    assert.deepEqual(decided, [f.task.id], 'reading the same decisions again says nothing');
+    counts = { pending: 0, accepted: 3, rejected: 0 };
+    await f.workspace.refresh(f.task.id);
+    assert.equal(decided.length, 2, 'changed decisions with none pending say so again');
+  } finally { f.close(); }
+});
+
 test('comparison progress reaches workspace snapshots and clears when the build finishes', async () => {
   const progress = { baseline: { step: 'tex', pass: 2, pages: 23, total: 180 } };
   let finished = false;

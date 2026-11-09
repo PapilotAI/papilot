@@ -1155,7 +1155,7 @@ test('deferred decisions wait until application before refreshing the manuscript
   } finally { await engine.close(); await f.close(); }
 });
 
-test('the Apply and Commit step compiles what applying the decided task writes, and nothing else does', async () => {
+test('the last decision compiles what applying the decided task writes, and undecided proposals do not', async () => {
   const f = await fixture();
   try {
     const predicted: [string, string, Record<string, string | null>][] = [];
@@ -1172,12 +1172,11 @@ test('the Apply and Commit step compiles what applying the decided task writes, 
     await predict();
     assert.deepEqual(predicted, [], 'undecided proposals do not start a speculative full manuscript build');
     f.store.updateTask('thesis-task', { review: { state: 'done', round: 1, counts: { accepted: 1 }, unsent: 0 } });
-    f.workspace.emit('reviewed', 'thesis-task');
+    f.workspace.emit('decided', 'thesis-task');
     await new Promise(resolve => setTimeout(resolve, 20));
-    assert.deepEqual(predicted, [], 'the last decision itself starts nothing');
-    await predict();
-    assert.deepEqual(predicted, [['thesis', '/unused/thesis', { 'main.tex': 'Applied.\n', 'old.tex': null }]], 'the step on screen compiles the result once');
+    assert.deepEqual(predicted, [['thesis', '/unused/thesis', { 'main.tex': 'Applied.\n', 'old.tex': null }]], 'the last decision compiles the result at once');
     f.store.updateTask('thesis-task', { deferred: false } as any);
+    f.workspace.emit('decided', 'thesis-task');
     await predict();
     assert.equal(predicted.length, 1, 'a task that applies as it is reviewed needs no prediction');
   } finally { await f.close(); }

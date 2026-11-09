@@ -395,9 +395,11 @@ export async function buildApp(options: AppOptions) {
   // The Apply and Commit step is on screen: compile in the background what
   // applying the decided task will write, so the manuscript's PDF is ready or
   // on its way when the author saves it. Individual decisions start no build.
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/predict', task, request => {
-    const current = store.task(request.params.id), project = store.project(current.projectId);
-    if (!current.deferred || current.mode === 'review' || current.delivery?.pending || current.status === 'deleting' || (current.review?.counts.pending ?? 0) > 0) return { ok: true };
+  // Once every change of a task is decided, its manuscript as applying it
+  // would write compiles at once, so the PDF is ready when the author applies.
+  const predict = (taskId: string) => {
+    const current = store.task(taskId), project = store.project(current.projectId);
+    if (!current.deferred || current.mode === 'review' || current.delivery?.pending || current.status === 'deleting' || (current.review?.counts.pending ?? 0) > 0) return;
     void (async () => {
       const client = await connectReview(project.path);
       // What applying writes: the accepted text merged with the files on
@@ -405,6 +407,10 @@ export async function buildApp(options: AppOptions) {
       const preview = await client.get<{ files: Record<string, string | null> | null }>(`${taskRoute(current.name)}/preview`);
       if (preview.files) await manuscripts.predict(project.id, project.path, Object.fromEntries(Object.entries(preview.files).map(([file, data]) => [file, data === null ? null : Buffer.from(data, 'base64')])));
     })().catch(() => undefined);
+  };
+  workspace.on('decided', predict);
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/predict', task, request => {
+    predict(store.task(request.params.id).id);
     return { ok: true };
   });
   // Where a note on the task's PDF of its decisions is in the task's files.

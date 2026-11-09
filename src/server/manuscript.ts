@@ -447,7 +447,9 @@ export class Manuscripts extends EventEmitter {
   // waits for the next one, which sees every edit made before it was asked.
   private snapshots = new Map<string, { current: Promise<string>; next?: Promise<string> }>();
   // Per paper, the speculative build that is running and the one wanted next.
-  private speculation = new Map<string, { running: boolean; wanted?: { root: string; files: Record<string, Buffer | null> } }>();
+  // The manuscript as applying a task would write it, compiling: a newer
+  // prediction cancels it.
+  private speculation = new Map<string, AbortController>();
   // Every open event stream listens for builds.
   constructor() { super(); this.setMaxListeners(0); }
   /** Stops every compiler this process started, also paused ones, so that
@@ -473,7 +475,7 @@ export class Manuscripts extends EventEmitter {
   }
   get busyForUpdate() { return this.reviewSnapshots.busy || [...this.builds.values()].some(build => build.status === 'building'); }
   busyForProject(id: string) { return this.builds.get(id)?.status === 'building'; }
-  forgetProject(id: string) { this.builds.delete(id); this.stale.delete(id); this.speculation.delete(id); }
+  forgetProject(id: string) { this.builds.delete(id); this.stale.delete(id); this.speculation.get(id)?.abort(); this.speculation.delete(id); }
 
   // The caller verifies the example's source tree. An edit or explicit rebuild
   // uses Builder; the original PDF can be read before TeX is installed.
@@ -590,23 +592,22 @@ export class Manuscripts extends EventEmitter {
    *  the same build, so its PDF is ready or already on its way. A build
    *  someone waits for always runs first. */
   async predict(projectId: string, root: string, files: Record<string, Buffer | null>) {
-    let entry = this.speculation.get(projectId);
-    if (!entry) this.speculation.set(projectId, entry = { running: false });
-    entry.wanted = { root, files };
-    if (entry.running) return;
-    entry.running = true;
+    const previous = this.speculation.get(projectId), stop = new AbortController();
+    this.speculation.set(projectId, stop);
+    // The prediction it replaces stops once this one waits for its own build,
+    // unless both need the same.
+    const replace = () => previous?.abort();
     try {
-      while (entry.wanted && this.speculation.get(projectId) === entry) {
-        const wanted: { root: string; files: Record<string, Buffer | null> } = entry.wanted;
-        entry.wanted = undefined;
-        try {
-          const { Builder, Repo, loadProject } = await engine(), repo = new Repo(wanted.root);
-          const tree = await this.snapshot(wanted.root), predicted = await repo.treeWithAsync(tree, wanted.files);
-          if (predicted === tree) continue;
-          await new Builder(loadProject(wanted.root), repo).build(predicted, ['full'], null, { priority: 'background' });
-        } catch { /* A build that fails here fails again, and is reported, when it is needed. */ }
-      }
-    } finally { entry.running = false; }
+      const { Builder, Repo, loadProject } = await engine(), repo = new Repo(root);
+      const tree = await this.snapshot(root), predicted = await repo.treeWithAsync(tree, files);
+      if (predicted === tree || stop.signal.aborted) return replace();
+      await new Builder(loadProject(root), repo).build(predicted, ['full'], null, { priority: 'background', signal: stop.signal, onKey: replace });
+    } catch {
+      /* A build that fails here fails again, and is reported, when it is needed. */
+      replace();
+    } finally {
+      if (this.speculation.get(projectId) === stop) this.speculation.delete(projectId);
+    }
   }
 
   // Keep the previous pages visible while a newer working tree compiles.
