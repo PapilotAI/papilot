@@ -111,6 +111,43 @@ it.skipIf(!posix)("stops another process's background run to lend its slot, and 
   await until(() => !stopped(lender.pgid));
 });
 
+it.skipIf(!posix)("lets normal work borrow a running background slot, and foreground work the newest normal one", async () => {
+  const lender = await holder("background"), busy = lease("normal");
+  await busy.ready;
+  const busyGroup = compiler(busy);
+  // Normal work stops the background run that the busy slot leaves.
+  const normal = lease("normal");
+  await normal.ready;
+  expect([normal.borrowed, normal.slot]).toEqual([true, lender.slot]);
+  expect(stopped(lender.pgid)).toBe(true);
+  await normal.release();
+  await until(() => !stopped(lender.pgid));
+  // Foreground work prefers the background run, the least important one.
+  const urgent = lease("foreground");
+  await urgent.ready;
+  expect([urgent.borrowed, urgent.slot]).toEqual([true, lender.slot]);
+  expect(stopped(busyGroup)).toBe(false);
+  await urgent.release();
+  await until(() => !stopped(lender.pgid));
+});
+
+it.skipIf(!posix)("stops the newest of two normal runs for foreground work", async () => {
+  const older = lease("normal");
+  await older.ready;
+  const olderGroup = compiler(older);
+  await sleep(20);
+  const newer = lease("normal");
+  await newer.ready;
+  const newerGroup = compiler(newer);
+  const urgent = lease("foreground");
+  await urgent.ready;
+  expect([urgent.borrowed, urgent.slot]).toEqual([true, newer.slot]);
+  expect(stopped(newerGroup)).toBe(true);
+  expect(stopped(olderGroup)).toBe(false);
+  await urgent.release();
+  await until(() => !stopped(newerGroup));
+});
+
 it.skipIf(!posix)("continues a lent run when its borrower dies", async () => {
   const lender = lease("background");
   await lender.ready;
@@ -121,8 +158,8 @@ it.skipIf(!posix)("continues a lent run when its borrower dies", async () => {
   expect(stopped(pgid)).toBe(true);
   borrower.child.kill("SIGKILL");
   await until(() => !stopped(pgid));
-  // The slot is the lender's again: normal work cannot borrow it.
-  const next = lease("normal");
+  // The slot is the lender's again: it is not free for other work.
+  const next = lease("background");
   let acquired = false;
   void next.ready.then(() => { acquired = true; }, () => { /* Cleanup cancels the waiter. */ });
   await sleep(400);
@@ -269,7 +306,7 @@ it.skipIf(!posix)("keeps a borrow for longer than a stale lock takes", () => sta
   await until(() => !stopped(lender.pgid));
 }), 20000);
 
-it.skipIf(!posix)("compiles a round's two sides at once while a speculative build waits stopped on its slot", async () => {
+it.skipIf(!posix)("runs a speculative build at full speed beside a round, and stops it only when the round's other side needs its slot", async () => {
   const f = new Fixture(), bin = path.join(f.base, "bin"), gates = path.join(f.base, "gates"), previousPath = process.env.PATH;
   fs.mkdirSync(bin); fs.mkdirSync(gates);
   // A latexmk that records its process ID and finishes when told to, or
@@ -293,8 +330,10 @@ it.skipIf(!posix)("compiles a round's two sides at once while a speculative buil
     const [speculative] = started();
     builds.push(builder.build(revisions[1]));
     await until(() => started().length === 2);
-    await until(() => stopped(pidOf(speculative)));
-    // The round's other side borrows the stopped build's slot.
+    // A free slot is used: nothing stops the speculative build.
+    await sleep(500);
+    expect(stopped(pidOf(speculative))).toBe(false);
+    // The round's other side borrows the speculative build's slot.
     builds.push(builder.build(revisions[2]));
     await until(() => started().length === 3);
     expect(stopped(pidOf(speculative))).toBe(true);

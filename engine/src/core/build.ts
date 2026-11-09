@@ -93,7 +93,6 @@ interface Active {
   // Its share of the TeX pool, while the compiler runs or waits to.
   lease?: Lease;
   paused: boolean;
-  yielding?: boolean;
   // Who is shown each pass, and the latest pass that more work followed.
   watchers: Set<(preview: PassPreview) => void>;
   followed?: () => void;
@@ -106,17 +105,14 @@ const active = new Set<Active>();
 interface Waiter { priority: WantedPriority; pass?: (preview: PassPreview) => void; progress?: (progress: BuildProgress) => void }
 const waiting = new Map<string, Set<Waiter>>();
 const building = new Map<string, Promise<BuildInfo>>();
-// A background build's compiler stops while any other build of this process
-// compiles, and continues once none does, so speculation never slows down a
-// PDF someone is waiting for. Its slot of the TeX pool then says so, and a
-// build waiting for a slot, also in this process, borrows it meanwhile. It
-// also stops while another process borrows its slot. A build that someone
-// waits for is promoted.
+// Every build runs at full speed on its slot of the TeX pool, whatever its
+// priority: TeX is single-threaded, and the pool bounds how many run at once.
+// A build stops (SIGSTOP) only while its slot is lent to one that matters
+// more and found no free slot (pool.ts), and continues when that one is done.
 function schedule() {
   if (process.platform === "win32") return;
-  const top = Math.max(-1, ...[...active].filter((a) => a.child).map((a) => RANK[a.priority]));
   for (const build of active) {
-    const pause = (build.priority === "background" && top > RANK.background) || Boolean(build.lease?.lent);
+    const pause = Boolean(build.lease?.lent);
     if (pause === build.paused || !build.child?.pid || build.child.exitCode !== null) continue;
     try {
       process.kill(-build.child.pid, pause ? "SIGSTOP" : "SIGCONT");
@@ -124,23 +120,17 @@ function schedule() {
       build.lease?.pause(pause);
     } catch { /* The compiler has exited. */ }
   }
-  watchOthers();
 }
 function promote(key: string, priority: BuildPriority) {
-  let changed = false;
   for (const build of active)
     if (build.key === key && RANK[priority] > RANK[build.priority]) {
       build.priority = priority;
       build.lease?.update();
-      if (build.yielding) void yieldTo(build, false);
-      changed = true;
     }
-  if (changed) schedule();
 }
 /** Runs every build of this process at the current priority of those who
  *  wait for it, raised or lowered: call it after one of them changed. */
 export function reprioritize() {
-  let changed = false;
   for (const build of active) {
     const waiters = [...(waiting.get(build.key) ?? [])];
     if (!waiters.length) continue;
@@ -148,43 +138,7 @@ export function reprioritize() {
     if (priority === build.priority) continue;
     build.priority = priority;
     build.lease?.update();
-    if (build.yielding && priority !== "background") void yieldTo(build, false);
-    changed = true;
   }
-  if (changed) schedule();
-}
-// On macOS a background build also yields to TeX that runs elsewhere, such as
-// the review engine compiling another task: while any does, its compiler runs
-// at background priority (efficiency cores, throttled disk). Unlike a nice
-// value this is undone as soon as nothing else compiles, or when someone
-// starts waiting for the build, so an idle machine gives it full speed.
-const TASKPOLICY = "/usr/sbin/taskpolicy";
-const darwinBackground = process.platform === "darwin" && fs.existsSync(TASKPOLICY);
-const OTHER_TEX = /(?:^|\/)(?:latexmk|(?:pdf|xe|lua|luahb)(?:la)?tex|xdvipdfmx|bibtex8?|biber)(?:\s|$)/;
-let watching: NodeJS.Timeout | null = null;
-function watchOthers() {
-  const waiting = darwinBackground && [...active].some((a) => a.priority === "background" && a.child);
-  if (!waiting) { if (watching) clearInterval(watching); watching = null; return; }
-  if (watching) return;
-  watching = setInterval(() => void (async () => {
-    const ours = new Set([...active].flatMap((a) => (a.child?.pid ? [String(a.child.pid)] : [])));
-    const lines = (await capture("ps", ["-A", "-o", "pgid=,command="], { check: false })).stdout.toString().split("\n");
-    const others = lines.some((line) => {
-      const [, group, command] = /^\s*(\d+)\s+(.*)$/.exec(line) ?? [];
-      return command !== undefined && !ours.has(group) && OTHER_TEX.test(command);
-    });
-    await Promise.all([...active].filter((a) => a.priority === "background" && a.child && Boolean(a.yielding) !== others).map((a) => yieldTo(a, others)));
-  })().catch(() => undefined), 2000);
-  watching.unref();
-}
-async function yieldTo(build: Active, others: boolean) {
-  const group = build.child?.pid;
-  if (!darwinBackground || !group) return;
-  build.yielding = others;
-  try {
-    const members = (await capture("ps", ["-o", "pid=", "-g", String(group)], { check: false })).stdout.toString().split(/\s+/).filter(Boolean);
-    await Promise.all(members.map((pid) => capture(TASKPOLICY, [others ? "-b" : "-B", "-p", pid], { check: false }).catch(() => undefined)));
-  } catch { /* The compiler has exited. */ }
 }
 // This file is part of every build key, so a change to how builds run
 // starts new build folders.
