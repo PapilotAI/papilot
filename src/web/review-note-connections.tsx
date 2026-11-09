@@ -45,24 +45,35 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
   useEffect(() => {
     const focus = links?.focus;
     const selected = links?.notes.find(note => note.key === focus?.key);
-    for (const place of places) {
-      const linked = Boolean(links?.scope === 'note' && selected && place.notes.some(note => note.key === selected.key));
-      place.element.classList.toggle('papilot-linked-change', linked);
-      place.element.classList.toggle('papilot-linked-target', linked && place.round === focus?.change.round && place.stop === focus.change.stop);
+    const highlight = () => {
+      for (const place of places) {
+        const linked = Boolean(links?.scope === 'note' && selected && place.notes.some(note => note.key === selected.key));
+        const target = linked && place.round === focus?.change.round && place.stop === focus.change.stop;
+        if (place.element.classList.contains('papilot-linked-change') !== linked) place.element.classList.toggle('papilot-linked-change', linked);
+        if (place.element.classList.contains('papilot-linked-target') !== target) place.element.classList.toggle('papilot-linked-target', target);
+      }
+    };
+    highlight();
+    // The embedded renderer owns className and can repaint after our focus
+    // update. Restore the host's markers without scrolling or moving focus.
+    const observer = new MutationObserver(highlight);
+    for (const place of places) observer.observe(place.element, { attributes: true, attributeFilter: ['class'] });
+    if (doc && focus && !(jumped.current?.doc === doc && jumped.current.sequence === focus.sequence)) {
+      const place = places.find(place => place.round === focus.change.round && place.stop === focus.change.stop && place.notes.some(note => note.key === focus.key));
+      if (place) {
+        place.element.click();
+        // Scroll only the PDF pane: scrollIntoView can also move the host page
+        // horizontally or leave the target behind the bottom drawer.
+        const paper = doc.getElementById('paper');
+        if (paper) {
+          const padding = parseFloat(doc.defaultView?.getComputedStyle(paper).scrollPaddingTop || '') || 0;
+          paper.scrollBy({ top: place.element.getBoundingClientRect().top - paper.getBoundingClientRect().top - padding - 12, behavior: 'instant' });
+        }
+        place.element.focus({ preventScroll: true });
+        jumped.current = { doc, sequence: focus.sequence };
+      }
     }
-    if (!doc || !focus || (jumped.current?.doc === doc && jumped.current.sequence === focus.sequence)) return;
-    const place = places.find(place => place.round === focus.change.round && place.stop === focus.change.stop && place.notes.some(note => note.key === focus.key));
-    if (!place) return;
-    place.element.click();
-    // Scroll only the PDF pane: scrollIntoView can also move the host page
-    // horizontally or leave the target behind the bottom drawer.
-    const paper = doc.getElementById('paper');
-    if (paper) {
-      const padding = parseFloat(doc.defaultView?.getComputedStyle(paper).scrollPaddingTop || '') || 0;
-      paper.scrollBy({ top: place.element.getBoundingClientRect().top - paper.getBoundingClientRect().top - padding - 12, behavior: 'instant' });
-    }
-    place.element.focus({ preventScroll: true });
-    jumped.current = { doc, sequence: focus.sequence };
+    return () => observer.disconnect();
   }, [doc, places, links?.focus, links?.scope]);
   useEffect(() => {
     const target = doc?.defaultView;
