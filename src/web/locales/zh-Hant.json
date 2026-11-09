@@ -1301,5 +1301,8 @@
   "{min}–{max} alternatives": "{min}–{max} 個備選",
   "A target range, excluding the main proposal. The AI may return fewer or more useful choices. More choices take longer to prepare.": "不含首選方案。這是目標範圍，AI 會依內容調整實際數量；更多備選需要更長的準備時間。",
   "Other options · {n}": "其他方案 · {n}",
-  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "隨修改一起準備；數量不含首選方案，僅供參考。只影響之後的請求。"
+  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "隨修改一起準備；數量不含首選方案，僅供參考。只影響之後的請求。",
+  "Linked changes": "對應修改",
+  "Change {n}": "修改 {n}",
+  "Show change {n}": "定位修改 {n}"
 }

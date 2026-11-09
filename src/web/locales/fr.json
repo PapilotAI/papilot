@@ -1301,5 +1301,8 @@
   "{min}–{max} alternatives": "{min}–{max} variantes",
   "A target range, excluding the main proposal. The AI may return fewer or more useful choices. More choices take longer to prepare.": "Une fourchette indicative, hors proposition principale. L’IA peut proposer moins ou plus de variantes utiles. Plus de variantes demandent plus de temps de préparation.",
   "Other options · {n}": "Autres options · {n}",
-  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "Préparées avec les modifications. Nombre indicatif, hors proposition principale. S’applique aux prochaines demandes."
+  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "Préparées avec les modifications. Nombre indicatif, hors proposition principale. S’applique aux prochaines demandes.",
+  "Linked changes": "Modifications associées",
+  "Change {n}": "Modification {n}",
+  "Show change {n}": "Afficher la modification {n}"
 }

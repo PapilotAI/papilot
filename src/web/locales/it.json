@@ -1301,5 +1301,8 @@
   "{min}–{max} alternatives": "{min}–{max} alternative",
   "A target range, excluding the main proposal. The AI may return fewer or more useful choices. More choices take longer to prepare.": "Un intervallo indicativo, esclusa la proposta principale. L’IA può fornire meno o più alternative utili. Più alternative richiedono più tempo di preparazione.",
   "Other options · {n}": "Altre opzioni · {n}",
-  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "Preparate insieme alle modifiche. Numero indicativo, esclusa la proposta principale. Si applica alle richieste future."
+  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "Preparate insieme alle modifiche. Numero indicativo, esclusa la proposta principale. Si applica alle richieste future.",
+  "Linked changes": "Modifiche collegate",
+  "Change {n}": "Modifica {n}",
+  "Show change {n}": "Mostra la modifica {n}"
 }

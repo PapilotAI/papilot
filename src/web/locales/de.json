@@ -1301,5 +1301,8 @@
   "{min}–{max} alternatives": "{min}–{max} Alternativen",
   "A target range, excluding the main proposal. The AI may return fewer or more useful choices. More choices take longer to prepare.": "Ein Zielbereich ohne den Hauptvorschlag. Die KI kann weniger oder mehr sinnvolle Alternativen liefern. Mehr Alternativen benötigen mehr Vorbereitungszeit.",
   "Other options · {n}": "Weitere Optionen · {n}",
-  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "Zusammen mit den Änderungen vorbereitet. Die Anzahl ist ein Richtwert ohne den Hauptvorschlag. Gilt für künftige Anfragen."
+  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "Zusammen mit den Änderungen vorbereitet. Die Anzahl ist ein Richtwert ohne den Hauptvorschlag. Gilt für künftige Anfragen.",
+  "Linked changes": "Zugehörige Änderungen",
+  "Change {n}": "Änderung {n}",
+  "Show change {n}": "Änderung {n} anzeigen"
 }

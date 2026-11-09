@@ -1065,6 +1065,12 @@ body.resizing iframe{pointer-events:none}
 .review-note-controls { position: absolute; z-index: 5; inset: auto 0 0; padding: 0 0 env(safe-area-inset-bottom, 0px); border: 0; border-top: 1px solid var(--line-strong); border-radius: 0; background: var(--bg); box-shadow: 0 -4px 16px rgb(0 0 0 / .06); max-height: min(44%, 300px); display: flex; flex-direction: column; overflow: hidden; transform: translateY(100%); transition: transform .26s var(--ease); }
 .review-note-controls[data-open="true"] { transform: translateY(0); }
 .review-note-controls[data-open="false"] { pointer-events: none; }
+.note-review-targets { display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.note-review-targets > span { flex-shrink: 0; color: var(--text-2); }
+.note-review-targets > div { display: flex; gap: 4px; min-width: 0; overflow-x: auto; }
+.note-review-targets button { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; border: 1px solid var(--line); border-radius: 5px; padding: 3px 7px; background: var(--bg); color: var(--text); font: inherit; white-space: nowrap; cursor: pointer; }
+.note-review-targets button:hover, .note-review-targets button[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); background: var(--accent-soft); }
+.note-review-targets button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 @starting-style { .review-note-controls[data-open="true"] { transform: translateY(100%); } }
 @media (prefers-reduced-motion: reduce) { .review-note-controls { transition: none; } }
 .review-note-pager { display: flex; align-items: center; flex-shrink: 0; gap: 2px; margin: 0 0 4px auto; color: var(--text-2); }

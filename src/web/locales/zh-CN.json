@@ -125,5 +125,8 @@
   "{min}–{max} alternatives": "{min}–{max} 个备选",
   "A target range, excluding the main proposal. The AI may return fewer or more useful choices. More choices take longer to prepare.": "不含首选方案。这是目标范围，AI 会按内容调整实际数量；更多备选需要更长的准备时间。",
   "Other options · {n}": "其他方案 · {n}",
-  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "随修改一起准备；数量不含首选方案，仅作参考。只影响之后的请求。"
+  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "随修改一起准备；数量不含首选方案，仅作参考。只影响之后的请求。",
+  "Linked changes": "对应修改",
+  "Change {n}": "修改 {n}",
+  "Show change {n}": "定位修改 {n}"
 }

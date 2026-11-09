@@ -1301,5 +1301,8 @@
   "{min}–{max} alternatives": "{min}–{max} alternativ",
   "A target range, excluding the main proposal. The AI may return fewer or more useful choices. More choices take longer to prepare.": "Ett riktmärke som inte räknar med huvudförslaget. AI:n kan ge färre eller fler användbara alternativ. Fler alternativ tar längre tid att förbereda.",
   "Other options · {n}": "Andra alternativ · {n}",
-  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "Förbereds med ändringarna. Antalet är ungefärligt och räknar inte med huvudförslaget. Gäller framtida förfrågningar."
+  "Prepared with edits. Counts exclude the main proposal and are approximate. Applies to future requests.": "Förbereds med ändringarna. Antalet är ungefärligt och räknar inte med huvudförslaget. Gäller framtida förfrågningar.",
+  "Linked changes": "Länkade ändringar",
+  "Change {n}": "Ändring {n}",
+  "Show change {n}": "Visa ändring {n}"
 }

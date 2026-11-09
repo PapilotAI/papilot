@@ -194,7 +194,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
       const frame = doc.defaultView?.frameElement?.getBoundingClientRect();
       const viewport = element.parentElement!.getBoundingClientRect();
       const bottom = viewport.bottom - element.offsetHeight - 12 - (frame?.top || 0);
-      const marks = [...paper.querySelectorAll<SVGRectElement>('.papilot-linked-change .pdf-focus-marks rect')].map(mark => mark.getBoundingClientRect());
+      const marks = [...paper.querySelectorAll<SVGRectElement>('.papilot-linked-target .pdf-focus-marks rect')].map(mark => mark.getBoundingClientRect());
       if (!marks.length) return;
       const top = Math.min(...marks.map(mark => mark.top)), end = Math.max(...marks.map(mark => mark.bottom));
       const visibleTop = paper.getBoundingClientRect().top + 48;
@@ -233,11 +233,22 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     event.preventDefault(); move(event.key === 'ArrowLeft' ? -1 : 1);
   }}>
     <button type="button" className="icon-button" data-direction="previous" aria-label={t('Previous note')} title={t('Previous note')} disabled={index <= 0} onClick={() => move(-1)}><Icon name="chevronLeft" size={14}/></button>
-    <span className="review-note-position" aria-live="polite" aria-atomic="true" aria-label={t('Note {n} of {total}', { n: index + 1, total: siblings.length })}>{index + 1}<span aria-hidden="true"> / </span>{siblings.length}</span>
+    <span className="review-note-position" aria-live="polite" aria-atomic="true" aria-label={t('Note {n} of {total}', { n: index + 1, total: siblings.length })}>{t('Note {n}', { n: index + 1 })}<span aria-hidden="true"> / </span>{siblings.length}</span>
     <button type="button" className="icon-button" data-direction="next" aria-label={t('Next note')} title={t('Next note')} disabled={index >= siblings.length - 1} onClick={() => move(1)}><Icon name="chevronRight" size={14}/></button>
   </nav>;
   const emptyHeader = <div className="note-option-navigation">{navigation}</div>;
+  // Use the review's change numbers, not the separate annotation index.
+  // The options endpoint compares this note's round; older tracked fragments
+  // from other rounds are not part of the comparison in this drawer.
+  const changes = displayed.changes.filter(change => change.round === displayed.round);
   return <section ref={panel} className="review-note-controls" data-open={Boolean(note)} inert={!note} aria-label={t('Options for this note')}>
+    {changes.length > 0 && <div className="note-review-targets" role="group" aria-label={t('Linked changes')}>
+      <span>{t('Linked changes')}</span>
+      <div>{changes.map(change => <button type="button" key={`${change.round}:${change.stop}`} data-round={change.round} data-stop={change.stop}
+        aria-label={t('Show change {n}', { n: change.stop + 1 })}
+        aria-pressed={links.scope === 'note' && links.focus?.change.round === change.round && links.focus.change.stop === change.stop}
+        onClick={() => links.showChange(displayed.key, change)}>{t('Change {n}', { n: change.stop + 1 })}<Icon name="arrowUp" size={12}/></button>)}</div>
+    </div>}
     {links.error ? <>{emptyHeader}<button type="button" className="note-result-retry" onClick={links.reload}><Icon name="refresh" size={12}/>{t('Retry linking changes')}</button></> : displayed.changes.length > 0 ? <NoteAlternatives key={displayed.key} note={displayed} navigation={navigation}/> : <>{emptyHeader}<p className="note-option-hint">{displayed.state === 'waiting' ? t('Awaiting changes') : t('No linked change')}</p></>}
   </section>;
 }
