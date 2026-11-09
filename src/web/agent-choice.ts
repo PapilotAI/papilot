@@ -1,9 +1,8 @@
 import { AGENT_IDS, type AgentId, type RuntimeStatus } from '../shared.ts';
 
-// Only agents found on the host are offered (the desktop app does not include
-// Codex). Codex is offered until the host says it is missing.
+// Offer only reported runtimes whose installation is not known to be missing.
 export function offeredAgents(runtimes: Partial<Record<AgentId, RuntimeStatus>>) {
-  return AGENT_IDS.filter(id => id === 'codex' ? runtimes.codex?.installed !== false : Boolean(runtimes[id] && runtimes[id]!.installed !== false));
+  return AGENT_IDS.filter(id => Boolean(runtimes[id] && runtimes[id]!.installed !== false));
 }
 // Wait for the host's report before treating an unknown installation as absent.
 export function noAgent(runtimes: Partial<Record<AgentId, RuntimeStatus>>) {

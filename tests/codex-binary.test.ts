@@ -180,3 +180,83 @@ test('starting Codex again during a stopped lookup launches afresh and retains t
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+for (const afterReply of [false, true]) test(`closing Codex ${afterReply ? 'just after the initialize reply' : 'while initialize is pending'} isolates the next launch`, { skip: !POSIX && 'uses a POSIX executable', timeout: 10000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-'));
+  const binary = path.join(root, 'codex'), messages = path.join(root, 'messages');
+  const codex = new Codex(binary, undefined, env(root));
+  const starts: Promise<void>[] = [], children: NonNullable<Codex['child']>[] = [];
+  const disconnected: Error[] = [];
+  codex.on('disconnected', error => disconnected.push(error));
+  const received = (): { pid: number; method: string }[] => fs.existsSync(messages) ? fs.readFileSync(messages, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
+  const start = () => { const starting = codex.start(); starts.push(starting); children.push(codex.child!); return starting; };
+  const release = (child: NonNullable<Codex['child']>) => fs.writeFileSync(path.join(root, String(child.pid)), '');
+  try {
+    fs.writeFileSync(binary, `#!${process.execPath}
+      const fs = require('node:fs'), readline = require('node:readline');
+      readline.createInterface({ input: process.stdin }).on('line', line => {
+        const message = JSON.parse(line);
+        fs.appendFileSync(${JSON.stringify(messages)}, JSON.stringify({ pid: process.pid, ...message }) + '\\n');
+        if (message.method === 'initialize') {
+          const timer = setInterval(() => {
+            if (!fs.existsSync(${JSON.stringify(root)} + '/' + process.pid)) return;
+            clearInterval(timer);
+            // Both lines arrive together so close can run before launch resumes.
+            process.stdout.write(JSON.stringify({ id: message.id, result: {} }) + '\\n'
+              + JSON.stringify({ method: 'initializeReplied', params: { pid: process.pid } }) + '\\n');
+          }, 10);
+        } else if (message.method === 'test/barrier') console.log(JSON.stringify({ id: message.id, result: {} }));
+      });
+    `, { mode: 0o755 });
+    const first = start(), firstChild = codex.child!;
+    const stopped = assert.rejects(first, new Error('Codex is not connected.'));
+    await waitFor(() => received().some(message => message.pid === firstChild.pid && message.method === 'initialize'));
+    const pending = ['account/read', 'model/list'].map(method => assert.rejects(codex.request(method, {}), new Error('Codex is not connected.')));
+    let second: Promise<void> | undefined;
+    const restart = () => {
+      codex.close();
+      assert.equal(codex.child, null);
+      assert.equal(codex.ready, false);
+      second = start();
+      assert.notEqual(first, second);
+    };
+    if (afterReply) {
+      codex.on('notification', message => { if (message.method === 'initializeReplied' && message.params.pid === firstChild.pid) restart(); });
+      release(firstChild);
+    } else restart();
+    await stopped;
+    await Promise.all(pending);
+    assert.ok(second);
+    const secondChild = codex.child!;
+    assert.notEqual(secondChild, firstChild);
+    assert.equal(codex.ready, false, 'the old launch cannot mark its replacement ready');
+    assert.equal(codex.start(), second, 'the replacement keeps its own start promise');
+    await waitFor(() => received().some(message => message.pid === secondChild.pid && message.method === 'initialize'));
+    release(secondChild);
+    await second;
+    assert.equal(codex.ready, true);
+    await codex.request('test/barrier', {});
+    assert.deepEqual(received().filter(message => message.pid === secondChild.pid).map(message => message.method), ['initialize', 'initialized', 'test/barrier'], 'the replacement receives exactly one initialized notification and no stale messages');
+
+    codex.close();
+    assert.equal(codex.ready, false);
+    assert.equal(codex.child, null);
+    await assert.rejects(codex.request('account/read', {}), new Error('Codex is not connected.'));
+    const third = start(), thirdChild = codex.child!;
+    assert.ok(thirdChild, 'starting immediately after closing a ready instance launches again');
+    assert.notEqual(thirdChild, secondChild);
+    assert.equal(codex.ready, false);
+    await waitFor(() => received().some(message => message.pid === thirdChild.pid && message.method === 'initialize'));
+    release(thirdChild);
+    await third;
+    assert.equal(codex.ready, true);
+    await codex.request('test/barrier', {});
+    assert.deepEqual(received().filter(message => message.pid === thirdChild.pid).map(message => message.method), ['initialize', 'initialized', 'test/barrier']);
+  } finally {
+    codex.close();
+    await Promise.allSettled(starts);
+    await waitFor(() => children.every(child => child.exitCode !== null || child.signalCode !== null));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  assert.deepEqual(disconnected, [], 'intentional closes do not emit disconnected on the later exit');
+});

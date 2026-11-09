@@ -6,7 +6,9 @@ import { AGENT_IDS, type RuntimeStatus } from '../src/shared.ts';
 const runtime = (installed?: boolean): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [], ...(installed === undefined ? {} : { installed }) });
 
 test('a desktop host without Codex offers and picks the agents it has', () => {
-  assert.deepEqual(offeredAgents({}), ['codex'], 'Codex is offered until the host reports on it');
+  assert.deepEqual(offeredAgents({}), [], 'agents are offered only after the host reports on them');
+  assert.deepEqual(offeredAgents({ codex: runtime() }), ['codex'], 'older servers report only the Codex runtime');
+  for (const id of AGENT_IDS) assert.deepEqual(offeredAgents({ [id]: runtime() }), [id]);
   assert.deepEqual(offeredAgents({ codex: runtime(), claude: runtime(false) }), ['codex']);
   const noCodex = offeredAgents({ codex: runtime(false), claude: runtime(true), kimi: runtime(false) });
   assert.deepEqual(noCodex, ['claude']);

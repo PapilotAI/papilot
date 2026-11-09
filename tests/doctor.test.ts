@@ -208,6 +208,40 @@ test('desktop doctor searches PATH, the package and data in order with the serve
   } finally { f.cleanup(); }
 });
 
+test('desktop doctor skips a hanging Codex and probes the working candidate only once', { timeout: 20000 }, async () => {
+  const f = fixture();
+  const pidFile = path.join(f.dir, 'codex.pid');
+  try {
+    f.baseTools();
+    f.tool('codex', `fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`);
+    const secondDir = path.join(f.dir, 'second');
+    fs.mkdirSync(secondDir);
+    const working = f.tool('working-codex', `
+      if (!process.env.PATH.split(${JSON.stringify(path.delimiter)}).includes(${JSON.stringify(path.join(f.env.HOME!, '.local/bin'))})) process.exit(2);
+      if (process.argv.includes('--version')) console.log('codex-cli 0.1.0');
+      else console.log('Logged in');
+    `);
+    const second = path.join(secondDir, process.platform === 'win32' ? 'codex.cmd' : 'codex');
+    if (process.platform === 'win32') fs.copyFileSync(working, second);
+    else fs.symlinkSync(working, second);
+    const started = Date.now();
+    const result = await f.run(['--json'], { PAPILOT_DESKTOP: '1', PATH: [f.tools, secondDir].join(path.delimiter) });
+    assert.ok(Date.now() - started < 14000, 'a hanging candidate must leave time within the 45 second diagnostics limit');
+    assert.equal(result.code, 0, result.stdout);
+    const codex = item(result.report, 'agent.codex');
+    assert.equal(codex.ok, true, codex.detail);
+    assert.equal(codex.detail, `Codex 0.1.0 (${second}): signed in.`);
+    const commands = fs.readFileSync(f.log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(commands.filter(([name]) => name === 'codex' || name === 'working-codex'), [
+      ['codex', '--version'], ['working-codex', '--version'], ['working-codex', 'login', 'status'],
+    ]);
+    assert.throws(() => process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 0), { code: 'ESRCH' }, 'the hanging probe is stopped');
+  } finally {
+    if (fs.existsSync(pidFile)) { try { process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 'SIGKILL'); } catch { /* already stopped */ } }
+    f.cleanup();
+  }
+});
+
 test('doctor checks real repository configuration without changing files or making worktrees', { skip: process.platform === 'win32' && 'uses the POSIX which command and file links' }, async () => {
   const f = fixture();
   try {
