@@ -514,7 +514,7 @@ export class Review {
     if (data.round !== latest.number) {
       // Changes decided on an earlier round's page apply to their exact
       // versions in the latest round, when each has exactly one there.
-      const translated = valid && data.round < latest.number ? await this.translate(name, data.round, chosen, latest) : null;
+      const translated = valid && data.round < latest.number ? await this.translate(name, data.round, chosen, latest, kind !== "comment") : null;
       if (!translated) throw new Error("A newer round is available. Reload the page.");
       ({ ids, seen } = translated);
       requested = { round: data.round, changes: chosen };
@@ -562,7 +562,7 @@ export class Review {
   // The latest round's changes with the exact versions of `chosen` in round
   // `number`, and the comparison each was seen with, or null unless each has
   // exactly one undecided match.
-  private async translate(name: string, number: number, chosen: string[], latest: Round) {
+  private async translate(name: string, number: number, chosen: string[], latest: Round, needsComparison: boolean) {
     const round = this.app.store.one<Round>("SELECT * FROM rounds WHERE task=? AND number=?", name, number);
     if (!round) return null;
     const [older, newer] = await Promise.all([round, latest].map((r) => withHashesAsync(this.app.repo, r.before, r.after, r.units))),
@@ -576,10 +576,11 @@ export class Review {
       if (!unit || then[id] !== "pending" || older.filter((u) => u.hash === unit.hash).length !== 1) return null;
       const matches = newer.filter((u) => u.hash === unit.hash && now[u.id] === "pending"),
         found = origin(round, shown, id);
-      // Its page offered no decision without a comparison.
-      if (matches.length !== 1 || !found) return null;
+      // Accept and reject need the comparison the author saw. Comments on
+      // the exact same change stay available while that comparison renders.
+      if (matches.length !== 1 || (needsComparison && !found)) return null;
       ids.push(matches[0].id);
-      seen[matches[0].id] = found;
+      if (found) seen[matches[0].id] = found;
     }
     return { ids, seen };
   }

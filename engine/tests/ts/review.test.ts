@@ -216,6 +216,21 @@ it("refuses an older-round decision when its version is ambiguous in the latest 
   expect(new Set(latest.units.map((u) => u.new_text)).size).toBe(1);
   await expect(app.review.decide(twins.name, { action: "accept", changes: ["c001"], round: 1 })).rejects.toThrow("newer round");
 });
+it("carries a comment from an unrendered earlier round without permitting a decision on its missing comparison", async () => {
+  two();
+  app.store.execute("UPDATE rounds SET visuals='pending' WHERE task=? AND number=1", task.name);
+  f.edit(task, METHOD, "Agent B.", "Agent C.");
+  fakeRound(app, task.name);
+  const accepted = app.tasks.get(task.name).accepted, source = f.read(METHOD, task.worktree);
+  for (const action of ["accept", "reject"] as const)
+    await expect(app.review.decide(task.name, { action, round: 1, changes: ["c001"] })).rejects.toThrow("newer round");
+  const result = await app.review.decide(task.name, { id: "early-comment", action: "comment", round: 1, changes: ["c001"], body: "Please explain this wording." });
+  expect(result.decisions.c001).toBe("commented");
+  expect(result.comments.c001).toBe("Please explain this wording.");
+  expect(app.tasks.get(task.name).accepted).toBe(accepted);
+  expect(f.read(METHOD, task.worktree)).toBe(source);
+});
+
 it("recovery completes a journaled accept after restart", async () => {
   const round = two(),
     target = path.join(f.root, METHOD),
