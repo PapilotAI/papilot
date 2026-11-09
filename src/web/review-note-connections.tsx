@@ -95,8 +95,10 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
     .papilot-note-options button{display:inline-flex;align-items:center;gap:3px;padding:4px;border:0;border-radius:5px;background:transparent;color:var(--accent);font:11px/1.5 var(--sans);white-space:nowrap;cursor:pointer}
     .papilot-note-options button:hover,.papilot-note-options button[aria-expanded=true]{background:var(--accent-soft)}
     .papilot-note-options button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-    .papilot-linked-change{outline:2px solid var(--primary);outline-offset:-2px}
-    .papilot-linked-target>.change-head{background:var(--accent-soft);box-shadow:inset 3px 0 var(--primary)}
+    .papilot-linked-change>.change-head{box-shadow:inset 3px 0 color-mix(in srgb,var(--primary) 35%,transparent)}
+    .papilot-linked-target{outline:2px solid var(--primary);outline-offset:-2px}
+    .papilot-linked-target>.change-head{background:color-mix(in srgb,var(--primary) 12%,var(--bg));box-shadow:inset 3px 0 var(--primary)}
+    .papilot-linked-target>.change-head .change-number{color:var(--primary);font-weight:600}
     @media(pointer:coarse){.papilot-note-links button{min-height:32px;min-width:28px}}
   `}</style>, doc.head)}{places.map(place => createPortal(<><Icon name="notes" size={12}/><span>{place.notes.map(note => <button key={note.key} type="button" title={note.note.comment} aria-pressed={links.focus?.key === note.key} aria-label={t('Show note {n}: {comment}', { n: note.index + 1, comment: note.note.comment })} onClick={event => { event.stopPropagation(); focusAt(place, note); }}>{note.index + 1}</button>)}</span></>, place.slot, `${place.round}:${place.stop}`))}{places.map(place => {
     const available = place.notes.filter(note => links.alternativeCounts[note.key] > 0);

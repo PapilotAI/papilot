@@ -121,7 +121,8 @@ try {
   await frame().locator('.papilot-linked-change[data-stop="1"]').waitFor();
   assert.equal(await frame().locator('.papilot-note-options button').count(), 0, 'Historical changes do not advertise unavailable alternatives');
   assert.equal(await controls().locator('.review-note-position').textContent(), 'Note 2 / 3');
-  await expect(controls().getByRole('button', { name: 'Show change 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(frame().locator('.papilot-linked-target')).toHaveAttribute('data-stop', '1');
+  await expect(controls().locator('.note-review-targets')).toHaveCount(0);
   assert.equal(await controls().getByRole('button', { name: 'Previous note', exact: true }).isEnabled(), true);
   assert.equal(await controls().getByRole('button', { name: 'Next note', exact: true }).isEnabled(), true);
   assert.match(await page.locator('.review-frame').getAttribute('src'), /round=1&history=1/);
@@ -130,19 +131,20 @@ try {
   await frame().locator('body').evaluate(element => element.ownerDocument.defaultView.dispatchEvent(new Event('latex-review:decided')));
   await sent(0).click();
   assert.equal(await controls().locator('.review-note-position').textContent(), 'Note 1 / 3');
-  await expect(controls().locator('.note-review-targets button')).toHaveText(['Change 1', 'Change 3']);
-  await controls().getByRole('button', { name: 'Show change 3', exact: true }).click();
+  await expect(frame().locator('.papilot-linked-change')).toHaveCount(2);
+  await frame().locator('.change[data-stop="2"] .papilot-note-links button').click();
   await expect(frame().locator('.papilot-linked-target')).toHaveAttribute('data-stop', '2');
-  await expect(controls().getByRole('button', { name: 'Show change 3', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const selectedColor = await frame().locator('.papilot-linked-target').evaluate(element => getComputedStyle(element).outlineColor);
+  assert.equal(await controls().evaluate(element => getComputedStyle(element).borderTopColor), selectedColor, 'The drawer and its exact source change share a selection accent');
+  assert.notEqual(await frame().locator('.change[data-stop="0"] .change-head').evaluate(element => getComputedStyle(element).backgroundColor), await frame().locator('.papilot-linked-target .change-head').evaluate(element => getComputedStyle(element).backgroundColor), 'Other related fragments do not look like the selected target');
   assert.ok(await frame().locator('.papilot-linked-target').evaluate(element => {
     const bounds = element.getBoundingClientRect();
     return bounds.top < window.innerHeight && bounds.bottom > 0;
-  }), 'A change link reveals its own change instead of the note’s first change');
-  await controls().getByRole('button', { name: 'Show change 1', exact: true }).click();
+  }), 'A note badge reveals its own change instead of the note’s first change');
+  await frame().locator('.change[data-stop="0"] .papilot-note-links button').click();
   await expect(frame().locator('.papilot-linked-target')).toHaveAttribute('data-stop', '0');
   await frame().locator('.change[data-stop="2"] .papilot-note-links button').click();
   await expect(frame().locator('.papilot-linked-target')).toHaveAttribute('data-stop', '2');
-  await expect(controls().getByRole('button', { name: 'Show change 3', exact: true })).toHaveAttribute('aria-pressed', 'true');
   const linkedHeader = await frame().locator('.papilot-linked-target .change-head').boundingBox();
   const linkedDrawer = await controls().boundingBox();
   assert.ok(linkedHeader.y + linkedHeader.height <= linkedDrawer.y, 'The linked header stays above the drawer');
@@ -151,7 +153,7 @@ try {
   await currentNote.click();
   await frame().locator('html[data-papilot-round="2"]').waitFor();
   await frame().locator('.papilot-linked-change[data-stop="0"]').waitFor();
-  await expect(controls().locator('.note-review-targets button')).toHaveText(['Change 1']);
+  await expect(frame().locator('.papilot-linked-target')).toHaveAttribute('data-stop', '0');
   const noteLinks = frame().locator('.change[data-stop="0"] .papilot-note-links');
   await expect(noteLinks.locator('button')).toHaveCount(3);
   await expect(noteLinks.locator('svg')).toHaveCount(1);
@@ -207,8 +209,12 @@ try {
   await controls().waitFor({ state: 'hidden' });
   await frame().getByRole('button', { name: 'Show note 1: Keep the technical term.', exact: true }).click();
   await controls().waitFor({ state: 'visible' });
+  await controls().getByRole('region', { name: 'Complete PDF comparison', exact: true }).waitFor();
   fs.mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/note-results-desktop.png', fullPage: true });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.screenshot({ path: 'test-results/note-results-desktop-light.png', fullPage: true });
+  await page.emulateMedia({ colorScheme: 'dark' });
 
   await page.reload();
   await page.setViewportSize({ width: 390, height: 844 });

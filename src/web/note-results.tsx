@@ -237,18 +237,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     <button type="button" className="icon-button" data-direction="next" aria-label={t('Next note')} title={t('Next note')} disabled={index >= siblings.length - 1} onClick={() => move(1)}><Icon name="chevronRight" size={14}/></button>
   </nav>;
   const emptyHeader = <div className="note-option-navigation">{navigation}</div>;
-  // Use the review's change numbers, not the separate annotation index.
-  // The options endpoint compares this note's round; older tracked fragments
-  // from other rounds are not part of the comparison in this drawer.
-  const changes = displayed.changes.filter(change => change.round === displayed.round);
   return <section ref={panel} className="review-note-controls" data-open={Boolean(note)} inert={!note} aria-label={t('Options for this note')}>
-    {changes.length > 0 && <div className="note-review-targets" role="group" aria-label={t('Linked changes')}>
-      <span>{t('Linked changes')}</span>
-      <div>{changes.map(change => <button type="button" key={`${change.round}:${change.stop}`} data-round={change.round} data-stop={change.stop}
-        aria-label={t('Show change {n}', { n: change.stop + 1 })}
-        aria-pressed={links.scope === 'note' && links.focus?.change.round === change.round && links.focus.change.stop === change.stop}
-        onClick={() => links.showChange(displayed.key, change)}>{t('Change {n}', { n: change.stop + 1 })}<Icon name="arrowUp" size={12}/></button>)}</div>
-    </div>}
     {links.error ? <>{emptyHeader}<button type="button" className="note-result-retry" onClick={links.reload}><Icon name="refresh" size={12}/>{t('Retry linking changes')}</button></> : displayed.changes.length > 0 ? <NoteAlternatives key={displayed.key} note={displayed} navigation={navigation}/> : <>{emptyHeader}<p className="note-option-hint">{displayed.state === 'waiting' ? t('Awaiting changes') : t('No linked change')}</p></>}
   </section>;
 }
