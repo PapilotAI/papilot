@@ -418,6 +418,35 @@ for (const status of ['done', 'failed']) test(`a source save during a build surv
   } finally { old.resolve({ status: 'done' }); next.resolve({ status: 'done' }); f.close(); }
 });
 
+for (const status of ['done', 'failed']) test(`a source save during the build after the agent's turn keeps that turn's result and repair (${status})`, async () => {
+  const old = deferred<unknown>(), started = deferred<void>();
+  const f = fixture(async (_method, route) => {
+    if (route.endsWith('/publish')) return { job: 'old-job' };
+    if (route.endsWith('/jobs/old-job')) { started.resolve(); return old.promise; }
+    if (route.endsWith('/jobs/new-job')) return status === 'done' ? { status: 'done', outcome: 'published', round: 2 } : { status: 'failed', error: 'The revised document could not be compiled.', details: ['! Undefined control sequence.'] };
+    if (route.includes('/feedback')) return feedback;
+    return { ...summary, round: 2 };
+  });
+  try {
+    const run: Run = { id: 'agent-run', taskId: f.task.id, requestKey: 'agent-request', prompt: 'Revise.', status: 'completed', createdAt: 1, finishedAt: 2, reviewRound: 0 };
+    f.store.saveRun(run);
+    const publishing = f.workspace.publish(f.task.id, run);
+    await started.promise;
+    await f.workspace.reviewWrite(f.task.id, true, async () => ({ ...pageState, job: { id: 'new-job', status: 'queued' } }), { route: '/api/tasks/p-task/source', body: { id: 'new-save' } });
+    assert.deepEqual(f.store.task(f.task.id).pendingBuild?.runs, ['agent-run'], "the newer build still carries the agent's turn");
+    assert.equal(f.store.task(f.task.id).pendingBuild?.sendBack, true);
+    old.resolve({ status: 'done', outcome: 'published', round: 1 });
+    await publishing;
+    if (status === 'done') {
+      assert.equal(f.store.runByKey('agent-request')?.reviewRound, 2, "the turn's result is the round that has its changes");
+      assert.equal(f.store.task(f.task.id).status, 'reviewing');
+    } else {
+      assert.ok(f.store.runByKey('build-fix-new-job'), 'a build the turn broke goes back to the agent');
+      assert.equal(f.store.task(f.task.id).status, 'queued');
+    }
+  } finally { old.resolve({ status: 'done' }); f.close(); }
+});
+
 test('recovering a lost source save resumes its build before queued agent work', async () => {
   const gate = deferred<{ status: string }>();
   const server = await reviewServer((_request, response) => {

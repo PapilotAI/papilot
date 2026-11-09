@@ -28,7 +28,7 @@ import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../n
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
 import { AGENT_IDS, isTaskReviewNote } from '../shared.ts';
-import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview } from '../shared.ts';
+import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -990,11 +990,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   // Source saves start a build in the engine. Track that exact job, including
   // across a lost save response, without handing the author's text to an agent.
+  // A save during the build after the agent's turn replaces that build's job,
+  // which includes the turn's edits: the newer job keeps the turn's result
+  // links and its repair of a build the turn broke.
   private rememberSourceBuild(taskId: string, value: unknown, pending?: { route: string; body: Record<string, unknown> }) {
     const job = (value as { job?: { id?: string } } | null)?.job;
     if (!job?.id) throw new Error('The review engine could not confirm this action. Select Check status before continuing.');
     const runs = pending?.route.endsWith('/source/options') ? this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && run.reviewRound === pending.body.round).map(run => run.id) : [];
-    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs, sendBack: false, restarts: 0 } });
+    const building = this.store.task(taskId).pendingBuild;
+    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs: [...new Set([...building?.runs ?? [], ...runs])], sendBack: building?.sendBack ?? false, restarts: 0 } });
   }
   // A build is automatic after the agent's run `after` completes. When its
   // edits break the build, the agent gets the error in a new turn, once.
@@ -1056,6 +1060,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         }
       }
     };
+    // A source save replaced the job: follow the newer one, which also has
+    // this build's edits, with their result links and repair.
+    const follow = (latest: PendingBuild): PendingBuild => {
+      const merged = { ...latest, runs: [...new Set([...pending.runs, ...latest.runs])], sendBack: latest.sendBack || pending.sendBack };
+      this.store.updateTask(taskId, { pendingBuild: merged });
+      return merged;
+    };
     try {
       for (;;) {
         if (this.closing) return;
@@ -1077,7 +1088,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: { ...current, id: pending.job } } });
         if (['done', 'completed', 'succeeded', 'failed'].includes(current.status)) {
           const latest = this.store.task(taskId).pendingBuild;
-          if (latest && latest.job !== pending.job) { pending = latest; continue; }
+          if (latest && latest.job !== pending.job) { pending = follow(latest); continue; }
         }
         if (current.status === 'done' || current.status === 'completed' || current.status === 'succeeded') {
           // Freeze the result round for these instructions. Later follow-ups
@@ -1093,7 +1104,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           }, () => this.closing);
           if (this.closing) return;
           const latest = this.store.task(taskId).pendingBuild;
-          if (latest && latest.job !== pending.job) { pending = latest; continue; }
+          if (latest && latest.job !== pending.job) { pending = follow(latest); continue; }
           this.holdForReview(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null, pendingBuild: null,
             review: { ...this.store.task(taskId).review!, job: { ...current, id: pending.job } } });
           break;
