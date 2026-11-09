@@ -60,10 +60,10 @@ try {
   await page.waitForTimeout(500);
   assert.deepEqual(builds, [], 'decisions and undo do not refresh or predict the manuscript');
 
-  // Hold a failing round: the untouched pages have carried comparisons.
+  // Hold a failing round: the pages before the broken one have carried comparisons.
   const gate = new Promise(resolve => { release = resolve; });
   Builder.prototype.build = async function (...args) { await gate; return original.apply(this, args); };
-  f.edit(task, METHOD, 'Proposed first paragraph.', '\\unknownBatchCommand');
+  f.edit(task, METHOD, 'Proposed third paragraph.', '\\unknownBatchCommand');
   app.publisher.submit(task.name);
   await expect.poll(() => app.review.latestRound(task.name)?.number).toBe(2);
   store.updateTask('batch', { status: 'building' });
@@ -72,7 +72,7 @@ try {
     if (view !== page) { pages.push(view); view.on('pageerror', error => errors.push(error.message)); }
     await view.addInitScript(() => localStorage.clear());
     await view.goto(`http://127.0.0.1:${listener.port}/review/paper/?task=batch`);
-    const waiting = view.locator('.change[data-stop="0"]');
+    const waiting = view.locator('.change[data-stop="2"]');
     await expect(waiting.locator('.comparison-waiting')).toContainText('PDF comparison in progress');
     await waiting.locator('.comparison-waiting').click();
     await expect(waiting.locator('button.accept')).toHaveCount(0);
@@ -80,8 +80,8 @@ try {
     await expect(view.locator('.change-carried').first()).toContainText('PDF from');
     await view.locator('.accept-all').click();
     await expect.poll(() => app.review.pageState(task.name).decisions.c002).toBe('accepted');
-    assert.equal(app.review.pageState(task.name).decisions.c003, 'accepted');
-    assert.equal(app.review.pageState(task.name).decisions.c001, 'pending');
+    assert.equal(app.review.pageState(task.name).decisions.c001, 'accepted');
+    assert.equal(app.review.pageState(task.name).decisions.c003, 'pending');
     await expect(view.locator('.accept-all')).toHaveCount(0);
     fs.mkdirSync('test-results', { recursive: true });
     await view.screenshot({ path: `test-results/review-batching-${width}.png` });
@@ -95,12 +95,12 @@ try {
   assert.equal(app.review.latestRound(task.name)?.visuals, 'failed');
   store.updateTask('batch', { status: 'failed' });
   await expect(page.locator('.comparison-waiting')).toContainText('PDF comparison failed', { timeout: 10000 });
-  await expect(page.locator('.change[data-stop="0"] button.accept')).toHaveCount(0);
+  await expect(page.locator('.change[data-stop="2"] button.accept')).toHaveCount(0);
   await expect(page.locator('.accept-all')).toBeEnabled();
   await page.locator('.accept-all').click();
   await expect.poll(() => app.review.pageState(task.name).decisions.c002).toBe('accepted');
   await expect(page.locator('.accept-all')).toHaveCount(0);
-  assert.equal(app.review.pageState(task.name).decisions.c001, 'pending');
+  assert.equal(app.review.pageState(task.name).decisions.c003, 'pending');
   assert.deepEqual(builds, []);
   assert.deepEqual(errors, []);
   console.log('PASS: real Papilot decisions do not build the manuscript; desktop and phone batches include only comparable changes; failure keeps the inserted round and gates its missing comparison.');
