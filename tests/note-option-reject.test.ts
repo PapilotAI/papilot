@@ -13,6 +13,70 @@ import type { Codex } from '../src/server/codex.ts';
 import type { Task } from '../src/shared.ts';
 
 class Agent extends EventEmitter { ready = false; close() {} }
+for (const deferred of [false, true]) test(`${deferred ? 'deferred' : 'legacy'} note decisions respect the final manuscript batch boundary`, async () => {
+  const f = new Fixture(), engine = f.app(); await engine.ready;
+  const task = engine.tasks.create('note-batch', 'Note batch', [], ['paper'], deferred);
+  f.edit(task, METHOD, 'Method sentence 2.', 'Approach sentence 2.');
+  f.edit(task, METHOD, 'Detail sentence 15.', 'Detail proposal 15.');
+  const round = fakeRound(engine, task.name);
+  const note = round.units.find(unit => unit.new_text === 'Approach')!, earlier = round.units.find(unit => unit.new_text === 'proposal')!;
+  assert.equal(round.units.length, 2);
+  const detail = { ...round, round: 1, units: round.units.map(unit => {
+    const lines = engine.repo.blob(round.before, unit.file)!.toString().split('\n');
+    return { ...unit, old_context: { text: lines[unit.old_start - 1], start: lines.slice(0, unit.old_start - 1).map(line => line + '\n').join('').length } };
+  }), sections: [], loose: round.units.map(unit => ({ kind: 'change', units: [unit.id] })) };
+  const server = createServer(engine); await server.listen({ host: '127.0.0.1', port: 0 });
+  const transport = new Client(`http://127.0.0.1:${(server.server.address() as { port: number }).port}`, engine.csrf);
+  engine.url = transport.url;
+  let releaseBuild!: () => void, polledBuild!: () => void;
+  const buildGate = new Promise<{ status: string; round: number }>(resolve => { releaseBuild = () => resolve({ status: 'done', round: 1 }); });
+  const buildStarted = new Promise<void>(resolve => { polledBuild = resolve; });
+  const client = { url: transport.url, token: transport.token, get: <T>(route: string) => {
+    if (route === '/api/jobs/option-build') { polledBuild(); return buildGate as Promise<T>; }
+    return route.includes('/rounds/') ? Promise.resolve(detail as T) : transport.get<T>(route);
+  }, post: <T>(route: string, body?: unknown) => transport.post<T>(route, body) };
+  const store = new Store(':memory:'), workspace = new Workspace(store, new Agent() as unknown as Codex, async () => client);
+  const manuscripts = new Manuscripts(); let refreshes = 0;
+  manuscripts.refresh = async () => { refreshes++; };
+  store.saveProject({ id: 'paper', name: 'Paper', path: f.root, createdAt: 1 });
+  store.saveTask({ id: 'task', projectId: 'paper', name: task.name, title: task.title, worktree: task.worktree, instructions: '', deferred, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, review: { round: 1 }, error: null } as Task);
+  store.saveRun({ id: 'run', taskId: 'task', requestKey: 'run', prompt: '', status: 'completed', createdAt: 1, finishedAt: 2, reviewRound: 1 });
+  store.saveItem({ id: 'run', taskId: 'task', type: 'user', text: '', createdAt: 1, meta: { notes: [{ where: `${METHOD} line ${note.old_start}`, quote: 'Method', comment: 'Improve wording.' }] } });
+  const local = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts, csrf: 'test-csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => client });
+  const headers = { host: '127.0.0.1:7274', origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'test-csrf', 'x-review-token': engine.csrf };
+  const proxy = (route: string, payload: Record<string, unknown>) => local.inject({ method: 'POST', url: `/review/paper/api/tasks/${task.name}/${route}`, headers, payload });
+  const choose = (payload: Record<string, unknown>) => local.inject({ method: 'POST', url: '/api/tasks/task/note-options', headers, payload: { key: 'run:0', round: 1, option: 'current', ...payload } });
+  try {
+    const first = await proxy('decide', { id: 'earlier', round: 1, changes: [earlier.id], action: 'accept' });
+    assert.equal(first.statusCode, 200, first.body);
+    assert.equal(refreshes, 0, 'earlier proxy acceptance waits for the remaining note');
+    const selection = await choose({});
+    assert.equal(selection.statusCode, 200, selection.body);
+    assert.equal((await choose({ id: 'invalid', round: 2, accept: true })).statusCode, 400);
+    assert.equal(refreshes, 0, 'a selection or failed decision is not a batch boundary');
+    for (const [index, action] of ['accept', 'reject'].entries()) {
+      const response = await choose({ id: `final-${action}`, [action]: true });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.equal(store.task('task').review?.counts.pending, 0);
+      assert.equal(refreshes, deferred ? 0 : index + 1, 'the confirmed final drawer decision flushes only a legacy manuscript');
+      const invalid = await choose({ id: `new-${action}`, [action]: true });
+      assert.equal(invalid.statusCode, 400, invalid.body);
+      assert.equal(refreshes, deferred ? 0 : index + 1, 'a failed duplicate cannot trigger compilation');
+      const undo = await proxy('undo', { id: `final-${action}` });
+      assert.equal(undo.statusCode, 200, undo.body);
+      assert.equal(refreshes, deferred ? 0 : index + 1, 'undo reopens a pending batch');
+    }
+    // An accepted alternative finishes its decision in the engine build job,
+    // after the drawer's HTTP response. Resuming that job must flush as well.
+    store.updateTask('task', { status: 'building', pendingBuild: { requestId: 'option-save', job: 'option-build', runs: [], sendBack: false, restarts: 0 } });
+    const building = workspace.resumeBuild('task'); await buildStarted;
+    assert.equal(refreshes, deferred ? 0 : 2, 'an unfinished option build does not flush');
+    await engine.review.decide(task.name, { id: 'built-option', round: 1, changes: [note.id], action: 'accept' });
+    releaseBuild(); await building;
+    assert.equal(store.task('task').status, 'reviewing');
+    assert.equal(refreshes, deferred ? 0 : 3, 'a confirmed option build flushes the final legacy batch');
+  } finally { releaseBuild(); await local.close(); workspace.close(); store.close(); await server.close(); await f.close(); }
+});
 test('rejecting a note restores its source even when previewing an alternative; neighboring edits and undo survive', async () => {
   const f = new Fixture(), engine = f.app(); await engine.ready;
   const task = engine.tasks.create('reject-note', 'Reject a note', [], ['paper'], true);

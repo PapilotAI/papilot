@@ -968,6 +968,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         await delay(1500);
       }
       await this.refresh(taskId);
+      // A saved note option may have accepted the last legacy change while
+      // this job ran. Notify listeners only after its result is confirmed.
+      this.emit('reviewed', taskId);
     } catch (e) {
       if (this.closing) return;
       if (reviewConnectionError(e)) {

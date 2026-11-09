@@ -17,7 +17,7 @@ try {
   for (const width of [1440, 390]) {
     const page = await browser.newPage({ locale: 'en-US', viewport: { width, height: 900 } });
     page.setDefaultTimeout(15000);
-    const errors = [], writes = [], previews = [];
+    const errors = [], writes = [], previews = [], undone = new Set();
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => { localStorage.setItem('papilot:language', 'en'); localStorage.setItem('papilot:task', 'task'); });
     const task = { id: 'task', projectId: 'paper', name: 'flow', title: 'Review note choices', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { round: 1, state: 'reviewing', counts: { pending: 3 } } };
@@ -64,6 +64,7 @@ try {
       if (url.pathname.endsWith('/note-options')) {
         if (route.request().method() === 'GET') return json(options(url.searchParams.get('key')));
         const body = route.request().postDataJSON(), unit = noteUnits[Number(body.key.split(':')[1])]; writes.push(body);
+        if (undone.has(body.id)) return route.fulfill({ status: 400, json: { error: 'That decision was undone or failed. Make it again.' } });
         if (saveFails) return route.fulfill({ status: 400, json: { error: 'The source changed. Try again.' } });
         if (body.accept && body.option !== selected[unit]) { pendingBuild = { unit, option: body.option }; task.status = 'building'; changed(); return json({ building: true }); }
         decisions[unit] = body.accept ? 'accepted' : 'rejected'; changed(); return json(options(body.key));
@@ -137,9 +138,20 @@ try {
       await expect(drawer.locator('.review-note-position')).toHaveText('Note 4 / 4');
       await expect(drawer.getByRole('button', { name: 'Accept Original c', exact: true })).toBeDisabled();
       assert.equal(writes.at(-1).id, writes.at(-2).id, 'a failed decision keeps its retry identity');
+      // The final drawer stays mounted. An undo elsewhere must permit a new
+      // decision, while an unconfirmed retry above keeps the original ID.
+      for (const action of ['reject', 'accept', 'accept']) {
+        const previous = writes.at(-1).id;
+        undone.add(previous); decisions.c = 'pending'; version++; changed(); await sync();
+        const button = drawer.getByRole('button', { name: `${action === 'accept' ? 'Accept' : 'Reject'} Original c`, exact: true });
+        await expect(button).toBeEnabled(); await button.click();
+        await expect.poll(() => decisions.c).toBe(action === 'accept' ? 'accepted' : 'rejected');
+        assert.notEqual(writes.at(-1).id, previous, 'a confirmed decision retires its request identity before undo');
+        await expect(drawer.locator('.review-note-position')).toHaveText('Note 4 / 4');
+      }
       assert.deepEqual(errors, []);
       await page.screenshot({ path: `test-results/note-options-flow-${width}.png` });
-      console.log(`PASS ${width}px: preview failure/retry, stale response isolation, confirmed acceptance, shared-note skipping, asynchronous alternative save and final drawer retention`);
+      console.log(`PASS ${width}px: preview failure/retry, stale response isolation, confirmed acceptance, shared-note skipping, asynchronous alternative save, final drawer retention and decisions after undo`);
     } catch (error) {
       await page.screenshot({ path: `test-results/note-options-flow-error-${width}.png` });
       throw error;

@@ -37,6 +37,8 @@ import { findExecutable } from '../../bin/agent-paths.mjs';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
 const deliveredToManuscript = (delivery: Task['delivery']) => Boolean(delivery && !delivery.pending && delivery.mode !== 'branch');
+const completedLegacyBatch = (task: Task) => !task.deferred && Boolean(task.review && !task.review.counts.pending);
+const legacyBatchListeners = new WeakSet<Workspace>();
 
 // Git writes to one repository run one at a time; each returns the new status.
 // Concurrent requests from browser tabs share the same queue.
@@ -120,7 +122,7 @@ export async function buildApp(options: AppOptions) {
   app.addHook('onSend', async (request, _reply, payload) => { projectRequests.get(request)?.(); return payload; });
   // Compile after applying the reviewed result. Individual decisions only
   // update the proposal; they must not start manuscript or speculative builds.
-  const WRITES = /^\/api\/projects\/:id\/git\/|^\/api\/tasks\/:id\/(?:commit|apply|reconcile)$|^\/review\/:projectId\/(?:api\/changes\/(?:decide|undo)|\*)$/;
+  const WRITES = /^\/api\/projects\/:id\/git\/|^\/api\/tasks\/:id\/(?:commit|apply|reconcile|note-options)$|^\/review\/:projectId\/(?:api\/changes\/(?:decide|undo)|\*)$/;
   const completedTaskWrites = new WeakSet<object>();
   app.addHook('onResponse', async (request, reply) => {
     if (request.method !== 'POST' || reply.statusCode >= 400 || !WRITES.test(request.routeOptions.url || '')) return;
@@ -134,13 +136,26 @@ export async function buildApp(options: AppOptions) {
         // A final comment also flushes any earlier accepted changes. Notes
         // do not resolve a pending choice and need no refresh of their own.
         const task = store.tasks().find(task => task.projectId === params.projectId && task.name === params['*']?.split('/')[2]);
-        if (!task || task.deferred || !/\/(decide|undo)$/.test(params['*'] || '')
-          || !task.review || (task.review.counts.pending ?? 0) > 0) return;
+        if (!task || !completedLegacyBatch(task) || !/\/(decide|undo)$/.test(params['*'] || '')) return;
       }
       const project = store.project(params.projectId ?? (request.routeOptions.url!.startsWith('/api/tasks/') ? store.task(params.id).projectId : params.id));
       void manuscripts.refresh(project.id, project.path).catch(() => undefined);
     } catch { /* The paper or task is gone. */ }
   });
+  // An alternative can finish accepting its edits after the HTTP response,
+  // including when its saved build resumes after a restart. Flush only the
+  // completed legacy batch, once per workspace even with multiple listeners.
+  if (!legacyBatchListeners.has(workspace)) {
+    legacyBatchListeners.add(workspace);
+    workspace.on('reviewed', (taskId: string) => {
+      try {
+        const task = store.task(taskId);
+        if (!completedLegacyBatch(task) || task.pendingReview || task.pendingBuild) return;
+        const project = store.project(task.projectId);
+        void manuscripts.refresh(project.id, project.path).catch(() => undefined);
+      } catch { /* The paper or task is gone. */ }
+    });
+  }
   app.addHook('onError', async request => { projectRequests.get(request)?.(); });
   await app.register(compress);
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
@@ -355,7 +370,11 @@ export async function buildApp(options: AppOptions) {
         }, { route, body: input });
         if (result.error) throw new Error(result.error);
         await workspace.refresh(current.id);
-        return (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
+        const confirmed = store.task(current.id);
+        // The final choice can come from this drawer after earlier decisions
+        // in the PDF. Legacy tasks have no later application step to flush it.
+        if (completedLegacyBatch(confirmed)) completedTaskWrites.add(request);
+        return (await noteOptionContext(store, confirmed, body.key, client)).options;
       }
       const route = `${taskRoute(current.name)}/source/options`, input = { id: string(body.id, 'Option request ID', 80), round: body.round, edits: option.edits, ...(body.accept ? { accept: true } : {}) };
       // Keep the annotation's original association before the engine starts

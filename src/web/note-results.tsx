@@ -363,6 +363,9 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
       // Rejection restores the original edit and never waits for an option PDF.
       if (action === 'accept') await links.previewRequest(task.id, note.key, data.round, option.id, false, data.comparisonKey);
       const result = await request(task.id, note.key, { round: data.round, option: option.id, id: requestId.current.id, ...(action === 'accept' ? { accept: true } : { reject: true }) });
+      // The drawer can remain mounted through undo. Only an unconfirmed
+      // request may reuse its ID; the next decision needs a fresh identity.
+      requestId.current = null;
       const rejected = optionFeedback(option.id, 'reject'); if (rejected) draft.remove(rejected.id);
       browserStorage.removeItem(storageKey);
       if ('options' in result) { setData(result); setSelected(result.selected || 'current'); setApplying(false); }
