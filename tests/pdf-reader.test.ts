@@ -30,7 +30,7 @@ function markedLine(pageNumber: number) {
     const page = document.page(pageNumber), [x0, y0, x1, y1] = page.bounds;
     const line = page.lines.find(line => line.text.trim().length > 30)!;
     const rect: Rect = [(line.rect[0] - x0) / (x1 - x0), (line.rect[1] - y0) / (y1 - y0), (line.rect[2] - x0) / (x1 - x0), (line.rect[3] - y0) / (y1 - y0)];
-    const clip = [x0 + rect[0] * (x1 - x0), y0 + rect[1] * (y1 - y0), x0 + rect[2] * (x1 - x0), y0 + rect[3] * (y1 - y0)];
+    const clip: Rect = [x0 + rect[0] * (x1 - x0), y0 + rect[1] * (y1 - y0), x0 + rect[2] * (x1 - x0), y0 + rect[3] * (y1 - y0)];
     return { rect, text: page.text(clip).replace(/�/g, '').replace(/\s+/g, ' ').trim() };
   } finally { document.close(); }
 }
