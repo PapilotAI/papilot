@@ -84,7 +84,7 @@ try {
   await page.locator('.manuscript-link').click();
   await page.locator('.textLayer span').first().waitFor();
   // Leaving the manuscript saves note edits, and a failed save keeps the editor open.
-  await page.getByRole('button', { name: 'My notes', exact: true }).click();
+  await page.getByRole('button', { name: /^My notes(?: · .+)?$/ }).click();
   await page.locator('.pdf-reading-notes').getByRole('button', { name: 'Edit note 1', exact: true }).click();
   const noteEditor = page.locator('.pdf-reading-notes').getByRole('textbox', { name: 'Edit note 1', exact: true });
   await noteEditor.fill('Save before opening version management');

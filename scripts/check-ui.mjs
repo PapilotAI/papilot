@@ -826,7 +826,7 @@ try {
   for (const paneWidth of [360, 384, 408]) {
     await expect.poll(() => narrowPdfToolbar.evaluate(el => Math.round(el.clientWidth))).toBe(paneWidth);
     assert.equal(await narrowPdfToolbar.evaluate(el => el.scrollWidth <= el.clientWidth), true);
-    const toolbarBox = await narrowPdfToolbar.boundingBox(), notesBox = await narrowPdfToolbar.getByRole('button', { name: 'My notes', exact: true }).boundingBox();
+    const toolbarBox = await narrowPdfToolbar.boundingBox(), notesBox = await narrowPdfToolbar.getByRole('button', { name: /^My notes(?: · .+)?$/ }).boundingBox();
     assert.ok(notesBox.x >= toolbarBox.x && notesBox.x + notesBox.width <= toolbarBox.x + toolbarBox.width);
     await page.keyboard.press('ArrowRight');
   }
@@ -1058,7 +1058,7 @@ try {
   await expect(page.locator('.new-task-panel [data-note]')).toHaveCount(0);
   await page.reload();
   await page.getByRole('button', { name: 'Note 1: Only these words, please.', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'My notes', exact: true }).click();
+  await page.getByRole('button', { name: /^My notes(?: · .+)?$/ }).click();
   await expect(page.getByRole('region', { name: 'PDF notes' })).toContainText('Only these words, please.');
   await page.getByRole('button', { name: 'Show note 1 on the page', exact: true }).click();
   await expect(notesPanel).toBeVisible();
