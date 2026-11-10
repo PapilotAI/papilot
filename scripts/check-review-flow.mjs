@@ -231,21 +231,35 @@ try {
     await viewer().getByRole('button', { name: 'Undo last decision', exact: true }).click();
     await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '0');
   }
+  // The review scrolls natively: nothing in it cancels wheel events, which
+  // would make every scroll wait for the page's main thread.
+  assert.equal(await paper.evaluate(el => {
+    const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 40 });
+    el.querySelector('.change').dispatchEvent(event);
+    return event.defaultPrevented;
+  }), false, 'Wheel scrolling in the review must stay with the browser');
   // Nested editors keep their own wheel scrolling and zoom is left native.
-  const nested = await paper.evaluate(el => {
+  const areaAt = await paper.evaluate(el => {
     el.scrollTop = 0;
     const area = document.createElement('textarea');
+    area.id = 'nested-wheel';
     area.value = Array.from({ length: 40 }, (_, i) => `Line ${i}`).join('\n');
     area.style.cssText = 'display:block;width:240px;height:100px;overflow:auto;position:sticky;top:0;z-index:20';
     el.prepend(area);
     const box = area.getBoundingClientRect();
-    area.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: box.x + 30, clientY: box.y + 30, deltaY: 50 }));
-    const scroll = area.scrollTop, rootScroll = el.scrollTop;
-    const zoom = new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true, clientX: box.x + 30, clientY: box.y + 30, deltaY: 50 });
-    area.dispatchEvent(zoom); area.remove();
-    return { scroll, rootScroll, zoomPrevented: zoom.defaultPrevented };
+    return { x: box.x + 30, y: box.y + 30 };
   });
-  assert.equal(nested.scroll, 50); assert.equal(nested.rootScroll, 0); assert.equal(nested.zoomPrevented, false);
+  const frameAt = await page.locator('.review-frame').boundingBox();
+  await page.mouse.move(frameAt.x + areaAt.x, frameAt.y + areaAt.y);
+  await page.mouse.wheel(0, 50);
+  await expect.poll(() => paper.evaluate(el => el.querySelector('#nested-wheel').scrollTop)).toBeGreaterThan(0);
+  const nested = await paper.evaluate(el => {
+    const area = el.querySelector('#nested-wheel'), rootScroll = el.scrollTop;
+    const zoom = new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true, clientX: 30, clientY: 30, deltaY: 50 });
+    area.dispatchEvent(zoom); area.remove();
+    return { rootScroll, zoomPrevented: zoom.defaultPrevented };
+  });
+  assert.equal(nested.rootScroll, 0); assert.equal(nested.zoomPrevented, false);
   const paperTop = await paper.evaluate(el => el.scrollTop), chatBox = await chat.boundingBox();
   await page.mouse.move(chatBox.x + 40, chatBox.y + 60);
   await page.mouse.wheel(0, 120);
