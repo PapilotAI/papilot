@@ -114,6 +114,8 @@ await page.route('**/review/**', async route => {
   if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail(Number(relative.split('/').at(-1))) });
   if (relative.endsWith('/effects/first')) { effectRequests++; return route.fulfill({ json: { places: [effectPlace('extra')] } }); }
   let restored;
+  // Which view the page shows steers compilation; it decides nothing.
+  if (relative.endsWith('/look')) return route.fulfill({ json: { ok: true } });
   if (route.request().method() === 'POST') {
     const body = route.request().postDataJSON(); writes.push(body);
     if (relative.endsWith('/decide')) {
