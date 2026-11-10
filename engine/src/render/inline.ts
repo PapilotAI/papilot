@@ -1049,14 +1049,17 @@ export function renderDocument(
         kept.push({ section: piece.section, pieces: [piece] });
       else last?.pieces.push(piece);
     }
+  // One block per region, wherever its pieces print: a later piece joins the
+  // region's block rather than starting a second block of the same edits.
+  // Short context between two pieces in one section joins it too, so the
+  // block reads straight through instead of jumping over those lines.
+  const shown = new Map<number, ChangeBlock>(),
+    JOIN = 120;
   const render = (pieces: (Display | { kind: "gap" })[]): Block[] => {
     const blocks: Block[] = [];
-    let previous: number | undefined;
     for (const piece of pieces) {
-      if (piece.kind === "gap") {
-        blocks.push({ kind: "gap" });
-        previous = undefined;
-      } else if (piece.region === undefined) {
+      if (piece.kind === "gap") blocks.push({ kind: "gap" });
+      else if (piece.region === undefined) {
         const image = strips.write(
           next.document,
           piece.page,
@@ -1066,21 +1069,30 @@ export function renderDocument(
           "",
           [piece.rect[0], piece.rect[2]],
         );
-        if (image) {
-          blocks.push({ kind: "context", image });
-          previous = undefined;
-        }
+        if (image) blocks.push({ kind: "context", image });
       } else {
         const block = change(piece.region, [
             { page: piece.page, clip: piece.rect, label: "" },
           ]),
-          last = blocks.at(-1);
-        // Adjacent fragments can share a block. Intervening printed context
-        // or another change stays in reading order, never inside an envelope.
-        if (previous === piece.region && last?.kind === "change")
-          last.after.push(...block.after);
-        else blocks.push(block);
-        previous = piece.region;
+          earlier = shown.get(piece.region);
+        if (!earlier) {
+          shown.set(piece.region, block);
+          blocks.push(block);
+          continue;
+        }
+        const at = blocks.indexOf(earlier),
+          between = at < 0 ? [] : blocks.slice(at + 1);
+        if (
+          at >= 0 &&
+          between.every((b) => b.kind === "context") &&
+          between.reduce((sum, b) => sum + (b.kind === "context" ? b.image.height : 0), 0) <= JOIN
+        ) {
+          blocks.splice(at + 1);
+          earlier.after.push(
+            ...between.flatMap((b) => (b.kind === "context" ? [b.image] : [])),
+          );
+        }
+        earlier.after.push(...block.after);
       }
     }
     return blocks;
@@ -1100,5 +1112,65 @@ export function renderDocument(
   areas.forEach((area, index) => {
     if (!area.new.length) loose.push(change(index, []));
   });
-  return { sections: rendered, loose };
+  return linkBlocks(rendered, loose, cards);
+}
+// Blocks of the same edits are one block; edits that remain in several
+// blocks say why. An edit is in several regions when its crops form
+// separate groups: its source prints in several places, or its text left
+// one place for another far from it.
+function linkBlocks(
+  sections: RenderedRound["sections"],
+  loose: ChangeBlock[],
+  cards: Card[],
+): Pick<RenderedRound, "sections" | "loose"> {
+  const all = [
+      ...sections.flatMap((s) => s.blocks),
+      ...loose,
+    ].filter((b): b is ChangeBlock => b.kind === "change"),
+    first = new Map<string, ChangeBlock>(),
+    dropped = new Set<ChangeBlock>();
+  for (const block of all) {
+    const key = JSON.stringify(block.units),
+      earlier = first.get(key);
+    if (!earlier) {
+      first.set(key, block);
+      continue;
+    }
+    earlier.before.push(...block.before);
+    earlier.after.push(...block.after);
+    earlier.identical &&= block.identical;
+    if (block.moved) earlier.moved = true;
+    if (!block.reflow) delete earlier.reflow;
+    dropped.add(block);
+  }
+  const kept = all.filter((b) => !dropped.has(b)),
+    count = new Map<string, number>();
+  for (const block of kept)
+    for (const unit of block.units) count.set(unit, (count.get(unit) ?? 0) + 1);
+  const reason = (unit: string): "places" | "moved" => {
+    const groups = new Map<number, { old: boolean; new: boolean }>();
+    for (const pair of cards.find((c) => c.id === unit)?.pairs ?? []) {
+      const group = groups.get(pair.group ?? 0) ?? { old: false, new: false };
+      group.old ||= Boolean(pair.old);
+      group.new ||= Boolean(pair.new);
+      groups.set(pair.group ?? 0, group);
+    }
+    const sides = [...groups.values()];
+    return sides.some((g) => g.old && !g.new) && sides.some((g) => g.new && !g.old)
+      ? "moved"
+      : "places";
+  };
+  for (const block of kept) {
+    const linked = block.units
+      .filter((unit) => (count.get(unit) ?? 0) > 1)
+      .map((unit) => ({ unit, reason: reason(unit) }));
+    if (linked.length) block.linked = linked;
+  }
+  return {
+    sections: sections.map((s) => ({
+      ...s,
+      blocks: s.blocks.filter((b) => b.kind !== "change" || !dropped.has(b)),
+    })),
+    loose: loose.filter((b) => !dropped.has(b)),
+  };
 }

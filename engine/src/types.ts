@@ -270,6 +270,10 @@ export interface ChangeBlock {
   waiting?: boolean;
   /** The round whose comparison it shows while its own renders. */
   carried?: number;
+  /** Edits this block shares with other blocks, and why: one edit's source
+   *  prints in several places (`places`), or its text left one place and
+   *  now prints far from it, on another page or as a float (`moved`). */
+  linked?: { unit: string; reason: "places" | "moved" }[];
 }
 export type Block =
   ChangeBlock | { kind: "context"; image: Strip } | { kind: "gap" };
