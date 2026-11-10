@@ -39,6 +39,11 @@ export class Applied {
   private file(name: string) {
     return path.join(this.app.state, "applied", name + ".json");
   }
+  // The accepted text a decision asked to compile, until that compilation
+  // ends: a start resumes exactly these.
+  private wantedFile(name: string) {
+    return path.join(this.app.state, "applied", name + ".wanted");
+  }
   /** The latest completed compilation of the task's accepted text. */
   latest(name: string) {
     const value = readJson<AppliedBuild | null>(this.file(name), null);
@@ -76,6 +81,8 @@ export class Applied {
     const replace = () => previous?.stop.abort();
     run.done = (async () => {
       try {
+        await fs.promises.mkdir(path.dirname(this.wantedFile(name)), { recursive: true });
+        await fs.promises.writeFile(this.wantedFile(name), accepted);
         const builder = new Builder(this.app.project, this.app.repo),
           { targets, date, seed } = await this.scope(name, round, builder);
         if (stop.signal.aborted) return replace();
@@ -89,7 +96,11 @@ export class Applied {
           : { message: (error as Error).message, details: [] };
         this.failures.set(name, { accepted, error: failure });
       } finally {
-        if (this.runs.get(name) === run) this.runs.delete(name);
+        if (this.runs.get(name) === run) {
+          this.runs.delete(name);
+          // Compiled or failed: nothing to resume. A stop at shutdown keeps it.
+          if (!stop.signal.aborted) await fs.promises.rm(this.wantedFile(name), { force: true });
+        }
       }
     })();
   }
@@ -118,6 +129,10 @@ export class Applied {
     else if (base?.accepted === accepted) shown = { ...base, current: true };
     else if (own ?? base) shown = { ...(own ?? base)!, current: false };
     const failure = this.failures.get(name);
+    // Decisions no compilation was asked for, as those made before this
+    // version: they compile once the author opens the task, not at start.
+    if (!shown?.current && !this.runs.has(name) && failure?.accepted !== accepted && round && (round.visuals ?? "ready") === "ready")
+      this.refresh(name);
     return {
       accepted,
       shown,
@@ -134,10 +149,12 @@ export class Applied {
     }
     return (await new Builder(this.app.project, this.app.repo).completed(key))?.pdf ?? null;
   }
-  /** At start: tasks whose decisions changed after their last compilation. */
+  /** At start: the compilations a decision asked for that did not end. A
+   *  repository's other tasks wait until the author opens them. */
   recover() {
     for (const task of this.app.tasks.list())
-      if (task.deferred && !task.closed && this.latest(task.name)?.accepted !== task.accepted) this.refresh(task.name);
+      if (task.deferred && !task.closed && fs.existsSync(this.wantedFile(task.name)) && this.latest(task.name)?.accepted !== task.accepted)
+        this.refresh(task.name);
   }
   /** Settles once every compilation under way has ended, for tests. */
   async join() {

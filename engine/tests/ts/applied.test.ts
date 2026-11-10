@@ -122,3 +122,26 @@ it.skipIf(!posix)("after a restart, compiles decisions its last compilation did 
   await restarted.applied.join();
   expect(await restarted.applied.state(task.name)).toMatchObject({ shown: { key: first.key, current: true } });
 }, 30000);
+
+it.skipIf(!posix)("a start compiles no task whose decisions were never asked to compile, until the author reads it", async () => {
+  const { task, unit } = await deferredRound();
+  await app.review.decide(task.name, { id: "a", action: "accept", round: 1, changes: [unit("Agent A")] });
+  await until(() => runs().length === 1);
+  const [first] = runs();
+  await app.close();
+  f.apps.splice(f.apps.indexOf(app), 1);
+  await until(() => !alive(first.pid));
+  // As if an older version recorded the decision: nothing asked to compile it.
+  fs.rmSync(path.join(app.state, "applied", `${task.name}.wanted`));
+  const restarted = f.app();
+  await restarted.ready;
+  await sleep(1000);
+  expect(runs()[0].pid).toBe(first.pid);
+  // The author opens the task: its paper as decided compiles now.
+  expect(await restarted.applied.state(task.name)).toMatchObject({ building: true });
+  await until(() => runs()[0].pid !== first.pid);
+  expect(runs()).toMatchObject([{ key: first.key, text: "Agent A" }]);
+  go(first.key);
+  await restarted.applied.join();
+  expect(await restarted.applied.state(task.name)).toMatchObject({ building: false, shown: { key: first.key, current: true } });
+}, 30000);
