@@ -41,7 +41,7 @@ test('WSL Codex discovery skips Windows folders before probing the filesystem, w
   const folders = ['/mnt/c/Users/u/AppData/Roaming/npm', '/usr/local/bin', '/mnt/data-disk-not-a-letter/bin'];
   const plain = env('/home/papilot-test', ...folders), scanned: string[] = [];
   t.mock.method(fs, 'statSync', (file: fs.PathLike) => { scanned.push(String(file)); throw new Error('ENOENT'); });
-  const wasScanned = (dir: string) => scanned.some(file => file === path.join(dir, 'codex') || file.startsWith(path.join(dir, 'codex') + '.'));
+  const wasScanned = (dir: string) => scanned.some(file => file === path.resolve(dir, 'codex') || file.startsWith(path.resolve(dir, 'codex') + '.'));
   codexCandidates(plain, '/data', '/checkout', isWsl({ ...plain, WSL_DISTRO_NAME: 'Ubuntu' }, 'linux', ''));
   assert.equal(wasScanned(folders[0]), false);
   assert.equal(wasScanned(folders[1]), true);
@@ -71,10 +71,12 @@ test('Codex is looked for on PATH first, then in the checkout and the data folde
   try {
     const first = fakeCodex(path.join(root, 'a'), null), second = fakeCodex(path.join(root, 'b'), '0.170.0');
     const dev = fakeCodex(path.join(checkout, 'node_modules/.bin'), '0.164.0'), own = fakeCodex(path.join(data, 'agents/node_modules/.bin'), '0.164.0');
-    const found = codexCandidates(env(root, path.dirname(first), path.dirname(second)), data, checkout);
+    // PATHEXT may change a shim's extension case on Windows.
+    const comparable = (file: string) => POSIX ? file : file.toLowerCase();
+    const found = codexCandidates(env(root, path.dirname(first), path.dirname(second)), data, checkout).map(comparable);
     // Standard install folders (Homebrew, /usr/local/bin) sit between PATH and the copies.
-    assert.deepEqual(found.slice(0, 2), [first, second]);
-    assert.ok(found.indexOf(dev) > 1 && found.indexOf(own) > found.indexOf(dev));
+    assert.deepEqual(found.slice(0, 2), [first, second].map(comparable));
+    assert.ok(found.indexOf(comparable(dev)) > 1 && found.indexOf(comparable(own)) > found.indexOf(comparable(dev)));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 

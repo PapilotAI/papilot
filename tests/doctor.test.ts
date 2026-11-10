@@ -310,7 +310,10 @@ test('desktop doctor skips a hanging Codex and probes the working candidate only
     assert.equal(result.code, 0, result.stdout);
     const codex = item(result.report, 'agent.codex');
     assert.equal(codex.ok, true, codex.detail);
-    assert.equal(codex.detail, `Codex 0.1.0 (${second}): signed in.`);
+    const reported = /^Codex 0\.1\.0 \((.+)\): signed in\.$/.exec(codex.detail);
+    assert.ok(reported, codex.detail);
+    const comparable = (file: string) => process.platform === 'win32' ? file.toLowerCase() : file;
+    assert.equal(comparable(reported[1]), comparable(second));
     const commands = fs.readFileSync(f.log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
     assert.deepEqual(commands.filter(([name]) => name === 'codex' || name === 'working-codex'), [
       ['codex', '--version'], ['working-codex', '--version'], ['working-codex', 'login', 'status'],
