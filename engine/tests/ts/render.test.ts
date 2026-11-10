@@ -760,3 +760,38 @@ it("comment-only lines neither create paragraphs nor introduce spaces", () => {
   expect(typesetWords("100\\% sure")).not.toEqual(typesetWords("100% sure"));
   expect(typesetWords("a\\\\% comment\nb")).toEqual(typesetWords("a\\\\b"));
 });
+
+it("never makes the blank space a crop reaches into a change of its own", () => {
+  // Lines 5 and 6 are blank, the end of section 0; section 1 starts at
+  // line 7. The edit's crop reaches from that blank space into section 1,
+  // and a speck of ink at its top edge, such as the foot of a glyph above,
+  // keeps trimming from removing the space.
+  const raw = new mupdf.PDFDocument(),
+    font = new mupdf.Font("Helvetica"),
+    resource = raw.addSimpleFont(font),
+    lines = Array.from({ length: 12 }, (_, i) => (i === 5 || i === 6 ? "" : `Line ${i} has distinct words here`)),
+    content = "BT /F1 12 Tf 30 550 Td 18 TL " + lines.map((line, i) => (i ? "T* " : "") + "(" + line + ") Tj").join("\n") + " ET 0 0 0 rg 300 471.5 0.3 0.3 re f",
+    page = raw.addPage([0, 0, 600, 600], 0, { Font: { F1: resource } }, content);
+  raw.insertPage(-1, page);
+  const buffer = raw.saveToBuffer(""),
+    doc = new PdfDocument(buffer.asUint8Array());
+  buffer.destroy(); page.destroy(); resource.destroy(); font.destroy(); raw.destroy();
+  documents.push(doc);
+  const build = sectioned(doc, [0, 7]),
+    top = doc.page(0).search("Line 4")[0][3] + 1,
+    bottom = doc.page(0).search("Line 8")[0][3] + 1,
+    crop = { page: 0, clip: [0, top, 600, bottom] as [number, number, number, number], label: "1" },
+    cards: Card[] = [{ id: "edit", file: "paper.tex", context_node: "1", comparison: "text", aligned: true,
+      pairs: [{ old: crop, new: crop, group: 0, before_marks: [], after_marks: [] }] }],
+    folder = fs.mkdtempSync(path.join(os.tmpdir(), "review-blank-"));
+  folders.push(folder);
+  const result = renderDocument(build, build, cards, new Strips(folder), () => false),
+    changes = (blocks: { kind: string }[]) => blocks.filter((b) => b.kind === "change");
+  expect(result.loose).toEqual([]);
+  // Section 0 may show context, but holds no change.
+  const counts = Object.fromEntries(result.sections.map((s) => [s.node, changes(s.blocks).length]));
+  expect(counts).toMatchObject({ "1": 1 });
+  expect(counts["0"] ?? 0).toBe(0);
+  const one = changes(result.sections.find((s) => s.node === "1")!.blocks)[0];
+  expect(one).toMatchObject({ units: ["edit"], before: [expect.anything()], after: [expect.anything()] });
+});

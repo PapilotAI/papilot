@@ -750,6 +750,21 @@ function renderSlides(
 
 /** Plan the whole round before assigning sections. Source edits identify
  * regions; sections provide context, but never own a second copy of ink. */
+// Whether a part of a page prints anything: a character or a dark shape or
+// image, not merely the edge of a glyph next to it.
+export function prints(document: PdfDocument, page: number, rect: Rect) {
+  const p = document.page(page);
+  return (
+    p.lines.some((line) =>
+      line.chars.some((c) => c.text.trim() && containsCenter(rect, c.rect)),
+    ) ||
+    p.drawings.some(
+      (d) =>
+        Math.min(d[2], rect[2]) - Math.max(d[0], rect[0]) > 0.5 &&
+        Math.min(d[3], rect[3]) - Math.max(d[1], rect[1]) > 0.5,
+    )
+  );
+}
 // Two edits' crops are one place when they print a line in common. The boxes
 // of adjacent lines touch or overlap by a point or two, which does not make
 // separate edits one change. A crop without text, such as a figure, is one
@@ -916,30 +931,37 @@ export function renderDocument(
     area.new = area.new
       .flatMap((p) => readingParts(next.document, p))
       .sort((a, b) => order(next.document, a, b));
-    for (const position of area.new) {
-      // Cut at both reading lanes and headings before assigning a section.
-      // A fragment keeps its region's complete correspondence and source IDs.
-      const pieces = partition(
-        [
-          ...boundaries.filter(
-            (c) =>
-              c.page === position.page && intersects(c.rect, position.clip),
-          ),
-          { page: position.page, rect: position.clip, value: sections.length },
-        ],
-        (values) =>
-          values.includes(sections.length) ? Math.min(...values) : undefined,
+    // Cut at both reading lanes and headings before assigning a section.
+    // A fragment keeps its region's complete correspondence and source IDs.
+    const pieces = area.new.flatMap((position) =>
+        partition(
+          [
+            ...boundaries.filter(
+              (c) =>
+                c.page === position.page && intersects(c.rect, position.clip),
+            ),
+            { page: position.page, rect: position.clip, value: sections.length },
+          ],
+          (values) =>
+            values.includes(sections.length) ? Math.min(...values) : undefined,
+        ).map((piece) => ({ position, piece })),
+      ),
+      // The blank space a crop reaches into, such as the gap above a heading
+      // that the next section owns, is no place of the change: on its own it
+      // showed an empty strip as a separate change, in the section before or
+      // under no section at all.
+      printing = pieces.filter(({ position, piece }) =>
+        prints(next.document, position.page, piece.rect),
       );
-      for (const piece of pieces) {
-        const placed = piece.value < sections.length;
-        (placed ? plan : loosePlan).push(
-          display(
-            { ...position, clip: piece.rect },
-            placed ? piece.value : -1,
-            region,
-          ),
-        );
-      }
+    for (const { position, piece } of printing.length ? printing : pieces) {
+      const placed = piece.value < sections.length;
+      (placed ? plan : loosePlan).push(
+        display(
+          { ...position, clip: piece.rect },
+          placed ? piece.value : -1,
+          region,
+        ),
+      );
     }
   });
   const change = (index: number, positions: Position[]): ChangeBlock => {
