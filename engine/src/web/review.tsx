@@ -1396,7 +1396,7 @@ export function ReviewApp({
                           <button
                             className={kind}
                             key={kind}
-                            title={actionLock(kind) || undefined}
+                            title={actionLock(kind) || label(kind)}
                             aria-describedby={
                               actionLock(kind) ? "review-lock" : undefined
                             }
