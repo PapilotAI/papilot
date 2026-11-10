@@ -107,12 +107,12 @@ try {
   await controls().getByRole('button', { name: 'Retry linking changes', exact: true }).click();
   await frame().getByRole('button', { name: 'Show note 1: Keep the technical term.', exact: true }).waitFor();
   assert.equal(await frame().getByRole('button', { name: 'Show note 1: Shorten the opening.', exact: true }).count(), 0, 'an older note must not label a newer round');
-  assert.deepEqual(optionReads.sort(), ['request-2:0', 'request-2:1', 'request-2:2'], 'Only the current note and its two neighbors are prefetched');
+  assert.deepEqual(optionReads.sort(), ['request-2:0', 'request-2:1', 'request-2:2'], 'Every current note\'s small manifest is read, so each change can offer its options');
   assert.deepEqual(previewReads, [], 'Opening the review never prefetches option PDFs');
   await frame().getByRole('button', { name: 'Other options · 1', exact: true }).click();
   await controls().getByRole('tab', { name: 'Concise', exact: true }).waitFor();
   assert.equal(optionReads.length, 3, 'Opening a cached note does not repeat its manifest request');
-  assert.deepEqual(previewReads, [{ key: 'request-2:0', round: 2, option: 'current' }], 'Only the visible comparison is loaded');
+  assert.deepEqual(previewReads[0], { key: 'request-2:0', round: 2, option: 'current' }, 'The visible comparison loads first; the note\'s other options follow while the author reads');
   await frame().locator('.source-fixture p').first().click();
   await controls().waitFor({ state: 'hidden' });
   const original = await page.locator('[data-note-result]').allTextContents();

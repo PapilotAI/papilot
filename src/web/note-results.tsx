@@ -130,14 +130,23 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     const { optionsRequest } = requests.current;
     if (!optionsRequest) return;
     let cancelled = false;
+    // Every current note's small manifest says whether its change offers
+    // "Other options", so all are read, one at a time, starting where the
+    // author is. Their PDF previews load only when shown.
     const eligible = notes.filter(note => note.round === task.review?.round && note.changes.length);
-    const current = eligible.findIndex(note => note.key === (focus?.key || selected));
-    const nearby = eligible.slice(Math.max(0, current), Math.max(0, current) + 3);
-    for (const note of nearby) void readOptions(optionStateKey(task, notes, note), () => optionsRequest(id, note.key)).then(options => {
-      if (cancelled || !('options' in options)) return;
-      const count = options.locked ? 0 : Math.max(0, options.options.length - 1);
-      setAvailable(previous => previous[note.key]?.round === options.round && previous[note.key]?.count === count ? previous : { ...previous, [note.key]: { round: options.round, count } });
-    }).catch(() => { /* Opening the note reports errors and offers Retry. */ });
+    const start = Math.max(0, eligible.findIndex(note => note.key === (focus?.key || selected)));
+    const ordered = [...eligible.slice(start), ...eligible.slice(0, start)];
+    void (async () => {
+      for (const note of ordered) {
+        if (cancelled) return;
+        try {
+          const options = await readOptions(optionStateKey(task, notes, note), () => optionsRequest(id, note.key));
+          if (cancelled || !('options' in options)) continue;
+          const count = options.locked ? 0 : Math.max(0, options.options.length - 1);
+          setAvailable(previous => previous[note.key]?.round === options.round && previous[note.key]?.count === count ? previous : { ...previous, [note.key]: { round: options.round, count } });
+        } catch { /* Opening the note reports errors and offers Retry. */ }
+      }
+    })();
     return () => { cancelled = true; };
   }, [id, task?.status, task?.review?.round, task?.updatedAt, decisions, noteSignature, focus?.key, selected]);
   const value: Links = { task, optionsRequest, previewRequest: previewRequest && ((id, key, round, option, retry, version) => comparisonCache.read(previewKey(id, key, round, option, version), () => previewRequest(id, key, round, option, retry, version).then(warmComparison))), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
@@ -318,6 +327,17 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     const resize = new ResizeObserver(reveal); resize.observe(list);
     return () => resize.disconnect();
   }, [selected, optionIds]);
+  // Once the shown comparison is in, the note's other options load while
+  // the author reads, so switching to one shows it at once.
+  const shownReady = Boolean(selected === saved ? baseline : links.preview?.detail);
+  useEffect(() => {
+    if (!task || !data || data.locked || !links.previewRequest || !shownReady) return;
+    const others = data.options.filter(option => option.id !== selected && !option.previewError);
+    if (!others.length) return;
+    const warm = () => { for (const option of others) void links.previewRequest!(task.id, note.key, data.round, option.id, false, data.comparisonKey).catch(() => {}); };
+    const idle = typeof requestIdleCallback === 'function' ? requestIdleCallback(warm, { timeout: 1500 }) : window.setTimeout(warm, 300);
+    return () => { if (typeof cancelIdleCallback === 'function') cancelIdleCallback(idle); else window.clearTimeout(idle); };
+  }, [task?.id, note.key, data?.round, data?.comparisonKey, data?.locked, optionIds, shownReady]);
   const readyComparison = selected === saved ? baseline : links.preview?.detail;
   useEffect(() => { if (readyComparison) setShown(readyComparison); }, [readyComparison]);
   if (!request || !task) return null;
