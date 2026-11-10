@@ -3045,9 +3045,9 @@ test('a resumed preparation waits while the engine is still making the copy it a
 });
 
 test('attachments are claimed when the task is saved, and deleting a failed preparation returns its notes', async () => {
-  let listed: { task: string }[] = [];
-  const f = fixture(async (method, route) => {
-    if (route === '/api/tasks') { if (method === 'GET') return { tasks: listed }; throw new Error('The review engine is busy.'); }
+  let copied = false;
+  const f = fixture(async (_method, route) => {
+    if (route === '/api/tasks') { if (copied) return { ...engineCopy(), task: 'p-claims-task-000001' }; throw new Error('The review engine is busy.'); }
     if (route.endsWith('/finish')) return { task: 'p-claims-task-000001', finished: true };
     return summary;
   });
@@ -3065,13 +3065,59 @@ test('attachments are claimed when the task is saved, and deleting a failed prep
     assert.ok(fs.existsSync(f.workspace.attachments.path(file)), 'a claimed attachment cannot be discarded');
     await assert.rejects(preparation(f, input.id), /engine is busy/);
     // The engine made the copy, but its answer was lost.
-    listed = [{ task: 'p-claims-task-000001' }];
+    copied = true;
     await f.workspace.deleteTask(input.id);
     assert.ok(f.calls.some(call => call.route === '/api/tasks/p-claims-task-000001/finish'), 'a copy the engine made is finished');
     assert.equal(f.store.tasks().some(task => task.id === input.id), false);
     assert.equal(f.store.annotation('paper', note.id).taskId, undefined, 'the note goes back to the manuscript');
     assert.equal(fs.existsSync(f.workspace.attachments.path(file)), false);
   } finally { f.close(); }
+});
+
+test('deletion retains a failed preparation while the engine is still making its copy', async () => {
+  const input = { id: 'lost-copy-reply-0001', projectId: 'paper', title: 'Revise', instructions: 'Revise.' };
+  const name = 'p-' + input.id;
+  let attempts = 0, creating = true, finished = false;
+  const f = fixture(async (method, route) => {
+    if (route === '/api/tasks' && method === 'GET') return { tasks: [] }; // No task is recorded until its copy is ready.
+    if (route === '/api/tasks') {
+      if (++attempts === 1) throw new Error('The create response was lost.');
+      if (creating) throw new Error(`Task ${JSON.stringify(name)} is being created. Try again in a moment.`);
+      return { ...engineCopy(), task: name };
+    }
+    if (route.endsWith('/finish')) { finished = true; return { task: name, finished: true }; }
+    return summary;
+  });
+  try {
+    await f.workspace.createTask(input);
+    await assert.rejects(preparation(f, input.id), /response was lost/);
+    await assert.rejects(f.workspace.deleteTask(input.id), /being created/);
+    assert.equal(f.store.task(input.id).status, 'deleting', 'Keep the cleanup reservation until the engine confirms it');
+    assert.equal(f.store.taskDeleted(input.id), false);
+    assert.equal(finished, false);
+    creating = false;
+    await f.workspace.deleteTask(input.id);
+    assert.equal(finished, true);
+    assert.equal(f.store.taskDeleted(input.id), true);
+  } finally { f.close(); }
+});
+
+test('deletion refuses malformed or foreign copy confirmations after a failed preparation', async t => {
+  for (const info of [{}, { task: 'another-task', worktree: '/unused' }, { task: 'p-unconfirmed-copy-01' }, { task: 'p-unconfirmed-copy-01', worktree: '' }]) await t.test(JSON.stringify(info), async () => {
+    let failed = false;
+    const f = fixture(async (_method, route) => {
+      if (route === '/api/tasks' && !failed) { failed = true; throw new Error('The create response was lost.'); }
+      return info;
+    });
+    try {
+      await f.workspace.createTask({ id: 'unconfirmed-copy-01', projectId: 'paper', title: 'Revise', instructions: 'Revise.' });
+      await assert.rejects(preparation(f, 'unconfirmed-copy-01'), /response was lost/);
+      await assert.rejects(f.workspace.deleteTask('unconfirmed-copy-01'), /could not confirm/);
+      assert.equal(f.store.task('unconfirmed-copy-01').status, 'deleting');
+      assert.equal(f.store.taskDeleted('unconfirmed-copy-01'), false);
+      assert.ok(!f.calls.some(call => call.route.endsWith('/finish')));
+    } finally { f.close(); }
+  });
 });
 
 test('deleting a task the engine never saw needs no engine', async () => {

@@ -1544,8 +1544,14 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         if (result?.task !== task.name || result.finished !== true) throw new Error('The review engine did not confirm task deletion.');
       };
       if (unprepared) {
-        // It may have made the copy before a restart or a lost response.
-        if (client && (await client.get<{ tasks?: { task?: string }[] }>('/api/tasks')).tasks?.some(open => open.task === task.name)) await finish();
+        if (client) {
+          // A lost response may leave the engine still creating the copy,
+          // before it appears in the task list. Repeating the same request
+          // either confirms that copy or refuses while it is being created.
+          const info = await client.post('/api/tasks', { name: task.name, title: task.title, deferred: true });
+          if (info?.task !== task.name || typeof info.worktree !== 'string' || !info.worktree) throw new Error('The review engine could not confirm this task’s cleanup status.');
+          await finish();
+        }
       } else {
         const state = await client!.get(`${taskRoute(task.name)}/state`);
       if (!confirmedReviewResponse(200, state, task.name)) throw new Error('The review engine could not confirm this task’s cleanup status.');
