@@ -296,7 +296,7 @@ function cropMargins(doc: Document) {
 // completion is the next step shown in the viewer's card once every change is decided.
 // Without a task the frame shows the paper's uncommitted changes (changesOf),
 // and the viewer's own waiting message shows while they are compared.
-export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void }) {
+export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided, onReadyChange, keepPdf }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void; onReadyChange?: (ready: boolean, round?: number) => void; keepPdf?: boolean }) {
   const draft = useReviewDraft(task?.id || '');
   const quoteFocus = draft.reveal;
   const shortcuts = useShortcuts();
@@ -368,6 +368,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   const cropper = useRef<MutationObserver | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'slow' | 'error'>('loading');
+  const [displayedRound, setDisplayedRound] = useState<number>();
   // A new language reloads the viewer in that language.
   const shown = useLanguage().language;
   useEffect(() => {
@@ -491,12 +492,21 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
       const inspect = () => {
         const paper = doc.getElementById('paper');
         if (!paper) return;
-        if (paper.querySelector('[role="alert"]')) { setPhase('error'); return; }
-        if (changesOf || !paper.querySelector('.waiting')) { setPhase('ready'); observer.current?.disconnect(); cropMargins(doc); }
+        setDisplayedRound(Number(doc.documentElement.dataset.papilotRound) || undefined);
+        const waiting = paper.querySelector('.comparison-waiting');
+        if (!changesOf && waiting && !paper.querySelector('.pdf-strip img[src],.paper-page')) {
+          setPhase(waiting.getAttribute('data-state') === 'failed' ? 'error' : 'loading'); return;
+        }
+        // An inline edit/annotation error must not hide an otherwise usable
+        // review. Only the viewer's unavailable-document states need fallback.
+        if (paper.querySelector('.empty[role="alert"],.paper-status[role="alert"]')) { setPhase('error'); return; }
+        if (changesOf || !paper.querySelector('.waiting,.paper-status[role="status"]')) { setPhase('ready'); if (!onReadyChange) observer.current?.disconnect(); }
+        else setPhase(value => value === 'error' || value === 'ready' ? 'loading' : value);
       };
       observer.current = new MutationObserver(inspect);
-      observer.current.observe(doc.body, { childList: true, subtree: true });
+      observer.current.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-papilot-round'] });
       inspect();
+      cropMargins(doc);
     } catch { setPhase('error'); }
   }
   useEffect(() => {
@@ -522,6 +532,9 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     return () => { viewport.removeEventListener('resize', sync); viewport.removeEventListener('scroll', sync); window.removeEventListener('resize', sync); };
   }, [document]);
   const ready = phase === 'ready';
+  const readiness = useRef(onReadyChange); readiness.current = onReadyChange;
+  useEffect(() => { onReadyChange?.(ready, displayedRound); }, [ready, displayedRound, onReadyChange]);
+  useEffect(() => () => { readiness.current?.(false); }, []);
   const [slot, setSlot] = useState<Element | null>(null);
   useEffect(() => {
     if (!document || !ready) { setSlot(null); return; }
@@ -540,7 +553,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     sync(); paper.addEventListener('scroll', sync, { passive: true });
     return () => { paper.removeEventListener('scroll', sync); root.removeAttribute('data-papilot-scrolled'); };
   }, [document, slot]);
-  return <div className={'review-viewport' + (ready ? '' : ' review-pending')} aria-busy={!ready}>
+  return <div className={'review-viewport' + (ready ? '' : ' review-pending') + (keepPdf ? ' keeps-pdf' : '')} aria-busy={!ready}>
     <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}:${focusSequence || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound, linkedChange) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
     {task && ready && <NoteReviewControls doc={document}/>}
@@ -553,6 +566,6 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     </div>
     {task && onComment && <div ref={setRailSlot} className="review-marking-rail"/>}
     {slot && completion ? createPortal(completion, slot) : null}
-    {!ready && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}
+    {!ready && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{keepPdf && readingPdf && <button className="button secondary" onClick={() => chooseView('changes')}>{t('Changes')}</button>}{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}
   </div>;
 }

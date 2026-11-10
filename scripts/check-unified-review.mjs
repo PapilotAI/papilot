@@ -16,6 +16,8 @@ const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ locale: 'en-US', hasTouch: process.env.PAPILOT_REVIEW_TOOLS_TOUCH === '1', viewport: { width: 1440, height: 1000 } });
 page.setDefaultTimeout(15000);
+// These checks exercise the per-change tools; full-paper reading is covered in check-places.
+await page.addInitScript(() => localStorage.setItem('latex-review:default-view', 'changes'));
 const errors = []; page.on('pageerror', error => { errors.push(error.message); console.error('PAGE ERROR', error.message); });
 const prefix = '/review/paper';
 const task = { id: 'review-flow-fixture', projectId: 'paper', name: 'flow', title: 'Review the new wording', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { state: 'reviewing', round: 1, counts: {}, unsent: 0 } };
@@ -62,7 +64,9 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
   if (url.pathname === '/api/quick-notes') return route.fulfill({ json: { quickNotes: null } });
   if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
+  if (/\/api\/tasks\/[^/]+\/pdf$/.test(url.pathname)) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
+  if (url.pathname.endsWith('/predict')) return route.fulfill({ json: { ok: true } });
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: timeline } });
@@ -116,6 +120,7 @@ await page.route('**/review/**', async route => {
   const round = Number(url.searchParams.get('round') || latest);
   if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail(Number(relative.split('/').at(-1))) });
   if (relative.endsWith('/effects/first')) { effectRequests++; return route.fulfill({ json: { places: [effectPlace('extra')] } }); }
+  if (relative.endsWith('/look')) return route.fulfill({ json: { ok: true } });
   let restored;
   if (route.request().method() === 'POST') {
     const body = route.request().postDataJSON(); writes.push(body);

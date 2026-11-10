@@ -2,11 +2,10 @@ import { useSyncExternalStore } from 'react';
 import { browserStorage } from './storage.ts';
 import { VIEW_STORAGE, type ReviewView } from '../../engine/src/web/view-preferences.ts';
 
-// The view reviews open on, chosen in Settings: the changed sections unless the
-// author prefers the whole paper. The review toolbar's switch changes only the
-// open review, so looking at the whole paper once does not slow later reviews.
+// Open on the whole paper so revisions retain the manuscript's context.
+// An explicit preference for changed sections, or a task's own view, still wins.
 export { VIEW_EVENT, type ReviewView } from '../../engine/src/web/view-preferences.ts';
-const read = (): ReviewView => browserStorage.getItem(VIEW_STORAGE) === 'paper' ? 'paper' : 'changes';
+const read = (): ReviewView => browserStorage.getItem(VIEW_STORAGE) === 'changes' ? 'changes' : 'paper';
 let view = read();
 const listeners = new Set<() => void>();
 function apply(value: ReviewView) { view = value; listeners.forEach(listener => listener()); }

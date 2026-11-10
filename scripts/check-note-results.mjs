@@ -40,6 +40,9 @@ const decisions = { 1: { c1: 'pending', c2: 'rejected', c3: 'accepted' }, 2: { c
 const client = { get: async route => route.includes('/rounds/') ? rounds[Number(route.split('/').at(-1))] : { decisions: decisions[Number(new URL(route, origin).searchParams.get('round'))] } };
 let failResults = true;
 const optionWrites = [], optionReads = [], previewReads = [];
+// Hold the alternate preview until the test has inspected the pending UI.
+let releaseBriefPreview;
+const briefPreviewWait = new Promise(resolve => { releaseBriefPreview = resolve; });
 let rejectFails = false;
 let comparisonVersion = 'initial';
 const alternateSource = '\\emph{A concise alternative preserving the technical term.}';
@@ -59,12 +62,15 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
   if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true } });
+  if (url.pathname.endsWith('/manuscript')) return route.fulfill({ json: { annotations: [], build: { status: 'idle' }, git: { files: [] } } });
+  if (/\/api\/tasks\/[^/]+\/pdf$/.test(url.pathname)) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items } });
   if (url.pathname.endsWith('/note-results')) return route.fulfill(failResults ? { status: 503, json: { error: 'Temporary failure' } } : { json: { notes: await taskNoteResults(task, items, runs, client) } });
   if (url.pathname.endsWith('/note-options/preview')) {
     assert.equal(url.searchParams.get('comparison'), comparisonVersion);
     const round = Number(url.searchParams.get('round')), option = url.searchParams.get('option');
+    if (round === 2 && option === 'brief' && comparisonVersion === 'initial') await briefPreviewWait;
     previewReads.push({ key: url.searchParams.get('key'), round, option });
     const candidate = round === 2 ? [...units[round].map(unit => ({ ...unit, new_text: option === 'brief' ? alternateSource : unit.new_text })), unit('other', 80, 'Three datasets.', 'Five datasets.')] : units[round];
     const blocks = round === 2 ? [{ kind: 'change', units: candidate.map(unit => unit.id), before: [strip('Unrelated leading strip'), sharedStrip(candidate[0].old_text)], after: [strip('Unrelated leading strip'), sharedStrip(candidate[0].new_text)] }] : candidate.map(unit => ({ kind: 'change', units: [unit.id], before: [strip(unit.old_text)], after: [strip(unit.new_text)] }));
@@ -199,6 +205,7 @@ try {
   assert.equal(await controls().getByRole('button', { name: 'Accept Concise', exact: true }).isDisabled(), true, 'An option cannot be accepted before its own comparison shows');
   assert.deepEqual(await controls().locator('.note-option-navigation').boundingBox(), navigationBefore, 'Switching options keeps the toolbar stable');
   assert.deepEqual(await page.locator('[data-note-result]').allTextContents(), original, 'Switching options never rearranges the review list');
+  releaseBriefPreview();
   const sourceView = controls().locator('.note-option-source[data-revision="candidate-brief-initial"]');
   await sourceView.waitFor();
   assert.equal(previewReads.filter(read => read.key === 'request-2:0' && read.option === 'brief').length, 1, 'A newly visible option loads its preview once');
@@ -275,4 +282,4 @@ try {
   assert.equal(await page.evaluate(id => localStorage.getItem('papilot:review-notes:' + id), task.id), draftBefore, 'Rejecting never creates a feedback draft');
   assert.deepEqual(errors, []);
   console.log('PASS: Original messages preserved; PDF note controls; load retry; selected candidate PDF/LaTeX comparisons; no writes on option switches; responsive mobile actions');
-} finally { await browser.close(); await server.close(); }
+} finally { releaseBriefPreview(); await browser.close(); await server.close(); }
