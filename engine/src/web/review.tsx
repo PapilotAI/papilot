@@ -160,12 +160,15 @@ export function ReviewApp({
   pinned,
   changes = false,
   transport,
+  compileDecisions = true,
 }: {
   task: string;
   pinned: number | null;
   changes?: boolean;
   /** A host can provide local review data without running the HTTP server. */
   transport?: <T>(route: string, body?: unknown) => Promise<T>;
+  /** Static hosts use prepared comparisons without a compiler for decisions. */
+  compileDecisions?: boolean;
 }) {
   const [state, setState] = useState<PageState | null>(null),
     [publishedDetail, setDetail] = useState<RoundDetail | null>(null),
@@ -1466,7 +1469,7 @@ export function ReviewApp({
   }
   // A deferred task's PDF is the paper as decided so far, compiled after each
   // decision: switching to it never starts a compilation.
-  const appliedPaper = Boolean(state?.deferred ?? state?.workspace?.deferred) && !changes && Boolean(detail),
+  const appliedPaper = compileDecisions && Boolean(state?.deferred ?? state?.workspace?.deferred) && !changes && Boolean(detail),
     fullPaper = !pinnedView && (appliedPaper || (Boolean(detail?.pdf) && placeable(placed))),
     paperView = fullPaper && view === "paper";
   const applied = useApplied(appliedPaper && paperView, api);
