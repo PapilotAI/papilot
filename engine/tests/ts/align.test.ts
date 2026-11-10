@@ -866,3 +866,31 @@ it("partitions a section without duplicating a narrow band across both columns",
       expect(width * height).toBe(0);
     }
 });
+it("does not call a word moved when reflow only hyphenates it elsewhere", () => {
+  // One word changed early in the paragraph; the rest reflows, so the
+  // same word breaks at another hyphen. Nothing moved: only the changed
+  // word is marked.
+  const filler = (n: number) => Array.from({ length: n }, (_, i) => `Steady line ${i} of the unchanged paragraph text.`);
+  const old = pdf([
+      "The opening anchor sentence stays exactly where it was.",
+      "Neither method uses the information of the other argu-",
+      "ments when the compiler infers each type separately.",
+      ...filler(30),
+    ]),
+    next = pdf([
+      "The opening anchor sentence stays exactly where it was.",
+      "Neither variant uses the information of the other ar-",
+      "guments when the compiler infers each type separately.",
+      ...filler(30),
+    ]),
+    al = alignment(build(old), build(next));
+  for (const side of ["old", "new"] as const) {
+    const moved = [...al[side].moved.values()].flat().map((g) => al[side].words.glyphs[g].text).join("");
+    expect(moved).toBe("");
+    const crop: Position = { page: 0, clip: [0, 0, 600, 600], label: "1" };
+    expect(marksIn(al, side, crop).filter((m) => m.kind === "moved")).toEqual([]);
+  }
+  const changed = (side: "old" | "new") => [...al[side].changed.values()].flat().map((g) => al[side].words.glyphs[g].text).join("");
+  expect(changed("old")).toBe("method");
+  expect(changed("new")).toBe("variant");
+});

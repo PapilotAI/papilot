@@ -168,9 +168,14 @@ function build(
         for (const g of tokenGlyphs(w.tokens[t]))
           add(sides[name].changed, w, g);
   for (const side of [sides.old, sides.new]) {
-    const changed = new Set([...side.changed.values()].flat());
+    const changed = new Set([...side.changed.values()].flat()),
+      // A line-end hyphen the comparison left unpaired marks where a line
+      // broke, which reflow moves; its word did not move.
+      hyphens = new Set(
+        side.words.tokens.flatMap((t) => (t.hyphen ? tokenGlyphs(t) : [])),
+      );
     for (const [page, glyphs] of side.unpaired) {
-      const moved = glyphs.filter((g) => !changed.has(g));
+      const moved = glyphs.filter((g) => !changed.has(g) && !hyphens.has(g));
       if (moved.length) side.moved.set(page, moved);
     }
     side.words.lines.forEach(([i, j], line) => {
