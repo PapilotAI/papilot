@@ -766,7 +766,8 @@ test('the note alternatives default is validated and saved for future editing tu
   const f = await fixture();
   try {
     const read = async () => (await f.local.inject({ url: '/api/note-alternatives', headers: LOCAL })).json().noteAlternatives;
-    assert.equal(await read(), true);
+    // Off until the author turns alternatives on.
+    assert.equal(await read(), false);
     const preferences = async () => (await f.local.inject({ url: '/api/note-alternatives', headers: LOCAL })).json();
     assert.equal((await preferences()).noteAlternativeRange, 'few');
     for (const range of ['few', 'balanced', 'many']) {

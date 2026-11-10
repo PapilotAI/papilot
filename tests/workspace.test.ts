@@ -68,6 +68,12 @@ test('note alternatives are requested in the editing turn, respect the saved def
   try {
     f.codex.ready = false;
     const notes = [{ where: 'main.tex line 1', quote: 'The model is fast.', comment: 'Clarify speed.' }];
+    // Off by default: no alternatives until the author turns them on.
+    const unset = await f.workspace.enqueue(f.task.id, 'Keep the facts.', 'default-options', false, { reviewNotes: notes });
+    assert.equal(unset.noteOptionsRequested, undefined);
+    assert.doesNotMatch(unset.prompt, /papilot-note-options/);
+    f.store.saveRun({ ...unset, status: 'completed' });
+    f.store.savePreference('note-alternatives', true);
     const on = await f.workspace.enqueue(f.task.id, 'Keep the facts.', 'with-options', false, { reviewNotes: notes });
     assert.equal(on.noteOptionsRequested, true);
     assert.match(on.prompt, /aim for 1–2 extra alternatives/);
@@ -97,6 +103,7 @@ test('the editing response carries prepared choices into publication without put
   const f = fixture();
   try {
     f.codex.ready = false;
+    f.store.savePreference('note-alternatives', true);
     const run = await f.workspace.enqueue(f.task.id, 'Polish this.', 'prepared-response', false, { reviewNotes: [{ where: 'main.tex line 1', quote: 'fast', comment: 'Clarify.' }] });
     (f.workspace as any).active.set(f.task.id, run);
     f.store.updateTask(f.task.id, { status: 'running', turnId: 'editing-turn' });

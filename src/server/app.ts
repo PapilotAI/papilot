@@ -240,7 +240,7 @@ export async function buildApp(options: AppOptions) {
     return { quickNotes: quickNotes || null };
   });
   app.get('/api/indirect-changes', () => ({ indirectChanges: indirectChanges() }));
-  const alternativePreferences = () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') !== false, noteAlternativeRange: noteAlternativeRange(store.preference('note-alternative-range')) });
+  const alternativePreferences = () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') === true, noteAlternativeRange: noteAlternativeRange(store.preference('note-alternative-range')) });
   app.get('/api/note-alternatives', alternativePreferences);
   app.post('/api/note-alternatives', (request, reply) => {
     const value = (request.body as any)?.noteAlternatives;
