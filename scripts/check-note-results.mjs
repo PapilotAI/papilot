@@ -246,9 +246,11 @@ try {
   await controls().getByRole('region', { name: 'LaTeX comparison', exact: true }).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390, 'LaTeX wraps within the narrow PDF pane');
   const toolbar = await controls().locator('.note-option-navigation').boundingBox();
-  assert.ok(toolbar.height < 50, 'tabs, pager, review actions and LaTeX toggle stay in one row');
+  assert.ok(toolbar.height < 90, 'narrow screens give tabs their own row above the pager and review actions');
   const tabs = await controls().getByRole('tablist').boundingBox(), selectedTab = await controls().getByRole('tab', { selected: true }).boundingBox();
   assert.ok(selectedTab.x >= tabs.x - 1 && selectedTab.x + selectedTab.width <= tabs.x + tabs.width + 1, 'the remembered selected option stays visible in the narrow tab strip');
+  const conciseTab = await controls().getByRole('tab', { name: 'Concise', exact: true }).boundingBox();
+  assert.ok(conciseTab.x >= tabs.x - 1 && conciseTab.x + conciseTab.width <= tabs.x + tabs.width + 1, 'both choices are directly visible on a phone');
   for (const button of await controls().locator('.note-option-actions button').all()) {
     const bounds = await button.boundingBox();
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390, 'every action remains reachable on mobile');
@@ -270,5 +272,5 @@ try {
   assert.equal(optionWrites[0].id, optionWrites[1].id, 'A retry keeps the same decision identity');
   assert.equal(await page.evaluate(id => localStorage.getItem('papilot:review-notes:' + id), task.id), draftBefore, 'Rejecting never creates a feedback draft');
   assert.deepEqual(errors, []);
-  console.log('PASS: Original messages preserved; PDF note controls; load retry; selected candidate PDF/LaTeX comparisons; no writes on option switches; single-row mobile actions');
+  console.log('PASS: Original messages preserved; PDF note controls; load retry; selected candidate PDF/LaTeX comparisons; no writes on option switches; responsive mobile actions');
 } finally { await browser.close(); await server.close(); }
