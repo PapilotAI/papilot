@@ -28,8 +28,8 @@ function rememberOptions(key: string, options: NoteOptions) {
 // A note's options are read once, shared by the page and the drawer: a read
 // already in flight is joined, and a cached one answers at once.
 const optionReads = new Map<string, ReturnType<OptionsRequest>>();
-function readOptions(key: string, load: () => ReturnType<OptionsRequest>) {
-  const cached = optionCache.get(key);
+function readOptions(key: string, load: () => ReturnType<OptionsRequest>, fresh = false) {
+  const cached = !fresh && optionCache.get(key);
   if (cached) return Promise.resolve(cached);
   let request = optionReads.get(key);
   if (!request) {
@@ -132,7 +132,8 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
   }, [notes]);
   useEffect(() => {
     if (!advance) return;
-    if (focus?.key !== advance.key || ['failed', 'uncertain', 'interrupted'].includes(task?.status || '')) { setAdvance(null); return; }
+    // Moving to another note, a failure or a new agent turn ends the wait.
+    if (focus?.key !== advance.key || ['failed', 'uncertain', 'interrupted', 'queued', 'running', 'waiting_input'].includes(task?.status || '')) { setAdvance(null); return; }
     if (task?.status !== 'reviewing' || task.pendingReview) return;
     const current = notes.find(note => note.key === advance.key);
     if (!current) return;
@@ -310,7 +311,8 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     if (!request || !task) return;
     let cancelled = false; setBusy(true); setError('');
     // Opening a note reads the choices prepared in the original editing turn.
-    void readOptions(optionsKey, () => request(task.id, note.key)).then(result => {
+    // Retry asks the server again rather than the cache.
+    void readOptions(optionsKey, () => request(task.id, note.key), retry > 0).then(result => {
       if (cancelled || !('options' in result)) return;
       setData(result); setSelected(rememberedChoice(storageKey, result)); setApplying(false);
     }).catch(error => { if (!cancelled) setError(error.message); }).finally(() => { if (!cancelled) setBusy(false); });
