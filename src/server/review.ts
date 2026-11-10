@@ -21,11 +21,13 @@ export function reviewConnectionError(error: unknown): boolean {
 }
 
 // A repeatable read, even when the engine prepares its cache for it.
-// Reconnect once if the engine restarted between connecting and reading.
+// Reconnect once if the engine restarted between connecting and reading. A
+// read that timed out reached a live engine: repeating it would only double
+// the wait, up to the preview's two minutes, before reporting the same error.
 export async function retryReviewRead<T>(connect: (root: string) => Promise<ReviewClient>, root: string, read: (client: ReviewClient) => Promise<T>): Promise<T> {
   try { return await read(await connect(root)); }
   catch (error) {
-    if (!reviewConnectionError(error)) throw error;
+    if (!reviewConnectionError(error) || ['AbortError', 'TimeoutError'].includes((error as Error).name)) throw error;
     return read(await connect(root));
   }
 }

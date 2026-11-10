@@ -110,7 +110,8 @@ it("labels a change invisible only when none of its edits shows", () => {
   expect(changeKinds([{ visual: "layout" }, { visual: "unmapped" }])).toEqual(["layout"]);
   expect(changeKinds([{ visual: "identical" }])).toEqual(["identical"]);
   expect(changeKinds([{ visual: "identical" }, {}])).toEqual(["identical", "unmapped"]);
-  expect(changeKinds([{ visual: "position" }, { visual: "identical" }])).toEqual(["identical"]);
+  // Moved text is marked on the page, so the change is visible.
+  expect(changeKinds([{ visual: "position" }, { visual: "identical" }])).toEqual([]);
   // An unmapped edit whose effects show elsewhere is not "Source only".
   expect(changeKinds([{ visual: "unmapped", effects: { total: 1, shown: [] } }])).toEqual([]);
 });

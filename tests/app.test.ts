@@ -1086,7 +1086,7 @@ async function legacyBatchFixture(pending = 1) {
   const refreshes: string[] = [];
   f.manuscripts.refresh = async id => { refreshes.push(id); };
   const summary = (pending: number) => ({ state: pending ? 'reviewing' : 'done', round: 1, counts: { pending, accepted: 1 } });
-  f.store.updateTask('thesis-task', { deferred: false, review: { ...summary(pending), unsent: 0 } });
+  f.store.updateTask('thesis-task', { deferred: false, review: { ...summary(pending), unsent: 0, files: [] } });
   let summaries: () => Promise<object> = async () => summary(pending);
   f.review.get = async (route: string) => (route.includes('/feedback') ? { feedback: [] } : route.startsWith('/api/jobs/') ? { status: 'done', round: 1 } : await summaries()) as any;
   const base = '/review/thesis/api/tasks/p-thesis-task';
@@ -1213,6 +1213,20 @@ test('a legacy batch completed while an alternative builds refreshes once that b
       assert.deepEqual(f.refreshes, confirmed ? ['thesis'] : [], 'only a confirmed summary after the build completes the batch');
     } finally { build.release(); await building; await f.close(); }
   }
+});
+
+test('after a restart, a build resumed for a decided task announces its selection', { timeout: 10000 }, async () => {
+  // The previous process stored the final counts while the build ran, and
+  // held their announcement back for its result.
+  const f = await legacyBatchFixture(0);
+  try {
+    f.store.updateTask('thesis-task', { status: 'building', pendingBuild: { requestId: 'saved-option', job: 'option-job', runs: [], sendBack: false, restarts: 0 } });
+    await f.workspace.resumeBuild('thesis-task');
+    assert.equal(f.store.task('thesis-task').status, 'reviewing');
+    assert.deepEqual(f.refreshes, ['thesis']);
+    await f.workspace.refresh('thesis-task');
+    assert.deepEqual(f.refreshes, ['thesis'], 'announced once');
+  } finally { await f.close(); }
 });
 
 test('a review decision replies before the task summary is read again, and the next poll waits for that read', async () => {

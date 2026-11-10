@@ -12,6 +12,7 @@ import { NotePreviewCache } from './note-preview-cache.ts';
 export interface NoteFocus { key: string; change: NoteChange; sequence: number; historical: boolean }
 type OptionsRequest = (id: string, key: string, body?: { round: number; option?: string; id?: string; accept?: boolean; reject?: boolean }) => Promise<NoteOptions | { building: true }>;
 type Preview = { key: string; round: number; option: string; version?: string; detail?: RoundDetail } | null;
+type Advance = { key: string; round: number; units: string[] };
 type PreviewRequest = (id: string, key: string, round: number, option: string, retry?: boolean, version?: string) => Promise<RoundDetail>;
 const previewKey = (id: string, key: string, round: number, option: string, version?: string) => JSON.stringify([id, key, round, option, version]);
 const comparisonCache = new NotePreviewCache<RoundDetail>();
@@ -77,7 +78,7 @@ interface Links {
   cachedPreview: (id: string, key: string, round: number, option: string, version?: string) => RoundDetail | undefined;
   notes: NoteResult[]; error: boolean; loading: boolean; selected: string; reveal: number;
   focus: NoteFocus | null; scope: 'all' | 'note'; setScope: (scope: 'all' | 'note') => void; reload: () => void;
-  clearFocus: () => void; decisionSaved: (key: string) => void;
+  clearFocus: () => void; decisionSaved: (decision: Advance) => void;
   alternativeCounts: Record<string, number>;
   focusNote: (key: string) => void;
   showChange: (key: string, change: NoteChange) => void; showNote: (key: string) => void;
@@ -93,8 +94,8 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
   const [selected, setSelected] = useState(''), [focus, setFocus] = useState<NoteFocus | null>(null);
   const [reveal, setReveal] = useState(0), [scope, setScope] = useState<'all' | 'note'>('all');
   const [preview, setPreview] = useState<Preview>(null);
-  // The note whose decision was just saved, to move on from once confirmed.
-  const [advance, setAdvance] = useState<string | null>(null);
+  // The decision just saved in the drawer, to move on from once confirmed.
+  const [advance, setAdvance] = useState<Advance | null>(null);
   const [available, setAvailable] = useState<Record<string, { round: number; count: number }>>({});
   const sequence = useRef(0), actions = useRef({ read, openReview, openChat }); actions.current = { read, openReview, openChat };
   const signature = items.filter(item => item.type === 'user' && (item.meta?.notes?.length || readNotesInstructions(item.text))).map(item => item.id).join(',');
@@ -131,20 +132,26 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
   }, [notes]);
   useEffect(() => {
     if (!advance) return;
-    if (focus?.key !== advance || ['failed', 'uncertain', 'interrupted'].includes(task?.status || '')) { setAdvance(null); return; }
+    if (focus?.key !== advance.key || ['failed', 'uncertain', 'interrupted'].includes(task?.status || '')) { setAdvance(null); return; }
     if (task?.status !== 'reviewing' || task.pendingReview) return;
-    const current = notes.find(note => note.key === advance);
-    if (!current?.changes.length || current.changes.some(change => change.state === 'pending')) return;
-    // Wait for the reloaded notes to confirm the decision: several notes can
-    // share one edit. Skip those together, and keep the last note open when
-    // none is left, so it can still be inspected or undone.
+    const current = notes.find(note => note.key === advance.key);
+    if (!current) return;
+    // Wait for the reloaded notes to confirm the decision: its changes, or
+    // those of the round an accepted alternative built, are decided.
+    const covered = current.changes.filter(change => change.round !== advance.round || change.units.some(unit => advance.units.includes(unit)));
+    if (!covered.length || covered.some(change => change.state === 'pending')) return;
+    setAdvance(null);
+    // The note still has a change of its own to decide: stay on it.
+    if (current.changes.some(change => change.state === 'pending')) return;
+    // Several notes can share one edit: skip those together, and keep the
+    // last note open when none is left, so it can be inspected or undone.
     const siblings = notes.filter(note => note.itemId === current.itemId), index = siblings.indexOf(current);
     const next = [...siblings.slice(index + 1), ...siblings.slice(0, index)].find(note => note.round === task.review?.round
       && note.changes.length && note.changes.every(change => change.state === 'pending'));
-    setAdvance(null);
     if (next) showChange(next.key, next.changes[0]);
   }, [advance, notes, focus?.key, task?.status, task?.pendingReview, task?.review?.round]);
   const requests = useRef({ optionsRequest }); requests.current = { optionsRequest };
+  const here = useRef(''); here.current = focus?.key || selected;
   const noteSignature = JSON.stringify(notes.map(note => [note.key, note.round, note.changes.map(change => change.state)]));
   useEffect(() => {
     if (!id || task?.status !== 'reviewing') return;
@@ -155,7 +162,8 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     // "Other options", so all are read, one at a time, starting where the
     // author is. Their PDF comparisons load only when a note is opened.
     const eligible = notes.filter(note => note.round === task.review?.round && note.changes.length);
-    const start = Math.max(0, eligible.findIndex(note => note.key === (focus?.key || selected)));
+    // Moving between notes does not restart the reads.
+    const start = Math.max(0, eligible.findIndex(note => note.key === here.current));
     void (async () => {
       for (const note of [...eligible.slice(start), ...eligible.slice(0, start)]) {
         if (cancelled) return;
@@ -168,11 +176,11 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
       }
     })();
     return () => { cancelled = true; };
-  }, [id, task?.status, task?.review?.round, task?.updatedAt, decisions, noteSignature, focus?.key, selected]);
+  }, [id, task?.status, task?.review?.round, task?.updatedAt, decisions, noteSignature]);
   const value: Links = { task, optionsRequest, previewRequest: previewRequest && ((id, key, round, option, retry, version) => comparisonCache.read(previewKey(id, key, round, option, version), () => previewRequest(id, key, round, option, retry, version).then(warmComparison))), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
     alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
-    decisionSaved: key => { setAdvance(key); reload(); }, showChange };
+    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
@@ -395,7 +403,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
       const rejected = optionFeedback(option.id, 'reject'); if (rejected) draft.remove(rejected.id);
       browserStorage.removeItem(storageKey);
       if ('options' in result) { setData(result); setSelected(result.selected || 'current'); setApplying(false); }
-      links.decisionSaved(note.key);
+      links.decisionSaved({ key: note.key, round: data.round, units: option.edits.map(edit => edit.unit) });
     }
     catch (error) { setError((error as Error).message); setApplying(false); }
   };

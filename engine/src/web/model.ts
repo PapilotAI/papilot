@@ -158,7 +158,7 @@ export function changeKinds(units: Partial<Pick<VisualUnit, "visual" | "effects"
       .filter((u) => !(u.effects && u.visual === "unmapped"))
       .map((u) => u.visual ?? "unmapped"),
   );
-  const visible = kinds.has("text") || kinds.has("layout");
+  const visible = kinds.has("text") || kinds.has("layout") || kinds.has("position");
   return [...kinds].filter(
     (kind) =>
       kind !== "text" &&

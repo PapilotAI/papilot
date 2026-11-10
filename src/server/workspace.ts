@@ -1101,6 +1101,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           this.emit('publishing', taskId, compiling);
         }
         const summary = await request(client => client.get(taskRoute(task.name)));
+        this.seedSelection(this.store.task(taskId));
         this.store.updateTask(taskId, { review: { ...this.store.task(taskId).review, state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: { ...current, id: pending.job } } });
         if (['done', 'completed', 'succeeded', 'failed'].includes(current.status)) {
           const latest = this.store.task(taskId).pendingBuild;
@@ -1221,18 +1222,21 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // just decided, or the decisions changed with none pending. What applying
   // writes, or what a task writing accepted changes directly wrote, can
   // compile now. A build still producing the task's next round announces
-  // its own result when it finishes. The first read seeds from the stored
-  // summary, so a restart does not announce every finished review again.
+  // its own result when it finishes.
   private announceSelection(before: Task, review: NonNullable<Task['review']>) {
-    const selection = (review?: Task['review']) => review?.counts?.pending === 0 && Object.values(review.counts).some(n => Number(n) > 0)
-      ? JSON.stringify([review.round, review.counts, review.files]) : null;
-    if (!this.announced.has(before.id)) this.announced.set(before.id, selection(before.review));
-    const next = selection(review);
+    this.seedSelection(before);
+    const next = finalSelection(review);
     if (!next) this.announced.set(before.id, null);
     else if (next !== this.announced.get(before.id) && !before.pendingBuild && before.status !== 'building') {
       this.announced.set(before.id, next);
       this.emit('decided', before.id);
     }
+  }
+  // Before a task's summary is first stored in this process, take the stored
+  // one as announced, so a restart does not announce every finished review
+  // again. A build in flight may have held its announcement back: none then.
+  private seedSelection(task: Task) {
+    if (!this.announced.has(task.id)) this.announced.set(task.id, task.pendingBuild || task.status === 'building' ? null : finalSelection(task.review));
   }
   // Review decisions, comments and undo updates the agent has not received yet.
   // The engine excludes decisions undone before delivery. A queued or in-flight message
@@ -1598,6 +1602,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
 // one it started from; their difference is what the task put in the
 // manuscript, and the difference from the accepted text at the task's last
 // commit is what it has added since. A rename counts as both of its paths.
+/** A summary's final selection, when none of its changes is pending. */
+function finalSelection(review?: Task['review'] | null) {
+  return review?.counts?.pending === 0 && Object.values(review.counts).some(n => Number(n) > 0)
+    ? JSON.stringify([review.round, review.counts, review.files]) : null;
+}
 export async function acceptedFiles(root: string, name: string, since?: string) {
   try {
     const { stdout } = await execute('git', ['-C', root, 'diff', '--name-only', '--no-renames', '-z', since || `refs/latex-review/${name}/base`, `refs/latex-review/${name}/accepted`, '--']);
