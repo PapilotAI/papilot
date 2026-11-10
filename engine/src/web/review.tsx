@@ -53,6 +53,7 @@ import {
   buildStops,
   copyReference,
   describeLocation,
+  shortLocation,
   nextPending,
   commentScope,
   pendingUnits,
@@ -1184,11 +1185,10 @@ export function ReviewApp({
               ...known
                 .filter((u) => !(u.effects && u.visual === "unmapped"))
                 .map((u) => u.visual ?? "unmapped"),
-              // Text that moved, drawn in blue, reads as moved.
-              ...(block.moved ? (["position"] as const) : []),
             ]),
           ]
-            .filter((kind) => kind !== "text")
+            // Where text moved, its marks show it; a label only puzzled.
+            .filter((kind) => kind !== "text" && kind !== "position")
             .map((kind) => t(KIND[kind]))
             .join(", ");
     const images = (items: Strip[], side: "before" | "after") => (
@@ -1249,7 +1249,7 @@ export function ReviewApp({
             title={location}
             data-location={describeLocation(known)}
           >
-            {location}
+            {shortLocation(known, t)}
           </span>
           {actionBar(index)}
           {kindLabel && !block.waiting && <span className="change-kind" title={kindLabel}>{kindLabel}</span>}
@@ -1378,7 +1378,7 @@ export function ReviewApp({
                     epoch.current++; setState(next);
                   }}
                   title={<span className="source-location" title={unit.file}>
-                    {unit.file} ·{" "}
+                    {unit.file.slice(unit.file.lastIndexOf("/") + 1)} ·{" "}
                     {t("lines {start}–{end}", {
                       start: unit.new_start,
                       end: unit.new_end,

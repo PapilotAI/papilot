@@ -179,6 +179,30 @@ export function describeLocation(
     (pages.length ? ` · ${say("p. {pages}", { pages: pages.join(", ") })}` : "")
   );
 }
+/** The location as a change's bar shows it: each file's name, without its
+ *  folders, and the span of its edited lines. describeLocation's full paths,
+ *  every line and the pages are what hovering shows and tools quote. */
+export function shortLocation(
+  units: (Unit & Partial<VisualUnit>)[],
+  say: Say = english,
+) {
+  const files = new Map<string, number[] | string>();
+  for (const unit of units) {
+    const seen = files.get(unit.file);
+    if (typeof seen === "string") continue;
+    if (unit.status === "added" || unit.status === "deleted")
+      files.set(unit.file, say(unit.status === "added" ? "new file" : "deleted"));
+    else files.set(unit.file, [...(seen ?? []), unit.new_start, unit.new_end]);
+  }
+  return [...files]
+    .map(([file, lines]) => {
+      const name = file.slice(file.lastIndexOf("/") + 1);
+      if (typeof lines === "string") return `${name}:${lines}`;
+      const from = Math.min(...lines), to = Math.max(...lines);
+      return `${name}:${from === to ? from : `${from}–${to}`}`;
+    })
+    .join("; ");
+}
 export function copyReference(
   title: string,
   round: number,
