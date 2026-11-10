@@ -642,6 +642,8 @@ export async function buildApp(options: AppOptions) {
     const existing = store.tasks().find(task => task.id === id);
     if (existing) { if (existing.projectId !== project.id) throw new Error('Invalid task ID.'); return workspace.retryTask(existing.id); }
     if (!Array.isArray(b.annotations) || !b.annotations.length || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64)) throw new Error('Select valid PDF notes for this task.');
+    // The note-only send path needs the same source lookup as task creation.
+    await Promise.all(b.annotations.map((note: string) => locating.get(note)));
     const notes = [...new Set<string>(b.annotations)].map(id => store.annotation(project.id, id));
     if (notes.some(note => note.taskId || isTaskReviewNote(note) || note.deletedAt !== undefined)) throw new Error('Select unsent PDF notes for this task.');
     const { title } = annotationTask(notes);

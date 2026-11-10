@@ -660,6 +660,30 @@ test('a note is saved at once while SyncTeX finds its source', async () => {
   } finally { await f.close(); }
 });
 
+for (const endpoint of ['task', 'notes']) test(`sending a new PDF note through ${endpoint} waits for its source`, async () => {
+  const f = await fixture();
+  let release!: () => void;
+  const lookup = new Promise<void>(resolve => { release = resolve; });
+  f.manuscripts.locate = async () => { await lookup; return { quote: 'Located text', source: { file: 'main.tex', lines: [7, 8], excerpt: undefined } }; };
+  f.review.post = async () => ({ worktree: '/unused/review-copy', deferred: true }) as any;
+  try {
+    const created = await f.local.inject({ method: 'POST', url: '/api/projects/thesis/annotations', headers: f.as, payload: { key: 'pdf', page: 0, rect: [0.1, 0.1, 0.4, 0.2], quote: 'Selected text', comment: 'Tighten this.' } });
+    assert.equal(created.statusCode, 200, created.body);
+    const id = `source-lookup-${endpoint}-01`, annotations = [created.json().id];
+    let answered = false;
+    const sending = f.local.inject({ method: 'POST', url: endpoint === 'task' ? '/api/tasks' : '/api/projects/thesis/annotations/send', headers: f.as,
+      payload: { id, annotations, ...(endpoint === 'task' ? { projectId: 'thesis', title: 'Tighten this', instructions: '' } : {}) } }).then(response => { answered = true; return response; });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const answeredBeforeSource = answered;
+    release();
+    const sent = await sending;
+    assert.equal(sent.statusCode, 200, sent.body);
+    assert.equal(answeredBeforeSource, false, 'The agent must receive the source of the selected passage');
+    assert.match(f.store.runByKey('initial-' + id)!.prompt, /main\.tex.*7.*8/);
+    assert.deepEqual(f.store.items(id)[0].meta?.notes?.[0].anchor?.sources, [{ file: 'main.tex', lines: [7, 8] }]);
+  } finally { release(); await f.close(); }
+});
+
 test('color groups persist without per-location comments and take their meaning from each request', async () => {
   const f = await fixture();
   f.manuscripts.locate = async () => ({ quote: 'Selected text', source: { file: 'main.tex', lines: [10, 12], excerpt: undefined } });
