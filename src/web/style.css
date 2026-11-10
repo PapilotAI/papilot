@@ -267,7 +267,7 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .task-document>.review-viewport{position:absolute;inset:0}
 .task-document .keeps-pdf.review-pending{pointer-events:none}
 .task-document .keeps-pdf.review-pending>.review-host-bar,.task-document .keeps-pdf.review-pending>.review-marking-rail{visibility:hidden}
-.task-document .keeps-pdf>.review-loading{inset:auto 0 0;padding:8px 12px;pointer-events:auto;border-top:1px solid var(--line);background:var(--bg);font-size:12px}
+.task-document .keeps-pdf>.review-loading{inset:auto 0 0;flex-direction:row;flex-wrap:wrap;gap:8px;padding:8px 12px;pointer-events:auto;border-top:1px solid var(--line);background:var(--bg);font-size:12px}
 .task-document .keeps-pdf>.review-loading p{max-width:none;margin:0}
 .task-document-status{flex:none;max-height:30%;overflow:auto;padding:8px 12px;border-top:1px solid var(--line);background:var(--bg);color:var(--text-2);font-size:12px}
 .task-document-version{font-weight:600}

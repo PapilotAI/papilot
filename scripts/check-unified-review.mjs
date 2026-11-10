@@ -16,8 +16,6 @@ const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ locale: 'en-US', hasTouch: process.env.PAPILOT_REVIEW_TOOLS_TOUCH === '1', viewport: { width: 1440, height: 1000 } });
 page.setDefaultTimeout(15000);
-// These checks exercise the per-change tools; full-paper reading is covered in check-places.
-await page.addInitScript(() => localStorage.setItem('latex-review:default-view', 'changes'));
 const errors = []; page.on('pageerror', error => { errors.push(error.message); console.error('PAGE ERROR', error.message); });
 const prefix = '/review/paper';
 const task = { id: 'review-flow-fixture', projectId: 'paper', name: 'flow', title: 'Review the new wording', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { state: 'reviewing', round: 1, counts: {}, unsent: 0 } };

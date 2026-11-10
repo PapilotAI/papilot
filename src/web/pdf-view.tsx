@@ -595,7 +595,7 @@ export const PdfView = forwardRef<PdfHandle, {
       // and reject its replacement state. Keep that request in our cancellable
       // load phase, before the viewer takes ownership of the document.
       await document.getPage(1);
-      if (cancelled || editingRef.current) return;
+      if (cancelled || editingRef.current) { restore.current = null; closeDocument(task); return; }
       const previous = loaded.current;
       loaded.current = document; attached = true; layerMap.current.clear(); setLayers(new Map()); setSelection(null); setEditing(null);
       // Marks always name the pages actually attached, never a pending fetch.
@@ -608,10 +608,11 @@ export const PdfView = forwardRef<PdfHandle, {
       if (loaded.current === document) latest.current.onOutline(items);
     }).catch(failure => {
       if (cancelled) return;
-      if (!attached) closeDocument(task);
-      setError(failure instanceof Error ? failure.message : String(failure)); setLoading(false);
+      if (!attached) { restore.current = null; closeDocument(task); }
+      if (!loaded.current) setError(failure instanceof Error ? failure.message : String(failure));
+      setLoading(false);
     });
-    return () => { cancelled = true; if (!attached) closeDocument(task); };
+    return () => { cancelled = true; if (!attached) { restore.current = null; closeDocument(task); } };
   }, [props.url, props.words, props.pdfKey, editing]);
 
   // Opening a suggestion from the task or navigation reveals its passage.

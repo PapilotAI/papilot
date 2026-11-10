@@ -250,6 +250,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     /* The common PDF toolbar owns the first row; review decisions keep a
        separate row below it. Full pages use the manuscript's fit and margins. */
     :root[data-papilot-reader] .bar{margin-top:var(--papilot-bar-height,46px);padding:0 8px;min-height:44px}
+    :root[data-papilot-reader] .change-map{display:none}
     :root[data-papilot-reader] .review-body>#paper{--paper-top:20px;padding:20px 0 56px}
     :root[data-papilot-reader] .paper-page{margin-bottom:20px;border-radius:2px;box-shadow:0 1px 2px rgb(0 0 0/.06),0 8px 24px rgb(0 0 0/.08)}
     :root[data-papilot-reader] .paper{--pdf-crop-scale:1;--pdf-crop-shift:0}
@@ -493,9 +494,8 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
         const paper = doc.getElementById('paper');
         if (!paper) return;
         setDisplayedRound(Number(doc.documentElement.dataset.papilotRound) || undefined);
-        const waiting = paper.querySelector('.comparison-waiting');
-        if (!changesOf && waiting && !paper.querySelector('.pdf-strip img[src],.paper-page')) {
-          setPhase(waiting.getAttribute('data-state') === 'failed' ? 'error' : 'loading'); return;
+        if (!changesOf && paper.querySelector('.comparison-waiting[data-state="failed"]') && !paper.querySelector('.pdf-strip img[src],.paper-page,.applied-page')) {
+          setPhase('error'); return;
         }
         // An inline edit/annotation error must not hide an otherwise usable
         // review. Only the viewer's unavailable-document states need fallback.
@@ -503,8 +503,13 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
         if (changesOf || !paper.querySelector('.waiting,.paper-status[role="status"]')) { setPhase('ready'); if (!onReadyChange) observer.current?.disconnect(); }
         else setPhase(value => value === 'error' || value === 'ready' ? 'loading' : value);
       };
-      observer.current = new MutationObserver(inspect);
-      observer.current.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-papilot-round'] });
+      observer.current = new MutationObserver(records => {
+        const relevant = records.some(record => record.type === 'attributes'
+          ? record.target === doc.documentElement || (record.target as Element).matches('.comparison-waiting,.pdf-strip img')
+          : !(record.target as Element).closest?.('.pdf-text,.change-map,.latex-highlight'));
+        if (relevant) inspect();
+      });
+      observer.current.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-papilot-round', 'data-state', 'src'] });
       inspect();
       cropMargins(doc);
     } catch { setPhase('error'); }

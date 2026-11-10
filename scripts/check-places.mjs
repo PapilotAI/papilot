@@ -183,6 +183,11 @@ try {
   await entries.last().click();
   await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('2');
   await expect.poll(() => scrollOf(paper())).toBeGreaterThan(500);
+  const inlineSource = full.locator('.change.inline').first().getByRole('button', { name: /LaTeX/ });
+  await inlineSource.click();
+  await expect(full.locator('.change.inline .source').first()).toBeVisible();
+  await inlineSource.click();
+  await expect(full.locator('.change.inline .source')).toHaveCount(0);
 
   // Fit and explicit zoom use the same picker in both readers.
   const chooseZoom = async label => {

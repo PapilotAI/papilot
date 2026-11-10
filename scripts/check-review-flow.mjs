@@ -158,9 +158,9 @@ try {
   const settings = () => page.locator('dialog').filter({ has: page.locator('.settings-dialog') });
   await settings().getByRole('button', { name: 'Review preferences', exact: true }).click();
   const expandEffects = () => settings().getByRole('switch', { name: 'Track indirect changes', exact: true });
-  // Reviews start on the full PDF; an explicit Changes preference is kept.
+  // Reviews open on the changed sections unless the whole paper is chosen here.
   const openOn = settings().getByRole('group', { name: 'Open reviews on', exact: true });
-  await expect(openOn.getByRole('button', { name: 'PDF', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(openOn.getByRole('button', { name: 'Changes', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await openOn.getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(openOn.getByRole('button', { name: 'PDF', exact: true })).toHaveAttribute('aria-pressed', 'true');
   assert.equal(await page.evaluate(() => localStorage.getItem('latex-review:default-view')), 'paper');
