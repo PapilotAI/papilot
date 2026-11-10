@@ -19,6 +19,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
+- **A lost file lock no longer stops the app.** When another process took over or removed a lock Papilot held, for example while an earlier app's review engine shut down, the server crashed; it now logs the loss and carries on.
+- **"No visible change" describes only changes that show nothing.** A change with visible edits is no longer labelled so because one of its edits only swapped a space for a line break.
 - **Notes on an older PDF are kept.** A note written while a newer PDF compiles is saved and placed in the current source, and a new PDF arriving leaves an open note box as it is. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **Saving a PDF note no longer waits for SyncTeX.** The note appears at once and its source fills in afterwards. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **Saving is offered after rejecting changes.** Rejections no longer hide Apply and Commit; sending them to the agent stays optional. ([#112](https://github.com/PapilotAI/papilot/pull/112))
