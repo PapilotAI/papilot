@@ -100,6 +100,9 @@ Literal symbols: \% and \$; \verb|% $ { }|.
   await expect.poll(() => app.publisher.current(task.name)?.status, { timeout: 90000 }).toBe('failed');
   assert.equal(app.review.latestRound(task.name)?.number, 3);
   assert.equal(app.review.latestRound(task.name)?.visuals, 'failed');
+  // The publisher can fail before the browser has loaded its new round.
+  // Wait for that round's source before opening its editor.
+  await expect(page.locator('.source-code')).toContainText('\\unknownSourceEditCommand', { timeout: 15000 });
   await expect(edit()).toBeEnabled({ timeout: 15000 }); await edit().click();
   await expect(field()).toHaveValue('\\unknownSourceEditCommand\n');
   await field().fill('Repaired by hand.');
