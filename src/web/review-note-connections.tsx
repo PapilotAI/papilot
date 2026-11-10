@@ -92,17 +92,21 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
     .papilot-note-links button:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
     .papilot-note-options{display:inline-flex;flex:none;order:3;margin-left:4px}
     .papilot-note-options:empty{display:none}
-    .papilot-note-options button{display:inline-flex;align-items:center;gap:3px;padding:4px;border:0;border-radius:5px;background:transparent;color:var(--accent);font:11px/1.5 var(--sans);white-space:nowrap;cursor:pointer}
+    .papilot-note-options button{display:inline-flex;align-items:center;gap:4px;min-height:26px;padding:3px 5px;border:0;border-radius:5px;background:transparent;color:var(--accent);font:11px/1.5 var(--sans);white-space:nowrap;cursor:pointer}
     .papilot-note-options button:hover,.papilot-note-options button[aria-expanded=true]{background:var(--accent-soft)}
     .papilot-note-options button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+    .papilot-note-options button[aria-expanded=true]>svg:last-child{transform:rotate(180deg)}
+    .papilot-note-options-count{display:none}
     .papilot-linked-change>.change-head{box-shadow:inset 3px 0 color-mix(in srgb,var(--primary) 35%,transparent)}
     .papilot-linked-target{outline:2px solid var(--primary);outline-offset:-2px}
     .papilot-linked-target>.change-head{background:color-mix(in srgb,var(--primary) 12%,var(--bg));box-shadow:inset 3px 0 var(--primary)}
     .papilot-linked-target>.change-head .change-number{color:var(--primary);font-weight:600}
-    @media(pointer:coarse){.papilot-note-links button{min-height:32px;min-width:28px}}
+    @media(max-width:640px){.papilot-note-options-label{display:none}.papilot-note-options-count{display:inline}.papilot-note-options button{gap:2px}}
+    @media(pointer:coarse){.papilot-note-links button{min-height:32px;min-width:28px}.papilot-note-options button{min-height:32px;min-width:32px;justify-content:center}}
   `}</style>, doc.head)}{places.map(place => createPortal(<><Icon name="notes" size={12}/><span>{place.notes.map(note => <button key={note.key} type="button" title={note.note.comment} aria-pressed={links.focus?.key === note.key} aria-label={t('Show note {n}: {comment}', { n: note.index + 1, comment: note.note.comment })} onClick={event => { event.stopPropagation(); focusAt(place, note); }}>{note.index + 1}</button>)}</span></>, place.slot, `${place.round}:${place.stop}`))}{places.map(place => {
     const available = place.notes.filter(note => links.alternativeCounts[note.key] > 0);
     const note = available.find(note => note.key === links.focus?.key) || available[0];
-    return createPortal(note ? <button type="button" aria-expanded={links.focus?.key === note.key} onClick={event => { event.stopPropagation(); focusAt(place, note); }}>{t('Other options · {n}', { n: links.alternativeCounts[note.key] })}<Icon name="chevronDown" size={12}/></button> : null, place.optionsSlot, `options:${place.round}:${place.stop}`);
+    const label = note && t('Other options · {n}', { n: links.alternativeCounts[note.key] });
+    return createPortal(note ? <button type="button" aria-label={label} title={label} aria-expanded={links.focus?.key === note.key} onClick={event => { event.stopPropagation(); focusAt(place, note); }}><Icon name="layers" size={13}/><span className="papilot-note-options-label">{label}</span><span className="papilot-note-options-count" aria-hidden="true">{links.alternativeCounts[note.key]}</span><Icon name="chevronDown" size={12}/></button> : null, place.optionsSlot, `options:${place.round}:${place.stop}`);
   })}</>;
 }

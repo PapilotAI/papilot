@@ -39,7 +39,7 @@ const rounds = Object.fromEntries([1, 2].map(round => [round, { round, units: un
 const decisions = { 1: { c1: 'pending', c2: 'rejected', c3: 'accepted' }, 2: { c1: 'pending' } };
 const client = { get: async route => route.includes('/rounds/') ? rounds[Number(route.split('/').at(-1))] : { decisions: decisions[Number(new URL(route, origin).searchParams.get('round'))] } };
 let failResults = true;
-const optionWrites = [];
+const optionWrites = [], optionReads = [], previewReads = [];
 let rejectFails = false;
 let comparisonVersion = 'initial';
 const alternateSource = '\\emph{A concise alternative preserving the technical term.}';
@@ -65,6 +65,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/note-options/preview')) {
     assert.equal(url.searchParams.get('comparison'), comparisonVersion);
     const round = Number(url.searchParams.get('round')), option = url.searchParams.get('option');
+    previewReads.push({ key: url.searchParams.get('key'), round, option });
     const candidate = round === 2 ? [...units[round].map(unit => ({ ...unit, new_text: option === 'brief' ? alternateSource : unit.new_text })), unit('other', 80, 'Three datasets.', 'Five datasets.')] : units[round];
     const blocks = round === 2 ? [{ kind: 'change', units: candidate.map(unit => unit.id), before: [strip('Unrelated leading strip'), sharedStrip(candidate[0].old_text)], after: [strip('Unrelated leading strip'), sharedStrip(candidate[0].new_text)] }] : candidate.map(unit => ({ kind: 'change', units: [unit.id], before: [strip(unit.old_text)], after: [strip(unit.new_text)] }));
     return route.fulfill({ json: { ...rounds[round], units: candidate, task: task.name, before: 'before', after: `candidate-${option}-${comparisonVersion}`, files: '', warnings: [], loose: [...blocks, ...Array.from({ length: 5 }, (_, i) => ({ kind: 'change', units: ['space-' + i], identical: true, before: [], after: [] }))] } });
@@ -75,7 +76,7 @@ await page.route('**/api/**', async route => {
       optionWrites.push(body);
       if (body.reject && rejectFails) return route.fulfill({ status: 400, json: { error: 'The source changed. Try again.' } });
       if (body.reject) decisions[2].c1 = 'rejected';
-    }
+    } else optionReads.push(url.searchParams.get('key'));
     const round = (body?.key || url.searchParams.get('key'))?.startsWith('request-1:') ? 1 : 2;
     return route.fulfill({ json: { round, comparisonKey: comparisonVersion, key: url.searchParams.get('key'), ...(round === 1 ? { options: [], locked: 'Options are not available for this source range yet.' } : { options: [
       { id: 'current', label: 'Keep terminology', reason: 'Preserve the author’s technical term.', edits: [{ unit: 'c1', text: units[2][0].new_text }] },
@@ -106,8 +107,12 @@ try {
   await controls().getByRole('button', { name: 'Retry linking changes', exact: true }).click();
   await frame().getByRole('button', { name: 'Show note 1: Keep the technical term.', exact: true }).waitFor();
   assert.equal(await frame().getByRole('button', { name: 'Show note 1: Shorten the opening.', exact: true }).count(), 0, 'an older note must not label a newer round');
+  assert.deepEqual(optionReads.sort(), ['request-2:0', 'request-2:1', 'request-2:2'], 'Only the current note and its two neighbors are prefetched');
+  assert.deepEqual(previewReads, [], 'Opening the review never prefetches option PDFs');
   await frame().getByRole('button', { name: 'Other options · 1', exact: true }).click();
   await controls().getByRole('tab', { name: 'Concise', exact: true }).waitFor();
+  assert.equal(optionReads.length, 3, 'Opening a cached note does not repeat its manifest request');
+  assert.deepEqual(previewReads, [{ key: 'request-2:0', round: 2, option: 'current' }], 'Only the visible comparison is loaded');
   await frame().locator('.source-fixture p').first().click();
   await controls().waitFor({ state: 'hidden' });
   const original = await page.locator('[data-note-result]').allTextContents();
@@ -186,9 +191,15 @@ try {
   assert.equal(await sourceToggle.getAttribute('aria-pressed'), 'false', 'PDF remains the default');
   await sourceToggle.click();
   await controls().getByRole('region', { name: 'LaTeX comparison', exact: true }).waitFor();
+  const navigationBefore = await controls().locator('.note-option-navigation').boundingBox();
   await controls().getByRole('tab', { name: 'Concise', exact: true }).click();
+  await expect(controls().getByRole('tablist')).toHaveAttribute('aria-busy', 'true');
+  await controls().locator('.note-option-source[data-revision="candidate-current-initial"]').waitFor();
+  assert.deepEqual(await controls().locator('.note-option-navigation').boundingBox(), navigationBefore, 'Switching options keeps the toolbar stable');
+  assert.deepEqual(await page.locator('[data-note-result]').allTextContents(), original, 'Switching options never rearranges the review list');
   const sourceView = controls().locator('.note-option-source[data-revision="candidate-brief-initial"]');
   await sourceView.waitFor();
+  assert.equal(previewReads.filter(read => read.key === 'request-2:0' && read.option === 'brief').length, 1, 'A newly visible option loads its preview once');
   assert.ok((await sourceView.locator('.note-source-unit[data-unit="c1"]').textContent()).includes(alternateSource), 'source follows the selected alternative');
   assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"]').count(), 0, 'other groups are excluded from this note’s drawer');
   assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"] ins, .note-source-unit[data-unit="other"] del').count(), 0, 'unrelated edits retain context without focused colors');
