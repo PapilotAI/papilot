@@ -571,6 +571,10 @@ export function ReviewApp({
         setOnline(true);
         setError("");
         setSettling(false);
+        const unavailable = (value: PageState) => value.state === "building" || value.state === "build_failed" || Boolean(value.rendering);
+        // A new source round can precede its PDF, or retain a failed build.
+        // Clear only the previous build's success message, not action feedback.
+        if (unavailable(next)) setToast(message => message === t("Changes are ready") ? "" : message);
         const target = pinned || next.latest;
         if (
           target &&
@@ -642,9 +646,16 @@ export function ReviewApp({
               const shown = paper.current?.querySelector<HTMLElement>(`[data-stop="${index}"]`);
               if (shown) reveal(shown);
             });
-          else if (previous.detail)
+          if (previous.detail && !loaded.rendering && !unavailable(loadedState) && (!same || previous.detail.rendering))
             setToast(t("Changes are ready"));
-        } else setState(next);
+        } else {
+          setState(next);
+          // The PDF and job status are read separately. If the PDF arrived
+          // first, announce it when the publication's status catches up.
+          if (previous.detail && !previous.detail.rendering && !unavailable(next) &&
+              (previous.state?.state === "building" || previous.state?.state === "build_failed"))
+            setToast(t("Changes are ready"));
+        }
       } catch (e) {
         if (!cancelled) {
           setOnline(false);
