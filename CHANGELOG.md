@@ -21,7 +21,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Fixed
 
 - **Apply reuses the final selection's compilation.** Intermediate decisions no longer refresh the manuscript. Older tasks that write accepted changes directly compile once their last pending change is decided, and Apply or Commit compiles only once the changes are in the manuscript. ([#115](https://github.com/PapilotAI/papilot/pull/115))
-- **A lost file lock no longer stops the app.** When another process took over or removed a lock Papilot held, for example while an earlier app's review engine shut down, the server crashed; it now logs the loss and carries on. ([#115](https://github.com/PapilotAI/papilot/pull/115))
+- **A lost file lock no longer stops the app.** When another process took over or removed a lock Papilot held, for example while an earlier app's review engine shut down, the server crashed. Now the review engine that lost its lock stops, and Papilot continues with the engine that holds it, so two never write a paper's review state at once. ([#115](https://github.com/PapilotAI/papilot/pull/115))
 - **"No visible change" describes only changes that show nothing.** A change with visible edits is no longer labelled so because one of its edits only swapped a space for a line break. ([#115](https://github.com/PapilotAI/papilot/pull/115))
 - **Notes on an older PDF are kept.** A note written while a newer PDF compiles is saved and placed in the current source, and a new PDF arriving leaves an open note box as it is. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **Saving a PDF note no longer waits for SyncTeX.** The note appears at once and its source fills in afterwards. ([#112](https://github.com/PapilotAI/papilot/pull/112))

@@ -102,7 +102,7 @@ export function writeJson(file: string, value: unknown, mode?: number) {
 export async function acquireLock(
   file: string,
   retry = true,
-  timing: { stale?: number; update?: number } = {},
+  options: { stale?: number; update?: number; onLost?: () => void } = {},
 ) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.closeSync(fs.openSync(file, "a"));
@@ -111,15 +111,17 @@ export async function acquireLock(
       let lost = false;
       const release = await lockfile.lock(file, {
         realpath: false,
-        stale: timing.stale ?? 30000,
-        update: timing.update ?? 10000,
+        stale: options.stale ?? 30000,
+        update: options.update ?? 10000,
         retries: 0,
         // A lock judged stale and taken over, or whose folder another process
         // removed, is lost. The default handler throws from a timer, which
-        // took the whole app down; the work under it simply finishes.
+        // took the whole app down. The work under it finishes, unless its
+        // owner says what losing it means (onLost).
         onCompromised: (error) => {
           lost = true;
           console.warn(`Lost the lock on ${file}: ${error.message}`);
+          options.onLost?.();
         },
       });
       return async () => {
