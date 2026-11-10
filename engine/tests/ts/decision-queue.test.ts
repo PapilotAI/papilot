@@ -193,3 +193,35 @@ it("takes back the latest decision while it waits, never sending it, but not one
   expect(sent.map((s) => s.entry.id)).toEqual(["a"]);
   expect(events).toEqual(["confirmed a state-a []"]);
 });
+
+it("restores an empty queue when browser policy blocks access to localStorage itself", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, get() { throw new DOMException("Storage blocked", "SecurityError"); } });
+  try {
+    expect(DecisionQueue.saved("queue")).toEqual([]);
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  }
+});
+it("still sends and confirms decisions when the localStorage getter throws", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage"), sent: string[] = [], confirmed: string[] = [];
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, get() { throw new DOMException("Storage blocked", "SecurityError"); } });
+  try {
+    const queue = new DecisionQueue<QueuedDecision, string>({
+      storage: { key: "queue" },
+      send: async (decision) => { sent.push(decision.id); return "ok"; },
+      confirmed: (decision) => { confirmed.push(decision.id); },
+      failed: () => { throw new Error("The decision should still send"); },
+    });
+    queue.push(entry("a"));
+    queue.push(entry("b"));
+    await queue.drained();
+    expect(sent).toEqual(["a", "b"]);
+    expect(confirmed).toEqual(["a", "b"]);
+    expect(queue.pending).toEqual([]);
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  }
+});

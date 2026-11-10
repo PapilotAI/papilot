@@ -66,16 +66,16 @@ export class DecisionQueue<T extends QueuedDecision, R> {
   private save() {
     const store = this.options.storage;
     if (!store) return;
-    const area = store.area ?? globalThis.localStorage;
     try {
+      const area = store.area ?? globalThis.localStorage;
       if (this.entries.length) area.setItem(store.key, JSON.stringify(this.entries));
       else area.removeItem(store.key);
     } catch { /* Storage may be full or unavailable; the queue still sends. */ }
   }
   /** Decisions a page that closed before they were confirmed left behind. */
-  static saved<T>(key: string, area: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): T[] {
+  static saved<T>(key: string, area?: Pick<Storage, "getItem">): T[] {
     try {
-      const value = JSON.parse(area?.getItem(key) || "[]");
+      const value = JSON.parse((area ?? globalThis.localStorage)?.getItem(key) || "[]");
       return Array.isArray(value) ? value : [];
     } catch { return []; }
   }
