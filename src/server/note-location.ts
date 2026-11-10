@@ -92,9 +92,9 @@ export function sourceExcerpt(file: string, [start, end]: [number, number], limi
 }
 
 export interface MarkPage {
-  bounds: number[];
-  lines: { chars: { text: string; rect: number[] }[] }[];
-  text(clip: number[]): string;
+  bounds: Rect;
+  lines: { chars: { text: string; rect: Rect }[] }[];
+  text(clip: Rect): string;
 }
 export interface MarkRequest {
   pdf: string; page: number; rect: Rect; rects: Rect[]; selected: string;
@@ -111,17 +111,17 @@ export interface Located { quote: string; source: { file: string; lines: [number
 export async function locateMark(
   document: { length: number; page(index: number): MarkPage },
   request: MarkRequest,
-  { containsCenter, opcodesWithin }: { containsCenter: (clip: number[], rect: number[]) => boolean; opcodesWithin: (a: string[], b: string[], timeout: number) => LineOp[] | null },
+  { containsCenter, opcodesWithin }: { containsCenter: (clip: Rect, rect: Rect) => boolean; opcodesWithin: (a: string[], b: string[], timeout: number) => LineOp[] | null },
 ): Promise<Located | null> {
   const { pdf, page, rect, rects, selected } = request;
   if (!Number.isInteger(page) || page < 0 || page >= document.length) return null;
   const current = document.page(page), [x0, y0, x1, y1] = current.bounds, width = x1 - x0, height = y1 - y0;
-  const toPage = (r: Rect) => [x0 + r[0] * width, y0 + r[1] * height, x0 + r[2] * width, y0 + r[3] * height];
+  const toPage = (r: Rect): Rect => [x0 + r[0] * width, y0 + r[1] * height, x0 + r[2] * width, y0 + r[3] * height];
   const clips = (rects.length ? rects : [rect]).map(toPage);
   const quote = (selected || clips.map(clip => current.text(clip)).join(' ')).replace(/�/g, '').replace(/\s+/g, ' ').trim();
   // Ask SyncTeX about the first and last marked character of every line, so
   // the source range covers the whole selection rather than its first line.
-  const points: [number, number][] = [], centre = (r: number[]): [number, number] => [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2];
+  const points: [number, number][] = [], centre = (r: Rect): [number, number] => [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2];
   let first: Anchor | null = null, last: Anchor | null = null;
   for (const line of current.lines) {
     const marked = line.chars.flatMap((c, index) => clips.some(clip => containsCenter(clip, c.rect)) ? [index] : []);
@@ -149,9 +149,10 @@ export async function locateMark(
   const working = request.working && path.join(request.working, ...file.split('/'));
   if (working && path.resolve(working) !== path.resolve(found.input) && fs.existsSync(working)) {
     const now = fs.readFileSync(working, 'utf8').split('\n');
-    const ops = now.length === source.length && now.every((line, index) => line === source[index]) ? null : opcodesWithin(source, now, 1000);
-    if (ops) {
-      const followed = followLines(ops, lines);
+    if (now.length !== source.length || now.some((line, index) => line !== source[index])) {
+      const ops = opcodesWithin(source, now, 1000);
+      // A timed-out comparison cannot establish current source coordinates.
+      const followed = ops && followLines(ops, lines);
       return { quote, source: followed && { file, lines: followed, excerpt: sourceExcerpt(working, followed) } };
     }
   }

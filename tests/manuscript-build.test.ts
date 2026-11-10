@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Manuscripts, workingTree } from '../src/server/manuscript.ts';
-import { PdfDocument } from '../engine/src/render/pdf.ts';
+import { PdfDocument, containsCenter } from '../engine/src/render/pdf.ts';
+import { locateMark } from '../src/server/note-location.ts';
 import type { Annotation } from '../src/shared.ts';
 
 const latexmk = (() => {
@@ -213,6 +214,20 @@ test('a note on pages that a newer build replaced is still located, in the file 
     assert.equal(located.source?.file, 'main.tex');
     assert.deepEqual(located.source?.lines, [9, 9], 'Lines name the passage in the file as it is now');
     assert.equal(located.source?.excerpt, 'Mark this sentence on the older pages.');
+
+    // A bounded diff that times out cannot prove where the old passage moved.
+    // Keep the selected quote, but never attach its stale compiled line number.
+    const oldPdf = manuscripts.pdf('paper', first.key!), oldDocument = new PdfDocument(oldPdf);
+    let comparisons = 0;
+    try {
+      const unknown = await locateMark(oldDocument, { pdf: oldPdf, page: 0, rect: rects[0], rects, selected: '', working: root }, {
+        containsCenter,
+        opcodesWithin: () => { comparisons++; return null; },
+      });
+      assert.equal(comparisons, 1);
+      assert.equal(unknown?.quote, 'Mark this sentence on the older pages.');
+      assert.equal(unknown?.source, null, 'A timed-out diff does not identify current source lines');
+    } finally { oldDocument.close(); }
 
     // A passage deleted since keeps its quote and names no lines.
     fs.writeFileSync(file, tex('A new first paragraph.'));
