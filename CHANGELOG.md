@@ -15,7 +15,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 - **Smoother review scrolling.** The review scrolls natively, and selectable PDF text is laid out once scrolling rests. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **A much smaller desktop installer.** The desktop app no longer includes Codex: it uses the Codex installed on the computer, and **Settings → Runtime → Agents** says when none is found or none runs, so you can install it and select **Reconnect**. The review engine also no longer carries its own copy of dependencies the app already has. ([#110](https://github.com/PapilotAI/papilot/pull/110))
 - **Quicker with a long history.** Each streamed agent message updates one task and one message instead of reading every task and the whole conversation again, and the app's state poll gets an empty answer when nothing changed instead of every task again. ([#110](https://github.com/PapilotAI/papilot/pull/110))
-- **Note review stays continuous.** Prepared alternatives retain the current note and toolbar while switching, saving or compiling; alternative previews reconnect once if the review engine restarts. ([#109](https://github.com/PapilotAI/papilot/pull/109))
+- **Note review stays continuous.** The drawer stays open, advances to the next pending note after a confirmed decision, and leaves the final note available to inspect. Alternative previews reconnect once if the review engine restarts. ([#109](https://github.com/PapilotAI/papilot/pull/109))
 
 ### Fixed
 
