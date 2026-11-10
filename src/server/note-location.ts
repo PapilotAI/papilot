@@ -147,7 +147,8 @@ export async function locateMark(
   // The build compiled a copy of the source; the working tree may have
   // moved on since, by later edits or because these are older pages.
   const working = request.working && path.join(request.working, ...file.split('/'));
-  if (working && path.resolve(working) !== path.resolve(found.input) && fs.existsSync(working)) {
+  if (working && path.resolve(working) !== path.resolve(found.input)) {
+    if (!fs.existsSync(working)) return { quote, source: null };
     const now = fs.readFileSync(working, 'utf8').split('\n');
     if (now.length !== source.length || now.some((line, index) => line !== source[index])) {
       const ops = opcodesWithin(source, now, 1000);

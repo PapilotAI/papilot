@@ -234,6 +234,10 @@ test('a note on pages that a newer build replaced is still located, in the file 
     const gone = await manuscripts.locate('paper', first.key!, 0, rects[0], rects);
     assert.equal(gone.quote, 'Mark this sentence on the older pages.');
     assert.equal(gone.source, null);
+    fs.unlinkSync(file);
+    const removed = await manuscripts.locate('paper', first.key!, 0, rects[0], rects);
+    assert.equal(removed.quote, 'Mark this sentence on the older pages.');
+    assert.equal(removed.source, null, 'A deleted source file cannot supply current coordinates');
   } finally {
     await manuscripts.stop();
     fs.rmSync(base, { recursive: true, force: true });
