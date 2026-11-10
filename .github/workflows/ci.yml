@@ -60,6 +60,16 @@ jobs:
       - run: npm run i18n -- check
       - run: npm run i18n:check-app
       - run: npm run build
+      - name: Review batching and toolbar browser regressions
+        if: matrix.node == 22
+        run: |
+          node --import tsx scripts/check-review-batching.mjs
+          node --import tsx scripts/check-review-application.mjs
+          node --import tsx scripts/check-review-flow.mjs
+          node --import tsx scripts/check-note-results.mjs
+          node --import tsx scripts/check-note-options-flow.mjs
+        env:
+          PAPILOT_BROWSER_CHANNEL: chromium
       # Checks the generated UI demos and local asset links before main.
       - run: npm run site
       - name: Verify the static playground without a backend
