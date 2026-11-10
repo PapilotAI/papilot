@@ -1,177 +1,111 @@
-// Browser -> Papilot -> real review server -> real Git and LaTeX.
-// Only the agent is inert. All repositories, state and browser profiles are disposable.
+// Real engine and Papilot routes, with only the agent and manuscript builds
+// replaced. All files and servers belong to this disposable fixture.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { Fixture, METHOD } from '../engine/tests/ts/helpers.ts';
+import { createServer } from '../engine/src/server.ts';
+import { Builder } from '../engine/src/core/build.ts';
 
-const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-batching-'));
-process.env.PAPILOT_DATA = path.join(temp, 'data');
-delete process.env.PAPILOT_DESKTOP;
-const latexmk = execFileSync('which', ['latexmk'], { encoding: 'utf8' }).trim();
-const calls = path.join(temp, 'compiles.jsonl'), fail = path.join(temp, 'fail'), hold = path.join(temp, 'hold');
-const bin = path.join(temp, 'bin'); fs.mkdirSync(bin);
-fs.writeFileSync(path.join(bin, 'latexmk'), `#!${process.execPath}
-const fs = require('node:fs');
-const build = process.argv.includes('-outdir=build');
-if (build) fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }) + '\\n');
-if (build && fs.existsSync(${JSON.stringify(fail)})) { console.error('Intentional compilation failure'); process.exit(1); }
-const deadline = Date.now() + 30000;
-while (build && fs.existsSync(${JSON.stringify(hold)}) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30);
-const result = require('node:child_process').spawnSync(${JSON.stringify(latexmk)}, process.argv.slice(2), { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`, { mode: 0o755 });
-process.env.PATH = bin + path.delimiter + process.env.PATH;
-const [{ Fixture }, { createServer }, { Store }, { Workspace }, { Manuscripts }, { buildApp, gitQueue }, { Updates }, { AGENT_IDS }] = await Promise.all([
-  import('../engine/tests/ts/helpers.ts'), import('../engine/src/server.ts'), import('../src/server/store.ts'),
-  import('../src/server/workspace.ts'), import('../src/server/manuscript.ts'), import('../src/server/app.ts'),
-  import('../src/server/updates.ts'), import('../src/shared.ts'),
+const f = new Fixture();
+process.env.PAPILOT_DATA = path.join(f.base, 'data');
+const [{ Store }, { Workspace }, { Manuscripts }, { buildApp, gitQueue }, { AGENT_IDS }] = await Promise.all([
+  import('../src/server/store.ts'), import('../src/server/workspace.ts'), import('../src/server/manuscript.ts'),
+  import('../src/server/app.ts'), import('../src/shared.ts'),
 ]);
-class InertAgent extends EventEmitter { ready = false; close() {} }
-const f = new Fixture(), store = new Store(path.join(temp, 'data/state.sqlite3')), manuscripts = new Manuscripts();
-let server, reviewServer, browser, page, workspace, updates;
-const count = () => fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').trim().split('\n').length : 0;
-fs.mkdirSync('test-results', { recursive: true });
-const report = { decisions: 0, decisionCompiles: 0, applicationCompiles: 0, refreshes: 0, errors: [] };
+f.write('paper/main.tex', '\\documentclass{article}\n\\begin{document}\n\\input{sections/method}\n\\end{document}\n');
+f.write(METHOD, '\\section{First}\nOriginal first paragraph.\n\\newpage\n\\section{Second}\nOriginal second paragraph.\n\\newpage\n\\section{Third}\nOriginal third paragraph.\n');
+f.repo.run(['add', '-A']); f.repo.run(['commit', '-qm', 'Separate review pages']);
+const app = f.app(); await app.ready;
+const task = app.tasks.create('batch', 'Review three pages', [], ['paper'], true);
+f.edit(task, METHOD, 'Original first', 'Proposed first');
+f.edit(task, METHOD, 'Original second', 'Proposed second');
+f.edit(task, METHOD, 'Original third', 'Proposed third');
+app.publisher.submit(task.name); await app.publisher.join();
+assert.equal(app.review.latestRound(task.name)?.visuals, 'ready');
+const engine = createServer(app);
+await engine.listen({ host: '127.0.0.1', port: 0 });
+app.url = `http://127.0.0.1:${engine.server.address().port}`;
+const client = { url: app.url, token: app.csrf,
+  async get(route) { const response = await fetch(app.url + route); assert.ok(response.ok, await response.clone().text()); return response.json(); },
+  async post(route, body) { const response = await fetch(app.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': app.csrf }, body: JSON.stringify(body) }); assert.ok(response.ok, await response.clone().text()); return response.json(); },
+};
+class Agent extends EventEmitter { ready = false; close() {} }
+const store = new Store(':memory:');
+const workspace = new Workspace(store, new Agent(), async () => client, Object.fromEntries(AGENT_IDS.filter(id => id !== 'codex').map(id => [id, new Agent()])));
+store.saveProject({ id: 'paper', path: f.root, name: 'Paper', createdAt: 1 });
+store.saveTask({ id: 'batch', projectId: 'paper', name: task.name, title: task.title, instructions: '', worktree: task.worktree, threadId: null, turnId: null, model: null, status: 'reviewing', deferred: true, createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null });
+const manuscripts = new Manuscripts(), builds = [];
+manuscripts.refresh = async () => { builds.push('refresh'); };
+manuscripts.predict = async () => { builds.push('predict'); };
+const listener = { kind: 'local', port: 0, publicOrigin: '', owner: '' };
+const server = await buildApp({ listener, store, workspace, manuscripts, csrf: 'fixture', serialGit: gitQueue(), dist: path.resolve('dist'), version: 'test', connectReview: async () => client });
+await server.listen({ host: '127.0.0.1', port: 0 });
+listener.port = server.server.address().port;
+const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
+const errors = [], pages = [];
+let release = () => {}, original = Builder.prototype.build;
 try {
-  f.write('paper/main.tex', '\\documentclass{article}\n\\begin{document}\n\\input{first}\n\\input{second}\n\\input{third}\n\\end{document}\n');
-  for (const name of ['first', 'second', 'third']) f.write(`paper/${name}.tex`, `\\section{${name}}\nOriginal ${name} sentence.\n`);
-  f.repo.run(['add', '.']); f.repo.run(['commit', '-qm', 'Browser batching fixture']);
-  const engine = f.app(); await engine.ready;
-  const proposal = engine.tasks.create('batching', 'Review batching', [], ['paper'], true);
-  for (const name of ['first', 'second', 'third']) f.edit(proposal, `paper/${name}.tex`, `Original ${name}`, `Revised ${name}`);
-  engine.publisher.submit(proposal.name); await engine.publisher.join();
-  assert.equal(engine.publisher.current(proposal.name)?.status, 'done', JSON.stringify(engine.publisher.current(proposal.name)));
-  reviewServer = createServer(engine); await reviewServer.listen({ host: '127.0.0.1', port: 0 });
-  engine.url = `http://127.0.0.1:${reviewServer.server.address().port}`;
-  const call = async (route, body) => {
-    const response = await fetch(engine.url + route, { method: body === undefined ? 'GET' : 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Review-Token': engine.csrf }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || response.statusText);
-    return result;
-  };
-  const client = { url: engine.url, token: engine.csrf, get: route => call(route), post: (route, body = {}) => call(route, body) };
-  workspace = new Workspace(store, new InertAgent(), async () => client, Object.fromEntries(AGENT_IDS.filter(id => id !== 'codex').map(id => [id, new InertAgent()])));
-  store.saveProject({ id: 'paper', name: 'Batching test paper', path: f.root, createdAt: Date.now() });
-  store.saveTask({ id: 'batching', projectId: 'paper', name: proposal.name, title: 'Review batching', instructions: '', worktree: proposal.worktree,
-    deferred: true, threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null });
-  await workspace.refresh('batching');
-  const settle = async () => {
-    let result;
-    await expect.poll(async () => { result = await manuscripts.state('paper', f.root); return result.build.status; }, { timeout: 60000 }).not.toBe('building');
-    return result.build;
-  };
-  assert.equal((await settle()).status, 'ready');
-  const refresh = manuscripts.refresh.bind(manuscripts);
-  manuscripts.refresh = (...args) => { report.refreshes++; return refresh(...args); };
-  const listener = { kind: 'local', port: 0, publicOrigin: '', owner: '' };
-  updates = new Updates({ root: process.cwd(), data: process.env.PAPILOT_DATA, version: '0.9.2', port: 0, supported: false, busy: () => false, shutdown() {}, latest: async () => '0.9.2' });
-  server = await buildApp({ store, workspace, manuscripts, listener, csrf: 'batching-test', serialGit: gitQueue(), dist: path.resolve('dist'), version: '0.9.2', connectReview: async () => client, updates });
-  await server.listen({ host: '127.0.0.1', port: 0 }); listener.port = server.server.address().port;
-  const origin = `http://127.0.0.1:${listener.port}`;
-  console.log(`Isolated web test: ${origin}, real review service: ${engine.url}`);
-  browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
-  page = await browser.newPage({ locale: 'en-US', viewport: { width: 1100, height: 900 } });
-  page.setDefaultTimeout(15000);
-  page.on('pageerror', error => report.errors.push(error.message));
-  page.on('response', response => { if (response.status() >= 500) report.errors.push(`${response.status()} ${response.url()}`); });
-  await page.addInitScript(() => { localStorage.setItem('papilot:task', 'batching'); localStorage.setItem('papilot:project', 'paper'); localStorage.setItem('papilot:language', 'en'); });
-  await page.goto(origin);
-  const viewer = () => page.frameLocator('.review-frame');
-  await expect(viewer().locator('.change.current')).toBeVisible();
-  assert.equal(engine.review.summary(proposal.name).counts.pending, 3);
-  const start = count(), refreshStart = report.refreshes, round = engine.review.latestRound(proposal.name).number;
-  const choose = async (action, pending) => {
-    await viewer().locator('.change.current').getByRole('button', { name: action, exact: true }).click();
-    await expect.poll(() => engine.review.summary(proposal.name).counts.pending).toBe(pending);
-    await expect(viewer().locator('.change.current').getByRole('button', { name: 'Accept', exact: true })).toBeEnabled();
-    report.decisions++;
-  };
-  await choose('Accept', 2);
-  await choose('Reject', 1);
-  // Undo through the real embedded viewer, then reload with persisted choices.
-  await viewer().locator('.change.current .change-number').click(); await page.keyboard.press('ControlOrMeta+z');
-  await expect.poll(() => engine.review.summary(proposal.name).counts.pending).toBe(2);
-  await page.reload();
-  await expect(viewer().locator('.bar .reject-all')).toBeEnabled();
-  await choose('Accept', 1);
-  await viewer().locator('.change.current').getByRole('button', { name: 'Accept', exact: true }).click(); report.decisions++;
-  await expect.poll(() => engine.review.summary(proposal.name).counts.pending).toBe(0);
-  await expect(viewer().getByRole('button', { name: 'Apply to workspace', exact: true })).toBeEnabled();
-  await page.reload();
-  await expect(viewer().getByRole('button', { name: 'Apply to workspace', exact: true })).toBeEnabled();
-  // Wait through the actual periodic review refresh; it must not enqueue a build.
-  await page.waitForResponse(response => response.url().includes('/api/tasks/batching/state') && response.ok());
-  assert.equal(engine.review.latestRound(proposal.name).number, round);
-  report.decisionCompiles = count() - start;
-  assert.equal(report.decisionCompiles, 0);
-  assert.equal(report.refreshes, refreshStart);
-  for (const name of ['first', 'second', 'third']) assert.match(f.read(`paper/${name}.tex`), /Original/);
-  await page.screenshot({ path: 'test-results/review-batching-before-apply.png' });
+  // No single decision, undo, or comment may start a manuscript build.
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); pages.push(page);
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(`http://127.0.0.1:${listener.port}/review/paper/?task=batch`);
+  await expect(page.locator('.change.current')).toHaveAttribute('data-stop', '0');
+  await page.keyboard.press('a');
+  await expect.poll(() => app.review.pageState(task.name).decisions.c001).toBe('accepted');
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+  await expect.poll(() => app.review.pageState(task.name).decisions.c001).toBe('pending');
+  await page.waitForTimeout(500);
+  assert.deepEqual(builds, [], 'decisions and undo do not refresh or predict the manuscript');
 
-  await viewer().getByRole('button', { name: 'Apply to workspace', exact: true }).click();
-  await expect.poll(() => store.task('batching').delivery?.mode).toBe('workspace');
-  assert.equal((await settle()).status, 'ready');
-  assert.equal(report.refreshes - refreshStart, 1);
-  report.applicationCompiles = count() - start;
-  assert.equal(report.applicationCompiles, 1, 'the final selected version runs one latexmk build');
-  assert.match(f.read('paper/first.tex'), /Revised first/);
-  assert.match(f.read('paper/second.tex'), /Revised second/);
-  assert.match(f.read('paper/third.tex'), /Revised third/);
-  console.log('PASS: browser decisions, rejection, undo and reload compile zero times; final application compiles once with the correct text');
-
-  // A new task exercises a real in-flight comparison, compiler failure and retry.
-  f.repo.run(['add', '.']); f.repo.run(['commit', '-qm', 'Applied selection']);
-  const retry = engine.tasks.create('retry', 'Compilation recovery', [], ['paper'], true);
-  f.edit(retry, 'paper/first.tex', 'Revised first', 'Recovery first');
-  f.edit(retry, 'paper/third.tex', 'Revised third', 'Recovery third');
-  store.saveTask({ ...store.task('batching'), id: 'retry', name: retry.name, title: 'Compilation recovery', worktree: retry.worktree, delivery: null, review: null });
-  await workspace.publish('retry');
-  await page.getByRole('button', { name: /^Compilation recovery/ }).click();
-  await expect(viewer().locator('.bar .accept-all')).toBeEnabled();
-  f.edit(retry, 'paper/first.tex', 'Recovery first', 'Updated first');
-  fs.writeFileSync(hold, '');
-  await page.locator('.review-rebuild').click();
-  await expect(page.locator('.review-rebuild')).toHaveAttribute('aria-busy', 'true');
-  await expect(viewer().locator('.bar .status[data-state="building"]')).toHaveCSS('clip-path', 'inset(50%)');
-  assert.equal(await viewer().locator('.bar').evaluate(el => el.offsetHeight), 44);
-  await page.screenshot({ path: 'test-results/review-batching-real-build.png' });
-  fs.rmSync(hold);
-  await expect(page.locator('.review-rebuild')).toHaveAttribute('aria-busy', 'false', { timeout: 60000 });
-  await expect(viewer().locator('.bar .accept-all')).toBeEnabled();
-  const goodRound = engine.review.latestRound(retry.name).number;
-
-  f.edit(retry, 'paper/first.tex', 'Updated first', 'Broken first'); fs.writeFileSync(fail, '');
-  await page.locator('.review-rebuild').click();
-  await expect(page.locator('.review-rebuild')).toHaveAttribute('data-state', 'failed', { timeout: 60000 });
-  await expect(viewer().locator('.bar .status[data-state="build_failed"]')).toBeVisible();
-  await expect(viewer().locator('.bar .accept-all')).toBeEnabled();
-  assert.equal(engine.review.latestRound(retry.name).number, goodRound, 'a failed build preserves the last review');
-  await expect(viewer().locator('.change.current')).toBeVisible();
-  await page.screenshot({ path: 'test-results/review-batching-failed.png' });
-  fs.rmSync(fail); await page.locator('.review-rebuild').click();
-  await expect(page.locator('.review-rebuild')).toHaveAttribute('data-state', 'ready', { timeout: 60000 });
-  await expect(viewer().locator('.bar .accept-all')).toBeEnabled();
-  await expect(viewer().locator('.bar .status')).toHaveCount(0);
-  assert.deepEqual(report.errors, []);
-  console.log('PASS: real comparison progress, old preview retention, failed compilation and retry recover without stuck controls');
-  fs.writeFileSync('test-results/review-batching.json', JSON.stringify(report, null, 2));
-} catch (error) {
-  console.error(error);
-  console.error('Task at failure:', JSON.stringify(store.tasks()));
-  if (page) { await page.screenshot({ path: 'test-results/review-batching-error.png' }); fs.writeFileSync('test-results/review-batching-error.txt', await page.locator('body').innerText()); }
-  throw error;
+  // Hold a failing round: the pages before the broken one have carried comparisons.
+  const gate = new Promise(resolve => { release = resolve; });
+  Builder.prototype.build = async function (...args) { await gate; return original.apply(this, args); };
+  f.edit(task, METHOD, 'Proposed third paragraph.', '\\unknownBatchCommand');
+  app.publisher.submit(task.name);
+  await expect.poll(() => app.review.latestRound(task.name)?.number).toBe(2);
+  store.updateTask('batch', { status: 'building' });
+  for (const width of [1440, 390]) {
+    const view = width === 1440 ? page : await browser.newPage({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true });
+    if (view !== page) { pages.push(view); view.on('pageerror', error => errors.push(error.message)); }
+    await view.addInitScript(() => localStorage.clear());
+    await view.goto(`http://127.0.0.1:${listener.port}/review/paper/?task=batch`);
+    const waiting = view.locator('.change[data-stop="2"]');
+    await expect(waiting.locator('.comparison-waiting')).toContainText('PDF comparison in progress');
+    await waiting.locator('.comparison-waiting').click();
+    await expect(waiting.locator('button.accept')).toHaveCount(0);
+    await expect(waiting.locator('button.comment')).toBeEnabled();
+    await expect(view.locator('.change-carried').first()).toContainText('PDF from');
+    await view.locator('.accept-all').click();
+    await expect.poll(() => app.review.pageState(task.name).decisions.c002).toBe('accepted');
+    assert.equal(app.review.pageState(task.name).decisions.c001, 'accepted');
+    assert.equal(app.review.pageState(task.name).decisions.c003, 'pending');
+    await expect(view.locator('.accept-all')).toHaveCount(0);
+    fs.mkdirSync('test-results', { recursive: true });
+    await view.screenshot({ path: `test-results/review-batching-${width}.png` });
+    assert.ok(await view.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await view.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+    await expect.poll(() => app.review.pageState(task.name).decisions.c002).toBe('pending');
+    assert.deepEqual(builds, [], 'batch decisions during a render do not build the manuscript');
+  }
+  release(); await app.publisher.join();
+  assert.equal(app.review.latestRound(task.name)?.number, 2, 'failure retains the inserted round');
+  assert.equal(app.review.latestRound(task.name)?.visuals, 'failed');
+  store.updateTask('batch', { status: 'failed' });
+  await expect(page.locator('.comparison-waiting')).toContainText('PDF comparison failed', { timeout: 10000 });
+  await expect(page.locator('.change[data-stop="2"] button.accept')).toHaveCount(0);
+  await expect(page.locator('.accept-all')).toBeEnabled();
+  await page.locator('.accept-all').click();
+  await expect.poll(() => app.review.pageState(task.name).decisions.c002).toBe('accepted');
+  await expect(page.locator('.accept-all')).toHaveCount(0);
+  assert.equal(app.review.pageState(task.name).decisions.c003, 'pending');
+  assert.deepEqual(builds, []);
+  assert.deepEqual(errors, []);
+  console.log('PASS: real Papilot decisions do not build the manuscript; desktop and phone batches include only comparable changes; failure keeps the inserted round and gates its missing comparison.');
 } finally {
-  fs.rmSync(hold, { force: true });
-  if (browser) await browser.close();
-  if (server) await server.close();
-  workspace?.close(); updates?.close();
-  await manuscripts.stop();
-  if (reviewServer) await reviewServer.close();
-  await f.close(); store.close();
-  fs.rmSync(temp, { recursive: true, force: true });
+  release(); Builder.prototype.build = original;
+  await browser.close(); await server.close(); workspace.close(); store.close();
+  await engine.close(); await f.close();
 }

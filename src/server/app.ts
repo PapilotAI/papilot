@@ -6,11 +6,11 @@ import rateLimit from '@fastify/rate-limit';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { registerFrontend } from './frontend.ts';
 import type { Store } from './store.ts';
 import type { Workspace } from './workspace.ts';
-import { reviewClient, readReview, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
+import { AGENT_TURN, reviewClient, readReview, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
 import { fullPaperPdf, nextPaperPass, paperPassPdf } from './pdf.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { bibliography, confirmEntry } from './references.ts';
@@ -39,6 +39,37 @@ const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
 const deliveredToManuscript = (delivery: Task['delivery']) => Boolean(delivery && !delivery.pending && delivery.mode !== 'branch');
 const completedLegacyBatch = (task: Task) => !task.deferred && Boolean(task.review && !task.review.counts.pending);
 const legacyBatchListeners = new WeakSet<Workspace>();
+// A review write's reply does not wait for the task's summary to be read
+// again: that runs right after it, once at a time per task, and once more
+// for writes that arrive meanwhile. The review page's reads of the task wait
+// for it, so its next poll shows what the reply used to. The workspace does
+// not wait, since one slow engine would hold every paper's state: the
+// summary's update announces itself through the event stream.
+const settling = new WeakMap<Workspace, Map<string, { done: Promise<void>; again: boolean; legacy: boolean }>>();
+function settle(workspace: Workspace, taskId: string, legacy = false) {
+  let tasks = settling.get(workspace);
+  if (!tasks) settling.set(workspace, tasks = new Map());
+  const running = tasks.get(taskId);
+  if (running) { running.again = true; running.legacy ||= legacy; return; }
+  const entry = { done: Promise.resolve(), again: false, legacy };
+  tasks.set(taskId, entry);
+  entry.done = (async () => {
+    try {
+      let confirmed = false;
+      do {
+        entry.again = false;
+        try { confirmed = await workspace.refresh(taskId); }
+        catch { confirmed = false; }
+      } while (entry.again);
+      const current = confirmed && entry.legacy && workspace.store.findTask(taskId);
+      if (current && completedLegacyBatch(current) && !current.pendingReview && !current.pendingBuild)
+        workspace.emit('reviewed', taskId);
+    } finally { if (tasks.get(taskId) === entry) tasks.delete(taskId); }
+  })().catch(() => undefined);
+}
+async function settled(workspace: Workspace, taskId: string) {
+  await settling.get(workspace)?.get(taskId)?.done;
+}
 
 // Git writes to one repository run one at a time; each returns the new status.
 // Concurrent requests from browser tabs share the same queue.
@@ -101,6 +132,8 @@ export async function buildApp(options: AppOptions) {
   // Task rounds and the manuscript's Changes both follow it.
   const indirectChanges = () => store.preference<boolean>('indirect-changes') === true;
   workspace.indirectChanges = changes.indirectChanges = indirectChanges;
+  // An AI review resumed after a restart compiles its copy here too.
+  workspace.prepareReview = (task, worktree) => manuscripts.captureReview(store.project(task.projectId).path, worktree, task.id);
   const app = Fastify({ logger: false, bodyLimit: Number.MAX_SAFE_INTEGER });
   guard(app, { listener, csrf: options.csrf });
   const updateRequests = new WeakMap<object, () => void>();
@@ -115,13 +148,13 @@ export async function buildApp(options: AppOptions) {
     const resource = request.routeOptions.config.resource, params = request.params as Record<string, string>;
     if (!resource) return;
     const id = 'project' in resource ? (resource.from === 'body' ? request.body as Record<string, string> : params)?.[resource.project]
-      : 'task' in resource ? store.tasks().find(task => task.id === params[resource.task])?.projectId
-      : store.tasks().find(task => task.id === workspace.requests.get(params[resource.request])?.taskId)?.projectId;
+      : 'task' in resource ? store.taskProject(params[resource.task])
+      : store.taskProject(workspace.requests.get(params[resource.request])?.taskId || '');
     if (id) projectRequests.set(request, workspace.enterProjectRequest(id));
   });
   app.addHook('onSend', async (request, _reply, payload) => { projectRequests.get(request)?.(); return payload; });
-  // Compile after applying the reviewed result. Individual decisions only
-  // update the proposal; they must not start manuscript or speculative builds.
+  // Refresh after applying the reviewed result. Intermediate decisions only
+  // update the proposal; the final selection can still be predicted ahead.
   const WRITES = /^\/api\/projects\/:id\/git\/|^\/api\/tasks\/:id\/(?:commit|apply|reconcile|note-options)$|^\/review\/:projectId\/(?:api\/changes\/(?:decide|undo)|\*)$/;
   const completedTaskWrites = new WeakSet<object>();
   app.addHook('onResponse', async (request, reply) => {
@@ -131,13 +164,9 @@ export async function buildApp(options: AppOptions) {
       // Save routes can return a confirmation or merge suggestion without
       // changing the manuscript. A status check is not itself a write either.
       if (request.routeOptions.url?.startsWith('/api/tasks/') && !completedTaskWrites.has(request)) return;
-      if (request.routeOptions.url === '/review/:projectId/*') {
-        // Older tasks write accepted edits directly into the manuscript.
-        // A final comment also flushes any earlier accepted changes. Notes
-        // do not resolve a pending choice and need no refresh of their own.
-        const task = store.tasks().find(task => task.projectId === params.projectId && task.name === params['*']?.split('/')[2]);
-        if (!task || !completedLegacyBatch(task) || !/\/(decide|undo)$/.test(params['*'] || '')) return;
-      }
+      // Proxy decisions settle their summaries after replying and flush a
+      // completed legacy batch once, even when several writes share a read.
+      if (request.routeOptions.url === '/review/:projectId/*') return;
       const project = store.project(params.projectId ?? (request.routeOptions.url!.startsWith('/api/tasks/') ? store.task(params.id).projectId : params.id));
       void manuscripts.refresh(project.id, project.path).catch(() => undefined);
     } catch { /* The paper or task is gone. */ }
@@ -222,11 +251,17 @@ export async function buildApp(options: AppOptions) {
     app.post('/api/updates/channel', request => options.updates!.setChannel((request.body as any)?.channel));
     app.post('/api/updates/install', request => options.updates!.install((request.body as any)?.version));
   }
-  app.get('/api/state', async () => {
+  app.get('/api/state', async (request, reply) => {
     await options.prepareDemo?.();
     // Check the backend environment (Linux when using WSL), again on each poll
     // so installing Git unlocks version management without a page reload.
-    return { ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), csrf: options.csrf };
+    const body = JSON.stringify({ ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), csrf: options.csrf });
+    // The app polls every second or two and most polls find nothing new: those
+    // get an empty 304 instead of every task again to download and parse.
+    const tag = `"${createHash('sha1').update(body).digest('base64url')}"`;
+    reply.header('ETag', tag);
+    if (request.headers['if-none-match']?.replace(/^W\//, '') === tag) return reply.code(304).send();
+    return reply.type('application/json; charset=utf-8').send(body);
   });
   // Quick notes for the magic pen. None saved means the presets.
   app.get('/api/quick-notes', () => ({ quickNotes: store.preference<QuickNote[]>('quick-notes') || null }));
@@ -237,7 +272,7 @@ export async function buildApp(options: AppOptions) {
     return { quickNotes: quickNotes || null };
   });
   app.get('/api/indirect-changes', () => ({ indirectChanges: indirectChanges() }));
-  const alternativePreferences = () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') !== false, noteAlternativeRange: noteAlternativeRange(store.preference('note-alternative-range')) });
+  const alternativePreferences = () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') === true, noteAlternativeRange: noteAlternativeRange(store.preference('note-alternative-range')) });
   app.get('/api/note-alternatives', alternativePreferences);
   app.post('/api/note-alternatives', (request, reply) => {
     const value = (request.body as any)?.noteAlternatives;
@@ -301,19 +336,26 @@ export async function buildApp(options: AppOptions) {
   const skillName = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,47}$/.test(value) ? value : undefined;
   // Text the author may leave empty when a skill or review feedback says enough.
   const optional = (value: unknown, name: string, max?: number) => value === undefined || value === '' ? '' : string(value, name, max);
+  // Each new note's source lookup while it runs, by note ID.
+  const locating = new Map<string, Promise<void>>();
   app.get<{ Params: { id: string } }>('/api/projects/:id/skills', project(), request => ({ skills: loadSkills(store.project(request.params.id).path).map(listedSkill) }));
   app.post('/api/tasks', { config: { resource: { project: 'projectId', from: 'body' } } }, async request => {
     const b = request.body as any, skill = skillName(b.skill), attachments = attachmentIds(b.attachments);
     if (b.annotations !== undefined && (!Array.isArray(b.annotations) || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64))) throw new Error('Select valid PDF notes for this task.');
     const annotations: string[] | undefined = b.annotations, groupInstructions = parseGroupInstructions(b.groupInstructions);
+    // A note written seconds ago may still be finding its source.
+    if (annotations?.length) await Promise.all(annotations.map(note => locating.get(note)));
     const id = string(b.id, 'Task ID', 64), projectId = string(b.projectId, 'Paper ID', 64);
-    // A skill submission uses the same task endpoint and retry identity as editing.
-    const existing = store.tasks().find(task => task.id === id);
-    if (existing) { if (existing.projectId !== projectId) throw new Error('Invalid task ID.'); return existing; }
+    // A skill submission uses the same task endpoint and retry identity as
+    // editing. A retry returns the task, preparing it again if that failed.
+    const existing = store.findTask(id);
+    if (existing) { if (existing.projectId !== projectId) throw new Error('Invalid task ID.'); return workspace.retryTask(existing.id); }
     // AI review compiles the task's own copy of the manuscript, so it does not wait for the preview.
     const reviewing = Boolean(skill && findSkill(store.project(projectId).path, skill).output === 'annotations');
     return workspace.createTask({ id, projectId, ...(reviewing ? { prepareReview: (worktree: string) => manuscripts.captureReview(store.project(projectId).path, worktree, id) } : {}), title: string(b.title, 'Task title', 120), permissions: b.permissions, instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64) });
   });
+  // Retry for a task whose preparation failed; it answers at once as well.
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/prepare', task, request => workspace.retryTask(request.params.id));
   app.get<{ Params: { id: string }; Querystring: { since?: string } }>('/api/tasks/:id/items', task, request => { store.task(request.params.id); return store.itemsSince(request.params.id, typeof request.query.since === 'string' ? request.query.since : undefined); });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {
     const task = store.task(request.params.id), client = await connectReview(store.project(task.projectId).path);
@@ -369,11 +411,11 @@ export async function buildApp(options: AppOptions) {
           return value;
         }, { route, body: input });
         if (result.error) throw new Error(result.error);
-        await workspace.refresh(current.id);
+        const refreshed = await workspace.refresh(current.id);
         const confirmed = store.task(current.id);
         // The final choice can come from this drawer after earlier decisions
         // in the PDF. Legacy tasks have no later application step to flush it.
-        if (completedLegacyBatch(confirmed)) completedTaskWrites.add(request);
+        if (refreshed && completedLegacyBatch(confirmed)) completedTaskWrites.add(request);
         return (await noteOptionContext(store, confirmed, body.key, client)).options;
       }
       const route = `${taskRoute(current.name)}/source/options`, input = { id: string(body.id, 'Option request ID', 80), round: body.round, edits: option.edits, ...(body.accept ? { accept: true } : {}) };
@@ -393,6 +435,34 @@ export async function buildApp(options: AppOptions) {
       return { building: true };
     }
     throw new Error('Select an existing option.');
+  });
+  // When the final selection is ready or Apply/Commit appears, predict what
+  // applying writes. Intermediate decisions do not predict a manuscript.
+  const predict = (taskId: string) => {
+    const current = store.task(taskId), project = store.project(current.projectId);
+    if (!current.deferred || current.mode === 'review' || current.delivery?.pending || current.status === 'deleting' || (current.review?.counts.pending ?? 0) > 0) return;
+    void (async () => {
+      const client = await connectReview(project.path);
+      // What applying writes: the accepted text merged with the files on
+      // disk as the application merges them, or nothing while it would conflict.
+      const preview = await client.get<{ files: Record<string, string | null> | null }>(`${taskRoute(current.name)}/preview`);
+      if (preview.files) await manuscripts.predict(project.id, project.path, Object.fromEntries(Object.entries(preview.files).map(([file, data]) => [file, data === null ? null : Buffer.from(data, 'base64')])));
+    })().catch(() => undefined);
+  };
+  workspace.on('decided', predict);
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/predict', task, request => {
+    predict(store.task(request.params.id).id);
+    return { ok: true };
+  });
+  // Where a note on the task's PDF of its decisions is in the task's files.
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/locate', task, async request => {
+    const current = store.task(request.params.id), project = store.project(current.projectId), b = request.body as any;
+    const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] >= value[0] && value[3] >= value[1];
+    const page = Number(b?.page);
+    if (!isRect(b?.rect) || !Number.isSafeInteger(page) || page < 0 || !current.worktree) throw new Error('Mark text on a page first.');
+    const rects = Array.isArray(b.rects) ? b.rects.filter(isRect).slice(0, 200) : [];
+    const located = await manuscripts.locateBuild(project.path, string(b.key, 'PDF key', 32), page, b.rect, rects, typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '', current.worktree);
+    return { source: located?.source ? { file: located.source.file, lines: located.source.lines } : null };
   });
   app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
     const task = store.task(request.params.id), project = store.project(task.projectId);
@@ -473,7 +543,7 @@ export async function buildApp(options: AppOptions) {
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/publish', task, request => {
-    const task = store.task(request.params.id); if (['running', 'waiting_input', 'building'].includes(task.status)) throw new Error('This task is busy. Wait for it to finish or pause it first.');
+    const task = store.task(request.params.id); if (task.preparation || ['running', 'waiting_input', 'building'].includes(task.status)) throw new Error('This task is busy. Wait for it to finish or pause it first.');
     void workspace.publish(task.id); return { ok: true };
   });
   // The manuscript preview compiles each paper's working tree and reports its Git status.
@@ -569,8 +639,24 @@ export async function buildApp(options: AppOptions) {
     // A delete mark may name a replacement; with none, the text simply goes.
     const comment = b.group || b.kind === 'delete' ? optional(b.comment, 'Note') : string(b.comment, 'Note'), key = string(b.key, 'Preview key', 64), page = Number(b.page);
     const selected = typeof b.quote === 'string' ? b.quote : '';
-    const { quote, source } = await manuscripts.locate(project.id, key, page, b.rect, rects, selected);
-    return store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(b.group ? { group: b.group } : {}), ...(b.kind ? { kind: b.kind } : {}), ...(stamp ? { stamp } : {}), ...(rects.length ? { rects } : {}), comment, quote, source, createdAt: Date.now() });
+    // The note is saved at once and SyncTeX finds its source afterwards: in a
+    // long paper that lookup took seconds, during which the note box spun.
+    const located = manuscripts.locate(project.id, key, page, b.rect, rects, selected);
+    // A preview that is gone fails at once and is reported; a lookup that
+    // takes time is not waited for.
+    const settled = await Promise.race([located.then(value => ({ value }), (error: unknown) => ({ error })), new Promise<null>(resolve => setImmediate(() => resolve(null)))]);
+    if (settled && 'error' in settled) throw settled.error;
+    const note = store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(b.group ? { group: b.group } : {}), ...(b.kind ? { kind: b.kind } : {}), ...(stamp ? { stamp } : {}), ...(rects.length ? { rects } : {}), comment, quote: settled?.value.quote || selected, source: settled?.value.source ?? null, createdAt: Date.now() });
+    if (!settled) {
+      const lookup = located.then(({ quote, source }) => {
+        // Keep what the author changed meanwhile; a note moved to a newer PDF
+        // was placed there with its own source.
+        const current = store.annotation(project.id, note.id);
+        if (current.key === key && !current.taskId) store.saveAnnotation({ ...current, quote: quote || current.quote, source });
+      }).catch(() => undefined).finally(() => locating.delete(note.id));
+      locating.set(note.id, lookup);
+    }
+    return note;
   });
   app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note', project(), request => {
     const note = store.annotation(request.params.id, request.params.note);
@@ -600,9 +686,11 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', project(), async request => {
     const project = store.project(request.params.id), b = request.body as any, id = string(b.id, 'Task ID', 64);
     // A retried send returns its task; an ID from another paper is refused.
-    const existing = store.tasks().find(task => task.id === id);
-    if (existing) { if (existing.projectId !== project.id) throw new Error('Invalid task ID.'); return existing; }
+    const existing = store.findTask(id);
+    if (existing) { if (existing.projectId !== project.id) throw new Error('Invalid task ID.'); return workspace.retryTask(existing.id); }
     if (!Array.isArray(b.annotations) || !b.annotations.length || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64)) throw new Error('Select valid PDF notes for this task.');
+    // The note-only send path needs the same source lookup as task creation.
+    await Promise.all(b.annotations.map((note: string) => locating.get(note)));
     const notes = [...new Set<string>(b.annotations)].map(id => store.annotation(project.id, id));
     if (notes.some(note => note.taskId || isTaskReviewNote(note) || note.deletedAt !== undefined)) throw new Error('Select unsent PDF notes for this task.');
     const { title } = annotationTask(notes);
@@ -711,6 +799,23 @@ export async function buildApp(options: AppOptions) {
       const reviewTask = request.method === 'POST' ? store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]) : undefined;
       const writesFiles = /\/source(?:\/options)?$/.test(route) || route.endsWith('/undo') || (route.endsWith('/decide') && (request.body as any)?.action !== 'comment');
       if (request.method === 'POST' && writesFiles) string((request.body as any)?.id, 'Review action ID', 80);
+      // The next poll waits for the summary a write is still reading.
+      if (request.method === 'GET' && /^\/api\/tasks\/[a-z0-9-]+\/state$/.test(route)) {
+        const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
+        if (task) await settled(workspace, task.id);
+      }
+      // Accepting leaves the task's worktree alone, and so does undoing an
+      // accept or a comment: these go ahead while the agent edits it. Undoing
+      // an accept of an earlier round publishes a round of the worktree, so
+      // it waits like rejecting.
+      // A reject waits for the turn to end in the engine, and so does
+      // undoing one still waiting.
+      const besideAgent = Boolean(reviewTask?.deferred && AGENT_TURN.includes(reviewTask.status)) && (route.endsWith('/decide')
+        ? ['accept', 'reject'].includes((request.body as any)?.action)
+        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean; queued?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
+          .then(state => state.undo?.id === (request.body as any)?.id && (state.undo?.kind !== 'reject' || Boolean(state.undo?.queued)) && !state.undo?.republish, () => false));
+      if (besideAgent && route.endsWith('/decide') && (request.body as any)?.action === 'reject') (request.body as any).queue = true;
+      let settles: string | undefined;
       const forward = async () => {
         const search = new URL(request.url, 'http://localhost').search;
         const response = await fetch(client.url + route + search, {
@@ -728,11 +833,12 @@ export async function buildApp(options: AppOptions) {
             const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
             if (task) store.updateTask(task.id, { error: 'Review action failed: ' + (value as any).error });
           }
-          if (response.ok && request.method === 'POST' && !route.endsWith('/references/confirm')) {
+          // Saying what the page shows changes nothing about the task.
+          if (response.ok && request.method === 'POST' && !route.endsWith('/references/confirm') && !route.endsWith('/look')) {
             const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
             if (task) {
               store.updateTask(task.id, { error: null });
-              await workspace.refresh(task.id);
+              settles = task.id;
             }
           }
           // A round's new version as one complete PDF, which Papilot compiles,
@@ -744,12 +850,14 @@ export async function buildApp(options: AppOptions) {
         if (reviewTask && writesFiles) throw new Error('The review engine returned an unexpected response. Select Check status before continuing.');
         reply.type(type);
         if (type.includes('text/html')) return rewriteReviewHtml(await response.text(), prefix);
-        const cache = response.headers.get('cache-control'); if (cache && route.startsWith('/files/')) reply.header('Cache-Control', cache);
+        const cache = response.headers.get('cache-control'); if (cache && (route.startsWith('/files/') || route.startsWith('/applied/'))) reply.header('Cache-Control', cache);
         if (route.startsWith('/assets/')) reply.header('Cache-Control', 'private, max-age=31536000, immutable');
         return Buffer.from(await response.arrayBuffer());
       };
       if (request.method === 'POST' && !reviewTask) throw new Error('This review task does not belong to this workspace.');
-      const result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown> } : undefined) : forward());
+      let result: unknown;
+      try { result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown> } : undefined, besideAgent) : forward()); }
+      finally { if (settles) settle(workspace, settles, !reviewTask?.deferred && /\/(decide|undo)$/.test(route)); }
       return annotateReviewState(result, store.tasks().filter(task => task.projectId === project.id));
     },
   });

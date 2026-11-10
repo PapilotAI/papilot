@@ -64,6 +64,7 @@ jobs:
         if: matrix.node == 22
         run: |
           node --import tsx scripts/check-review-batching.mjs
+          node --import tsx scripts/check-review-application.mjs
           node --import tsx scripts/check-review-flow.mjs
           node --import tsx scripts/check-note-results.mjs
           node --import tsx scripts/check-note-options-flow.mjs
