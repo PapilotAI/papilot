@@ -1248,6 +1248,64 @@ test('a completed alternative build does not announce a legacy batch after an un
   }
 });
 
+test('recovering a final legacy decision waits for its pending alternative build before refreshing', { timeout: 10000 }, async () => {
+  const f = await legacyBatchFixture(0);
+  let finish = (_job: object) => {};
+  const job = new Promise<object>(resolve => { finish = resolve; });
+  f.review.get = async (route: string) => {
+    if (route.startsWith('/api/jobs/')) return await job as any;
+    return (route.includes('/feedback') ? { feedback: [] } : { state: 'done', round: 1, counts: { pending: 0, accepted: 1 } }) as any;
+  };
+  try {
+    f.store.updateTask('thesis-task', { status: 'uncertain',
+      pendingBuild: { requestId: 'saved-option', job: 'option-job', runs: [], sendBack: false, restarts: 0 },
+      pendingReview: { route: '/api/tasks/p-thesis-task/decide', body: { id: 'final-accept', action: 'accept' }, previousStatus: 'building' } });
+    const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/reconcile', headers: f.as, payload: {} });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().pendingReview, null); assert.equal(response.json().pendingBuild.job, 'option-job');
+    assert.deepEqual(f.refreshes, [], 'the recovered decision must not flush a result still being built');
+    finish({ status: 'done', round: 1 }); await eventually(() => f.refreshes.length === 1);
+    assert.equal(f.store.task('thesis-task').pendingBuild, null);
+    assert.deepEqual(f.refreshes, ['thesis']);
+  } finally { finish({ status: 'done', round: 1 }); await eventually(() => !f.store.task('thesis-task').pendingBuild); await f.close(); }
+});
+
+test('a confirmed legacy replay refreshes without clearing an earlier build error', { timeout: 10000 }, async () => {
+  const f = await legacyBatchFixture(0);
+  f.review.get = async (route: string) => (route.includes('/feedback') ? { feedback: [] } : { state: 'done', round: 1, counts: { pending: 0, accepted: 1 } }) as any;
+  try {
+    f.store.updateTask('thesis-task', { status: 'uncertain', error: 'Check the action.',
+      pendingReview: { route: '/api/tasks/p-thesis-task/decide', body: { id: 'final-accept', action: 'accept' }, previousStatus: 'failed', previousError: 'PDF build failed.' } });
+    const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/reconcile', headers: f.as, payload: {} });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().pendingReview, null);
+    assert.equal(response.json().status, 'failed'); assert.equal(response.json().error, 'PDF build failed.');
+    assert.deepEqual(f.refreshes, ['thesis'], 'the old error does not negate the confirmed final decision');
+  } finally { await f.close(); }
+});
+
+test('a legacy build completion and a pending decision summary flush their shared result once', { timeout: 10000 }, async () => {
+  const f = await legacyBatchFixture(1);
+  let finish = (_job: object) => {}, release = () => {}, reads = 0;
+  const job = new Promise<object>(resolve => { finish = resolve; });
+  f.review.get = async (route: string) => {
+    if (route.startsWith('/api/jobs/')) return await job as any;
+    if (route.includes('/feedback')) return { feedback: [] } as any;
+    if (++reads === 1) await new Promise<void>(resolve => { release = resolve; });
+    return { state: 'done', round: 1, counts: { pending: 0, accepted: 1 } } as any;
+  };
+  let building = Promise.resolve(false);
+  try {
+    f.store.updateTask('thesis-task', { status: 'building', pendingBuild: { requestId: 'saved-option', job: 'option-job', runs: [], sendBack: false, restarts: 0 } });
+    building = f.workspace.resumeBuild('thesis-task');
+    assert.equal((await f.post()).statusCode, 200);
+    assert.equal(reads, 1);
+    finish({ status: 'done', round: 1 }); await eventually(() => !f.store.task('thesis-task').pendingBuild);
+    release(); await building; await f.poll();
+    assert.deepEqual(f.refreshes, ['thesis']);
+  } finally { finish({ status: 'done', round: 1 }); release(); await building; await f.close(); }
+});
+
 test('a review decision replies before the task summary is read again, and the next poll waits for that read', { timeout: 10000 }, async () => {
   const f = await fixture(), engine = await decisionEngine();
   f.review.url = engine.url;
@@ -1347,7 +1405,8 @@ test('accepting and rejecting go ahead while the agent edits a deferred task; un
 });
 
 test('save previews and status checks do not compile an unapplied manuscript', async () => {
-  const f = await fixture();
+  const f = await fixture(), engine = await decisionEngine();
+  f.review.url = engine.url;
   let refreshes = 0;
   f.manuscripts.refresh = async () => { refreshes++; };
   const headers = { ...LOCAL, 'x-papilot-token': 'local-csrf' };
@@ -1372,15 +1431,17 @@ test('save previews and status checks do not compile an unapplied manuscript', a
     const checked = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/reconcile', headers, payload: {} });
     assert.equal(checked.statusCode, 200, checked.body);
     assert.equal(refreshes, 0);
-    // Recovering a lost decision response obeys the same batching boundary.
+    // Exercise the real replay adapter: only it knows whether the recovered
+    // action succeeded, independently of a previous build error.
+    f.workspace.reconcile = Workspace.prototype.reconcile.bind(f.workspace);
     for (const [deferred, pending, state, expected] of [[true, 0, 'revise', 0], [false, 1, 'reviewing', 0], [false, 0, 'done', 1], [false, 0, 'revise', 2]] as const) {
       f.store.updateTask('thesis-task', { deferred, status: 'uncertain', pendingReview: { route: '/api/tasks/p-thesis-task/decide', body: { id: 'lost', action: 'accept' }, previousStatus: 'reviewing' } });
-      f.workspace.reconcile = async () => f.store.updateTask('thesis-task', { status: 'reviewing', pendingReview: null, review: { state, round: 1, counts: { pending }, unsent: 0 } });
+      f.review.get = async (route: string) => (route.includes('/feedback') ? { feedback: [] } : { state, round: 1, counts: { pending } }) as any;
       const recovered = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/reconcile', headers, payload: {} });
       assert.equal(recovered.statusCode, 200, recovered.body);
       assert.equal(refreshes, expected);
     }
-  } finally { await f.close(); }
+  } finally { await engine.close(); await f.close(); }
 });
 
 test('deferred commits refresh only after a completed manuscript delivery, even without a commit hash', async () => {

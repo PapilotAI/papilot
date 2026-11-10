@@ -55,15 +55,15 @@ function settle(workspace: Workspace, taskId: string, legacy = false) {
   tasks.set(taskId, entry);
   entry.done = (async () => {
     try {
-      let confirmed = false;
+      let confirmed = false, confirmation: Promise<boolean> | undefined;
       do {
         entry.again = false;
-        try { confirmed = await workspace.refresh(taskId); }
+        try { confirmation = workspace.refresh(taskId); confirmed = await confirmation; }
         catch { confirmed = false; }
       } while (entry.again);
       const current = confirmed && entry.legacy && workspace.store.findTask(taskId);
       if (current && completedLegacyBatch(current) && !current.pendingReview && !current.pendingBuild)
-        workspace.emit('reviewed', taskId);
+        workspace.emit('reviewed', taskId, confirmation);
     } finally { if (tasks.get(taskId) === entry) tasks.delete(taskId); }
   })().catch(() => undefined);
 }
@@ -155,7 +155,7 @@ export async function buildApp(options: AppOptions) {
   app.addHook('onSend', async (request, _reply, payload) => { projectRequests.get(request)?.(); return payload; });
   // Refresh after applying the reviewed result. Intermediate decisions only
   // update the proposal; the final selection can still be predicted ahead.
-  const WRITES = /^\/api\/projects\/:id\/git\/|^\/api\/tasks\/:id\/(?:commit|apply|reconcile|note-options)$|^\/review\/:projectId\/(?:api\/changes\/(?:decide|undo)|\*)$/;
+  const WRITES = /^\/api\/projects\/:id\/git\/|^\/api\/tasks\/:id\/(?:commit|apply)$|^\/review\/:projectId\/(?:api\/changes\/(?:decide|undo)|\*)$/;
   const completedTaskWrites = new WeakSet<object>();
   app.addHook('onResponse', async (request, reply) => {
     if (request.method !== 'POST' || reply.statusCode >= 400 || !WRITES.test(request.routeOptions.url || '')) return;
@@ -171,15 +171,20 @@ export async function buildApp(options: AppOptions) {
       void manuscripts.refresh(project.id, project.path).catch(() => undefined);
     } catch { /* The paper or task is gone. */ }
   });
-  // An alternative can finish accepting its edits after the HTTP response,
-  // including when its saved build resumes after a restart. Flush only the
-  // completed legacy batch, once per workspace even with multiple listeners.
+  // Decisions and resumed alternatives announce their confirmed result here.
+  // Flush only the completed legacy batch, once per workspace even with
+  // multiple listeners; a pending build announces its result when it finishes.
   if (!legacyBatchListeners.has(workspace)) {
     legacyBatchListeners.add(workspace);
-    workspace.on('reviewed', (taskId: string) => {
+    const completed = new WeakSet<Promise<boolean>>();
+    workspace.on('reviewed', (taskId: string, confirmation?: Promise<boolean>) => {
       try {
         const task = store.task(taskId);
         if (!completedLegacyBatch(task) || task.pendingReview || task.pendingBuild) return;
+        // A resumed build and a decision can await the same summary read.
+        // Its promise identifies that confirmation without retaining tasks.
+        if (confirmation && completed.has(confirmation)) return;
+        if (confirmation) completed.add(confirmation);
         const project = store.project(task.projectId);
         void manuscripts.refresh(project.id, project.path).catch(() => undefined);
       } catch { /* The paper or task is gone. */ }
@@ -411,12 +416,11 @@ export async function buildApp(options: AppOptions) {
           return value;
         }, { route, body: input });
         if (result.error) throw new Error(result.error);
-        const refreshed = await workspace.refresh(current.id);
-        const confirmed = store.task(current.id);
-        // The final choice can come from this drawer after earlier decisions
-        // in the PDF. Legacy tasks have no later application step to flush it.
-        if (refreshed && completedLegacyBatch(confirmed)) completedTaskWrites.add(request);
-        return (await noteOptionContext(store, confirmed, body.key, client)).options;
+        // Share the proxy's settlement: a preceding undo and this final
+        // drawer choice may still be reading the same summary.
+        settle(workspace, current.id, !current.deferred);
+        await settled(workspace, current.id);
+        return (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
       }
       const route = `${taskRoute(current.name)}/source/options`, input = { id: string(body.id, 'Option request ID', 80), round: body.round, edits: option.edits, ...(body.accept ? { accept: true } : {}) };
       // Keep the annotation's original association before the engine starts
@@ -535,13 +539,7 @@ export async function buildApp(options: AppOptions) {
     if ((request.body as any)?.confirm !== true) throw new Error('Confirm permanent task deletion before continuing.');
     return workspace.deleteTask(request.params.id);
   });
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/reconcile', task, async request => {
-    const before = store.task(request.params.id), result = await workspace.reconcile(before.id);
-    // A recovered final decision can write directly to a legacy manuscript.
-    if (!before.deferred && before.pendingReview && /\/(decide|undo)$/.test(before.pendingReview.route)
-      && !result.pendingReview && !result.error && result.review && !result.review.counts.pending) completedTaskWrites.add(request);
-    return result;
-  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/reconcile', task, request => workspace.reconcile(request.params.id));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/publish', task, request => {
     const task = store.task(request.params.id); if (task.preparation || ['running', 'waiting_input', 'building'].includes(task.status)) throw new Error('This task is busy. Wait for it to finish or pause it first.');
     void workspace.publish(task.id); return { ok: true };

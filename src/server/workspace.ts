@@ -919,7 +919,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (!confirmedReviewResponse(response.status, value, task.name)) throw new Error('The review engine could not confirm this action. Check again when it is available.');
       // Keep the replay identity until both the action and its resulting
       // summary are confirmed; old completed counts cannot confirm an undo.
-      if (!await this.refresh(task.id)) return this.store.task(task.id);
+      const confirmation = this.refresh(task.id);
+      if (!await confirmation) return this.store.task(task.id);
       const sourceBuild = response.ok && startsBuild(pending.route, value);
       this.store.transaction(() => {
         // The status the task reached meanwhile, recorded by holdForReview. A
@@ -933,6 +934,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       // So does the build held after the agent's turn for this action, and a
       // build whose connection was lost meanwhile.
       if (sourceBuild || this.store.task(task.id).pendingBuild) void this.resumeBuild(task.id);
+      // The replay succeeded even if a previous build's error stays visible.
+      // A still-pending build delays the legacy refresh until its own result.
+      if (response.ok && /\/(decide|undo)$/.test(pending.route)) this.emit('reviewed', task.id, confirmation);
       return this.store.task(task.id);
     } finally { this.reviewWrites.delete(task.id); this.schedule(); }
   }
@@ -1142,7 +1146,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       }
       // A saved note option may have accepted the last legacy change while
       // this job ran. Notify listeners only after its result is confirmed.
-      if (await this.refresh(taskId)) this.emit('reviewed', taskId);
+      const confirmation = this.refresh(taskId);
+      if (await confirmation) this.emit('reviewed', taskId, confirmation);
     } catch (e) {
       if (this.closing) return;
       if (reviewConnectionError(e)) {
