@@ -304,11 +304,15 @@ export async function buildApp(options: AppOptions) {
   const skillName = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,47}$/.test(value) ? value : undefined;
   // Text the author may leave empty when a skill or review feedback says enough.
   const optional = (value: unknown, name: string, max?: number) => value === undefined || value === '' ? '' : string(value, name, max);
+  // Each new note's source lookup while it runs, by note ID.
+  const locating = new Map<string, Promise<void>>();
   app.get<{ Params: { id: string } }>('/api/projects/:id/skills', project(), request => ({ skills: loadSkills(store.project(request.params.id).path).map(listedSkill) }));
   app.post('/api/tasks', { config: { resource: { project: 'projectId', from: 'body' } } }, async request => {
     const b = request.body as any, skill = skillName(b.skill), attachments = attachmentIds(b.attachments);
     if (b.annotations !== undefined && (!Array.isArray(b.annotations) || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64))) throw new Error('Select valid PDF notes for this task.');
     const annotations: string[] | undefined = b.annotations, groupInstructions = parseGroupInstructions(b.groupInstructions);
+    // A note written seconds ago may still be finding its source.
+    if (annotations?.length) await Promise.all(annotations.map(note => locating.get(note)));
     const id = string(b.id, 'Task ID', 64), projectId = string(b.projectId, 'Paper ID', 64);
     // A skill submission uses the same task endpoint and retry identity as
     // editing. A retry returns the task, preparing it again if that failed.
@@ -588,8 +592,24 @@ export async function buildApp(options: AppOptions) {
     // A delete mark may name a replacement; with none, the text simply goes.
     const comment = b.group || b.kind === 'delete' ? optional(b.comment, 'Note') : string(b.comment, 'Note'), key = string(b.key, 'Preview key', 64), page = Number(b.page);
     const selected = typeof b.quote === 'string' ? b.quote : '';
-    const { quote, source } = await manuscripts.locate(project.id, key, page, b.rect, rects, selected);
-    return store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(b.group ? { group: b.group } : {}), ...(b.kind ? { kind: b.kind } : {}), ...(stamp ? { stamp } : {}), ...(rects.length ? { rects } : {}), comment, quote, source, createdAt: Date.now() });
+    // The note is saved at once and SyncTeX finds its source afterwards: in a
+    // long paper that lookup took seconds, during which the note box spun.
+    const located = manuscripts.locate(project.id, key, page, b.rect, rects, selected);
+    // A preview that is gone fails at once and is reported; a lookup that
+    // takes time is not waited for.
+    const settled = await Promise.race([located.then(value => ({ value }), (error: unknown) => ({ error })), new Promise<null>(resolve => setImmediate(() => resolve(null)))]);
+    if (settled && 'error' in settled) throw settled.error;
+    const note = store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(b.group ? { group: b.group } : {}), ...(b.kind ? { kind: b.kind } : {}), ...(stamp ? { stamp } : {}), ...(rects.length ? { rects } : {}), comment, quote: settled?.value.quote || selected, source: settled?.value.source ?? null, createdAt: Date.now() });
+    if (!settled) {
+      const lookup = located.then(({ quote, source }) => {
+        // Keep what the author changed meanwhile; a note moved to a newer PDF
+        // was placed there with its own source.
+        const current = store.annotation(project.id, note.id);
+        if (current.key === key && !current.taskId) store.saveAnnotation({ ...current, quote: quote || current.quote, source });
+      }).catch(() => undefined).finally(() => locating.delete(note.id));
+      locating.set(note.id, lookup);
+    }
+    return note;
   });
   app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note', project(), request => {
     const note = store.annotation(request.params.id, request.params.note);

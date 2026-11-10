@@ -640,6 +640,26 @@ test('this host and the tailnet keep working as before, and refuse Funnel traffi
   } finally { await f.close(); }
 });
 
+test('a note is saved at once while SyncTeX finds its source', async () => {
+  const f = await fixture();
+  let release!: () => void;
+  const lookup = new Promise<void>(resolve => { release = resolve; });
+  f.manuscripts.locate = async () => { await lookup; return { quote: 'Located text', source: { file: 'main.tex', lines: [7, 8], excerpt: undefined } }; };
+  try {
+    const created = await f.local.inject({ method: 'POST', url: '/api/projects/thesis/annotations', headers: f.as, payload: { key: 'pdf', page: 0, rect: [0.1, 0.1, 0.4, 0.2], quote: 'Selected text', comment: 'Tighten this.' } });
+    // The lookup has not finished: the note is already there, with what was selected.
+    assert.equal(created.statusCode, 200, created.body);
+    assert.equal(created.json().source, null);
+    assert.equal(created.json().quote, 'Selected text');
+    release();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const stored = f.store.annotation('thesis', created.json().id);
+    assert.deepEqual(stored.source, { file: 'main.tex', lines: [7, 8] });
+    assert.equal(stored.quote, 'Located text');
+    assert.equal(stored.comment, 'Tighten this.');
+  } finally { await f.close(); }
+});
+
 test('color groups persist without per-location comments and take their meaning from each request', async () => {
   const f = await fixture();
   f.manuscripts.locate = async () => ({ quote: 'Selected text', source: { file: 'main.tex', lines: [10, 12], excerpt: undefined } });
