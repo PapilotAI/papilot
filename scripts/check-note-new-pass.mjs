@@ -21,6 +21,7 @@ const git = { branch: 'main', files: [] };
 const words = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 let notes = [], serial = 0, key = 'first-pass', manuscriptReads = 0;
 const pdfKeys = [], created = [];
+let releasePending; const pendingPdf = new Promise(resolve => { releasePending = resolve; });
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/note-alternatives') return json({ noteAlternatives: true, noteAlternativeRange: 'few' });
@@ -33,7 +34,11 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git')) return json(git);
   if (url.pathname.endsWith('/manuscript')) { manuscriptReads++; return json({ git, build: { status: 'building', key, pages: [[612, 792], [612, 792]] }, annotations: notes }); }
-  if (url.pathname.endsWith('/manuscript.pdf')) { pdfKeys.push(url.searchParams.get('key')); return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') }); }
+  if (url.pathname.endsWith('/manuscript.pdf')) {
+    const requested = url.searchParams.get('key'); pdfKeys.push(requested);
+    if (requested === 'fifth-pass') await pendingPdf;
+    return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
+  }
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
   if (url.pathname.endsWith('/annotations')) {
     const body = route.request().postDataJSON();
@@ -91,9 +96,29 @@ try {
   // Without an open card a newer pass replaces the pages right away.
   await newerPass('fourth-pass');
   await expect.poll(() => pdfKeys.at(-1)).toBe('fourth-pass');
+  await textOnPage().first().waitFor();
+
+  // The old pages stay interactive while a replacement PDF is downloading.
+  // Opening a card in that interval must keep its page key and its draft,
+  // even after the pending download completes.
+  await newerPass('fifth-pass');
+  await expect.poll(() => pdfKeys.at(-1)).toBe('fifth-pass');
+  await selectText(0);
+  await expect(input).toBeFocused();
+  await input.fill('Keep this note on the fourth pass.');
+  releasePending();
+  await page.waitForTimeout(300);
+  await expect(card).toBeVisible();
+  await expect(input).toHaveValue('Keep this note on the fourth pass.');
+  await input.press('Enter');
+  await expect.poll(() => created.length).toBe(2);
+  assert.equal(created[1].key, 'fourth-pass', 'A pending PDF cannot claim a note on the visible pages');
+  await expect(card).toHaveCount(0);
+  await expect.poll(() => pdfKeys.filter(key => key === 'fifth-pass').length).toBe(2);
   assert.deepEqual(errors, []);
-  console.log('A note being written keeps its pages while newer passes land.');
+  console.log('Notes retain their visible pages and build key, including when opened during a replacement download.');
 } finally {
+  releasePending();
   await browser.close();
   await server.close();
 }

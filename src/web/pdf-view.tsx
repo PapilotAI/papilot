@@ -219,10 +219,6 @@ export const PdfView = forwardRef<PdfHandle, {
   // pages would close the card and lose its place. The pages on screen, their
   // notes and their key stay together until the card closes.
   const [shown, setShown] = useState({ url: props.url, words: props.words, key: props.pdfKey }), shownRef = useRef(shown); shownRef.current = shown;
-  useEffect(() => {
-    if (editing) return;
-    setShown(current => current.url === props.url && current.words === props.words && current.key === props.pdfKey ? current : { url: props.url, words: props.words, key: props.pdfKey });
-  }, [props.url, props.words, props.pdfKey, editing]);
   const heldNotes = useRef(props.notes), held = shown.url !== props.url;
   if (!held) heldNotes.current = props.notes;
   const notes = held ? heldNotes.current : props.notes, notesRef = useRef(notes); notesRef.current = notes;
@@ -583,23 +579,28 @@ export const PdfView = forwardRef<PdfHandle, {
     };
   }, []);
 
-  // A recompiled manuscript opens at the same place and zoom.
+  // A recompiled manuscript opens at the same place and zoom. A card opened
+  // during its download cancels that replacement until the card closes.
   useEffect(() => {
+    if (editing || (loaded.current && shownRef.current.url === props.url)) return;
+    const next = { url: props.url, words: props.words, key: props.pdfKey };
     const current = tools.current!, box = container.current!;
     let cancelled = false, attached = false;
     if (loaded.current) restore.current = { scale: current.viewer.currentScaleValue, top: box.scrollTop, left: box.scrollLeft };
     setLoading(!loaded.current); setError('');
-    const task = pdfjs.getDocument({ url: shown.url, enableXfa: false, BinaryDataFactory: CMapData });
+    const task = pdfjs.getDocument({ url: next.url, enableXfa: false, BinaryDataFactory: CMapData });
     void task.promise.then(async document => {
       if (cancelled) return;
       // PDFViewer's first-page rejection handler can outlive setDocument(null)
       // and reject its replacement state. Keep that request in our cancellable
       // load phase, before the viewer takes ownership of the document.
       await document.getPage(1);
-      if (cancelled) return;
+      if (cancelled || editingRef.current) return;
       const previous = loaded.current;
       loaded.current = document; attached = true; layerMap.current.clear(); setLayers(new Map()); setSelection(null); setEditing(null);
-      if (shownRef.current.words) exactText(document, shownRef.current.words);
+      // Marks always name the pages actually attached, never a pending fetch.
+      shownRef.current = next; setShown(next);
+      if (next.words) exactText(document, next.words);
       current.viewer.setDocument(document); current.links.setDocument(document, null);
       setPages(document.numPages); setLoading(false);
       closeDocument(previous?.loadingTask);
@@ -611,7 +612,7 @@ export const PdfView = forwardRef<PdfHandle, {
       setError(failure instanceof Error ? failure.message : String(failure)); setLoading(false);
     });
     return () => { cancelled = true; if (!attached) closeDocument(task); };
-  }, [shown.url]);
+  }, [props.url, props.words, props.pdfKey, editing]);
 
   // Opening a suggestion from the task or navigation reveals its passage.
   // Page views exist after pagesinit even when their canvases have not rendered.
