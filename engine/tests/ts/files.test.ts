@@ -60,3 +60,21 @@ it("a non-waiting lock reports contention immediately", async () => {
     fs.rmSync(folder, { recursive: true, force: true });
   }
 });
+
+it("losing a held lock is reported, not thrown from a timer", async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "review-lock-lost-")),
+    file = path.join(folder, "start.lock"),
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const release = await acquireLock(file, true, { stale: 2000, update: 1000 });
+    // Another process removes the lock folder, as when it took over the lock
+    // or shut down holding a stale one.
+    fs.rmSync(file + ".lock", { recursive: true, force: true });
+    await new Promise(resolve => setTimeout(resolve, 1600));
+    expect(warn.mock.calls.some(([message]) => String(message).includes("Lost the lock"))).toBe(true);
+    await expect(release()).resolves.toBeUndefined();
+  } finally {
+    warn.mockRestore();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
