@@ -256,6 +256,11 @@ try {
   await expect(viewer().locator('.bar .accept-all')).toHaveCount(0);
   const carried = viewer().locator('.change:has(.change-carried)');
   await expect(carried).toHaveCount(1);
+  // Only the current change shows its actions, and which change is current
+  // first depends on which comparison settles first. Select it, as note
+  // links do, before checking its controls.
+  await carried.evaluate(element => element.click());
+  await expect(carried).toHaveClass(/\bcurrent\b/);
   await expect(carried.getByRole('button', { name: 'Accept', exact: true })).toBeEnabled();
   await expect(carried.getByRole('button', { name: 'Reject', exact: true })).toBeEnabled();
   assert.equal(engine.review.latestRound(retry.name).number, goodRound + 1, 'a failed build keeps its new source round');

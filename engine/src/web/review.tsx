@@ -576,14 +576,13 @@ export function ReviewApp({
         // Clear only the previous build's success message, not action feedback.
         if (unavailable(next)) setToast(message => message === t("Changes are ready") ? "" : message);
         const target = pinned || next.latest;
-        if (
+        const changed = Boolean(
           target &&
           (target !== previous.detail?.round ||
             (next.revision && next.revision !== previous.detail?.after) ||
             // The round's own comparison arrived, or failed.
-            (next.round === previous.detail?.round && (next.rendering ?? null) !== (previous.detail?.rendering ?? null))) &&
-          !snapshot.current.composer && !paper.current?.querySelector('.source-editor[data-dirty="true"]')
-        ) {
+            (next.round === previous.detail?.round && (next.rendering ?? null) !== (previous.detail?.rendering ?? null))));
+        if (changed && !snapshot.current.composer && !paper.current?.querySelector('.source-editor[data-dirty="true"]')) {
           const [loadedState, loaded] = await Promise.all([
             api<PageState>(stateRoute(target)),
             api<RoundDetail>(`/rounds/${target}`),
@@ -651,8 +650,10 @@ export function ReviewApp({
         } else {
           setState(next);
           // The PDF and job status are read separately. If the PDF arrived
-          // first, announce it when the publication's status catches up.
-          if (previous.detail && !previous.detail.rendering && !unavailable(next) &&
+          // first, announce it when the publication's status catches up. A
+          // newer version held back by an open composer or unsaved source is
+          // not shown yet, so it is not ready.
+          if (!changed && previous.detail && !previous.detail.rendering && !unavailable(next) &&
               (previous.state?.state === "building" || previous.state?.state === "build_failed"))
             setToast(t("Changes are ready"));
         }
