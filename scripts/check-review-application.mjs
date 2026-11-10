@@ -215,16 +215,36 @@ try {
   await workspace.publish('retry');
   await page.getByRole('button', { name: /^Compilation recovery/ }).click();
   await expect(viewer().locator('.bar .accept-all')).toBeEnabled();
+  // Record transient false success messages too: waiting for a toast to
+  // disappear could otherwise pass only because its six-second timer expired.
+  await viewer().locator('body').evaluate(body => {
+    window.readyWhileUnavailable = [];
+    const record = () => {
+      const toast = [...body.querySelectorAll('.toast')].find(element => element.textContent.trim() === 'Changes are ready');
+      const unavailable = body.querySelector('.comparison-waiting, .bar .status[data-state="building"], .bar .status[data-state="build_failed"]');
+      if (toast && unavailable) window.readyWhileUnavailable.push(unavailable.textContent.trim());
+    };
+    new MutationObserver(record).observe(body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['data-state'] });
+    record();
+  });
+  const readyToast = () => viewer().locator('.toast').filter({ hasText: /^Changes are ready$/ });
+  const noFalseReady = async () => {
+    assert.equal(await readyToast().count(), 0, 'an unavailable comparison never claims that changes are ready');
+    assert.deepEqual(await viewer().locator('body').evaluate(() => window.readyWhileUnavailable), [], 'no transient ready toast while comparisons build or fail');
+  };
   f.edit(retry, 'paper/first.tex', 'Recovery first', 'Updated first');
   fs.writeFileSync(hold, '');
   await page.locator('.review-rebuild').click();
   await expect(page.locator('.review-rebuild')).toHaveAttribute('aria-busy', 'true');
   await expect(viewer().locator('.bar .status[data-state="building"]')).toHaveCSS('clip-path', 'inset(50%)');
+  await expect(viewer().locator('.comparison-waiting[data-state="pending"]').first()).toBeVisible();
+  await noFalseReady();
   assert.equal(await viewer().locator('.bar').evaluate(el => el.offsetHeight), 44);
   await page.screenshot({ path: 'test-results/review-application-real-build.png' });
   fs.rmSync(hold);
   await expect(page.locator('.review-rebuild')).toHaveAttribute('aria-busy', 'false', { timeout: 60000 });
   await expect(viewer().locator('.bar .accept-all')).toBeEnabled();
+  await expect(readyToast()).toBeVisible();
   const goodRound = engine.review.latestRound(retry.name).number;
 
   f.edit(retry, 'paper/first.tex', 'Updated first', 'Broken first'); fs.writeFileSync(fail, '');
@@ -244,6 +264,7 @@ try {
   await expect(viewer().locator('.comparison-waiting').first()).toContainText('PDF comparison failed');
   await expect(viewer().locator('.change:has(.comparison-waiting) button.accept')).toHaveCount(0);
   await expect(viewer().locator('.change.current')).toBeVisible();
+  await noFalseReady();
   await page.screenshot({ path: 'test-results/review-application-failed.png' });
   fs.rmSync(fail); await page.locator('.review-rebuild').click();
   await expect(page.locator('.review-rebuild')).toHaveAttribute('data-state', 'ready', { timeout: 60000 });
@@ -251,6 +272,8 @@ try {
   await expect(viewer().locator('.bar .status')).toHaveCount(0);
   assert.equal(engine.review.latestRound(retry.name).visuals, 'ready');
   await expect(viewer().locator('.comparison-waiting')).toHaveCount(0);
+  await expect(readyToast()).toBeVisible();
+  assert.deepEqual(await viewer().locator('body').evaluate(() => window.readyWhileUnavailable), [], 'success is announced only when the comparison is ready');
   assert.deepEqual(report.errors, []);
   console.log('PASS: real comparison progress, carried pages, source-first failure gating and retry recover without stuck controls');
   report.builds = observedBuilds; report.compiles = compiles();
