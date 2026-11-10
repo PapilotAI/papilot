@@ -61,6 +61,12 @@ function selectionPoint(node: Node, offset: number): () => [Node, number] {
     node.nodeType === 1 ? (node as Element) : node.parentElement
   )?.closest(".pdf-text-line");
   if (!line) return () => [node, offset];
+  // These stable element boundaries are not interchangeable with the final
+  // newline text node: Chromium may include a neighboring, absolutely
+  // positioned equation number when copying through that newline.
+  if (node === line && offset === 0) return () => [line, 0];
+  if (node === line && offset === line.childNodes.length)
+    return () => [line, line.childNodes.length];
   const prefix = document.createRange();
   prefix.selectNodeContents(line);
   prefix.setEnd(node, offset);
@@ -106,23 +112,31 @@ export const PdfStrip = memo(function PdfStrip({
   useEffect(() => {
     const element = box.current!;
     let nearby = false;
-    const settle = () => { if (nearby !== rendered.current) setDetailed(nearby); };
-    const update = () => {
+    const apply = () => {
       if (nearby === rendered.current) return;
       const selected = window.getSelection();
       if (
-        !selected ||
-        selected.isCollapsed ||
-        !(element.contains(selected.anchorNode) || element.contains(selected.focusNode))
-      )
-        return whenSettled(settle);
-      // Keep precise selected glyphs alive outside the viewport. A Find
-      // result in a compact line must instead expand as it comes into view.
-      if (rendered.current) return;
-      const anchor = selectionPoint(selected.anchorNode!, selected.anchorOffset),
-        focus = selectionPoint(selected.focusNode!, selected.focusOffset);
-      restoreSelection.current = () => selected.setBaseAndExtent(...anchor(), ...focus());
+        selected && !selected.isCollapsed &&
+        (element.contains(selected.anchorNode) || element.contains(selected.focusNode))
+      ) {
+        // Keep precise selected glyphs alive outside the viewport. A Find
+        // result in a compact line must instead expand as it comes into view.
+        if (rendered.current) return;
+        const anchor = selectionPoint(selected.anchorNode!, selected.anchorOffset),
+          focus = selectionPoint(selected.focusNode!, selected.focusOffset);
+        restoreSelection.current = () => selected.setBaseAndExtent(...anchor(), ...focus());
+      }
       setDetailed(nearby);
+    };
+    const update = () => {
+      if (nearby === rendered.current) return;
+      const selected = window.getSelection();
+      if (selected && !selected.isCollapsed &&
+        (element.contains(selected.anchorNode) || element.contains(selected.focusNode)))
+        apply();
+      // Recheck the selection when the queued update actually runs: it may
+      // have changed while scrolling settled, before selectionchange fires.
+      else whenSettled(apply);
     };
     const observer = new IntersectionObserver(
       (entries) => {
@@ -134,7 +148,7 @@ export const PdfStrip = memo(function PdfStrip({
     observer.observe(element);
     document.addEventListener("selectionchange", update);
     return () => {
-      settling.delete(settle);
+      settling.delete(apply);
       observer.disconnect();
       document.removeEventListener("selectionchange", update);
     };
