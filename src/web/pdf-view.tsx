@@ -605,7 +605,7 @@ export const PdfView = forwardRef<PdfHandle, {
       setPages(document.numPages); setLoading(false);
       closeDocument(previous?.loadingTask);
       const items = await readOutline(document).catch(() => []);
-      if (!cancelled) latest.current.onOutline(items);
+      if (loaded.current === document) latest.current.onOutline(items);
     }).catch(failure => {
       if (cancelled) return;
       if (!attached) closeDocument(task);

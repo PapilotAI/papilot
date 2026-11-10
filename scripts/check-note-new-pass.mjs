@@ -84,6 +84,7 @@ try {
   await expect(input).toHaveValue('Is this opening too long?');
   assert.deepEqual(pdfKeys, ['first-pass'], 'The pages under an open card are not replaced');
 
+  const firstPassText = await textOnPage().first().elementHandle();
   await input.press('Enter');
   await expect.poll(() => created.length).toBe(1);
   assert.equal(created[0].key, 'first-pass', 'The note names the pages it was written on');
@@ -91,11 +92,14 @@ try {
   await expect(card).toHaveCount(0);
   // Then the newest pages replace them.
   await expect.poll(() => pdfKeys.at(-1)).toBe('third-pass');
+  await expect.poll(() => firstPassText.evaluate(element => element.isConnected)).toBe(false);
   await textOnPage().first().waitFor();
 
   // Without an open card a newer pass replaces the pages right away.
+  const thirdPassText = await textOnPage().first().elementHandle();
   await newerPass('fourth-pass');
   await expect.poll(() => pdfKeys.at(-1)).toBe('fourth-pass');
+  await expect.poll(() => thirdPassText.evaluate(element => element.isConnected)).toBe(false);
   await textOnPage().first().waitFor();
 
   // The old pages stay interactive while a replacement PDF is downloading.
@@ -110,11 +114,13 @@ try {
   await page.waitForTimeout(300);
   await expect(card).toBeVisible();
   await expect(input).toHaveValue('Keep this note on the fourth pass.');
+  const fourthPassText = await textOnPage().first().elementHandle();
   await input.press('Enter');
   await expect.poll(() => created.length).toBe(2);
   assert.equal(created[1].key, 'fourth-pass', 'A pending PDF cannot claim a note on the visible pages');
   await expect(card).toHaveCount(0);
-  await expect.poll(() => pdfKeys.filter(key => key === 'fifth-pass').length).toBe(2);
+  await expect.poll(() => fourthPassText.evaluate(element => element.isConnected)).toBe(false);
+  await textOnPage().first().waitFor();
   assert.deepEqual(errors, []);
   console.log('Notes retain their visible pages and build key, including when opened during a replacement download.');
 } finally {
