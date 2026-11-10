@@ -388,6 +388,15 @@ kbd {
     Menlo,
     monospace;
 }
+.change-linked {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--comment);
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
 .change-kind {
   white-space: nowrap;
 }

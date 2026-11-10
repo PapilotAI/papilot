@@ -1253,6 +1253,25 @@ export function ReviewApp({
           </span>
           {actionBar(index)}
           {kindLabel && !block.waiting && <span className="change-kind" title={kindLabel}>{kindLabel}</span>}
+          {(() => {
+            // One edit that still sits in several changes says where else and why.
+            const linked = (block.linked ?? []).flatMap((link) =>
+              stops.flatMap((other, at) => (at !== index && other.units.includes(link.unit) ? [{ at, reason: link.reason }] : [])));
+            if (!linked.length) return null;
+            const others = [...new Set(linked.map((link) => link.at))];
+            return (
+              <button
+                type="button"
+                className="change-kind change-linked"
+                title={t(linked.some((link) => link.reason === "moved")
+                  ? "The same edit now prints elsewhere, on another page or in a float."
+                  : "The same edit prints in several places in the PDF.")}
+                onClick={(event) => { event.stopPropagation(); select(others[0]); }}
+              >
+                {t("Same edit as change {list}", { list: others.map((at) => at + 1).join(", ") })}
+              </button>
+            );
+          })()}
           {block.carried !== undefined && (() => {
             // Rounds are named by when they were published, as in History.
             const published = state?.history?.find((entry) => entry.number === block.carried)?.created,

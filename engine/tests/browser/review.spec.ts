@@ -592,3 +592,24 @@ test("change map viewport follows scrolling and can be dragged", async ({
   await expectMapAligned(page);
   await page.screenshot({ path: ".cache/browser-change-map.png" });
 });
+test("an edit that prints in two changes names the other and goes there", async ({ page }) => {
+  await page.route("**/rounds/1", async route => {
+    const response = await route.fetch(), detail = await response.json();
+    const section = detail.sections.find((s: { blocks: { kind: string }[] }) => s.blocks.filter(b => b.kind === "change").length >= 2);
+    const [first, second] = section.blocks.filter((b: { kind: string }) => b.kind === "change");
+    // The second change also carries the first change's edit, printed there too.
+    const unit = first.units[0];
+    second.units = [...second.units, unit];
+    first.linked = [{ unit, reason: "places" }];
+    second.linked = [{ unit, reason: "places" }];
+    await route.fulfill({ response, json: detail });
+  });
+  await page.reload();
+  const firstLink = page.locator('.change[data-stop="0"] .change-linked');
+  await expect(firstLink).toHaveText(/Same edit as change \d+/);
+  await expect(firstLink).toHaveAttribute("title", "The same edit prints in several places in the PDF.");
+  const target = Number((await firstLink.innerText()).match(/\d+/)![0]) - 1;
+  await firstLink.click();
+  await expect(page.locator(".change.current")).toHaveAttribute("data-stop", String(target));
+  await expect(page.locator(`.change[data-stop="${target}"] .change-linked`)).toHaveText("Same edit as change 1");
+});

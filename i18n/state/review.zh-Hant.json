@@ -809,6 +809,11 @@
     "textHash": "214f8b9d20846cad5df70c8cc5b2258c9455094475b19ddbac5b4046b1b44b42",
     "model": "gemini-4-argon-medium"
   },
+  "Same edit as change {list}": {
+    "revision": "73d973c36bbf94d6e1cd08fdc5825c859d99ab6f7fe1a4e02c9f9c331403a4d7",
+    "textHash": "843fe4c297f4d028d1d0d73573c6baf9ec49f7ed4056e419c09c77bfecd34336",
+    "model": "gemini-4-argon-medium"
+  },
   "Search by title or task name": {
     "revision": "0a40be4466c5a4074b812930f29cd9a031acde610a822cb8bebf8d0e85881e3f",
     "textHash": "6fb6e14aa34f8823ed0bb2f8b2eb49f82aab5510cc676d916d841182c6cd8e4b",
@@ -972,6 +977,16 @@
   "The paper still cites this key, and no entry defines it now.": {
     "revision": "de559bb6f01594281407d41f9bbcffa3d5ec63af6a7170b8d49faef6a0e55b8d",
     "textHash": "1d752a2e1228d275204109465e2af8c01a7d3cd486bbf18018f49038599b5e47",
+    "model": "gemini-4-argon-medium"
+  },
+  "The same edit now prints elsewhere, on another page or in a float.": {
+    "revision": "ce0f164827165887a238591e7bdd6aebfbb4a5203adc11e24521993c40044efe",
+    "textHash": "41a42caf61b5261af0a6ad2ed1a00b929a854f51c3a18581ab1b30bf021290c6",
+    "model": "gemini-4-argon-medium"
+  },
+  "The same edit prints in several places in the PDF.": {
+    "revision": "42292a018fc1c6350baf7707be705efc5611d26317a3412f9d5e9439e167882c",
+    "textHash": "209df26b1416416a1852ec211464f5616f3ab029cb3792a4bfd80c58c40935eb",
     "model": "gemini-4-argon-medium"
   },
   "The sources could not be reached.": {
