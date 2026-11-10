@@ -144,7 +144,14 @@ function build(
   };
   // A word the comparison could not pair changed or moved. Crops show both
   // where text left and where it arrived; marks cover only the changed
-  // words, since words that moved are the same text.
+  // words, since words that moved are the same text. A running head or a
+  // page number left unpaired only turned with its page: unless its words
+  // changed, it is neither moved text nor anything a crop must show.
+  const edited = { old: new Uint8Array(a.tokens.length), new: new Uint8Array(b.tokens.length) };
+  for (const effect of result.changes) {
+    edited.old.fill(1, effect.old[0], effect.old[1]);
+    edited.new.fill(1, effect.new[0], effect.new[1]);
+  }
   for (const [name, w, map] of [
     ["old", a, result.tokens],
     ["new", b, back],
@@ -152,6 +159,7 @@ function build(
     const side = sides[name];
     map.forEach((other, t) => {
       if (other >= 0) return;
+      if (w.tokens[t].flow === "edge" && !edited[name][t]) return;
       side.changedToken[t] = 1;
       for (const g of tokenGlyphs(w.tokens[t])) {
         add(side.unpaired, w, g);

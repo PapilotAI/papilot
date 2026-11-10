@@ -907,3 +907,18 @@ it("finds one place only where two crops print a line in common", async () => {
   // Both crops hold the second line: one place.
   expect(same(crop(first[1], second[3]), crop(second[1], 600))).toBe(true);
 });
+
+it("does not move running heads or reach crops to them when pages turn elsewhere", () => {
+  // Inserted lines push the body down a page break; each page's running
+  // head then sits at another place in the reading order. The heads only
+  // turned with the pages: they are not moved text, and nothing a crop shows.
+  const body = Array.from({ length: 40 }, (_, i) => `Body line ${i} keeps its words in every version.`),
+    old = pdf(body),
+    next = pdf([...body.slice(0, 3), ...Array.from({ length: 10 }, (_, i) => `Inserted line ${i} adds new words here.`), ...body.slice(3)]),
+    al = alignment(build(old), build(next));
+  for (const side of ["old", "new"] as const) {
+    const text = (map: Map<number, number[]>) => [...map.values()].flat().map((g) => al[side].words.glyphs[g].text).join("");
+    expect(text(al[side].moved)).toBe("");
+    expect(text(al[side].unpaired)).not.toContain("Page");
+  }
+});
