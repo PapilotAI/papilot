@@ -750,6 +750,38 @@ function renderSlides(
 
 /** Plan the whole round before assigning sections. Source edits identify
  * regions; sections provide context, but never own a second copy of ink. */
+// Two edits' crops are one place when they print a line in common. The boxes
+// of adjacent lines touch or overlap by a point or two, which does not make
+// separate edits one change. A crop without text, such as a figure, is one
+// place with another when they overlap by much of the smaller one.
+export function sharesLine(document: PdfDocument) {
+  return (a: Position, b: Position) => {
+    if (a.page !== b.page || !intersects(a.clip, b.clip)) return false;
+    const lines = document
+        .page(a.page)
+        .lines.filter((l) => l.chars.some((c) => c.text.trim())),
+      within = (p: Position) =>
+        lines.filter((l) => {
+          const middle = (l.rect[1] + l.rect[3]) / 2;
+          return (
+            middle > p.clip[1] &&
+            middle < p.clip[3] &&
+            l.rect[2] > p.clip[0] &&
+            l.rect[0] < p.clip[2]
+          );
+        }),
+      first = within(a),
+      second = within(b);
+    if (first.length && second.length)
+      return first.some((line) => second.includes(line));
+    const overlap =
+      Math.min(a.clip[3], b.clip[3]) - Math.max(a.clip[1], b.clip[1]);
+    return (
+      overlap >=
+      0.4 * Math.min(a.clip[3] - a.clip[1], b.clip[3] - b.clip[1])
+    );
+  };
+}
 export function renderDocument(
   old: Build,
   next: Build,
@@ -803,7 +835,8 @@ export function renderDocument(
         readingKey(document, laneAt(document, a.page, a.clip), a.clip[1]),
         readingKey(document, laneAt(document, b.page, b.clip), b.clip[1]),
       ) || a.clip[0] - b.clip[0],
-    areas = regions(cards),
+    lines = { old: sharesLine(old.document), new: sharesLine(next.document) },
+    areas = regions(cards, (side, a, b) => lines[side](a, b)),
     sectionAreas = sections.flatMap(({ intervals }, value) =>
       [...intervals].flatMap(([id, spans]) =>
         spans.map(([top, bottom]) => {

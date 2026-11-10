@@ -894,3 +894,16 @@ it("does not call a word moved when reflow only hyphenates it elsewhere", () => 
   expect(changed("old")).toBe("method");
   expect(changed("new")).toBe("variant");
 });
+
+it("finds one place only where two crops print a line in common", async () => {
+  const { sharesLine } = await import("../../src/render/inline.ts");
+  const doc = pdf(["The first printed line of the paragraph.", "The second printed line of the paragraph.", "The third printed line of the paragraph."]),
+    lines = doc.page(0).lines.filter((l) => l.text.trim()),
+    [first, second] = lines.map((l) => l.rect),
+    same = sharesLine(doc),
+    crop = (top: number, bottom: number): Position => ({ page: 0, clip: [0, top, 600, bottom], label: "1" });
+  // A crop of the first line and one of the rest touch where their boxes do.
+  expect(same(crop(first[1], first[3] + 1), crop(first[3] - 1, 600))).toBe(false);
+  // Both crops hold the second line: one place.
+  expect(same(crop(first[1], second[3]), crop(second[1], 600))).toBe(true);
+});
