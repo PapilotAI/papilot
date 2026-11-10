@@ -8,6 +8,7 @@ import {
   visibleStop,
   wordDiff,
   buildStops,
+  changeKinds,
   commentScope,
 } from "../../src/web/model.ts";
 import type { RenderedRound, Decision, ChangeBlock, Unit } from "../../src/types.ts";
@@ -103,4 +104,13 @@ it("source diff scales to long changes without marking shared context", () => {
       .filter((p) => p.type !== "equal")
       .map((p) => p.text),
   ).toEqual(["w1000", "changed"]);
+});
+it("labels a change invisible only when none of its edits shows", () => {
+  expect(changeKinds([{ visual: "text" }, { visual: "identical" }])).toEqual([]);
+  expect(changeKinds([{ visual: "layout" }, { visual: "unmapped" }])).toEqual(["layout"]);
+  expect(changeKinds([{ visual: "identical" }])).toEqual(["identical"]);
+  expect(changeKinds([{ visual: "identical" }, {}])).toEqual(["identical", "unmapped"]);
+  expect(changeKinds([{ visual: "position" }, { visual: "identical" }])).toEqual(["identical"]);
+  // An unmapped edit whose effects show elsewhere is not "Source only".
+  expect(changeKinds([{ visual: "unmapped", effects: { total: 1, shown: [] } }])).toEqual([]);
 });

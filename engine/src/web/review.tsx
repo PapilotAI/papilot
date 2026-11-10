@@ -52,6 +52,7 @@ import {
   STATE,
   buildStops,
   copyReference,
+  changeKinds,
   describeLocation,
   shortLocation,
   nextPending,
@@ -1183,23 +1184,7 @@ export function ReviewApp({
         ? t("Bibliography")
         : block.reflow
         ? t("Reflow")
-        : (() => {
-            const kinds = new Set(
-              known
-                .filter((u) => !(u.effects && u.visual === "unmapped"))
-                .map((u) => u.visual ?? "unmapped"),
-            );
-            // "No visible change" and "Source only" describe a whole change: a
-            // whitespace edit beside visible ones does not make it invisible.
-            const visible = kinds.has("text") || kinds.has("layout");
-            return [...kinds].filter(
-              (kind) =>
-                kind !== "text" &&
-                // Where text moved, its marks show it; a label only puzzled.
-                kind !== "position" &&
-                !(visible && (kind === "identical" || kind === "unmapped")),
-            );
-          })()
+        : changeKinds(known)
             .map((kind) => t(KIND[kind]))
             .join(", ");
     const images = (items: Strip[], side: "before" | "after") => (
