@@ -335,7 +335,7 @@ export class Publisher {
     if (signal.aborted) return;
     await this.renderCached(
       { main: project.main, source_dir: project.source_dir, figures: project.figures, old, new: next, units, indirect },
-      indirect ? (subset) => builder.build(withUnits(app.repo, before, after, subset), targets, seed, options) : undefined,
+      indirect ? (subset, shared) => builder.build(withUnits(app.repo, before, after, subset), targets, seed, { ...options, ...shared }) : undefined,
       priority,
       signal,
     );
@@ -346,7 +346,7 @@ export class Publisher {
   /** The folder of a rendered comparison: one rendered before, the one under
    *  way, or a new one. A caller that cancels stops waiting; the rendering
    *  stops once nobody waits for it. */
-  private async renderCached(request: RenderRequest, variant: ((units: Unit[]) => Promise<BuildInfo>) | undefined, priority: () => BuildPriority, signal?: AbortSignal): Promise<string> {
+  private async renderCached(request: RenderRequest, variant: ((units: Unit[], shared: { signal: AbortSignal; priority: () => BuildPriority }) => Promise<BuildInfo>) | undefined, priority: () => BuildPriority, signal?: AbortSignal): Promise<string> {
     const key = renderKey(request), folder = path.join(this.app.state, "cache/renders", key);
     if (fs.existsSync(path.join(folder, "round.json"))) {
       const time = new Date();
@@ -362,7 +362,9 @@ export class Publisher {
       const done = (async () => {
         await fs.promises.mkdir(output, { recursive: true });
         try {
-          await render(output, request, variant, top, stop.signal);
+          // Variants belong to this shared render, not the first caller: a
+          // speculative caller may leave while a publication still needs it.
+          await render(output, request, variant ? (units) => variant(units, { signal: stop.signal, priority: top }) : undefined, top, stop.signal);
           await fs.promises.rm(folder, { recursive: true, force: true });
           await fs.promises.rename(output, folder);
           return folder;
@@ -391,6 +393,14 @@ export class Publisher {
     cancelled.catch(() => undefined);
     try {
       return await (signal ? Promise.race([shared.done, cancelled]) : shared.done);
+    } catch (error) {
+      // A new caller can arrive while a cancelled render is stopping. Once
+      // it has cleaned up, start again for the caller that still needs it.
+      if (error instanceof Cancelled && !signal?.aborted) {
+        if (this.renders.get(key) === shared) this.renders.delete(key);
+        return this.renderCached(request, variant, priority, signal);
+      }
+      throw error;
     } finally {
       signal?.removeEventListener("abort", leave);
       shared.wanted.delete(priority);
@@ -802,12 +812,12 @@ export class Publisher {
         // Only a round that lists indirect changes compiles variants to
         // find the edits behind them.
         indirect
-          ? (subset) =>
+          ? (subset, shared) =>
               builder.build(
                 withUnits(app.repo, before, after, subset),
                 targets,
                 seed,
-                { date, priority: () => this.priority(job) },
+                { date, ...shared },
               )
           : undefined,
         () => this.priority(job),
