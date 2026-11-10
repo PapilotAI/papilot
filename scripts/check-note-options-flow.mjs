@@ -82,7 +82,15 @@ try {
       return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(html, '/review/paper') });
     });
     const frame = () => page.frameLocator('.review-frame'), drawer = page.locator('.review-note-controls[data-open="true"]');
-    const sync = () => frame().locator('body').evaluate(el => el.ownerDocument.defaultView.dispatchEvent(new Event('latex-review:decided')));
+    const sync = () => expect.poll(() => page.evaluate(() => {
+      // The review round can replace the iframe. Resolve its current window
+      // in the parent context and wait until the host has attached listeners.
+      const current = document.querySelector('.review-frame');
+      const doc = current?.contentDocument, view = current?.contentWindow;
+      if (!view || !doc?.querySelector('#paper') || !doc.querySelector('#papilot-embed-style')) return false;
+      view.dispatchEvent(new view.Event('latex-review:decided'));
+      return true;
+    }), { timeout: 15000 }).toBe(true);
     const tab = name => drawer.getByRole('tab', { name, exact: true });
     const comparison = revision => drawer.locator(`.note-option-comparison[data-revision="${revision}"]`);
     try {
