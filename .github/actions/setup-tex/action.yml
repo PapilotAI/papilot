@@ -14,9 +14,9 @@ runs:
         echo "list=$packages" >> "$GITHUB_OUTPUT"
         echo "dir=/tmp/papilot-tex-debs" >> "$GITHUB_OUTPUT"
         # The cache holds only what this image lacks, so the image version is
-        # in the key, and so are the packages. Bump v1 when the way the
-        # packages are cached changes.
-        echo "prefix=tex-debs-v1-$ImageOS-$ImageVersion-$(uname -m)-$(sha256sum <<< "$packages" | cut -c1-16)-" >> "$GITHUB_OUTPUT"
+        # in the key, and so are the packages. Bump its version (v2) when the
+        # way the packages are cached changes.
+        echo "prefix=tex-debs-v2-$ImageOS-$ImageVersion-$(uname -m)-$(sha256sum <<< "$packages" | cut -c1-16)-" >> "$GITHUB_OUTPUT"
 
     # A save is keyed on what it holds and a restore takes the newest, so a
     # download that repairs a cache that would not install supersedes it.
@@ -61,9 +61,12 @@ runs:
         # restored set held, as a failed install from it may have installed
         # some. apt-get download fetches the current version of each, whether
         # it is installed or not, into a folder of its own.
+        # A plan apt cannot make fails the step here, with apt's own error.
+        plan=$(apt-get -s -f install --no-install-recommends $PACKAGES)
+        shopt -s nullglob
         names=$( {
-          apt-get -s -f install --no-install-recommends $PACKAGES | awk '/^Inst /{print $2}'
-          for deb in "$DIR"/*.deb; do [ -e "$deb" ] && dpkg-deb -f "$deb" Package; done
+          awk '/^Inst /{print $2}' <<< "$plan"
+          for deb in "$DIR"/*.deb; do dpkg-deb -f "$deb" Package; done
         } | sort -u)
         rm -rf "$DIR" && mkdir -p "$DIR"
         if [ -n "$names" ]; then
