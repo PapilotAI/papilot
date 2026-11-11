@@ -89,7 +89,7 @@ const key = async value => { await page.locator('.pdf-container').focus(); await
 try {
   await page.goto(origin);
   await words().first().waitFor();
-  await expect(rail().getByRole('button')).toHaveCount(10);
+  await expect(rail().getByRole('button')).toHaveCount(11);
   await expect(tool('Undo')).toBeDisabled(); await expect(tool('Redo')).toBeDisabled();
   assert.deepEqual(await rail().getByRole('button').evaluateAll(buttons => buttons.slice(-2).map(button => button.getAttribute('aria-label'))), ['Undo', 'Redo']);
   const railBox = await rail().boundingBox(), redoBox = await tool('Redo').boundingBox();
@@ -119,7 +119,7 @@ try {
   await page.keyboard.press('Enter');
   await expect(collapse()).toHaveAttribute('aria-expanded', 'true');
   await expect(collapse()).toBeFocused();
-  await expect(rail().getByRole('button')).toHaveCount(10);
+  await expect(rail().getByRole('button')).toHaveCount(11);
   // The note tool is its own color picker: a click picks it, a second opens colors.
   await tool('Note').click();
   await expect(tool('Note')).toHaveAttribute('aria-pressed', 'true');
@@ -172,7 +172,7 @@ try {
     await expect(tool('Collapse marking tools')).toBeFocused();
     await expect(page.locator('.rail-tip:popover-open')).toHaveCount(0);
     await page.keyboard.press('Tab');
-    for (let index = 0; index < 6; index++) await page.keyboard.press('Tab');
+    for (let index = 0; index < 7; index++) await page.keyboard.press('Tab');
     await expect(tool('Hand')).toBeFocused();
     await expect(tool('Hand').locator('.rail-tip')).toBeVisible();
     await page.keyboard.press('Enter');
