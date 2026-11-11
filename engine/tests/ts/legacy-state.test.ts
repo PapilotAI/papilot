@@ -6,6 +6,7 @@ import { loadProject } from "../../src/core/config.ts";
 import { moveLegacyState } from "../../src/core/legacy-state.ts";
 import { REFS, STATE, gitBinary, stateOf } from "../../src/core/git.ts";
 import { run } from "../../src/core/process.ts";
+import { realPath } from "../../src/core/files.ts";
 import { Store } from "../../src/core/store.ts";
 import { DatabaseSync } from "node:sqlite";
 
@@ -22,7 +23,7 @@ it("moves the state folder, task refs, worktree indexes and settings of an earli
   const head = f.repo.rev("HEAD"), old = path.join(f.root, ".git/latex-review");
   f.write("rounds/polish/001/round.json", "{}", old);
   // A round keeps the builds it compares, and a failed job its log, by path.
-  const real = path.join(fs.realpathSync(path.join(f.root, ".git")), "latex-review"), build = (key: string) => ({ key, root: `${real}/cache/builds/${key}/src`, pdf: `${real}/cache/builds/${key}/src/build/main.pdf` });
+  const real = path.join(realPath(path.join(f.root, ".git")), "latex-review"), build = (key: string) => ({ key, root: path.join(real, "cache/builds", key, "src"), pdf: path.join(real, "cache/builds", key, "src/build/main.pdf") });
   f.write("rounds/polish/001/places.json", JSON.stringify({ main: "paper/main.tex", old: build("a"), new: build("b"), units: { u1: [] } }), old);
   const store = new Store(path.join(old, "state.sqlite3"));
   store.db.prepare("INSERT INTO jobs(id, task, status, result, created) VALUES ('j', 'polish', 'failed', ?, 1)").run(JSON.stringify({ error: "Your edits do not compile.", log: `${real}/logs/j.log` }));
@@ -37,7 +38,7 @@ it("moves the state folder, task refs, worktree indexes and settings of an earli
   f.write("latex-review/snapshot-index", "index", worktreeState);
   f.write(".latex-review.json", JSON.stringify({ main: "paper/main.tex", engine: "lualatex", partial_builds: false }));
 
-  const project = loadProject(f.root), state = path.join(fs.realpathSync(f.root), ".git", STATE);
+  const project = loadProject(f.root), state = path.join(realPath(f.root), ".git", STATE);
   expect(project.state).toBe(state);
   expect([project.main, project.engine, project.partial_builds]).toEqual(["paper/main.tex", "lualatex", false]);
   expect(fs.existsSync(old)).toBe(false);
@@ -83,7 +84,7 @@ it("a linked worktree's Git directory moves the whole repository's state", () =>
   f.repo.run(["worktree", "add", "-q", "--detach", worktree]);
   f.write(".git/latex-review/state.sqlite3", "tasks");
   f.repo.run(["update-ref", "refs/latex-review/task/base", f.repo.rev("HEAD")]);
-  expect(stateOf(worktree)).toBe(path.join(fs.realpathSync(f.root), ".git/worktrees/task", STATE));
+  expect(stateOf(worktree)).toBe(path.join(realPath(f.root), ".git/worktrees/task", STATE));
   expect(fs.readFileSync(path.join(f.root, ".git", STATE, "state.sqlite3"), "utf8")).toBe("tasks");
   expect(refs("refs/latex-review/")).toBe("");
 });
