@@ -73,7 +73,7 @@ async function check(button, color, busy = false) {
   }
   assert.equal(await button.innerText(), '', 'The toolbar remains icon-only');
 }
-const green = 'rgb(21, 128, 61)', blue = 'rgb(37, 99, 235)', red = 'rgb(220, 38, 38)';
+const ready = 'rgb(110, 110, 115)', blue = 'rgb(0, 122, 255)', red = 'rgb(255, 59, 48)';
 try {
   fs.mkdirSync('test-results', { recursive: true });
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
@@ -85,7 +85,7 @@ try {
     await page.emulateMedia({ colorScheme });
     if (width <= 680) await page.getByRole('group', { name: 'Manuscript view', exact: true }).getByRole('button', { name: 'PDF', exact: true }).click();
     await expect(initialToolbar).toBeVisible();
-    await check(compile, colorScheme === 'dark' ? 'rgb(138, 180, 255)' : blue, true);
+    await check(compile, colorScheme === 'dark' ? 'rgb(10, 132, 255)' : blue, true);
     const spacing = await initialToolbar.evaluate(toolbar => {
       const boxes = [...toolbar.querySelectorAll(':scope > button, :scope > .problems-anchor > button')].map(button => button.getBoundingClientRect());
       const modes = toolbar.querySelector('.pdf-modes').getBoundingClientRect();
@@ -114,7 +114,7 @@ try {
   Object.assign(build, { status: 'ready', key: 'pdf', current: true, error: undefined });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(initialToolbar).toHaveCount(0);
-  await check(compile, green);
+  await check(compile, ready);
   await page.locator('.pdf-toolbar').screenshot({ path: 'test-results/compile-ready.png' });
 
   // A stale read and repeated clicks cannot hide or duplicate a new compile.
@@ -152,17 +152,17 @@ try {
   await check(compile, blue, true);
   Object.assign(build, { status: 'ready', current: true, error: undefined });
   await page.clock.runFor(1600);
-  await check(compile, green);
+  await check(compile, ready);
 
   // Transport errors leave the action available instead of claiming success.
   failRequest = true; await compile.click();
-  await check(compile, 'rgb(138, 138, 138)');
+  await check(compile, 'rgb(134, 134, 139)');
   await expect(compile).toHaveAttribute('title', /status unavailable/);
   failRequest = false; await compile.click();
   await check(compile, blue, true);
   Object.assign(build, { status: 'ready', current: true });
   await page.clock.runFor(1600);
-  await check(compile, green);
+  await check(compile, ready);
 
   // A new PDF keeps confirmed highlights and keeps unresolved notes in the
   // PDF note library, including color groups, without attaching them to wrong places.
@@ -190,23 +190,23 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.clock.runFor(300);
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-  await check(compile, 'rgb(123, 213, 160)');
+  await check(compile, 'rgb(161, 161, 166)');
   assert.equal((await compile.boundingBox()).width, 44);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   await page.locator('.workspace-navigation').screenshot({ path: 'test-results/compile-mobile-dark.png' });
   await compile.click();
-  await check(compile, 'rgb(138, 180, 255)', true);
+  await check(compile, 'rgb(10, 132, 255)', true);
   await expect(compile.locator('.spinner')).toHaveCSS('animation-name', 'none');
   Object.assign(build, { status: 'failed', error: 'Compile failed.' });
   await page.clock.runFor(1600);
-  await check(compile, 'rgb(255, 150, 150)');
+  await check(compile, 'rgb(255, 69, 58)');
 
   // Comparison generation uses the task's actual build status, too.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.getByRole('button', { name: /^Revise the introduction/ }).click();
   const compare = page.getByRole('button', { name: 'Regenerate PDF comparison', exact: true });
-  await check(compare, green);
+  await check(compare, ready);
   holdNextBuild(); await compare.click();
   await check(compare, blue, true);
   releaseBuild();
@@ -217,7 +217,7 @@ try {
   await check(compare, red);
   task.status = 'reviewing'; task.review.job = { status: 'done', phase: 'building' };
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await check(compare, green);
+  await check(compare, ready);
   assert.deepEqual(errors, []);
   console.log('PASS: Compile actions show real build states, block duplicate requests, retry failures, poll promptly, and work on mobile, in dark mode, and with reduced motion');
 } finally { releaseBuild?.(); releaseRead?.(); await browser.close(); await server.close(); }

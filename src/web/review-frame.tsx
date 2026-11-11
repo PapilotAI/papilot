@@ -39,11 +39,12 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
   doc.documentElement.style.setProperty('--papilot-lead', `${lead}px`);
   const style = doc.createElement('style'); style.id = 'papilot-embed-style';
   style.textContent = themeStyles + `
-    :root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Noto Sans SC",system-ui,sans-serif;--comment:var(--accent);--accept:var(--green);--reject:var(--red);--frame:var(--canvas);--bar:var(--bg);--muted:var(--text-3);--ink:var(--text);--head:var(--bg-subtle);font-size:14px}
+    :root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Noto Sans SC",system-ui,sans-serif;--comment:var(--accent);--accept:var(--green);--reject:var(--red);--frame:var(--canvas);--bar:var(--bg);--muted:var(--text-3);--ink:var(--text);--head:var(--bg-subtle);font-size:13px}
     .banner{border-radius:10px}
-    .source,.source-code,.unit-actions button,.toast,.change-map-tooltip,.review-mode,.review-mode select,.review-complete,.change.standalone{background:var(--bg);color:var(--text)}
-    .banner{background:var(--accent-soft);border-color:var(--accent-line)}.banner .details{background:var(--bg-subtle)}
-    .composer{border-color:color-mix(in srgb,var(--line-strong) 65%,transparent);box-shadow:var(--float)}
+    .source,.toast,.change-map-tooltip,.review-mode,.review-complete,.change.standalone{background:var(--bg);color:var(--text)}
+    .toast,.change-map-tooltip{background:var(--bg-elevated)}.source-code{background:var(--bg-muted);color:var(--text)}.unit-actions button,.review-mode select{background:var(--fill);color:var(--text)}
+    .banner{background:var(--accent-soft);border-color:transparent}.banner .details{background:var(--bg-subtle)}
+    .composer{border-color:transparent;background:var(--bg-elevated);box-shadow:var(--float)}
     .composer-close:hover{background:var(--bg-hover);color:var(--text)}
     .composer-send{background:var(--primary)}.composer-send:hover:not(:disabled){background:var(--primary-hover)}.composer-send:disabled{background:var(--bg-active);color:var(--text-3)}
     .composer-send:focus-visible,.composer-close:focus-visible{outline:none;box-shadow:var(--ring)}
@@ -60,9 +61,9 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .review-complete{align-items:center}
     .review-complete-actions{flex-wrap:wrap;justify-content:flex-end;max-width:100%}
     .review-complete-actions .commit-state{font-size:13px;color:var(--text-3)}
-    .review-complete-actions .commit-button{display:inline-flex;align-items:center;height:28px;padding:0 12px;border:1px solid var(--line-strong);border-radius:7px;background:var(--bg);color:var(--text);font:500 13px var(--sans);cursor:pointer;box-shadow:0 1px 2px rgb(0 0 0/.06)}
-    .review-complete-actions .commit-button:hover{background:var(--bg-subtle);border-color:var(--line-hover)}
-    .review-complete-actions .commit-button:focus-visible{outline:none;box-shadow:var(--ring)}
+    .review-complete-actions .commit-button{display:inline-flex;align-items:center;height:24px;padding:0 10px;border:1px solid transparent;border-radius:6px;background:var(--control);box-shadow:var(--control-shadow);color:var(--text);font:400 13px var(--sans);cursor:pointer}
+    .review-complete-actions .commit-button:active{filter:brightness(.93)}
+    .review-complete-actions .commit-button:focus-visible{outline:none;box-shadow:var(--control-shadow),var(--ring)}
     .review-complete-actions .commit-button{height:auto;min-height:30px;padding:5px 12px;white-space:nowrap}
     .review-complete-actions .commit-button:disabled{opacity:.5;cursor:default}
     :root[data-papilot-phone] .review-complete-actions{justify-content:flex-start;margin-left:0}
@@ -73,25 +74,34 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .document{--pdf-filter:var(--review-filter);--pdf-page:var(--review-page);--before:var(--review-before);--after:var(--review-after)}
     .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}.sheet{background:var(--pdf-page)}
     :root[data-theme="dark"][data-review-theme="light"] :is(.sheet,.paper-page,.document .change){
-      color-scheme:light;--bg:#ffffff;--bg-subtle:#fafafa;--bg-muted:#f4f4f4;--bg-hover:#efefef;--bg-active:#e7e7e7;--frame:#f3f3f3;
-      --text:#171717;--text-2:#525252;--text-3:#8a8a8a;--ink:var(--text);--muted:var(--text-3);--head:var(--bg-subtle);
-      --line:#e8e8e8;--line-strong:#d6d6d6;--line-hover:#c4c4c4;
-      --accent:#2563eb;--accent-hover:#1d4ed8;--accent-soft:#eff6ff;--accent-line:#bfdbfe;
-      --green:#15803d;--green-soft:#f0fdf4;--red:#dc2626;--red-soft:#fef2f2;--red-line:#fecaca;
-      --amber-text:#92400e;--amber-soft:#fffbeb;--amber-line:#fde68a;
+      color-scheme:light;--bg:#ffffff;--bg-subtle:#fbfbfd;--bg-muted:#f5f5f7;--bg-hover:rgb(0 0 0/.045);--bg-active:rgb(0 0 0/.085);--bg-elevated:#ffffff;--frame:#f0f0f3;
+      --text:#1d1d1f;--text-2:#6e6e73;--text-3:#86868b;--ink:var(--text);--muted:var(--text-3);--head:var(--bg-subtle);
+      --line:rgb(60 60 67/.2);--line-strong:rgb(60 60 67/.3);--line-hover:rgb(60 60 67/.42);
+      --fill:rgb(118 118 128/.12);--fill-hover:rgb(118 118 128/.18);--fill-active:rgb(118 118 128/.24);
+      --accent:#007aff;--accent-hover:#0066d6;--accent-soft:#e6f2ff;--accent-line:#b3d7ff;
+      --green:#248a3d;--green-soft:#e7f8eb;--red:#ff3b30;--red-soft:#ffebea;--red-line:#ffc4c1;
+      --amber-text:#a05a00;--amber-soft:#fff8e0;--amber-line:#ffe08a;
       --accept:var(--green);--reject:var(--red);--comment:var(--accent);--ok-soft:var(--green-soft);--bad-soft:var(--red-soft);--warn:var(--amber-text);--warn-soft:var(--amber-soft);--warn-line:var(--amber-line);
     }
     .review-body{margin-left:var(--papilot-rail,0px)}
     .bar{display:flex;align-items:center;height:var(--papilot-bar-height,44px);min-height:var(--papilot-bar-height,44px);padding:0 max(14px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + 14px);gap:12px;flex-wrap:nowrap;overflow:hidden}
     .bar .overview-link,.bar .identity h1,.bar .identity span{display:none}
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
-    .bar .identity span{font-size:13px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis}
+    .bar .identity span{font-size:13px;font-weight:500;color:var(--text-2);overflow:hidden;text-overflow:ellipsis}
     .bar .meter{display:flex;order:initial;width:auto;font-size:13px}
     .bar .bar-end{margin-left:0;gap:6px;flex-wrap:wrap;justify-content:flex-end;min-width:0}
-    .bar .ghost{font-size:13px;font-weight:500;height:28px;padding:0 10px;border-radius:7px}
+    .bar .ghost{font-size:13px;font-weight:400;height:28px;padding:0 10px;border-radius:6px}
     .bar .ghost:hover{text-decoration:none;background:var(--bg-hover)}
-    .bar .accept-all,.bar .reject-all{display:inline-flex;align-items:center;gap:6px;border-color:var(--line-strong);background:var(--bg);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0/.06)}
-    .bar .accept-all:hover,.bar .reject-all:hover{background:var(--bg-subtle);border-color:var(--line-hover)}
+    /* Accept all and Reject all form one momentary segmented control, as in a
+       macOS toolbar: a grey track, two segments split by a hairline,
+       monochrome glyphs. The meter already shows the count, so the segments
+       show it only when their labels collapse. */
+    .bar .accept-all,.bar .reject-all{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 10px;border:0;border-radius:6px;background:var(--fill);color:var(--text);box-shadow:none;transition:background-color .12s}
+    .bar .accept-all:hover:not(:disabled),.bar .reject-all:hover:not(:disabled){background:var(--fill-hover);text-decoration:none}
+    .bar .accept-all:active:not(:disabled),.bar .reject-all:active:not(:disabled){background:var(--fill-active)}
+    .bar .accept-all:has(+.reject-all){border-radius:6px 0 0 6px}
+    .bar .accept-all+.reject-all{margin-left:-6px;border-radius:0 6px 6px 0;box-shadow:inset .5px 0 0 var(--line-strong)}
+    .bar .accept-all:focus-visible,.bar .reject-all:focus-visible{position:relative;z-index:1;outline:none;box-shadow:var(--ring)}
     .bar .ghost.round{display:none}
     .bar .status{font-size:13px}
     .sheet{border-radius:4px;box-shadow:0 1px 2px rgb(0 0 0/.06),0 8px 24px rgb(0 0 0/.08)}
@@ -99,19 +109,19 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     /* Keep the selection cue in the toolbar, clear of the PDF itself. */
     .change.current{box-shadow:none}
     .change.current .change-head{background:var(--bg-muted);box-shadow:inset 2px 0 var(--accent);color:var(--ink)}
-    .change-head .link{display:inline-flex;align-items:center;height:28px;padding:0 8px;border-radius:7px;color:var(--text-2);font-weight:500}
+    .change-head .link{display:inline-flex;align-items:center;height:28px;padding:0 8px;border-radius:6px;color:var(--text-2);font-weight:400}
     .change-head .link:hover{background:var(--bg-hover);color:var(--ink);text-decoration:none}
     .change-head .link.active{background:var(--accent-soft);color:var(--accent);text-decoration:none}
     /* Decision buttons are plain text actions like the rest of the header
        (Copy reference, LaTeX, Undo): a coloured icon says what each does, and
        hovering tints it green, red or blue. On phones the bar is a solid
        toolbar at the bottom. */
-    :root{--icon-copy:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'><rect x='8' y='8' width='12' height='12' rx='2'/><path d='M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2'/></svg>");--icon-check:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>");--icon-cross:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M18 6 6 18M6 6l12 12'/></svg>");--icon-comment:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><path d='M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z'/></svg>")}
+    :root{--icon-copy:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='8.5' y='8.5' width='12' height='12' rx='3'/><path d='M15.5 8.5v-2a3 3 0 0 0-3-3h-6a3 3 0 0 0-3 3v6a3 3 0 0 0 3 3h2'/></svg>");--icon-check:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='m4.75 12.75 4.75 4.75 9.75-11'/></svg>");--icon-cross:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='m6.5 6.5 11 11m0-11-11 11'/></svg>");--icon-comment:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><path d='M7 4h10a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4h-5.5L7 21v-3a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4Z'/></svg>")}
     .change-head .actions .accept::before,.change-head .actions .reject::before,.change-head .actions .comment::before,.bar .accept-all::before,.bar .reject-all::before{content:"";flex:none;width:13px;height:13px;background:currentColor;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
     .change-head .actions .accept,.bar .accept-all{--icon:var(--icon-check)}.change-head .actions .reject,.bar .reject-all{--icon:var(--icon-cross)}.change-head .actions .comment{--icon:var(--icon-comment)}
-    .change-head .actions .accept::before,.bar .accept-all::before{background:var(--accept)}.change-head .actions .reject::before,.bar .reject-all::before{background:var(--reject)}.change-head .actions .comment::before{background:var(--accent)}
-    .change-head .actions{gap:3px;padding:4px;background:var(--bg);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 1px 2px rgb(0 0 0/.06),0 4px 12px rgb(0 0 0/.06)}
-    .change-head .actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 11px;border:1px solid transparent;border-radius:7px;font-size:13px;font-weight:500;line-height:1;transition:background-color .15s,border-color .15s}
+    .change-head .actions .accept::before{background:var(--accept)}.change-head .actions .reject::before{background:var(--reject)}.bar .accept-all::before,.bar .reject-all::before{width:12px;height:12px;background:var(--text-2)}.change-head .actions .comment::before{background:var(--accent)}
+    .change-head .actions{gap:3px;padding:4px;background:var(--bg-elevated);border:0;border-radius:12px;box-shadow:var(--shadow-sm)}
+    .change-head .actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 10px;border:1px solid transparent;border-radius:6px;font-size:13px;font-weight:400;line-height:1;transition:background-color .15s,border-color .15s}
     .change-head .actions .nav{width:28px;padding:0;font-size:19px;font-weight:400;color:var(--text-2)}
     .change-head .actions .nav:hover:not(:disabled){background:var(--bg-hover)}
     .change-head .actions .nav:disabled{color:var(--text-3);opacity:1}
@@ -130,7 +140,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .change-head .actions .accept:disabled,.change-head .actions .reject:disabled,.change-head .actions .comment:disabled{opacity:.4}
     /* Uncommitted changes: Stage is the check, Unstage a minus and Revert an
        arrow back. The last revert is undone from the bar. */
-    :root{--icon-minus:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M5 12h14'/></svg>");--icon-revert:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M9 14 4 9l5-5'/><path d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/></svg>")}
+    :root{--icon-minus:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M5 12h14'/></svg>");--icon-revert:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M8.5 4.5 4 9l4.5 4.5M4 9h10.5a5.5 5.5 0 0 1 0 11h-3'/></svg>")}
     .change-head .actions .unstage::before{content:"";flex:none;width:13px;height:13px;background:var(--text-2);-webkit-mask:var(--icon-minus) center/contain no-repeat;mask:var(--icon-minus) center/contain no-repeat}
     [data-mode=changes] .change-head .actions .reject{--icon:var(--icon-revert)}
     .change-head .actions .unstage{background:transparent;color:var(--ink)}
@@ -212,7 +222,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       .side,.context{overflow-x:clip}
     }
     /* Keep readable names and shortcut hints while drawing only the icons. */
-    :root{--icon-source:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16'/></svg>")}
+    :root{--icon-source:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M8 7.5 3.5 12 8 16.5m8-9 4.5 4.5-4.5 4.5M13.75 4.5l-3.5 15'/></svg>")}
     :root .change-head .actions button:is(.accept,.reject,.comment,.unstage,.skip){width:28px;padding:0;gap:0;font-size:0;flex:none}
     .change-head .actions button:is(.accept,.reject,.comment,.unstage,.skip)::before{width:15px;height:15px}
     .change-head .actions .skip::before{content:"";background:currentColor;--skip-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m5 5 7 7-7 7M19 5v14'/></svg>");-webkit-mask:var(--skip-icon) center/contain no-repeat;mask:var(--skip-icon) center/contain no-repeat}
@@ -229,7 +239,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
        progress, batch counts and history; shorten only the batch labels. */
     .bar{container:review-bar/inline-size;height:auto;gap:8px}
     .bar .accept-all,.bar .reject-all{flex-shrink:0;white-space:nowrap}
-    .bar .batch-count{margin-left:0;background:var(--bg-muted);color:var(--text-2)}
+    .bar .batch-count{display:none}
     :root[data-papilot-toolbar-stacked] .bar{padding:calc(var(--papilot-bar-height,44px) + 4px) 8px 4px;min-height:calc(var(--papilot-bar-height,44px) + 44px)}
     :root[data-papilot-toolbar-stacked] .bar .identity{display:none}
     :root[data-papilot-toolbar-stacked] .bar .bar-end{margin-left:auto}
@@ -241,8 +251,8 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     :root[data-papilot-reader] .paper{--pdf-crop-scale:1;--pdf-crop-shift:0}
     :root[data-papilot-reader][data-papilot-phone] .review-body>#paper{--paper-top:10px;padding:10px 0 132px}
     :root[data-papilot-reader][data-papilot-phone] .paper-page{margin-bottom:10px}
-    @container review-bar (max-width:340px){.bar .batch-label{display:none}.bar .accept-all,.bar .reject-all{padding:0 8px}.bar .bar-end{gap:4px}}
-    :root{--icon-history:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12a9 9 0 1 0 2.6-6.4L3 8'/><path d='M3 3v5h5M12 7v5l3 2'/></svg>")}
+    @container review-bar (max-width:340px){.bar .batch-label{display:none}.bar .batch-count{display:inline;min-width:0;margin:0;padding:0;background:none;color:var(--text-2);font-size:12px}.bar .accept-all,.bar .reject-all{padding:0 8px}.bar .bar-end{gap:4px}.bar .accept-all+.reject-all{margin-left:-4px}}
+    :root{--icon-history:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4.25 12a7.75 7.75 0 1 0 2.27-5.48L4 9m0-4.75V9h4.75M12 8v4.5l3 1.75'/></svg>")}
   `;
   syncAppearance(window.document.documentElement, doc.documentElement);
   style.textContent += taskCommitStyles;

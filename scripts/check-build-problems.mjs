@@ -110,7 +110,7 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(button).toHaveAttribute('data-severity', 'error');
   await expect(button).toHaveAccessibleName('2 compilation errors');
-  await expect(button.locator('.problems-count')).toHaveCSS('background-color', 'rgb(220, 38, 38)');
+  await expect(button.locator('.problems-count')).toHaveCSS('background-color', 'rgb(255, 59, 48)');
   const notice = page.locator('.manuscript-note.brief');
   await expect(notice).toHaveText(/The latest changes did not compile\. This is the last PDF that did\./);
   await expect(page.locator('.manuscript-note pre')).toHaveCount(0);

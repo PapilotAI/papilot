@@ -1744,11 +1744,6 @@
     "textHash": "3c3d832cc02572e0a06c9f56f4fd53f50ce5d5fd58e5c48c05617e4a0c246768",
     "model": "gemini-4-argon-medium"
   },
-  "Full PDF": {
-    "revision": "495659aaac7c7c044f41154f52d300cfb9b7327825d85001c28b5159ba647098",
-    "textHash": "ca43cebab61a890dbc4a21f9835ebca7e17cb7ab25280c3af783fb5e16adafdd",
-    "model": "gemini-4-argon-medium"
-  },
   "General": {
     "revision": "6a115193df112900370b3a346cb6ff4c9348fa9e489e51e146a8c07840213c2f",
     "textHash": "2130a3b5e09e419fb7ad86dc8c1f274a37301f216251d9b35cbf11d137f6f514",
@@ -2712,11 +2707,6 @@
   "Open task: {title}": {
     "revision": "af83791f4bf0d94d9fe4e640efcee67824a5b6f5b5dd1aaf3345a353400e8bea",
     "textHash": "22761f7dedc04e660087e02b2bcf3fc16bb98a6adc0f920dacf1e581221aad17",
-    "model": "gemini-4-argon-medium"
-  },
-  "Open the full PDF": {
-    "revision": "359231b8c5cf7d425a79e34a2abc936877057f951f74ceca876635dbbc0ea565",
-    "textHash": "6d49a1ded581e26edff916b8c6f610dc234777934020c1e781831312fd9690da",
     "model": "gemini-4-argon-medium"
   },
   "Open these shortcut settings.": {

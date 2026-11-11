@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('papilotDesktop', {
   minimize: () => ipcRenderer.send('papilot:window', 'minimize'),
   maximize: () => ipcRenderer.send('papilot:window', 'maximize'),
   close: () => ipcRenderer.send('papilot:window', 'close'),
+  // The window's material (the translucent sidebar on macOS) follows the
+  // workspace's light, dark or system theme.
+  setTheme: (theme: string) => ipcRenderer.send('papilot:theme', theme),
   chooseDirectory: (): Promise<string | null> => ipcRenderer.invoke('papilot:choose-directory'),
   openEnvironment: () => ipcRenderer.invoke('papilot:open-environment'),
   environment: (): Promise<string> => ipcRenderer.invoke('papilot:current-environment'),

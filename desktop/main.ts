@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, session, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -36,11 +36,14 @@ function showWindow() {
   if (!origin) return;
   window = new BrowserWindow({ title: 'Papilot', width: 1380, height: 900, minWidth: 900, minHeight: 620,
     titleBarStyle: 'hidden', trafficLightPosition: { x: 18, y: 16 },
+    // On macOS the sidebar is the system's translucent sidebar material; the
+    // page leaves it transparent and paints every other surface itself.
+    ...(process.platform === 'darwin' ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const } : {}),
     autoHideMenuBar: process.platform !== 'darwin',
     icon: process.platform === 'win32'
       ? path.join(nix && process.env.PAPILOT_DESKTOP_ROOT ? process.env.PAPILOT_DESKTOP_ROOT : app.isPackaged ? process.resourcesPath : path.resolve(fileURLToPath(new URL('../..', import.meta.url))), 'desktop/assets/icon.ico')
       : process.platform === 'linux' ? path.join(nix && process.env.PAPILOT_DESKTOP_ROOT ? process.env.PAPILOT_DESKTOP_ROOT : app.isPackaged ? process.resourcesPath : path.resolve(fileURLToPath(new URL('../..', import.meta.url))), 'desktop/assets/icon.png') : undefined,
-    show: false, backgroundColor: '#ffffff', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true,
+    show: false, backgroundColor: process.platform === 'darwin' ? '#00000000' : '#ffffff', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true,
       preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)) } });
   window.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', (event, url) => {
@@ -120,6 +123,11 @@ else {
       if (action === 'minimize') window.minimize();
       else if (action === 'maximize') { if (window.isMaximized()) window.unmaximize(); else window.maximize(); }
       else if (action === 'close') window.close();
+    });
+    ipcMain.on('papilot:theme', (event, theme: unknown) => {
+      if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;
+      if (!event.senderFrame || new URL(event.senderFrame.url).origin !== origin) return;
+      if (theme === 'system' || theme === 'light' || theme === 'dark') nativeTheme.themeSource = theme;
     });
     const root = nix && process.env.PAPILOT_DESKTOP_ROOT ? process.env.PAPILOT_DESKTOP_ROOT : app.isPackaged ? path.join(process.resourcesPath, 'server') : path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
     const node = nix ? process.env.PAPILOT_DESKTOP_NODE : app.isPackaged ? path.join(process.resourcesPath, 'runtime/bin', process.platform === 'win32' ? 'node.exe' : 'node') : process.env.PAPILOT_DESKTOP_NODE;

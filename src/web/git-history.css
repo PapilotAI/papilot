@@ -10,7 +10,7 @@
 .git-version-meta>time{flex:none;white-space:nowrap}
 .git-version-row>svg{flex:none;color:var(--text-3);margin-top:2px}
 .git-version-row>.git-current-badge{margin-top:1px}
-.git-version-detail{padding:0 6px 3px 12px;margin:0 0 4px 12px;border-left:1px solid var(--line)}
+.git-version-detail{padding:0 6px 3px 12px;margin:0 0 4px 12px;border-left:var(--hairline) solid var(--line)}
 .git-version-message{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6;margin:0 0 5px;color:var(--text-2);max-height:160px;overflow:auto;user-select:text}
 .git-version-files{list-style:none;padding:0;margin:0;max-height:180px;overflow:auto}
 .git-version-file{width:100%;display:flex;align-items:center;gap:6px;min-width:0;min-height:26px;padding:3px 0;color:var(--text-2);text-align:left;font-size:12px;border-radius:3px}

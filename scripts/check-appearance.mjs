@@ -135,7 +135,7 @@ try {
   }
   await dialog.getByRole('button', { name: 'Reset appearance', exact: true }).click();
   await rootHas('--bg', '#ffffff');
-  await rootHas('--primary', '#2563eb');
+  await rootHas('--primary', '#007aff');
   await expect(reviewOptions.getByRole('radio', { name: 'PDF', exact: true })).toBeChecked();
   await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--bg') === '#ffffff');
   // The theme select follows the select-only combobox pattern: Escape cancels

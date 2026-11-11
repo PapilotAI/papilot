@@ -20,7 +20,7 @@ const words = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'u
 const text = words[0].words[1], rect = [text[1] / 612, (text[2] - text[3]) / 792, (text[1] + text[4]) / 612, text[2] / 792];
 const note = { id: 'ai-finding-1', projectId: 'paper', key: 'pdf', page: 0, rect, rects: [rect], quote: text[0], comment: 'State the assumptions under which this claim holds.', source: null, createdAt: Date.now(), aiReview: { taskId: 'review', agent: 'codex' } };
 const nextText = words[1].words.at(-1), nextRect = [nextText[1] / 612, (nextText[2] - nextText[3]) / 792, (nextText[1] + nextText[4]) / 612, nextText[2] / 792];
-const second = { ...note, id: 'ai-finding-2', page: 1, rect: nextRect, rects: [nextRect], quote: nextText[0], comment: 'Explain how this conclusion follows from the evidence. ' + 'Specify the assumptions and distinguish the observed result from the broader claim. '.repeat(18) };
+const second = { ...note, id: 'ai-finding-2', page: 1, rect: nextRect, rects: [nextRect], quote: nextText[0], comment: 'Explain how this conclusion follows from the evidence. ' + 'Specify the assumptions and distinguish the observed result from the broader claim. '.repeat(30) };
 const personal = { ...note, id: 'personal-note', comment: 'My reading thought.', aiReview: undefined };
 let notes = [personal], reviewNotes = [], attempts = [], edits = [], copies = [], fail = true, failDelete = true, failCopy = true;
 let releaseRestore, restoreCommitted = false;

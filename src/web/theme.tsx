@@ -27,6 +27,7 @@ export function useTheme() {
     window.addEventListener('storage', sync);
     return () => { media.removeEventListener('change', change); window.removeEventListener('storage', sync); };
   }, []);
+  useEffect(() => { window.papilotDesktop?.setTheme?.(theme); }, [theme]);
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = resolved;
     const variables = appearanceVariables(appearance, resolved);
