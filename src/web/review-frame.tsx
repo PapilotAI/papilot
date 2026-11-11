@@ -83,7 +83,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       --accept:var(--green);--reject:var(--red);--comment:var(--accent);--ok-soft:var(--green-soft);--bad-soft:var(--red-soft);--warn:var(--amber-text);--warn-soft:var(--amber-soft);--warn-line:var(--amber-line);
     }
     .review-body{margin-left:var(--papilot-rail,0px)}
-    .bar{display:flex;align-items:center;height:var(--papilot-bar-height,44px);min-height:var(--papilot-bar-height,44px);padding:0 max(14px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + 14px);gap:12px;flex-wrap:nowrap;overflow:hidden}
+    .bar{display:flex;align-items:center;height:var(--papilot-bar-height,46px);min-height:var(--papilot-bar-height,46px);padding:0 max(14px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + 14px);gap:12px;flex-wrap:nowrap;overflow:hidden}
     .bar .identity h1,.bar .identity span{display:none}
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
     .bar .identity span{font-size:13px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis}
@@ -257,7 +257,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     :root[data-papilot-build-indicator] .bar .status[data-state="building"]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%)}
     .bar .accept-all,.bar .reject-all{flex-shrink:0;white-space:nowrap}
     .bar .batch-count{margin-left:0;background:var(--bg-muted);color:var(--text-2)}
-    :root[data-papilot-toolbar-stacked] .bar{padding:calc(var(--papilot-bar-height,44px) + 4px) 8px 4px;min-height:calc(var(--papilot-bar-height,44px) + 44px)}
+    :root[data-papilot-toolbar-stacked] .bar{padding:calc(var(--papilot-bar-height,46px) + 4px) 8px 4px;min-height:calc(var(--papilot-bar-height,46px) + 44px)}
     :root[data-papilot-toolbar-stacked] .bar .identity{display:none}
     :root[data-papilot-toolbar-stacked] .bar .bar-end{margin-left:auto}
     /* The common PDF toolbar owns the first row; review decisions keep a
