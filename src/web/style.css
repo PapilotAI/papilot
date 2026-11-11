@@ -263,7 +263,8 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .review-loading p{max-width:340px}
 .task-document{position:relative;display:flex;flex:1;min-width:0;min-height:0}
 .task-document-actions{flex:none;max-height:40vh;overflow:auto;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--bg)}
-.task-document-preview{position:absolute;inset:0;display:flex;flex-direction:column;min-height:0}
+/* Its own stacking context: the PDF's raised scroll host stays below the review above it. */
+.task-document-preview{position:absolute;inset:0;isolation:isolate;display:flex;flex-direction:column;min-height:0}
 .task-document.has-review>.task-document-preview{visibility:hidden}
 .task-document>.review-viewport{position:absolute;inset:0}
 .task-document .keeps-pdf.review-pending{pointer-events:none}
