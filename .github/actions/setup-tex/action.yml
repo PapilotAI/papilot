@@ -38,11 +38,13 @@ runs:
         PACKAGES: ${{ steps.packages.outputs.list }}
       # dpkg installs only the cached files and never downloads: apt counts
       # copying local packages as fetching, so apt-get --no-download refuses
-      # them. A package missing from the cache fails this step, and the step
-      # below finishes the install and downloads as before.
+      # them. dpkg takes the files in name order, so a second pass installs
+      # those that needed one later in the order first. A package missing
+      # from the cache fails this step, and the step below finishes the
+      # install and downloads as before.
       continue-on-error: true
       run: |
-        sudo dpkg -i "$DIR"/*.deb
+        sudo dpkg -i "$DIR"/*.deb || sudo dpkg -i "$DIR"/*.deb
         bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
 
     - name: Download and install the packages
@@ -53,6 +55,7 @@ runs:
         DIR: ${{ steps.packages.outputs.dir }}
         PACKAGES: ${{ steps.packages.outputs.list }}
         PREFIX: ${{ steps.packages.outputs.prefix }}
+        RESTORED: ${{ steps.cache.outputs.cache-matched-key }}
       run: |
         apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o DPkg::Lock::Timeout=120)
         # Finish what a failed install from the cache left half done, if it
@@ -65,25 +68,34 @@ runs:
         # it is installed or not, into a folder of its own.
         # A plan apt cannot make fails the step here, with apt's own error.
         plan=$(apt-get -s -f install --no-install-recommends $PACKAGES)
+        needed=$(awk '/^Inst /{print $2}' <<< "$plan" | sort -u)
         shopt -s nullglob
-        names=$( {
-          awk '/^Inst /{print $2}' <<< "$plan"
-          for deb in "$DIR"/*.deb; do dpkg-deb -f "$deb" Package; done
-        } | sort -u)
+        restored=$(for deb in "$DIR"/*.deb; do dpkg-deb -f "$deb" Package; done | sort -u)
         rm -rf "$DIR" && mkdir -p "$DIR"
-        if [ -n "$names" ]; then
-          (cd "$DIR" && apt-get "${apt_options[@]}" download $names)
-          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends --fix-broken "$DIR"/*.deb
-          echo "key=$PREFIX$(cd "$DIR" && sha256sum -- *.deb | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        if [ -n "$needed" ]; then (cd "$DIR" && apt-get "${apt_options[@]}" download $needed); fi
+        # A restored package the archive has since dropped is left out.
+        for name in $(comm -13 <(echo "$needed") <(echo "$restored")); do
+          (cd "$DIR" && apt-get "${apt_options[@]}" download "$name") || echo "::notice::$name is no longer in the archive and is left out of the TeX cache."
+        done
+        debs=("$DIR"/*.deb)
+        if [ ${#debs[@]} -gt 0 ]; then
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends --fix-broken "${debs[@]}"
+          key="$PREFIX$(cd "$DIR" && sha256sum -- *.deb | sha256sum | cut -c1-16)"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          # The same packages again: the cache did not fail for what it holds,
+          # so a new copy would not help, and it is not saved.
+          if [ "$key" = "$RESTORED" ]; then
+            echo "::warning::The cached TeX packages did not install, though they are the current ones; see the step before."
+          fi
         fi
         bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
 
     # Saved right after the download, so a test failing later still keeps it.
-    # Pull requests do not save: they restore main's cache, and one of their
-    # own would add hundreds of megabytes no other branch can use. Pushes to
-    # main save, and so do runs started by hand, to try a branch's cache.
-    # When both jobs of a run download, the second save only warns.
-    - if: github.event_name != 'pull_request' && steps.download.outputs.key != '' && steps.download.outputs.key != steps.cache.outputs.cache-matched-key
+    # Only main saves, and runs started by hand to try a branch's cache: the
+    # cache of a pull request or release tag would add hundreds of megabytes
+    # no other ref can use, and they restore main's. When both jobs of a run
+    # download, the second save only warns.
+    - if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && steps.download.outputs.key != '' && steps.download.outputs.key != steps.cache.outputs.cache-matched-key
       uses: actions/cache/save@v4
       with:
         path: ${{ steps.packages.outputs.dir }}
