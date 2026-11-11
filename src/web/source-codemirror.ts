@@ -1,5 +1,5 @@
 import { Compartment, EditorState, RangeSet, StateEffect, StateField, Text, type Extension } from '@codemirror/state';
-import { Decoration, EditorView, GutterMarker, ViewPlugin, drawSelection, gutter, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, type DecorationSet, type ViewUpdate } from '@codemirror/view';
+import { Decoration, EditorView, GutterMarker, ViewPlugin, WidgetType, drawSelection, gutter, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { HighlightStyle, StreamLanguage, bracketMatching, syntaxHighlighting } from '@codemirror/language';
 import { stex } from '@codemirror/legacy-modes/mode/stex';
@@ -9,7 +9,9 @@ import { tags } from '@lezer/highlight';
 
 // The LaTeX editor of the manuscript's source tab, loaded when a source is
 // first opened. It shows the whole file, with bars beside the lines that
-// changed since the last commit and their places along the scrollbar.
+// changed since the last commit and their places along the scrollbar. In a
+// task, it also shows the review's changes in the text, each with Accept and
+// Reject, as an editor shows an agent's edits.
 
 export type ChangeKind = 'added' | 'modified' | 'deleted';
 export interface SourceEditorOptions {
@@ -21,7 +23,14 @@ export interface SourceEditorOptions {
   onCursor?: (line: number) => void;
   /** A change bar was clicked, at a line (0-based) of its change. */
   onChangeBar?: (line: number) => void;
+  /** Accept or Reject was pressed on a review change shown in the text. */
+  onDecide?: (change: string, action: 'accept' | 'reject') => void;
+  labels?: { accept: string; reject: string };
 }
+
+/** A change of a review, in the text: each part's range in the document and
+ *  the text it replaced. */
+export interface ReviewChange { id: string; decision: string; parts: { from: number; to: number; old: string }[] }
 
 const latex = StreamLanguage.define(stex);
 // The colours of the review's LaTeX, for light and dark pages.
@@ -59,6 +68,17 @@ const theme = EditorView.theme({
   '.cm-source-focus': { backgroundColor: 'color-mix(in srgb, var(--accent) 12%, transparent)' },
   '.cm-source-word': { backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)', borderRadius: '2px' },
   // What changed since the last commit, beside the line numbers and along the scrollbar.
+  // A review's changes in the text, and Accept and Reject after each.
+  '.cm-review-added': { backgroundColor: 'var(--green-soft)', borderRadius: '2px' },
+  '.cm-review-removed': { backgroundColor: 'var(--red-soft)', color: 'var(--danger)', textDecoration: 'line-through', textDecorationColor: 'color-mix(in srgb, var(--danger) 55%, transparent)', borderRadius: '2px', whiteSpace: 'pre-wrap' },
+  '.cm-review-dropped': { color: 'var(--text-3)', textDecoration: 'line-through' },
+  '.cm-review-restored': { backgroundColor: 'var(--green-soft)', borderRadius: '2px', whiteSpace: 'pre-wrap' },
+  '.cm-review-actions': { display: 'inline-flex', gap: '2px', margin: '0 2px 0 4px', verticalAlign: '-3px' },
+  '.cm-review-actions > button': { display: 'inline-grid', placeItems: 'center', width: '20px', height: '18px', padding: '0', border: '1px solid var(--line)', borderRadius: '5px', backgroundColor: 'var(--bg)', cursor: 'pointer' },
+  '.cm-review-actions > button:hover': { backgroundColor: 'var(--bg-hover)' },
+  '.cm-review-actions svg': { width: '12px', height: '12px' },
+  '.cm-review-accept': { color: 'var(--green)' },
+  '.cm-review-reject': { color: 'var(--danger)' },
   '.cm-change-ruler': { position: 'absolute', top: '0', right: '0', bottom: '0', zIndex: '3', pointerEvents: 'none' },
   '.cm-ruler-mark': { position: 'absolute', left: '1px', right: '1px', borderRadius: '1px' },
   '.cm-ruler-added': { backgroundColor: 'var(--green, #2f9e44)' },
@@ -197,14 +217,84 @@ function changeBars(base: Text, onClick?: (line: number) => void): Extension {
   })];
 }
 
+// The review's changes, kept at their places as the author types. A pending
+// change shows what it removed, struck through before what it wrote, and
+// Accept and Reject after it; an accepted one is plain text again; a
+// rejected one shows the text that comes back until the file is reread.
+const setReview = StateEffect.define<ReviewChange[]>();
+const setDecisions = StateEffect.define<Map<string, string>>();
+class RemovedText extends WidgetType {
+  constructor(readonly text: string, readonly restored: boolean) { super(); }
+  eq(other: RemovedText) { return other.text === this.text && other.restored === this.restored; }
+  toDOM() {
+    const element = document.createElement('span');
+    element.className = this.restored ? 'cm-review-restored' : 'cm-review-removed';
+    element.textContent = this.text;
+    return element;
+  }
+}
+class ChangeActions extends WidgetType {
+  constructor(readonly id: string, readonly options: SourceEditorOptions) { super(); }
+  eq(other: ChangeActions) { return other.id === this.id; }
+  toDOM() {
+    const element = document.createElement('span');
+    element.className = 'cm-review-actions';
+    for (const action of ['accept', 'reject'] as const) {
+      const button = document.createElement('button'), label = this.options.labels?.[action] ?? action;
+      button.type = 'button'; button.className = `cm-review-${action}`; button.title = label; button.setAttribute('aria-label', label);
+      button.innerHTML = action === 'accept'
+        ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+      // The caret stays where it was.
+      button.addEventListener('mousedown', event => event.preventDefault());
+      button.addEventListener('click', () => this.options.onDecide?.(this.id, action));
+      element.append(button);
+    }
+    return element;
+  }
+  ignoreEvent() { return true; }
+}
+function reviewDecorations(changes: ReviewChange[], options: SourceEditorOptions) {
+  const ranges = [];
+  for (const change of changes) {
+    if (change.decision === 'accepted') continue;
+    const rejected = change.decision === 'rejected';
+    for (const part of change.parts) {
+      if (part.old) ranges.push(Decoration.widget({ widget: new RemovedText(part.old, rejected), side: -1 }).range(part.from));
+      if (part.to > part.from) ranges.push(Decoration.mark({ class: rejected ? 'cm-review-dropped' : 'cm-review-added' }).range(part.from, part.to));
+    }
+    if (change.decision === 'pending' && change.parts.length)
+      ranges.push(Decoration.widget({ widget: new ChangeActions(change.id, options), side: 1 }).range(Math.max(...change.parts.map(part => part.to))));
+  }
+  return Decoration.set(ranges, true);
+}
+const reviewField = (options: SourceEditorOptions) => StateField.define<ReviewChange[]>({
+  create: () => [],
+  update(changes, tr) {
+    for (const effect of tr.effects) if (effect.is(setReview)) return effect.value;
+    let next = changes;
+    if (tr.docChanged && next.length) next = next.map(change => ({ ...change, parts: change.parts.map(part => {
+      const from = tr.changes.mapPos(part.from, 1);
+      return { ...part, from, to: Math.max(from, tr.changes.mapPos(part.to, -1)) };
+    }) }));
+    for (const effect of tr.effects) if (effect.is(setDecisions)) next = next.map(change => ({ ...change, decision: effect.value.get(change.id) ?? change.decision }));
+    return next;
+  },
+  provide: field => EditorView.decorations.from(field, changes => reviewDecorations(changes, options)),
+});
+
 export class SourceCodeEditor {
   readonly view: EditorView;
   private bars = new Compartment();
   private editable = new Compartment();
   private base = Text.empty;
   private silent = false;
+  private review: ReturnType<typeof reviewField>;
+  // The version whose review changes are shown.
+  private reviewKey: string | null = null;
 
   constructor(private options: SourceEditorOptions) {
+    this.review = reviewField(options);
     this.view = new EditorView({ parent: options.parent, state: this.state('') });
   }
 
@@ -213,7 +303,7 @@ export class SourceCodeEditor {
     return EditorState.create({ doc: text, extensions: [
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(), bracketMatching(),
       search({ top: false }), highlightSelectionMatches(), latex, syntaxHighlighting(highlight), EditorView.lineWrapping, theme,
-      this.editable.of(EditorState.readOnly.of(false)), this.bars.of(changeBars(this.base, options.onChangeBar)), focusField, flashField,
+      this.editable.of(EditorState.readOnly.of(false)), this.bars.of(changeBars(this.base, options.onChangeBar)), focusField, flashField, this.review,
       EditorView.contentAttributes.of({ 'aria-label': options.label, spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off' }),
       keymap.of([
         { key: 'Mod-s', preventDefault: true, run: () => { options.onSave(); return true; } },
@@ -237,6 +327,25 @@ export class SourceCodeEditor {
     if (base === null) this.base = Text.empty;
     this.silent = true;
     try { this.view.setState(this.state(text)); } finally { this.silent = false; }
+    this.reviewKey = null;
+  }
+
+  /** Shows a review's changes in the text. `key` names the version of the
+   *  file they were found in, `text`: they are placed only over that text,
+   *  then follow the author's edits, and while the key stays only their
+   *  decisions change. */
+  showReview(review: { key: string; text: string; changes: ReviewChange[] } | null) {
+    if (!review) {
+      if (this.reviewKey !== null) { this.reviewKey = null; this.view.dispatch({ effects: setReview.of([]) }); }
+      return;
+    }
+    if (review.key === this.reviewKey) {
+      this.view.dispatch({ effects: setDecisions.of(new Map(review.changes.map(change => [change.id, change.decision]))) });
+      return;
+    }
+    if (this.view.state.doc.toString() !== review.text) return;
+    this.reviewKey = review.key;
+    this.view.dispatch({ effects: setReview.of(review.changes) });
   }
 
   /** The last commit changed, such as after a commit. */

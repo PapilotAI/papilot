@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { BuildProblem, ManuscriptBuild, ManuscriptProblems, SourceFile, SourcePlace, SourceSave, TaskSourceSave } from '../shared.ts';
 import type { PdfHandle, PdfPassage, Rect, Target } from './pdf-view.tsx';
-import type { CurrentChange } from '../../engine/src/web/review-events.ts';
+import type { CurrentChange, ReviewChanges } from '../../engine/src/web/review-events.ts';
 import type { SourceCodeEditor } from './source-codemirror.ts';
 import { Icon } from './icons.tsx';
 import { t, tn } from './i18n.ts';
@@ -18,8 +18,8 @@ import './source-panel.css';
 // and the editor then flash the saved lines, or the tab shows the errors in
 // them and the last PDF stays.
 // The same editor edits a task's files beside its review, opened from a
-// change: it marks what the task changed, and a save is reviewed in a new
-// round.
+// change: it marks what the task changed, shows each change of the round in
+// the text with Accept and Reject, and a save is reviewed in a new round.
 
 type Api = <T>(route: string, body?: unknown, signal?: AbortSignal, wait?: number) => Promise<T>;
 type Lines = [number, number];
@@ -67,7 +67,7 @@ interface Edit {
 // mark, and lines to flash.
 interface Reveal { lines: Lines; mark: boolean; caret: boolean; marks?: Lines[]; word?: [number, number]; flash?: Lines[] }
 
-export function useSourceEdit({ api, projectId, taskId, version, build, head, pdf, onProblems, onLine, onTaskSaved }: {
+export function useSourceEdit({ api, projectId, taskId, version, build, head, pdf, onProblems, onLine, onTaskSaved, review }: {
   api: Api; projectId: string;
   /** Edits this task's files, in its worktree, rather than the paper's. */
   taskId?: string;
@@ -79,9 +79,13 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   onLine?: (file: string, line: number) => void;
   /** A task's file was saved: the review after the save, and the line (0-based) the author is at. */
   onTaskSaved?: (state: unknown, file: string, line: number) => void;
+  /** A task's review: its changes, shown in their files, and deciding one. */
+  review?: { changes: ReviewChanges | null; decide: (change: string, action: 'accept' | 'reject') => void };
 }) {
-  // Drafts are kept per paper, and per task.
-  const scope = taskId ? `task:${taskId}` : projectId;
+  // Drafts are kept per paper, and per task. A task's changes show in the
+  // text, so its passages are not highlighted as well.
+  const scope = taskId ? `task:${taskId}` : projectId, marking = !taskId;
+  const reviewing = useRef(review); reviewing.current = review;
   const read = async (file: string) => normalize(await api<SourceFile>(taskId ? `/tasks/${taskId}/source?file=${encodeURIComponent(file)}` : `/projects/${projectId}/manuscript/source?file=${encodeURIComponent(file)}`));
   const [edit, setEdit] = useState<Edit | null>(null);
   const latest = useRef(edit); latest.current = edit;
@@ -128,6 +132,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
         parent: element, label: t('Edit LaTeX source'),
         onChange: () => actions.current.typed(), onSave: () => actions.current.save(), onEscape: () => actions.current.escape(),
         onCursor: line => actions.current.line(line), onChangeBar: line => actions.current.line(line),
+        onDecide: (change, action) => reviewing.current?.decide(change, action), labels: { accept: t('Accept'), reject: t('Reject') },
       });
       actions.current.sync();
     });
@@ -162,7 +167,28 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
       const flash = reveal.flash, owner = request.current;
       if (flash) setTimeout(() => { if (request.current === owner) editor.current?.flash(flash); }, loaded ? 0 : 260);
     }
+    showReview();
   }
+
+  // The review's changes in the open file, placed by where the round has
+  // them, when it shows this very file.
+  function showReview() {
+    const view = editor.current, file = latest.current?.file, changes = reviewing.current?.changes;
+    if (!view || !file) return;
+    const before = file.before;
+    if (!file.reviewed || before == null || !changes || changes.round !== file.round) { view.showReview(null); return; }
+    // Rejected changes whose text came back are gone from the file; the
+    // changes after them moved by the difference.
+    const reverted = new Set(file.reverted ?? []), mine = changes.changes.filter(change => change.file === file.file);
+    const parts = (change: ReviewChanges['changes'][number]) => change.ops.filter(op => op[0] !== 'equal');
+    const shifts = mine.filter(change => reverted.has(change.id)).flatMap(parts).map(([, from, to, at, end]) => ({ end, by: (to - from) - (end - at) }));
+    const place = (at: number) => at + shifts.reduce((sum, shift) => shift.end <= at ? sum + shift.by : sum, 0);
+    view.showReview({ key: `${file.file}:${file.revision}:${changes.round}`, text: file.text, changes: mine.filter(change => !reverted.has(change.id)).map(change => ({
+      id: change.id, decision: change.decision,
+      parts: parts(change).map(([, from, to, at, end]) => ({ from: place(at), to: place(end), old: before.slice(from, to) })),
+    })) });
+  }
+  useEffect(showReview, [review?.changes]);
   actions.current.sync = sync;
   useEffect(sync, [edit?.file, edit?.saving, tick]);
 
@@ -218,9 +244,9 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
       // from the author, and keeps unsaved changes to another file.
       const view = editor.current;
       if (again || !current?.file || !view || view.view.hasFocus || (current.file.file !== unit.file && dirty)) return;
-      if (current.file.file === unit.file) { view.reveal(lines, { mark: true, caret: false, marks: unit.lines }); return; }
+      if (current.file.file === unit.file) { view.reveal(lines, { mark: marking, caret: false, marks: unit.lines }); return; }
     } else showTab();
-    await openAt(unit.file, { lines, mark: true, caret: change.from === 'pick', marks: unit.lines, flash: change.from === 'pick' ? unit.lines : undefined });
+    await openAt(unit.file, { lines, mark: marking, caret: change.from === 'pick', marks: unit.lines, flash: change.from === 'pick' ? unit.lines : undefined });
   }
 
   // Opens a file, or moves within the one open, and shows `reveal` there.
@@ -340,7 +366,8 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
       // Typing begun while the file was read keeps its text; saving it then
       // reports that the file changed.
       if (file.revision !== now.revision && (unsaved() || saving.current)) return;
-      if (file.revision !== now.revision || file.base !== now.base || file.round !== now.round) settle(value => value.file?.file === file.file ? { ...value, file } : value);
+      if (file.revision !== now.revision || file.base !== now.base || file.round !== now.round || file.reviewed !== now.reviewed || String(file.reverted) !== String(now.reverted))
+        settle(value => value.file?.file === file.file ? { ...value, file } : value);
     }, () => undefined);
   }, [build?.tree, head, version]);
 
@@ -399,7 +426,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   return {
     open, follow, close, editing: Boolean(edit),
     /** Opens a file at lines, with `marks` within them standing out and flashing. */
-    reveal: (file: string, lines: Lines, marks: Lines[]) => void openAt(file, { lines, mark: true, caret: true, marks, flash: marks }),
+    reveal: (file: string, lines: Lines, marks: Lines[]) => void openAt(file, { lines, mark: marking, caret: true, marks, flash: marks }),
     passage: edit?.anchor ? { page: edit.anchor.page, marks: edit.anchor.marks } as PdfPassage : undefined,
     // The tab names the file, with a dot while there are unsaved changes.
     tab: edit ? { file: edit.file?.file || '', name, dirty, saving: Boolean(edit.saving) } : null,

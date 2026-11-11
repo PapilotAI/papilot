@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { splitLines, textOf } from "./changes.ts";
+import { revertUnits, splitLines, textOf } from "./changes.ts";
 import { opcodesWithin } from "./diff.ts";
 import { readBytes, same, writeOrDelete } from "./files.ts";
 import { safePath } from "./review.ts";
@@ -108,8 +108,14 @@ export class SourceEdits {
     if (current.length > MAX_FILE) throw new Error("This source file is too large to edit here.");
     const text = textOf(current);
     if (text === null) throw new Error("This file is not text that can be edited here.");
-    const before = this.app.repo.blob(task.base, file);
-    return { round: round.number, file, revision: revision(current), text, base: before ? textOf(before) : null };
+    const base = this.app.repo.blob(task.base, file), before = this.app.repo.blob(round.before, file), after = this.app.repo.blob(round.after, file);
+    // A reject puts its text back in the worktree without a new round.
+    const decisions = this.app.review.decisions(name, round), rejected = round.units.filter(unit => unit.file === file && unit.kind === "text" && decisions[unit.id] === "rejected");
+    let reviewed = Boolean(after) && same(current, after), reverted: string[] = [];
+    if (!reviewed && after && before && rejected.length && !rejected.some(unit => unit.whole_file) && same(current, revertUnits(before, after, rejected))) {
+      reviewed = true; reverted = rejected.map(unit => unit.id);
+    }
+    return { round: round.number, file, revision: revision(current), text, base: base ? textOf(base) : null, before: before ? textOf(before) : null, reviewed, reverted };
   }
 
   /** Replaces a whole file of the task, keeping its line endings and byte

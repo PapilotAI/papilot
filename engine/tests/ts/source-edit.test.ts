@@ -151,3 +151,15 @@ it("refuses whole files outside the task worktree, over HTTP with the review tok
     expect(f.read(METHOD)).toBe(BODY);
   } finally { await server.close(); }
 });
+it("places the round's changes in a file whose rejected changes came back", async () => {
+  const round = app.review.latestRound(task.name)!;
+  expect(app.sourceEdits.readFile(task.name, METHOD)).toMatchObject({ reviewed: true, reverted: [] });
+  vi.mocked(app.publisher.publish).mockClear();
+  await app.review.decide(task.name, { action: "reject", changes: ["c001"], round: round.number });
+  const file = app.sourceEdits.readFile(task.name, METHOD);
+  expect(file.text).toContain("Method sentence 2.");
+  expect(file).toMatchObject({ round: round.number, reviewed: true, reverted: ["c001"] });
+  // Written by hand, the file is no longer the round's.
+  fs.appendFileSync(path.join(task.worktree, METHOD), "Typed.\n");
+  expect(app.sourceEdits.readFile(task.name, METHOD)).toMatchObject({ reviewed: false, reverted: [] });
+});

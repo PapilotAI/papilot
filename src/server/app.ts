@@ -336,8 +336,9 @@ export async function buildApp(options: AppOptions) {
   });
   // A task's file in the editor beside its review. The review engine reads
   // it from the task's worktree and reviews a save in a new round; a save
-  // waits like any review action that writes the task's files.
-  const taskSource = (read: SourceFileRead): SourceFile => ({ file: read.file, revision: read.revision, text: read.text, base: read.base, round: read.round, passage: [0, 0], focus: [0, 0], drifted: false });
+  // waits like any review action that writes the task's files. The editor
+  // works on \n line breaks, so a CRLF file shows no changes in its text.
+  const taskSource = (read: SourceFileRead): SourceFile => ({ file: read.file, revision: read.revision, text: read.text, base: read.base, round: read.round, before: read.before, reviewed: read.reviewed && !read.text.includes('\r'), reverted: read.reverted, passage: [0, 0], focus: [0, 0], drifted: false });
   app.get<{ Params: { id: string }; Querystring: { file?: string } }>('/api/tasks/:id/source', task, async request => {
     const current = store.task(request.params.id), file = string(request.query.file, 'Source file', 1024);
     return retryReviewRead(connectReview, store.project(current.projectId).path, async client =>

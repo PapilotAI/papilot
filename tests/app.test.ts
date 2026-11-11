@@ -1056,12 +1056,12 @@ test('a task file in the workspace editor is read and saved through the review e
   const reads: string[] = [];
   let finish!: (value: any) => void;
   const job = new Promise(resolve => { finish = resolve; });
-  f.review.get = async route => { reads.push(route); return (route.includes('/source/file') ? { round: 1, file: 'sections/intro.tex', revision: 'a'.repeat(64), text: 'Agent.\n', base: 'Before.\n' } : route.includes('/jobs/') ? await job : {}) as any; };
+  f.review.get = async route => { reads.push(route); return (route.includes('/source/file') ? { round: 1, file: 'sections/intro.tex', revision: 'a'.repeat(64), text: 'Agent.\n', base: 'Before.\n', before: 'Before.\n', reviewed: true, reverted: [] } : route.includes('/jobs/') ? await job : {}) as any; };
   const url = '/api/tasks/thesis-task/source', edit = { id: 'tab-edit', round: 1, file: 'sections/intro.tex', revision: 'a'.repeat(64), text: 'Typed.\n' };
   try {
     const read = await f.local.inject({ url: `${url}?file=sections%2Fintro.tex`, headers: f.as });
     assert.equal(read.statusCode, 200, read.body);
-    assert.deepEqual(read.json(), { file: 'sections/intro.tex', revision: 'a'.repeat(64), text: 'Agent.\n', base: 'Before.\n', round: 1, passage: [0, 0], focus: [0, 0], drifted: false });
+    assert.deepEqual(read.json(), { file: 'sections/intro.tex', revision: 'a'.repeat(64), text: 'Agent.\n', base: 'Before.\n', round: 1, before: 'Before.\n', reviewed: true, reverted: [], passage: [0, 0], focus: [0, 0], drifted: false });
     assert.equal(reads[0], '/api/tasks/p-thesis-task/source/file?file=sections%2Fintro.tex');
     assert.equal((await f.local.inject({ method: 'POST', url, headers: LOCAL, payload: edit })).statusCode, 403);
     f.store.updateTask('thesis-task', { status: 'running' });

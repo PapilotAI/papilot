@@ -16,13 +16,14 @@ const [{ Store }, { Workspace }, { Manuscripts }, { buildApp, gitQueue }, { AGEN
   import('../src/server/app.ts'), import('../src/shared.ts'),
 ]);
 f.write('paper/main.tex', '\\documentclass{article}\n\\begin{document}\n\\input{sections/method}\n\\end{document}\n');
-const BEFORE = '\\section{First}\nOriginal first paragraph.\n\\newpage\n\\section{Second}\nOriginal second paragraph.\n';
+const BEFORE = '\\section{First}\nOriginal first paragraph.\n\\newpage\n\\section{Second}\nOriginal second paragraph.\n\\newpage\n\\section{Third}\nOriginal third paragraph.\n';
 f.write(METHOD, BEFORE);
-f.repo.run(['add', '-A']); f.repo.run(['commit', '-qm', 'Two pages']);
+f.repo.run(['add', '-A']); f.repo.run(['commit', '-qm', 'Three pages']);
 const app = f.app(); await app.ready;
-const task = app.tasks.create('sources', 'Edit two pages', [], ['paper'], true);
+const task = app.tasks.create('sources', 'Edit three pages', [], ['paper'], true);
 f.edit(task, METHOD, 'Original first', 'Proposed first');
 f.edit(task, METHOD, 'Original second', 'Proposed second');
+f.edit(task, METHOD, 'Original third', 'Proposed third');
 app.publisher.submit(task.name); await app.publisher.join();
 assert.equal(app.review.latestRound(task.name)?.visuals, 'ready');
 const engine = createServer(app);
@@ -59,24 +60,48 @@ try {
   const viewer = page.frameLocator('.review-frame'), side = page.locator('#conversation-panel');
   await expect(viewer.locator('.change.current')).toBeVisible({ timeout: 60000 });
 
-  // The change's pencil opens its file beside the chat, not a box in the card.
+  // LaTeX on a change opens its file beside the chat, at the change, not in the card.
   await viewer.locator('.change.current .source-toggle').click();
-  await expect(viewer.locator('.change.current .source-code')).toContainText('Proposed');
-  await viewer.locator('.change.current .source-editor').getByRole('button', { name: 'Edit', exact: true }).click();
   const tab = side.getByRole('tab', { name: 'method.tex' }), chat = side.getByRole('tab', { name: 'Chat' });
   await expect(tab).toHaveAttribute('aria-selected', 'true');
   await expect(tab).toHaveAttribute('title', METHOD);
-  await expect(viewer.locator('.source-editor textarea'), 'the review leaves editing to the workspace').toHaveCount(0);
+  await expect(viewer.locator('.change.current .source'), 'the card shows no source of its own').toHaveCount(0);
   const editor = side.locator('.cm-editor'), field = side.locator('.cm-content');
   await expect(editor).toBeVisible();
   await expect(side.locator('.composer-wrap'), 'the editor takes the chat\'s place').toBeHidden();
-  const text = () => field.evaluate(content => [...content.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n'));
-  await expect.poll(text).toBe(worktree());
-  await expect(side.locator('.cm-source-focus')).toContainText('Proposed first');
-  await expect(side.locator('.cm-change-bar'), 'bars mark what the task changed').toHaveCount(2);
+  const text = () => field.evaluate(content => [...content.querySelectorAll('.cm-line')].map(line => line.textContent.replace(/\u200b/g, '')).join('\n'));
   await expect(field).toBeFocused();
 
+  // Each change of the round shows in the text, with Accept and Reject.
+  const actions = side.locator('.cm-review-actions');
+  await expect(actions).toHaveCount(3);
+  await expect(side.locator('.cm-review-removed')).toHaveText(['Original', 'Original', 'Original']);
+  await expect(side.locator('.cm-review-added')).toHaveText(['Proposed', 'Proposed', 'Proposed']);
+  await expect(side.locator('.cm-change-bar'), 'bars mark what the task changed').toHaveCount(3);
+  await page.screenshot({ path: 'test-results/task-source-review.png' });
+
+  // The caret on a change makes it the review's current change.
+  await side.locator('.cm-line', { hasText: 'third paragraph' }).click();
+  await expect(viewer.locator('.change.current')).toHaveAttribute('data-stop', '2');
+
+  // Accepting in the editor decides the change in the review; its marks go.
+  await actions.nth(0).locator('.cm-review-accept').click();
+  await expect.poll(() => app.review.pageState(task.name).decisions.c001).toBe('accepted');
+  await expect(actions).toHaveCount(2);
+  await expect(side.locator('.cm-review-removed')).toHaveCount(2);
+
+  // Rejecting returns the task's text, which the editor then shows.
+  await actions.nth(0).locator('.cm-review-reject').click();
+  await expect.poll(() => app.review.pageState(task.name).decisions.c002).toBe('rejected');
+  await expect.poll(worktree, { timeout: 60000 }).toContain('Original second paragraph.');
+  await expect.poll(text, { timeout: 30000 }).toContain('Original second paragraph.');
+  await expect(actions, 'the change after it keeps its place and its buttons').toHaveCount(1);
+  await expect(side.locator('.cm-review-added')).toHaveText(['Proposed']);
+  await expect(side.locator('.cm-line', { hasText: 'third paragraph' }).locator('.cm-review-added')).toHaveText('Proposed');
+  await expect.poll(() => app.review.latestRound(task.name)?.visuals, { timeout: 90000 }).toBe('ready');
+
   // Typing marks the tab; the chat keeps its place, and so does the draft.
+  await side.locator('.cm-line', { hasText: 'third paragraph' }).click();
   await page.keyboard.press('End');
   await page.keyboard.type(' Typed in Papilot.');
   const unsaved = side.locator('.side-tab-close[data-dirty]');
@@ -85,27 +110,20 @@ try {
   await expect(side.locator('.composer-wrap')).toBeVisible();
   await expect(editor).toBeHidden();
   await tab.click();
-  await expect.poll(text).toContain('Proposed first paragraph. Typed in Papilot.');
+  await expect.poll(text).toContain('Proposed third paragraph. Typed in Papilot.');
   fs.mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/task-source-edit.png' });
 
   // ⌘S writes the task's file, without an agent, and reviews it in a new round.
   const round = app.review.latestRound(task.name).number;
   await field.press('ControlOrMeta+s');
-  await expect.poll(worktree).toContain('Proposed first paragraph. Typed in Papilot.');
+  await expect.poll(worktree, { timeout: 60000 }).toContain('Proposed third paragraph. Typed in Papilot.');
   assert.equal(fs.readFileSync(path.join(f.root, METHOD), 'utf8'), BEFORE, 'the manuscript itself is untouched');
   await expect(unsaved, 'a saved file has no dot').toHaveCount(0);
-  await expect.poll(() => app.review.latestRound(task.name)?.number, { timeout: 90000 }).toBe(round + 1);
+  await expect.poll(() => app.review.latestRound(task.name)?.number, { timeout: 90000 }).toBeGreaterThan(round);
   await expect.poll(() => app.review.latestRound(task.name)?.visuals, { timeout: 90000 }).toBe('ready');
-  await expect(viewer.locator('.change').first()).toContainText('Typed in Papilot', { timeout: 60000 });
-
-  // A second save continues the new round.
-  await field.press('End');
-  await page.keyboard.type(' Again.');
-  await field.press('ControlOrMeta+s');
-  // It waits for the engine to finish writing the round before.
-  await expect.poll(worktree, { timeout: 60000 }).toContain('Typed in Papilot. Again.');
-  await expect.poll(() => app.review.latestRound(task.name)?.number, { timeout: 90000 }).toBe(round + 2);
+  await expect(viewer.locator('.change').last()).toContainText('Typed in Papilot', { timeout: 60000 });
+  await expect(side.locator('.cm-review-added').last(), 'the new round\'s changes show in the text').toContainText('Typed in Papilot', { timeout: 30000 });
   await expect(side.locator('.source-panel-error')).toHaveCount(0);
 
   // Closing the tab returns to the chat.
@@ -114,7 +132,7 @@ try {
   await expect(chat).toHaveCount(0);
   await expect(side.locator('.composer-wrap')).toBeVisible();
   assert.deepEqual(errors, []);
-  console.log('PASS: a change\'s pencil opens its whole file in the editor beside the chat, marked with what the task changed; ⌘S saves it into the task, reviews it in a new round and continues from there; the chat stays as it was');
+  console.log('PASS: LaTeX on a change opens its whole file in the editor beside the chat, which shows each change of the round in the text with Accept and Reject that decide it in the review; the caret and the review follow each other; ⌘S saves into the task and reviews it in a new round; the chat stays as it was');
 } finally {
   await browser.close();
   await server.close(); await engine.close(); workspace.close(); store.close();

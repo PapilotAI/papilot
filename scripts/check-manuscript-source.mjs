@@ -73,7 +73,8 @@ try {
   const panel = page.locator('.source-panel'), field = panel.getByRole('textbox', { name: 'Edit LaTeX source' });
   const tabs = page.getByRole('tablist', { name: 'Manuscript panels' }), close = tabs.locator('.side-tab-close'), unsaved = tabs.locator('.side-tab-close[data-dirty]');
   // A build of the working tree as it is now, finished and shown.
-  const compiled = async () => { const build = await settle(); assert.equal(build.status, 'ready', build.error); await expect(page.locator('.manuscript-note.error.brief')).toHaveCount(0); return build; };
+  // The page learns of the build at its next poll.
+  const compiled = async () => { const build = await settle(); assert.equal(build.status, 'ready', build.error); await expect(page.locator('.manuscript-note.error.brief')).toHaveCount(0, { timeout: 30000 }); return build; };
   const text = () => field.evaluate(content => [...content.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n'));
   const setText = async value => { await field.click(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.insertText(value); };
   // A flash lasts a moment: record every line that flashes from now on.

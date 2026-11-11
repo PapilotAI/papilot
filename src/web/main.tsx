@@ -44,7 +44,7 @@ import { ImportDialog } from './import-dialog.tsx';
 import { CompileButton } from './compile-button.tsx';
 import { ProblemsButton, fixRequest, type ProblemsHandle } from './build-problems.tsx';
 import { SourceTab, useSourceEdit } from './source-panel.tsx';
-import type { OpenSource } from '../../engine/src/web/review-events.ts';
+import type { OpenSource, ReviewChanges } from '../../engine/src/web/review-events.ts';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog, type SettingsInitialPage } from './settings.tsx';
 import { WorkspaceSwitcher } from './workspace-switcher.tsx';
@@ -1807,12 +1807,19 @@ function App() {
   const taskLayout = layout, taskTab = mobileTab;
   const conversationVisible = mobile ? taskTab === 'conversation' : taskLayout !== 'review';
   // On a computer, a change's source opens beside the conversation, in the
-  // editor the manuscript uses; a save there is reviewed like an edit in the
-  // review, which keeps its place.
+  // editor the manuscript uses, with the round's changes in the text and
+  // Accept and Reject on each; the editor and the review follow each other.
+  // A save there is reviewed like an edit in the review, which keeps its place.
   const [taskSide, setTaskSide] = useState<'chat' | 'source'>('chat');
   const taskReview = useRef<ReviewSources>(null);
-  const taskSource = useSourceEdit({ api, projectId: task?.projectId ?? '', taskId: task?.id, version: task?.review?.round,
-    onTaskSaved: (next, file, line) => taskReview.current?.saved(next, file, line) });
+  const [taskChanges, setTaskChanges] = useState<ReviewChanges | null>(null);
+  useEffect(() => setTaskChanges(null), [task?.id]);
+  // The viewer sees a new round first, and a reject that returned text.
+  const taskVersion = `${task?.review?.round}:${taskChanges?.round}:${taskChanges?.changes.filter(change => change.confirmed === 'rejected').map(change => change.id).join(',')}`;
+  const taskSource = useSourceEdit({ api, projectId: task?.projectId ?? '', taskId: task?.id, version: taskVersion,
+    onTaskSaved: (next, file, line) => taskReview.current?.saved(next, file, line),
+    onLine: (file, line) => taskReview.current?.select(file, line),
+    review: { changes: taskChanges, decide: (change, action) => { if (taskChanges) taskReview.current?.decide(taskChanges.round, change, action); } } });
   useEffect(() => { if (!taskSource.editing) setTaskSide('chat'); }, [taskSource.editing]);
   const openTaskSource = mobile ? undefined : (request: OpenSource) => {
     taskSource.reveal(request.file, request.lines, request.marks);
@@ -2029,7 +2036,7 @@ function App() {
           <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
           {!mobile && !chatOnly && task.status === 'deleting' && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}{!conversationVisible && workspaceViews}<div className="panel-tools">{!conversationVisible && taskStateActions}</div></div>}
           {(task.review?.state === 'build_failed' || task.status === 'failed' && task.review?.job?.status === 'failed') && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('Could not generate the PDF comparison.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
-          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : !task.preparation && task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : <TaskDocument key={task.id} projectId={task.projectId} manuscript={manuscriptData.data} placeholder={task.preparation ? <PreparingTask task={task}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>} task={task} sources={taskReview} onOpenSource={openTaskSource} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && <>{taskStateActions}{reviewOpen}</>}</>} completion={chatOnly ? null : applicationStep} onComment={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>}
+          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : !task.preparation && task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : <TaskDocument key={task.id} projectId={task.projectId} manuscript={manuscriptData.data} placeholder={task.preparation ? <PreparingTask task={task}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>} task={task} sources={taskReview} onOpenSource={openTaskSource} onChanges={setTaskChanges} onCurrentChange={change => { if (taskSource.editing && taskSide === 'source') void taskSource.follow(change, () => undefined); }} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && <>{taskStateActions}{reviewOpen}</>}</>} completion={chatOnly ? null : applicationStep} onComment={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>}
         </section><Activity key={task.id} source={taskSourceSide} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? <>{taskControls}{reviewOpen}</> : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/prepare')}><Icon name="refresh" size={14}/>{t('Retry')}</button>
             <button type="button" className="button secondary compact" onClick={() => setDeleteTarget(task)}><Icon name="trash" size={14}/>{t('Delete task…')}</button>
