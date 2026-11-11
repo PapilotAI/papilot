@@ -12,10 +12,11 @@ import './source-panel.css';
 
 // Editing the manuscript's LaTeX by hand. A click on the PDF, or a change
 // picked in the Changes view, opens its file in a tab beside New task, at
-// its lines, which are highlighted as the PDF highlights the passage. The
-// editor marks what changed since the last commit. A save writes the file
-// and compiles the manuscript; the PDF and the editor then flash the saved
-// lines, or the tab shows the errors in them and the last PDF stays.
+// its lines, which are highlighted as the PDF highlights the passage, both
+// until the author starts typing. The editor marks what changed since the
+// last commit. A save writes the file and compiles the manuscript; the PDF
+// and the editor then flash the saved lines, or the tab shows the errors in
+// them and the last PDF stays.
 
 type Api = <T>(route: string, body?: unknown, signal?: AbortSignal, wait?: number) => Promise<T>;
 type Lines = [number, number];
@@ -47,7 +48,8 @@ function readDraft(project: string, file: SourceFile): string | null {
 }
 
 interface Edit {
-  // Where on the PDF the passage is, when it was picked there.
+  // Where on the PDF the passage is, when it was picked there, and what of
+  // it is highlighted: nothing once the author edits.
   anchor: { page: number; rect: Rect; marks: Rect[] } | null;
   state: 'loading' | 'ready' | 'missing' | 'failed';
   file?: SourceFile;
@@ -75,6 +77,8 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
   // The file version the editor holds, and what to show once it does.
   const shown = useRef<{ file: string; revision: string; base: string | null } | null>(null), pending = useRef<Reveal | null>(null);
   const request = useRef(0), saving = useRef(false), shownBuild = useRef(build); shownBuild.current = build;
+  // Set while a kept draft is put back into the editor.
+  const restoring = useRef(false);
   // Asks for a sync when the file stays the same but there is something to show.
   const [tick, setTick] = useState(0), followed = useRef(-1);
   const show = (reveal: Reveal) => { pending.current = reveal; setTick(value => value + 1); };
@@ -125,7 +129,10 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
       // A kept draft comes back as one edit over the file on disk, which ⌘Z undoes.
       const draft = held?.file === file.file ? null : readDraft(projectId, file);
       view.load(file.text, file.base);
-      if (draft !== null && draft !== file.text) view.replace(draft);
+      if (draft !== null && draft !== file.text) {
+        restoring.current = true;
+        try { view.replace(draft); } finally { restoring.current = false; }
+      }
     } else if (held.base !== file.base) view.setBase(file.base);
     shown.current = { file: file.file, revision: file.revision, base: file.base };
     view.setReadOnly(Boolean(current?.saving));
@@ -227,6 +234,9 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
   // moment later.
   const typing = useRef<{ frame: number; timer?: ReturnType<typeof setTimeout> }>({ frame: 0 });
   actions.current.typed = () => {
+    // The passage stops standing out on the PDF, as it does in the editor;
+    // a draft coming back is not the author typing.
+    if (!restoring.current && latest.current?.anchor?.marks.length) update(value => value.anchor ? { ...value, anchor: { ...value.anchor, marks: [] } } : value);
     cancelAnimationFrame(typing.current.frame);
     typing.current.frame = requestAnimationFrame(() => {
       const view = editor.current, file = latest.current?.file;
@@ -319,7 +329,8 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
   }, [build?.status, build?.tree, build?.key, build?.current, edit?.compile?.tree]);
 
   // The saved lines flash in the PDF and the editor, while the editor still
-  // shows the saved file; another file opened since is left as it is.
+  // shows the saved file; another file opened since is left as it is. They
+  // only flash: the PDF keeps no highlight of what the author changed.
   async function compiled(key: string, tree: string) {
     update(value => value.compile?.tree === tree ? { ...value, compile: { ...value.compile, state: 'ready' } } : value);
     const compile = latest.current?.compile;
@@ -330,7 +341,7 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
       const { place } = await api<{ place: SourcePlace | null }>(`/projects/${projectId}/manuscript/source/place?key=${encodeURIComponent(key)}&file=${encodeURIComponent(compile.file)}&start=${start}&end=${end}&near=${near}`);
       if (!showing()) return;
       if (!place || !pdf.current) { editor.current?.flash([[start, end]]); return; }
-      const anchor = { page: place.page, rect: place.rect, marks: [place.rect] };
+      const anchor = { page: place.page, rect: place.rect, marks: [] };
       update(value => ({ ...value, anchor }));
       pdf.current.showPlace(place.page, place.rect, { keep: true });
       editor.current?.flash([[start, end]]);

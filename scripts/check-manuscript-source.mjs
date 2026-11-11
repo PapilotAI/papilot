@@ -106,6 +106,8 @@ try {
   // What changed since the last commit, as bars beside the lines while editing.
   await page.keyboard.press('End');
   await page.keyboard.type(' Really.');
+  await expect(page.locator('.source-mark'), 'typing ends the highlight on the PDF, as in the editor').toHaveCount(0);
+  await expect(panel.locator('.cm-source-focus')).toHaveCount(0);
   await expect(panel.locator('.cm-change-modified')).toHaveCount(1);
   await expect(panel.locator('.cm-change-ruler .cm-ruler-modified'), 'the change shows along the scrollbar').toHaveCount(1);
   await expect(panel.getByText('1 change'), 'no count in the header').toHaveCount(0);
@@ -114,7 +116,7 @@ try {
   await expect(panel.getByRole('button', { name: 'Compare' }), 'comparing belongs to version management').toHaveCount(0);
   await shot('changed');
 
-  // Saving writes the file without an agent; the PDF marks the saved lines.
+  // Saving writes the file without an agent; the PDF flashes the saved lines.
   const herons = ORIGINAL.replace('A separate paragraph about pelicans.\nPelicans glide over the water.', 'A separate paragraph about herons.\nHerons wade in the shallows.');
   await setText(herons);
   await watchFlashes();
@@ -123,6 +125,8 @@ try {
   await expect(word('herons')).toBeVisible({ timeout: 60000 });
   await expect(page.locator('.problem-flash')).toBeVisible();
   await expect.poll(flashed, { message: 'the saved lines flash with the PDF' }).toContain('Herons wade in the shallows.');
+  await expect(page.locator('.source-mark'), 'the saved lines only flash; nothing stays highlighted').toHaveCount(0);
+  await expect(page.locator('.problem-flash'), 'the flash ends').toHaveCount(0, { timeout: 5000 });
   await expect(unsaved, 'a saved file has no dot').toHaveCount(0);
   await expect(panel.locator('.cm-change-modified')).toHaveCount(2);
   await shot('saved');
