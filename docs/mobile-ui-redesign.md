@@ -80,8 +80,8 @@
 - **iMessage 风格对话流**：优化 `.message.user .message-body` 气泡圆角与留白，底部输入框采用贴合拇指安全区的胶囊设计。
 
 ### 5. 版本管理（Git Workspace）
-- **模式切换置顶**：通过 CSS `display: contents` 与显式 `order` 编排，将 `[Changes | Version history]` 双列等宽 iOS 分段控制器紧贴在 `Version Management` 毛玻璃标题栏下方。
-- **按视图动态释放全屏空间**：在 `<section className="git-workspace">` 注入 `data-git-detail={detail}` 状态属性；当用户切换到 `Version history` 时自动隐藏 `.git-panel` 提交表单，将 100% 剩余视口完整交给版本历史、提交图谱（Commit Graph）与工作树列表（Worktrees）。
+- **沿用单行工具栏**：版本管理工作区已去掉独立的 `Version Management` 标题栏，侧边栏按钮、当前分支与远端操作同在 `.git-toolbar` 一行；`[Changes | Version history]` 分段控制器位于右侧视图的工具栏（或打开的 Diff 工具栏）中，并沿用全局 iOS 分段样式。
+- **按视图动态释放全屏空间**：在 `<section className="git-workspace">` 注入 `data-git-detail={detail}` 状态属性；当用户切换到 `Version history` 时隐藏提交表单与文件列表（`.git-panel-content`），只保留顶部工具栏与提示信息，将其余视口完整交给版本历史、提交图谱（Commit Graph）与工作树列表（Worktrees）。
 - **紧凑源码 Diff**：在 `src/web/git-diff.css` 中隐藏窄屏表头与次要统计项，收窄双列行号宽度至 `32px + 32px`，显著提升手机端阅读 LaTeX 源码变更的有效列宽。
 
 ### 6. iOS 原生分组卡片式设置中心（Settings Modal Sheet）
@@ -114,7 +114,7 @@
 - `src/web/pdf-view.tsx`、`src/web/stamp-menu.tsx`、`src/web/note-groups.tsx`：手稿 PDF 触屏轻点呼出魔法笔圆盘 `StampWheel`、底部水平工具栏子菜单向上居中定位。
 - `src/web/style.css`：移动端全局顶栏、iOS 分段控制器、单行 PDF 工具栏与居中页码、`.pdf-scroll-host` 层叠隔离、批注/模型/菜单底部抽屉、分组侧边栏、对话流与 iOS 开关样式。
 - `src/web/review-frame.tsx`、`src/web/review-notes.tsx`：内嵌审阅页移动端毛玻璃子工具栏、圆角纸张卡片、底部居中毛玻璃决策胶囊，以及 `--papilot-bottom-rail` 动态高度联动避让。
-- `src/web/git-overview.css`：移动端 Git 顶栏、置顶双列分段切换器及 `Version history` 全屏释放布局。
+- `src/web/git-overview.css`：移动端 `Version history` 全屏释放布局。
 - `src/web/git-diff.css`：移动端 Git Diff 紧凑行号列与工具栏精简。
 - `src/web/settings.css`：iOS 分组卡片式设置模态抽屉、隐藏桌面快捷键设置页、蓝色返回导航与卡片视觉细化。
 - `src/web/pdf-suggestion.css`：移动端 PDF 批注气泡圆角与阴影质感优化。

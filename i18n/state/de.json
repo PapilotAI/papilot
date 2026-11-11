@@ -1614,11 +1614,6 @@
     "textHash": "a36e0c35c81388217d8d8f5789b9d977c072518023e019282cd12733494b712b",
     "model": "gemini-4-argon-medium"
   },
-  "Enter a folder path": {
-    "revision": "d4d84ff56a5b06039caa004f27b01be615831555c3419a58e11f286044eedae6",
-    "textHash": "ffbda6207181013a6c3de954fbf54967c7ea8dc6abef45a69eaa5aace4a54053",
-    "model": "gemini-4-argon-high"
-  },
   "Environment variable": {
     "revision": "2b837a5d3c7fa48ad08d3614c0c57e6784420c14404a24e9dce903e0ed9162c0",
     "textHash": "ffee21263ff5675f61bc9c8e7fb895c3b50be59691c8fdf2e1f14a1052de4c05",
@@ -2337,11 +2332,6 @@
   "Modified": {
     "revision": "aa1bbaa7ba01db8e082fdb2a583ae82023cd4e7e23e09e7170138cd51c5163a9",
     "textHash": "d63c93a908a9fc43a12263c79d3f04ae9c1d3a36665f0ffac3a6de7a83df87cf",
-    "model": "gemini-4-argon-medium"
-  },
-  "More Git actions": {
-    "revision": "464806c4fa97d9494a62c4e42e325385a42cb328d2f31b194cf2feafa5a9d0c8",
-    "textHash": "e45969bacad71b0860c6f8066c6e90908af005dc8ae85eb8669770f6cc798ee3",
     "model": "gemini-4-argon-medium"
   },
   "More commit actions": {
