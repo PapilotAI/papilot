@@ -68,6 +68,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: timeline } });
+  if (url.pathname.endsWith('/predict')) return route.fulfill({ json: { ok: true } });
   if (url.pathname.endsWith('/note-results')) return route.fulfill({ json: { notes: noteResults } });
   if (url.pathname.endsWith('/note-options/preview')) return route.fulfill({ json: detail(Number(url.searchParams.get('round')) || latest) });
   if (url.pathname.endsWith('/note-options')) return route.fulfill({ json: { key: url.searchParams.get('key'), round: latest, options: [], locked: 'Options are not available for this source range yet.' } });

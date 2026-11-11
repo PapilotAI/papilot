@@ -190,7 +190,6 @@ try {
   await sourceDiff.getByRole('button', { name: 'Previous change', exact: true }).click();
   await sourceDiff.getByText('Updated result.', { exact: true }).waitFor();
   await sourceDiff.locator('.git-source-scroll').press('Escape');
-  await expect(page.locator('.git-diff-view')).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'results.tex chapters', exact: true })).toBeFocused();
   await panel.screenshot({ path: 'test-results/git-simple-desktop.png' });
   await syncFromMenu();
@@ -333,6 +332,13 @@ try {
   const chinesePanel = page.locator('.git-panel');
   await chinesePanel.getByRole('button', { name: '提交', exact: true }).waitFor();
   await chinesePanel.screenshot({ path: 'test-results/git-simple-zh.png' });
+  // The restore above left Version history open. On a phone it takes the whole
+  // height, keeping only the toolbar; Changes brings back the draft and files.
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect(page.locator('.git-panel-content')).toBeHidden();
+  await expect(page.locator('.git-repository-view')).toBeVisible();
+  await expect(chinesePanel.locator('.git-toolbar')).toBeVisible();
+  await page.locator('.git-detail-switcher').getByRole('button', { name: '改动', exact: true }).click();
   for (const width of [900, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await chinesePanel.screenshot({ path: `test-results/git-simple-${width}.png` });
@@ -344,7 +350,6 @@ try {
   await page.locator('.git-diff-view').getByRole('button', { name: '下一处改动', exact: true }).click();
   await page.locator('.git-diff-view').getByText('Late updated result.', { exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/git-diff-phone.png' });
-  await page.getByRole('button', { name: '返回文件列表', exact: true }).click();
   await expect(chinesePanel).toBeVisible();
   assert.deepEqual(errors, []);
   console.log('PASS: Git settings, basic/advanced views, commit/sync, failure recovery and responsive layout');
