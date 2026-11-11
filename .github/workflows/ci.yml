@@ -45,10 +45,13 @@ jobs:
         if: matrix.node == 22
         uses: ./.github/actions/setup-tex
       - run: npm run typecheck
+      # The runner image already has the libraries Chromium needs. Installing
+      # them (--with-deps) needs Ubuntu's package mirror, which the runner
+      # sometimes cannot resolve for an hour or more.
       - name: Install browser for PDF review tests
         if: matrix.node == 22
         working-directory: engine
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - run: npm test
         env:
           # The viewer's lock test drives the built review viewer in Chromium.
@@ -68,7 +71,7 @@ jobs:
         # The static pages do not depend on the server's Node version.
         if: matrix.node == 22
         run: |
-          engine/node_modules/.bin/playwright install --with-deps chromium
+          engine/node_modules/.bin/playwright install chromium
           node scripts/check-site-blog.mjs
           node scripts/check-site.mjs
           node scripts/check-site-analytics.mjs
@@ -101,7 +104,7 @@ jobs:
         uses: ./.github/actions/setup-tex
       - name: Install browser
         working-directory: engine
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - run: npm run build
       # One step each, so one failure does not hide the others' results.
       - name: Review batching
@@ -161,7 +164,7 @@ jobs:
         uses: ./.github/actions/setup-tex
       - name: Install browser
         working-directory: engine
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - run: npm run build
       - name: ai-review
         run: node --import tsx scripts/check-ai-review.mjs

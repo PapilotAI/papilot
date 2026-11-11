@@ -69,8 +69,17 @@ jobs:
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y libgtk-3-0 libnss3 libxss1 libxtst6 libasound2 libgbm1 libnotify4 libsecret-1-0 libfuse2 xvfb xauth openbox
+          # The image has most of these; only missing ones need the package
+          # mirror, which the runner sometimes cannot resolve.
+          missing=()
+          for package in libgtk-3-0 libnss3 libxss1 libxtst6 libasound2 libgbm1 libnotify4 libsecret-1-0 libfuse2 xvfb xauth openbox; do
+            dpkg -s "$package" >/dev/null 2>&1 || missing+=("$package")
+          done
+          echo "Missing: ${missing[*]:-none}"
+          if [ ${#missing[@]} -gt 0 ]; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y "${missing[@]}"
+          fi
       - run: npm ci
       # Making the installers takes most of a full build. The smoke tests
       # launch the unpacked app, which --dir builds by itself.
