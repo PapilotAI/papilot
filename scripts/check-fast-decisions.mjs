@@ -66,7 +66,13 @@ async function open(page) {
     return route.fulfill({ json: view(extra) });
   });
   await page.goto(`${origin}/?task=flow`);
+  await ready(page);
+}
+// The viewer listens for keys from an effect that runs after it first
+// renders the current change; a key pressed before then is not a decision.
+async function ready(page) {
   await expect(page.locator('.change.current')).toHaveAttribute('data-stop', '0');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve))));
 }
 const decides = () => posts.filter(post => post.route === 'decide');
 const current = page => page.locator('.change.current');
@@ -288,5 +294,5 @@ async function reloadFresh(page, status) {
   reset(status);
   await page.addInitScript(() => localStorage.clear());
   await page.reload();
-  await expect(current(page)).toHaveAttribute('data-stop', '0');
+  await ready(page);
 }
