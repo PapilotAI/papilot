@@ -402,6 +402,7 @@ export const PdfView = forwardRef<PdfHandle, {
     };
     bus.on('pagesinit', () => {
       const keep = restore.current; restore.current = null;
+      if (!keep && !returning && !box.clientHeight && place) returning = readPlace(place);
       viewer.currentScaleValue = pdfZoom(keep?.scale || returning?.scale || browserStorage.getItem(PDF_ZOOM_STORAGE));
       if (keep) { returning = undefined; box.scrollTop = keep.top; box.scrollLeft = keep.left; }
       else goBack();
@@ -418,6 +419,7 @@ export const PdfView = forwardRef<PdfHandle, {
     // viewer's actual bounds, while preserving an explicitly chosen percentage.
     let resizeFrame = 0;
     const resize = new ResizeObserver(() => {
+      if (!box.clientWidth || !box.clientHeight) { if (!returning && place) returning = readPlace(place); return; }
       cancelAnimationFrame(resizeFrame);
       resizeFrame = requestAnimationFrame(() => {
         if (!viewer.pagesCount || !box.clientWidth || !box.clientHeight) return;
@@ -430,7 +432,7 @@ export const PdfView = forwardRef<PdfHandle, {
     // The current section is the last bookmark above a line 40% down the view
     // (PDF units grow upwards); at the end of the document it is the last one.
     bus.on('updateviewarea', ({ location }: { location?: { pageNumber: number; top: number; left: number; scale: number } }) => {
-      if (!location) return;
+      if (!location || !box.clientHeight) return;
       if (place && !returning) savePlace(place, { page: location.pageNumber, left: location.left, top: location.top, scale: viewer.currentScaleValue });
       const items = latest.current.outline, reading = location.top - box.clientHeight * 0.4 / (viewer.currentScale * 96 / 72);
       let current = -1;
@@ -487,25 +489,31 @@ export const PdfView = forwardRef<PdfHandle, {
     // still selects a word.
     // A click that closes an open card does only that. The card closes on
     // the same press, so whether one was open is read before anything else.
-    let down: { x: number; y: number } | null = null, pointTimer: ReturnType<typeof setTimeout> | undefined;
+    let down: { x: number; y: number; time: number } | null = null, pointTimer: ReturnType<typeof setTimeout> | undefined;
     const pressStart = (event: PointerEvent) => {
       pressed.current.card = Boolean(latest.current.active || editingRef.current);
-      clearTimeout(pointTimer); down = event.button === 0 && box.contains(event.target as Node) ? { x: event.clientX, y: event.clientY } : null;
+      clearTimeout(pointTimer); down = event.button === 0 && box.contains(event.target as Node) ? { x: event.clientX, y: event.clientY, time: performance.now() } : null;
     };
+    const clearDown = () => { down = null; };
     const finishMark = (event: PointerEvent) => {
       const tool = toolRef.current, start = down; down = null;
-      if ((tool !== 'note' && tool !== 'delete' && tool !== 'magic' && tool !== 'source') || latest.current.readOnly || (tool !== 'source' && latest.current.markingDisabled) || editingRef.current || event.pointerType === 'touch' || event.button !== 0
+      const touchMagic = event.pointerType === 'touch' && tool === 'magic' && !picking.current?.active() && Boolean(start && performance.now() - start.time < 450);
+      if ((tool !== 'note' && tool !== 'delete' && tool !== 'magic' && tool !== 'source') || latest.current.readOnly || (tool !== 'source' && latest.current.markingDisabled) || editingRef.current || (event.pointerType === 'touch' && !touchMagic) || event.button !== 0
         || !box.contains(event.target as Node) || (event.target as Element).closest('button,input,textarea,select,.pdf-note-card')) return;
       const at = { x: event.clientX, y: event.clientY }, page = (event.target as Element).closest<HTMLElement>('.page');
-      const click = Boolean(start && !pressed.current.card && Math.hypot(at.x - start.x, at.y - start.y) < 5), onNote = Boolean(noteAt(event));
+      const click = Boolean(start && !pressed.current.card && Math.hypot(at.x - start.x, at.y - start.y) < (event.pointerType === 'touch' ? 10 : 5)), onNote = Boolean(noteAt(event));
       setTimeout(() => {
-        if (disposed) return;
-        const value = select();
+        if (disposed || (event.pointerType === 'touch' && picking.current?.active())) return;
+        const value = event.pointerType === 'touch' ? null : select();
         if (value) { markRef.current({ page: value.page, rect: bounds(value.rects), rects: value.rects, quote: value.quote }, at); return; }
-        if ((tool === 'magic' || tool === 'source') && page && click && !onNote) pointTimer = setTimeout(() => { if (!disposed && !editingRef.current) markRef.current(pointAt(page, at.x, at.y), at); }, 220);
+        if ((tool === 'magic' || tool === 'source') && page && click && !onNote) {
+          if (event.pointerType === 'touch') markRef.current(pointAt(page, at.x, at.y), at);
+          else pointTimer = setTimeout(() => { if (!disposed && !editingRef.current) markRef.current(pointAt(page, at.x, at.y), at); }, 220);
+        }
       }, 0);
     };
     window.addEventListener('pointerdown', pressStart, true);
+    window.addEventListener('pointercancel', clearDown, true);
     document.addEventListener('pointerup', finishMark);
     // The hand drags the pages, whichever tool is chosen while Space is held.
     let pan: { id: number; x: number; y: number; left: number; top: number } | null = null;
@@ -591,7 +599,7 @@ export const PdfView = forwardRef<PdfHandle, {
     return () => {
       disposed = true; clearTimeout(timer); clearTimeout(pointTimer); picking.current?.stop(); picking.current = null;
       resize.disconnect(); cancelAnimationFrame(resizeFrame);
-      document.removeEventListener('selectionchange', selectionChange); document.removeEventListener('pointerup', finishMark); window.removeEventListener('pointerdown', pressStart, true);
+      document.removeEventListener('selectionchange', selectionChange); document.removeEventListener('pointerup', finishMark); window.removeEventListener('pointerdown', pressStart, true); window.removeEventListener('pointercancel', clearDown, true);
       box.removeEventListener('pointerdown', panStart); box.removeEventListener('pointermove', panMove); box.removeEventListener('pointerup', panEnd); box.removeEventListener('pointercancel', panEnd);
       box.removeEventListener('pointerdown', pressNote); box.removeEventListener('scroll', cancelPress);
       document.removeEventListener('pointermove', moveNote); document.removeEventListener('pointerup', releaseNote); document.removeEventListener('pointercancel', cancelPress);
@@ -607,7 +615,7 @@ export const PdfView = forwardRef<PdfHandle, {
     const next = { url: props.url, words: props.words, key: props.pdfKey };
     const current = tools.current!, box = container.current!;
     let cancelled = false, attached = false;
-    if (loaded.current) restore.current = { scale: current.viewer.currentScaleValue, top: box.scrollTop, left: box.scrollLeft };
+    if (loaded.current && box.clientHeight > 0) restore.current = { scale: current.viewer.currentScaleValue, top: box.scrollTop, left: box.scrollLeft };
     pagesReady.current = false;
     setLoading(!loaded.current); setError('');
     const task = pdfjs.getDocument({ url: next.url, enableXfa: false, BinaryDataFactory: CMapData });
@@ -617,7 +625,7 @@ export const PdfView = forwardRef<PdfHandle, {
       // and reject its replacement state. Keep that request in our cancellable
       // load phase, before the viewer takes ownership of the document.
       await document.getPage(1);
-      if (cancelled || editingRef.current) return;
+      if (cancelled || editingRef.current) { restore.current = null; closeDocument(task); return; }
       const previous = loaded.current;
       loaded.current = document; attached = true; layerMap.current.clear(); setLayers(new Map()); setSelection(null); setEditing(null);
       // Marks always name the pages actually attached, never a pending fetch.
@@ -630,10 +638,11 @@ export const PdfView = forwardRef<PdfHandle, {
       if (loaded.current === document) latest.current.onOutline(items);
     }).catch(failure => {
       if (cancelled) return;
-      if (!attached) closeDocument(task);
-      setError(failure instanceof Error ? failure.message : String(failure)); setLoading(false);
+      if (!attached) { restore.current = null; closeDocument(task); }
+      if (!loaded.current) setError(failure instanceof Error ? failure.message : String(failure));
+      setLoading(false);
     });
-    return () => { cancelled = true; if (!attached) closeDocument(task); };
+    return () => { cancelled = true; if (!attached) { restore.current = null; closeDocument(task); } };
   }, [props.url, props.words, props.pdfKey, editing]);
 
   // Opening a suggestion from the task or navigation reveals its passage.
@@ -656,7 +665,7 @@ export const PdfView = forwardRef<PdfHandle, {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const viewer = tools.current?.viewer, mod = e.metaKey || e.ctrlKey;
-      if (!viewer || e.defaultPrevented || latest.current.suspended) return;
+      if (!viewer || e.defaultPrevented || latest.current.suspended || !container.current?.clientHeight) return;
       if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); if (findInput.current) findInput.current.select(); else setFindOpen(true); }
       else if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); viewer.increaseScale(); }
       else if (mod && e.key === '-') { e.preventDefault(); viewer.decreaseScale(); }
@@ -671,7 +680,7 @@ export const PdfView = forwardRef<PdfHandle, {
   // still turns the page), and Escape steps back: unlock, then Select.
   useEffect(() => {
     const keyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.metaKey || event.ctrlKey || event.altKey || latest.current.readOnly || latest.current.suspended) return;
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.metaKey || event.ctrlKey || event.altKey || latest.current.readOnly || latest.current.suspended || !container.current?.clientHeight) return;
       const focus = document.activeElement;
       if (typing(event.target) || (focus && focus !== document.body && !root.current?.contains(focus)) || document.querySelector('dialog[open]')) return;
       if (event.key === ' ') {
@@ -693,7 +702,7 @@ export const PdfView = forwardRef<PdfHandle, {
     const keyUp = (event: KeyboardEvent) => {
       if (event.key !== ' ' || !spaceRef.current.held) return;
       setSpaceHand(false);
-      if (latest.current.suspended) return;
+      if (latest.current.suspended || !container.current?.clientHeight) return;
       const box = container.current;
       if (!spaceRef.current.used && box) box.scrollBy({ top: (event.shiftKey ? -0.9 : 0.9) * box.clientHeight });
     };
@@ -809,7 +818,7 @@ export const PdfView = forwardRef<PdfHandle, {
       <PdfPageControls page={page} pages={pages} zoom={zoom} onPage={number => { if (tools.current) tools.current.viewer.currentPageNumber = number; }} onZoom={value => { if (tools.current) tools.current.viewer.currentScaleValue = value; }} onZoomBy={factor => tools.current?.viewer.updateScale({ scaleFactor: factor })}/>
       <PdfFindButton open={findOpen} onClick={() => { if (findOpen) closeFind(); else setFindOpen(true); }}/>
 
-      {/* Narrow viewers have no tool rail; their marking tools stay up here. */}
+      {/* Narrow desktop panes keep compact tools; phones show a collapsible bottom capsule. */}
       {markable && <span className="pdf-compact-tools">
         <button type="button" className={'icon-button region-toggle' + (props.region ? ' active' : '')} aria-label={t('Mark region')} aria-pressed={props.region} title={t('Mark a figure or region')} onClick={() => pickTool(props.region ? 'select' : 'region')}><Icon name="region" size={16}/></button>
         {props.onGroupChange && <GroupPicker value={props.group || null} onChange={group => { props.onGroupChange!(group); if (group && tool !== 'region') choose('note'); }} disabled={props.markingDisabled || Boolean(editing)}/>}

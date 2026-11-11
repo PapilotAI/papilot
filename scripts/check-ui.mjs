@@ -1262,10 +1262,9 @@ try {
     if (await graph.getByRole('alert').count()) throw error;
   });
   await graph.getByRole('alert').waitFor({ state: 'detached' });
-  // Build output goes into .gitignore from the Changes menu, one pattern per kind.
+  // Build output goes into .gitignore directly from Changes, one pattern per kind.
   await unstagedList.getByText('main.aux', { exact: true }).waitFor();
-  await changes.getByRole('button', { name: 'More Git actions', exact: true }).click();
-  const ignoreItem = page.getByRole('menuitem', { name: /^Add to \.gitignore/ });
+  const ignoreItem = changes.getByRole('button', { name: /^Add to \.gitignore/ });
   await expect(ignoreItem).toContainText('2 build files');
   await ignoreItem.click();
   await gitPanel.getByRole('status').filter({ hasText: 'Added 2 patterns to .gitignore.' }).waitFor();
@@ -1278,7 +1277,6 @@ try {
   assert.equal(await commitButton.isDisabled(), true);
   await unstagedList.getByRole('button', { name: 'main.tex', exact: true }).click();
   await page.getByRole('region', { name: 'Changes in main.tex' }).getByText('New line.', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Back to files', exact: true }).click();
   // + stages a file and − unstages it; Commit then takes only what is staged.
   await unstagedList.getByRole('button', { name: 'Stage main.tex', exact: true }).click();
   await stagedList.getByText('main.tex', { exact: true }).waitFor();
@@ -1830,9 +1828,10 @@ try {
     assert.ok(send.x >= 0 && send.x + send.width <= width);
     if (width < 681) {
       await page.getByRole('button', { name: /Review/ }).first().click();
-      // Phone layouts keep PDF tools in the viewer and the new-tab link in navigation.
-      await page.locator('.review-tools').getByRole('link', { name: 'Full PDF', exact: true }).waitFor();
-      assert.equal(await page.locator('.workspace-navigation').getByRole('link', { name: 'Open review in new tab', exact: true }).isVisible(), true);
+      // Phone layouts hide desktop new-tab links and keep rebuild in the review bar.
+      await page.locator('.review-tools').getByRole('button', { name: 'Regenerate PDF comparison', exact: true }).waitFor();
+      assert.equal(await page.locator('.review-tools').getByRole('link', { name: 'Full PDF', exact: true }).isVisible(), false);
+      assert.equal(await page.locator('.workspace-navigation').getByRole('link', { name: 'Open review in new tab', exact: true }).isVisible(), false);
       await page.screenshot({ path: `test-results/english-mobile-${width}.png`, fullPage: true });
     }
     const drawerToggle = page.getByRole('button', { name: 'Show task list', exact: true });
@@ -2127,7 +2126,7 @@ try {
   const restrictedPage = await restricted.newPage();
   const restrictedErrors = [];
   restrictedPage.on('pageerror', error => restrictedErrors.push(error.message));
-  await restrictedPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/runtime/requirements') ? readyRequirements : route.request().url().endsWith('/api/state') ? { ...snapshot, tasks: [secondTask], requests: [] } : { items: [] } }));
+  await restrictedPage.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/api/runtime/requirements') ? readyRequirements : route.request().url().endsWith('/api/state') ? { ...snapshot, tasks: [secondTask], requests: [] } : route.request().url().endsWith('/manuscript') ? { annotations: [], build: { status: 'idle' }, git: { files: [] } } : { items: [] } }));
   await restrictedPage.goto(origin);
   const restrictedInput = restrictedPage.getByRole('textbox', { name: 'Instructions for Codex' });
   await restrictedInput.fill('A usable draft with storage disabled.');

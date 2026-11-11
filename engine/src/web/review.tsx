@@ -1567,6 +1567,13 @@ export function ReviewApp({
     if (fullPaper) root.dataset.fullPaper = "available";
     else delete root.dataset.fullPaper;
   }, [fullPaper]);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (detail?.round) {
+      root.dataset.papilotRound = String(detail.round);
+      window.dispatchEvent(new Event("papilot:round"));
+    } else delete root.dataset.papilotRound;
+  }, [detail?.round]);
   // Keep the selected change in view when the view changes, from here or the host.
   const shownView = useRef(paperView);
   useEffect(() => {
@@ -1955,6 +1962,18 @@ export function ReviewApp({
                   )}
                 </summary>
                 <pre className="details">{detail.warnings.join("\n")}</pre>
+              </details>
+            </div>
+          ) : null}
+          {/* A task that fixes a compilation error starts from text that
+              does not compile: its Before pages went on past the errors. */}
+          {detail?.baselineErrors?.length ? (
+            <div className="banner">
+              <details>
+                <summary>
+                  {t("The text before these changes has compilation errors. Its pages show what LaTeX typeset after skipping them.")}
+                </summary>
+                <pre className="details">{detail.baselineErrors.join("\n")}</pre>
               </details>
             </div>
           ) : null}

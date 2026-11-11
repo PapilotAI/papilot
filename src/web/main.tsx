@@ -1,3 +1,4 @@
+import { TaskDocument } from './task-document.tsx';
 import { requestApi, requestState } from './api.ts';
 import { agentsSettled, chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
@@ -60,7 +61,7 @@ import { TaskApply } from './task-apply.tsx';
 import { TaskApplyState } from './task-apply-state.ts';
 import { taskSaveStatus } from './task-save-status.ts';
 import { TaskSaved } from './task-saved.tsx';
-import { GitPane, GitRepository, usePane } from './git-overview.tsx';
+import { GitRepository } from './git-overview.tsx';
 import { useAdvancedGit } from './git-preferences.ts';
 import { GitDiffView } from './git-diff-view.tsx';
 import { VersionHistory, type HistorySelection } from './git-history.tsx';
@@ -466,29 +467,27 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [resolution, setResolution] = useState<{ agent: string; summary: string } | null>(null);
   const [discarding, setDiscarding] = useState<GitFile[] | null>(null);
-  const [changesOpen, toggleChanges] = usePane('changes', true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [detail, setDetail] = useState<'changes' | 'history'>(() => readPlace('git-view:' + projectId) === 'history' ? 'history' : 'changes');
   const showDetail = (value: 'changes' | 'history') => { setDetail(value); savePlace('git-view:' + projectId, value); };
   const [source, setSource] = useState<GitSelection | null>(() => readPlace<GitSelection>('git-selection:' + projectId) || { path: '', list: 'changes' });
-  const [diffRefresh, setDiffRefresh] = useState(0);
+  const [diffRefresh, setDiffRefresh] = useState(0), [historyRefresh, setHistoryRefresh] = useState(0);
   const sourceOpener = useRef<HTMLElement | null>(null);
   const selectSource = (value: GitSelection | null) => { setSource(value); savePlace('git-selection:' + projectId, value); };
   const onOpenDiff = (value: GitSelection) => { sourceOpener.current = document.activeElement as HTMLElement | null; selectSource(value); showDetail('changes'); setDiffRefresh(value => value + 1); };
-  const closeSource = () => { if (source?.list === 'history') showDetail('history'); selectSource(null); requestAnimationFrame(() => { if (sourceOpener.current?.isConnected) sourceOpener.current.focus({ preventScroll: true }); }); };
+  const closeSource = () => { if (source?.list === 'history') { showDetail('history'); selectSource({ path: '', list: 'changes' }); } requestAnimationFrame(() => { if (sourceOpener.current?.isConnected) sourceOpener.current.focus({ preventScroll: true }); }); };
   const historyHash = source?.list === 'history' ? source.hash : null;
   const loadDiff = useCallback((path: string, signal: AbortSignal) => api<GitDiff>(historyHash ? `/projects/${projectId}/git/history/${historyHash}/diff?path=${encodeURIComponent(path)}` : `/projects/${projectId}/git/diff?path=${encodeURIComponent(path)}&scope=${source?.list === 'staged' ? 'staged' : 'unstaged'}`, undefined, signal), [projectId, historyHash, source?.list]);
   useEffect(() => {
-    if (!git || !source || source.list === 'history') return;
-    const file = git.files.find(file => file.path === source.path) || git.files[0];
-    if (!file) selectSource(null);
+    if (!git || source?.list === 'history') return;
+    const file = git.files.find(file => file.path === source?.path) || git.files[0];
+    if (!file) { if (source) selectSource(null); }
     else {
-      const list = !git.merging && file.staged && (!file.unstaged || source.list === 'staged') ? 'staged' : 'changes';
-      if (source.path !== file.path || source.list !== list) selectSource({ path: file.path, list });
+      const list = !git.merging && file.staged && (!file.unstaged || source?.list === 'staged') ? 'staged' : 'changes';
+      if (source?.path !== file.path || source?.list !== list) selectSource({ path: file.path, list });
     }
   }, [git, source]);
   const selection = source;
-  const heading = <header className="git-workspace-header">{navigation}<Icon name="restore" size={18}/><h2>{t('Version Management')}</h2></header>;
   const latest = useRef({ busy, onStatus });
   latest.current = { busy, onStatus };
   // Discover incoming commits while this panel is visible; status alone only
@@ -512,7 +511,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
     return () => { controller.abort(); clearInterval(timer); window.removeEventListener('focus', check); document.removeEventListener('visibilitychange', check); };
   }, [projectId, git?.remote]);
   const files = git?.files || [];
-  if (!git || !Array.isArray(git.files)) return <section className="git-workspace" aria-label={t('Version Management')}>{heading}<p className="git-clean" role="status">{t('Loading version management…')}</p></section>;
+  if (!git || !Array.isArray(git.files)) return <section className="git-workspace" aria-label={t('Version Management')}><div className="git-toolbar">{navigation}</div><p className="git-clean" role="status">{t('Loading version management…')}</p></section>;
   const staged = files.filter(file => file.staged), unstaged = files.filter(file => file.unstaged), chosen = staged.length ? staged : files.filter(file => !ignorable(file));
   const stage = (paths: string[], on: boolean) => { if (paths.length) void run('stage', () => api<{ git: GitStatus }>(`/projects/${projectId}/git/stage`, { paths, stage: on }), () => ''); };
   const saveMessage = (value: string) => { setMessage(value); if (value) browserStorage.setItem(draftKey, value); else browserStorage.removeItem(draftKey); };
@@ -596,7 +595,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
           <Icon name="paper" size={14}/><span className="git-name">{file.path.slice(slash + 1)}</span>{slash > 0 && <span className="git-dir">{file.path.slice(0, slash)}</span>}
         </button>
         {!merging && <span className="git-row-actions">
-          {list === 'changes' && <button type="button" className="icon-button" aria-label={t('Discard changes in {path}', { path: file.path })} title={t('Discard changes')} disabled={Boolean(busy)} onClick={() => setDiscarding([file])}><Icon name="undo" size={16}/></button>}
+          {list === 'changes' && <button type="button" className="icon-button git-discard-action" aria-label={t('Discard changes in {path}', { path: file.path })} title={t('Discard changes')} disabled={Boolean(busy)} onClick={() => setDiscarding([file])}><Icon name="undo" size={16}/></button>}
           {list === 'changes'
             ? <button type="button" className="icon-button" aria-label={t('Stage {path}', { path: file.path })} title={t('Stage changes')} disabled={Boolean(busy)} onClick={() => stage([file.path], true)}><Icon name="plus" size={16}/></button>
             : <button type="button" className="icon-button" aria-label={t('Unstage {path}', { path: file.path })} title={t('Unstage changes')} disabled={Boolean(busy)} onClick={() => stage([file.path], false)}><Icon name="minus" size={16}/></button>}
@@ -607,47 +606,44 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
   };
   const group = (list: 'staged' | 'changes', items: GitFile[]) => {
     const name = list === 'staged' ? t('Staged changes') : t('Changes'), shut = collapsed[list];
+    const stageable = list === 'changes' ? items.filter(file => !ignorable(file)) : items;
     return <div className="git-group" role="group" aria-label={name}>
       <div className="git-group-header">
-        <button type="button" className="git-group-toggle" aria-expanded={!shut} onClick={() => setCollapsed(current => ({ ...current, [list]: !shut }))}><Icon name={shut ? 'chevronRight' : 'chevronDown'} size={12}/><span>{name}</span></button>
+        <button type="button" className="git-group-toggle" aria-expanded={!shut} onClick={() => setCollapsed(current => ({ ...current, [list]: !shut }))}><Icon name={shut ? 'chevronRight' : 'chevronDown'} size={12}/><span>{name}</span><span className="git-count" aria-hidden="true">{items.length}</span></button>
         {!merging && <span className="git-row-actions">
-          {list === 'changes' && <button type="button" className="icon-button" aria-label={t('Discard all changes')} title={t('Discard all changes')} disabled={Boolean(busy)} onClick={() => setDiscarding(items)}><Icon name="undo" size={16}/></button>}
+          {list === 'changes' && <button type="button" className="icon-button git-discard-action" aria-label={t('Discard all changes')} title={t('Discard all changes')} disabled={Boolean(busy)} onClick={() => setDiscarding(items)}><Icon name="undo" size={15}/></button>}
           {list === 'changes'
-            ? <button type="button" className="icon-button" aria-label={t('Stage all changes')} title={t('Stage all changes')} disabled={Boolean(busy)} onClick={() => stage(items.filter(file => !ignorable(file)).map(file => file.path), true)}><Icon name="plus" size={16}/></button>
-            : <button type="button" className="icon-button" aria-label={t('Unstage all changes')} title={t('Unstage all changes')} disabled={Boolean(busy)} onClick={() => stage(items.map(file => file.path), false)}><Icon name="minus" size={16}/></button>}
+            ? <button type="button" className="icon-button" aria-label={t('Stage all changes')} title={t('Stage all changes')} disabled={Boolean(busy) || !stageable.length} onClick={() => stage(stageable.map(file => file.path), true)}><Icon name="plus" size={15}/></button>
+            : <button type="button" className="icon-button" aria-label={t('Unstage all changes')} title={t('Unstage all changes')} disabled={Boolean(busy)} onClick={() => stage(items.map(file => file.path), false)}><Icon name="minus" size={15}/></button>}
         </span>}
-        <span className="git-count">{items.length}</span>
       </div>
       {!shut && <ul className="git-files">{items.map(file => row(file, list))}</ul>}
     </div>;
   };
   const sync = git.upstream && (git.ahead > 0 || git.behind > 0) ? <span className="git-sync">{git.ahead > 0 && <span>↑{git.ahead}</span>}{git.behind > 0 && <span>↓{git.behind}</span>}</span> : null;
-  return <section className="git-workspace" aria-label={t('Version Management')} aria-busy={Boolean(busy)}>
-    {heading}
+  const switcher = <div className="git-detail-switcher view-selector" role="group" aria-label={t('Workspace view')}>
+    <button type="button" aria-pressed={detail === 'changes'} onClick={() => { if (source?.list === 'history') selectSource({ path: '', list: 'changes' }); showDetail('changes'); }}><Icon name="diff" size={16}/><span>{t('Changes')}</span></button>
+    <button type="button" aria-pressed={detail === 'history'} onClick={() => showDetail('history')}><Icon name="restore" size={16}/><span>{t('Version history')}</span></button>
+  </div>;
+  const diffOpen = detail === 'changes' && Boolean(source?.path);
+  return <section className="git-workspace" data-git-detail={detail} aria-label={t('Version Management')} aria-busy={Boolean(busy)}>
     <div className="git-workspace-body">
-    <aside className={'git-panel' + (advanced ? ' git-advanced' : '')} aria-label={t('Changes')}>
+    <section className={'git-panel' + (advanced ? ' git-advanced' : '')} aria-label={t('Changes')}>
     <div className="git-toolbar" role="group" aria-label={t('Version Management')}>
-      <div className="git-toolbar-branch">
-        <span className="git-branch" title={git.upstream ? `${t('Tracking')} ${git.upstream}` : t('No upstream branch')}><Icon name="branch" size={14}/><code>{git.branch || t('detached HEAD')}</code>{sync}</span>
-        {advanced && git.remote && <button type="button" className="icon-button" aria-label={t('Fetch from the remote')} title={t('Fetch from the remote')} disabled={Boolean(busy)} onClick={() => remote('fetch')}>{busy === 'fetch' ? <span className="spinner"/> : <Icon name="fetch" size={15}/>}</button>}
+      {navigation}
+      <span className="git-branch" title={git.upstream ? `${t('Tracking')} ${git.upstream}` : t('No upstream branch')}><Icon name="branch" size={14}/><code>{git.branch || t('detached HEAD')}</code>{sync}</span>
+      <div className="git-toolbar-tools">
+        {advanced && git.remote && <>
+          <button type="button" className="icon-button" aria-label={t('Fetch from the remote')} title={t('Fetch from the remote')} disabled={Boolean(busy)} onClick={() => remote('fetch')}>{busy === 'fetch' ? <span className="spinner"/> : <Icon name="fetch" size={15}/>}</button>
+          {git.upstream && <button type="button" className={'git-remote-action' + (git.behind > 0 ? ' has-count' : '')} aria-label={diverged ? t('Merge') : t('Pull')} title={diverged ? t('{branch} and {upstream} have both changed. Merge brings in the remote commits.', { branch: git.branch ?? '', upstream: git.upstream }) : t('Pull')} disabled={Boolean(busy) || Boolean(merging) || !git.behind} onClick={() => remote(diverged ? 'merge' : 'pull')}>{busy === 'pull' || busy === 'merge' ? <span className="spinner"/> : <Icon name="pull" size={14}/>}{git.behind > 0 && <span className="git-action-count" aria-hidden="true">{git.behind}</span>}</button>}
+          {(git.upstream || publish) && <button type="button" className={'git-remote-action' + ((git.upstream && git.ahead > 0) || publish ? ' has-count' : '')} aria-label={git.upstream ? t('Push') : t('Publish branch')} title={git.upstream ? t('Push') : t('Publish branch')} disabled={Boolean(busy) || Boolean(merging) || Boolean(git.upstream && !git.ahead)} onClick={() => remote('push')}>{busy === 'push' ? <span className="spinner"/> : <Icon name="push" size={14}/>}{git.upstream && git.ahead > 0 && <span className="git-action-count" aria-hidden="true">{git.ahead}</span>}</button>}
+        </>}
+        <button type="button" className="icon-button" aria-label={t('Refresh changes')} title={t('Refresh changes')} disabled={Boolean(busy)} onClick={reload}>{busy === 'reload' ? <span className="spinner"/> : <Icon name="refresh" size={14}/>}</button>
       </div>
-      {advanced && git.remote && <div className="git-toolbar-actions">
-        {git.upstream && <button type="button" className="button secondary compact" aria-label={diverged ? t('Merge') : t('Pull')} title={diverged ? t('{branch} and {upstream} have both changed. Merge brings in the remote commits.', { branch: git.branch ?? '', upstream: git.upstream }) : t('Pull')} disabled={Boolean(busy) || Boolean(merging) || !git.behind} onClick={() => remote(diverged ? 'merge' : 'pull')}>{busy === 'pull' || busy === 'merge' ? <span className="spinner"/> : <Icon name="pull" size={15}/>}<span>{diverged ? t('Merge') : t('Pull')}</span>{git.behind > 0 && <span className="git-action-count" aria-hidden="true">{git.behind}</span>}</button>}
-        {(git.upstream || publish) && <button type="button" className="button secondary compact" aria-label={git.upstream ? t('Push') : t('Publish branch')} disabled={Boolean(busy) || Boolean(merging) || Boolean(git.upstream && !git.ahead)} onClick={() => remote('push')}>{busy === 'push' ? <span className="spinner"/> : <Icon name="push" size={15}/>}<span>{git.upstream ? t('Push') : t('Publish branch')}</span>{git.upstream && git.ahead > 0 && <span className="git-action-count" aria-hidden="true">{git.ahead}</span>}</button>}
-      </div>}
     </div>
     {error && <p className="inline-error git-message" role="alert">{error}</p>}
-    {notice && !error && <p className={'git-message git-notice' + (merging ? ' git-warning' : '')} role="status"><Icon name={merging ? 'alert' : 'check'} size={14}/>{notice}</p>}
+    {notice && !error && <p className={'git-message git-notice' + (merging ? ' git-warning' : '')} role="status"><Icon name={merging ? 'alert' : 'check'} size={14}/><span>{notice}</span></p>}
     <div className="git-panel-content">
-    <GitPane className="git-changes" title={t('Changes')} open={changesOpen} onToggle={() => toggleChanges()} actions={<>
-      <button type="button" className="icon-button" aria-label={t('Refresh changes')} title={t('Refresh changes')} disabled={Boolean(busy)} onClick={reload}>{busy === 'reload' ? <span className="spinner"/> : <Icon name="refresh" size={14}/>}</button>
-      <ActionMenu label={t('More Git actions')} disabled={Boolean(busy) || Boolean(merging)} actions={[
-        ...(ignored.length ? [{ label: t('Add to .gitignore'), detail: tn(ignored.length, '{n} build file', '{n} build files'), title: t('Untracked build output. Add to .gitignore adds:') + '\n' + patterns.join('\n'), icon: 'archive', select: ignore }] : []),
-        { label: t('Stage all changes'), icon: 'plus', disabled: !unstaged.length, select: () => stage(unstaged.filter(file => !ignorable(file)).map(file => file.path), true) },
-        { label: t('Unstage all changes'), icon: 'minus', disabled: !staged.length, select: () => stage(staged.map(file => file.path), false) },
-        { label: t('Discard all changes'), icon: 'undo', danger: true, disabled: !unstaged.length, select: () => setDiscarding(unstaged) },
-      ]}><Icon name="more" size={15}/></ActionMenu>
-    </>}>
       {merging && <div className={'git-merge' + (merging.conflicts.length ? '' : ' resolved')} role="group" aria-label={t('Merge in progress')}>
         <p><strong>{merging.conflicts.length ? tn(merging.conflicts.length, 'Merging: {n} file has conflicts', 'Merging: {n} files have conflicts') : t('Merging: no conflicts left')}</strong><span>{merging.message}</span></p>
         {resolution && <div className="git-merge-summary markdown" aria-label={t('{agent} on the merge', { agent: resolution.agent })}><Markdown text={resolution.summary}/></div>}
@@ -661,40 +657,42 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
       {!merging && <form className="git-commit-form" onSubmit={event => { event.preventDefault(); submitPrimary(); }}>
         <div className="git-message-box">
           <textarea aria-label={t('Commit message')} placeholder={placeholder} rows={1} value={message} readOnly={busy === 'commit' || busy === 'message'} onChange={event => saveMessage(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, touch())) { event.preventDefault(); commit(); } }}/>
-          <button type="button" className="icon-button git-generate" aria-label={t('Generate commit message')} title={t('Write a commit message for the chosen files with {agent}', { agent: AGENT_LABELS[writer.agent] })} disabled={Boolean(busy) || !chosen.length} onClick={() => void generate()}>{busy === 'message' ? <span className="spinner"/> : <Icon name="spark" size={15}/>}</button>
-        </div>
-        <div className="git-commit-split has-menu">
-          <button className="button primary git-commit-button" aria-label={primaryLabel} title={syncPrimary ? needsSync ? syncTitle : t('Up to date with the remote.') : commitTitle} disabled={primaryDisabled}>{busy === 'commit' || syncing ? <span className="spinner"/> : <Icon name={syncPrimary && needsSync ? 'refresh' : 'check'} size={15}/>}<span>{primaryLabel}</span>{syncPrimary && needsSync && sync}</button>
-          <ActionMenu label={t('More commit actions')} className="button primary git-commit-more" disabled={Boolean(busy)} actions={[
-            { label: t('Commit'), icon: 'check', disabled: commitDisabled, select: () => commit() },
-            { label: t('Commit and sync'), icon: 'refresh', disabled: commitDisabled || !canSync, select: () => commit('sync') },
-            { label: t('Sync'), icon: 'refresh', divider: true, disabled: !canSync, title: syncTitle, select: syncRemote },
-            ...(advanced ? [{ label: t('Commit (Amend)'), icon: 'undo', disabled: commitDisabled || !git.head, divider: true, select: () => commit('amend') },
-              ...(canPush ? [{ label: t('Commit and push'), icon: 'push', disabled: commitDisabled, select: () => commit('push') }] : [])] : []),
-          ]}><Icon name="chevronDown" size={14}/></ActionMenu>
+          <div className="git-compose-bar">
+            <button type="button" className="icon-button git-generate" aria-label={t('Generate commit message')} title={t('Write a commit message for the chosen files with {agent}', { agent: AGENT_LABELS[writer.agent] })} disabled={Boolean(busy) || !chosen.length} onClick={() => void generate()}>{busy === 'message' ? <span className="spinner"/> : <Icon name="spark" size={15}/>}</button>
+            <div className={'git-commit-split has-menu' + (busy === 'commit' || syncing ? ' is-busy' : '')}>
+              <button className="button primary git-commit-button" aria-label={primaryLabel} title={syncPrimary ? needsSync ? syncTitle : t('Up to date with the remote.') : commitTitle} disabled={primaryDisabled}>{busy === 'commit' || syncing ? <span className="spinner light"/> : <Icon name={syncPrimary && needsSync ? 'refresh' : 'check'} size={14}/>}<span>{primaryLabel}</span>{syncPrimary && needsSync && sync}</button>
+              <ActionMenu label={t('More commit actions')} className="button primary git-commit-more" disabled={Boolean(busy)} actions={[
+                { label: t('Commit'), icon: 'check', disabled: commitDisabled, select: () => commit() },
+                { label: t('Commit and sync'), icon: 'refresh', disabled: commitDisabled || !canSync, select: () => commit('sync') },
+                { label: t('Sync'), icon: 'refresh', divider: true, disabled: !canSync, title: syncTitle, select: syncRemote },
+                ...(advanced ? [{ label: t('Commit (Amend)'), icon: 'undo', disabled: commitDisabled || !git.head, divider: true, select: () => commit('amend') },
+                  ...(canPush ? [{ label: t('Commit and push'), icon: 'push', disabled: commitDisabled, select: () => commit('push') }] : [])] : []),
+              ]}><Icon name="chevronDown" size={13}/></ActionMenu>
+            </div>
+          </div>
         </div>
       </form>}
       <div className="git-file-lists">
+      {ignored.length > 0 && !merging && <button type="button" className="git-ignore-banner" title={t('Untracked build output. Add to .gitignore adds:') + '\n' + patterns.join('\n')} disabled={Boolean(busy)} onClick={ignore}><Icon name="archive" size={14}/><span>{t('Add to .gitignore')}</span><small>{tn(ignored.length, '{n} build file', '{n} build files')}</small></button>}
       {merging ? files.length > 0 && group('changes', files) : <>
         {staged.length > 0 && group('staged', staged)}
         {unstaged.length > 0 && group('changes', unstaged)}
       </>}
-      {!files.length && <p className="git-clean">{t('No uncommitted changes')}</p>}
+      {!files.length && <p className="git-clean"><Icon name="check" size={14}/><span>{t('No uncommitted changes')}</span></p>}
       </div>
-    </GitPane>
     </div>
-    </aside>
+    </section>
     <section className="git-details" aria-label={t('Workspace view')}>
-      <div className="git-detail-switcher view-selector" role="group" aria-label={t('Workspace view')}>
-        <button type="button" aria-pressed={detail === 'changes'} onClick={() => showDetail('changes')}><Icon name="diff" size={16}/><span>{t('Changes')}</span></button>
-        <button type="button" aria-pressed={detail === 'history'} onClick={() => showDetail('history')}><Icon name="restore" size={16}/><span>{t('Version history')}</span></button>
-      </div>
+      {!diffOpen && <div className="git-details-toolbar">
+        {switcher}
+        {detail === 'history' && !advanced && <button type="button" className="icon-button git-details-refresh" aria-label={t('Refresh version history')} title={t('Refresh version history')} disabled={Boolean(busy)} onClick={() => setHistoryRefresh(value => value + 1)}><Icon name="refresh" size={14}/></button>}
+      </div>}
       <div className="git-file-preview" hidden={detail !== 'changes'}>
-        {detail === 'changes' && source?.path ? <GitDiffView key={projectId + ':' + source.list + ':' + historyHash + ':' + source.path} path={source.path} scopeLabel={source.list === 'history' ? source.subject : source.list === 'staged' ? t('Staged changes') : t('Changes')} revision={historyHash || JSON.stringify([git.head?.hash, git.files, diffRefresh])} live={source.list !== 'history'} load={loadDiff} onClose={closeSource} closeLabel={t('Back to files')}/>
-          : <p className="git-empty-diff"><Icon name="check" size={18}/>{files.length ? t('Changes') : t('No uncommitted changes')}</p>}
+        {diffOpen && source ? <GitDiffView key={projectId + ':' + source.list + ':' + historyHash + ':' + source.path} lead={switcher} path={source.path} scopeLabel={source.list === 'history' ? source.subject : source.list === 'staged' ? t('Staged changes') : ''} revision={historyHash || JSON.stringify([git.head?.hash, git.files, diffRefresh])} live={source.list !== 'history'} load={loadDiff} onClose={closeSource}/>
+          : <p className="git-empty-diff"><Icon name={files.length ? 'diff' : 'check'} size={18}/><span>{files.length ? t('Changes') : t('No uncommitted changes')}</span></p>}
       </div>
       <div className="git-repository-view" hidden={detail !== 'history'}>
-    <VersionHistory git={git} busy={Boolean(busy)} load={loadHistory} loadVersion={loadVersion} selection={selection?.list === 'history' ? selection : null} onOpenDiff={onOpenDiff} restore={async (hash, head) => {
+    <VersionHistory git={git} busy={Boolean(busy)} collapsible={advanced} refreshKey={historyRefresh} load={loadHistory} loadVersion={loadVersion} selection={selection?.list === 'history' ? selection : null} onOpenDiff={onOpenDiff} restore={async (hash, head) => {
       if (busy) return;
       setBusy('restore'); setError(''); setNotice('');
       try {
@@ -1038,7 +1036,7 @@ function ManuscriptView({ notesRequest, taskCards, navigationGuard, collapsed, s
           onCreate={actions.add} onSelect={async note => { if (await closeReadingNotes()) setActive(note.id); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={pdfTools}
           onSource={async (target, key) => { if (!await closeReadingNotes()) return; setActive(''); setView('source'); setCollapsed(false); void source.open(target, key); }} passage={source.passage}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
-      {readingNotes && <aside className="pdf-reading-notes" aria-label={t('PDF note library')}><div className="pdf-reading-notes-head"><strong>{t('My notes')}</strong><button type="button" className="icon-button" aria-label={t('Close notes')} onClick={() => void closeReadingNotes()}><Icon name="close" size={16}/></button></div><NotesPanel key={project.id} controller={notesPanel} notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/></aside>}
+      {readingNotes && <><div aria-hidden="true" className="pdf-reading-notes-scrim" onClick={() => void closeReadingNotes()}/><aside className="pdf-reading-notes" aria-label={t('PDF note library')}><div className="pdf-reading-notes-head"><strong>{t('My notes')}</strong><button type="button" className="icon-button" aria-label={t('Close notes')} onClick={() => void closeReadingNotes()}><Icon name="close" size={16}/></button></div><NotesPanel key={project.id} controller={notesPanel} notes={notes} currentKey={build?.key} active={active} actions={actions} onShow={show} onAnnotate={annotate}/></aside></>}
     </section>}
     <aside id={panelId} className="manuscript-side" aria-label={t('Manuscript panels')} hidden={hidden}>
       <div className="manuscript-side-header">
@@ -1576,6 +1574,7 @@ function App() {
     if (!gitAvailable) return;
     if (manuscriptNavigationGuard.current && !await manuscriptNavigationGuard.current.save()) return;
     if (snapshotRef.current?.gitAvailable === false) return;
+    if (mobile && project) savePlace('git-view:' + project.id, 'changes');
     setSelected(''); setPage('git'); setRegion(false); setSidebar(false);
   }
   const loadManuscript = useCallback(async (projectId: string, rebuild = false) => {
@@ -1590,19 +1589,21 @@ function App() {
     } catch (e) { if (request === manuscriptRequest.current) setManuscript(current => ({ projectId, data: current.projectId === projectId ? current.data : null, error: e instanceof Error ? e.message : String(e) })); }
     finally { if (rebuild) { manuscriptBuildRequests.current.delete(projectId); setPendingManuscriptBuilds(new Set(manuscriptBuildRequests.current)); } }
   }, []);
+  const needsManuscript = manuscriptOpen || Boolean(task && (task.mode !== 'review' || task.preparation));
   const manuscriptBuilding = manuscript.projectId === project?.id && manuscript.data?.build.status === 'building';
+  const holdingLegacyManuscript = Boolean(task && !manuscriptOpen && !task.deferred && (task.review?.counts?.pending ?? 0) > 0 && manuscript.projectId === project?.id && manuscript.data);
   useEffect(() => {
-    if (!manuscriptOpen || !project) return;
+    if (!needsManuscript || !project || holdingLegacyManuscript) return;
     void loadManuscript(project.id);
     const focus = () => void loadManuscript(project.id);
     window.addEventListener('focus', focus);
     window.addEventListener('papilot:manuscript', focus);
     return () => { ++manuscriptRequest.current; window.removeEventListener('focus', focus); window.removeEventListener('papilot:manuscript', focus); };
-  }, [manuscriptOpen, project?.id, project?.path, loadManuscript]);
+  }, [needsManuscript, holdingLegacyManuscript, project?.id, project?.path, loadManuscript]);
   // Starting a compile switches to fast polling immediately, including a
   // manual retry made between the regular working-tree refreshes.
   useEffect(() => {
-    if (!manuscriptOpen || !project) return;
+    if ((!manuscriptOpen && !manuscriptBuilding) || !needsManuscript || !project) return;
     // Papilot compiles after its own writes and tells the view; this notices
     // edits saved by another editor.
     const delay = manuscriptBuilding ? 1500 : 5000;
@@ -1610,7 +1611,7 @@ function App() {
     const tick = async () => { await loadManuscript(project.id); if (!stopped) timer = setTimeout(() => void tick(), delay); };
     timer = setTimeout(() => void tick(), delay);
     return () => { stopped = true; clearTimeout(timer); };
-  }, [manuscriptOpen, project?.id, manuscriptBuilding, loadManuscript]);
+  }, [manuscriptOpen, needsManuscript, project?.id, manuscriptBuilding, loadManuscript]);
   // Accepting a change updates the working tree, so the status reloads with
   // the tasks' reviews as well as every 20 seconds.
   const reviewKey = (state?.tasks || []).filter(t => t.projectId === project?.id).map(t => `${t.review?.files?.join()}:${t.review?.counts?.accepted}`).join('|');
@@ -1808,10 +1809,7 @@ function App() {
   // telling the agent about them stays optional.
   const asksRevision = Boolean(reviewSubmission(localReview).notes.length || (pendingReviewFeedback(task?.review || null) && (task?.review?.comments ?? task?.review?.counts?.commented ?? 0) > 0));
   const active = Boolean(task && ACTIVE.includes(task.status));
-  const answerOnly = Boolean(task && task.mode !== 'review' && (noManuscriptChanges(task) || (active && task.review?.round === null)));
-  // Do not save this as the author's layout preference: switching back to a
-  // task with manuscript changes should restore their chosen review layout.
-  const taskLayout = answerOnly ? 'conversation' : layout, taskTab = answerOnly ? 'conversation' : mobileTab;
+  const taskLayout = layout, taskTab = mobileTab;
   const conversationVisible = mobile ? taskTab === 'conversation' : taskLayout !== 'review';
   const pause = () => { if (task) void action('/tasks/' + task.id + '/interrupt'); };
   // With only the chat in view, the feedback bar moves to the end of the conversation.
@@ -1897,15 +1895,13 @@ function App() {
           {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>{t('Retry deletion')}</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}><Icon name="refresh" size={14}/>{t('Check status')}</button> : active && !conversationVisible ? <button className="button secondary compact" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={pause}><Icon name="pause" size={14}/><span className="button-label">{t('Pause')}</span></button> : task.error ? <button className="button secondary compact" onClick={() => { setMobileTab('conversation'); setLayout('conversation'); }}>{t('View details')}</button> : null}
         </div>
   );
-  const workspaceViews = task && <div className={'view-selector workspace-view-selector' + (answerOnly ? ' single-view' : '')} role="group" aria-label={t('Workspace view')}>{answerOnly ?
-          <button type="button" aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} title={noManuscriptChanges(task) ? t('This conversation has no manuscript changes.') : t('Chat only')} aria-pressed="true"><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
-        : mobile ? <>
+  const workspaceViews = task && <div className="view-selector workspace-view-selector" role="group" aria-label={t('Workspace view')}>{mobile ? <>
           <button aria-label={pending ? t('Review, {n} to decide', { n: pending }) : t('Review')} aria-pressed={mobileTab === 'review'} onClick={() => selectLayout('review')}><Icon name="paper" size={16}/><span>{t('Review')}</span>{pending > 0 && <b className="view-count" aria-hidden="true">{pending}</b>}</button>
           <button aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} aria-pressed={mobileTab === 'conversation'} onClick={() => selectLayout('conversation')}><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
         </> : <>
           <button aria-label={t('Review')} title={t('PDF review only')} aria-pressed={layout === 'review'} onClick={() => selectLayout('review')}><Icon name="paper" size={16}/><span>{t('Review')}</span></button>
           <button aria-label={t('Split')} title={t('Review and chat side by side')} aria-pressed={layout === 'split'} onClick={() => selectLayout('split')}><Icon name="split" size={16}/><span>{t('Split')}</span></button>
-          <button aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} title={t('Chat only')} aria-pressed={layout === 'conversation'} onClick={() => selectLayout('conversation')}><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
+          <button aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} title={noManuscriptChanges(task) ? t('This conversation has no manuscript changes.') : t('Chat only')} aria-pressed={layout === 'conversation'} onClick={() => selectLayout('conversation')}><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
         </>}</div>;
   const taskControls = task && <>{taskStateActions}{workspaceViews}</>;
   const reviewOpen = task && fullPdfUrl ? <a className="icon-button review-open" href={reviewUrl(task)} target="_blank" rel="noreferrer" aria-label={t('Open review in new tab')} title={t('Open review in new tab')}><Icon name="external" size={16}/></a> : null;
@@ -1926,12 +1922,11 @@ function App() {
     <CompileButton key={project.id} label={t('Recompile PDF')} status={pendingManuscriptBuilds.has(project.id) ? 'building' : manuscriptData.error ? 'unknown' : manuscriptData.data?.build.status || 'unknown'} disabled={!manuscriptData.data && !manuscriptData.error} onCompile={async () => isPlayground ? requestPlaygroundDownload() : loadManuscript(project.id, true)}/>
   </>;
   const manuscriptNavigation = manuscriptOpen && project && <>
-    {manuscriptTools}
     <div className="view-selector manuscript-view-selector" role="group" aria-label={t('Manuscript view')}>
           <button aria-label="PDF" data-notes-home="pdf" aria-pressed={manuscriptView === 'pdf'} onClick={() => setManuscriptView('pdf')}><Icon name="pdf" size={16}/><span>PDF</span></button>
           <button aria-label={t('New task')} data-task-home aria-pressed={manuscriptView === 'task'} onClick={() => { setManuscriptView('task'); setRegion(false); }}><Icon name="compose" size={16}/><span>{t('New task')}</span>{noteSelection.selected.length > 0 && <b className="view-count" aria-hidden="true">{noteSelection.selected.length}</b>}</button>
         </div>
-    {manuscriptShare}
+    {manuscriptView === 'pdf' && <div className="workspace-nav-end">{manuscriptTools}{manuscriptShare}</div>}
   </>;
   const newTaskPanel = (attachments: React.ReactNode) => <section className={'new-task-panel' + (noteSelection.selected.length ? ' has-notes' : '')} aria-label={t('New task')}>
     <div className="new-task-start">
@@ -2023,9 +2018,9 @@ function App() {
       {task ? <div className={`task-grid layout-${taskLayout} show-${taskTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
           {!mobile && taskLayout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label={t('Resize chat panel')} aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title={t('Drag to resize · Double-click to reset')} onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
           <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
-          {!mobile && !chatOnly && (task.mode !== 'review' || task.preparation) && (!task.review?.round || task.status === 'deleting') && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}{!conversationVisible && workspaceViews}<div className="panel-tools">{!conversationVisible && taskStateActions}</div></div>}
-          {task.status === 'failed' && task.review?.job?.status === 'failed' && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('Could not generate the PDF comparison.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
-          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : task.preparation ? <PreparingTask task={task}/> : task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : task.review?.round ? <ReviewFrame key={task.id} task={task} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && <>{taskStateActions}{reviewOpen}</>}</>} completion={chatOnly ? null : applicationStep} onComment={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>}
+          {!mobile && !chatOnly && task.status === 'deleting' && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}{!conversationVisible && workspaceViews}<div className="panel-tools">{!conversationVisible && taskStateActions}</div></div>}
+          {(task.review?.state === 'build_failed' || task.status === 'failed' && task.review?.job?.status === 'failed') && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('Could not generate the PDF comparison.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
+          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : !task.preparation && task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : <TaskDocument key={task.id} projectId={task.projectId} manuscript={manuscriptData.data} placeholder={task.preparation ? <PreparingTask task={task}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>} task={task} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && workspaceViews}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && <>{taskStateActions}{reviewOpen}</>}</>} completion={chatOnly ? null : applicationStep} onComment={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}/>}
         </section><Activity key={task.id} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? <>{taskControls}{reviewOpen}</> : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/prepare')}><Icon name="refresh" size={14}/>{t('Retry')}</button>
             <button type="button" className="button secondary compact" onClick={() => setDeleteTarget(task)}><Icon name="trash" size={14}/>{t('Delete task…')}</button>

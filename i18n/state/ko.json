@@ -505,7 +505,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Changes": {
-    "revision": "46be66dd8570a4ccb40bda8865e7c10c11718ea018a66ae1df5b7737566ec6ed",
+    "revision": "262941886dda570a6c371d197a8dc78f9ddf9b5d3bf0070b02b343370a47025f",
     "textHash": "48125302a8d02c0d3bedfcd1f5176bab2d242ca49277df6ca90d0b0f66d6f884",
     "model": "gemini-4-argon-medium"
   },
@@ -1614,11 +1614,6 @@
     "textHash": "fd6b7b24b1d318c2ff8db1894f301da57880b5a6876986fe309b6cc9969de30f",
     "model": "gemini-4-argon-medium"
   },
-  "Enter a folder path": {
-    "revision": "e809d18b443effe6853c672323b6a21e7e9406267d97ff708c95b23643db2e7e",
-    "textHash": "c9f8dbd4ca9fa0ce64ef18c1158937407220f57233f78006d82bf1367d7c8c50",
-    "model": "gemini-4-argon-high"
-  },
   "Environment variable": {
     "revision": "4bfd544dc9d99928d28a7658cf117482876c659b9a3ed3a0e60c31630ba5dd20",
     "textHash": "6eeb4713cc7e4553bdd124297e1c6d1373b5024eaefa186a51a7c6a9ef6fe8d4",
@@ -2339,11 +2334,6 @@
     "textHash": "66693eef1b08260d641270962c518c534087b050c60b6e1fa1a0ed74156f4f0c",
     "model": "gemini-4-argon-medium"
   },
-  "More Git actions": {
-    "revision": "160fe2963f081e657c0ae0e82f5f3eb0e73c6582458093d17286adf23c268653",
-    "textHash": "25bb3c128227a71d432b3332da2b3844d019e85cea18619a777be0e566009f58",
-    "model": "gemini-4-argon-medium"
-  },
   "More commit actions": {
     "revision": "2b69e44f8c8df5d530e1d92879591a6c5eb4895ed946e1e03b505010dcc98148",
     "textHash": "cbd033c9f0b27ae70fe016171627d58c6d409b7bf105ded3da7e48ed02f9a8fa",
@@ -2750,7 +2740,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Opening the PDF…": {
-    "revision": "2fa5bdd2160280de42cf90321f631b80b5778a11281420e47dfe69ac1b953c97",
+    "revision": "8164a65549130bc69bdaa3bc057c2edcaa396dd205e9eb33e145f73301e10eeb",
     "textHash": "25e374ec4eaa967f86d08f5ba17751b36938cb49c3e363253ef887b61df88270",
     "model": "gemini-4-argon-medium"
   },
