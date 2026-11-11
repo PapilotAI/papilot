@@ -1575,18 +1575,19 @@ function App() {
   }, []);
   const needsManuscript = manuscriptOpen || Boolean(task && (task.mode !== 'review' || task.preparation));
   const manuscriptBuilding = manuscript.projectId === project?.id && manuscript.data?.build.status === 'building';
+  const holdingLegacyManuscript = Boolean(task && !manuscriptOpen && !task.deferred && (task.review?.counts?.pending ?? 0) > 0 && manuscript.projectId === project?.id && manuscript.data);
   useEffect(() => {
-    if (!needsManuscript || !project) return;
+    if (!needsManuscript || !project || holdingLegacyManuscript) return;
     void loadManuscript(project.id);
     const focus = () => void loadManuscript(project.id);
     window.addEventListener('focus', focus);
     window.addEventListener('papilot:manuscript', focus);
     return () => { ++manuscriptRequest.current; window.removeEventListener('focus', focus); window.removeEventListener('papilot:manuscript', focus); };
-  }, [needsManuscript, project?.id, project?.path, loadManuscript]);
+  }, [needsManuscript, holdingLegacyManuscript, project?.id, project?.path, loadManuscript]);
   // Starting a compile switches to fast polling immediately, including a
   // manual retry made between the regular working-tree refreshes.
   useEffect(() => {
-    if (!needsManuscript || !project) return;
+    if ((!manuscriptOpen && !manuscriptBuilding) || !needsManuscript || !project) return;
     // Papilot compiles after its own writes and tells the view; this notices
     // edits saved by another editor.
     const delay = manuscriptBuilding ? 1500 : 5000;
@@ -1594,7 +1595,7 @@ function App() {
     const tick = async () => { await loadManuscript(project.id); if (!stopped) timer = setTimeout(() => void tick(), delay); };
     timer = setTimeout(() => void tick(), delay);
     return () => { stopped = true; clearTimeout(timer); };
-  }, [needsManuscript, project?.id, manuscriptBuilding, loadManuscript]);
+  }, [manuscriptOpen, needsManuscript, project?.id, manuscriptBuilding, loadManuscript]);
   // Accepting a change updates the working tree, so the status reloads with
   // the tasks' reviews as well as every 20 seconds.
   const reviewKey = (state?.tasks || []).filter(t => t.projectId === project?.id).map(t => `${t.review?.files?.join()}:${t.review?.counts?.accepted}`).join('|');

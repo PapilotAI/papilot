@@ -385,6 +385,7 @@ export const PdfView = forwardRef<PdfHandle, {
     };
     bus.on('pagesinit', () => {
       const keep = restore.current; restore.current = null;
+      if (!keep && !returning && !box.clientHeight && place) returning = readPlace(place);
       viewer.currentScaleValue = pdfZoom(keep?.scale || returning?.scale || browserStorage.getItem(PDF_ZOOM_STORAGE));
       if (keep) { returning = undefined; box.scrollTop = keep.top; box.scrollLeft = keep.left; }
       else goBack();
@@ -398,6 +399,7 @@ export const PdfView = forwardRef<PdfHandle, {
     // viewer's actual bounds, while preserving an explicitly chosen percentage.
     let resizeFrame = 0;
     const resize = new ResizeObserver(() => {
+      if (!box.clientWidth || !box.clientHeight) { if (!returning && place) returning = readPlace(place); return; }
       cancelAnimationFrame(resizeFrame);
       resizeFrame = requestAnimationFrame(() => {
         if (!viewer.pagesCount || !box.clientWidth || !box.clientHeight) return;
@@ -410,7 +412,7 @@ export const PdfView = forwardRef<PdfHandle, {
     // The current section is the last bookmark above a line 40% down the view
     // (PDF units grow upwards); at the end of the document it is the last one.
     bus.on('updateviewarea', ({ location }: { location?: { pageNumber: number; top: number; left: number; scale: number } }) => {
-      if (!location) return;
+      if (!location || !box.clientHeight) return;
       if (place && !returning) savePlace(place, { page: location.pageNumber, left: location.left, top: location.top, scale: viewer.currentScaleValue });
       const items = latest.current.outline, reading = location.top - box.clientHeight * 0.4 / (viewer.currentScale * 96 / 72);
       let current = -1;
@@ -586,7 +588,7 @@ export const PdfView = forwardRef<PdfHandle, {
     const next = { url: props.url, words: props.words, key: props.pdfKey };
     const current = tools.current!, box = container.current!;
     let cancelled = false, attached = false;
-    if (loaded.current) restore.current = { scale: current.viewer.currentScaleValue, top: box.scrollTop, left: box.scrollLeft };
+    if (loaded.current && box.clientHeight > 0) restore.current = { scale: current.viewer.currentScaleValue, top: box.scrollTop, left: box.scrollLeft };
     setLoading(!loaded.current); setError('');
     const task = pdfjs.getDocument({ url: next.url, enableXfa: false, BinaryDataFactory: CMapData });
     void task.promise.then(async document => {
@@ -635,7 +637,7 @@ export const PdfView = forwardRef<PdfHandle, {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const viewer = tools.current?.viewer, mod = e.metaKey || e.ctrlKey;
-      if (!viewer || e.defaultPrevented || latest.current.suspended) return;
+      if (!viewer || e.defaultPrevented || latest.current.suspended || !container.current?.clientHeight) return;
       if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); if (findInput.current) findInput.current.select(); else setFindOpen(true); }
       else if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); viewer.increaseScale(); }
       else if (mod && e.key === '-') { e.preventDefault(); viewer.decreaseScale(); }
@@ -650,7 +652,7 @@ export const PdfView = forwardRef<PdfHandle, {
   // still turns the page), and Escape steps back: unlock, then Select.
   useEffect(() => {
     const keyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.metaKey || event.ctrlKey || event.altKey || latest.current.readOnly || latest.current.suspended) return;
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.metaKey || event.ctrlKey || event.altKey || latest.current.readOnly || latest.current.suspended || !container.current?.clientHeight) return;
       const focus = document.activeElement;
       if (typing(event.target) || (focus && focus !== document.body && !root.current?.contains(focus)) || document.querySelector('dialog[open]')) return;
       if (event.key === ' ') {
@@ -672,7 +674,7 @@ export const PdfView = forwardRef<PdfHandle, {
     const keyUp = (event: KeyboardEvent) => {
       if (event.key !== ' ' || !spaceRef.current.held) return;
       setSpaceHand(false);
-      if (latest.current.suspended) return;
+      if (latest.current.suspended || !container.current?.clientHeight) return;
       const box = container.current;
       if (!spaceRef.current.used && box) box.scrollBy({ top: (event.shiftKey ? -0.9 : 0.9) * box.clientHeight });
     };

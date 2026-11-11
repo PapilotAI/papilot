@@ -48,15 +48,18 @@ async function readable() {
   await expect(preview).toBeVisible();
   await expect(canvas).toBeVisible();
   await expect(preview.locator('.review-loading')).toHaveCount(0);
-  await expect.poll(() => canvas.evaluate(el => {
-    const host = el.closest('.pdf-scroll-host')?.getBoundingClientRect();
-    if (!host || el.width <= 0 || el.height <= 0) return false;
-    const rect = el.getBoundingClientRect();
-    const left = Math.max(rect.left, host.left), right = Math.min(rect.right, host.right);
-    const top = Math.max(rect.top, host.top), bottom = Math.min(rect.bottom, host.bottom);
-    if (right <= left || bottom <= top) return false;
-    const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
-    return Boolean(hit?.closest('.pdfViewer'));
+  await expect.poll(() => preview.locator('.pdfViewer').evaluate(viewer => {
+    const host = viewer.closest('.pdf-scroll-host')?.getBoundingClientRect();
+    if (!host) return false;
+    return Array.from(viewer.querySelectorAll('canvas')).some(el => {
+      if (el.width <= 0 || el.height <= 0) return false;
+      const rect = el.getBoundingClientRect();
+      const left = Math.max(rect.left, host.left), right = Math.min(rect.right, host.right);
+      const top = Math.max(rect.top, host.top), bottom = Math.min(rect.bottom, host.bottom);
+      if (right <= left || bottom <= top) return false;
+      const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+      return Boolean(hit?.closest('.pdfViewer'));
+    });
   })).toBe(true);
 }
 async function sync() { task.updatedAt++; await page.evaluate(() => window.dispatchEvent(new Event('focus'))); }
@@ -102,7 +105,16 @@ try {
     el.innerHTML = '<p>Changes are ready</p>';
   });
   await expect(page.locator('.task-document')).toHaveClass(/has-review/);
-  await expect.poll(() => requests.some(url => url.includes('/tasks/task/pdf?round=1'))).toBe(true);
+  await expect.poll(() => requests.some(url => url.includes('/tasks/task/pdf?round=1&retained=1'))).toBe(true);
+  await page.locator('.review-host-bar').getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(frame.locator('html')).toHaveAttribute('data-view', 'paper');
+  await frame.locator('#paper').evaluate(el => { el.innerHTML = '<div class="paper-status" role="status">Preparing the full PDF…</div>'; });
+  await readable();
+  await expect(preview.locator('.pdf-toolbar').getByRole('button', { name: 'Changes', exact: true })).toBeVisible();
+  await preview.locator('.pdf-toolbar').getByRole('button', { name: 'Changes', exact: true }).click();
+  await expect(frame.locator('html')).toHaveAttribute('data-view', 'changes');
+  await frame.locator('#paper').evaluate(el => { el.innerHTML = '<p>Changes are ready</p>'; });
+  await expect(page.locator('.task-document')).toHaveClass(/has-review/);
   await page.locator('.review-host-bar').getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(frame.locator('html')).toHaveAttribute('data-view', 'paper');
   await frame.locator('#paper').evaluate(el => { el.innerHTML = '<div class="paper-status" role="alert">Full PDF unavailable</div>'; });
@@ -138,10 +150,28 @@ try {
   await page.waitForTimeout(300);
   await page.screenshot({ path: 'test-results/persistent-pdf-mobile.png' });
   await page.setViewportSize({ width: 1440, height: 900 });
+  await readable();
+  const box = preview.locator('.pdf-container');
+  await preview.locator('.page[data-page-number="2"]').waitFor();
+  await expect.poll(() => box.evaluate(el => el.scrollHeight)).toBeGreaterThan(1800);
+  await box.evaluate(el => { el.scrollTop = el.scrollHeight * 0.62; });
+  await expect.poll(() => box.evaluate(el => Math.round(el.scrollTop))).toBeGreaterThan(500);
+  await page.waitForTimeout(250);
   await views.getByRole('button', { name: 'Chat', exact: true }).click();
-  task.status = 'running'; task.review = { state: 'editing', round: null, counts: {} }; await sync();
+  await expect(preview).toBeHidden();
+  await page.keyboard.press('Control+f');
+  await page.keyboard.press('Meta+f');
+  await expect(preview.getByRole('textbox', { name: 'Search the PDF', exact: true, includeHidden: true })).toHaveCount(0);
+  brokenReview = false;
+  task.status = 'running'; task.review = { state: 'editing', round: null, counts: {} };
+  manuscript.build = { status: 'ready', key: 'rebuilt', current: true };
+  await sync();
   await expect(page.locator('.task-grid')).toHaveClass(/layout-conversation/);
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:layout')), 'conversation');
+  await expect.poll(() => requests.some(url => url.includes('key=rebuilt'))).toBe(true);
+  await views.getByRole('button', { name: 'Split', exact: true }).click();
+  await readable();
+  await expect.poll(() => box.evaluate(el => Math.round(el.scrollTop))).toBeGreaterThan(500);
   assert.deepEqual(errors, []);
-  console.log('PASS: Persistent PDF across task states, no changes, failed replacement, review readiness/failure, reload, mobile, and explicit chat preference');
+  console.log('PASS: Persistent PDF across task states, no changes, failed replacement, review readiness/failure, PDF-mode escape, hidden Chat shortcuts/place retention, reload, and mobile');
 } finally { await browser.close(); await server.close(); }
