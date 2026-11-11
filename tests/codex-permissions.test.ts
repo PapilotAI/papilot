@@ -112,7 +112,8 @@ for (const initial of ['workspace', 'full'] as const) test(`real Codex switches 
     const closed = codex.child ? once(codex.child, 'close') : Promise.resolve();
     workspace.close(); await closed; store.close();
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
-    fs.rmSync(dir, { recursive: true, force: true });
+    // Codex's Windows sandbox can hold the folder for a moment after it closes.
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -144,7 +145,7 @@ test('on Windows, Codex threads get the sandbox that needs no setup unless the u
     assert.deepEqual(await start('linux'), { 'sandbox_workspace_write.network_access': true }, 'other systems are unchanged');
     fs.writeFileSync(path.join(home, 'config.toml'), '[windows]\nsandbox = "elevated"\n');
     assert.deepEqual(await start('win32'), { 'sandbox_workspace_write.network_access': true }, "the user's own sandbox is kept");
-  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+  } finally { fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
 });
 
 test('a Codex that exits while its config is read does not count as connected', { timeout: 30000 }, async () => {
