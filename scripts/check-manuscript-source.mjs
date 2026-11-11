@@ -193,8 +193,11 @@ try {
   await field.press('Escape');
   await expect(panel).toHaveCount(0);
   await page.locator('.pdf-container').focus(); await page.keyboard.press('v');
-  await word('closing').dblclick();
-  await page.locator('.add-source').click();
+  // A newer PDF of the last build may still replace the pages, and the selection with them.
+  await expect(async () => {
+    await word('closing').dblclick();
+    await page.locator('.add-source').click({ timeout: 3000 });
+  }).toPass({ timeout: 30000 });
   await expect(panel.locator('.cm-source-focus')).toContainText('closing');
   await expect(panel.locator('.cm-source-word'), 'the selected word stands out').toHaveText('closing');
 

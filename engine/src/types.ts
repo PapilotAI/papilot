@@ -595,6 +595,25 @@ export interface SourceEditRequest {
   revision: string;
   text: string;
 }
+/** A whole text file of a task, for an editor beside the review: as it is in
+ *  the task's worktree, which the latest round shows, and as it was when the
+ *  task started (null for a file the task added). */
+export interface SourceFileRead {
+  round: number;
+  file: string;
+  revision: string;
+  text: string;
+  base: string | null;
+}
+/** Replaces a whole file of a task, which must still be at `revision`, and
+ *  reviews the result in a new round. `round` is the one the file was read in. */
+export interface SourceFileSave {
+  id: string;
+  round: number;
+  file: string;
+  revision: string;
+  text: string;
+}
 export interface FeedbackItem {
   id: number;
   kind: Message["kind"];

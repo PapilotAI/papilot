@@ -46,7 +46,7 @@ import {
 } from "./references.tsx";
 import { bindingLabel, readShortcuts, resolveShortcuts, shortcutAction, SHORTCUT_EVENT, SHORTCUT_STORAGE } from "./shortcuts.ts";
 import { sendsMessage } from "./send-key.ts";
-import { CURRENT_CHANGE_EVENT, SELECT_SOURCE_EVENT, type CurrentChange, type SelectSource } from "./review-events.ts";
+import { CURRENT_CHANGE_EVENT, OPEN_SOURCE_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, type CurrentChange, type OpenSource, type SelectSource, type SourceSaved } from "./review-events.ts";
 import { DecisionQueue, Unreachable, withQueued, type QueuedDecision } from "./decision-queue.ts";
 import {
   STATE,
@@ -585,6 +585,18 @@ export function ReviewApp({
     };
     window.addEventListener(SELECT_SOURCE_EVENT, choose);
     return () => window.removeEventListener(SELECT_SOURCE_EVENT, choose);
+  });
+  // A file saved in the workspace's editor shows as an edit made here: the
+  // review continues from the new state, at the edited place.
+  useEffect(() => {
+    const saved = (event: Event) => {
+      const { state: next, file, line } = (event as CustomEvent<SourceSaved>).detail;
+      const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${current}"]`);
+      editedPlace.current = { file, line: line + 1, offset: article ? past(article) : 0, paper: paperView };
+      epoch.current++; setState(next);
+    };
+    window.addEventListener(SOURCE_SAVED_EVENT, saved);
+    return () => window.removeEventListener(SOURCE_SAVED_EVENT, saved);
   });
   useEffect(() => {
     let cancelled = false,
@@ -1445,6 +1457,13 @@ export function ReviewApp({
                   building={Boolean(state?.job && ["queued", "running"].includes(state.job.status))}
                   locked={!latest ? t("A newer round is available. Reload the page.") : decisions[unit.id] === "rejected" ? t("This change was rejected. Undo that decision before editing it.") : actionLock("source") || (waiting.has(unit.id) && detail!.rendering !== "failed" ? t("PDF comparison in progress") : null)}
                   onSaving={saving => { snapshot.current.busy = saving; setBusy(saving); }}
+                  onOpen={() => {
+                    const lines = unitLines(unit);
+                    if (!lines.length || unit.status === "deleted") return false;
+                    const request: OpenSource = { round: detail!.round, change: unit.id, file: unit.file, marks: lines,
+                      lines: [Math.min(...lines.map(range => range[0])), Math.max(...lines.map(range => Math.max(range[1], range[0] + 1)))] };
+                    return !window.dispatchEvent(new CustomEvent(OPEN_SOURCE_EVENT, { detail: request, cancelable: true }));
+                  }}
                   onSaved={next => {
                     const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${index}"]`);
                     editedPlace.current = { file: unit.file, line: unit.new_start, offset: article ? past(article) : 0, paper: paperView };

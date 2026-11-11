@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import type { BuildProblem, ManuscriptBuild, ManuscriptProblems, SourceFile, SourcePlace, SourceSave } from '../shared.ts';
+import type { BuildProblem, ManuscriptBuild, ManuscriptProblems, SourceFile, SourcePlace, SourceSave, TaskSourceSave } from '../shared.ts';
 import type { PdfHandle, PdfPassage, Rect, Target } from './pdf-view.tsx';
 import type { CurrentChange } from '../../engine/src/web/review-events.ts';
 import type { SourceCodeEditor } from './source-codemirror.ts';
@@ -17,6 +17,9 @@ import './source-panel.css';
 // last commit. A save writes the file and compiles the manuscript; the PDF
 // and the editor then flash the saved lines, or the tab shows the errors in
 // them and the last PDF stays.
+// The same editor edits a task's files beside its review, opened from a
+// change: it marks what the task changed, and a save is reviewed in a new
+// round.
 
 type Api = <T>(route: string, body?: unknown, signal?: AbortSignal, wait?: number) => Promise<T>;
 type Lines = [number, number];
@@ -64,18 +67,28 @@ interface Edit {
 // mark, and lines to flash.
 interface Reveal { lines: Lines; mark: boolean; caret: boolean; marks?: Lines[]; word?: [number, number]; flash?: Lines[] }
 
-export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, onLine }: {
-  api: Api; projectId: string; build?: ManuscriptBuild; head?: string | null; pdf: RefObject<PdfHandle | null>;
-  onProblems: () => void;
+export function useSourceEdit({ api, projectId, taskId, version, build, head, pdf, onProblems, onLine, onTaskSaved }: {
+  api: Api; projectId: string;
+  /** Edits this task's files, in its worktree, rather than the paper's. */
+  taskId?: string;
+  /** Changes when the files may have changed elsewhere, such as a task's round. */
+  version?: unknown;
+  build?: ManuscriptBuild; head?: string | null; pdf?: RefObject<PdfHandle | null>;
+  onProblems?: () => void;
   /** The author moved to a line (0-based) of the file, in the editor. */
   onLine?: (file: string, line: number) => void;
+  /** A task's file was saved: the review after the save, and the line (0-based) the author is at. */
+  onTaskSaved?: (state: unknown, file: string, line: number) => void;
 }) {
+  // Drafts are kept per paper, and per task.
+  const scope = taskId ? `task:${taskId}` : projectId;
+  const read = async (file: string) => normalize(await api<SourceFile>(taskId ? `/tasks/${taskId}/source?file=${encodeURIComponent(file)}` : `/projects/${projectId}/manuscript/source?file=${encodeURIComponent(file)}`));
   const [edit, setEdit] = useState<Edit | null>(null);
   const latest = useRef(edit); latest.current = edit;
   const [dirty, setDirty] = useState(false);
   const editor = useRef<SourceCodeEditor | null>(null), host = useRef<HTMLDivElement | null>(null);
   // The file version the editor holds, and what to show once it does.
-  const shown = useRef<{ file: string; revision: string; base: string | null } | null>(null), pending = useRef<Reveal | null>(null);
+  const shown = useRef<SourceFile | null>(null), pending = useRef<Reveal | null>(null);
   const request = useRef(0), saving = useRef(false), shownBuild = useRef(build); shownBuild.current = build;
   // Set while a kept draft is put back into the editor.
   const restoring = useRef(false);
@@ -92,7 +105,7 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
     const owner = request.current;
     return (change: (edit: Edit) => Edit) => { if (request.current === owner) update(change); };
   };
-  useEffect(() => { setEdit(null); request.current++; }, [projectId]);
+  useEffect(() => { setEdit(null); request.current++; }, [scope]);
   // The editor's code loads while the manuscript is idle, so the first
   // source opens without waiting for it.
   useEffect(() => {
@@ -126,15 +139,17 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
     if (!view || !file) return;
     const held = shown.current, loaded = !held || held.file !== file.file || (held.revision !== file.revision && view.text !== file.text);
     if (loaded) {
+      // Another file keeps the draft of the one it replaces.
+      if (held && held.file !== file.file) keepDraft(scope, held, view.text);
       // A kept draft comes back as one edit over the file on disk, which ⌘Z undoes.
-      const draft = held?.file === file.file ? null : readDraft(projectId, file);
+      const draft = held?.file === file.file ? null : readDraft(scope, file);
       view.load(file.text, file.base);
       if (draft !== null && draft !== file.text) {
         restoring.current = true;
         try { view.replace(draft); } finally { restoring.current = false; }
       }
     } else if (held.base !== file.base) view.setBase(file.base);
-    shown.current = { file: file.file, revision: file.revision, base: file.base };
+    shown.current = file;
     view.setReadOnly(Boolean(current?.saving));
     setDirty(view.text !== file.text);
     const reveal = pending.current;
@@ -205,16 +220,20 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
       if (again || !current?.file || !view || view.view.hasFocus || (current.file.file !== unit.file && dirty)) return;
       if (current.file.file === unit.file) { view.reveal(lines, { mark: true, caret: false, marks: unit.lines }); return; }
     } else showTab();
+    await openAt(unit.file, { lines, mark: true, caret: change.from === 'pick', marks: unit.lines, flash: change.from === 'pick' ? unit.lines : undefined });
+  }
+
+  // Opens a file, or moves within the one open, and shows `reveal` there.
+  async function openAt(name: string, reveal: Reveal) {
     const id = ++request.current;
-    const reveal: Reveal = { lines, mark: true, caret: change.from === 'pick', marks: unit.lines, flash: change.from === 'pick' ? unit.lines : undefined };
-    if (current?.file?.file === unit.file) {
+    if (latest.current?.file?.file === name) {
       update(value => ({ ...value, anchor: null, state: 'ready' }));
       show(reveal);
       return;
     }
     setEdit(value => ({ anchor: null, state: 'loading', compile: value?.compile }));
     try {
-      const file = normalize(await api<SourceFile>(`/projects/${projectId}/manuscript/source?file=${encodeURIComponent(unit.file)}`));
+      const file = await read(name);
       if (id !== request.current) return;
       pending.current = reveal;
       update(value => ({ ...value, state: 'ready', file }));
@@ -225,9 +244,9 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
     // The draft is kept, or dropped, now: the editor goes with the tab.
     const view = editor.current, file = latest.current?.file;
     clearTimeout(typing.current.timer);
-    if (view && file) keepDraft(projectId, file, view.text);
+    if (view && file) keepDraft(scope, file, view.text);
     request.current++; setEdit(null); setDirty(false);
-    pdf.current?.focus();
+    pdf?.current?.focus();
   }
 
   // Each keystroke: whether there are unsaved changes, and the draft, a
@@ -245,7 +264,7 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
       setDirty(text !== file.text);
       if (latest.current?.error) update(value => ({ ...value, error: undefined }));
       clearTimeout(typing.current.timer);
-      typing.current.timer = setTimeout(() => keepDraft(projectId, file, text), 400);
+      typing.current.timer = setTimeout(() => keepDraft(scope, file, text), 400);
     });
   };
   // Read from the editor itself: the dirty state renders a frame later.
@@ -273,48 +292,57 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
     saving.current = true;
     update(value => ({ ...value, saving: true, error: undefined }));
     try {
-      const result = await api<SourceSave>(`/projects/${projectId}/manuscript/source`, { id, file: file.file, revision: file.revision, text }, undefined, 60000);
-      browserStorage.removeItem(draftKey(projectId, file.file));
-      const saved = normalize(result.source);
-      if (shown.current?.file === saved.file) shown.current = { ...shown.current, revision: saved.revision };
-      const compile = { file: saved.file, tree: result.tree, before, since: result.at, lines: result.changed, state: 'building' as const };
+      let saved: SourceFile, compile: Edit['compile'];
+      if (taskId) {
+        // A task's file names the round it was read in; the review
+        // follows the save from the line the author is at.
+        const result = await api<TaskSourceSave>(`/tasks/${taskId}/source`, { id, round: file.round, file: file.file, revision: file.revision, text }, undefined, 120000);
+        saved = normalize(result.source);
+        const view = editor.current?.view, line = view ? view.state.doc.lineAt(view.state.selection.main.head).number - 1 : 0;
+        onTaskSaved?.(result.state, saved.file, line);
+      } else {
+        const result = await api<SourceSave>(`/projects/${projectId}/manuscript/source`, { id, file: file.file, revision: file.revision, text }, undefined, 60000);
+        saved = normalize(result.source);
+        compile = { file: saved.file, tree: result.tree, before, since: result.at, lines: result.changed, state: 'building' };
+      }
+      browserStorage.removeItem(draftKey(scope, file.file));
+      if (shown.current?.file === saved.file) shown.current = saved;
       // The save happened even if another passage was opened meanwhile; the
       // file shown takes the saved version when it is still this file.
-      update(value => ({ ...value, saving: false, compile, ...(value.file?.file === saved.file && (request.current === owner || value.file.revision === file.revision) ? { file: saved } : {}) }));
+      update(value => ({ ...value, saving: false, ...(compile ? { compile } : {}), ...(value.file?.file === saved.file && (request.current === owner || value.file.revision === file.revision) ? { file: saved } : {}) }));
     } catch (error) { update(value => ({ ...value, saving: false, ...(request.current === owner ? { error: message(error) } : {}) })); }
     finally { saving.current = false; }
   }
   actions.current.save = () => void save();
-
-
 
   // The file as it is on disk now, without the draft.
   async function reload() {
     const current = latest.current?.file, settle = settler();
     if (!current) return;
     try {
-      const file = normalize(await api<SourceFile>(`/projects/${projectId}/manuscript/source?file=${encodeURIComponent(current.file)}`));
-      browserStorage.removeItem(draftKey(projectId, current.file));
+      const file = await read(current.file);
+      browserStorage.removeItem(draftKey(scope, current.file));
       shown.current = null;
       settle(value => ({ ...value, error: undefined, file }));
     } catch (error) { settle(value => ({ ...value, error: message(error) })); }
   }
 
   // Another editor, an applied task or a commit changed the file or its last
-  // commit: an editor without unsaved changes shows the new version.
+  // commit, or the task's review moved to a new round: an editor without
+  // unsaved changes shows the new version.
   useEffect(() => {
     const current = latest.current?.file;
     if (!current || dirty || saving.current) return;
     const settle = settler();
-    void api<SourceFile>(`/projects/${projectId}/manuscript/source?file=${encodeURIComponent(current.file)}`).then(next => {
-      const file = normalize(next), now = latest.current?.file;
+    void read(current.file).then(file => {
+      const now = latest.current?.file;
       if (!now || now.file !== file.file) return;
       // Typing begun while the file was read keeps its text; saving it then
       // reports that the file changed.
       if (file.revision !== now.revision && (unsaved() || saving.current)) return;
-      if (file.revision !== now.revision || file.base !== now.base) settle(value => value.file?.file === file.file ? { ...value, file } : value);
+      if (file.revision !== now.revision || file.base !== now.base || file.round !== now.round) settle(value => value.file?.file === file.file ? { ...value, file } : value);
     }, () => undefined);
-  }, [build?.tree, head]);
+  }, [build?.tree, head, version]);
 
   // Follow the build of the last save. It succeeded when its tree compiled,
   // or a newer working tree did: one built after the save began, never the
@@ -340,7 +368,7 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
     try {
       const { place } = await api<{ place: SourcePlace | null }>(`/projects/${projectId}/manuscript/source/place?key=${encodeURIComponent(key)}&file=${encodeURIComponent(compile.file)}&start=${start}&end=${end}&near=${near}`);
       if (!showing()) return;
-      if (!place || !pdf.current) { editor.current?.flash([[start, end]]); return; }
+      if (!place || !pdf?.current) { editor.current?.flash([[start, end]]); return; }
       const anchor = { page: place.page, rect: place.rect, marks: [] };
       update(value => ({ ...value, anchor }));
       pdf.current.showPlace(place.page, place.rect, { keep: true });
@@ -370,12 +398,28 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
   const name = edit?.file ? edit.file.file.slice(edit.file.file.lastIndexOf('/') + 1) : t('LaTeX source');
   return {
     open, follow, close, editing: Boolean(edit),
+    /** Opens a file at lines, with `marks` within them standing out and flashing. */
+    reveal: (file: string, lines: Lines, marks: Lines[]) => void openAt(file, { lines, mark: true, caret: true, marks, flash: marks }),
     passage: edit?.anchor ? { page: edit.anchor.page, marks: edit.anchor.marks } as PdfPassage : undefined,
     // The tab names the file, with a dot while there are unsaved changes.
     tab: edit ? { file: edit.file?.file || '', name, dirty, saving: Boolean(edit.saving) } : null,
     panel: edit ? <SourcePanel edit={edit} dirty={dirty} mount={mount} onClose={close}
-      onReload={() => void reload()} onJump={jump} onProblems={onProblems}/> : null,
+      onReload={() => void reload()} onJump={jump} onProblems={onProblems ?? (() => undefined)}/> : null,
   };
+}
+
+/** The source tab, which closes itself like an editor's: a dot while
+ *  unsaved, a cross under the pointer. */
+export function SourceTab({ tab, selected, onSelect, onClose }: {
+  tab: { file: string; name: string; dirty: boolean; saving: boolean }; selected: boolean;
+  onSelect: () => void; onClose: () => void;
+}) {
+  const unsaved = `${t('Unsaved')} · ${t('Close (the draft is kept)')}`;
+  return <span className="side-tab-closable" role="presentation" data-selected={selected}>
+    <button role="tab" aria-selected={selected} title={tab.file || t('Edit source')} onClick={onSelect}><Icon name="toolSource" size={14}/><span className="tab-label">{tab.name}</span></button>
+    <button type="button" className="side-tab-close" data-dirty={tab.dirty || tab.saving || undefined}
+      aria-label={tab.dirty ? unsaved : t('Close')} title={tab.dirty ? unsaved : t('Close')} onClick={onClose}><Icon name="close" size={12}/></button>
+  </span>;
 }
 
 function SourcePanel({ edit, dirty, mount, onClose, onReload, onJump, onProblems }: {

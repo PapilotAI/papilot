@@ -1,4 +1,5 @@
 // Events between the review viewer and the workspace that embeds it.
+import type { PageState } from "../types.ts";
 
 /** The viewer's current change, sent on `window` whenever it changes:
  *  `from` says whether the author picked it, the viewer scrolled to it, or
@@ -16,3 +17,16 @@ export interface CurrentChange {
  *  viewer's `window` by the workspace. */
 export const SELECT_SOURCE_EVENT = "papilot:review:select-source";
 export interface SelectSource { file: string; line: number }
+
+/** The author asks to edit a change's source, sent on the viewer's `window`
+ *  and cancelable: a workspace with its own editor cancels it and opens the
+ *  file there, at `lines` (0-based, end excluded) with `marks` standing out;
+ *  otherwise the change's lines open for editing in the viewer. */
+export const OPEN_SOURCE_EVENT = "latex-review:open-source";
+export interface OpenSource { round: number; change: string; file: string; lines: [number, number]; marks: [number, number][] }
+
+/** The workspace saved a file of the task, sent on the viewer's `window`:
+ *  `state` is the review after the save, and the viewer stays at `line`
+ *  (0-based) of `file`, as after an edit made in the viewer. */
+export const SOURCE_SAVED_EVENT = "latex-review:source-saved";
+export interface SourceSaved { state: PageState; file: string; line: number }
