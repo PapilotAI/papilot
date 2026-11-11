@@ -10,52 +10,62 @@ runs:
     - id: packages
       shell: bash
       run: |
-        # Keep this list sorted: it is part of the cache key.
-        echo "list=latexmk poppler-utils texlive-lang-chinese texlive-latex-extra texlive-xetex" >> "$GITHUB_OUTPUT"
-        echo "dir=$HOME/.cache/papilot-tex-debs" >> "$GITHUB_OUTPUT"
-        # The image version is in the key: the cache holds only what that
-        # image lacks, and a newer image may need other versions or packages.
-        echo "key=tex-debs-$ImageOS-$ImageVersion-$(uname -m)-${{ hashFiles('.github/actions/setup-tex/action.yml') }}" >> "$GITHUB_OUTPUT"
+        packages="latexmk poppler-utils texlive-lang-chinese texlive-latex-extra texlive-xetex"
+        echo "list=$packages" >> "$GITHUB_OUTPUT"
+        # Outside $HOME, which apt's download user (_apt) cannot enter.
+        echo "dir=/tmp/papilot-tex-debs" >> "$GITHUB_OUTPUT"
+        # The cache holds only what this image lacks, so the image version is
+        # in the key, and so are the packages. Bump v1 when the way the
+        # packages are cached changes.
+        echo "prefix=tex-debs-v1-$ImageOS-$ImageVersion-$(uname -m)-$(sha256sum <<< "$packages" | cut -c1-16)-" >> "$GITHUB_OUTPUT"
 
+    # Each save adds a key of its own and a restore takes the newest, so a
+    # download that replaces a cache that would not install supersedes it.
     - id: cache
       uses: actions/cache/restore@v4
       with:
         path: ${{ steps.packages.outputs.dir }}
-        key: ${{ steps.packages.outputs.key }}
+        key: ${{ steps.packages.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: ${{ steps.packages.outputs.prefix }}
 
     - name: Install from the cached packages
       id: cached
-      if: steps.cache.outputs.cache-hit == 'true'
+      if: steps.cache.outputs.cache-matched-key != ''
       shell: bash
       env:
         DIR: ${{ steps.packages.outputs.dir }}
+        PACKAGES: ${{ steps.packages.outputs.list }}
       # Without package lists apt cannot fetch anything missing from the
       # cache; it fails instead, and the step below downloads as before.
       continue-on-error: true
-      run: sudo apt-get install -y --no-install-recommends --no-download "$DIR"/*.deb
+      run: |
+        sudo apt-get install -y --no-install-recommends --no-download "$DIR"/*.deb
+        dpkg-query -W $PACKAGES
 
     - name: Download and install the packages
       id: download
-      if: steps.cache.outputs.cache-hit != 'true' || steps.cached.outcome == 'failure'
+      if: steps.cache.outputs.cache-matched-key == '' || steps.cached.outcome == 'failure'
       shell: bash
       env:
         DIR: ${{ steps.packages.outputs.dir }}
         PACKAGES: ${{ steps.packages.outputs.list }}
       run: |
+        # Finish whatever a failed install from the cache left half done.
+        sudo dpkg --configure -a
         apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30)
-        rm -rf "$DIR" && mkdir -p "$DIR/partial"
+        sudo rm -rf "$DIR" && mkdir -p "$DIR/partial" && sudo chown _apt "$DIR/partial"
         sudo apt-get "${apt_options[@]}" update
         sudo apt-get "${apt_options[@]}" -o Dir::Cache::archives="$DIR" install -y --no-install-recommends --download-only $PACKAGES
         sudo apt-get -o Dir::Cache::archives="$DIR" install -y --no-install-recommends $PACKAGES
+        dpkg-query -W $PACKAGES
         # Only the packages themselves go in the cache, readable by the runner.
         sudo rm -rf "$DIR/partial" "$DIR/lock"
         sudo chown -R "$(id -u):$(id -g)" "$DIR"
-        ls "$DIR"/*.deb > /dev/null
+        if compgen -G "$DIR/*.deb" > /dev/null; then echo save=true >> "$GITHUB_OUTPUT"; fi
 
     # Saved right after the download, so a test failing later still keeps it.
-    # Two jobs saving the same key is harmless: the second one only warns.
-    - if: steps.download.outcome == 'success'
+    - if: steps.download.outputs.save == 'true'
       uses: actions/cache/save@v4
       with:
         path: ${{ steps.packages.outputs.dir }}
-        key: ${{ steps.cache.outputs.cache-primary-key }}
+        key: ${{ steps.packages.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
