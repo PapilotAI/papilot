@@ -13,90 +13,53 @@ runs:
         packages="latexmk poppler-utils texlive-lang-chinese texlive-latex-extra texlive-xetex"
         echo "list=$packages" >> "$GITHUB_OUTPUT"
         echo "dir=/tmp/papilot-tex-debs" >> "$GITHUB_OUTPUT"
-        # The cache holds only what this image lacks, so the image version is
-        # in the key, and so are the packages. Bump its version (v2) when the
-        # way the packages are cached changes.
-        echo "prefix=tex-debs-v2-$ImageOS-$ImageVersion-$(uname -m)-$(sha256sum <<< "$packages" | cut -c1-16)-" >> "$GITHUB_OUTPUT"
+        # The cache holds what this image lacks, so a new image (about weekly)
+        # starts a new one. Bump v3 to replace a cache that does not install.
+        echo "key=tex-debs-v3-$ImageOS-$ImageVersion-$(uname -m)-$(sha256sum <<< "$packages" | cut -c1-16)" >> "$GITHUB_OUTPUT"
 
-    # A save is keyed on what it holds and a restore takes the newest, so a
-    # download that repairs a cache that would not install supersedes it.
-    # No save has the bare prefix as its key: only restore-keys can match,
-    # so cache-hit is never true and the steps below test cache-matched-key.
     - id: cache
       uses: actions/cache/restore@v5
       with:
         path: ${{ steps.packages.outputs.dir }}
-        key: ${{ steps.packages.outputs.prefix }}
-        restore-keys: ${{ steps.packages.outputs.prefix }}
+        key: ${{ steps.packages.outputs.key }}
 
-    - name: Install from the cached packages
+    # dpkg installs the cached files and never downloads. (apt-get counts
+    # copying local packages as fetching, so --no-download refuses them.)
+    - name: Install from the cache
       id: cached
-      if: steps.cache.outputs.cache-matched-key != ''
-      shell: bash
-      env:
-        DIR: ${{ steps.packages.outputs.dir }}
-        PACKAGES: ${{ steps.packages.outputs.list }}
-      # dpkg installs only the cached files and never downloads: apt counts
-      # copying local packages as fetching, so apt-get --no-download refuses
-      # them. dpkg takes the files in name order, so a second pass installs
-      # those that needed one later in the order first. A package missing
-      # from the cache fails this step, and the step below finishes the
-      # install and downloads as before.
+      if: steps.cache.outputs.cache-hit == 'true'
       continue-on-error: true
-      run: |
-        sudo dpkg -i "$DIR"/*.deb || sudo dpkg -i "$DIR"/*.deb
-        bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
-
-    - name: Download and install the packages
-      id: download
-      if: steps.cache.outputs.cache-matched-key == '' || steps.cached.outcome == 'failure'
       shell: bash
       env:
         DIR: ${{ steps.packages.outputs.dir }}
         PACKAGES: ${{ steps.packages.outputs.list }}
-        PREFIX: ${{ steps.packages.outputs.prefix }}
-        RESTORED: ${{ steps.cache.outputs.cache-matched-key }}
       run: |
-        apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o DPkg::Lock::Timeout=120)
-        # Finish what a failed install from the cache left half done, if it
-        # can be; the install below repairs the rest (--fix-broken).
-        sudo dpkg --configure -a || true
-        sudo apt-get "${apt_options[@]}" update
-        # The set to cache: what this image still lacks, and everything a
-        # restored set held, as a failed install from it may have installed
-        # some. apt-get download fetches the current version of each, whether
-        # it is installed or not, into a folder of its own.
-        # A plan apt cannot make fails the step here, with apt's own error.
-        plan=$(apt-get -s -f install --no-install-recommends $PACKAGES)
-        needed=$(awk '/^Inst /{print $2}' <<< "$plan" | sort -u)
-        shopt -s nullglob
-        restored=$(for deb in "$DIR"/*.deb; do dpkg-deb -f "$deb" Package; done | sort -u)
-        rm -rf "$DIR" && mkdir -p "$DIR"
-        if [ -n "$needed" ]; then (cd "$DIR" && apt-get "${apt_options[@]}" download $needed); fi
-        # A restored package the archive has since dropped is left out.
-        for name in $(comm -13 <(echo "$needed") <(echo "$restored")); do
-          (cd "$DIR" && apt-get "${apt_options[@]}" download "$name") || echo "::notice::$name is no longer in the archive and is left out of the TeX cache."
-        done
-        debs=("$DIR"/*.deb)
-        if [ ${#debs[@]} -gt 0 ]; then
-          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends --fix-broken "${debs[@]}"
-          key="$PREFIX$(cd "$DIR" && sha256sum -- *.deb | sha256sum | cut -c1-16)"
-          echo "key=$key" >> "$GITHUB_OUTPUT"
-          # The same packages again: the cache did not fail for what it holds,
-          # so a new copy would not help, and it is not saved.
-          if [ "$key" = "$RESTORED" ]; then
-            echo "::warning::The cached TeX packages did not install, though they are the current ones; see the step before."
-          fi
-        fi
+        sudo dpkg -i "$DIR"/*.deb
         bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
 
-    # Saved right after the download, so a test failing later still keeps it.
-    # Only main saves, and runs started by hand to try a branch's cache: the
-    # cache of a pull request or release tag would add hundreds of megabytes
-    # no other ref can use, and they restore main's. When both jobs of a run
-    # download, the second save only warns.
-    - if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && steps.download.outputs.key != '' && steps.download.outputs.key != steps.cache.outputs.cache-matched-key
+    # Otherwise, or if that failed, install from the mirror as before, keeping
+    # the downloaded packages in the cache folder.
+    - name: Install from the mirror
+      id: download
+      if: steps.cache.outputs.cache-hit != 'true' || steps.cached.outcome == 'failure'
+      shell: bash
+      env:
+        DIR: ${{ steps.packages.outputs.dir }}
+        PACKAGES: ${{ steps.packages.outputs.list }}
+      run: |
+        apt=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o DPkg::Lock::Timeout=120 -o Dir::Cache::archives="$DIR" -o APT::Keep-Downloaded-Packages=true)
+        sudo dpkg --configure -a || true
+        mkdir -p "$DIR/partial" && sudo chown _apt "$DIR/partial"
+        sudo apt-get "${apt[@]}" update
+        sudo apt-get "${apt[@]}" install -y --no-install-recommends --fix-broken $PACKAGES
+        bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
+        sudo rm -rf "$DIR/partial" "$DIR/lock"
+        sudo chown -R "$(id -u):$(id -g)" "$DIR"
+
+    # Only main saves: pull requests restore its cache, and one of their own
+    # would add 274 MB that no other branch can use.
+    - if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' && steps.download.outcome == 'success'
       uses: actions/cache/save@v5
       with:
         path: ${{ steps.packages.outputs.dir }}
-        key: ${{ steps.download.outputs.key }}
+        key: ${{ steps.packages.outputs.key }}
