@@ -152,11 +152,11 @@ export async function readFile(root: string, file: unknown): Promise<SourceFile>
 
 // Saves already applied, so that a retried request returns its result
 // instead of reporting its own write as a conflict.
-const applied = new Map<string, { request: string; revision: string; result: Omit<SourceSave, 'tree'> }>();
+const applied = new Map<string, { request: string; revision: string; result: Omit<SourceSave, 'tree' | 'at'> }>();
 
 /** Replaces a file, which must still be at `revision`, keeping its line
  *  endings and byte order mark. `changed` is the range of lines that differ. */
-export async function saveSource(projectId: string, root: string, input: unknown): Promise<Omit<SourceSave, 'tree'>> {
+export async function saveSource(projectId: string, root: string, input: unknown): Promise<Omit<SourceSave, 'tree' | 'at'>> {
   const body = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
   const id = body.id, text = body.text, expected = body.revision;
   if (typeof id !== 'string' || !/^[A-Za-z0-9-]{1,80}$/.test(id)) throw new Error('Invalid source edit.');

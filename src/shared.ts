@@ -202,8 +202,9 @@ export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotation
 // PDF named and `focus` the lines it hit; `drifted` says the passage changed
 // after the PDF it was found in was compiled.
 export interface SourceFile { file: string; revision: string; text: string; base: string | null; passage: [number, number]; focus: [number, number]; drifted: boolean }
-// A saved file, the lines that changed, and the working tree whose build shows it.
-export interface SourceSave { source: SourceFile; changed: [number, number]; tree: string }
+// A saved file, the lines that changed, the working tree whose build shows
+// it, and when it was written, by the server's clock (as builds' `builtAt`).
+export interface SourceSave { source: SourceFile; changed: [number, number]; tree: string; at: number }
 // Where saved lines were printed in a PDF: a page (0-based) and a box as fractions of it.
 export interface SourcePlace { page: number; rect: [number, number, number, number] }
 export interface PaperImport {

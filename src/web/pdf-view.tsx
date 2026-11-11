@@ -200,8 +200,8 @@ export const PdfView = forwardRef<PdfHandle, {
   place?: string;
   /** Keep reading state mounted while another workspace view is in front. */
   suspended?: boolean;
-  /** Offers the source tool; a click or drag with it names a passage. */
-  onSource?: (target: Target) => void;
+  /** Offers the source tool; a click or drag with it names a passage, on the PDF named `key`. */
+  onSource?: (target: Target, key?: string) => void;
   passage?: PdfPassage;
 }>(function PdfView(props, ref) {
   const latest = useRef(props); latest.current = props;
@@ -729,7 +729,7 @@ export const PdfView = forwardRef<PdfHandle, {
     const tool = toolRef.current;
     if (tool === 'hand') return;
     if (tool === 'delete') { if (!target.point) createMark(target, '', { kind: 'delete' }); return; }
-    if (tool === 'source') { clearSelection(); latest.current.onSource?.(target); return; }
+    if (tool === 'source') { clearSelection(); latest.current.onSource?.(target, shownRef.current.key); return; }
     if (tool === 'magic') {
       const slot = lockedRef.current, stamp = slot === null ? undefined : stamps[slot];
       if (stamp) createMark(target, stamp.instruction, { stamp: stamp.label });
@@ -888,7 +888,7 @@ export const PdfView = forwardRef<PdfHandle, {
       </>}
       {markable && selection?.page === number - 1 && !editing && (active === 'select' || active === 'note' || selection.handles) && <button type="button" className={'add-note' + (selection.handles ? ' touch' : '')} aria-label={pillTool === 'delete' ? t('Delete') : pillTool === 'magic' ? t('Quick notes') : pillGroup ? t('Add to {group}', { group: groupName(pillGroup) }) : t('Add note')} style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={() => { if (pillTool) mark(selected(selection)); else startNote(); }}>{pillTool === 'delete' ? <><Icon name="toolStrike" size={14}/>{t('Delete')}</> : pillTool === 'magic' ? <><Icon name="toolMagic" size={14}/>{t('Quick notes')}</> : <><Icon name="pencil" size={14}/><GroupAction group={pillGroup}/></>}</button>}
       {/* Beside "Add note", the Select tool also offers the passage's LaTeX. */}
-      {markable && props.onSource && selection?.page === number - 1 && !selection.handles && !editing && active === 'select' && <button type="button" className="add-source" aria-label={t('Edit source')} title={t('Edit source')} style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={() => { const target = selected(selection); clearSelection(); props.onSource!(target); }}><Icon name="toolSource" size={15}/></button>}
+      {markable && props.onSource && selection?.page === number - 1 && !selection.handles && !editing && active === 'select' && <button type="button" className="add-source" aria-label={t('Edit source')} title={t('Edit source')} style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={() => { const target = selected(selection); clearSelection(); props.onSource!(target, shownRef.current.key); }}><Icon name="toolSource" size={15}/></button>}
       {editing?.page === number - 1 && <>
         {editing.point ? <div className="note-point draft" style={center(editing.rect)}/> : (editing.rects.length ? editing.rects : [editing.rect]).map((rect, index) => <div key={index} className={(editing.rects.length ? 'note-mark' : 'note-box') + ' draft'} style={percent(rect)}/>)}
         <PdfNoteCard note={{ rect: editing.rect, comment: '', ...(editing.point ? { kind: 'point' as const } : {}) }} number={notes.length + 1} index={0} total={1} selected={false} busy={noteLocked} error={noteError}

@@ -53,9 +53,10 @@ interface Edit {
   file?: SourceFile;
   error?: string;
   saving?: boolean;
-  // The build of the last save, recognized by the working tree it compiles;
-  // `before` is the tree of the build shown when the save began.
-  compile?: { tree: string; before?: string; lines: Lines; state: 'building' | 'ready' | 'failed'; problems?: BuildProblem[]; others?: number };
+  // The build of the last save, of `file`, recognized by the working tree it
+  // compiles; `before` is the tree of the build shown when the save began,
+  // and `since` when the file was written, by the server's clock.
+  compile?: { file: string; tree: string; before?: string; since: number; lines: Lines; state: 'building' | 'ready' | 'failed'; problems?: BuildProblem[]; others?: number };
 }
 // What the editor shows next, once it holds the file: lines to scroll to and
 // mark, and lines to flash.
@@ -144,8 +145,10 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
   useEffect(sync, [edit?.file, edit?.saving, tick]);
 
   // A click or selection on the PDF named a passage.
-  async function open(target: Target) {
-    const key = build?.key;
+  // `shownKey` names the PDF the click was on, which may still be on screen
+  // while a newer one loads.
+  async function open(target: Target, shownKey?: string) {
+    const key = shownKey ?? build?.key;
     if (!key) return;
     // The demo has no files to write; it offers the download instead.
     if (isPlayground) { window.dispatchEvent(new Event('papilot:playground-download')); return; }
@@ -248,10 +251,15 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
     if (file && onLine) lineTimer.current = setTimeout(() => onLine(file, line), 120);
   };
 
+  // Saving the same text over the same version again reuses the request's
+  // identity, so a save whose answer was lost is recognized, not refused.
+  const lastSave = useRef<{ file: string; revision: string; text: string; id: string } | null>(null);
   async function save(text = editor.current?.text) {
     const current = latest.current;
     if (!current?.file || saving.current || text === undefined || text === current.file.text) return;
-    const { file } = current, id = uuid(), before = shownBuild.current?.tree, settle = settler();
+    const { file } = current, before = shownBuild.current?.tree, owner = request.current, again = lastSave.current;
+    const id = again && again.file === file.file && again.revision === file.revision && again.text === text ? again.id : uuid();
+    lastSave.current = { file: file.file, revision: file.revision, text, id };
     saving.current = true;
     update(value => ({ ...value, saving: true, error: undefined }));
     try {
@@ -259,8 +267,11 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
       browserStorage.removeItem(draftKey(projectId, file.file));
       const saved = normalize(result.source);
       if (shown.current?.file === saved.file) shown.current = { ...shown.current, revision: saved.revision };
-      settle(value => ({ ...value, saving: false, file: saved, compile: { tree: result.tree, before, lines: result.changed, state: 'building' } }));
-    } catch (error) { settle(value => ({ ...value, saving: false, error: message(error) })); }
+      const compile = { file: saved.file, tree: result.tree, before, since: result.at, lines: result.changed, state: 'building' as const };
+      // The save happened even if another passage was opened meanwhile; the
+      // file shown takes the saved version when it is still this file.
+      update(value => ({ ...value, saving: false, compile, ...(value.file?.file === saved.file && (request.current === owner || value.file.revision === file.revision) ? { file: saved } : {}) }));
+    } catch (error) { update(value => ({ ...value, saving: false, ...(request.current === owner ? { error: message(error) } : {}) })); }
     finally { saving.current = false; }
   }
   actions.current.save = () => void save();
@@ -286,43 +297,50 @@ export function useSourceEdit({ api, projectId, build, head, pdf, onProblems, on
     if (!current || dirty || saving.current) return;
     const settle = settler();
     void api<SourceFile>(`/projects/${projectId}/manuscript/source?file=${encodeURIComponent(current.file)}`).then(next => {
-      const file = normalize(next);
-      if (file.revision !== current.revision || file.base !== current.base) settle(value => value.file?.file === file.file ? { ...value, file } : value);
+      const file = normalize(next), now = latest.current?.file;
+      if (!now || now.file !== file.file) return;
+      // Typing begun while the file was read keeps its text; saving it then
+      // reports that the file changed.
+      if (file.revision !== now.revision && (unsaved() || saving.current)) return;
+      if (file.revision !== now.revision || file.base !== now.base) settle(value => value.file?.file === file.file ? { ...value, file } : value);
     }, () => undefined);
   }, [build?.tree, head]);
 
   // Follow the build of the last save. It succeeded when its tree compiled,
-  // or a newer working tree did (never the build already shown before the
-  // save, whose status may still say current); it failed when its own tree
-  // did not compile.
+  // or a newer working tree did: one built after the save began, never the
+  // build shown before it or a late answer about one, whose status may still
+  // say current. It failed when its own tree did not compile.
   useEffect(() => {
     const compile = latest.current?.compile;
     if (!compile || compile.state !== 'building' || !build || build.status === 'building') return;
-    const ours = build.tree === compile.tree, newer = build.current && build.tree !== compile.before;
+    const ours = build.tree === compile.tree, newer = build.current && build.tree !== compile.before && (build.builtAt ?? 0) >= compile.since;
     if (build.status === 'ready' && (ours || newer) && build.key) void compiled(build.key, compile.tree);
     else if (build.status === 'failed' && ours) void failed(compile.tree);
   }, [build?.status, build?.tree, build?.key, build?.current, edit?.compile?.tree]);
 
+  // The saved lines flash in the PDF and the editor, while the editor still
+  // shows the saved file; another file opened since is left as it is.
   async function compiled(key: string, tree: string) {
     update(value => value.compile?.tree === tree ? { ...value, compile: { ...value.compile, state: 'ready' } } : value);
-    const current = latest.current;
-    if (!current?.file || !current.compile || current.compile.lines[1] <= current.compile.lines[0]) return;
-    const [start, end] = current.compile.lines, near = current.anchor?.page ?? 0;
+    const compile = latest.current?.compile;
+    if (!compile || compile.tree !== tree || compile.lines[1] <= compile.lines[0]) return;
+    const [start, end] = compile.lines, near = latest.current?.anchor?.page ?? 0;
+    const showing = () => latest.current?.file?.file === compile.file && latest.current?.compile?.tree === tree;
     try {
-      const { place } = await api<{ place: SourcePlace | null }>(`/projects/${projectId}/manuscript/source/place?key=${encodeURIComponent(key)}&file=${encodeURIComponent(current.file.file)}&start=${start}&end=${end}&near=${near}`);
-      if (latest.current?.compile?.tree !== tree) return;
+      const { place } = await api<{ place: SourcePlace | null }>(`/projects/${projectId}/manuscript/source/place?key=${encodeURIComponent(key)}&file=${encodeURIComponent(compile.file)}&start=${start}&end=${end}&near=${near}`);
+      if (!showing()) return;
       if (!place || !pdf.current) { editor.current?.flash([[start, end]]); return; }
       const anchor = { page: place.page, rect: place.rect, marks: [place.rect] };
       update(value => ({ ...value, anchor }));
       pdf.current.showPlace(place.page, place.rect, { keep: true });
       editor.current?.flash([[start, end]]);
-    } catch { editor.current?.flash([[start, end]]); }
+    } catch { if (showing()) editor.current?.flash([[start, end]]); }
   }
 
   async function failed(tree: string) {
-    const current = latest.current;
-    if (!current?.file || !current.compile) return;
-    const file = current.file.file, [start, end] = current.compile.lines;
+    const compile = latest.current?.compile;
+    if (!compile || compile.tree !== tree) return;
+    const file = compile.file, [start, end] = compile.lines;
     let problems: BuildProblem[] = [], others = 0;
     try {
       const errors = (await api<ManuscriptProblems>(`/projects/${projectId}/manuscript/problems`, undefined, undefined, 60000)).problems.filter(problem => problem.severity === 'error');

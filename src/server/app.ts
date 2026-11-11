@@ -617,8 +617,8 @@ export async function buildApp(options: AppOptions) {
     const project = store.project(request.params.id);
     // Like reverting a change: one Git write at a time, never during a commit.
     return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
-      const saved = await saveSource(project.id, project.path, request.body);
-      return { ...saved, tree: await manuscripts.written(project.id, project.path) };
+      const saved = await saveSource(project.id, project.path, request.body), at = Date.now();
+      return { ...saved, tree: await manuscripts.written(project.id, project.path), at };
     }));
   });
   app.get<{ Params: { id: string }; Querystring: { key?: string; file?: string; start?: string; end?: string; near?: string } }>('/api/projects/:id/manuscript/source/place', project(), request => {
