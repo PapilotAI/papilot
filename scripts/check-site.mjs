@@ -260,11 +260,11 @@ try {
       }
       await page.keyboard.press('Escape');
       const panels = await page.locator('.scene').evaluateAll(apps => apps.map(app => {
-        const pdf = app.querySelector('.app-pdf').getBoundingClientRect();
-        const target = app.querySelector(app.dataset.scene === 'notes' ? '.scene-figure' : app.dataset.scene === 'revise' ? '.review-change' : '.scene-text').getBoundingClientRect();
-        return { scene: app.dataset.scene, bottom: target.bottom - pdf.top, height: pdf.height };
+        const pane = app.querySelector(app.dataset.scene === 'record' ? '.app-history' : '.app-pdf').getBoundingClientRect();
+        const target = app.querySelector(app.dataset.scene === 'notes' ? '.scene-figure' : app.dataset.scene === 'revise' ? '.review-change' : '.git-new').getBoundingClientRect();
+        return { scene: app.dataset.scene, bottom: target.bottom - pane.top, height: pane.height };
       }));
-      for (const panel of panels) assert.ok(panel.bottom <= panel.height - 6, `${locale}/${width}: ${panel.scene} content stays inside its PDF pane`);
+      for (const panel of panels) assert.ok(panel.bottom <= panel.height - 6, `${locale}/${width}: ${panel.scene} content stays inside its pane`);
       if (width === 390 || width === 1440) {
         await page.screenshot({ path: `test-results/site/${locale}-${width}-hero.png` });
         await page.locator('#why').screenshot({ style: '.topbar{visibility:hidden!important}', path: `test-results/site/${locale}-${width}-why.png` });

@@ -15,7 +15,7 @@ export async function checkSiteTheme(browser, origin, watch = () => {}) {
       ['.app-window, .mini, .app-chat, .app-git, .demo-note, .mini-comment', dark ? 'rgb(38, 39, 43)' : 'rgb(255, 255, 255)'],
       ['.review-page, .mini-page', dark ? 'rgb(41, 41, 41)' : 'rgb(255, 255, 255)'],
       ['.app-pdf', dark ? 'rgb(30, 31, 34)' : 'rgb(236, 238, 241)'],
-      ['.review-head, .mini-head, .chat-pending', dark ? 'rgb(42, 43, 47)' : 'rgb(250, 250, 250)'],
+      ['.review-head, .mini-head, .draft-note', dark ? 'rgb(42, 43, 47)' : 'rgb(250, 250, 250)'],
       ['.chat-bubble', dark ? 'rgb(48, 49, 53)' : 'rgb(244, 244, 244)'],
     ];
     for (const [selector, background] of surfaces) {

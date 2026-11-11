@@ -28,6 +28,49 @@
 </head>
 <body>
 
+<!-- The app's own icons (src/web/icons.tsx), drawn once and used by every window below. -->
+<svg class="sprite" aria-hidden="true">
+<symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M9 3v18"/></symbol>
+<symbol id="i-paper" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5M16 13H8M16 17H8M10 9H8"/></symbol>
+<symbol id="i-diff" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6m-3-3v6m-3 4h6"/></symbol>
+<symbol id="i-pdf" viewBox="0 0 24 24"><path d="M4 9V4a2 2 0 0 1 2-2h9l5 5v2M14 2v5h6M4 20a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2"/><path stroke-width="1.5" d="M2.5 18v-6h2a2 2 0 0 1 0 4h-2M9.5 12v6h1.5a3 3 0 0 0 0-6ZM17 18v-6h4m-4 3h3"/></symbol>
+<symbol id="i-compose" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+<symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M14 3v18"/></symbol>
+<symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></symbol>
+<symbol id="i-compile" viewBox="0 0 24 24"><path d="M6 3.5 21 12 6 20.5Z" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+<symbol id="i-notes" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/><path d="M8 8h8M8 12h5"/></symbol>
+<symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5m-7 7 7-7 7 7"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="i-tool-select" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M16.12 20.83C15.95 20.75 15.67 20.51 15.49 20.31C14.74 19.47 11.55 16.12 11.50 16.12C11.48 16.13 11.13 16.63 10.74 17.24C9.60 19.02 9.12 19.42 8.33 19.27C8 19.21 7.51 18.82 7.34 18.49C7.11 18.04 3.84 5.07 3.84 4.60C3.84 4.17 3.93 3.98 4.38 3.52C4.76 3.13 5.21 2.95 5.64 3.05C5.87 3.10 11.53 5.49 16.16 7.49C17.04 7.87 17.88 8.23 18.03 8.29C18.18 8.35 18.47 8.58 18.68 8.81C19.05 9.20 19.07 9.24 19.07 9.73C19.07 10.51 18.75 10.81 17.04 11.63C16.30 11.99 15.71 12.31 15.72 12.35C15.73 12.38 16.67 13.40 17.80 14.61C18.94 15.82 19.93 16.95 20.01 17.12C20.20 17.52 20.19 17.93 20 18.35C19.80 18.77 17.84 20.71 17.43 20.88C17.03 21.04 16.48 21.03 16.12 20.83ZM17.71 18.53C18.30 17.93 18.48 17.71 18.42 17.61C18.38 17.54 17.57 16.66 16.63 15.65C13.22 12.03 13.51 12.38 13.51 12.02C13.51 11.54 13.76 11.36 15.55 10.52C16.42 10.11 17.10 9.75 17.06 9.71C16.96 9.61 5.59 4.76 5.55 4.80C5.51 4.83 6.73 9.69 8.02 14.69C8.33 15.87 8.60 16.94 8.62 17.07C8.64 17.19 8.68 17.30 8.71 17.30C8.74 17.30 9.19 16.64 9.71 15.84C10.90 14.02 11.10 13.82 11.59 14.01C11.71 14.05 12.91 15.26 14.26 16.70C15.62 18.14 16.77 19.32 16.83 19.32C16.88 19.32 17.28 18.96 17.71 18.53Z"/></symbol>
+<symbol id="i-tool-note" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M3.30 20.75C3.15 20.57 3.08 20.39 3.08 20.19C3.08 20.02 3.40 18.70 3.78 17.26L4.48 14.63L7.95 11.10C13.79 5.16 15.63 3.36 16.05 3.17C16.32 3.05 16.59 3 17.12 3C18.12 3 18.42 3.17 19.59 4.36C20.71 5.51 20.87 5.81 20.87 6.76C20.87 7.95 21.13 7.63 14.97 13.85C11.96 16.88 9.40 19.40 9.28 19.45C8.40 19.78 4.16 21 3.87 21C3.57 21 3.47 20.96 3.30 20.75ZM6.65 17.38C6.15 16.86 5.77 16.54 5.73 16.59C5.68 16.65 5.06 18.83 5.06 18.96C5.06 18.98 5.61 18.83 6.29 18.62L7.51 18.25L6.65 17.38ZM14.38 12.07L17.06 9.37L15.79 8.08L14.52 6.80L10.52 10.85L6.52 14.90L7.80 16.18L9.07 17.46L10.38 16.11C11.10 15.37 12.90 13.55 14.38 12.07ZM19.23 6.93C19.26 6.77 19.24 6.57 19.18 6.46C19 6.11 17.59 4.74 17.31 4.65C16.97 4.53 16.57 4.73 16.05 5.27L15.68 5.64L16.96 6.93L18.23 8.21L18.70 7.71C19.02 7.38 19.19 7.12 19.23 6.93Z"/><path className="tool-note-line" fill="currentColor" stroke="none" fill-rule="evenodd" d="M10.89 20.75C10.76 20.58 10.68 20.39 10.68 20.22C10.68 20.04 10.76 19.85 10.89 19.69L11.11 19.43L15.81 19.43L20.51 19.43L20.71 19.63C20.87 19.79 20.92 19.92 20.92 20.22C20.92 20.51 20.87 20.64 20.71 20.80L20.51 21L15.81 21L11.11 21L10.89 20.75Z"/></symbol>
+<symbol id="i-tool-magic" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9.54 19.91C9.25 19.70 9.15 19.41 9.15 18.71C9.15 18.07 9.15 18.06 8.98 18.11C8.11 18.35 7.61 18.41 6.41 18.41C5.35 18.41 5.07 18.39 4.72 18.27C3.39 17.81 2.82 16.83 3.07 15.41C3.36 13.73 5.12 11.59 7.80 9.65C8.97 8.81 8.93 8.85 9.78 7.25C10.22 6.43 10.75 5.44 10.96 5.04C11.48 4.06 11.57 3.97 12 3.97C12.45 3.97 12.51 4.04 13.25 5.41L13.84 6.50L14.36 6.32C15.55 5.92 16.35 5.76 17.50 5.72C19.12 5.66 19.81 5.85 20.45 6.55C21.38 7.56 21.12 9.31 19.76 11.12C19.18 11.89 17.67 13.36 16.71 14.09C16.03 14.61 15.98 14.66 15.72 15.23C15.10 16.59 14.85 17.61 14.85 18.81C14.85 19.51 14.85 19.52 14.60 19.77L14.34 20.03L12.02 20.03C10.05 20.03 9.68 20.01 9.54 19.91ZM18.01 18.84C17.98 18.77 17.87 18.47 17.78 18.17C17.60 17.57 17.54 17.51 16.79 17.29C16.29 17.15 16.18 17.04 16.21 16.75C16.24 16.55 16.29 16.52 16.91 16.31L17.59 16.09L17.76 15.53C17.99 14.78 18.01 14.74 18.28 14.71C18.56 14.69 18.62 14.76 18.81 15.42C19 16.06 19.10 16.15 19.73 16.32C20.31 16.47 20.49 16.61 20.46 16.87C20.43 17.09 20.25 17.19 19.64 17.36C19.09 17.51 19.01 17.59 18.82 18.25C18.73 18.54 18.62 18.83 18.58 18.88C18.47 19.02 18.09 19 18.01 18.84ZM13.57 18.45L13.57 18.15L12 18.15L10.42 18.15L10.42 18.45L10.42 18.75L12 18.75L13.57 18.75L13.57 18.45ZM7.95 16.94C11.04 16.27 14.96 14.05 17.52 11.51C19.26 9.80 20.03 8.19 19.46 7.51C19.10 7.08 18.19 6.90 17.13 7.05C16.51 7.14 14.80 7.58 14.59 7.71C14.53 7.75 14.81 8.32 15.54 9.68C16.74 11.90 16.78 12.05 16.30 12.44C16 12.68 15.67 12.74 15.54 12.58C15.47 12.49 14.18 10.13 13.19 8.29L12.71 7.39L12.69 9.03L12.67 10.67L13.02 10.97C13.21 11.14 13.42 11.39 13.47 11.53C13.59 11.82 13.61 12.51 13.50 12.80C13.40 13.06 13.01 13.47 12.73 13.62C12.50 13.74 11.65 13.76 11.35 13.65C10.60 13.36 10.21 12.30 10.57 11.51C10.70 11.22 11.11 10.80 11.26 10.80C11.30 10.80 11.32 10.07 11.32 9.06L11.32 7.31L11.09 7.76C10.96 8.01 10.36 9.12 9.75 10.24C9.15 11.35 8.63 12.32 8.61 12.39C8.58 12.47 8.71 12.82 8.94 13.29C10.16 15.79 10.21 16.40 9.18 16.34C8.76 16.31 8.88 16.49 7.89 14.40L7.31 13.16L7.31 12.47L7.31 11.78L6.91 12.17C5.29 13.75 4.48 14.93 4.38 15.87C4.26 16.99 5.69 17.42 7.95 16.94ZM13.78 16.47C13.84 16.27 13.87 16.10 13.85 16.08C13.84 16.06 13.47 16.24 13.04 16.46L12.26 16.88L12.97 16.86L13.67 16.84L13.78 16.47ZM5.65 8.61C5.61 8.55 5.52 8.29 5.44 8.01C5.37 7.74 5.27 7.46 5.22 7.39C5.18 7.33 4.85 7.18 4.50 7.07L3.86 6.86L3.86 6.57L3.86 6.27L4.48 6.08C4.82 5.97 5.13 5.85 5.17 5.81C5.21 5.77 5.34 5.45 5.45 5.10C5.65 4.50 5.67 4.46 5.89 4.44C6.19 4.41 6.24 4.49 6.45 5.19C6.55 5.51 6.66 5.80 6.70 5.84C6.75 5.88 7.04 5.98 7.35 6.08C8 6.27 8.10 6.33 8.10 6.56C8.10 6.79 7.90 6.94 7.46 7.04C6.68 7.23 6.61 7.30 6.38 8.18C6.26 8.61 6.18 8.70 5.92 8.70C5.81 8.70 5.69 8.66 5.65 8.61Z"/></symbol>
+<symbol id="i-tool-region" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M4.26 20.73C3.46 20.35 3 19.64 3 18.78C3 18.06 3.23 17.74 3.77 17.74C4.26 17.74 4.48 18 4.58 18.67C4.64 19.11 4.82 19.28 5.31 19.34C6.02 19.44 6.35 19.95 6.09 20.54C5.89 20.97 4.97 21.06 4.26 20.73ZM7.55 20.68C7.38 20.50 7.32 20.37 7.32 20.14C7.32 19.92 7.38 19.79 7.55 19.61L7.79 19.37L9.35 19.37L10.91 19.37L11.15 19.61C11.33 19.79 11.39 19.92 11.39 20.14C11.39 20.37 11.33 20.50 11.15 20.68L10.91 20.92L9.35 20.92L7.79 20.92L7.55 20.68ZM12.77 20.68C12.59 20.50 12.53 20.37 12.53 20.14C12.53 19.92 12.59 19.79 12.77 19.61L13.01 19.37L14.54 19.37C16.22 19.37 16.33 19.40 16.52 19.85C16.64 20.16 16.57 20.47 16.32 20.72C16.12 20.92 16.10 20.92 14.56 20.92L13.01 20.92L12.77 20.68ZM17.98 20.68C17.80 20.50 17.74 20.37 17.74 20.14C17.74 19.79 18.10 19.37 18.41 19.37C19.06 19.37 19.37 19.09 19.37 18.51C19.37 17.75 20.52 17.45 20.83 18.12C20.96 18.41 20.94 19.25 20.79 19.59C20.45 20.41 19.67 20.92 18.73 20.92C18.27 20.92 18.19 20.89 17.98 20.68ZM3.39 16.47C3.03 16.28 3 16.13 3 14.53C3 13.03 3 13.01 3.20 12.81C3.34 12.67 3.49 12.61 3.72 12.61C4.48 12.61 4.55 12.77 4.55 14.61C4.55 16.15 4.52 16.28 4.14 16.48C3.85 16.63 3.67 16.63 3.39 16.47ZM19.82 16.49C19.68 16.43 19.53 16.28 19.47 16.16C19.34 15.88 19.33 13.27 19.46 12.99C19.65 12.58 20.38 12.47 20.72 12.81C20.92 13.01 20.92 13.03 20.92 14.53C20.92 15.46 20.88 16.11 20.83 16.21C20.75 16.35 20.30 16.61 20.13 16.60C20.09 16.60 19.95 16.55 19.82 16.49ZM3.43 11.35C3.03 11.18 3 11.04 3 9.42C3 7.75 3.03 7.65 3.53 7.48C3.87 7.37 4.23 7.48 4.43 7.75C4.58 7.96 4.60 10.81 4.46 11.08C4.38 11.22 3.92 11.48 3.76 11.47C3.72 11.47 3.58 11.41 3.43 11.35ZM19.73 11.29C19.42 11.15 19.37 10.88 19.37 9.43C19.37 7.82 19.43 7.62 19.93 7.47C20.28 7.37 20.68 7.51 20.82 7.79C20.93 8 21 10.51 20.91 10.85C20.87 11.01 20.75 11.20 20.65 11.26C20.45 11.41 19.99 11.42 19.73 11.29ZM3.20 6.06C3.03 5.88 3 5.78 3 5.30C3 4 3.90 3.08 5.17 3.08C5.62 3.08 5.92 3.22 6.06 3.50C6.39 4.13 5.96 4.71 5.17 4.71C4.76 4.71 4.55 4.96 4.55 5.43C4.55 5.97 4.25 6.26 3.68 6.26C3.49 6.26 3.34 6.19 3.20 6.06ZM19.65 6.07C19.48 5.92 19.41 5.77 19.36 5.40C19.29 4.86 19.16 4.71 18.76 4.71C17.87 4.71 17.41 3.89 17.98 3.32C18.18 3.12 18.28 3.08 18.65 3.08C20.02 3.08 20.92 3.96 20.92 5.28C20.92 5.79 20.89 5.88 20.72 6.06C20.45 6.33 19.96 6.33 19.65 6.07ZM7.76 4.60C7.36 4.42 7.21 3.93 7.43 3.50C7.62 3.13 7.85 3.08 9.35 3.08C10.85 3.08 11.08 3.13 11.27 3.50C11.49 3.92 11.34 4.43 10.94 4.61C10.64 4.75 8.09 4.74 7.76 4.60ZM12.98 4.60C12.59 4.43 12.41 3.87 12.61 3.48C12.80 3.14 13.09 3.08 14.56 3.08C16.07 3.08 16.29 3.13 16.49 3.50C16.70 3.92 16.55 4.43 16.16 4.61C15.85 4.75 13.30 4.74 12.98 4.60Z"/></symbol>
+<symbol id="i-tool-sticky" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M4.27 20.88C3.92 20.70 3.61 20.38 3.46 20.03C3.32 19.74 3.31 19.36 3.31 12.02C3.31 3.59 3.28 4.07 3.77 3.52C4.25 2.97 3.81 2.99 12.12 3.02L19.58 3.04L19.90 3.25C20.08 3.37 20.32 3.61 20.44 3.79L20.65 4.11L20.67 9.90L20.69 15.69L19.63 16.78C19.05 17.38 17.88 18.58 17.04 19.44L15.50 21L10.01 21C5.18 21 4.48 20.98 4.27 20.88ZM14.36 17.76L14.36 16L14.57 15.58C14.72 15.30 14.90 15.09 15.16 14.92L15.53 14.67L17.34 14.67L19.15 14.67L19.13 9.62L19.11 4.58L12 4.58L4.89 4.58L4.87 11.96C4.85 18.83 4.86 19.35 4.98 19.44C5.09 19.51 6.16 19.53 9.74 19.53L14.36 19.53L14.36 17.76ZM17.18 16.15C16.70 16.14 16.22 16.16 16.11 16.21L15.90 16.28L15.90 17.35L15.90 18.41L16.98 17.29L18.05 16.17L17.18 16.15Z"/></symbol>
+<symbol id="i-tool-strike" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10.39 20.88C7.96 20.35 6.22 18.75 5.78 16.64C5.60 15.74 5.66 15.42 6.13 14.96L6.49 14.59L7.57 14.59C8.58 14.59 8.66 14.60 8.92 14.77C9.19 14.96 9.41 15.33 9.65 16.01C9.94 16.86 10.66 17.30 11.83 17.35C12.82 17.40 13.44 17.23 13.90 16.80C14.38 16.33 14.52 15.68 14.27 15.06C14.06 14.52 13.60 14.31 10.76 13.43C10.19 13.25 9.50 13 9.23 12.88L8.73 12.66L6.47 12.66L4.21 12.66L3.97 12.46C3.66 12.19 3.64 11.74 3.92 11.46C4.11 11.27 4.13 11.27 5.55 11.27L6.98 11.27L6.71 10.86C5.97 9.74 5.79 8.02 6.28 6.59C6.74 5.28 8.01 4 9.41 3.46C10.36 3.09 11.11 2.98 12.38 3.02C13.99 3.08 14.97 3.40 16.03 4.21C17.28 5.17 18.12 6.83 18.01 8.14C17.98 8.50 17.93 8.61 17.71 8.84C17.32 9.26 17.07 9.33 16.13 9.33C14.97 9.33 14.51 9.08 14.31 8.31C13.99 7.05 13.28 6.57 11.80 6.64C10.47 6.70 9.64 7.55 9.91 8.56C10.07 9.13 10.60 9.44 12.35 9.95C13.90 10.41 14.74 10.70 15.37 11L15.93 11.27L17.89 11.27L19.85 11.27L20.06 11.48C20.36 11.79 20.35 12.19 20.03 12.46C19.80 12.65 19.77 12.66 18.60 12.66L17.41 12.66L17.63 13.02C18.09 13.77 18.21 14.28 18.21 15.52C18.22 16.77 18.13 17.19 17.67 18.06C16.95 19.44 15.41 20.52 13.68 20.88C12.94 21.03 11.09 21.03 10.39 20.88ZM13.77 19.46C15.18 19.05 16.17 18.23 16.63 17.08C16.81 16.61 16.96 15.59 16.90 15.21C16.62 13.48 16.01 12.72 14.31 12.03C14.01 11.91 13.10 11.61 12.28 11.38C10.49 10.85 9.83 10.55 9.27 10.01C8.73 9.48 8.57 9.13 8.54 8.40C8.45 6.67 9.71 5.42 11.68 5.27C13.65 5.11 15.22 6.13 15.59 7.81C15.63 8.02 15.65 8.02 16.17 8.02C16.47 8.02 16.71 8 16.71 7.96C16.71 7.70 16.43 6.83 16.23 6.46C15.51 5.10 14.04 4.36 12.08 4.36C10.96 4.35 10.42 4.47 9.53 4.91C7.20 6.04 6.62 9.16 8.43 10.81C9.01 11.34 9.84 11.72 11.77 12.31C12.68 12.59 13.67 12.93 13.97 13.07C15.31 13.71 15.91 14.73 15.72 16.08C15.62 16.78 15.40 17.23 14.90 17.72C13.79 18.83 11.69 19.08 10.03 18.31C9.19 17.91 8.40 16.96 8.25 16.15L8.20 15.90L7.62 15.90L7.04 15.90L7.10 16.23C7.39 17.97 8.82 19.23 10.93 19.61C11.59 19.72 13.11 19.64 13.77 19.46Z"/></symbol>
+<symbol id="i-tool-source" viewBox="0 0 24 24"><path d="m8.5 8-4 4 4 4m7-8 4 4-4 4M13.6 5.5l-3.2 13"/></symbol>
+<symbol id="i-tool-hand" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M12.47 20.93C10.72 20.72 9.08 19.68 7.74 17.93C7.14 17.15 4.28 12.89 4.15 12.60C4.02 12.30 4.02 11.41 4.16 11.09C4.45 10.39 5.29 9.82 6.04 9.82C6.75 9.82 7.01 9.94 7.59 10.52L8.11 11.05L8.13 8.42C8.16 5.52 8.13 5.66 8.66 5.06C9.06 4.59 9.55 4.38 10.23 4.38L10.78 4.38L10.91 4.09C11.07 3.74 11.58 3.25 11.93 3.10C12.29 2.95 13.23 2.97 13.60 3.14C13.76 3.21 14.07 3.47 14.29 3.71L14.69 4.15L15.16 4.11C15.84 4.06 16.19 4.18 16.67 4.62C17.17 5.09 17.33 5.44 17.33 6.03L17.33 6.48L17.86 6.48C18.52 6.48 19.01 6.70 19.44 7.19C19.96 7.78 19.96 7.82 19.93 11.88C19.90 15.25 19.89 15.48 19.74 16.05C19.26 17.89 17.98 19.47 16.28 20.33C15.20 20.87 13.84 21.09 12.47 20.93ZM14.76 19.18C16.22 18.72 17.17 17.93 17.81 16.62C18.31 15.59 18.31 15.59 18.33 11.85C18.35 9.21 18.33 8.44 18.26 8.30C18.15 8.08 17.81 8.02 17.59 8.18C17.45 8.28 17.44 8.39 17.41 10.07L17.37 11.85L17.16 12.07C16.85 12.38 16.33 12.39 16.02 12.08L15.81 11.87L15.81 9C15.81 6.96 15.79 6.07 15.73 5.94C15.58 5.62 15.10 5.61 14.92 5.93C14.85 6.04 14.82 6.77 14.81 8.68L14.79 11.27L14.52 11.50C14.30 11.69 14.22 11.72 13.98 11.69C13.80 11.66 13.61 11.57 13.48 11.45L13.27 11.25L13.27 8.23C13.27 6.41 13.24 5.11 13.20 4.95C13.07 4.50 12.49 4.43 12.33 4.85C12.28 4.97 12.25 6.30 12.25 8.20L12.25 11.36L12.01 11.61C11.65 11.96 11.32 11.95 10.94 11.57L10.66 11.29L10.66 8.79C10.66 6.65 10.64 6.28 10.54 6.14C10.40 5.93 10.06 5.92 9.86 6.12C9.72 6.26 9.71 6.36 9.71 9.94L9.71 13.61L9.47 13.86C9.26 14.06 9.17 14.10 8.91 14.10C8.54 14.10 8.45 14.02 7.12 12.40C6.29 11.41 6.15 11.31 5.83 11.52C5.49 11.75 5.57 11.91 7.11 14.21C9.37 17.57 9.83 18.11 10.95 18.74C12.13 19.40 13.54 19.56 14.76 19.18Z"/></symbol>
+<symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+<symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+<symbol id="i-branch" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+<symbol id="i-push" viewBox="0 0 24 24"><circle cx="12" cy="19" r="2.5"/><path d="M12 16.5V3M8.5 6.5 12 3l3.5 3.5"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+<symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 9M3 4v6h6M12 7v5l3 2"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3c.4 3.9 2.1 5.6 6 6-3.9.4-5.6 2.1-6 6-.4-3.9-2.1-5.6-6-6 3.9-.4 5.6-2.1 6-6ZM19 15c.2 1.5.8 2.1 2.3 2.3-1.5.2-2.1.8-2.3 2.3-.2-1.5-.8-2.1-2.3-2.3 1.5-.2 2.1-.8 2.3-2.3Z"/></symbol>
+<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="i-log" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6m-6 4h4"/></symbol>
+</svg>
+
 <header class="topbar">
   <div class="wrap topbar-inner">
     <a class="brand" href="./" aria-label="Papilot"><img class="brand-mark" src="assets/logo.svg" alt="" width="26" height="26"><span class="brand-name">Papilot</span></a>
@@ -65,32 +108,47 @@
 <section class="hero">
   <!-- The first screen fills the window: the headline, whose "Agentic" is
        marked as an addition, Papilot's window and the downloads. The window
-       keeps only what the point needs: one change on a page whose other text,
+       is the app as it is: its 46px toolbar row with the window controls,
+       the marking tools' rail, one change on a page whose other text,
        equations and figures are abstract, drawn from the viewer
        (engine/src/web/review.tsx and style.css), and a chat whose agent
-       keeps changing. Accept and Reject
-       leave the side that stays as plain text, and clicking it reopens the
-       change; LaTeX shows the source and Comment opens the discussions. Until
-       someone touches the window, a pointer plays the whole round as the app
-       does it: it draws a box round the sentence, writes a note, sends the
-       note to the agent from the chat, the agent works, the diff appears and
-       the pointer accepts it. Without script or motion the window shows the
-       sent note and the diff. A quiet arrow says the page goes on. -->
+       keeps changing. On a phone it is the phone app: the navigation bar's
+       Review and Chat, and the change's decisions in a floating capsule.
+       Accept and Reject leave the side that stays as plain text, and
+       clicking it reopens the change; the source button shows the LaTeX and
+       Comment opens the discussions. Until someone touches the window, a
+       pointer plays the whole round as the app does it: it draws a box round
+       the sentence, writes a note, sends the note to the agent from the
+       chat, the agent works, the diff appears and the pointer accepts it.
+       Without script or motion the window shows the sent note and the diff.
+       A quiet arrow says the page goes on. -->
   <div class="wrap hero-copy hero-screen">
     <h1><span lang="en">A Modern <ins>Agentic</ins> <span class="latex">L<sup>a</sup>T<sub>e</sub>X</span> Editor</span><span lang="zh-CN">一个现代的 <ins>Agentic</ins> <span class="latex">L<sup>a</sup>T<sub>e</sub>X</span> 编辑器</span></h1>
     <figure class="app-window">
       <div class="app-bar" aria-hidden="true"><span class="lights"><i></i><i></i><i></i></span></div>
+      <div class="app-top" aria-hidden="true">
+        <div class="m-nav"><i class="tb-icon"><svg class="ic"><use href="#i-menu"/></svg></i><span class="tb-seg"><b class="on"><svg class="ic"><use href="#i-paper"/></svg><span lang="en">Review</span><span lang="zh-CN">审阅</span><em class="tb-badge">1</em></b><b class="m-chat"><svg class="ic"><use href="#i-chat"/></svg><span lang="en">Chat</span><span lang="zh-CN">对话</span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+        <div class="app-tb">
+          <i class="tb-icon tb-sidebar"><svg class="ic"><use href="#i-sidebar"/></svg></i>
+          <span class="tb-seg"><b class="tb-pdf"><svg class="ic"><use href="#i-paper"/></svg><span class="tb-label">PDF</span></b><b class="tb-changes"><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b></span>
+          <span class="tb-space"></span>
+          <span class="tb-decide"><span class="tb-count">0 / 1</span><span class="tb-pill tb-accept"><svg class="ic"><use href="#i-check"/></svg><span class="tb-label"><span lang="en">Accept all</span><span lang="zh-CN">全部接受</span></span><b>1</b></span><span class="tb-pill tb-reject"><svg class="ic"><use href="#i-close"/></svg><span class="tb-label"><span lang="en">Reject all</span><span lang="zh-CN">全部拒绝</span></span><b>1</b></span></span>
+          <i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i>
+        </div>
+        <div class="app-tb side"><span class="tb-seg icons"><b><svg class="ic"><use href="#i-paper"/></svg></b><b class="on"><svg class="ic"><use href="#i-split"/></svg></b><b><svg class="ic"><use href="#i-chat"/></svg></b></span><span class="tb-space"></span><i class="tb-icon"><svg class="ic"><use href="#i-external"/></svg></i></div>
+      </div>
       <div class="app-body">
+        <div class="app-rail" aria-hidden="true"><i><svg class="ic"><use href="#i-chevron-left"/></svg></i><i><svg class="ic"><use href="#i-tool-magic"/></svg></i><hr><i><svg class="ic"><use href="#i-tool-note"/></svg></i><i class="rail-region"><svg class="ic"><use href="#i-tool-region"/></svg></i><i><svg class="ic"><use href="#i-tool-sticky"/></svg></i><i><svg class="ic"><use href="#i-tool-strike"/></svg></i><hr><i class="rail-select on"><svg class="ic"><use href="#i-tool-select"/></svg></i><i><svg class="ic"><use href="#i-tool-hand"/></svg></i><span class="rail-history"><i><svg class="ic"><use href="#i-undo"/></svg></i><i><svg class="ic"><use href="#i-redo"/></svg></i></span></div>
         <div class="app-pdf">
           <div class="review-page">
             <span class="sheet-eq" aria-hidden="true"><i style="width:26px"></i>=<span class="frac"><i style="width:64px"></i><b></b><i style="width:40px"></i></span>+<i style="width:34px"></i><em>(1)</em></span>
             <article class="review-change current" data-state="pending">
               <div class="review-head">
-                <span class="review-number"><span lang="en">Change 1</span><span lang="zh-CN">修改 1</span></span>
-                <button class="review-accept" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span lang="en">Accept</span><span lang="zh-CN">接受</span></button>
-                <button class="review-reject" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg><span lang="en">Reject</span><span lang="zh-CN">拒绝</span></button>
-                <a class="review-comment" href="https://github.com/PapilotAI/papilot/discussions" title="Discuss Papilot on GitHub" data-zh-title="在 GitHub 上讨论 Papilot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><span lang="en">Comment</span><span lang="zh-CN">评论</span></a>
-                <button class="review-latex" type="button" aria-expanded="false" aria-controls="review-source-1" title="Show LaTeX source" data-zh-title="显示 LaTeX 源码">LaTeX</button>
+                <i class="review-step"><svg class="ic"><use href="#i-chevron-left"/></svg></i><span class="review-number"><span lang="en">Change 1</span><span lang="zh-CN">修改 1</span></span><i class="review-step"><svg class="ic"><use href="#i-chevron-right"/></svg></i><code class="review-where">main.tex:6</code>
+                <button class="review-accept" type="button"><svg class="ic"><use href="#i-check"/></svg><span class="sr"><span lang="en">Accept</span><span lang="zh-CN">接受</span></span></button>
+                <button class="review-reject" type="button"><svg class="ic"><use href="#i-close"/></svg><span class="sr"><span lang="en">Reject</span><span lang="zh-CN">拒绝</span></span></button>
+                <a class="review-comment" href="https://github.com/PapilotAI/papilot/discussions" title="Discuss Papilot on GitHub" data-zh-title="在 GitHub 上讨论 Papilot"><svg class="ic"><use href="#i-chat"/></svg><span class="sr"><span lang="en">Comment</span><span lang="zh-CN">评论</span></span></a>
+                <button class="review-latex" type="button" aria-expanded="false" aria-controls="review-source-1" title="Show LaTeX source" data-zh-title="显示 LaTeX 源码"><svg class="ic"><use href="#i-code"/></svg><span class="sr">LaTeX</span></button>
               </div>
               <div class="review-side before" aria-hidden="true">
                 <span class="review-label"><span lang="en">Before</span><span lang="zh-CN">修改前</span></span>
@@ -107,19 +165,24 @@
             </article>
             <span class="sheet-lines fill" aria-hidden="true"><i style="width:100%"></i><i style="width:72%"></i><span class="sheet-fig"><span class="fig-flow"><span class="fig-panel fig-source"><svg class="fig-file" viewBox="0 0 64 78"><path d="M4 2h40l18 18v54a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" fill="#f6f7f9" stroke="#c9ced6" stroke-width="1.3"/><path d="M44 2v16a2 2 0 0 0 2 2h16" fill="none" stroke="#c9ced6" stroke-width="1.3"/><text x="9" y="34">\sum_{n</text><text x="9" y="46">\frac{1}</text><text x="9" y="58">= \frac{</text></svg><b>main.tex</b></span><span class="fig-step"><span class="latex">L<sup>a</sup>T<sub>e</sub>X</span><svg class="fig-arrow" viewBox="0 0 34 12"><path d="M1 6h30m-6-5 6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="fig-panel"><span class="fig-page"><span class="fig-op"><small>∞</small><span>∑</span><small><var>n</var>=1</small></span><span class="fig-frac"><span>1</span><span><var>n</var><sup>2</sup></span></span><span>=</span><span class="fig-frac"><span><var>π</var><sup>2</sup></span><span>6</span></span></span><b>main.pdf</b></span></span><i></i></span><i style="width:100%"></i><i style="width:100%"></i><i style="width:86%"></i></span>
           </div>
+          <div class="m-decide"><i><svg class="ic"><use href="#i-chevron-left"/></svg></i><span>1 / 1</span><button class="m-accept" type="button"><svg class="ic"><use href="#i-check"/></svg><span class="sr"><span lang="en">Accept</span><span lang="zh-CN">接受</span></span></button><button class="m-reject" type="button"><svg class="ic"><use href="#i-close"/></svg><span class="sr"><span lang="en">Reject</span><span lang="zh-CN">拒绝</span></span></button><a class="m-talk" href="https://github.com/PapilotAI/papilot/discussions" title="Discuss Papilot on GitHub" data-zh-title="在 GitHub 上讨论 Papilot"><svg class="ic"><use href="#i-chat"/></svg><span class="sr"><span lang="en">Comment</span><span lang="zh-CN">评论</span></span></a><i><svg class="ic"><use href="#i-chevron-right"/></svg></i></div>
+          <div class="m-tools" aria-hidden="true"><i><svg class="ic"><use href="#i-tool-magic"/></svg></i><hr><i><svg class="ic"><use href="#i-tool-note"/></svg></i><i class="rail-region"><svg class="ic"><use href="#i-tool-region"/></svg></i><i><svg class="ic"><use href="#i-tool-sticky"/></svg></i><i><svg class="ic"><use href="#i-tool-strike"/></svg></i><hr><i class="rail-select on"><svg class="ic"><use href="#i-tool-select"/></svg></i><hr><i><svg class="ic"><use href="#i-undo"/></svg></i><i><svg class="ic"><use href="#i-redo"/></svg></i></div>
         </div>
         <div class="app-chat" aria-hidden="true">
           <div class="chat-thread">
             <div class="chat-bubble">
-              <span class="chat-note-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span lang="en">Note on the PDF</span><span lang="zh-CN">PDF 上的批注</span></span>
-              <span class="chat-quote"><b>1</b><em><span lang="en">Marked region</span><span lang="zh-CN">标记的区域</span></em></span>
+              <span class="chat-note-head"><svg class="ic"><use href="#i-notes"/></svg><span lang="en">Note on the PDF</span><span lang="zh-CN">PDF 上的批注</span></span>
+              <span class="chat-quote"><b>1</b><em><span lang="en">Page 1</span><span lang="zh-CN">第 1 页</span></em></span>
+              <span class="chat-region"><span lang="en">Marked region</span><span lang="zh-CN">标记的区域</span></span>
               <p class="chat-comment"><span lang="en">Make it more modern</span><span lang="zh-CN">改得现代一点</span></p>
             </div>
+            <p class="chat-tool"><svg class="ic"><use href="#i-diff"/></svg><span lang="en">Edited main.tex</span><span lang="zh-CN">编辑了 main.tex</span></p>
             <div class="chat-reply"><span class="chat-dots"><i></i><i></i><i></i></span><span class="chat-lines"><i style="width:100%"></i><i style="width:94%"></i><i style="width:46%"></i></span></div>
           </div>
+          <div class="chat-picked"><span class="picked"><b>1</b><em><span lang="en">Page 1</span><span lang="zh-CN">第 1 页</span></em><span></span></span></div>
           <div class="chat-composer">
-            <span class="chat-input"><span class="chat-attached"><b>1</b><span></span></span><i></i></span>
-            <span class="chat-foot"><span class="chat-agent agent codex"><i></i><b>Codex</b></span><span class="chat-send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></span></span>
+            <span class="chat-input"><i></i></span>
+            <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent codex"><i></i><b>Codex</b><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
           </div>
         </div>
       </div>
@@ -257,9 +320,9 @@ progress and preservation.</pre></div>
       <article class="era ours">
         <div class="era-art" aria-hidden="true">
           <div class="mini">
-            <div class="mini-bar"><i></i><i></i><i></i></div>
+            <div class="mini-bar"><i></i><i></i><i></i><span class="mini-seg"><b></b><b class="on"></b></span><span class="mini-run"></span></div>
             <div class="mini-body only">
-              <div class="mini-pdf"><div class="mini-page"><span class="mini-heading"><b>3.2</b><span class="bar"></span></span><span class="bar"></span><span class="bar short"></span><span class="mini-review"><span class="mini-head"><span class="bar"></span><span class="mini-acts"><i class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></i><i class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 6 12 12M18 6 6 18"/></svg></i><i class="talk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg></i></span></span><span class="mini-side before"><span class="bar"></span><span class="bar mid"></span></span><span class="mini-side after"><span class="bar"></span><span class="bar short"></span></span></span><span class="mini-comment"><span><span class="bar"></span><span class="bar short"></span></span><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></i></span><span class="bar"></span><span class="bar"></span><span class="bar short"></span></div></div>
+              <div class="mini-pdf"><div class="mini-page"><span class="mini-heading"><b>3.2</b><span class="bar"></span></span><span class="bar"></span><span class="bar short"></span><span class="mini-review"><span class="mini-head"><span class="mini-step">‹</span><span class="bar"></span><span class="mini-step">›</span><span class="mini-acts"><i class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></i><i class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 6 12 12M18 6 6 18"/></svg></i><i class="talk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg></i><i class="src"><svg class="ic"><use href="#i-code"/></svg></i></span></span><span class="mini-side before"><span class="bar"></span><span class="bar mid"></span></span><span class="mini-side after"><span class="bar"></span><span class="bar short"></span></span></span><span class="mini-comment"><span><span class="bar"></span><span class="bar short"></span></span><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></i></span><span class="bar"></span><span class="bar"></span><span class="bar short"></span></div></div>
             </div>
           </div>
         </div>
@@ -277,10 +340,12 @@ progress and preservation.</pre></div>
   <div class="wrap">
     <!-- Each feature is drawn like the opening window, with the rest of the
          app as bars, and plays what the opening round leaves out: two notes
-         sent together, a comment that sends a change back for another round,
-         and the accepted change committed and pushed. Each round plays while
-         its window is on screen and not under the mouse. Without script or
-         motion a window shows where its round ends. -->
+         added to a task and sent together, a comment that sends a change
+         back for another round, and the accepted change committed and synced
+         in Version Management. On a phone the PDF and the chat take turns,
+         switched in the navigation bar, as in the phone app. Each round plays
+         while its window is on screen and not under the mouse. Without script
+         or motion a window shows where its round ends. -->
     <article class="feature">
       <div class="feature-text">
         <p class="step"><span class="num">01</span><span lang="en">Annotate</span><span lang="zh-CN">批注</span></p>
@@ -290,7 +355,13 @@ progress and preservation.</pre></div>
       <figure class="app-window scene" data-scene="notes" role="img" aria-label="A sentence and a figure boxed on the PDF, each with a note, sent to the agent together" data-zh-aria-label="在 PDF 上框出一句话和一张图，各写一条批注，一起发给智能体">
         <div class="scene-art" aria-hidden="true" inert>
           <div class="app-bar"><span class="lights"><i></i><i></i><i></i></span></div>
+          <div class="app-top">
+            <div class="m-nav"><i class="tb-icon"><svg class="ic"><use href="#i-menu"/></svg></i><span class="tb-seg"><b class="seg-pdf"><svg class="ic"><use href="#i-pdf"/></svg>PDF</b><b class="seg-side"><svg class="ic"><use href="#i-compose"/></svg><span lang="en">New task</span><span lang="zh-CN">新任务</span><em class="tb-badge tb-picked"></em></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+            <div class="app-tb"><i class="tb-icon tb-sidebar"><svg class="ic"><use href="#i-sidebar"/></svg></i><span class="tb-seg"><b class="on"><svg class="ic"><use href="#i-paper"/></svg><span class="tb-label">PDF</span></b><b><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i><i class="tb-icon"><svg class="ic"><use href="#i-notes"/></svg></i></div>
+            <div class="app-tb side"><span class="tb-tab"><svg class="ic"><use href="#i-compose"/></svg><span lang="en">New task</span><span lang="zh-CN">新任务</span><em class="tb-badge tb-picked"></em></span><span class="tb-space"></span><i class="tb-icon"><svg class="ic"><use href="#i-share"/></svg></i></div>
+          </div>
           <div class="app-body">
+            <div class="app-rail"><i><svg class="ic"><use href="#i-chevron-left"/></svg></i><i><svg class="ic"><use href="#i-tool-magic"/></svg></i><hr><i><svg class="ic"><use href="#i-tool-note"/></svg></i><i class="rail-region"><svg class="ic"><use href="#i-tool-region"/></svg></i><i><svg class="ic"><use href="#i-tool-sticky"/></svg></i><i><svg class="ic"><use href="#i-tool-strike"/></svg></i><i><svg class="ic"><use href="#i-tool-source"/></svg></i><hr><i class="rail-select on"><svg class="ic"><use href="#i-tool-select"/></svg></i><i><svg class="ic"><use href="#i-tool-hand"/></svg></i><span class="rail-history"><i><svg class="ic"><use href="#i-undo"/></svg></i><i><svg class="ic"><use href="#i-redo"/></svg></i></span></div>
             <div class="app-pdf">
               <div class="review-page">
                 <span class="sheet-lines"><i style="width:100%"></i><i style="width:62%"></i></span>
@@ -298,11 +369,12 @@ progress and preservation.</pre></div>
                 <span class="scene-figure"><span class="figure-plot"><span class="figure-legend"><i></i><i></i></span><b style="height:30%"></b><b style="height:44%"></b><b style="height:40%"></b><b style="height:62%"></b><b style="height:86%"></b></span><i class="figure-caption"></i></span>
                 <span class="sheet-lines fill"><i style="width:100%"></i><i style="width:74%"></i><span class="sheet-eq"><i style="width:30px"></i>=<span class="frac"><i style="width:56px"></i><b></b><i style="width:44px"></i></span>+<i style="width:28px"></i><em>(4)</em></span><i style="width:100%"></i><i style="width:100%"></i></span>
               </div>
+              <div class="m-tools"><i><svg class="ic"><use href="#i-tool-magic"/></svg></i><hr><i><svg class="ic"><use href="#i-tool-note"/></svg></i><i class="rail-region"><svg class="ic"><use href="#i-tool-region"/></svg></i><i><svg class="ic"><use href="#i-tool-sticky"/></svg></i><i><svg class="ic"><use href="#i-tool-strike"/></svg></i><i><svg class="ic"><use href="#i-tool-source"/></svg></i><hr><i class="rail-select on"><svg class="ic"><use href="#i-tool-select"/></svg></i></div>
             </div>
             <div class="app-chat">
               <div class="chat-thread">
                 <div class="chat-bubble">
-                  <span class="chat-note-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span lang="en">2 notes on the PDF</span><span lang="zh-CN">PDF 上的 2 条批注</span></span>
+                  <span class="chat-note-head"><svg class="ic"><use href="#i-notes"/></svg><span lang="en">2 notes on the PDF</span><span lang="zh-CN">PDF 上的 2 条批注</span></span>
                   <span class="chat-quote"><b>1</b><em><span lang="en">Page 2 · main.tex:24</span><span lang="zh-CN">第 2 页 · main.tex:24</span></em></span>
                   <p class="chat-comment"><span lang="en">Say it more plainly</span><span lang="zh-CN">说得直白一点</span></p>
                   <span class="chat-quote"><b>2</b><em><span lang="en">Page 2 · main.tex:31</span><span lang="zh-CN">第 2 页 · main.tex:31</span></em></span>
@@ -310,9 +382,10 @@ progress and preservation.</pre></div>
                 </div>
                 <div class="chat-reply"><span class="chat-dots"><i></i><i></i><i></i></span><span class="chat-lines"><i style="width:100%"></i><i style="width:70%"></i></span></div>
               </div>
+              <div class="chat-picked"><span class="picked"><b>1</b><em><span lang="en">Page 2</span><span lang="zh-CN">第 2 页</span></em><span></span></span><span class="picked"><b>2</b><em><span lang="en">Page 2</span><span lang="zh-CN">第 2 页</span></em><span></span></span></div>
               <div class="chat-composer">
-                <span class="chat-input"><span class="chat-attached"><b>1</b><span></span></span><span class="chat-attached"><b>2</b><span></span></span><i></i></span>
-                <span class="chat-foot"><span class="chat-agent agent claude"><i></i><b>Claude</b></span><span class="chat-send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></span></span>
+                <span class="chat-input"><i></i></span>
+                <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent claude"><i></i><b>Claude</b><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
               </div>
             </div>
           </div>
@@ -332,17 +405,21 @@ progress and preservation.</pre></div>
       <figure class="app-window scene" data-scene="revise" role="img" aria-label="A comment on a change goes back to the agent, which rewrites it as the T-Abs typing rule before it is accepted" data-zh-aria-label="对一处改动写下评论发回给智能体，它改写成推导规则后再接受">
         <div class="scene-art" aria-hidden="true" inert>
           <div class="app-bar"><span class="lights"><i></i><i></i><i></i></span></div>
+          <div class="app-top">
+            <div class="m-nav"><i class="tb-icon"><svg class="ic"><use href="#i-menu"/></svg></i><span class="tb-seg"><b class="seg-pdf"><svg class="ic"><use href="#i-paper"/></svg><span lang="en">Review</span><span lang="zh-CN">审阅</span><em class="tb-badge">1</em></b><b class="seg-side"><svg class="ic"><use href="#i-chat"/></svg><span lang="en">Chat</span><span lang="zh-CN">对话</span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+            <div class="app-tb"><i class="tb-icon tb-sidebar"><svg class="ic"><use href="#i-sidebar"/></svg></i><span class="tb-seg"><b><svg class="ic"><use href="#i-paper"/></svg><span class="tb-label">PDF</span></b><b class="on"><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b></span><span class="tb-space"></span><span class="tb-count">0 / 1</span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+            <div class="app-tb side"><span class="tb-seg icons"><b><svg class="ic"><use href="#i-paper"/></svg></b><b class="on"><svg class="ic"><use href="#i-split"/></svg></b><b><svg class="ic"><use href="#i-chat"/></svg></b></span><span class="tb-space"></span><i class="tb-icon"><svg class="ic"><use href="#i-external"/></svg></i></div>
+          </div>
           <div class="app-body">
+            <div class="app-rail"><i><svg class="ic"><use href="#i-chevron-left"/></svg></i><i><svg class="ic"><use href="#i-tool-magic"/></svg></i><hr><i><svg class="ic"><use href="#i-tool-note"/></svg></i><i class="rail-region"><svg class="ic"><use href="#i-tool-region"/></svg></i><i><svg class="ic"><use href="#i-tool-sticky"/></svg></i><i><svg class="ic"><use href="#i-tool-strike"/></svg></i><hr><i class="rail-select on"><svg class="ic"><use href="#i-tool-select"/></svg></i><i><svg class="ic"><use href="#i-tool-hand"/></svg></i><span class="rail-history"><i><svg class="ic"><use href="#i-undo"/></svg></i><i><svg class="ic"><use href="#i-redo"/></svg></i></span></div>
             <div class="app-pdf">
               <div class="review-page">
                 <span class="sheet-head"><b>3.2</b><i style="width:34%"></i></span>
                 <span class="sheet-lines"><i style="width:100%"></i><i style="width:56%"></i></span>
                 <article class="review-change current" data-state="pending">
                   <div class="review-head">
-                    <span class="review-number"><span lang="en">Change 1</span><span lang="zh-CN">修改 1</span></span>
-                    <button class="review-accept" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span lang="en">Accept</span><span lang="zh-CN">接受</span></button>
-                    <button class="review-reject" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg><span lang="en">Reject</span><span lang="zh-CN">拒绝</span></button>
-                    <button class="review-comment" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><span lang="en">Comment</span><span lang="zh-CN">评论</span></button>
+                    <i class="review-step"><svg class="ic"><use href="#i-chevron-left"/></svg></i><span class="review-number"><span lang="en">Change 1</span><span lang="zh-CN">修改 1</span></span><i class="review-step"><svg class="ic"><use href="#i-chevron-right"/></svg></i><code class="review-where">main.tex:42</code>
+                    <i class="review-accept"><svg class="ic"><use href="#i-check"/></svg></i><i class="review-reject"><svg class="ic"><use href="#i-close"/></svg></i><i class="review-comment"><svg class="ic"><use href="#i-chat"/></svg></i><i class="review-latex"><svg class="ic"><use href="#i-code"/></svg></i>
                   </div>
                   <div class="review-side before">
                     <span class="review-label"><span lang="en">Before</span><span lang="zh-CN">修改前</span></span>
@@ -355,21 +432,23 @@ progress and preservation.</pre></div>
                 </article>
                 <span class="sheet-lines fill"><i style="width:100%"></i><i style="width:68%"></i><span class="sheet-eq"><i style="width:22px"></i>=<span class="frac"><i style="width:48px"></i><b></b><i style="width:30px"></i></span>+<i style="width:40px"></i><em>(7)</em></span><i style="width:100%"></i></span>
               </div>
+              <div class="m-decide"><i><svg class="ic"><use href="#i-chevron-left"/></svg></i><span>1 / 1</span><i class="m-accept"><svg class="ic"><use href="#i-check"/></svg></i><i class="m-reject"><svg class="ic"><use href="#i-close"/></svg></i><i class="m-talk"><svg class="ic"><use href="#i-chat"/></svg></i><i><svg class="ic"><use href="#i-chevron-right"/></svg></i></div>
             </div>
             <div class="app-chat">
               <div class="chat-thread">
                 <span class="chat-bubble chat-old"><i style="width:100%"></i><i style="width:64%"></i></span>
                 <div class="chat-reply chat-old"><span class="chat-lines"><i style="width:100%"></i><i style="width:82%"></i></span></div>
                 <div class="chat-bubble">
-                  <span class="chat-note-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><span lang="en">Review feedback · 1 comment</span><span lang="zh-CN">审阅反馈 · 1 条评论</span></span>
+                  <span class="chat-note-head"><svg class="ic"><use href="#i-paper"/></svg><span lang="en">Review feedback</span><span lang="zh-CN">审阅反馈</span></span>
+                  <span class="chat-quote"><em><span lang="en">Change 1 · Whole change</span><span lang="zh-CN">修改 1 · 整处修改</span></em></span>
                   <p class="chat-comment"><span lang="en">Write this as an inference rule</span><span lang="zh-CN">这里写成推导规则</span></p>
                 </div>
                 <div class="chat-reply"><span class="chat-dots"><i></i><i></i><i></i></span><span class="chat-lines"><i style="width:100%"></i><i style="width:58%"></i></span></div>
               </div>
-              <div class="chat-pending"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><span><span lang="en">1 review update not sent yet</span><span lang="zh-CN">1 项审阅更新尚未发送</span></span><b><span lang="en">Send feedback</span><span lang="zh-CN">发送反馈</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></b></div>
               <div class="chat-composer">
+                <div class="chat-draft"><p class="draft-head"><svg class="ic"><use href="#i-chat"/></svg><b><span lang="en">Review feedback</span><span lang="zh-CN">审阅反馈</span></b><span><span lang="en">1 comment</span><span lang="zh-CN">1 条评论</span></span></p><p class="draft-note"><span class="draft-where"><b>1</b><em><span lang="en">Whole change</span><span lang="zh-CN">整处修改</span></em></span><span class="draft-text"></span></p></div>
                 <span class="chat-input"><i></i></span>
-                <span class="chat-foot"><span class="chat-agent agent codex"><i></i><b>Codex</b></span><span class="chat-send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></span></span>
+                <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent codex"><i></i><b>Codex</b><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
               </div>
             </div>
           </div>
@@ -388,30 +467,29 @@ progress and preservation.</pre></div>
       <figure class="app-window scene" data-scene="record" data-step="pushed" role="img" aria-label="The accepted rule, with a commit message written by the agent, committed and pushed" data-zh-aria-label="接受的规则由智能体写好提交信息，提交并推送">
         <div class="scene-art" aria-hidden="true" inert>
           <div class="app-bar"><span class="lights"><i></i><i></i><i></i></span></div>
-          <div class="app-body">
-            <div class="app-pdf">
-              <div class="review-page">
-                <span class="sheet-head"><b>3.2</b><i style="width:34%"></i></span>
-                <span class="sheet-lines"><i style="width:100%"></i><i style="width:48%"></i></span>
-                <p class="scene-text scene-edited scene-rule"><span class="rule"><span class="rule-premises"><span>Γ, <i>x</i> : <i>τ</i>₁ ⊢ <i>e</i> : <i>τ</i>₂</span></span><span class="rule-name">T-Abs</span><span class="rule-conclusion">Γ ⊢ λ<i>x</i>. <i>e</i> : <i>τ</i>₁ → <i>τ</i>₂</span></span></p>
-                <span class="sheet-lines fill"><i style="width:100%"></i><i style="width:80%"></i><span class="sheet-fig"><svg class="fig-auto" viewBox="0 0 300 88"><defs><marker id="fig-arrowhead" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 7 4 1 7" fill="none" stroke="#59606c" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></marker></defs><path d="M22 38H52" fill="none" stroke="#59606c" stroke-width="1.1" marker-end="url(#fig-arrowhead)"/><circle cx="66" cy="38" r="13" fill="#fff" stroke="#59606c" stroke-width="1.1"/><text x="66" y="42" class="q">q<tspan dy="2.5" font-size="8">0</tspan></text><circle cx="150" cy="38" r="13" fill="#fff" stroke="#59606c" stroke-width="1.1"/><text x="150" y="42" class="q">q<tspan dy="2.5" font-size="8">1</tspan></text><circle cx="234" cy="38" r="13" fill="#fff" stroke="#59606c" stroke-width="1.1"/><circle cx="234" cy="38" r="10" fill="none" stroke="#59606c" stroke-width="1"/><text x="234" y="42" class="q">q<tspan dy="2.5" font-size="8">2</tspan></text><path d="M80 38H134" fill="none" stroke="#59606c" stroke-width="1.1" marker-end="url(#fig-arrowhead)"/><text x="107" y="32" class="e">a</text><path d="M164 38H218" fill="none" stroke="#59606c" stroke-width="1.1" marker-end="url(#fig-arrowhead)"/><text x="191" y="32" class="e">a</text><path d="M144 26C134 2 166 2 156 26" fill="none" stroke="#59606c" stroke-width="1.1" marker-end="url(#fig-arrowhead)"/><text x="150" y="1" class="e">b</text><path d="M226 49C200 84 100 84 74 50" fill="none" stroke="#59606c" stroke-width="1.1" marker-end="url(#fig-arrowhead)"/><text x="150" y="82" class="e">b</text></svg><i></i></span><i style="width:100%"></i><i style="width:60%"></i></span>
-              </div>
-            </div>
+          <div class="app-body vm">
             <div class="app-git">
-              <p class="git-branch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><code>main</code></p>
+              <div class="vm-tb"><i class="tb-icon tb-sidebar"><svg class="ic"><use href="#i-sidebar"/></svg></i><i class="tb-icon m-menu"><svg class="ic"><use href="#i-menu"/></svg></i><span class="git-branch"><svg class="ic"><use href="#i-branch"/></svg><code>main</code><b class="git-ahead">↑1</b></span><span class="tb-space"></span><i class="tb-icon"><svg class="ic"><use href="#i-refresh"/></svg></i></div>
+              <p class="git-pushed"><svg class="ic"><use href="#i-check"/></svg><span lang="en">Pushed to the remote.</span><span lang="zh-CN">已推送到远程。</span></p>
+              <div class="git-box">
+                <p class="git-message"><span class="git-typed"></span><span class="git-hint"><span lang="en">Message (↵ to commit on “main”)</span><span lang="zh-CN">提交信息（按 ↵ 提交到“main”）</span></span></p>
+                <p class="git-bar"><i class="git-spark"><svg class="ic"><use href="#i-spark"/></svg></i><span class="git-split"><b class="git-commit"><span class="git-to-commit"><svg class="ic"><use href="#i-check"/></svg><span lang="en">Commit</span><span lang="zh-CN">提交</span></span><span class="git-to-sync"><svg class="ic"><use href="#i-refresh"/></svg><span lang="en">Sync</span><span lang="zh-CN">同步</span><em>↑1</em></span><span class="git-synced"><svg class="ic"><use href="#i-check"/></svg><span lang="en">Synced</span><span lang="zh-CN">已同步</span></span></b><i class="git-more"><svg class="ic"><use href="#i-chevron-down"/></svg></i></span></p>
+              </div>
               <div class="git-staged">
-                <p class="git-title"><span lang="en">1 file staged</span><span lang="zh-CN">已暂存 1 个文件</span></p>
-                <p class="git-file"><code>main.tex</code><b>+3 <s>−1</s></b></p>
-                <p class="git-message"><span class="git-typed"></span><span class="git-hint"><span lang="en">Commit message</span><span lang="zh-CN">提交信息</span></span><span class="git-spark"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5c.5 4.6 2.9 7 7.5 7.5-4.6.5-7 2.9-7.5 7.5-.5-4.6-2.9-7-7.5-7.5 4.6-.5 7-2.9 7.5-7.5Z"/></svg></span></p>
-                <p class="git-commit"><span lang="en">Commit 1 file</span><span lang="zh-CN">提交 1 个文件</span></p>
+                <p class="git-group"><svg class="ic"><use href="#i-chevron-down"/></svg><span lang="en">Staged changes</span><span lang="zh-CN">暂存的改动</span><b>1</b></p>
+                <p class="git-file"><svg class="ic"><use href="#i-paper"/></svg><span>main.tex</span><b>M</b></p>
               </div>
-              <div class="git-log">
-                <p class="git-row git-new"><i></i><span class="git-msg"><span lang="en">Write T-Abs as a rule</span><span lang="zh-CN">T-Abs 写成推导规则</span></span><code>3f9c2a1</code></p>
-                <p class="git-row"><i></i><b style="width:64%"></b><code>ecce73e</code></p>
-                <p class="git-row"><i></i><b style="width:48%"></b><code>91b07d4</code></p>
-                <p class="git-row"><i></i><b style="width:56%"></b><code>5a2e8c0</code></p>
-              </div>
-              <p class="git-push"><span class="git-push-button"><span lang="en">Push</span><span lang="zh-CN">推送</span></span><span class="git-pushed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span lang="en">Pushed to the remote.</span><span lang="zh-CN">已推送到远程。</span></span></p>
+              <p class="git-clean"><svg class="ic"><use href="#i-check"/></svg><span lang="en">No uncommitted changes</span><span lang="zh-CN">没有未提交的改动</span></p>
+            </div>
+            <div class="app-history">
+              <div class="vm-tb"><span class="tb-seg"><b><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b><b class="on"><svg class="ic"><use href="#i-restore"/></svg><span class="tb-label"><span lang="en">Version history</span><span lang="zh-CN">版本记录</span></span></b></span></div>
+              <ol class="git-log">
+                <li class="git-new"><i><svg class="ic"><use href="#i-chevron-right"/></svg></i><span><span class="git-msg"><span lang="en">Write T-Abs as a rule</span><span lang="zh-CN">T-Abs 写成推导规则</span></span><small style="width:46%"></small></span><code>3f9c2a1</code></li>
+                <li><i><svg class="ic"><use href="#i-chevron-right"/></svg></i><span><b style="width:72%"></b><small style="width:40%"></small></span><code>ecce73e</code></li>
+                <li><i><svg class="ic"><use href="#i-chevron-right"/></svg></i><span><b style="width:58%"></b><small style="width:44%"></small></span><code>91b07d4</code></li>
+                <li><i><svg class="ic"><use href="#i-chevron-right"/></svg></i><span><b style="width:66%"></b><small style="width:36%"></small></span><code>5a2e8c0</code></li>
+                <li><i><svg class="ic"><use href="#i-chevron-right"/></svg></i><span><b style="width:50%"></b><small style="width:42%"></small></span><code>c71d0b9</code></li>
+              </ol>
             </div>
           </div>
           <span class="app-cursor"><svg viewBox="0 0 24 24"><path d="M5.5 2.5v17.2l4.3-4.1 2.9 6.6 3.1-1.3-2.9-6.5h6z"/></svg></span>
@@ -588,6 +666,9 @@ for (const download of document.querySelectorAll('.download')) {
 }
 
 const still = matchMedia('(prefers-reduced-motion: reduce)');
+// On a phone the windows are the phone app: one pane at a time, switched in
+// the navigation bar, and decisions in a capsule floating over the page.
+const phone = matchMedia('(max-width: 720px)');
 const ease = 'cubic-bezier(.45,.05,.2,1)';
 // Steps take effect at once, without transitions, inside this.
 const instantly = (elements, step) => {
@@ -700,6 +781,7 @@ const player = app => {
   };
   // Draws a dashed box round a rectangle, as dragging on the page does.
   self.box = async (box, measure) => {
+    app.classList.add('marking');
     await self.glide(() => { const rect = measure(); return self.tip(rect.left, rect.top); }, 650);
     box.classList.add('open', 'draft');
     self.anchor(box, () => {
@@ -740,7 +822,7 @@ const player = app => {
     await note.animate([{ transform: 'none', opacity: 1 }, { transform: `translate(${to.left - from.left}px,${to.top - from.top}px) scale(.35)`, opacity: 0 }], { duration: 500, easing: 'cubic-bezier(.4,0,.2,1)' }).finished;
     self.closeNote(note);
   };
-  self.closeNote = note => { note.classList.remove('open', 'filled'); note.querySelector('.demo-note-typed').textContent = ''; };
+  self.closeNote = note => { app.classList.remove('marking'); note.classList.remove('open', 'filled'); note.querySelector('.demo-note-typed').textContent = ''; };
   // A round fades out and starts again from its first step.
   self.restart = async (elements, begin) => {
     const out = elements.map(el => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, fill: 'forwards' }));
@@ -766,11 +848,17 @@ const around = (el, page, text = true) => {
   const left = box.left - pad, top = box.top - (text ? 6 : 0), right = Math.min(box.right + pad, page.right - 6), bottom = box.bottom + (text ? 6 : 0);
   return { left, top, right, bottom, width: right - left, height: bottom - top };
 };
-const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach((chip, i) => {
-  chip.lastElementChild.textContent = texts[i] || '';
-  chip.classList.toggle('on', Boolean(texts[i]));
-  input.classList.toggle('filled', texts.some(Boolean));
-});
+// Notes added to the task wait above the composer, one card each, and send
+// turns blue once there is something to send.
+const pick = (chat, texts) => {
+  const count = texts.filter(Boolean).length;
+  chat.querySelectorAll('.picked').forEach((card, i) => {
+    card.lastElementChild.textContent = texts[i] || '';
+    card.classList.toggle('on', Boolean(texts[i]));
+  });
+  chat.classList.toggle('ready', count > 0);
+  for (const badge of chat.closest('.app-window').querySelectorAll('.tb-picked')) badge.textContent = count || '';
+};
 
 // The opening window. Its change behaves as in the review, LaTeX shows the
 // source, and the PDF keeps the height of the undecided change, so a round
@@ -785,7 +873,9 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
     if (state === 'accepted' || state === 'rejected') change.tabIndex = 0; else change.removeAttribute('tabindex');
   };
   for (const [name, state] of [['accept', 'accepted'], ['reject', 'rejected']]) {
-    change.querySelector(`.review-${name}`).addEventListener('click', event => { settle(state); change.focus(); siteAction(event, 'demo_interaction', { action: name }); });
+    for (const button of [change.querySelector(`.review-${name}`), app.querySelector(`.m-${name}`)]) {
+      button.addEventListener('click', event => { settle(state); change.focus(); siteAction(event, 'demo_interaction', { action: name }); });
+    }
   }
   const reopen = event => { settle('pending'); accept.focus(); siteAction(event, 'demo_interaction', { action: 'reopen' }); };
   change.addEventListener('click', event => { if (change.tabIndex === 0 && !event.target.closest('a, button')) reopen(event); });
@@ -813,13 +903,14 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
   // asking, the composer cycles through the agents.
   const play = player(app), { cursor } = play;
   const chat = app.querySelector('.app-chat'), thread = chat.querySelector('.chat-thread');
-  const input = chat.querySelector('.chat-input'), send = chat.querySelector('.chat-send');
+  const composer = chat.querySelector('.chat-composer'), send = chat.querySelector('.chat-send');
+  const chatTab = app.querySelector('.m-chat'), phoneAccept = app.querySelector('.m-accept');
   const chip = chat.querySelector('.chat-agent'), label = chip.querySelector('b');
   const box = app.querySelector('.demo-box'), note = app.querySelector('.demo-note');
   const comment = chat.querySelector('.chat-comment').textContent, quote = change.querySelector('.before .review-body');
   let locked = false;
   const clear = () => {
-    chips(input, []); play.closeNote(note);
+    pick(chat, []); play.closeNote(note); chatTab.classList.remove('busy');
     for (const el of [box, note]) { el.classList.remove('open', 'draft', 'gone'); for (const motion of el.getAnimations()) motion.cancel(); }
   };
   // The start of a round: the sentence as written and an empty chat.
@@ -843,20 +934,25 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
     await play.box(box, measure);
     await play.note(note, measure, comment);
     locked = true;
-    await play.fly(note, input);
-    chips(input, [comment]); box.classList.remove('draft');
+    // The note goes to the chat: above the composer on a computer, where
+    // the pointer sends it, and to the Chat tab on a phone.
+    await play.fly(note, phone.matches ? chatTab : composer);
+    pick(chat, [comment]); box.classList.remove('draft');
     await play.sleep(450);
-    await play.glide(() => play.point(send), 550);
-    await play.press(send);
-    chips(input, []);
-    chat.dataset.step = 'sent'; chip.classList.add('busy');
+    if (!phone.matches) {
+      await play.glide(() => play.point(send), 550);
+      await play.press(send);
+    }
+    pick(chat, []);
+    chat.dataset.step = 'sent'; chip.classList.add('busy'); chatTab.classList.add('busy');
     await play.sleep(1300);
-    chat.dataset.step = 'done'; chip.classList.remove('busy');
+    chat.dataset.step = 'done'; chip.classList.remove('busy'); chatTab.classList.remove('busy');
     box.classList.add('gone');
     decide('pending');
     await play.sleep(2200);
-    await play.glide(() => play.point(accept, .4, .6), 750);
-    await play.press(accept);
+    const yes = phone.matches ? phoneAccept : accept;
+    await play.glide(() => play.point(yes, .4, .6), 750);
+    await play.press(yes);
     decide('accepted');
     await play.sleep(600);
     cursor.classList.remove('shown');
@@ -881,12 +977,14 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
 }
 
 // Feature 1: a sentence and a figure boxed, each with a note, and both
-// notes sent to the agent in one message. Without motion the boxes stay.
+// notes added to the task, then sent to the agent in one message. On a phone
+// the notes collect on the New task tab, which then opens to send them.
+// Without motion the boxes stay.
 {
   const app = document.querySelector('[data-scene=notes]'), play = player(app);
   const page = app.querySelector('.review-page'), boxes = [...app.querySelectorAll('.demo-box')];
   const note = app.querySelector('.demo-note'), chat = app.querySelector('.app-chat');
-  const input = chat.querySelector('.chat-input'), send = chat.querySelector('.chat-send');
+  const composer = chat.querySelector('.chat-composer'), send = chat.querySelector('.chat-send'), taskTab = app.querySelector('.seg-side');
   const texts = [...chat.querySelectorAll('.chat-comment')].map(p => p.textContent);
   const rects = () => [around(app.querySelector('.scene-text'), page.getBoundingClientRect()), around(app.querySelector('.scene-figure'), page.getBoundingClientRect(), false)];
   const mark = () => rects().forEach((rect, i) => {
@@ -895,9 +993,9 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
     boxes[i].classList.add('open');
   });
   if (!play.playing) { document.fonts.ready.then(mark); addEventListener('resize', mark); }
-  const begin = () => instantly([chat], () => {
+  const begin = () => instantly([chat, app], () => {
     for (const box of boxes) box.classList.remove('open', 'draft');
-    chips(input, []); play.closeNote(note); chat.dataset.step = 'empty';
+    pick(chat, []); play.closeNote(note); chat.dataset.step = 'empty'; delete app.dataset.tab;
   });
   play.loop(begin, async () => {
     await play.sleep(900);
@@ -907,14 +1005,20 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
     for (const i of boxes.keys()) {
       await play.box(boxes[i], () => rects()[i]);
       await play.note(note, () => rects()[i], texts[i]);
-      await play.fly(note, input);
+      await play.fly(note, phone.matches ? taskTab : composer);
       boxes[i].classList.remove('draft');
-      sent.push(texts[i]); chips(input, sent);
+      sent.push(texts[i]); pick(chat, sent);
       await play.sleep(400);
+    }
+    if (phone.matches) {
+      await play.glide(() => play.point(taskTab), 550);
+      await play.press(taskTab);
+      app.dataset.tab = 'side';
+      await play.sleep(700);
     }
     await play.glide(() => play.point(send), 550);
     await play.press(send);
-    chips(input, []);
+    pick(chat, []);
     chat.dataset.step = 'sent';
     await play.sleep(1300);
     chat.dataset.step = 'done';
@@ -925,18 +1029,21 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
   });
 }
 
-// Feature 2: a comment on a change goes back to the agent with Send
-// feedback; the agent's second attempt replaces the first, and is accepted.
+// Feature 2: a comment on a change waits in the composer as review feedback
+// and goes back to the agent with send; the agent's second attempt replaces
+// the first, and is accepted. On a phone the comment goes to the Chat tab and
+// the decisions are in the capsule over the page.
 {
   const app = document.querySelector('[data-scene=revise]'), play = player(app);
   const change = app.querySelector('.review-change'), decide = review(change);
-  const after = change.querySelector('.after'), accept = change.querySelector('.review-accept');
-  const comment = change.querySelector('.review-comment'), note = app.querySelector('.demo-note');
-  const chat = app.querySelector('.app-chat'), pending = chat.querySelector('.chat-pending'), feedback = pending.querySelector('b');
+  const after = change.querySelector('.after'), note = app.querySelector('.demo-note');
+  const chat = app.querySelector('.app-chat'), draft = chat.querySelector('.chat-draft'), send = chat.querySelector('.chat-send');
+  const chatTab = app.querySelector('.seg-side'), reviewTab = app.querySelector('.seg-pdf');
   const text = chat.querySelector('.chat-comment').textContent;
-  const begin = () => instantly([change, chat], () => {
+  const control = name => app.querySelector(phone.matches ? `.m-${name}` : `.review-${name}`);
+  const begin = () => instantly([change, chat, app], () => {
     change.dataset.state = 'pending'; after.dataset.version = '1';
-    chat.dataset.step = 'empty'; pending.classList.remove('on'); play.closeNote(note);
+    chat.dataset.step = 'empty'; draft.classList.remove('on'); chat.classList.remove('ready'); play.closeNote(note); delete app.dataset.tab;
   });
   const revise = () => {
     const from = after.offsetHeight;
@@ -947,24 +1054,40 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
   play.loop(begin, async () => {
     await play.sleep(1200);
     play.show(app.querySelector('.app-pdf'));
+    const comment = phone.matches ? app.querySelector('.m-talk') : change.querySelector('.review-comment');
     await play.glide(() => play.point(comment), 650);
     await play.press(comment);
     await play.note(note, () => {
       const box = change.getBoundingClientRect();
       return { left: box.left + 16, top: box.top, bottom: box.bottom - 2 };
     }, text);
-    pending.classList.add('on');
-    await play.fly(note, pending);
+    draft.querySelector('.draft-text').textContent = text;
+    await play.fly(note, phone.matches ? chatTab : chat.querySelector('.chat-composer'));
+    draft.classList.add('on'); chat.classList.add('ready');
     await play.sleep(500);
-    await play.glide(() => play.point(feedback), 550);
-    await play.press(feedback);
-    pending.classList.remove('on');
+    if (phone.matches) {
+      await play.glide(() => play.point(chatTab), 550);
+      await play.press(chatTab);
+      app.dataset.tab = 'side';
+      await play.sleep(600);
+    }
+    await play.glide(() => play.point(send), 550);
+    await play.press(send);
+    draft.classList.remove('on'); chat.classList.remove('ready');
     chat.dataset.step = 'sent';
     await play.sleep(1300);
     chat.dataset.step = 'done';
+    if (phone.matches) {
+      await play.sleep(500);
+      await play.glide(() => play.point(reviewTab), 550);
+      await play.press(reviewTab);
+      delete app.dataset.tab;
+      await play.sleep(300);
+    }
     revise();
     await play.sleep(2000);
-    await play.glide(() => play.point(accept, .4, .6), 700);
+    const accept = control('accept');
+    await play.glide(() => play.point(accept, .45, .6), 700);
     await play.press(accept);
     decide('accepted');
     await play.sleep(600);
@@ -974,18 +1097,19 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
   });
 }
 
-// Feature 3: the agent writes the commit message, Commit takes what is
-// staged into the history, and Push sends it to the remote.
+// Feature 3: Version Management. The agent writes the commit message, Commit
+// takes what is staged into the history, and the same button then syncs it
+// with the remote.
 {
   const app = document.querySelector('[data-scene=record]'), play = player(app);
-  const staged = app.querySelector('.git-staged'), fresh = app.querySelector('.git-new');
+  const staged = app.querySelector('.git-staged'), fresh = app.querySelector('.git-new'), clean = app.querySelector('.git-clean');
   const message = app.querySelector('.git-message'), typed = message.querySelector('.git-typed');
-  const spark = message.querySelector('.git-spark'), commit = app.querySelector('.git-commit'), push = app.querySelector('.git-push-button');
+  const spark = app.querySelector('.git-spark'), commit = app.querySelector('.git-commit');
   const text = fresh.querySelector('.git-msg').textContent;
   const begin = () => instantly([app], () => { app.dataset.step = 'staged'; typed.textContent = ''; message.classList.remove('filled', 'busy'); });
   play.loop(begin, async () => {
     await play.sleep(1200);
-    play.show(app.querySelector('.app-pdf'));
+    play.show(app.querySelector('.app-git'));
     await play.glide(() => play.point(spark), 700);
     await play.press(spark);
     message.classList.add('busy');
@@ -997,10 +1121,11 @@ const chips = (input, texts) => input.querySelectorAll('.chat-attached').forEach
     await play.press(commit);
     const close = closing(staged);
     app.dataset.step = 'committed';
-    close(); opening(fresh);
+    typed.textContent = ''; message.classList.remove('filled');
+    close(); opening(fresh); opening(clean);
     await play.sleep(1400);
-    await play.glide(() => play.point(push), 500);
-    await play.press(push);
+    await play.glide(() => play.point(commit), 400);
+    await play.press(commit);
     await play.sleep(300);
     app.dataset.step = 'pushed';
     await play.sleep(600);
