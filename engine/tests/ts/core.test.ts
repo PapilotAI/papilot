@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, afterEach, describe, it, expect } from "vitest";
 import { Fixture, METHOD, BODY, MAIN } from "./helpers.ts";
-import { cleanPath, merge3, within } from "../../src/core/git.ts";
+import { cleanPath, merge3Async, within } from "../../src/core/git.ts";
 import { loadProject, detectMain } from "../../src/core/config.ts";
 import {
   buildOutline,
@@ -14,7 +14,7 @@ import {
   diffUnits,
   applyUnits,
   revertUnits,
-  scopeViolations,
+  scopeViolationsAsync,
 } from "../../src/core/changes.ts";
 import {
   affectedTargets,
@@ -22,7 +22,6 @@ import {
   errors,
   warnings,
 } from "../../src/core/build.ts";
-import { wordDiff } from "../../src/web/model.ts";
 let f: Fixture;
 beforeEach(() => {
   f = new Fixture();
@@ -83,13 +82,13 @@ describe("Git snapshots", () => {
     "rejects unsafe path %s",
     (value) => expect(() => cleanPath(value)).toThrow(),
   );
-  it("merges independent edits and reports overlaps", () => {
+  it("merges independent edits and reports overlaps", async () => {
     const b = (s: string) => Buffer.from(s);
     expect(
-      merge3(b("A\nb\nc\nd\ne\n"), b("a\nb\nc\nd\ne\n"), b("a\nb\nc\nd\nE\n")),
+      await merge3Async(b("A\nb\nc\nd\ne\n"), b("a\nb\nc\nd\ne\n"), b("a\nb\nc\nd\nE\n")),
     ).toEqual([b("A\nb\nc\nd\nE\n"), false]);
-    expect(merge3(b("x\n"), b("a\n"), b("y\n"))[1]).toBe(true);
-    expect(merge3(null, b("a"), null)).toEqual([null, false]);
+    expect((await merge3Async(b("x\n"), b("a\n"), b("y\n")))[1]).toBe(true);
+    expect(await merge3Async(null, b("a"), null)).toEqual([null, false]);
     expect(within("paper-old/a", ["paper"])).toBe(false);
     expect(cleanPath("./paper/")).toBe("paper");
   });
@@ -221,7 +220,7 @@ Background.
       )?.toString(),
     ).toBe(BODY + "Appended");
   });
-  it("enforces line and file scope", () => {
+  it("enforces line and file scope", async () => {
     const head = f.repo.rev("HEAD"),
       scope = {
         ranges: { [METHOD]: [[4, 10] as [number, number]] },
@@ -230,11 +229,11 @@ Background.
       };
     f.write(METHOD, BODY.replace("Method sentence 5.", "Inside."));
     expect(
-      scopeViolations(f.repo, head, f.repo.snapshot(["paper"]), scope),
+      await scopeViolationsAsync(f.repo, head, f.repo.snapshot(["paper"]), scope),
     ).toEqual([]);
     f.write(METHOD, BODY.replace("Method sentence 15.", "Outside."));
     expect(
-      scopeViolations(f.repo, head, f.repo.snapshot(["paper"]), scope),
+      await scopeViolationsAsync(f.repo, head, f.repo.snapshot(["paper"]), scope),
     ).toEqual([METHOD + ":18"]);
   });
 });
@@ -289,66 +288,4 @@ describe("compiler diagnostics and source diff", () => {
       "Undefined control sequence.  [l.4 \\broken]",
     ]);
   });
-  it.each([
-    ["one old word", "one new term"],
-    ["a b c", "x b y"],
-    [
-      "\\noindent Since a type variable's meaning now\ndepends on its bound, our two new guards must also be context-aware.",
-      "\\noindent Since type variables now depend on their bounds, both guards must be context-aware.",
-    ],
-  ])("source diff reconstructs both inputs", (before, after) => {
-    const diff = wordDiff(before, after);
-    expect(
-      diff
-        .filter((p) => p.type !== "ins")
-        .map((p) => p.text)
-        .join(""),
-    ).toBe(before);
-    expect(
-      diff
-        .filter((p) => p.type !== "del")
-        .map((p) => p.text)
-        .join(""),
-    ).toBe(after);
-  });
-});
-it("seeded edit sequences reconstruct both sides through arbitrary hunk subsets", () => {
-  let seed = 0x5eed123;
-  const random = (n: number) => {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-    return seed % n;
-  };
-  const before = Array.from(
-      { length: 45 },
-      (_, i) => `line ${i}: repeated text\n`,
-    ).join(""),
-    head = f.repo.commitWith(
-      f.repo.rev("HEAD"),
-      { [METHOD]: Buffer.from(before) },
-      "fuzz baseline",
-    );
-  for (let sample = 0; sample < 100; sample++) {
-    const lines = before.match(/[^\n]*\n/g)!;
-    for (let k = 0; k < 8; k++) {
-      const index = random(lines.length + 1),
-        kind = random(3);
-      lines.splice(
-        index,
-        kind === 0 ? 0 : 1,
-        ...(kind === 1 ? [] : [`mutation ${sample}-${k}: α beta\\gamma\n`]),
-      );
-    }
-    if (random(2)) lines[lines.length - 1] = lines.at(-1)!.trimEnd();
-    const next = Buffer.from(lines.join("")),
-      after = f.repo.commitWith(head, { [METHOD]: next }, "fuzz snapshot"),
-      units = diffUnits(f.repo, head, after),
-      old = Buffer.from(before);
-    expect(applyUnits(old, next, units)).toEqual(next);
-    expect(revertUnits(old, next, units)).toEqual(old);
-    const chosen = units.filter(() => Boolean(random(2))),
-      other = units.filter((u) => !chosen.includes(u));
-    expect(applyUnits(old, next, chosen)).toEqual(
-      revertUnits(old, next, other),
-    );
-  }
 });

@@ -39,11 +39,6 @@
     "textHash": "ac049457f182adabbb68a406d918e5a9e61979978b5fa8c21903d0a5c58024be",
     "model": "gemini-4-argon-high"
   },
-  "AI review has no manuscript changes to deliver.": {
-    "revision": "6e37f4a0aec0175ae18bbf149ffefca08cb06ba0138fd4484b97a9a96efd7b3c",
-    "textHash": "512d05c7f41a22f2fb84452edd27e218b62729cbf984d575f277a6cd90ab8f5c",
-    "model": "gemini-4-argon-medium"
-  },
   "AI review uses manuscript PDF notes, not change decisions.": {
     "revision": "722c8569ef120dfb9da4b1281c863cb57c758fb2c06c2991bda8ed1375afd0fe",
     "textHash": "a6e0cdae1b83ab32fec8b67abc85927fde65a5e13ddc77eec293cd2b280126b6",
@@ -208,11 +203,6 @@
     "revision": "4f865fed666a5397675bea944a4b5af2f8a84d17cfbb81f805d0cd4a13020c38",
     "textHash": "c639b470f9140b945884ab41bfef3ef5ce9debe6bcaf63e92e59b39b61831724",
     "model": "gemini-4-argon-medium"
-  },
-  "Commit the task first, then push from Git.": {
-    "revision": "7e808cc45aadf6f52bc56ad5bd292408d98efd274f39ed4e471a8b750f4f671d",
-    "textHash": "5333fa8f077bafc78f19da4c374ceea81a29f804a33950466f76be1dfa474230",
-    "model": "gemini-4-argon-high"
   },
   "Confirm permanent task deletion before continuing.": {
     "revision": "356c3c8eb4f0e6186775887536aa00d2c14ddcca6771ddf3f944fd5f3d73c282",
@@ -587,11 +577,6 @@
   "Select the root directory of the Git repository.": {
     "revision": "f1afc488e09ba3cc1c9c36e8c17b2bf48dc9ca8f64dbb0b9e61093e357a2ae94",
     "textHash": "a58decf5c45eac2194e0410fa791410b44468d58da9620b321dee0639794e16b",
-    "model": "gemini-4-argon-medium"
-  },
-  "Select unsent PDF notes for this task.": {
-    "revision": "9e36208cc78e1f77c8f802e10bfe4851db9c4ba41ba2b3c4badc4e664989c019",
-    "textHash": "c932416d713aba27b2f4bf7e9f0795a0669ceab8b2954f1cf62ed896ce9c4e34",
     "model": "gemini-4-argon-medium"
   },
   "Select up to 10 valid attachments.": {
@@ -994,11 +979,6 @@
     "textHash": "5f5a526fd9e845c7cca798c6269ccc23f3e0c39fec9cb0fc80f2496aa1567b8b",
     "model": "gemini-4-argon-medium"
   },
-  "This task already applies accepted changes to the working directory.": {
-    "revision": "20ed0ab60e1e7285619b4f5d7b868a2ba7dd1dde9a13656551f35ba9c10df1a4",
-    "textHash": "b347f2ede13ef790856239e0b5fa52770befeac848517be8a1e1f25d93b4e69b",
-    "model": "gemini-4-argon-medium"
-  },
   "This task already has queued instructions. Wait or pause it first.": {
     "revision": "3f904061b65e59a1f4e709d8d38d7522e9cd786f8e35154c8b846ec7b91c2f47",
     "textHash": "ef2f91c86ad5f44556701fad7c19451771bc6fdee4b35cfdff966579eba53d7b",
@@ -1113,11 +1093,6 @@
     "revision": "ff0e02195aa75abc2624d854ce0b33be67d2f355142ee98dd8ce771dc370604d",
     "textHash": "09b3b2efdaf47d2ca987a02f4c3f6681947ea83587bc7df494cb2fed481ed6a0",
     "model": "gemini-4-argon-high"
-  },
-  "Wait for the task and review actions to finish before choosing a destination.": {
-    "revision": "b4c9ecc79f94bea5347a59d21ee12b642e990506f8059743c7c9621515c5396b",
-    "textHash": "8cd3e78e768a1dfe16f48b46ba3c83476beb2bf07682d8f848f3015bc4d0bd50",
-    "model": "gemini-4-argon-medium"
   },
   "Wait for this paper’s PDF build to finish before changing its path or removing it.": {
     "revision": "d9226e73bb4f3c81021931ea0ecf5948cdf51a4238dda00b8216d51df2fdc0be",

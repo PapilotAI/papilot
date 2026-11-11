@@ -29,26 +29,6 @@ export const zhCN: Record<string, string> = {
   "Choose how to save the accepted changes to your manuscript.": "请选择如何将已接受的改动保存到论文。",
   "There are no accepted changes to save.": "没有需要保存的已接受改动。",
 
-  // Overview
-  "All reviews": "全部审阅",
-  "Search reviews": "搜索审阅",
-  "Search by title or task name": "按标题或任务名搜索",
-  "Filter reviews": "筛选审阅",
-  "All tasks": "全部任务",
-  "Awaiting your review": "等待你审阅",
-  "Not published yet": "尚未发布",
-  "Review →": "审阅 →",
-  "Open →": "打开 →",
-  "No reviews match this filter.": "没有符合筛选条件的审阅。",
-  "No open reviews yet. Start a task from your document repository.":
-    "还没有进行中的审阅。请在文档仓库中开始一个任务。",
-  "{n} open review": "{n} 个进行中的审阅",
-  "{n} open reviews": "{n} 个进行中的审阅",
-  "{n} accepted": "{n} 已接受",
-  "{n} rejected": "{n} 已拒绝",
-  "{n} commented": "{n} 已评论",
-  "{n} pending": "{n} 待定",
-
   // Review states
   Editing: "编辑中",
   "In review": "审阅中",
@@ -103,9 +83,7 @@ export const zhCN: Record<string, string> = {
   "Change {n}": "修改 {n}",
   "Review the current change": "审阅当前修改",
   "Previous change": "上一处修改",
-  "Previous change (K or ←)": "上一处修改（K 或 ←）",
   "Next change": "下一处修改",
-  "Next change (J or →)": "下一处修改（J 或 →）",
   Accept: "接受",
   Reject: "拒绝",
   Comment: "评论",
@@ -128,7 +106,6 @@ export const zhCN: Record<string, string> = {
   "Copy selected text with this change’s file, line numbers and PDF page":
     "复制选中的文本，并附上这处修改的文件、行号和 PDF 页码",
   "Copy reference": "复制引用",
-  "Show the LaTeX source (S)": "显示 LaTeX 源码（S）",
   "{n} edits · LaTeX": "{n} 处编辑 · LaTeX",
   "Revised after your comment: ": "根据你的评论修订：",
   "No visible change in the PDF; see the LaTeX source.":
@@ -170,8 +147,6 @@ export const zhCN: Record<string, string> = {
   "All changes reviewed": "所有修改均已审阅",
   "Open Chat to answer the agent's question.": "打开对话回答智能体的问题。",
   "New changes will appear here when ready.": "新的修改准备好后会显示在这里。",
-  "Your comments are saved. Send feedback so the agent can revise.":
-    "你的评论已保存。发送反馈后，智能体会据此修订。",
   "Accepted changes are in your manuscript.": "已接受的修改已写入你的稿件。",
   "Your decisions are saved. Send them to the agent to continue.":
     "你的决定已保存。发送给智能体以继续。",
@@ -212,8 +187,6 @@ export const zhCN: Record<string, string> = {
   "↵ send · Esc cancel": "↵ 发送 · Esc 取消",
   Cancel: "取消",
   Send: "发送",
-  "J / K or → / ←": "J / K 或 → / ←",
-  "Next / previous change": "下一处 / 上一处修改",
   "Show LaTeX source": "显示 LaTeX 源码",
   Undo: "撤销",
   "Copy selected PDF text": "复制选中的 PDF 文本",
@@ -241,7 +214,6 @@ export const zhCN: Record<string, string> = {
   "Stage all ({n})": "全部暂存（{n}）",
   "Stage all": "全部暂存",
   "Comparison failed": "比较失败",
-  "Put back what the last revert removed (U)": "恢复上一次还原掉的内容（U）",
   "Undo revert": "撤销还原",
   "The comparison could not be built: ": "无法生成比较：",
   "Updating the comparison with your latest edits. You can keep staging and reverting meanwhile.":

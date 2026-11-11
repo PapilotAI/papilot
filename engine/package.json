@@ -6,17 +6,12 @@
   "engines": {
     "node": ">=22.22.0"
   },
-  "bin": {
-    "latex-review": "scripts/review.mjs"
-  },
   "scripts": {
-    "review": "tsx src/cli.ts",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test && npm run build",
-    "demo": "tsx examples/demo.ts",
     "test:browser": "playwright test",
     "test:corpus": "tsx scripts/validate-corpus.ts",
     "fixture:prepare": "tsx scripts/prepare-fixture.ts",
@@ -42,6 +37,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "fast-check": "^4.10.2",
     "pdfjs-dist": "^6.4.299",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2",

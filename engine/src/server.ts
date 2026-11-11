@@ -452,11 +452,6 @@ export function createServer(app: App) {
       const writes = await app.delivery.preview(request.params.name);
       return { files: writes && Object.fromEntries(Object.entries(writes).map(([file, data]) => [file, data?.toString("base64") ?? null])) };
     });
-    server.post<{ Params: { name: string }; Body: { mode: "workspace" | "branch"; message?: string } }>(
-      "/api/tasks/:name/deliver",
-      { schema: { body: { ...objectSchema, required: ["mode"], properties: { mode: { enum: ["workspace", "branch"] }, message: { type: "string", maxLength: 5000 } } } } },
-      request => app.delivery.deliver(request.params.name, request.body.mode, request.body.message),
-    );
     server.post<{
       Params: { name: string };
       Body: {
@@ -499,19 +494,6 @@ export function createServer(app: App) {
         },
       },
       (request) => app.review.undo(request.params.name, request.body.id),
-    );
-    server.post<{ Params: { name: string }; Body: { body: string } }>(
-      "/api/tasks/:name/note",
-      {
-        schema: {
-          body: {
-            ...objectSchema,
-            required: ["body"],
-            properties: { body: { type: "string" } },
-          },
-        },
-      },
-      (request) => app.review.note(request.params.name, request.body.body),
     );
     server.post<{ Params: { name: string }; Body: { force?: boolean } }>(
       "/api/tasks/:name/finish",
