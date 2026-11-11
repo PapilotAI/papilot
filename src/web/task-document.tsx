@@ -33,13 +33,10 @@ export function TaskDocument({ task, projectId, manuscript, placeholder, ...revi
     {!visibleReview && hasReview && review.completion && <div className="task-document-actions">{review.completion}</div>}
     <div className={'task-document' + (visibleReview ? ' has-review' : '')}>
     <div className="task-document-preview" aria-hidden={visibleReview} inert={visibleReview}>
-      {url ? <>
-        <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}>
-          <PdfView readOnly suspended={visibleReview} place={'task-pdf:' + task.id} url={url} notes={[]} active="" region={false} setRegion={nothing} onCreate={async () => {}} onSelect={nothing}
-            outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={visibleReview ? undefined : review.lead} tools={visibleReview ? undefined : review.tools}/>
-        </Suspense>
-        <div className="task-document-status"><span className="task-document-version">{lastRound ? t('Full PDF') : t('Manuscript')}</span>{failed && <p>{t('The latest changes did not compile. This is the last PDF that did.')}</p>}{!hasReview && placeholder}</div>
-      </> : !hasReview && <>{(review.lead || review.tools) && <div className="review-placeholder-toolbar">{review.lead}<div className="panel-tools">{review.tools}</div></div>}{placeholder}</>}
+      {url ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}>
+        <PdfView readOnly suspended={visibleReview} place={'task-pdf:' + task.id} url={url} notes={[]} active="" region={false} setRegion={nothing} onCreate={async () => {}} onSelect={nothing}
+          outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={visibleReview ? undefined : review.lead} tools={visibleReview ? undefined : review.tools}/>
+      </Suspense> : !hasReview && <>{(review.lead || review.tools) && <div className="review-placeholder-toolbar">{review.lead}<div className="panel-tools">{review.tools}</div></div>}{placeholder}</>}
     </div>
     {hasReview && <ReviewFrame {...review} lead={visibleReview || !url ? review.lead : undefined} tools={visibleReview || !url ? review.tools : undefined} task={task} keepPdf={Boolean(url)} onReadyChange={onReadyChange}/>}
     </div>

@@ -70,7 +70,8 @@ try {
     task.error = status === 'failed' ? 'Compile failed' : null;
     task.review = { state: status === 'failed' ? 'build_failed' : 'editing', round: null, counts: {}, job: status === 'reviewing' ? { status: 'done', outcome: 'empty' } : null };
     await sync();
-    await expect(preview).toContainText(status === 'reviewing' ? 'No manuscript changes' : status === 'building' ? 'Preparing task results' : status === 'waiting_input' ? 'Needs your reply' : status === 'queued' ? 'Queued' : 'PDF comparison');
+    await expect(page.locator(`[data-task="${task.id}"] .status`)).toContainText(status === 'reviewing' ? 'Completed' : status === 'building' ? 'Preparing task results' : status === 'waiting_input' ? 'Needs your reply' : status === 'queued' ? 'Queued' : 'Needs attention');
+    await expect(preview.locator('.review-placeholder')).toHaveCount(0);
     await readable();
     assert.ok(await original.evaluate(el => el.isConnected), 'Task status must not remount the PDF');
     await expect(views.getByRole('button')).toHaveCount(3);

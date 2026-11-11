@@ -1770,7 +1770,7 @@
     "model": "codex-reviewed"
   },
   "Full PDF": {
-    "revision": "eef3fc95de7028e8b9602a7821a8b8e70dfed8ffba9c4e4c380831e3aec47a41",
+    "revision": "062fac2cdf64245109de69c1b93301b3fe8d8b8db90dc578db83dfb8a2db1cce",
     "textHash": "f4c755ad943f3b2244f1e7adf7e06ec1c74bd94864b47a59ff0685473056b744",
     "model": "gemini-4-argon-medium"
   },
@@ -2215,7 +2215,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Manuscript": {
-    "revision": "df8f651ec3c54e2960a60c1d59a8204efc20c35e0593304ebf172510000e44d7",
+    "revision": "a1534e1fed1c9a6c9e2d44c520831fcf42b83288f9bf77bdd280c7e20eb2b156",
     "textHash": "1fa362a6b4024a80bd6fb332a5aec01ae3d8e55e1957ec131c7ddb0d445d0b17",
     "model": "gemini-4-argon-medium"
   },
@@ -4290,7 +4290,7 @@
     "model": "gemini-4-argon-medium"
   },
   "The latest changes did not compile. This is the last PDF that did.": {
-    "revision": "aae4a85a28cdb9062b352f94d9e8c4471622f062b9aec721845cd5765941d726",
+    "revision": "3cf01349d57200c7733b43c148b205007d631c18a081ff6e924456830b590121",
     "textHash": "0cdad24d3c4844a14f3139789603fd8b7e815864195f7237d80fadf6c2be9979",
     "model": "gemini-4-argon-medium"
   },

@@ -269,15 +269,6 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .task-document .keeps-pdf.review-pending>.review-host-bar,.task-document .keeps-pdf.review-pending>.review-marking-rail{visibility:hidden}
 .task-document .keeps-pdf>.review-loading{inset:auto 0 0;flex-direction:row;flex-wrap:wrap;gap:8px;padding:8px 12px;pointer-events:auto;border-top:1px solid var(--line);background:var(--bg);font-size:12px}
 .task-document .keeps-pdf>.review-loading p{max-width:none;margin:0}
-.task-document-status{flex:none;max-height:30%;overflow:auto;padding:8px 12px;border-top:1px solid var(--line);background:var(--bg);color:var(--text-2);font-size:12px}
-.task-document-version{font-weight:600}
-.task-document-status>p{margin:2px 0 0}
-.task-document:has(>.review-viewport) .task-document-status{order:-1;border-top:0;border-bottom:1px solid var(--line)}
-.task-document-status .review-placeholder{padding:4px 0;align-items:flex-start;text-align:left}
-.task-document-status .placeholder-icon{display:none}
-.task-document-status .review-placeholder h2{font:500 13px/1.4 var(--sans);margin:0}
-.task-document-status .review-placeholder p{max-width:none;font-size:12px}
-.task-document-status .review-placeholder>.button{margin-top:6px}
 .review-placeholder{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;padding:32px;overflow:auto;text-align:center;color:var(--text-2)}
 .placeholder-icon{display:flex;align-items:center;justify-content:center;width:48px;height:48px;color:var(--text-3);margin-bottom:16px}
 .review-placeholder h2{font:400 21px/1.3 var(--serif);margin:0 0 6px;color:var(--text)}
