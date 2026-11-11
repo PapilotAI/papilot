@@ -36,11 +36,13 @@ runs:
       env:
         DIR: ${{ steps.packages.outputs.dir }}
         PACKAGES: ${{ steps.packages.outputs.list }}
-      # Without package lists apt cannot fetch anything missing from the
-      # cache; it fails instead, and the step below downloads as before.
+      # dpkg installs only the cached files and never downloads: apt counts
+      # copying local packages as fetching, so apt-get --no-download refuses
+      # them. A package missing from the cache fails this step, and the step
+      # below finishes the install and downloads as before.
       continue-on-error: true
       run: |
-        sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends --no-download "$DIR"/*.deb
+        sudo dpkg -i "$DIR"/*.deb
         bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
 
     - name: Download and install the packages
@@ -77,10 +79,11 @@ runs:
         bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
 
     # Saved right after the download, so a test failing later still keeps it.
-    # Only main saves: pull requests restore its cache, and one saving its own
-    # would add hundreds of megabytes that no other branch can use. When both
-    # jobs of a run download, the second save only warns that the key exists.
-    - if: github.ref == 'refs/heads/main' && steps.download.outputs.key != '' && steps.download.outputs.key != steps.cache.outputs.cache-matched-key
+    # Pull requests do not save: they restore main's cache, and one of their
+    # own would add hundreds of megabytes no other branch can use. Pushes to
+    # main save, and so do runs started by hand, to try a branch's cache.
+    # When both jobs of a run download, the second save only warns.
+    - if: github.event_name != 'pull_request' && steps.download.outputs.key != '' && steps.download.outputs.key != steps.cache.outputs.cache-matched-key
       uses: actions/cache/save@v4
       with:
         path: ${{ steps.packages.outputs.dir }}
