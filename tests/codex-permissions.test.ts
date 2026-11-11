@@ -16,7 +16,10 @@ import type { Task } from '../src/shared.ts';
 // model charges are needed.
 const CODEX = path.join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'codex.cmd' : 'codex');
 for (const history of ['new', 'legacy-loaded', 'legacy-restarted'] as const)
-for (const initial of ['workspace', 'full'] as const) test(`real Codex switches permissions with ${history} history starting with ${initial}`, { timeout: 60000 }, async () => {
+for (const initial of ['workspace', 'full'] as const) test(`real Codex switches permissions with ${history} history starting with ${initial}`,
+  // Codex resolves workspace-write to read-only on Windows (Papilot then refuses
+  // to start); see the workspace permission handling in src/server/codex.ts.
+  { skip: process.platform === 'win32' && 'Codex has no workspace-write sandbox on Windows', timeout: 60000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-native-permissions-'));
   const cwd = path.join(dir, 'paper'), extra = path.join(dir, 'extra'), home = path.join(dir, 'home');
   for (const item of [cwd, extra, home]) fs.mkdirSync(item);
