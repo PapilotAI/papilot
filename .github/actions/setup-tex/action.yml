@@ -12,7 +12,6 @@ runs:
       run: |
         packages="latexmk poppler-utils texlive-lang-chinese texlive-latex-extra texlive-xetex"
         echo "list=$packages" >> "$GITHUB_OUTPUT"
-        # Outside $HOME, which apt's download user (_apt) cannot enter.
         echo "dir=/tmp/papilot-tex-debs" >> "$GITHUB_OUTPUT"
         # The cache holds only what this image lacks, so the image version is
         # in the key, and so are the packages. Bump v1 when the way the
@@ -21,6 +20,8 @@ runs:
 
     # A save is keyed on what it holds and a restore takes the newest, so a
     # download that repairs a cache that would not install supersedes it.
+    # No save has the bare prefix as its key: only restore-keys can match,
+    # so cache-hit is never true and the steps below test cache-matched-key.
     - id: cache
       uses: actions/cache/restore@v4
       with:
@@ -39,7 +40,7 @@ runs:
       # cache; it fails instead, and the step below downloads as before.
       continue-on-error: true
       run: |
-        sudo apt-get install -y --no-install-recommends --no-download "$DIR"/*.deb
+        sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends --no-download "$DIR"/*.deb
         bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
 
     - name: Download and install the packages
@@ -51,31 +52,32 @@ runs:
         PACKAGES: ${{ steps.packages.outputs.list }}
         PREFIX: ${{ steps.packages.outputs.prefix }}
       run: |
+        apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o DPkg::Lock::Timeout=120)
         # Finish what a failed install from the cache left half done, if it
         # can be; the install below repairs the rest (--fix-broken).
         sudo dpkg --configure -a || true
-        apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::archives="$DIR")
-        # The restored packages stay, so the set saved below still has those
-        # a failed install from it left installed. apt drops the ones its
-        # lists no longer have, downloads again any that differ from them,
-        # and downloads what is missing.
-        mkdir -p "$DIR/partial" && sudo chown _apt "$DIR/partial"
         sudo apt-get "${apt_options[@]}" update
-        sudo apt-get "${apt_options[@]}" autoclean
-        sudo apt-get "${apt_options[@]}" install -y --no-install-recommends --download-only $PACKAGES
-        sudo apt-get "${apt_options[@]}" install -y --no-install-recommends --fix-broken $PACKAGES
-        bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
-        # Only the packages themselves go in the cache, readable by the runner.
-        sudo rm -rf "$DIR/partial" "$DIR/lock"
-        sudo chown -R "$(id -u):$(id -g)" "$DIR"
-        if compgen -G "$DIR/*.deb" > /dev/null; then
+        # The set to cache: what this image still lacks, and everything a
+        # restored set held, as a failed install from it may have installed
+        # some. apt-get download fetches the current version of each, whether
+        # it is installed or not, into a folder of its own.
+        names=$( {
+          apt-get -s -f install --no-install-recommends $PACKAGES | awk '/^Inst /{print $2}'
+          for deb in "$DIR"/*.deb; do [ -e "$deb" ] && dpkg-deb -f "$deb" Package; done
+        } | sort -u)
+        rm -rf "$DIR" && mkdir -p "$DIR"
+        if [ -n "$names" ]; then
+          (cd "$DIR" && apt-get "${apt_options[@]}" download $names)
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends --fix-broken "$DIR"/*.deb
           echo "key=$PREFIX$(cd "$DIR" && sha256sum -- *.deb | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
         fi
+        bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
 
     # Saved right after the download, so a test failing later still keeps it.
-    # A set that is already cached is not saved again: when both jobs of a
-    # run download, the second save only warns that the key exists.
-    - if: steps.download.outputs.key != '' && steps.download.outputs.key != steps.cache.outputs.cache-matched-key
+    # Only main saves: pull requests restore its cache, and one saving its own
+    # would add hundreds of megabytes that no other branch can use. When both
+    # jobs of a run download, the second save only warns that the key exists.
+    - if: github.ref == 'refs/heads/main' && steps.download.outputs.key != '' && steps.download.outputs.key != steps.cache.outputs.cache-matched-key
       uses: actions/cache/save@v4
       with:
         path: ${{ steps.packages.outputs.dir }}
