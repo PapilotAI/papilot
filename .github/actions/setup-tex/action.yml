@@ -19,13 +19,13 @@ runs:
         # packages are cached changes.
         echo "prefix=tex-debs-v1-$ImageOS-$ImageVersion-$(uname -m)-$(sha256sum <<< "$packages" | cut -c1-16)-" >> "$GITHUB_OUTPUT"
 
-    # Each save adds a key of its own and a restore takes the newest, so a
-    # download that replaces a cache that would not install supersedes it.
+    # A save is keyed on what it holds and a restore takes the newest, so a
+    # download that repairs a cache that would not install supersedes it.
     - id: cache
       uses: actions/cache/restore@v4
       with:
         path: ${{ steps.packages.outputs.dir }}
-        key: ${{ steps.packages.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+        key: ${{ steps.packages.outputs.prefix }}
         restore-keys: ${{ steps.packages.outputs.prefix }}
 
     - name: Install from the cached packages
@@ -40,7 +40,7 @@ runs:
       continue-on-error: true
       run: |
         sudo apt-get install -y --no-install-recommends --no-download "$DIR"/*.deb
-        dpkg-query -W $PACKAGES
+        bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
 
     - name: Download and install the packages
       id: download
@@ -49,23 +49,34 @@ runs:
       env:
         DIR: ${{ steps.packages.outputs.dir }}
         PACKAGES: ${{ steps.packages.outputs.list }}
+        PREFIX: ${{ steps.packages.outputs.prefix }}
       run: |
-        # Finish whatever a failed install from the cache left half done.
-        sudo dpkg --configure -a
-        apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30)
-        sudo rm -rf "$DIR" && mkdir -p "$DIR/partial" && sudo chown _apt "$DIR/partial"
+        # Finish what a failed install from the cache left half done, if it
+        # can be; the install below repairs the rest (--fix-broken).
+        sudo dpkg --configure -a || true
+        apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::archives="$DIR")
+        # The restored packages stay, so the set saved below still has those
+        # a failed install from it left installed. apt drops the ones its
+        # lists no longer have, downloads again any that differ from them,
+        # and downloads what is missing.
+        mkdir -p "$DIR/partial" && sudo chown _apt "$DIR/partial"
         sudo apt-get "${apt_options[@]}" update
-        sudo apt-get "${apt_options[@]}" -o Dir::Cache::archives="$DIR" install -y --no-install-recommends --download-only $PACKAGES
-        sudo apt-get -o Dir::Cache::archives="$DIR" install -y --no-install-recommends $PACKAGES
-        dpkg-query -W $PACKAGES
+        sudo apt-get "${apt_options[@]}" autoclean
+        sudo apt-get "${apt_options[@]}" install -y --no-install-recommends --download-only $PACKAGES
+        sudo apt-get "${apt_options[@]}" install -y --no-install-recommends --fix-broken $PACKAGES
+        bash "$GITHUB_ACTION_PATH/installed.sh" $PACKAGES
         # Only the packages themselves go in the cache, readable by the runner.
         sudo rm -rf "$DIR/partial" "$DIR/lock"
         sudo chown -R "$(id -u):$(id -g)" "$DIR"
-        if compgen -G "$DIR/*.deb" > /dev/null; then echo save=true >> "$GITHUB_OUTPUT"; fi
+        if compgen -G "$DIR/*.deb" > /dev/null; then
+          echo "key=$PREFIX$(cd "$DIR" && sha256sum -- *.deb | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        fi
 
     # Saved right after the download, so a test failing later still keeps it.
-    - if: steps.download.outputs.save == 'true'
+    # A set that is already cached is not saved again: when both jobs of a
+    # run download, the second save only warns that the key exists.
+    - if: steps.download.outputs.key != '' && steps.download.outputs.key != steps.cache.outputs.cache-matched-key
       uses: actions/cache/save@v4
       with:
         path: ${{ steps.packages.outputs.dir }}
-        key: ${{ steps.packages.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+        key: ${{ steps.download.outputs.key }}
