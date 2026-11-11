@@ -350,7 +350,7 @@ function useDragHoles(host: RefObject<HTMLElement | null>, frame: RefObject<HTML
 // and the viewer's own waiting message shows while they are compared.
 // onCurrentChange follows the viewer's current change; sources asks the
 // viewer for the change at a line of a file.
-export interface ReviewSources { select: (file: string, line: number) => void; saved: (state: unknown, file: string, line: number) => void; decide: (round: number, change: string, action: DecideChange['action']) => void }
+export interface ReviewSources { select: (file: string, line: number) => void; saved: (state: unknown, file: string, line: number) => void; decide: (round: number, changes: string[], action: string) => void }
 export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided, onReadyChange, onFullPaperChange, view: controlledView, onViewChange, keepPdf, onCurrentChange, sources, onOpenSource, onChanges }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void; onReadyChange?: (ready: boolean, round?: number) => void; onFullPaperChange?: (available: boolean) => void; view?: ReviewView; onViewChange?: (value: ReviewView) => void; keepPdf?: boolean;
   onCurrentChange?: (change: CurrentChange) => void; sources?: Ref<ReviewSources>;
   /** Opens a change's source in the workspace's editor; false leaves it to the viewer's own. */
@@ -434,7 +434,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   useImperativeHandle(sources, () => ({
     select: (file, line) => document?.defaultView?.dispatchEvent(new CustomEvent(SELECT_SOURCE_EVENT, { detail: { file, line } })),
     saved: (state, file, line) => document?.defaultView?.dispatchEvent(new CustomEvent<SourceSaved>(SOURCE_SAVED_EVENT, { detail: { state: state as SourceSaved['state'], file, line } })),
-    decide: (round, change, action) => document?.defaultView?.dispatchEvent(new CustomEvent<DecideChange>(DECIDE_EVENT, { detail: { round, change, action } })),
+    decide: (round, changes, action) => document?.defaultView?.dispatchEvent(new CustomEvent<DecideChange>(DECIDE_EVENT, { detail: { round, changes, action } })),
   }), [document]);
   const toolbar = useRef<HTMLDivElement>(null), leading = useRef<HTMLDivElement>(null), hostBar = useRef<HTMLDivElement>(null);
   const [reserve, setReserve] = useState(0), [leadWidth, setLeadWidth] = useState(0);

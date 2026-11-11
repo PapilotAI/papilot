@@ -72,11 +72,18 @@ try {
   const text = () => field.evaluate(content => [...content.querySelectorAll('.cm-line')].map(line => line.textContent.replace(/\u200b/g, '')).join('\n'));
   await expect(field).toBeFocused();
 
-  // Each change of the round shows in the text, with Accept and Reject.
-  const actions = side.locator('.cm-review-actions');
-  await expect(actions).toHaveCount(3);
+  // The round's changes show in the text as the review's cards: a header
+  // with the card's title and actions, the line as it was, the line now.
+  const cards = side.locator('.cm-review-card');
+  await expect(cards).toHaveCount(3);
+  await expect(cards.locator('.cm-review-title')).toHaveText(['Change 1', 'Change 2', 'Change 3']);
+  await expect(cards.first().locator('.cm-review-before')).toHaveText('Original first paragraph.');
+  await expect(cards.first().locator('.cm-review-before')).toHaveAttribute('data-label', 'Before');
   await expect(side.locator('.cm-review-removed')).toHaveText(['Original', 'Original', 'Original']);
+  await expect(side.locator('.cm-line.cm-review-after')).toHaveCount(3);
+  await expect(side.locator('.cm-line.cm-review-after').first()).toHaveAttribute('data-label', 'After');
   await expect(side.locator('.cm-review-added')).toHaveText(['Proposed', 'Proposed', 'Proposed']);
+  await expect(cards.first().locator('.cm-review-buttons button')).toHaveCount(3);
   await expect(side.locator('.cm-change-bar'), 'bars mark what the task changed').toHaveCount(3);
   await page.screenshot({ path: 'test-results/task-source-review.png' });
 
@@ -85,19 +92,28 @@ try {
   await expect(viewer.locator('.change.current')).toHaveAttribute('data-stop', '2');
 
   // Accepting in the editor decides the change in the review; its marks go.
-  await actions.nth(0).locator('.cm-review-accept').click();
+  await cards.nth(0).locator('.cm-review-accept').click();
   await expect.poll(() => app.review.pageState(task.name).decisions.c001).toBe('accepted');
-  await expect(actions).toHaveCount(2);
+  await expect(cards).toHaveCount(2);
   await expect(side.locator('.cm-review-removed')).toHaveCount(2);
 
   // Rejecting returns the task's text, which the editor then shows.
-  await actions.nth(0).locator('.cm-review-reject').click();
+  await cards.nth(0).locator('.cm-review-reject').click();
   await expect.poll(() => app.review.pageState(task.name).decisions.c002).toBe('rejected');
   await expect.poll(worktree, { timeout: 60000 }).toContain('Original second paragraph.');
   await expect.poll(text, { timeout: 30000 }).toContain('Original second paragraph.');
-  await expect(actions, 'the change after it keeps its place and its buttons').toHaveCount(1);
+  await expect(cards, 'the change after it keeps its place and its card').toHaveCount(1);
+  await expect(cards.locator('.cm-review-title')).toHaveText('Change 3');
   await expect(side.locator('.cm-review-added')).toHaveText(['Proposed']);
   await expect(side.locator('.cm-line', { hasText: 'third paragraph' }).locator('.cm-review-added')).toHaveText('Proposed');
+
+  // Comment starts a comment on the card, which is written in the chat.
+  await cards.locator('.cm-review-comment').click();
+  await expect(viewer.locator('.change.current')).toHaveAttribute('data-stop', '2');
+  await expect(chat).toHaveAttribute('aria-selected', 'true');
+  await expect(side.locator('.review-draft')).toBeVisible();
+  await expect(side.locator('.review-draft-location'), 'the comment is on the card\'s change').toContainText('Page 3');
+  await tab.click();
   await expect.poll(() => app.review.latestRound(task.name)?.visuals, { timeout: 90000 }).toBe('ready');
 
   // Typing marks the tab; the chat keeps its place, and so does the draft.
@@ -124,6 +140,7 @@ try {
   await expect.poll(() => app.review.latestRound(task.name)?.visuals, { timeout: 90000 }).toBe('ready');
   await expect(viewer.locator('.change').last()).toContainText('Typed in Papilot', { timeout: 60000 });
   await expect(side.locator('.cm-review-added').last(), 'the new round\'s changes show in the text').toContainText('Typed in Papilot', { timeout: 30000 });
+  await page.screenshot({ path: 'test-results/task-source-saved.png' });
   await expect(side.locator('.source-panel-error')).toHaveCount(0);
 
   // Closing the tab returns to the chat.
@@ -132,7 +149,7 @@ try {
   await expect(chat).toHaveCount(0);
   await expect(side.locator('.composer-wrap')).toBeVisible();
   assert.deepEqual(errors, []);
-  console.log('PASS: LaTeX on a change opens its whole file in the editor beside the chat, which shows each change of the round in the text with Accept and Reject that decide it in the review; the caret and the review follow each other; ⌘S saves into the task and reviews it in a new round; the chat stays as it was');
+  console.log('PASS: LaTeX on a change opens its whole file in the editor beside the chat, which shows the round\'s changes as the review\'s cards (title, Accept, Reject and Comment over the lines before and after) acting through the review; rejected text comes back and the rest stay placed; the caret and the review follow each other; ⌘S saves into the task and reviews it in a new round; the chat stays as it was');
 } finally {
   await browser.close();
   await server.close(); await engine.close(); workspace.close(); store.close();

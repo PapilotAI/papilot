@@ -28,14 +28,23 @@ export interface OpenSource { round: number; change: string; file: string; lines
 /** The text changes the viewer reviews, sent on its `window` whenever they
  *  or their decisions change: each change's file, its `text_ops` (offsets in
  *  the round's before and after versions of the file), its decision as shown
- *  and as the engine confirmed it, which has written its files by then. */
+ *  and as the engine confirmed it, which has written its files by then. The
+ *  cards group them in `stops`, each with its title and the actions its
+ *  header offers (with the reason one is locked), and the words that name
+ *  the two versions. */
 export const REVIEW_CHANGES_EVENT = "latex-review:changes";
-export interface ReviewChanges { round: number; changes: { id: string; file: string; ops: [string, number, number, number, number][]; decision: string; confirmed: string }[] }
+export interface ReviewChanges {
+  round: number;
+  changes: { id: string; file: string; ops: [string, number, number, number, number][]; decision: string; confirmed: string }[];
+  stops: { title: string; units: string[]; actions: { kind: string; label: string; lock: string | null }[] }[];
+  labels: { before: string; after: string };
+}
 
-/** Asks the viewer to accept or reject a change, as its buttons do, sent on
- *  its `window` by the workspace. */
+/** Asks the viewer to act on changes as a card's header does: accept,
+ *  reject, or comment, which opens the card's composer. Sent on its `window`
+ *  by the workspace. */
 export const DECIDE_EVENT = "latex-review:decide";
-export interface DecideChange { round: number; change: string; action: "accept" | "reject" }
+export interface DecideChange { round: number; changes: string[]; action: string }
 
 /** The workspace saved a file of the task, sent on the viewer's `window`:
  *  `state` is the review after the save, and the viewer stays at `line`

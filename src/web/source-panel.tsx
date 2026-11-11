@@ -18,8 +18,9 @@ import './source-panel.css';
 // and the editor then flash the saved lines, or the tab shows the errors in
 // them and the last PDF stays.
 // The same editor edits a task's files beside its review, opened from a
-// change: it marks what the task changed, shows each change of the round in
-// the text with Accept and Reject, and a save is reviewed in a new round.
+// change: it marks what the task changed, shows the round's changes in the
+// text as the review's cards, with their actions, and a save is reviewed in a
+// new round.
 
 type Api = <T>(route: string, body?: unknown, signal?: AbortSignal, wait?: number) => Promise<T>;
 type Lines = [number, number];
@@ -79,8 +80,8 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   onLine?: (file: string, line: number) => void;
   /** A task's file was saved: the review after the save, and the line (0-based) the author is at. */
   onTaskSaved?: (state: unknown, file: string, line: number) => void;
-  /** A task's review: its changes, shown in their files, and deciding one. */
-  review?: { changes: ReviewChanges | null; decide: (change: string, action: 'accept' | 'reject') => void };
+  /** A task's review: its changes, shown in their files as its cards, and acting on a card's changes. */
+  review?: { changes: ReviewChanges | null; decide: (changes: string[], action: string) => void };
 }) {
   // Drafts are kept per paper, and per task. A task's changes show in the
   // text, so its passages are not highlighted as well.
@@ -132,7 +133,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
         parent: element, label: t('Edit LaTeX source'),
         onChange: () => actions.current.typed(), onSave: () => actions.current.save(), onEscape: () => actions.current.escape(),
         onCursor: line => actions.current.line(line), onChangeBar: line => actions.current.line(line),
-        onDecide: (change, action) => reviewing.current?.decide(change, action), labels: { accept: t('Accept'), reject: t('Reject') },
+        onDecide: (changes, action) => reviewing.current?.decide(changes, action),
       });
       actions.current.sync();
     });
@@ -183,10 +184,9 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
     const parts = (change: ReviewChanges['changes'][number]) => change.ops.filter(op => op[0] !== 'equal');
     const shifts = mine.filter(change => reverted.has(change.id)).flatMap(parts).map(([, from, to, at, end]) => ({ end, by: (to - from) - (end - at) }));
     const place = (at: number) => at + shifts.reduce((sum, shift) => shift.end <= at ? sum + shift.by : sum, 0);
-    view.showReview({ key: `${file.file}:${file.revision}:${changes.round}`, text: file.text, changes: mine.filter(change => !reverted.has(change.id)).map(change => ({
-      id: change.id, decision: change.decision,
-      parts: parts(change).map(([, from, to, at, end]) => ({ from: place(at), to: place(end), old: before.slice(from, to) })),
-    })) });
+    view.showReview({ key: `${file.file}:${file.revision}:${changes.round}`, text: file.text, before, labels: changes.labels, cards: changes.stops,
+      parts: new Map(mine.filter(change => !reverted.has(change.id)).map(change => [change.id, parts(change).map(([, from, to, at, end]) => ({ from, to, at: place(at), end: place(end) }))])),
+      decisions: new Map(mine.map(change => [change.id, change.decision])) });
   }
   useEffect(showReview, [review?.changes]);
   actions.current.sync = sync;

@@ -23,14 +23,9 @@ export interface SourceEditorOptions {
   onCursor?: (line: number) => void;
   /** A change bar was clicked, at a line (0-based) of its change. */
   onChangeBar?: (line: number) => void;
-  /** Accept or Reject was pressed on a review change shown in the text. */
-  onDecide?: (change: string, action: 'accept' | 'reject') => void;
-  labels?: { accept: string; reject: string };
+  /** An action of a review card shown in the text was pressed, for its changes. */
+  onDecide?: (changes: string[], action: string) => void;
 }
-
-/** A change of a review, in the text: each part's range in the document and
- *  the text it replaced. */
-export interface ReviewChange { id: string; decision: string; parts: { from: number; to: number; old: string }[] }
 
 const latex = StreamLanguage.define(stex);
 // The colours of the review's LaTeX, for light and dark pages.
@@ -68,17 +63,26 @@ const theme = EditorView.theme({
   '.cm-source-focus': { backgroundColor: 'color-mix(in srgb, var(--accent) 12%, transparent)' },
   '.cm-source-word': { backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)', borderRadius: '2px' },
   // What changed since the last commit, beside the line numbers and along the scrollbar.
-  // A review's changes in the text, and Accept and Reject after each.
-  '.cm-review-added': { backgroundColor: 'var(--green-soft)', borderRadius: '2px' },
-  '.cm-review-removed': { backgroundColor: 'var(--red-soft)', color: 'var(--danger)', textDecoration: 'line-through', textDecorationColor: 'color-mix(in srgb, var(--danger) 55%, transparent)', borderRadius: '2px', whiteSpace: 'pre-wrap' },
-  '.cm-review-dropped': { color: 'var(--text-3)', textDecoration: 'line-through' },
-  '.cm-review-restored': { backgroundColor: 'var(--green-soft)', borderRadius: '2px', whiteSpace: 'pre-wrap' },
-  '.cm-review-actions': { display: 'inline-flex', gap: '2px', margin: '0 2px 0 4px', verticalAlign: '-3px' },
-  '.cm-review-actions > button': { display: 'inline-grid', placeItems: 'center', width: '20px', height: '18px', padding: '0', border: '1px solid var(--line)', borderRadius: '5px', backgroundColor: 'var(--bg)', cursor: 'pointer' },
-  '.cm-review-actions > button:hover': { backgroundColor: 'var(--bg-hover)' },
-  '.cm-review-actions svg': { width: '12px', height: '12px' },
+  // A review's changes in the text, a block per card, as on the PDF.
+  '.cm-review-card': { margin: '6px 0 0', border: '1px solid var(--line)', borderBottom: '0', borderRadius: '6px 6px 0 0', overflow: 'hidden', fontFamily: 'var(--sans)' },
+  '.cm-review-head': { display: 'flex', alignItems: 'center', gap: '8px', height: '30px', padding: '0 4px 0 10px', backgroundColor: 'var(--bg-muted)', fontSize: '12.5px', fontWeight: '500', color: 'var(--text)' },
+  '.cm-review-title': { flex: '1' },
+  '.cm-review-buttons': { display: 'flex', gap: '2px' },
+  '.cm-review-buttons > button': { display: 'grid', placeItems: 'center', width: '26px', height: '24px', padding: '0', border: '0', borderRadius: '5px', backgroundColor: 'transparent', cursor: 'pointer' },
+  '.cm-review-buttons > button:hover:not(:disabled)': { backgroundColor: 'var(--bg-hover)' },
+  '.cm-review-buttons > button:disabled': { opacity: '0.4', cursor: 'default' },
+  '.cm-review-buttons svg': { width: '15px', height: '15px' },
   '.cm-review-accept': { color: 'var(--green)' },
   '.cm-review-reject': { color: 'var(--danger)' },
+  '.cm-review-comment': { color: 'var(--accent)' },
+  '.cm-review-before': { position: 'relative', padding: '0 64px 0 6px', borderLeft: '3px solid color-mix(in srgb, var(--danger) 55%, transparent)', backgroundColor: 'color-mix(in srgb, var(--red-soft) 60%, var(--bg))', fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-2)' },
+  // The labels use ::before: a flash of the line draws with ::after.
+  '.cm-review-before::before, .cm-review-after::before': { content: 'attr(data-label)', position: 'absolute', top: '0', right: '8px', fontFamily: 'var(--sans)', fontSize: '11px', letterSpacing: '.04em', textTransform: 'uppercase' },
+  '.cm-review-before::before': { color: 'var(--danger)' },
+  '.cm-review-removed': { backgroundColor: 'var(--red-soft)', color: 'var(--danger)', textDecoration: 'line-through', textDecorationColor: 'color-mix(in srgb, var(--danger) 55%, transparent)', borderRadius: '2px' },
+  '.cm-line.cm-review-after': { position: 'relative', paddingRight: '64px', borderLeft: '3px solid color-mix(in srgb, var(--green) 55%, transparent)', backgroundColor: 'color-mix(in srgb, var(--green-soft) 55%, var(--bg))' },
+  '.cm-review-after::before': { color: 'var(--green)' },
+  '.cm-review-added': { backgroundColor: 'var(--green-soft)', borderRadius: '2px' },
   '.cm-change-ruler': { position: 'absolute', top: '0', right: '0', bottom: '0', zIndex: '3', pointerEvents: 'none' },
   '.cm-ruler-mark': { position: 'absolute', left: '1px', right: '1px', borderRadius: '1px' },
   '.cm-ruler-added': { backgroundColor: 'var(--green, #2f9e44)' },
@@ -217,71 +221,114 @@ function changeBars(base: Text, onClick?: (line: number) => void): Extension {
   })];
 }
 
-// The review's changes, kept at their places as the author types. A pending
-// change shows what it removed, struck through before what it wrote, and
-// Accept and Reject after it; an accepted one is plain text again; a
-// rejected one shows the text that comes back until the file is reread.
-const setReview = StateEffect.define<ReviewChange[]>();
-const setDecisions = StateEffect.define<Map<string, string>>();
-class RemovedText extends WidgetType {
-  constructor(readonly text: string, readonly restored: boolean) { super(); }
-  eq(other: RemovedText) { return other.text === this.text && other.restored === this.restored; }
-  toDOM() {
-    const element = document.createElement('span');
-    element.className = this.restored ? 'cm-review-restored' : 'cm-review-removed';
-    element.textContent = this.text;
-    return element;
-  }
+// A review's changes in the text, as its cards show them on the PDF: a block
+// per card, under a header with the card's title and actions, the lines as
+// they were (read-only, struck words marked), then the lines as they are now
+// with the written words marked. The parts keep their places as the author
+// types; a decided change leaves its block.
+export interface ReviewState {
+  /** The text each change replaced its parts of. */
+  before: string;
+  labels: { before: string; after: string };
+  /** Each change's parts: [from, to) in `before`, [at, end) in the document. */
+  parts: Map<string, { from: number; to: number; at: number; end: number }[]>;
+  decisions: Map<string, string>;
+  cards: { title: string; units: string[]; actions: { kind: string; label: string; lock: string | null }[] }[];
 }
-class ChangeActions extends WidgetType {
-  constructor(readonly id: string, readonly options: SourceEditorOptions) { super(); }
-  eq(other: ChangeActions) { return other.id === this.id; }
+const setReview = StateEffect.define<ReviewState | null>();
+const updateReview = StateEffect.define<Pick<ReviewState, 'decisions' | 'cards' | 'labels'>>();
+const ICONS: Record<string, string> = {
+  accept: '<path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  reject: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  comment: '<path d="M3 4.5A1.5 1.5 0 014.5 3h7A1.5 1.5 0 0113 4.5v5a1.5 1.5 0 01-1.5 1.5H7l-3 2.5V11h.5A1.5 1.5 0 013 9.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
+};
+class CardHead extends WidgetType {
+  constructor(readonly card: ReviewState['cards'][number], readonly units: string[], readonly before: string, readonly removed: [number, number][], readonly label: string, readonly options: SourceEditorOptions) { super(); }
+  eq(other: CardHead) {
+    return other.before === this.before && other.label === this.label && JSON.stringify([other.card, other.units, other.removed]) === JSON.stringify([this.card, this.units, this.removed]);
+  }
   toDOM() {
-    const element = document.createElement('span');
-    element.className = 'cm-review-actions';
-    for (const action of ['accept', 'reject'] as const) {
-      const button = document.createElement('button'), label = this.options.labels?.[action] ?? action;
-      button.type = 'button'; button.className = `cm-review-${action}`; button.title = label; button.setAttribute('aria-label', label);
-      button.innerHTML = action === 'accept'
-        ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-        : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    const block = document.createElement('div'), head = document.createElement('div'), title = document.createElement('span'), buttons = document.createElement('span');
+    block.className = 'cm-review-card'; head.className = 'cm-review-head'; title.className = 'cm-review-title'; buttons.className = 'cm-review-buttons';
+    title.textContent = this.card.title;
+    for (const action of this.card.actions) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = `cm-review-${action.kind}`;
+      button.title = action.lock || action.label; button.setAttribute('aria-label', action.label); button.disabled = Boolean(action.lock);
+      button.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[action.kind] ?? ''}</svg>`;
       // The caret stays where it was.
       button.addEventListener('mousedown', event => event.preventDefault());
-      button.addEventListener('click', () => this.options.onDecide?.(this.id, action));
-      element.append(button);
+      button.addEventListener('click', () => this.options.onDecide?.(this.units, action.kind));
+      buttons.append(button);
     }
-    return element;
+    head.append(title, buttons); block.append(head);
+    if (this.before) {
+      const row = document.createElement('div');
+      row.className = 'cm-review-before'; row.dataset.label = this.label;
+      let at = 0;
+      for (const [from, to] of this.removed) {
+        row.append(this.before.slice(at, from));
+        const word = document.createElement('span');
+        word.className = 'cm-review-removed'; word.textContent = this.before.slice(from, to);
+        row.append(word); at = to;
+      }
+      row.append(this.before.slice(at));
+      block.append(row);
+    }
+    return block;
   }
   ignoreEvent() { return true; }
 }
-function reviewDecorations(changes: ReviewChange[], options: SourceEditorOptions) {
-  const ranges = [];
-  for (const change of changes) {
-    if (change.decision === 'accepted') continue;
-    const rejected = change.decision === 'rejected';
-    for (const part of change.parts) {
-      if (part.old) ranges.push(Decoration.widget({ widget: new RemovedText(part.old, rejected), side: -1 }).range(part.from));
-      if (part.to > part.from) ranges.push(Decoration.mark({ class: rejected ? 'cm-review-dropped' : 'cm-review-added' }).range(part.from, part.to));
+// The start of the line holding `at`, and the end of the line holding the
+// character before `end` (a part that ends with a line break ends its line).
+const lineStart = (text: string, at: number) => text.lastIndexOf('\n', at - 1) + 1;
+const lineEnd = (text: string, at: number, end: number) => { const last = end > at && text[end - 1] === '\n' ? end - 1 : end, next = text.indexOf('\n', last); return next < 0 ? text.length : next; };
+function reviewDecorations(review: ReviewState | null, doc: Text, options: SourceEditorOptions) {
+  if (!review) return Decoration.none;
+  const ranges = [], text = doc.toString();
+  for (const card of review.cards) {
+    const units = card.units.filter(id => review.parts.has(id) && (review.decisions.get(id) ?? 'pending') === 'pending');
+    const parts = units.flatMap(id => review.parts.get(id)!);
+    if (!parts.length) continue;
+    const removing = parts.filter(part => part.to > part.from), adding = parts.filter(part => part.end > part.at);
+    const first = Math.min(...parts.map(part => part.at)), last = Math.max(...parts.map(part => part.end));
+    // The lines as they were, around what was removed.
+    let before = '', removed: [number, number][] = [];
+    if (removing.length) {
+      const from = lineStart(review.before, Math.min(...removing.map(part => part.from)));
+      const to = lineEnd(review.before, from, Math.max(...removing.map(part => part.to)));
+      before = review.before.slice(from, to);
+      removed = removing.map(part => [part.from - from, Math.min(part.to, to) - from] as [number, number]).sort((a, b) => a[0] - b[0]);
     }
-    if (change.decision === 'pending' && change.parts.length)
-      ranges.push(Decoration.widget({ widget: new ChangeActions(change.id, options), side: 1 }).range(Math.max(...change.parts.map(part => part.to))));
+    const top = lineStart(text, first);
+    ranges.push(Decoration.widget({ widget: new CardHead(card, units, before, removed, review.labels.before, options), block: true, side: -1 }).range(top));
+    // The lines as they are now, with what was written.
+    if (adding.length) {
+      const end = lineEnd(text, first, last);
+      for (let line = doc.lineAt(top); ; line = doc.line(line.number + 1)) {
+        ranges.push(Decoration.line({ class: 'cm-review-after', attributes: line.from === top ? { 'data-label': review.labels.after } : {} }).range(line.from));
+        if (line.to >= end || line.number === doc.lines) break;
+      }
+      for (const part of adding) ranges.push(Decoration.mark({ class: 'cm-review-added' }).range(part.at, part.end));
+    }
   }
   return Decoration.set(ranges, true);
 }
-const reviewField = (options: SourceEditorOptions) => StateField.define<ReviewChange[]>({
-  create: () => [],
-  update(changes, tr) {
+const reviewField = StateField.define<ReviewState | null>({
+  create: () => null,
+  update(review, tr) {
     for (const effect of tr.effects) if (effect.is(setReview)) return effect.value;
-    let next = changes;
-    if (tr.docChanged && next.length) next = next.map(change => ({ ...change, parts: change.parts.map(part => {
-      const from = tr.changes.mapPos(part.from, 1);
-      return { ...part, from, to: Math.max(from, tr.changes.mapPos(part.to, -1)) };
-    }) }));
-    for (const effect of tr.effects) if (effect.is(setDecisions)) next = next.map(change => ({ ...change, decision: effect.value.get(change.id) ?? change.decision }));
+    if (!review) return review;
+    let next = review;
+    if (tr.docChanged) next = { ...next, parts: new Map([...next.parts].map(([id, parts]) => [id, parts.map(part => {
+      const at = tr.changes.mapPos(part.at, 1);
+      return { ...part, at, end: Math.max(at, tr.changes.mapPos(part.end, -1)) };
+    })])) };
+    for (const effect of tr.effects) if (effect.is(updateReview)) next = { ...next, ...effect.value };
     return next;
   },
-  provide: field => EditorView.decorations.from(field, changes => reviewDecorations(changes, options)),
 });
+const reviewView = (options: SourceEditorOptions) => EditorView.decorations.compute([reviewField, 'doc'], state => reviewDecorations(state.field(reviewField), state.doc, options));
 
 export class SourceCodeEditor {
   readonly view: EditorView;
@@ -289,12 +336,12 @@ export class SourceCodeEditor {
   private editable = new Compartment();
   private base = Text.empty;
   private silent = false;
-  private review: ReturnType<typeof reviewField>;
+  private review: Extension;
   // The version whose review changes are shown.
   private reviewKey: string | null = null;
 
   constructor(private options: SourceEditorOptions) {
-    this.review = reviewField(options);
+    this.review = [reviewField, reviewView(options)];
     this.view = new EditorView({ parent: options.parent, state: this.state('') });
   }
 
@@ -333,19 +380,20 @@ export class SourceCodeEditor {
   /** Shows a review's changes in the text. `key` names the version of the
    *  file they were found in, `text`: they are placed only over that text,
    *  then follow the author's edits, and while the key stays only their
-   *  decisions change. */
-  showReview(review: { key: string; text: string; changes: ReviewChange[] } | null) {
+   *  decisions and cards change. */
+  showReview(review: (ReviewState & { key: string; text: string }) | null) {
     if (!review) {
-      if (this.reviewKey !== null) { this.reviewKey = null; this.view.dispatch({ effects: setReview.of([]) }); }
+      if (this.reviewKey !== null) { this.reviewKey = null; this.view.dispatch({ effects: setReview.of(null) }); }
       return;
     }
-    if (review.key === this.reviewKey) {
-      this.view.dispatch({ effects: setDecisions.of(new Map(review.changes.map(change => [change.id, change.decision]))) });
+    const { key, text, ...state } = review;
+    if (key === this.reviewKey) {
+      this.view.dispatch({ effects: updateReview.of({ decisions: state.decisions, cards: state.cards, labels: state.labels }) });
       return;
     }
-    if (this.view.state.doc.toString() !== review.text) return;
-    this.reviewKey = review.key;
-    this.view.dispatch({ effects: setReview.of(review.changes) });
+    if (this.view.state.doc.toString() !== text) return;
+    this.reviewKey = key;
+    this.view.dispatch({ effects: setReview.of(state) });
   }
 
   /** The last commit changed, such as after a commit. */

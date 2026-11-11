@@ -572,13 +572,25 @@ export function ReviewApp({
     if (!detail) return;
     const changes: ReviewChanges["changes"] = detail.units.filter((unit) => unit.kind === "text" && unit.status !== "deleted" && unit.text_ops?.length)
       .map((unit) => ({ id: unit.id, file: unit.file, ops: unit.text_ops!, decision: decisions[unit.id] ?? "pending", confirmed: state?.decisions?.[unit.id] ?? "pending" }));
-    window.dispatchEvent(new CustomEvent<ReviewChanges>(REVIEW_CHANGES_EVENT, { detail: { round: detail.round, changes } }));
+    const cards: ReviewChanges["stops"] = stops.map((stop, index) => ({ title: t("Change {n}", { n: index + 1 }), units: stop.units,
+      actions: kinds(stop.units).map((kind) => ({ kind, label: label(kind), lock: actionLock(kind) ?? null })) }));
+    window.dispatchEvent(new CustomEvent<ReviewChanges>(REVIEW_CHANGES_EVENT, { detail: { round: detail.round, changes, stops: cards, labels: { before: t("Before"), after: t("After") } } }));
   }
-  useEffect(announceChanges, [detail, decisions, state?.decisions]);
+  useEffect(announceChanges, [detail, decisions, state]);
   useEffect(() => {
     const chosen = (event: Event) => {
-      const { round, change, action } = (event as CustomEvent<DecideChange>).detail;
-      if (detail?.round === round) void decide(action, targets([change], action));
+      const request = (event as CustomEvent<DecideChange & { again?: boolean }>).detail, { round, changes: ids, action } = request;
+      if (detail?.round !== round || !["accept", "reject", "comment"].includes(action)) return;
+      const kind = action as Kind;
+      if (kind !== "comment") { void decide(kind, targets(ids, kind)); return; }
+      // A comment belongs to its card, which becomes current first.
+      const index = stops.findIndex((stop) => stop.units.some((id) => ids.includes(id)));
+      if (index >= 0 && index !== current && !request.again) {
+        select(index);
+        requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(DECIDE_EVENT, { detail: { ...request, again: true } })));
+        return;
+      }
+      beginComposer(targets(ids, "comment"));
     };
     window.addEventListener(DECIDE_EVENT, chosen);
     return () => window.removeEventListener(DECIDE_EVENT, chosen);
