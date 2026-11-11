@@ -7,6 +7,8 @@
 //   npm run build && npm --prefix engine run build
 //   node --import tsx scripts/capture-readme-review.mjs    (Node 22)
 //
+// npm run readme:showcase runs it with scripts/capture-readme-showcase.mjs.
+//
 // It uses Chrome (PAPILOT_BROWSER_CHANNEL picks another channel) or else
 // Playwright's Chromium, and writes, in English and Simplified Chinese,
 // light and dark:

@@ -4,6 +4,8 @@
 //   node --import tsx scripts/capture-readme-review.mjs   (the real review screenshot)
 //   npm run site && node scripts/capture-readme-showcase.mjs
 //
+// npm run readme:showcase builds everything and runs both.
+//
 // The homepage draws Papilot in HTML and CSS (site/index.html), so the README
 // reuses those drawings instead of keeping a second copy: hero*.png is the
 // opening window and paradigm*.png the three cards of "Why", whose Papilot

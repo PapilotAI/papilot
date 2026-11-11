@@ -69,5 +69,6 @@ Changes to the review engine also need `npm test` in `engine/`.
 - Interface text is in English and says plainly what happens.
 - Write commit messages as a short imperative summary, with a body that explains why.
 - Attach screenshots for interface changes.
+- When an interface change shows in the homepage's windows (`site/index.html`), redraw them there; `npm run readme:showcase` then recaptures the README images in `docs/assets/readme-showcase/` from the homepage and the real interface.
 
 By contributing, you agree that your work is released under the [MIT License](../LICENSE). Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
