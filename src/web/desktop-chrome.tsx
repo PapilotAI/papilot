@@ -5,6 +5,7 @@ declare global {
   interface Window {
     papilotDesktop?: {
       platform: string; minimize(): void; maximize(): void; close(): void;
+      setTheme?(theme: 'system' | 'light' | 'dark'): void;
       chooseDirectory?(): Promise<string | null>;
       openEnvironment?(): Promise<void>;
       environment?(): Promise<string>;

@@ -1,36 +1,59 @@
-/* Shared by the workspace and its embedded review viewer. In the dark theme
-   PDF pages turn dark too: --pdf-filter inverts their lightness and turns the
-   hue back, so red, green and blue stay recognisable, and --pdf-page is the
-   colour white paper becomes, for the space around a page's image. */
+/* Shared by the workspace and its embedded review viewer. The palette follows
+   Apple's system colours: one vivid accent, cool neutral greys, translucent
+   fills that suit any surface beneath them, and hairline separators instead of
+   outlines. appearance.ts writes the theme-dependent values at runtime; the
+   values here are the same defaults for the first paint.
+   In the dark theme PDF pages turn dark too: --pdf-filter inverts their
+   lightness and turns the hue back, so red, green and blue stay recognisable,
+   and --pdf-page is the colour white paper becomes, for the space around a
+   page's image. */
 :root{
-  --bg:#ffffff;--sidebar:#f9f9f9;--bg-subtle:#fafafa;--bg-muted:#f4f4f4;--bg-hover:#efefef;--bg-active:#e7e7e7;--canvas:#f3f3f3;
-  --line:#e8e8e8;--line-strong:#d6d6d6;
-  --text:#171717;--text-2:#525252;--text-3:#8a8a8a;
-  --accent:#2563eb;--accent-hover:#1d4ed8;--accent-soft:#eff6ff;--accent-line:#bfdbfe;
-  --primary:#2563eb;--primary-hover:#1d4ed8;
-  --green:#15803d;--green-soft:#f0fdf4;--purple:#7c3aed;--purple-soft:#f5f3ff;--red:#dc2626;--red-soft:#fef2f2;--red-line:#fecaca;
-  --amber-soft:#fffbeb;--amber-line:#fde68a;--amber-text:#92400e;
-  --shadow-xs:0 1px 2px rgb(0 0 0/.06);
-  --shadow-sm:0 1px 2px rgb(0 0 0/.05),0 3px 8px rgb(0 0 0/.05);
-  --float:0 2px 4px rgb(0 0 0/.04),0 14px 36px rgb(0 0 0/.13);
-  --ring:0 0 0 3px rgb(37 99 235/.18);
-  --line-hover:#c4c4c4;--danger:#dc2626;--danger-hover:#b91c1c;
+  --bg:#ffffff;--sidebar:#f5f5f7;--bg-subtle:#fbfbfd;--bg-muted:#f5f5f7;--bg-hover:rgb(0 0 0/.045);--bg-active:rgb(0 0 0/.085);--canvas:#f0f0f3;--bg-elevated:#ffffff;
+  --line:rgb(60 60 67/.2);--line-strong:rgb(60 60 67/.3);--line-hover:rgb(60 60 67/.42);
+  --text:#1d1d1f;--text-2:#6e6e73;--text-3:#86868b;
+  --accent:#007aff;--accent-hover:#0066d6;--accent-soft:#e6f2ff;--accent-line:#b3d7ff;
+  --primary:#007aff;--primary-hover:#0066d6;
+  --green:#248a3d;--green-soft:#e7f8eb;--purple:#af52de;--purple-soft:#f7eefc;--red:#ff3b30;--red-soft:#ffebea;--red-line:#ffc4c1;
+  --amber-soft:#fff8e0;--amber-line:#ffe08a;--amber-text:#a05a00;
+  /* Controls are filled, not outlined; floating surfaces are lifted by a
+     shadow whose first layer is a half-pixel edge. */
+  --hairline:.5px;
+  --fill:rgb(118 118 128/.12);--fill-hover:rgb(118 118 128/.18);--fill-active:rgb(118 118 128/.24);
+  --thumb:#ffffff;
+  --group-fill:rgb(0 0 0/.03);--group-line:rgb(0 0 0/.08);
+  /* macOS controls: push and pop-up buttons are raised white bezels, text
+     fields are white wells; both carry a half-pixel edge, never a border. */
+  --control:#ffffff;--control-shadow:0 0 0 .5px rgb(0 0 0/.16),0 .5px 1.5px rgb(0 0 0/.1);
+  --field:#ffffff;--field-shadow:0 0 0 .5px rgb(0 0 0/.2),inset 0 .5px 1px rgb(0 0 0/.06);
+  --shadow-xs:0 0 0 .5px rgb(0 0 0/.06),0 1px 2px rgb(0 0 0/.1);
+  --shadow-sm:0 0 0 .5px rgb(0 0 0/.06),0 1px 3px rgb(0 0 0/.06),0 4px 12px rgb(0 0 0/.04);
+  --shadow-md:0 0 0 .5px rgb(0 0 0/.08),0 2px 6px rgb(0 0 0/.06),0 10px 28px rgb(0 0 0/.08);
+  --float:0 0 0 .5px rgb(0 0 0/.1),0 4px 14px rgb(0 0 0/.08),0 18px 44px rgb(0 0 0/.13);
+  --ring:0 0 0 3px rgb(0 122 255/.4);
+  --danger:#ff3b30;--danger-hover:#e0352b;
   --scroll-thumb:rgb(0 0 0/.12);--scroll-hover:rgb(0 0 0/.2);--scroll-active:rgb(0 0 0/.34);
   --pdf-filter:none;--pdf-page:#ffffff;
   color-scheme:light;
 }
 :root[data-theme="dark"]{
-  --bg:#26272b;--sidebar:#202124;--bg-subtle:#2a2b2f;--bg-muted:#303135;--bg-hover:#37383c;--bg-active:#404145;--canvas:#1e1f22;
-  --line:#38393e;--line-strong:#4b4c52;--line-hover:#63646b;
-  --text:#ececee;--text-2:#c2c3c9;--text-3:#9c9da5;
-  --accent:#8ab4ff;--accent-hover:#b2ceff;--accent-soft:#2b3651;--accent-line:#445c85;
-  --primary:#2563eb;--primary-hover:#1d4ed8;
-  --green:#7bd5a0;--green-soft:#243a2f;--purple:#bfa1ff;--purple-soft:#372d48;--red:#ff9696;--red-soft:#46292e;--red-line:#733b45;
-  --amber-soft:#3e3424;--amber-line:#6d5631;--amber-text:#eac584;
-  --shadow-xs:0 1px 2px rgb(0 0 0/.2);
-  --shadow-sm:0 1px 2px rgb(0 0 0/.18),0 3px 8px rgb(0 0 0/.2);
-  --float:0 2px 4px rgb(0 0 0/.2),0 14px 36px rgb(0 0 0/.4);
-  --ring:0 0 0 3px rgb(138 180 255/.22);
+  --bg:#1e1e20;--sidebar:#28282b;--bg-subtle:#232326;--bg-muted:#2c2c2e;--bg-hover:rgb(255 255 255/.07);--bg-active:rgb(255 255 255/.11);--canvas:#161618;--bg-elevated:#2c2c2e;
+  --line:rgb(255 255 255/.14);--line-strong:rgb(255 255 255/.22);--line-hover:rgb(255 255 255/.32);
+  --text:#e9e9eb;--text-2:#a1a1a6;--text-3:#8a8a8f;
+  --accent:#0a84ff;--accent-hover:#409cff;--accent-soft:#1a324d;--accent-line:#154c84;
+  --primary:#0a84ff;--primary-hover:#409cff;
+  --green:#30d158;--green-soft:#213e2a;--purple:#bf5af2;--purple-soft:#3b2946;--red:#ff453a;--red-soft:#462525;--red-line:#782e2a;
+  --amber-soft:#3a3420;--amber-line:#6e5a1c;--amber-text:#ffd60a;
+  --fill:rgb(118 118 128/.24);--fill-hover:rgb(118 118 128/.32);--fill-active:rgb(118 118 128/.4);
+  --thumb:rgb(255 255 255/.17);
+  --group-fill:rgb(255 255 255/.04);--group-line:rgb(255 255 255/.1);
+  --control:rgb(255 255 255/.16);--control-shadow:0 0 0 .5px rgb(0 0 0/.3),inset 0 .5px 0 rgb(255 255 255/.1);
+  --field:rgb(255 255 255/.06);--field-shadow:0 0 0 .5px rgb(255 255 255/.16),inset 0 .5px 1px rgb(0 0 0/.3);
+  --shadow-xs:0 0 0 .5px rgb(0 0 0/.4),0 1px 2px rgb(0 0 0/.3);
+  --shadow-sm:0 0 0 .5px rgb(0 0 0/.35),0 1px 3px rgb(0 0 0/.3),0 4px 12px rgb(0 0 0/.2);
+  --shadow-md:0 0 0 .5px rgb(0 0 0/.5),inset 0 0 0 .5px rgb(255 255 255/.08),0 2px 6px rgb(0 0 0/.3),0 10px 28px rgb(0 0 0/.35);
+  --float:0 0 0 .5px rgb(0 0 0/.55),inset 0 0 0 .5px rgb(255 255 255/.1),0 4px 14px rgb(0 0 0/.3),0 18px 44px rgb(0 0 0/.45);
+  --ring:0 0 0 3px rgb(10 132 255/.45);
+  --danger:#ff453a;--danger-hover:#ff6961;
   --scroll-thumb:rgb(255 255 255/.16);--scroll-hover:rgb(255 255 255/.25);--scroll-active:rgb(255 255 255/.38);
   /* White becomes #292929 and black #d6d6d6. */
   --pdf-filter:invert(.84) hue-rotate(180deg);--pdf-page:#292929;

@@ -25,6 +25,7 @@ export function PdfPageControls({ page, pages, zoom, onPage, onZoom, onZoomBy }:
   return <>
     <div className="pdf-pager">
       <button type="button" className="icon-button" aria-label={t('Previous page')} disabled={page <= 1 || !pages} onClick={() => onPage(page - 1)}><Icon name="chevronUp" size={16}/></button>
+      <button type="button" className="icon-button" aria-label={t('Next page')} disabled={page >= pages} onClick={() => onPage(page + 1)}><Icon name="chevronDown" size={16}/></button>
       <input aria-label={t('Page number')} inputMode="numeric" value={input} onChange={e => setInput(e.target.value.replace(/\D/g, ''))} onFocus={e => e.currentTarget.select()} onBlur={() => setInput(String(page))} onKeyDown={e => {
         if (e.key !== 'Enter') return;
         e.preventDefault();
@@ -33,7 +34,6 @@ export function PdfPageControls({ page, pages, zoom, onPage, onZoom, onZoomBy }:
         e.currentTarget.blur();
       }}/>
       <span className="pdf-pages">/ {pages || '–'}</span>
-      <button type="button" className="icon-button" aria-label={t('Next page')} disabled={page >= pages} onClick={() => onPage(page + 1)}><Icon name="chevronDown" size={16}/></button>
     </div>
     <div className="pdf-zoom">
       <button type="button" className="icon-button" aria-label={t('Zoom out')} title={t('Zoom out (⌘−)')} onClick={() => onZoomBy(1 / 1.1)}><Icon name="minus" size={16}/></button>

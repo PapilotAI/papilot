@@ -1,8 +1,8 @@
 .manuscript-pages.git-diff-view{grid-column:1;grid-row:1;background:var(--bg)}
 .manuscript-pages.behind-source{grid-column:1;grid-row:1;visibility:hidden;pointer-events:none}
-.git-diff-toolbar{display:flex;align-items:center;gap:8px;flex:none;min-height:45px;padding:0 8px;border-bottom:1px solid var(--line)}
+.git-diff-toolbar{display:flex;align-items:center;gap:8px;flex:none;min-height:45px;padding:0 8px;border-bottom:var(--hairline) solid var(--line)}
 .git-diff-toolbar>.icon-button{flex:none}
-.git-diff-title{display:flex;align-items:center;gap:6px;flex:1;min-width:0;font-size:12.5px}
+.git-diff-title{display:flex;align-items:center;gap:6px;flex:1;min-width:0;font-size:12px}
 .git-diff-title strong{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .git-diff-title>span{flex:0 4 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-3)}
 .git-diff-title>svg{color:var(--text-3)}
@@ -12,7 +12,7 @@
 .git-diff-navigation{display:flex;align-items:center;gap:1px;flex:none}
 .git-diff-navigation .icon-button{width:28px;height:28px}
 .git-diff-position{padding:0 3px;font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
-.git-diff-columns{display:grid;grid-template-columns:52px 52px;flex:none;height:24px;align-items:center;border-bottom:1px solid var(--line);font-size:10px;color:var(--text-3);text-align:right}
+.git-diff-columns{display:grid;grid-template-columns:52px 52px;flex:none;height:24px;align-items:center;border-bottom:var(--hairline) solid var(--line);font-size:10px;color:var(--text-3);text-align:right}
 .git-diff-columns span{padding-right:10px}
 .git-source-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;font:13px/24px var(--mono);tab-size:4;outline-offset:-2px}
 .git-source-lines{position:relative;min-width:100%}
@@ -26,8 +26,8 @@
 .git-source-line.note{color:var(--text-3)}
 .git-source-line.current-change{box-shadow:inset 2px 0 var(--accent)}
 .git-diff-error{padding:16px}
-.git-diff-note{margin:0;padding:12px;font-size:12.5px;color:var(--text-3)}
-.git-diff-truncated{border-top:1px solid var(--line);flex:none}
+.git-diff-note{margin:0;padding:12px;font-size:12px;color:var(--text-3)}
+.git-diff-truncated{border-top:var(--hairline) solid var(--line);flex:none}
 @media(max-width:680px){
   .manuscript.show-source-diff .manuscript-pages,.manuscript.show-source-diff .manuscript-side{display:none}
   .manuscript.show-git.show-source-diff .git-diff-view{display:flex}

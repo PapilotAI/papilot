@@ -1722,7 +1722,7 @@ export function ReviewApp({
               onClick={() => closeComposer()}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M18 6 6 18M6 6l12 12" />
+                <path d="m6.5 6.5 11 11m0-11-11 11" />
               </svg>
             </button>
           </div>
@@ -1756,7 +1756,7 @@ export function ReviewApp({
               disabled={busy || !draft.trim() || Boolean(state?.commentLock)}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 19V5m-7 7 7-7 7 7" />
+                <path d="M12 19.5V4.75M5.75 11 12 4.75 18.25 11" />
               </svg>
             </button>
           </div>

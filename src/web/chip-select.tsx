@@ -129,7 +129,7 @@ export function ChipSelect({ label, value, options, onChange, disabled, icon, cl
       {icon && <Icon name={icon} size={14}/>}
       {current?.swatch && <i className="select-swatch" style={{ background: current.swatch }}/>}
       <span className="chip-value">{display ?? current?.label ?? value}</span>
-      <Icon name="chevronDown" size={13}/>
+      <Icon name="updown" size={12}/>
     </button>
     {/* Clicks pick an option without taking focus from the chip, and are
         cancelled so a label around the chip does not click it open again. */}

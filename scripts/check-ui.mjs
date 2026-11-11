@@ -480,7 +480,7 @@ try {
   await page.emulateMedia({ colorScheme: 'light' });
   await themeIs('dark');
   assert.equal(await page.getByRole('textbox', { name: 'Instructions for Codex' }).inputValue(), 'Preserve this draft while changing appearance.');
-  assert.equal(await page.locator('.main').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(38, 39, 43)');
+  assert.equal(await page.locator('.main').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(30, 30, 32)');
   assert.equal(await page.locator('html').evaluate(el => getComputedStyle(el).colorScheme), 'dark');
   await page.reload();
   await settingsButton.click();
@@ -678,7 +678,8 @@ try {
   // Review actions sit beside the reader controls; wide panes use the shared
   // marking rail, while narrow panes expose the compact color picker.
   const reviewTools = page.locator('.review-tools');
-  assert.equal(await reviewTools.getByRole('link', { name: 'Full PDF', exact: true }).getAttribute('href'), '/api/tasks/fixture-task-0001/pdf?round=1');
+  // The PDF / Changes switch shows the full PDF; no separate link duplicates it.
+  assert.equal(await reviewTools.getByRole('link', { name: 'Full PDF', exact: true }).count(), 0);
   assert.equal(await page.locator('.panel-tools').getByRole('link', { name: 'Open review in new tab', exact: true }).getAttribute('href'), '/review/fixture-paper/?task=p-fixture');
   assert.equal(await reviewTools.getByRole('button', { name: 'Regenerate PDF comparison', exact: true }).isDisabled(), false);
   await expect(page.locator('.review-marking-rail').getByRole('button', { name: 'Note', exact: true })).toBeVisible();
@@ -1762,7 +1763,7 @@ try {
     if (width < 681) {
       await page.getByRole('button', { name: /Review/ }).first().click();
       // Phone layouts keep PDF tools in the viewer and the new-tab link in navigation.
-      await page.locator('.review-tools').getByRole('link', { name: 'Full PDF', exact: true }).waitFor();
+      await page.locator('.review-tools').getByRole('button', { name: 'Regenerate PDF comparison', exact: true }).waitFor();
       assert.equal(await page.locator('.workspace-navigation').getByRole('link', { name: 'Open review in new tab', exact: true }).isVisible(), true);
       await page.screenshot({ path: `test-results/english-mobile-${width}.png`, fullPage: true });
     }

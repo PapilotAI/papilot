@@ -39,3 +39,10 @@
   [data-desktop="win32"] .manuscript:not(.panel-collapsed)>.manuscript-pages{--desktop-window-space:138px}
   [data-desktop="win32"] .manuscript-side{--desktop-window-space:0px}
 }
+/* macOS: the window behind the page is the system sidebar material, so the
+   page is transparent down to the sidebar, which keeps only its separator.
+   Below 901px the sidebar floats over the workspace and stays opaque. */
+@media(min-width:901px){
+  :root[data-desktop="darwin"],[data-desktop="darwin"] body,[data-desktop="darwin"] .app-shell{background:transparent}
+  [data-desktop="darwin"] .sidebar{background:transparent}
+}

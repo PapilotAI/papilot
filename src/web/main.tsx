@@ -1853,7 +1853,6 @@ function App() {
   const taskControls = task && <>{taskStateActions}{workspaceViews}</>;
   const reviewOpen = task && fullPdfUrl ? <a className="icon-button review-open" href={reviewUrl(task)} target="_blank" rel="noreferrer" aria-label={t('Open review in new tab')} title={t('Open review in new tab')}><Icon name="external" size={16}/></a> : null;
   const reviewTools = task && fullPdfUrl ? <>
-    <a className="icon-button full-pdf-link" href={fullPdfUrl} target="_blank" rel="noreferrer" aria-label={t('Full PDF')} title={t('Open the full PDF')}><Icon name="pdf" size={16}/></a>
     <CompileButton key={task.id} className="review-rebuild" label={t('Regenerate PDF comparison')} status={task.status === 'building' ? 'building' : task.review?.job?.status === 'failed' || task.review?.state === 'build_failed' ? 'failed' : 'ready'} disabled={['running', 'waiting_input', 'queued', 'building', 'uncertain', 'deleting'].includes(task.status) || taskActionBusy} onCompile={() => action('/tasks/' + task.id + '/publish')}/>
   </> : null;
 
