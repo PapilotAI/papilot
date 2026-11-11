@@ -2384,10 +2384,15 @@ test('a Codex turn that lost its sign-in shows Codex signed out, and Refresh res
     assert.match(f.store.task(f.task.id).error || '', /could not be refreshed/, 'the task keeps what Codex said');
     assert.deepEqual([f.workspace.runtime.connected, f.workspace.runtime.authenticated, f.workspace.runtime.account], [true, false, null]);
     assert.match(f.workspace.runtime.error || '', /Select Refresh/);
+    // A helper turn still waiting when Refresh restarts Codex fails at once rather than at its timeout.
+    f.codex.handler = async method => method === 'thread/start' ? { thread: { id: 'helper' } } : { turn: { id: 'helper-turn' } };
+    const helper = (f.workspace as any).helperTurn('codex', { cwd: '/unused', sandbox: 'read-only', instructions: '', prompt: 'Write.', timeout: 600000, what: 'write a commit message' });
+    await tick();
     (f.codex as any).close = () => { closes++; f.codex.ready = false; };
     (f.codex as any).start = async () => { starts++; f.codex.ready = true; };
     f.codex.handler = async method => method === 'account/read' ? { account: { email: 'me@example.com' }, requiresOpenaiAuth: true } : method === 'model/list' ? { data: [] } : {};
     await (f.workspace as any).connectAgent('codex');
+    await assert.rejects(helper, /Codex disconnected before it could write a commit message/);
     assert.deepEqual([closes, starts], [1, 1], 'Refresh starts Codex again, so it reads the current sign-in');
     assert.deepEqual([f.workspace.runtime.connected, f.workspace.runtime.authenticated, f.workspace.runtime.account, f.workspace.runtime.error], [true, true, 'me@example.com', null]);
     await (f.workspace as any).connectAgent('codex');

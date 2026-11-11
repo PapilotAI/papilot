@@ -216,9 +216,11 @@ export class Workspace extends EventEmitter {
     // Codex starts it again, so it uses the host's current sign-in, such as
     // one renewed by `codex login` or by another Codex sharing it. Its turns
     // in progress were failing without a sign-in; they can be resumed.
+    // close() does not announce the disconnect, so it is announced here: the
+    // tasks (see disconnected) and helper turns waiting on it settle now.
     if (id === 'codex' && agent.ready && runtime.connected && !runtime.authenticated) {
       agent.close();
-      this.disconnected(id, new Error('Codex restarted to load the current sign-in.'));
+      agent.emit('disconnected', new Error('Codex restarted to load the current sign-in.'));
     }
     try {
       await agent.start();
