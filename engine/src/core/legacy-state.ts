@@ -29,7 +29,13 @@ export function moveLegacyState(gitDir: string, git: Git, folder: string, refs: 
     removeEmpty(path.join(common, "refs", "latex-review"));
   }
   for (const dir of [common, ...(lstat(worktrees)?.isDirectory() ? fs.readdirSync(worktrees).map((name) => path.join(worktrees, name)) : [])])
-    moveFolder(path.join(dir, FOLDER), path.join(dir, folder));
+    try {
+      moveFolder(path.join(dir, FOLDER), path.join(dir, folder));
+    } catch (error) {
+      // Another paper of the repository, whose earlier server may still hold
+      // its files on Windows, moves when that paper opens.
+      if (path.resolve(dir) === path.resolve(gitDir)) throw error;
+    }
 }
 /** The former server folder of a Git directory, while its state has not
  *  moved: a review server of an earlier version may still be running. */

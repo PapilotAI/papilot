@@ -94,6 +94,28 @@ it("deletes nothing when an older version left a folder beside the current one",
   }
 });
 
+// A folder that cannot move yet, as one whose earlier server still holds its
+// files on Windows, simulated here by a folder that cannot be changed.
+it.skipIf(process.platform === "win32")("another paper's folder that cannot move yet does not keep this paper from opening", () => {
+  f = new Fixture();
+  f.repo.run(["worktree", "add", "-q", "--detach", path.join(f.base, "other")]);
+  const gitDir = path.join(realPath(f.root), ".git"), other = path.join(gitDir, "worktrees/other");
+  f.write("latex-review/state.sqlite3", "main", gitDir);
+  f.write("latex-review/state.sqlite3", "other", other);
+  fs.chmodSync(other, 0o555);
+  try {
+    expect(stateDir(gitDir)).toBe(path.join(gitDir, STATE));
+    expect(fs.readFileSync(path.join(gitDir, STATE, "state.sqlite3"), "utf8")).toBe("main");
+    expect(fs.readFileSync(path.join(other, "latex-review/state.sqlite3"), "utf8")).toBe("other");
+    // That paper itself reports why it cannot open.
+    expect(() => moveLegacyState(other, git(other), STATE, REFS)).toThrow("could not move");
+  } finally {
+    fs.chmodSync(other, 0o755);
+  }
+  moveLegacyState(other, git(other), STATE, REFS);
+  expect(fs.readFileSync(path.join(other, STATE, "state.sqlite3"), "utf8")).toBe("other");
+});
+
 it("leaves a paper without earlier state as it is", () => {
   f = new Fixture();
   const gitDir = path.join(realPath(f.root), ".git");
