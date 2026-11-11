@@ -265,9 +265,9 @@ export async function doctor(args) {
           finally { unregister(); }
           check('project.main', true, 'error', `${project.main} (${project.engine}); configuration loaded without compiling.`);
           await tool(project.engine, ['--version'], `Install ${project.engine} through your TeX distribution.`, 'project.engine');
-          check('project.worktrees', writableDirectory(project.worktrees), 'error', `Task worktrees: ${project.worktrees}`, 'Choose a writable worktrees directory outside the repository in .latex-review.json.');
+          check('project.worktrees', writableDirectory(project.worktrees), 'error', `Task worktrees: ${project.worktrees}`, 'Choose a writable worktrees directory outside the repository in .git/papilot/settings.json.');
         } catch (error) {
-          check('project.main', false, 'error', `Could not load the paper configuration: ${error.message}`, 'Check .latex-review.json, its main/source_dir settings, and the review-engine/dependencies checks above.');
+          check('project.main', false, 'error', `Could not load the paper configuration: ${error.message}`, 'Check .git/papilot/settings.json, its main/source_dir settings, and the review-engine/dependencies checks above.');
         }
       }
     }

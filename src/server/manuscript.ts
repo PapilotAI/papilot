@@ -9,6 +9,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { ENGINE, ROOT } from './paths.ts';
+import { stateDir } from './state.ts';
 import type { Annotation, BuildProblem, BuildProgress, GitDiffScope, GitFile, GitStatus, ManuscriptBuild, ManuscriptProblems } from '../shared.ts';
 import { ignorePattern } from '../commit.ts';
 import { PdfReader } from './pdf-reader.ts';
@@ -314,7 +315,7 @@ async function gitAction(root: string, args: string[], timeout = 60_000) {
 // previous snapshot's index, or the repository's, so Git rehashes only files
 // whose size or modification time changed.
 export async function workingTree(root: string) {
-  const dir = gitDir(root), saved = dir && path.join(dir, 'latex-review', 'working-index');
+  const dir = gitDir(root), saved = dir && path.join(await stateDir(dir), 'working-index');
   const folder = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'papilot-index-')), index = path.join(folder, 'index'), env = { GIT_INDEX_FILE: index };
   const snapshot = async (seed: string | null | undefined) => {
     if (!seed || !await copyIndex(seed, index)) { await fs.promises.rm(index, { force: true }); await git(root, ['read-tree', 'HEAD'], env).catch(() => git(root, ['read-tree', '--empty'], env)); }
