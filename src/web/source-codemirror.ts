@@ -63,9 +63,11 @@ const theme = EditorView.theme({
   '.cm-source-focus': { backgroundColor: 'color-mix(in srgb, var(--accent) 12%, transparent)' },
   '.cm-source-word': { backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)', borderRadius: '2px' },
   // What changed since the last commit, beside the line numbers and along the scrollbar.
-  // A review's changes in the text, a block per card, as on the PDF.
-  '.cm-review-card': { margin: '6px 0 0', border: '1px solid var(--line)', borderBottom: '0', borderRadius: '6px 6px 0 0', overflow: 'hidden', fontFamily: 'var(--sans)' },
-  '.cm-review-head': { display: 'flex', alignItems: 'center', gap: '8px', height: '30px', padding: '0 4px 0 10px', backgroundColor: 'var(--bg-muted)', fontSize: '12.5px', fontWeight: '500', color: 'var(--text)' },
+  // A review's changes in the text, a block per card, as on the PDF: the
+  // header, then the lines before and after, whose text starts where the
+  // editor's lines do; the changed words stand out of their line's tint.
+  '.cm-review-card': { marginTop: '6px', fontFamily: 'var(--sans)' },
+  '.cm-review-head': { display: 'flex', alignItems: 'center', gap: '8px', height: '30px', padding: '0 4px 0 9px', borderRadius: '6px 6px 0 0', backgroundColor: 'var(--bg-muted)', fontSize: '12.5px', fontWeight: '500', color: 'var(--text)' },
   '.cm-review-title': { flex: '1' },
   '.cm-review-buttons': { display: 'flex', gap: '2px' },
   '.cm-review-buttons > button': { display: 'grid', placeItems: 'center', width: '26px', height: '24px', padding: '0', border: '0', borderRadius: '5px', backgroundColor: 'transparent', cursor: 'pointer' },
@@ -75,14 +77,14 @@ const theme = EditorView.theme({
   '.cm-review-accept': { color: 'var(--green)' },
   '.cm-review-reject': { color: 'var(--danger)' },
   '.cm-review-comment': { color: 'var(--accent)' },
-  '.cm-review-before': { position: 'relative', padding: '0 64px 0 6px', borderLeft: '3px solid color-mix(in srgb, var(--danger) 55%, transparent)', backgroundColor: 'color-mix(in srgb, var(--red-soft) 60%, var(--bg))', fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-2)' },
+  '.cm-review-before': { position: 'relative', margin: '0', padding: '0 64px 0 6px', borderLeft: '3px solid color-mix(in srgb, var(--danger) 60%, transparent)', backgroundColor: 'color-mix(in srgb, var(--danger) 6%, var(--bg))', fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'anywhere', color: 'var(--text-2)' },
+  '.cm-line.cm-review-after': { position: 'relative', padding: '0 64px 0 6px', borderLeft: '3px solid color-mix(in srgb, var(--green) 60%, transparent)', backgroundColor: 'color-mix(in srgb, var(--green) 7%, var(--bg))' },
   // The labels use ::before: a flash of the line draws with ::after.
   '.cm-review-before::before, .cm-review-after::before': { content: 'attr(data-label)', position: 'absolute', top: '0', right: '8px', fontFamily: 'var(--sans)', fontSize: '11px', letterSpacing: '.04em', textTransform: 'uppercase' },
   '.cm-review-before::before': { color: 'var(--danger)' },
-  '.cm-review-removed': { backgroundColor: 'var(--red-soft)', color: 'var(--danger)', textDecoration: 'line-through', textDecorationColor: 'color-mix(in srgb, var(--danger) 55%, transparent)', borderRadius: '2px' },
-  '.cm-line.cm-review-after': { position: 'relative', paddingRight: '64px', borderLeft: '3px solid color-mix(in srgb, var(--green) 55%, transparent)', backgroundColor: 'color-mix(in srgb, var(--green-soft) 55%, var(--bg))' },
   '.cm-review-after::before': { color: 'var(--green)' },
-  '.cm-review-added': { backgroundColor: 'var(--green-soft)', borderRadius: '2px' },
+  '.cm-review-removed': { backgroundColor: 'color-mix(in srgb, var(--danger) 16%, transparent)', color: 'var(--danger)', textDecoration: 'line-through', textDecorationColor: 'color-mix(in srgb, var(--danger) 60%, transparent)', borderRadius: '2px' },
+  '.cm-review-added': { backgroundColor: 'color-mix(in srgb, var(--green) 20%, transparent)', borderRadius: '2px' },
   '.cm-change-ruler': { position: 'absolute', top: '0', right: '0', bottom: '0', zIndex: '3', pointerEvents: 'none' },
   '.cm-ruler-mark': { position: 'absolute', left: '1px', right: '1px', borderRadius: '1px' },
   '.cm-ruler-added': { backgroundColor: 'var(--green, #2f9e44)' },
