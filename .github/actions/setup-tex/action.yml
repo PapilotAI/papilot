@@ -1,0 +1,61 @@
+name: Set up TeX
+description: >
+  Installs the TeX packages the PDF tests compile with, from Ubuntu's archive.
+  The downloaded packages are cached per runner image, so a run that finds
+  them never waits on the package mirror, which now and then takes minutes.
+
+runs:
+  using: composite
+  steps:
+    - id: packages
+      shell: bash
+      run: |
+        # Keep this list sorted: it is part of the cache key.
+        echo "list=latexmk poppler-utils texlive-lang-chinese texlive-latex-extra texlive-xetex" >> "$GITHUB_OUTPUT"
+        echo "dir=$HOME/.cache/papilot-tex-debs" >> "$GITHUB_OUTPUT"
+        # The image version is in the key: the cache holds only what that
+        # image lacks, and a newer image may need other versions or packages.
+        echo "key=tex-debs-$ImageOS-$ImageVersion-$(uname -m)-${{ hashFiles('.github/actions/setup-tex/action.yml') }}" >> "$GITHUB_OUTPUT"
+
+    - id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.packages.outputs.dir }}
+        key: ${{ steps.packages.outputs.key }}
+
+    - name: Install from the cached packages
+      id: cached
+      if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      env:
+        DIR: ${{ steps.packages.outputs.dir }}
+      # Without package lists apt cannot fetch anything missing from the
+      # cache; it fails instead, and the step below downloads as before.
+      continue-on-error: true
+      run: sudo apt-get install -y --no-install-recommends --no-download "$DIR"/*.deb
+
+    - name: Download and install the packages
+      id: download
+      if: steps.cache.outputs.cache-hit != 'true' || steps.cached.outcome == 'failure'
+      shell: bash
+      env:
+        DIR: ${{ steps.packages.outputs.dir }}
+        PACKAGES: ${{ steps.packages.outputs.list }}
+      run: |
+        apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30)
+        rm -rf "$DIR" && mkdir -p "$DIR/partial"
+        sudo apt-get "${apt_options[@]}" update
+        sudo apt-get "${apt_options[@]}" -o Dir::Cache::archives="$DIR" install -y --no-install-recommends --download-only $PACKAGES
+        sudo apt-get -o Dir::Cache::archives="$DIR" install -y --no-install-recommends $PACKAGES
+        # Only the packages themselves go in the cache, readable by the runner.
+        sudo rm -rf "$DIR/partial" "$DIR/lock"
+        sudo chown -R "$(id -u):$(id -g)" "$DIR"
+        ls "$DIR"/*.deb > /dev/null
+
+    # Saved right after the download, so a test failing later still keeps it.
+    # Two jobs saving the same key is harmless: the second one only warns.
+    - if: steps.download.outcome == 'success'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.packages.outputs.dir }}
+        key: ${{ steps.cache.outputs.cache-primary-key }}
