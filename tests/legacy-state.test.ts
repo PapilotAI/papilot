@@ -20,7 +20,8 @@ test('startup moves each paper\'s review state before anything reads it, and ski
   const errors: unknown[][] = [];
   t.mock.method(console, 'error', (...args: unknown[]) => { errors.push(args); });
   await moveLegacyStates([path.join(base, 'missing'), root]);
-  assert.equal(errors.length, 1);
+  // Node may also report node:sqlite as experimental the first time it loads.
+  assert.deepEqual(errors.filter(args => String(args[0]).startsWith('Could not move')).map(args => String(args[0])), [`Could not move the review state of ${path.join(base, 'missing')}:`]);
   assert.equal(fs.readFileSync(path.join(root, '.git/papilot/state.sqlite3'), 'utf8'), 'tasks');
   assert.equal(fs.existsSync(path.join(root, '.git/latex-review')), false);
   assert.equal(git('rev-parse', 'refs/papilot/task/accepted'), git('rev-parse', 'HEAD'));
@@ -53,4 +54,10 @@ test('the review viewer\'s preferences and drafts move to their current keys, al
     'papilot:theme': 'dark',
   });
   moveLegacyStorage({ get length(): number { throw new Error('blocked'); } } as unknown as Storage);
+  // Where the browser blocks storage, reading localStorage itself throws.
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new DOMException('blocked', 'SecurityError'); } });
+  try { moveLegacyStorage(); } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor); else delete (globalThis as { localStorage?: Storage }).localStorage;
+  }
 });

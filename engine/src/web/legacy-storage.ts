@@ -3,8 +3,10 @@
 // skill. Each entry point imports this module first, so the keys move before
 // anything reads them.
 const OLD = /^(playground:)?latex-review:/;
-export function moveLegacyStorage(storage: Storage | undefined = globalThis.localStorage) {
+export function moveLegacyStorage(storage?: Storage) {
   try {
+    // Reading localStorage itself throws where the browser blocks storage.
+    storage ??= globalThis.localStorage;
     if (!storage) return;
     const keys: string[] = [];
     for (let i = 0; i < storage.length; i++) {
