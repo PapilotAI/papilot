@@ -126,6 +126,17 @@ Want a sample first? Run `papilot demo`. Details are in the [guide](docs/guide.m
 
 <img src="docs/assets/readme-icons/pull-request.svg" width="20" height="20" align="absmiddle" alt=""> &nbsp;**Become a contributor.** Pull requests are very welcome, including ones written with AI agents. Start with the [contributing guide](.github/CONTRIBUTING.md).
 
+<img src="docs/assets/readme-icons/heart.svg" width="20" height="20" align="absmiddle" alt=""> &nbsp;**Thank you to everyone who has contributed.**
+
+<p align="center">
+  <a href="https://github.com/PapilotAI/papilot/graphs/contributors">
+    <picture>
+      <source media="(max-width: 600px)" srcset="docs/assets/readme-contributors/compact.svg">
+      <img src="docs/assets/readme-contributors/desktop.svg" alt="Papilot's contributors">
+    </picture>
+  </a>
+</p>
+
 ---
 
 <p align="center"><sub><a href="LICENSE">MIT</a> © 2026 PapilotAI. Thanks to our friends at <a href="https://linux.do/">LINUX DO</a>.</sub></p>
