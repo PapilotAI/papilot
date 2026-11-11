@@ -26,7 +26,7 @@ it("moves the state folder, task refs, worktree indexes and settings of an earli
   const real = path.join(realPath(path.join(f.root, ".git")), "latex-review"), build = (key: string) => ({ key, root: path.join(real, "cache/builds", key, "src"), pdf: path.join(real, "cache/builds", key, "src/build/main.pdf") });
   f.write("rounds/polish/001/places.json", JSON.stringify({ main: "paper/main.tex", old: build("a"), new: build("b"), units: { u1: [] } }), old);
   const store = new Store(path.join(old, "state.sqlite3"));
-  store.db.prepare("INSERT INTO jobs(id, task, status, result, created) VALUES ('j', 'polish', 'failed', ?, 1)").run(JSON.stringify({ error: "Your edits do not compile.", log: `${real}/logs/j.log` }));
+  store.db.prepare("INSERT INTO jobs(id, task, status, result, created) VALUES ('j', 'polish', 'failed', ?, 1)").run(JSON.stringify({ error: "Your edits do not compile.", log: path.join(real, "logs", "j.log") }));
   store.db.close();
   f.repo.run(["update-ref", "refs/latex-review/polish/base", head]);
   f.repo.run(["update-ref", "refs/latex-review/polish/round-1", head]);
