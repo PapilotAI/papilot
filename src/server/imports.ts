@@ -147,7 +147,7 @@ export async function openFolder(input: { path?: unknown; main?: unknown }, know
   const main = input.main ?? detected.main;
   if (!existingTex(root, main)) throw new Error('Choose an existing TeX main file.');
   await prepareRepository(root);
-  await rememberMain(root, main, engineFor(root, main, await config(root)));
+  await rememberMain(root, main, engineFor(root, main, (await configModule()).readSettings(root)));
   return { project: await register(root, path.basename(root)) };
 }
 export async function extractZip(buffer: Buffer, root: string) {

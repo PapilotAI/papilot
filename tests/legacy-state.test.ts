@@ -23,7 +23,9 @@ test('startup moves each paper\'s review state before anything reads it, and ski
   // Node may also report node:sqlite as experimental the first time it loads.
   assert.deepEqual(errors.filter(args => String(args[0]).startsWith('Could not move')).map(args => String(args[0])), [`Could not move the review state of ${path.join(base, 'missing')}:`]);
   assert.equal(fs.readFileSync(path.join(root, '.git/papilot/state.sqlite3'), 'utf8'), 'tasks');
-  assert.equal(fs.existsSync(path.join(root, '.git/latex-review')), false);
+  // A link keeps the absolute paths that earlier records name valid.
+  assert.ok(fs.lstatSync(path.join(root, '.git/latex-review')).isSymbolicLink());
+  assert.equal(fs.readFileSync(path.join(root, '.git/latex-review/state.sqlite3'), 'utf8'), 'tasks');
   assert.equal(git('rev-parse', 'refs/papilot/task/accepted'), git('rev-parse', 'HEAD'));
   assert.equal(git('for-each-ref', 'refs/latex-review/'), '');
 });

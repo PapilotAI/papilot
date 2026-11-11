@@ -228,6 +228,20 @@ export async function connect(
     return launch(root, info?.port ?? last?.port ?? 0, owned);
   });
 }
+/** Stops the review server recorded in `home` if it still serves `root`,
+ *  also in the middle of a build: before a paper's state moves on Windows,
+ *  where its open files keep the folder from moving. */
+export async function stopServerIn(home: string, root: string) {
+  const info = readJson<Connection | null>(path.join(home, "connection.json"), null),
+    answer = await probe(root, info);
+  if (!answer || !info) return;
+  await call(info.url, "/api/shutdown", { force: true }, answer.csrf, 5000);
+  await waitForExit(info.url, answer.pid);
+  // It stops answering before it closes its database and exits.
+  for (const deadline = Date.now() + 15000; Date.now() < deadline; await sleep(100))
+    try { process.kill(answer.pid, 0); } catch { return; }
+  throw new ServerError("The earlier review server has not exited yet.");
+}
 export async function stop(root: string, force = false) {
   const client = await connect(root, false);
   if (!client) return null;

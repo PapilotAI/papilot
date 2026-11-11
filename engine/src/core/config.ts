@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { Repo, cleanPath, stateOf, within } from "./git.ts";
+import { Repo, STATE, cleanPath, gitDirOf, stateOf, within } from "./git.ts";
 import { realPath, writeJson } from "./files.ts";
 import { legacySettings } from "./legacy-state.ts";
 export const ENGINES = ["pdflatex", "xelatex", "lualatex"] as const;
@@ -50,13 +50,25 @@ const read = (root: string, file: string) =>
  *  root document and engine are detected, and Papilot saves what the author
  *  chooses instead. */
 export const settingsFile = (root: string) => path.join(stateOf(root), "settings.json");
-const SETTINGS_NAME = ".git/papilot/settings.json";
+// The settings file as the author finds it, for messages: relative to the
+// paper, unless the paper is a linked worktree whose Git directory lies
+// elsewhere. Naming it moves nothing.
+function settingsName(root: string) {
+  try {
+    const file = path.join(gitDirOf(root), STATE, "settings.json"), relative = path.relative(realPath(root), file);
+    return relative.startsWith("..") || path.isAbsolute(relative) ? file : relative.split(path.sep).join("/");
+  } catch {
+    return ".git/papilot/settings.json";
+  }
+}
 export function readSettings(root: string): Record<string, unknown> {
   const file = settingsFile(root);
   let text: string;
   try {
     text = fs.readFileSync(file, "utf8");
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      throw new Error(`${settingsName(root)} cannot be read (${(error as Error).message}).`);
     // Settings an earlier version kept in the working tree move here once.
     const legacy = legacySettings(root);
     if (legacy) createOnce(file, JSON.stringify(legacy, null, 2) + "\n");
@@ -66,10 +78,10 @@ export function readSettings(root: string): Record<string, unknown> {
   try {
     settings = JSON.parse(text);
   } catch {
-    throw new Error(`${SETTINGS_NAME} is not valid JSON.`);
+    throw new Error(`${settingsName(root)} is not valid JSON.`);
   }
   if (!settings || typeof settings !== "object" || Array.isArray(settings))
-    throw new Error(`${SETTINGS_NAME} must contain an object.`);
+    throw new Error(`${settingsName(root)} must contain an object.`);
   return settings as Record<string, unknown>;
 }
 // Creates `file` with `text` unless another process did, never showing a
@@ -134,7 +146,7 @@ export function detectMain(root: string) {
   if (found.length === 1) return found[0];
   if (!found.length)
     throw new Error(
-      `No root document found. Set "main" in ${SETTINGS_NAME}, e.g. {"main":"path/to/main.tex"}.`,
+      `No root document found. Set "main" in ${settingsName(root)}, e.g. {"main":"path/to/main.tex"}.`,
     );
   const rank = (file: string) => [
     file.split("/").length,
@@ -149,7 +161,7 @@ export function detectMain(root: string) {
   )
     return found[0];
   throw new Error(
-    `Several root documents were found (${found.slice(0, 6).join(", ")}). Set "main" in ${SETTINGS_NAME}.`,
+    `Several root documents were found (${found.slice(0, 6).join(", ")}). Set "main" in ${settingsName(root)}.`,
   );
 }
 export function loadProject(root: string): Project {

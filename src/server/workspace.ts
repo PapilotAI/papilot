@@ -18,6 +18,7 @@ import { AGENT_TURN, reviewClient, reviewConnectionError, taskRoute, confirmedRe
 import { VERSION } from './paths.ts';
 import { prepareRepository } from './imports.ts';
 import { moveLegacyStates } from './state.ts';
+import { REFS } from '../../engine/src/core/git.ts';
 import { pathIdentity, realPath } from './real-path.ts';
 import { findSkill, type SkillFile } from './skills.ts';
 import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
@@ -1372,8 +1373,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   private async taskCommitChanges(task: Task) {
     const root = this.store.project(task.projectId).path;
     const delivered = task.reconciliation?.base ?? (task.delivery?.mode !== 'branch' ? task.delivery?.accepted : undefined);
-    const before = delivered ?? `refs/papilot/${task.name}/base`;
-    const after = `refs/papilot/${task.name}/accepted`;
+    const before = delivered ?? `${REFS}${task.name}/base`;
+    const after = `${REFS}${task.name}/accepted`;
     const paths = await acceptedFiles(root, task.name, delivered);
     if (!paths.length) throw new Error('This task has no accepted changes left to commit.');
     const { stdout: patch } = await execute('git', ['-C', root, 'diff', '--no-ext-diff', '--no-textconv', before, after, '--'], { maxBuffer: 8 * 1024 * 1024 });
@@ -1551,11 +1552,11 @@ function finalSelection(review?: Task['review'] | null) {
 }
 export async function acceptedFiles(root: string, name: string, since?: string) {
   try {
-    const { stdout } = await execute('git', ['-C', root, 'diff', '--name-only', '--no-renames', '-z', since || `refs/papilot/${name}/base`, `refs/papilot/${name}/accepted`, '--']);
+    const { stdout } = await execute('git', ['-C', root, 'diff', '--name-only', '--no-renames', '-z', since || `${REFS}${name}/base`, `${REFS}${name}/accepted`, '--']);
     return stdout.split('\0').filter(Boolean);
   } catch { return []; }
 }
 export async function acceptedCommit(root: string, name: string) {
-  try { return (await execute('git', ['-C', root, 'rev-parse', '--verify', '-q', `refs/papilot/${name}/accepted^{commit}`])).stdout.trim() || undefined; }
+  try { return (await execute('git', ['-C', root, 'rev-parse', '--verify', '-q', `${REFS}${name}/accepted^{commit}`])).stdout.trim() || undefined; }
   catch { return undefined; }
 }
