@@ -135,9 +135,4 @@ Wrapper executable paths are preserved.
 
 The locked SDK runtime is in `nix/runtime`; it is built independently of the
 application and review-engine npm trees. Linux native helpers are patched at
-build time. The `checks.x86_64-linux.desktop-vm` check boots a NixOS desktop,
-launches Papilot with a minimal PATH, and checks SQLite, PDF/SyncTeX compilation,
-read-only store files and writable user data. ARM Linux runtime validation is
-still required; evaluation is not a native execution test.
-Run the VM check manually with `nix build .#checks.x86_64-linux.desktop-vm -L`.
-It is not run by GitHub Actions.
+build time.
