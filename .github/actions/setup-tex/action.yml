@@ -23,7 +23,7 @@ runs:
     # No save has the bare prefix as its key: only restore-keys can match,
     # so cache-hit is never true and the steps below test cache-matched-key.
     - id: cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: ${{ steps.packages.outputs.dir }}
         key: ${{ steps.packages.outputs.prefix }}
@@ -96,7 +96,7 @@ runs:
     # no other ref can use, and they restore main's. When both jobs of a run
     # download, the second save only warns.
     - if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && steps.download.outputs.key != '' && steps.download.outputs.key != steps.cache.outputs.cache-matched-key
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       with:
         path: ${{ steps.packages.outputs.dir }}
         key: ${{ steps.download.outputs.key }}
