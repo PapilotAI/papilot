@@ -5,7 +5,10 @@
 [data-desktop] .sidebar-header>.icon-button{position:absolute;top:7px;right:12px;z-index:21;-webkit-app-region:no-drag}
 .sidebar-collapsed .desktop-window-drag{width:92px}
 [data-desktop] .sidebar-collapsed .sidebar-toggle{margin-left:92px}
-[data-desktop] :is(.pdf-toolbar,.workspace-navigation,.review-placeholder-toolbar,.git-toolbar,.git-details-toolbar,.git-diff-toolbar){-webkit-app-region:drag}
+[data-desktop] :is(.pdf-toolbar,.workspace-navigation,.review-placeholder-toolbar,.git-toolbar,.git-details-toolbar,.git-diff-toolbar,.review-host-bar){-webkit-app-region:drag}
+/* Over the changes the host bar lets clicks through to the viewer's own bar,
+   whose controls it marks with these holes. They take no clicks themselves. */
+.review-host-bar>.review-bar-hole{position:absolute;pointer-events:none;-webkit-app-region:no-drag}
 [data-desktop] :is(button,a,input,select,textarea,[role="slider"],[role="combobox"]){-webkit-app-region:no-drag}
 /* app-region inherits, so a popover or dialog opened from a toolbar would be a
    drag handle too. On macOS that stops every click reaching the window. */
