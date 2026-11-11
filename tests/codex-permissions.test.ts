@@ -146,3 +146,19 @@ test('on Windows, Codex threads get the sandbox that needs no setup unless the u
     assert.deepEqual(await start('win32'), { 'sandbox_workspace_write.network_access': true }, "the user's own sandbox is kept");
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+test('a Codex that exits while its config is read does not count as connected', { timeout: 30000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-exit-')), server = path.join(dir, 'app-server.mjs');
+  // Answers initialize, then exits when asked for its config.
+  fs.writeFileSync(server, `import { createInterface } from 'node:readline';
+createInterface({ input: process.stdin }).on('line', line => {
+  const message = JSON.parse(line);
+  if (message.method === 'initialize') process.stdout.write(JSON.stringify({ id: message.id, result: {} }) + '\\n');
+  if (message.method === 'config/read') process.exit(1);
+});`);
+  const codex = new Codex(process.execPath, [server], process.env, 'win32');
+  try {
+    await assert.rejects(codex.start(), /Codex exited|not connected/);
+    assert.equal(codex.ready, false);
+  } finally { codex.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});

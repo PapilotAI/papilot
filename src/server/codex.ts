@@ -88,8 +88,10 @@ export class Codex extends EventEmitter {
     this.notify('initialized', {});
     this.threadConfig = {};
     if (this.platform === 'win32') {
-      const effective = await this.request('config/read', {}).catch(() => null);
-      if (generation !== this.generation) throw new Error('Codex is not connected.');
+      // An older Codex without config/read answers with an error: keep its
+      // defaults. A Codex that exits meanwhile fails this launch.
+      const effective = await this.request('config/read', {}).catch(error => { if (error instanceof RpcResponseError) return null; throw error; });
+      if (generation !== this.generation || this.child !== child) throw new Error('Codex is not connected.');
       if (effective && !effective.config?.windows?.sandbox) this.threadConfig = { 'windows.sandbox': 'unelevated' };
     }
     this.ready = true;
