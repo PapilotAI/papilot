@@ -90,6 +90,9 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   const read = async (file: string) => normalize(await api<SourceFile>(taskId ? `/tasks/${taskId}/source?file=${encodeURIComponent(file)}` : `/projects/${projectId}/manuscript/source?file=${encodeURIComponent(file)}`));
   const [edit, setEdit] = useState<Edit | null>(null);
   const latest = useRef(edit); latest.current = edit;
+  // The task or paper the panel shows now; a save answered after a switch
+  // must not reach the newly shown task's review.
+  const currentScope = useRef(scope); currentScope.current = scope;
   const [dirty, setDirty] = useState(false);
   const editor = useRef<SourceCodeEditor | null>(null), host = useRef<HTMLDivElement | null>(null);
   // The file version the editor holds, and what to show once it does.
@@ -325,7 +328,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
         const result = await api<TaskSourceSave>(`/tasks/${taskId}/source`, { id, round: file.round, file: file.file, revision: file.revision, text }, undefined, 120000);
         saved = normalize(result.source);
         const view = editor.current?.view, line = view ? view.state.doc.lineAt(view.state.selection.main.head).number - 1 : 0;
-        onTaskSaved?.(result.state, saved.file, line);
+        if (currentScope.current === scope) onTaskSaved?.(result.state, saved.file, line);
       } else {
         const result = await api<SourceSave>(`/projects/${projectId}/manuscript/source`, { id, file: file.file, revision: file.revision, text }, undefined, 60000);
         saved = normalize(result.source);
