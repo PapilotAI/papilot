@@ -605,6 +605,9 @@ export function ReviewApp({
     if (!latest || !detail) return false;
     const shown = chosen.filter((item) => item.kind === "text" && item.status !== "deleted");
     if (!shown.length || shown.some((item) => !item.text_ops?.length)) return false;
+    // Nor can the editor place cards in a file with CRLF line endings, whose
+    // offsets count the carriage returns; its context shows them.
+    if (shown.some((item) => /\r/.test(item.old_text + item.new_text + (item.old_context?.text ?? "")))) return false;
     const unit = shown[0];
     const marks = chosen.filter((item) => item.file === unit.file && item.kind === "text").flatMap(unitLines);
     if (!marks.length) return false;
