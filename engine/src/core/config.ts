@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { Repo, STATE, cleanPath, gitDirOf, stateOf, within } from "./git.ts";
-import { realPath, writeJson } from "./files.ts";
+import { readJson, realPath, writeJson } from "./files.ts";
 import { legacySettings } from "./legacy-state.ts";
 export const ENGINES = ["pdflatex", "xelatex", "lualatex"] as const;
 type Engine = (typeof ENGINES)[number];
@@ -17,6 +18,40 @@ interface Settings {
   worktrees?: string;
   build_workers?: number;
 }
+export type BuildOverrides = Pick<Settings, "engine" | "source_dir"> & { ignoreLatexmkrc?: boolean };
+interface BuildOverrideRecord { project: string; defaults: string; settings: BuildOverrides }
+
+const buildDefaults = (settings: Record<string, unknown>) => JSON.stringify([settings.main, settings.engine, settings.source_dir, settings.latexmkrc]);
+
+// Agent repairs belong to this installation and compiler host, even when
+// the same checkout can be opened by both the Windows and WSL backends.
+export function buildOverridesFile(root: string) {
+  const data = process.env.PAPILOT_DATA;
+  if (!data) return null;
+  const key = createHash("sha256")
+    .update(JSON.stringify([process.platform, process.arch, process.env.WSL_DISTRO_NAME || "", realPath(root)]))
+    .digest("hex");
+  return path.join(data, "latex-builds", `${key}.json`);
+}
+export function readBuildOverrides(root: string, defaults?: Record<string, unknown>): BuildOverrides {
+  const file = buildOverridesFile(root);
+  const record = file && readJson<BuildOverrideRecord | null>(file, null);
+  // A later explicit choice in the paper's settings takes precedence.
+  return record && record.defaults === buildDefaults(defaults ?? readSettings(root)) ? record.settings ?? {} : {};
+}
+export function saveBuildOverrides(root: string, settings: BuildOverrides) {
+  const file = buildOverridesFile(root);
+  if (!file) throw new Error("The Papilot data directory is unavailable.");
+  const project = realPath(root), folder = path.resolve(path.dirname(file));
+  let ancestor = folder;
+  while (!fs.existsSync(ancestor) && path.dirname(ancestor) !== ancestor) ancestor = path.dirname(ancestor);
+  const location = path.join(realPath(ancestor), path.relative(ancestor, folder));
+  const relative = path.relative(project, location);
+  if (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))
+    throw new Error("The Papilot data directory for build settings must be outside the paper.");
+  writeJson(file, { project, defaults: buildDefaults(readSettings(root)), settings }, 0o600);
+}
+
 export interface Project {
   root: string;
   state: string;
@@ -164,9 +199,11 @@ export function detectMain(root: string) {
     `Several root documents were found (${found.slice(0, 6).join(", ")}). Set "main" in ${settingsName(root)}.`,
   );
 }
-export function loadProject(root: string): Project {
+export function loadProject(root: string, overrides?: BuildOverrides): Project {
   root = realPath(root);
-  const settings = readSettings(root) as Settings;
+  const defaults = readSettings(root);
+  const { ignoreLatexmkrc, ...buildSettings } = overrides ?? readBuildOverrides(root, defaults);
+  const settings = { ...defaults, ...buildSettings } as Settings;
   const allowed = new Set([
     "main",
     "engine",
@@ -208,7 +245,7 @@ export function loadProject(root: string): Project {
     doc_dir = path.posix.dirname(main) === "." ? "" : path.posix.dirname(main);
   if (!fs.existsSync(path.join(root, main)))
     throw new Error(`Root document not found: ${main}`);
-  const latexmkrc = settings.latexmkrc
+  const latexmkrc = ignoreLatexmkrc ? null : settings.latexmkrc
     ? cleanPath(settings.latexmkrc)
     : ([...new Set([doc_dir, ""])]
         .flatMap((dir) =>
