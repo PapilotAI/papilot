@@ -134,6 +134,13 @@ it("keeps a whole file's line endings and byte order mark", async () => {
   await app.sourceEdits.saveFile(task.name, { id: "crlf", round: round.number, file: METHOD, revision: file.revision, text: "First line.\nEdited line.\n" });
   expect(fs.readFileSync(target, "utf8")).toBe("﻿First line.\r\nEdited line.\r\n");
 });
+it("refuses a whole file too large in bytes before saving or reviewing it", async () => {
+  const file = app.sourceEdits.readFile(task.name, METHOD), before = f.read(METHOD, task.worktree);
+  // 700,000 characters pass the length check but are 2,100,000 bytes in UTF-8.
+  await expect(app.sourceEdits.saveFile(task.name, { id: "wide", round: file.round, file: METHOD, revision: file.revision, text: "中".repeat(700_000) })).rejects.toThrow("too large");
+  expect(f.read(METHOD, task.worktree)).toBe(before);
+  expect(app.sourceEdits.readFile(task.name, METHOD).text).toBe(before);
+});
 it("refuses whole files outside the task worktree, over HTTP with the review token", async () => {
   const server = createServer(app), url = `/api/tasks/${task.name}/source/file`;
   try {

@@ -134,7 +134,12 @@ export class SourceEdits {
         const { task } = this.writable(name, this.app.review.latestRound(name)?.number ?? input.round), current = readBytes(safePath(task.worktree, input.file));
         if (current === null || current.length > MAX_FILE || textOf(current) === null) throw new Error("This file is not text that can be edited here.");
         if (revision(current) !== input.revision) throw new Error("The source changed while you were editing. Your draft is kept.");
-        const data: SavedEdit = { request, file: input.file, expected: current.toString("base64"), target: fileBytes(current, input.text).toString("base64"), applied: false };
+        // The text's length counts characters; the file is the encoded bytes,
+        // which multi-byte characters and CRLF line endings make longer.
+        // Refuse before publishing a file the editor could not read back.
+        const target = fileBytes(current, input.text);
+        if (target.length > MAX_FILE) throw new Error("This source file is too large to edit here.");
+        const data: SavedEdit = { request, file: input.file, expected: current.toString("base64"), target: target.toString("base64"), applied: false };
         this.app.store.execute("INSERT INTO source_edits(id,task,data) VALUES(?,?,?)", identity, name, JSON.stringify(data));
         saved = { task: name, data };
       }
