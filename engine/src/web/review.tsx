@@ -597,8 +597,11 @@ export function ReviewApp({
   });
   // A change's source, offered to the workspace's editor: true when it opened there.
   function offerSource(chosen: Unit[]) {
-    const unit = chosen.find((item) => item.kind === "text" && item.status !== "deleted");
-    if (!unit || !detail) return false;
+    // Changes without character-level operations, such as a new file or a
+    // bibliography entry, have no card in the editor: they keep the inline LaTeX.
+    const shown = chosen.filter((item) => item.kind === "text" && item.status !== "deleted");
+    if (!shown.length || shown.some((item) => !item.text_ops?.length) || !detail) return false;
+    const unit = shown[0];
     const marks = chosen.filter((item) => item.file === unit.file && item.kind === "text").flatMap(unitLines);
     if (!marks.length) return false;
     const request: OpenSource = { round: detail.round, change: unit.id, file: unit.file, marks,
