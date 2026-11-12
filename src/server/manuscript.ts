@@ -789,16 +789,19 @@ export class Manuscripts extends EventEmitter {
     };
     const repair = (async (): Promise<BuildRepairResult> => {
       const { Builder, BuildError, Repo, config, mupdf } = await engine();
-      const { ENGINES, loadProject, readBuildOverrides, readSettings, saveBuildOverrides, signature } = config;
+      const { ENGINES, loadBuildDocuments, loadProject, readBuildOverrides, readSettings, saveBuildOverrides, signature } = config;
       const { which } = await import(pathToFileURL(path.join(ENGINE, 'src/core/process.ts')).href) as typeof import('../../engine/src/core/process.ts');
       const repo = new Repo(root), defaults = readSettings(root), saved = readBuildOverrides(root, defaults);
+      let documents: ReturnType<typeof loadBuildDocuments> | undefined = project;
+      if (!documents) try { documents = loadBuildDocuments(root, defaults, saved.ignoreLatexmkrc); }
+      catch { /* An unresolved main document still permits diagnosis and advice. */ }
       const checkSettings = () => {
         if (JSON.stringify(readSettings(root)) !== JSON.stringify(defaults) || JSON.stringify(readBuildOverrides(root)) !== JSON.stringify(saved)) throw stale();
       };
       const entries = (await repo.entriesAsync(tree)).filter(entry => entry.mode.startsWith('100'));
       const candidates = entries.filter(entry => /\.tex$/i.test(entry.file)).map(entry => entry.file).slice(0, 80);
       const errors = (failed.problems || []).filter(problem => problem.severity === 'error');
-      const focus = new Set([project?.main, ...errors.map(problem => problem.file)]);
+      const focus = new Set([documents?.main, ...errors.map(problem => problem.file)]);
       const small = new Set(entries.filter(entry => entry.size <= 100_000 && /\.(tex|sty|cls|bib)$/i.test(entry.file)).map(entry => entry.file));
       const files = [...focus].filter((file): file is string => Boolean(file && small.has(file))).slice(0, 6);
       const blobs = await repo.blobsAsync(tree, files);
@@ -808,7 +811,7 @@ export class Manuscripts extends EventEmitter {
         const start = Math.max(0, line - 5);
         return { file, line: start + 1, text: lines.slice(start, start + 14).join('\n').slice(0, 1600) };
       });
-      const { main, engine: compiler, source_dir, latexmkrc } = project || {};
+      const { main, latexmkrc } = documents || {}, { engine: compiler, source_dir } = project || {};
       const prompt = JSON.stringify({ platform: process.platform, installedEngines: ENGINES.filter(name => which(name)), latexmkInstalled: Boolean(which('latexmk')),
         settings: { main, engine: compiler, source_dir, latexmkrc, ...saved }, candidates, excerpts, error: scrubLog(failed.error || '', failed.logFolder).slice(0, 12000) });
       await checkCurrent();
@@ -818,7 +821,7 @@ export class Manuscripts extends EventEmitter {
       checkSettings();
       const next = { ...saved, ...settings }, candidate = loadProject(root, next);
       if (!entries.some(entry => entry.file === candidate.main)) throw new Error('Choose an existing TeX main file.');
-      if (candidate.latexmkrc && (candidate.latexmkrc !== project?.latexmkrc || candidate.doc_dir !== project.doc_dir))
+      if (candidate.latexmkrc && (!documents || candidate.latexmkrc !== documents.latexmkrc || candidate.doc_dir !== documents.doc_dir))
         throw new Error('The proposed settings would enable a different latexmkrc.');
       if (project && signature(project) === signature(candidate)) return { kind: 'advice', summary };
       let result: BuildInfo;

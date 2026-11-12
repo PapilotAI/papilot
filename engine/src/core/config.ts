@@ -199,6 +199,24 @@ export function detectMain(root: string) {
     `Several root documents were found (${found.slice(0, 6).join(", ")}). Set "main" in ${settingsName(root)}.`,
   );
 }
+/** Identify the existing inputs even when another build setting is invalid. */
+export function loadBuildDocuments(root: string, settings: { main?: unknown; latexmkrc?: unknown }, ignoreLatexmkrc = false) {
+  for (const key of ["main", "latexmkrc"] as const)
+    if (settings[key] !== undefined && typeof settings[key] !== "string")
+      throw new Error(`"${key}" must be a string.`);
+  const main = settings.main ? cleanPath(settings.main as string) : detectMain(root),
+    doc_dir = path.posix.dirname(main) === "." ? "" : path.posix.dirname(main);
+  if (!fs.existsSync(path.join(root, main)))
+    throw new Error(`Root document not found: ${main}`);
+  const latexmkrc = ignoreLatexmkrc ? null : settings.latexmkrc
+    ? cleanPath(settings.latexmkrc as string)
+    : ([...new Set([doc_dir, ""])]
+        .flatMap((dir) =>
+          ["latexmkrc", ".latexmkrc"].map((n) => path.posix.join(dir, n)),
+        )
+        .find((f) => fs.existsSync(path.join(root, f))) ?? null);
+  return { main, doc_dir, latexmkrc };
+}
 export function loadProject(root: string, overrides?: BuildOverrides): Project {
   root = realPath(root);
   const defaults = readSettings(root);
@@ -220,9 +238,7 @@ export function loadProject(root: string, overrides?: BuildOverrides): Project {
   if (unknown.length)
     throw new Error(`Unknown settings: ${unknown.join(", ")}`);
   for (const key of [
-    "main",
     "engine",
-    "latexmkrc",
     "source_dir",
     "worktrees",
   ] as const)
@@ -241,17 +257,7 @@ export function loadProject(root: string, overrides?: BuildOverrides): Project {
     throw new Error('"figures" must be a list of paths.');
   if (settings.preload === null || settings.dependencies === null)
     throw new Error('"preload" and "dependencies" must be objects.');
-  const main = settings.main ? cleanPath(settings.main) : detectMain(root),
-    doc_dir = path.posix.dirname(main) === "." ? "" : path.posix.dirname(main);
-  if (!fs.existsSync(path.join(root, main)))
-    throw new Error(`Root document not found: ${main}`);
-  const latexmkrc = ignoreLatexmkrc ? null : settings.latexmkrc
-    ? cleanPath(settings.latexmkrc)
-    : ([...new Set([doc_dir, ""])]
-        .flatMap((dir) =>
-          ["latexmkrc", ".latexmkrc"].map((n) => path.posix.join(dir, n)),
-        )
-        .find((f) => fs.existsSync(path.join(root, f))) ?? null);
+  const { main, doc_dir, latexmkrc } = loadBuildDocuments(root, settings, ignoreLatexmkrc);
   const text = read(root, main),
     magic = text
       .split("\n")
