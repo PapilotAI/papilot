@@ -148,6 +148,15 @@ try {
   await expect(tab).toHaveCount(0);
   await expect(chat).toHaveCount(0);
   await expect(side.locator('.composer-wrap')).toBeVisible();
+
+  // An earlier round keeps its inline LaTeX: the editor shows the files as
+  // they are now, with the latest round's changes.
+  await viewer.getByRole('button', { name: 'History', exact: true }).click();
+  await viewer.getByRole('combobox', { name: 'Review history' }).selectOption(String(round));
+  await expect(viewer.locator('.change.current')).toBeVisible({ timeout: 60000 });
+  await viewer.locator('.change.current .source-toggle').click();
+  await expect(viewer.locator('.change.current .source'), 'an earlier round shows its LaTeX in the card').toBeVisible();
+  await expect(side.getByRole('tab', { name: 'method.tex' }), 'the editor does not open for an earlier round').toHaveCount(0);
   assert.deepEqual(errors, []);
   console.log('PASS: LaTeX on a change opens its whole file in the editor beside the chat, which shows the round\'s changes as the review\'s cards (title, Accept, Reject and Comment over the lines before and after) acting through the review; rejected text comes back and the rest stay placed; the caret and the review follow each other; ⌘S saves into the task and reviews it in a new round; the chat stays as it was');
 } finally {
