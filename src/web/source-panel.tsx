@@ -335,11 +335,14 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
         compile = { file: saved.file, tree: result.tree, before, since: result.at, lines: result.changed, state: 'building' };
       }
       browserStorage.removeItem(draftKey(scope, file.file));
-      if (shown.current?.file === saved.file) shown.current = saved;
       // The save happened even if another passage was opened meanwhile; the
-      // file shown takes the saved version when it is still this file.
-      update(value => ({ ...value, saving: false, ...(compile ? { compile } : {}), ...(value.file?.file === saved.file && (request.current === owner || value.file.revision === file.revision) ? { file: saved } : {}) }));
-    } catch (error) { update(value => ({ ...value, saving: false, ...(request.current === owner ? { error: message(error) } : {}) })); }
+      // file shown takes the saved version when it is still this file of the
+      // same task or paper. After a switch, another task's file of the same
+      // name and revision must keep its own text.
+      const here = currentScope.current === scope;
+      if (here && shown.current?.file === saved.file) shown.current = saved;
+      update(value => ({ ...value, saving: false, ...(compile && here ? { compile } : {}), ...(here && value.file?.file === saved.file && (request.current === owner || value.file.revision === file.revision) ? { file: saved } : {}) }));
+    } catch (error) { update(value => ({ ...value, saving: false, ...(request.current === owner && currentScope.current === scope ? { error: message(error) } : {}) })); }
     finally { saving.current = false; }
   }
   actions.current.save = () => void save();
