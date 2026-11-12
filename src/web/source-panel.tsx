@@ -309,15 +309,16 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
     if (file && onLine) lineTimer.current = setTimeout(() => onLine(file, line), 120);
   };
 
-  // Saving the same text over the same version again reuses the request's
-  // identity, so a save whose answer was lost is recognized, not refused.
-  const lastSave = useRef<{ file: string; revision: string; text: string; id: string } | null>(null);
+  // Saving the same text over the same version of the same task's or paper's
+  // file again reuses the request's identity, so a save whose answer was lost
+  // is recognized, not refused. Another task's identical file gets its own.
+  const lastSave = useRef<{ scope: string; file: string; revision: string; text: string; id: string } | null>(null);
   async function save(text = editor.current?.text) {
     const current = latest.current;
     if (!current?.file || saving.current || text === undefined || text === current.file.text) return;
     const { file } = current, before = shownBuild.current?.tree, owner = request.current, again = lastSave.current;
-    const id = again && again.file === file.file && again.revision === file.revision && again.text === text ? again.id : uuid();
-    lastSave.current = { file: file.file, revision: file.revision, text, id };
+    const id = again && again.scope === scope && again.file === file.file && again.revision === file.revision && again.text === text ? again.id : uuid();
+    lastSave.current = { scope, file: file.file, revision: file.revision, text, id };
     saving.current = true;
     update(value => ({ ...value, saving: true, error: undefined }));
     try {
