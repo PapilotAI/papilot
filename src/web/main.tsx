@@ -1821,7 +1821,9 @@ function App() {
     onLine: (file, line) => taskReview.current?.select(file, line),
     review: { changes: taskChanges, decide: (changes, action) => { if (taskChanges) taskReview.current?.decide(taskChanges.round, changes, action); } } });
   useEffect(() => { if (!taskSource.editing) setTaskSide('chat'); }, [taskSource.editing]);
-  const openTaskSource = mobile ? undefined : (request: OpenSource) => {
+  // Phones and the static demo, which has no files to edit, keep the review's
+  // own inline LaTeX.
+  const openTaskSource = mobile || isPlayground ? undefined : (request: OpenSource) => {
     taskSource.reveal(request.file, request.lines, request.marks);
     setTaskSide('source');
     setLayout(current => current === 'review' ? 'split' : current);
