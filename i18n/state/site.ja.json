@@ -1,14 +1,4 @@
 {
-  "1 file staged": {
-    "revision": "ec6c38ab088a82f1ce9181f8c8cb77bf5a47c92de602b05927d3453c0226039f",
-    "textHash": "a9e5a69578d7cf9380e35574c3ed0ead4b3db0592c5f502f6435b973b71c3b32",
-    "model": "gemini-4-argon-high"
-  },
-  "1 review update not sent yet": {
-    "revision": "2e107d08ac8683967f797ea50ecb06947924e8bded750d13365ceb07b7d44f37",
-    "textHash": "415308472a8c3535bbfd15a2599fbdc9cd719cd0de459ee53dac583cd18aae16",
-    "model": "gemini-4-argon-high"
-  },
   "2 notes on the PDF": {
     "revision": "647885be0b568f402886154f14cbf92d1c923253cb46666881b58a1b4c8813bf",
     "textHash": "f5e98aec663975db0a1a7e056927522945ddefbf27ca911e461df8d59a16a26c",
@@ -117,16 +107,6 @@
   "Commit": {
     "revision": "66877fb1e356908041828ac1221e26a03bd0fb5a91430ee5fb21205136f4b761",
     "textHash": "3ae21a641adb0b9192553ab83475948922ffcd8523dc563480e90271d7f18efc",
-    "model": "gemini-4-argon-high"
-  },
-  "Commit 1 file": {
-    "revision": "05ac81d7c104fb6b179abaa5ad47c4f8e3e92a8012a86f8a212cd41e0b6a5b1f",
-    "textHash": "d15c03b5311a6691af382b4029d2cca9672f72cff3533b8ebacf5975fa8ebd41",
-    "model": "gemini-4-argon-high"
-  },
-  "Commit message": {
-    "revision": "6c7d98bcfa413b3a214dc1cfb23da936720dbcb5d8e26223e9f11b9c83299186",
-    "textHash": "89bdbb1f0f8da9efabfd0c080eab6d6ed157cda0eea26ebaf1fb01746c9497c0",
     "model": "gemini-4-argon-high"
   },
   "Copy the commands": {
@@ -279,11 +259,6 @@
     "textHash": "063b9601d0babbbda78c6a4e4deeaef1534271a2b5c5a910a6876b7339edc0e3",
     "model": "manual"
   },
-  "Push": {
-    "revision": "ceb073dd83f032c5ae4fb82428c940fca4c86f759340aaacc289ddcc89167b1d",
-    "textHash": "296f98db37a0ff91e45b8e5d79819757b0fb9b3a01af5c0dc2310459496e5762",
-    "model": "gemini-4-argon-high"
-  },
   "Pushed to the remote.": {
     "revision": "f29a64e91da72fe746b8e94713f960e78454cb2ea22e1cec702f1287a5169caf",
     "textHash": "4bda8501a9b05a21a49eb00ad28628524e7f1fdc61d2a9d47027595a8c015696",
@@ -297,11 +272,6 @@
   "Review": {
     "revision": "cacaf54b5db6c1fbed59ea2b7f73b11bf24f0e8690bf65d231bbf3f4e90dc007",
     "textHash": "99bc96b037349895ba2e448980854071e61100617c9eec1a7b2ff072e87cd44f",
-    "model": "gemini-4-argon-high"
-  },
-  "Review feedback · 1 comment": {
-    "revision": "734ad237bb38ca57cb9a47dc4090bf023c08a9c14bbcbfb9317d9716568cf084",
-    "textHash": "8e617118e170dabd4650b0c8cbc98dea7ceafcccebfc77238fea827f1fe9f776",
     "model": "gemini-4-argon-high"
   },
   "Reviewing the PDF": {
@@ -332,11 +302,6 @@
   "Select a sentence, or box an equation or a figure, and write what should change. The agent gets the exact source lines, with no need to know which file they are in.": {
     "revision": "c33be18cdad882dcbe12215e38b3c95c5277d4ca26bc3e644eb251cae6de912e",
     "textHash": "e3a46ef4510ef6b185d9d9c8adb576f5b565289961251b13e7c0846b1d0fb24a",
-    "model": "gemini-4-argon-high"
-  },
-  "Send feedback": {
-    "revision": "a02bd450695ee2c19b7f89a7d586eeaeef14f0ce8fb343323d321fd3ea32dafd",
-    "textHash": "426782e2171f817b95896d98d16dd234fc6e7b92dd079dccd9db8afad930a4b0",
     "model": "gemini-4-argon-high"
   },
   "Setting up an agent": {

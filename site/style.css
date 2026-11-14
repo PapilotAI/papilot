@@ -56,7 +56,7 @@
 .app-window,.mini{
   /* Use the workspace palette in the page's resolved color scheme, including
      system changes and the no-script page. PDF ink stays softer in the dark. */
-  --bg:light-dark(#ffffff,#26272b);--bg-subtle:light-dark(#fafafa,#2a2b2f);--bg-muted:light-dark(#f4f4f4,#303135);--bg-hover:light-dark(#efefef,#37383c);
+  --bg:light-dark(#ffffff,#26272b);--bg-subtle:light-dark(#fafafa,#2a2b2f);--bg-muted:light-dark(#f4f4f4,#303135);--bg-hover:light-dark(#efefef,#37383c);--bg-active:light-dark(#e7e7e7,#404145);
   --canvas:light-dark(#eceef1,#1e1f22);--line:light-dark(#ebebeb,#38393e);--line-strong:light-dark(#d6d6d6,#4b4c52);--line-hover:light-dark(#c4c4c4,#63646b);
   --text:light-dark(#171717,#ececee);--text-2:light-dark(#525252,#c2c3c9);--text-3:light-dark(#8a8a8a,#9c9da5);
   --accent:light-dark(#2563eb,#8ab4ff);--accent-hover:light-dark(#1d4ed8,#b2ceff);--accent-soft:light-dark(#eff6ff,#2b3651);--accent-line:light-dark(#bfdbfe,#445c85);
@@ -65,11 +65,15 @@
   --pdf-page:light-dark(#ffffff,#292929);--pdf-text:light-dark(#171717,#d6d6d6);
   --before:light-dark(#fbeeee,#432c30);--before-edge:light-dark(#d17c82,#d18a91);--after:light-dark(#eef8f1,#28392d);--after-edge:light-dark(#68ab82,#7bb58e);
   --deleted:light-dark(#f3cdd0,#683a42);--inserted:light-dark(#c9e8d3,#355b41);
-  --accept:light-dark(#1d7448,#7bd5a0);--reject:light-dark(#b0313b,#ff9696);--comment:light-dark(#356aa0,#8ab4ff);
+  --accept:light-dark(#1d7448,#7bd5a0);--reject:light-dark(#b0313b,#ff9696);--comment:light-dark(#356aa0,#8ab4ff);--run:light-dark(#15803d,#7bd5a0);
   --figure-blue:light-dark(#bed0f4,#5675a8);--figure-orange:light-dark(#f2cfae,#b1835e);
   color:var(--text);
 }
 *{box-sizing:border-box}
+/* The app's icons, drawn once as symbols and stroked like the app's. */
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+.ic{display:block;flex:none;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 body{margin:0;background:var(--bg)}
 h1,h2,h3,p,ol,ul,figure,pre{margin:0}
 h1,h2{font-family:var(--serif);font-weight:400;letter-spacing:-.02em;text-wrap:balance}
@@ -181,29 +185,99 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .latex sup{top:-.3em;margin:0 -.21em 0 -.47em;font-size:.7em;vertical-align:baseline}
 .latex sub{top:.22em;margin:0 -.125em 0 -.1667em;font-size:1em;vertical-align:baseline}
 
-/* The opening window is Papilot on a Mac, reduced to the change: the PDF on
-   the left, the chat on the right, and everything else drawn as bars. The
+/* The opening window is Papilot on a Mac, with its toolbar and marking
+   tools, reduced to the change: the PDF on the left, the chat on the right,
+   and the rest of the text drawn as bars. The
    agent in the composer keeps changing, since any of them can do the work.
    The PDF keeps its height while a change resolves, so the first screen
    never shifts; the page simply runs on below. */
-.app-window{position:relative;display:flex;flex-direction:column;width:min(100%,980px);overflow:hidden;border:1px solid var(--line-strong);border-radius:12px;background:var(--bg);box-shadow:0 1px 2px rgb(15 23 42/.05),0 30px 64px -30px rgb(15 23 42/.34);text-align:left}
-/* No title bar: like the app, the window controls sit on its content. */
-.app-bar{position:absolute;top:0;left:0;z-index:3;display:flex;align-items:center;height:38px;padding:0 16px;pointer-events:none}
+.app-window{--side:272px;container-type:inline-size;position:relative;display:flex;flex-direction:column;width:min(100%,980px);overflow:hidden;border:1px solid var(--line-strong);border-radius:12px;background:var(--bg);box-shadow:0 1px 2px rgb(15 23 42/.05),0 30px 64px -30px rgb(15 23 42/.34);text-align:left}
+/* No title bar: as in the desktop app, the window controls share the 46px
+   toolbar row, whose controls are the app's own, drawn without behaviour. */
+.app-bar{position:absolute;top:0;left:0;z-index:3;display:flex;align-items:center;height:46px;padding:0 16px;pointer-events:none}
 .app-bar .lights{gap:8px}
 .app-bar .lights i{width:12px;height:12px;box-shadow:inset 0 0 0 .5px rgb(0 0 0/.16)}
-.app-body{display:grid;grid-template-columns:minmax(0,1fr) 272px}
-.app-pdf{display:flex;flex-direction:column;padding:44px 28px 0;background:var(--canvas)}
-.app-chat{display:flex;flex-direction:column;justify-content:space-between;gap:16px;padding:18px 14px 14px;border-left:1px solid var(--line);background:var(--bg);user-select:none;-webkit-user-select:none}
+.app-top{display:grid;grid-template-columns:minmax(0,1fr) var(--side);flex:none;border-bottom:1px solid var(--line);background:var(--bg);user-select:none;-webkit-user-select:none}
+.app-tb{display:flex;align-items:center;gap:6px;min-width:0;height:46px;padding:0 8px 0 82px;overflow:hidden;font:500 13px/1 var(--sans);color:var(--text-2);white-space:nowrap}
+.app-tb.side{padding-left:8px;border-left:1px solid var(--line)}
+.tb-space{flex:1;min-width:0}
+.tb-icon{display:grid;flex:none;place-items:center;width:30px;height:30px;border-radius:8px;color:var(--text-2)}
+.tb-icon .ic{width:17px;height:17px}
+.tb-run{color:var(--run)}
+.tb-run .ic{width:19px;height:19px}
+/* A segmented control: the chosen segment is raised, its icon in the accent. */
+.tb-seg{display:inline-flex;flex:none;align-items:center;gap:2px;padding:2px;border:1px solid var(--line-strong);border-radius:9px;background:var(--bg-active)}
+.tb-seg>b{position:relative;display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:6px;font-weight:500;color:var(--text-2);transition:background-color .2s,color .2s,box-shadow .2s}
+.tb-seg>b .ic{width:15px;height:15px}
+.tb-seg>b.on{background:var(--bg);color:var(--text);box-shadow:0 1px 2px rgb(0 0 0/.06),0 0 0 1px var(--line)}
+.tb-seg>b.on .ic{color:var(--accent)}
+.tb-seg.icons>b{padding:0 7px}
+.tb-badge{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--button);color:#fff;font:600 11px/18px var(--sans);font-style:normal;text-align:center}
+.tb-decide{display:flex;flex:none;align-items:center;gap:6px}
+.tb-count{margin-right:4px;color:var(--text);font-variant-numeric:tabular-nums}
+.tb-pill{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 6px 0 10px;border:1px solid var(--line);border-radius:999px;background:var(--bg);box-shadow:0 1px 3px rgb(0 0 0/.05);color:var(--text)}
+.tb-pill b{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--bg-muted);color:var(--text-2);font:500 11.5px/18px var(--sans);text-align:center}
+.tb-accept .ic{color:var(--accept)}
+.tb-reject .ic{color:var(--reject)}
+/* The PDF's marking tools, in a rail at its left edge. */
+.app-rail{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:0;padding:8px 0;overflow:hidden;border-right:1px solid var(--line);background:var(--bg);color:var(--text-2)}
+.app-rail>i,.rail-history>i,.m-tools>i{display:grid;flex:none;place-items:center;width:34px;height:34px;border-radius:9px;transition:background-color .2s,color .2s}
+.app-rail .ic,.m-tools .ic{width:18px;height:18px}
+.app-rail hr{flex:none;width:20px;height:1px;margin:5px 0;border:0;background:var(--line)}
+.rail-history{display:flex;flex-direction:column;gap:2px;margin-top:auto;padding-top:10px}
+:is(.app-rail,.m-tools) .on{background:var(--accent-soft);color:var(--accent)}
+.app-body{display:grid;grid-template-columns:46px minmax(0,1fr) var(--side)}
+/* As the app does in a narrow window: the toolbar's controls lose their
+   labels, then the PDF pane loses its rail. */
+@container (max-width:920px){
+  .app-tb .tb-label{display:none}
+  .app-tb .tb-seg>b{padding:0 8px}
+  .tb-pill{padding:0 4px 0 9px}
+}
+@media(min-width:721px){@container (max-width:600px){
+  .app-rail{display:none}
+  .app-body:not(.vm){grid-template-columns:minmax(0,1fr) var(--side)}
+  .review-step{display:none}
+  .review-number{margin-right:auto}
+}}
+.app-pdf{position:relative;display:flex;flex-direction:column;min-width:0;padding:22px 28px 0;background:var(--canvas)}
+.app-chat{display:flex;flex-direction:column;justify-content:space-between;gap:12px;min-width:0;padding:16px 14px 14px;border-left:1px solid var(--line);background:var(--bg);user-select:none;-webkit-user-select:none}
+/* Phone-only controls: the frosted navigation bar and the floating capsules. */
+.m-nav,.m-decide,.m-tools{display:none}
+/* The opening window's toolbar follows its change: the PDF while nobody has
+   asked, then the changes, with the batch actions while one waits. The tool
+   that draws a box is chosen while a note is being written. */
+.hero .app-window:has(.review-change[data-state=idle]) .tb-pdf,.hero .app-window:not(:has(.review-change[data-state=idle])) .tb-changes{background:var(--bg);color:var(--text);box-shadow:0 1px 2px rgb(0 0 0/.06),0 0 0 1px var(--line)}
+.hero .app-window:has(.review-change[data-state=idle]) .tb-pdf .ic,.hero .app-window:not(:has(.review-change[data-state=idle])) .tb-changes .ic{color:var(--accent)}
+.hero .app-window:not(:has(.review-change[data-state=pending])) :is(.tb-decide,.tb-badge){display:none}
+.app-window.marking :is(.app-rail,.m-tools) .rail-region{background:var(--accent-soft);color:var(--accent)}
+.app-window.marking :is(.app-rail,.m-tools) .rail-select{background:none;color:inherit}
+.m-chat.busy .ic{display:none}
+.m-chat.busy::before{content:"";flex:none;width:12px;height:12px;border:2px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(1turn)}}
 .chat-thread{display:flex;flex-direction:column;gap:16px}
 .chat-thread>*{transition:opacity .28s,transform .28s cubic-bezier(.25,.8,.25,1)}
-/* The sent note, as the chat shows it: a heading, the note's number beside
-   what it marks and the comment. */
-.chat-bubble{align-self:flex-end;width:88%;padding:10px 13px 9px;border-radius:16px 16px 5px 16px;background:var(--bg-muted);font:14px/1.5 var(--sans);color:var(--text)}
-.chat-note-head{display:flex;align-items:center;gap:6px;margin-bottom:7px;font-size:12.5px;font-weight:500;color:var(--text-2)}
-.chat-note-head svg{flex:none;width:13px;height:13px;color:var(--text-3)}
-.chat-quote{display:flex;align-items:center;gap:8px;margin-bottom:5px}
-.chat-quote em{font-size:13px;color:var(--text-3)}
-.chat-quote b,.chat-attached b{flex:none;min-width:18px;height:18px;padding:0 4px;border-radius:5px;background:var(--accent-soft);color:var(--accent);font:500 11px/18px var(--sans);text-align:center}
+/* The sent note, as the chat shows it: a heading, then each note's number
+   and page, what it marks and the comment. */
+.chat-bubble{align-self:flex-end;width:88%;padding:10px 14px 11px;border-radius:18px 18px 6px 18px;background:var(--bg-muted);font:14px/1.5 var(--sans);color:var(--text)}
+.chat-note-head{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12.5px;font-weight:500;color:var(--text-2)}
+.chat-note-head .ic{width:14px;height:14px;color:var(--text-3)}
+.chat-quote{display:flex;align-items:center;gap:6px;margin-bottom:4px;font:12px/1.4 var(--sans);color:var(--text-3)}
+.chat-quote em{font-style:normal}
+.chat-quote b{flex:none;min-width:18px;height:18px;border-radius:50%;background:var(--bg-subtle);color:var(--text-2);font:500 11px/18px var(--sans);text-align:center}
+.chat-region{display:block;margin-bottom:3px;font-size:13px;font-style:italic;color:var(--text-3)}
+.chat-comment+.chat-quote{margin-top:9px;padding-top:9px;border-top:1px solid var(--line-strong)}
+/* What the agent did, folded to one line, as the chat lists tool calls. */
+.chat-tool{display:flex;align-items:center;gap:8px;padding:0 4px;font:12.5px/1.4 var(--sans);color:var(--text-2)}
+.chat-tool .ic{width:14px;height:14px;color:var(--text-3)}
+.app-chat[data-step=sent] .chat-tool{display:none}
+/* Notes added to the task wait above the composer until it is sent. */
+.chat-picked{display:grid;gap:6px}
+.chat-picked:not(:has(.on)){display:none}
+.picked{display:none;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:3px 7px;padding:7px 10px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font:12px/1.4 var(--sans);color:var(--text-3);animation:chat-in .25s ease-out}
+.picked.on{display:grid}
+.picked b{min-width:18px;height:18px;padding:0 4px;border-radius:5px;background:var(--accent-soft);color:var(--accent);font:600 11px/18px var(--sans);text-align:center}
+.picked>span{grid-column:1/-1;overflow:hidden;font-size:13px;color:var(--text);text-overflow:ellipsis;white-space:nowrap}
 .chat-reply{padding:0 4px}
 .chat-lines{display:grid;gap:10px;animation:chat-in .3s ease-out}
 .chat-lines i,.chat-input i{display:block;height:7px;border-radius:4px;background:var(--line)}
@@ -218,24 +292,24 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .app-chat[data-step=empty] .chat-thread>:not(.chat-old){opacity:0;transform:translateY(8px)}
 .app-chat[data-step=sent] .chat-dots{display:flex}
 .app-chat[data-step=sent] .chat-reply:not(.chat-old) .chat-lines{display:none}
-.chat-composer{padding:12px 8px 8px 12px;border:1px solid var(--line-strong);border-radius:14px}
-.chat-input{display:flex;align-items:center;min-width:0;min-height:24px;overflow:hidden;white-space:nowrap}
+.chat-composer{padding:12px 8px 8px 14px;border:1px solid var(--line-strong);border-radius:14px;background:var(--bg)}
+.chat-input{display:flex;align-items:center;min-width:0;min-height:20px;overflow:hidden;white-space:nowrap}
 .chat-input i{flex:none;width:58%}
-/* A note added to the task waits in the composer until it is sent. */
-.chat-attached{display:none;align-items:center;gap:6px;min-width:0;height:24px;padding:0 9px 0 3px;border-radius:7px;background:var(--accent-soft);font:12.5px/1 var(--sans);color:var(--accent);animation:chat-in .25s ease-out}
-.chat-attached span{overflow:hidden;text-overflow:ellipsis}
-.chat-attached.on{display:inline-flex}
-.chat-input.filled i{display:none}
 .chat-agent.busy i::before{animation:busy 1s ease-in-out infinite}
 @keyframes busy{50%{opacity:.3}}
-.chat-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:16px}
+/* The composer's footer: attach, the agent with its menu, and send, which
+   stays grey until there is something to send. */
+.chat-foot{display:flex;align-items:center;gap:8px;margin-top:14px}
+.chat-plus{display:grid;flex:none;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--bg-muted);color:var(--text-2)}
 .chat-agent{gap:7px;min-width:0;font:500 13px/1 var(--sans);color:var(--text-2);white-space:nowrap}
 .chat-agent b{overflow:hidden;font-weight:500;text-overflow:ellipsis}
-.chat-agent.agent i{width:26px;height:26px;border-radius:8px}
-.chat-agent.agent i::before{width:16px;height:16px}
-.chat-send{display:grid;flex:none;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--button);color:#fff;transition:transform .12s}
+.chat-agent .ic{width:13px;height:13px;color:var(--text-3)}
+.chat-agent.agent i{width:20px;height:20px;border:0;border-radius:0;background:none}
+.chat-agent.agent i::before{width:17px;height:17px}
+.chat-send{display:grid;flex:none;place-items:center;width:30px;height:30px;margin-left:auto;border-radius:50%;background:var(--bg-active);color:var(--text-3);transition:transform .12s,background-color .2s,color .2s}
+.app-chat.ready .chat-send{background:var(--button);color:#fff}
 .chat-send.pressed{transform:scale(.86)}
-.chat-send svg{width:15px;height:15px}
+.chat-send .ic{width:16px;height:16px}
 /* A pointer that plays one decision while nobody has touched the window. */
 .app-cursor{position:absolute;top:0;left:0;z-index:5;display:none;width:22px;height:22px;opacity:0;pointer-events:none;transition:opacity .2s;will-change:transform;filter:drop-shadow(0 1px 1.5px rgb(0 0 0/.35))}
 .playing .app-cursor{display:block}
@@ -335,21 +409,27 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
    a decided change opens it for review again. */
 .review-change:not([data-state=pending]){border-color:transparent;box-shadow:none}
 .review-change:is([data-state=accepted],[data-state=rejected]){cursor:pointer}
-.review-head{display:flex;align-items:center;gap:2px;min-height:40px;padding:4px 6px 4px 14px;border-bottom:1px solid var(--line);background:var(--bg-subtle);font:13px/1.4 var(--sans);color:var(--text-2);white-space:nowrap}
-.review-number{margin-right:auto;color:var(--text)}
-.review-head :is(button,a){display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 8px;border-radius:7px;font-weight:500;text-decoration:none;transition:background-color .15s}
+.review-head{display:flex;align-items:center;gap:2px;min-height:40px;padding:4px 6px;border-bottom:1px solid var(--line);background:var(--bg-subtle);font:14px/1.4 var(--sans);color:var(--text-2);white-space:nowrap}
+.review-change.current .review-head{box-shadow:inset 3px 0 var(--accent)}
+/* The viewer's header: the change between its neighbours' arrows, where its
+   source is, and its actions as icons. */
+.review-step{display:grid;flex:none;place-items:center;width:24px;height:28px;color:var(--text-3)}
+.review-step .ic{width:14px;height:14px}
+.review-number{color:var(--text)}
+.review-where{min-width:0;margin:0 auto 0 12px;overflow:hidden;font:11.5px var(--mono);color:var(--text-3);text-overflow:ellipsis}
+.review-head :is(button,a){display:inline-grid;flex:none;place-items:center;width:32px;height:28px;border-radius:7px;text-decoration:none;transition:background-color .15s}
 .review-head :is(button,a):hover{background:var(--bg-hover);text-decoration:none}
-.review-head svg{width:14px;height:14px;flex:none}
+.review-head :is(button,a) .ic{width:17px;height:17px}
 .review-accept{color:var(--accept)}
 .review-reject{color:var(--reject)}
 .review-comment{color:var(--comment)}
 .review-latex{color:var(--text-2)}
-.review-latex[aria-expanded=true]{font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.review-latex[aria-expanded=true]{background:var(--bg-active);color:var(--text)}
 .review-side{position:relative;padding:18px 48px 14px 40px;border-left:2px solid;transition:background-color .35s,border-color .35s}
 .folding{overflow:hidden}
 .review-side.before{background:var(--before);border-left-color:var(--before-edge)}
 .review-side.after{background:var(--after);border-left-color:var(--after-edge)}
-.review-label{position:absolute;top:8px;right:10px;font:500 11px/1 var(--sans);letter-spacing:.06em;color:var(--before-edge);transition:opacity .3s}
+.review-label{position:absolute;top:8px;right:10px;font:500 10.5px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--before-edge);transition:opacity .3s}
 .after .review-label{color:var(--after-edge)}
 .review-page :is(del,ins){padding:0 1px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .review-side del{background:var(--deleted);color:inherit;text-decoration:line-through;text-decoration-color:var(--reject);text-decoration-thickness:1.5px}
@@ -488,6 +568,12 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .mini-bar i{width:7px;height:7px;border-radius:50%;background:#ff5f57}
 .mini-bar i:nth-child(2){background:#febc2e}
 .mini-bar i:nth-child(3){background:#28c840}
+/* Papilot's drawing has the app's toolbar in that row: a segmented
+   control and the green compile button. */
+.mini-seg{display:flex;gap:2px;margin-left:10px;padding:1.5px;border:1px solid var(--line-strong);border-radius:4px;background:var(--bg-active)}
+.mini-seg b{width:14px;height:6px;border-radius:2px}
+.mini-seg b.on{background:var(--bg);box-shadow:0 0 0 .5px var(--line)}
+.mini-run{width:0;height:0;margin-left:auto;border-block:4px solid transparent;border-left:7px solid var(--run)}
 .mini-body{display:grid;flex:1;min-height:0}
 .mini-body>*{min-width:0;overflow:hidden}
 .mini-body>*+*{border-left:1px solid var(--line)}
@@ -522,7 +608,11 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .bar.mid{width:78%}
 .mini-review{display:grid;margin:4px -12px;border-block:1px solid var(--line);box-shadow:inset 0 0 0 1px var(--accent-line)}
 .mini-head{display:flex;align-items:center;gap:8px;height:18px;padding:0 8px;border-bottom:1px solid var(--line);background:var(--bg-subtle)}
-.mini-head>.bar{width:18%;height:4px;background:var(--line-strong)}
+.mini-head{gap:4px}
+.mini-head>.bar{width:16%;height:4px;background:var(--line-strong)}
+.mini-step{font:9px/1 var(--sans);color:var(--text-3)}
+.mini-acts .src{color:var(--text-2)}
+.mini-acts .ic{width:9px;height:9px;stroke-width:2.2}
 .mini-acts{display:flex;gap:5px;margin-left:auto}
 .mini-acts i{display:grid;place-items:center;width:13px;height:13px;border-radius:3px}
 .mini-acts svg{width:9px;height:9px}
@@ -549,8 +639,9 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
    Their app bodies keep a fixed height so a round never moves the page. */
 .scene{width:100%;box-shadow:0 1px 2px rgb(15 23 42/.05),0 24px 48px -26px rgb(15 23 42/.3)}
 .scene-art{display:contents}
-.scene .app-body{grid-template-columns:minmax(0,1fr) 232px;height:430px}
-.scene .app-pdf{padding:40px 20px 0;overflow:hidden}
+.scene{--side:232px}
+.scene .app-body{height:430px}
+.scene .app-pdf{padding:20px 20px 0;overflow:hidden}
 .scene .review-page{padding-top:22px;font-size:15px}
 .scene .sheet-lines,.scene .sheet-head{padding:0 26px}
 .scene .sheet-eq{padding:4px 40px}
@@ -562,14 +653,16 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .scene .review-change+.sheet-lines{margin-top:18px}
 .scene .review-side{padding:18px 48px 12px 24px}
 .scene .review-head{min-height:36px;font-size:12.5px}
-.scene .review-head :is(button,a){height:26px;padding:0 7px}
+.scene .review-head{padding-block:3px}
+.scene .review-head>i:not(.review-step){display:inline-grid;flex:none;place-items:center;width:28px;height:26px;border-radius:7px}
+.scene .review-head>i .ic{width:16px;height:16px}
+.scene .review-where{display:none}
+.scene .review-number+.review-step{margin-right:auto}
 .scene .app-chat{gap:12px;padding:14px 12px 12px}
-.scene .chat-thread{flex:1;justify-content:flex-end;gap:12px;min-height:0;overflow:hidden}
+.scene .chat-thread{flex:1;gap:12px;min-height:0;overflow:hidden}
 .scene .chat-bubble{width:92%;font-size:13px}
 .scene .chat-quote em{font-size:12px}
 .scene .chat-comment+.chat-quote{margin-top:8px}
-.scene .chat-input{flex-wrap:wrap;gap:4px}
-.scene .chat-attached{max-width:100%}
 .scene-text{position:relative;margin:0 26px 16px;text-wrap:pretty}
 /* A figure: a bar chart with its legend in the top left, and a caption. */
 .scene-figure{display:block;margin:0 26px 18px;padding:10px 14px 8px}
@@ -585,54 +678,82 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .chat-bubble.chat-old{display:grid;gap:8px;width:70%;padding:11px 13px}
 .chat-old i,.chat-old .chat-lines i{display:block;height:7px;border-radius:4px;background:var(--line)}
 .chat-reply.chat-old .chat-lines i{background:var(--line)}
-.chat-pending{display:none;align-items:center;gap:7px;padding:7px 7px 7px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-subtle);font:12px/1.3 var(--sans);color:var(--text-2);animation:chat-in .25s ease-out}
-.chat-pending.on{display:flex}
-.chat-pending>svg{flex:none;width:14px;height:14px;color:var(--accent)}
-.chat-pending>span{flex:1;min-width:0}
-.chat-pending b{display:inline-flex;flex:none;align-items:center;gap:4px;height:26px;padding:0 10px;border-radius:999px;background:var(--button);color:#fff;font-weight:500;transition:background-color .1s}
-.chat-pending b svg{width:12px;height:12px}
-.chat-pending b.pressed{background:var(--button-hover)}
-.review-comment.pressed,.review-head button.pressed{background:var(--bg-hover)}
+/* Review feedback waits in the composer, as the app keeps it, until send. */
+.chat-draft{display:none;margin:-2px -2px 10px -4px;padding-bottom:9px;border-bottom:1px solid var(--line);font:12px/1.4 var(--sans);color:var(--text-3);animation:chat-in .25s ease-out}
+.chat-draft.on{display:block}
+.draft-head{display:flex;align-items:center;gap:6px;margin-bottom:7px;color:var(--text-2)}
+.draft-head .ic{width:14px;height:14px}
+.draft-head b{font-size:12.5px;font-weight:500;color:var(--text)}
+.draft-head>span{margin-left:auto}
+.draft-note{display:grid;gap:4px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--bg-subtle)}
+.draft-where{display:flex;align-items:center;gap:6px}
+.draft-where b{min-width:17px;height:17px;border-radius:5px;background:var(--bg-muted);font:500 10px/17px var(--sans);text-align:center}
+.draft-where em{padding:1px 5px;border-radius:4px;background:var(--bg-muted);font-style:normal;font-weight:500;color:var(--text-2)}
+.draft-text{font-size:13px;color:var(--text)}
+.tb-tab{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:8px;background:var(--bg-muted);color:var(--text)}
+.tb-tab .ic{width:15px;height:15px}
+.tb-picked:empty{display:none}
+.review-head .pressed{background:var(--bg-hover)}
+.tb-seg>b.pressed{background:var(--bg-hover)}
 /* A revision replaces the first attempt in place. */
 .after[data-version="1"] .second,.after[data-version="2"] .first{display:none}
-/* Git: the branch, what is staged with its message and Commit, the history,
-   and Push. The change waiting to be committed is marked in the margin. */
-.app-git{display:flex;flex-direction:column;gap:12px;min-width:0;padding:14px 12px 12px;border-left:1px solid var(--line);background:var(--bg);font:12.5px/1.4 var(--sans);color:var(--text-2);user-select:none;-webkit-user-select:none}
-.app-git code{padding:0;border-radius:0;background:none;font:11.5px var(--mono);white-space:nowrap}
-.git-branch{display:flex;align-items:center;gap:6px;font-weight:500}
-.git-branch svg{width:14px;height:14px;color:var(--text-3)}
-.git-staged{display:grid;gap:9px;padding:10px;border:1px solid var(--line);border-radius:10px}
-.git-title{font-size:11.5px;font-weight:600;color:var(--text-3)}
-.git-file{display:flex;align-items:center;gap:6px}
-.git-file b{margin-left:auto;font:500 11.5px var(--mono);color:var(--green)}
-.git-file s{color:var(--red);text-decoration:none}
-.git-message{display:flex;align-items:center;gap:4px;min-height:32px;padding:0 4px 0 9px;border:1px solid var(--line-strong);border-radius:8px}
+/* Version Management, as the app lays it out: the branch, the commit box,
+   whose one button commits and then syncs, and what is staged on the left;
+   the version history on the right. Each pane has its own toolbar row. */
+.scene .app-body.vm{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.app-git,.app-history{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--bg);font:13px/1.4 var(--sans);color:var(--text-2);user-select:none;-webkit-user-select:none}
+.app-history{border-left:1px solid var(--line)}
+.app-git code,.app-history code{padding:0;border-radius:0;background:none;font:11.5px var(--mono);white-space:nowrap}
+.vm-tb{display:flex;flex:none;align-items:center;gap:6px;height:46px;padding:0 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.app-git .vm-tb{padding-left:82px}
+.vm-tb .m-menu{display:none}
+.vm-tb .tb-seg{font-weight:500}
+.git-branch{display:inline-flex;align-items:center;gap:5px;min-width:0;color:var(--text-2)}
+.git-branch .ic{width:14px;height:14px;color:var(--text-3)}
+.git-branch code{color:var(--text)}
+.git-ahead{padding:0 6px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font:500 11.5px/18px var(--sans)}
+.git-pushed{display:flex;align-items:center;gap:7px;margin:10px 10px 0;padding:7px 10px;border-radius:9px;background:var(--green-soft);font-size:12.5px;color:var(--green);animation:chat-in .25s ease-out}
+.git-pushed .ic{width:14px;height:14px}
+.git-box{margin:10px 10px 6px;padding:9px 6px 6px 10px;border:1px solid var(--line-strong);border-radius:12px}
+.git-message{display:flex;min-height:36px;padding-right:4px}
 .git-typed{overflow:hidden;color:var(--text);white-space:nowrap;text-overflow:ellipsis}
-.git-hint{flex:1;color:var(--text-3);white-space:nowrap}
+.git-hint{overflow:hidden;color:var(--text-3);white-space:nowrap;text-overflow:ellipsis}
 .git-message.filled .git-hint{display:none}
-.git-message.filled .git-typed{flex:1}
 .git-message.busy .git-hint{animation:busy 1s ease-in-out infinite}
-.git-spark{display:grid;flex:none;place-items:center;width:24px;height:24px;margin-left:auto;border-radius:6px;color:var(--accent);transition:background-color .1s}
-.git-spark svg{width:13px;height:13px}
-.git-spark.pressed{background:var(--accent-soft)}
-.git-commit{display:flex;align-items:center;justify-content:center;height:30px;border-radius:999px;background:var(--button);color:#fff;font-weight:500;transition:background-color .1s}
-.git-commit.pressed{background:var(--button-hover)}
-.git-log{display:grid;gap:11px;padding:2px 2px 0}
-.git-row{display:flex;align-items:center;gap:8px;min-width:0}
-.git-row>i{flex:none;width:9px;height:9px;border:2px solid var(--line-strong);border-radius:50%}
-.git-row>b{height:7px;border-radius:4px;background:var(--line)}
-.git-row>code{flex:none;margin-left:auto;color:var(--text-3)}
-.git-msg{min-width:0;overflow:hidden;color:var(--text);white-space:nowrap;text-overflow:ellipsis}
-.git-new>i{border-color:var(--accent);background:var(--accent)}
-.git-push{display:flex;align-items:center;margin-top:auto}
-.git-push-button{display:inline-flex;align-items:center;height:28px;padding:0 13px;border:1px solid var(--line-strong);border-radius:999px;font-weight:500;transition:background-color .1s}
-.git-push-button.pressed{background:var(--bg-hover)}
-.git-pushed{display:inline-flex;align-items:center;gap:6px;color:var(--green);animation:chat-in .25s ease-out}
-.git-pushed svg{width:14px;height:14px}
-.scene-edited::before{content:"";position:absolute;top:3px;bottom:3px;left:-14px;width:3px;border-radius:2px;background:var(--after-edge);transition:opacity .3s}
-.scene[data-step=staged] .git-new:not(.folding),.scene[data-step]:not([data-step=staged]) .git-staged:not(.folding),.scene[data-step=pushed] .git-push-button,.scene[data-step]:not([data-step=pushed]) .git-pushed{display:none}
-.scene[data-step=staged] .git-push{visibility:hidden}
-.scene[data-step]:not([data-step=staged]) .scene-edited::before{opacity:0}
+.git-bar{display:flex;align-items:center;gap:6px}
+.git-spark{display:grid;flex:none;place-items:center;width:28px;height:28px;border-radius:8px;color:var(--text-2);transition:background-color .1s}
+.git-spark.pressed{background:var(--bg-hover)}
+.git-split{display:flex;margin-left:auto;border-radius:8px;background:var(--button);color:#fff;transition:background-color .2s,color .2s}
+.git-commit{display:flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-right:1px solid rgb(255 255 255/.25);font-weight:500;transition:background-color .1s}
+.git-commit .ic,.git-more .ic{width:14px;height:14px}
+.git-commit em{font-style:normal;opacity:.85}
+.git-commit.pressed{background:var(--button-hover);border-radius:8px 0 0 8px}
+.git-more{display:grid;place-items:center;width:28px}
+.git-commit>span{display:none;align-items:center;gap:6px}
+.scene[data-step=staged] .git-to-commit,.scene[data-step=committed] .git-to-sync,.scene[data-step=pushed] .git-synced{display:flex}
+/* Commit waits for a message; once synced there is nothing left to do. */
+.scene[data-step=staged] .git-message:not(.filled)~.git-bar .git-split,.scene[data-step=pushed] .git-split{background:var(--bg-active);color:var(--text-3)}
+.scene[data-step=staged] .git-message:not(.filled)~.git-bar .git-commit,.scene[data-step=pushed] .git-commit{border-color:var(--line-strong)}
+.git-staged{margin:4px 6px 0}
+.git-group{display:flex;align-items:center;gap:6px;height:30px;padding:0 6px;font-weight:500;color:var(--text)}
+.git-group .ic{width:12px;height:12px;color:var(--text-3)}
+.git-group b{padding:0 6px;border-radius:999px;background:var(--bg-muted);font:500 11px/18px var(--sans);color:var(--text-2)}
+.git-file{display:flex;align-items:center;gap:7px;height:32px;padding:0 8px 0 22px;border-radius:7px;background:var(--accent-soft);color:var(--accent)}
+.git-file .ic{width:14px;height:14px}
+.git-file b{margin-left:auto;font:500 12px var(--mono)}
+.git-clean{display:flex;align-items:center;gap:7px;margin:8px 16px 0;font-size:12.5px;color:var(--text-3)}
+.git-clean .ic{width:14px;height:14px}
+.git-log{display:grid;gap:2px;margin:0;padding:8px 6px;list-style:none}
+.git-log li{display:flex;align-items:flex-start;gap:8px;min-width:0;padding:7px 8px;border-radius:8px}
+.git-log li>i{flex:none;margin-top:1px;color:var(--text-3)}
+.git-log li>i .ic{width:14px;height:14px}
+.git-log li>span{display:grid;flex:1;gap:6px;min-width:0;padding-top:3px}
+.git-log b,.git-log small{display:block;height:7px;border-radius:4px;background:var(--line-strong)}
+.git-log small{height:6px;background:var(--line)}
+.git-log code{flex:none;padding-top:2px;color:var(--text-3)}
+.git-msg{min-width:0;margin-top:-3px;overflow:hidden;font-weight:500;color:var(--text);white-space:nowrap;text-overflow:ellipsis}
+.git-new{background:var(--accent-soft)}
+.scene[data-step=staged] :is(.git-new,.git-clean):not(.folding),.scene[data-step]:not([data-step=staged]) .git-staged:not(.folding),.scene[data-step]:not([data-step=committed]) .git-ahead,.scene[data-step]:not([data-step=pushed]) .git-pushed{display:none}
 
 /* The closing download section echoes the hero's backdrop. */
 .get{padding:112px 0;background:var(--backdrop)}
@@ -700,20 +821,48 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
   .scroll-cue{bottom:20px}
   .hero h1 br{display:none}
   .actions{flex-direction:column;align-items:stretch;width:100%;max-width:360px}
-  .app-bar{height:28px;padding:0 10px}
-  .app-bar .lights{gap:6px}
-  .app-bar .lights i{width:10px;height:10px}
+  /* A phone shows the phone app: no window controls, the frosted
+     navigation bar over a one-row toolbar, one pane at a time, and the
+     capsules floating over the page. */
+  .app-window{border-radius:22px}
+  .app-bar{display:none}
+  .app-top{display:block}
+  .m-nav{display:flex;align-items:center;gap:4px;height:48px;padding:0 6px 0 2px;overflow:hidden;border-bottom:1px solid var(--line);font:500 14px/1 var(--sans);color:var(--text-2);white-space:nowrap}
+  .m-nav .tb-seg{flex:0 1 auto;min-width:0}
+  .m-nav .tb-seg>b{min-width:0}
+  .m-nav .tb-seg>b>[lang]{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .m-nav .tb-icon{width:40px;height:40px;border-radius:10px}
+  .m-nav .tb-icon .ic{width:20px;height:20px}
+  .m-nav .tb-run .ic{width:22px;height:22px}
+  .m-nav .tb-seg{border-radius:11px}
+  .m-nav .tb-seg>b{height:30px;padding:0 11px;border-radius:8px}
+  .m-nav .tb-seg>b .ic{width:16px;height:16px}
+  .app-tb{height:44px;padding:0 8px}
+  :is(.app-tb.side,.tb-sidebar,.app-tb .tb-run,.app-tb .tb-label){display:none}
+  .app-tb .tb-seg>b{padding:0 8px}
+  .tb-pill{padding:0 4px 0 9px}
   .app-body{grid-template-columns:minmax(0,1fr)}
-  .app-pdf{padding:30px 12px 0}
-  .hero .app-chat{padding:8px;border-left:0;border-top:1px solid var(--line)}
-  .hero .chat-thread{display:none}
-  .hero .chat-composer{display:flex;align-items:center;gap:10px;padding:5px 5px 5px 8px;border-radius:999px}
-  .hero .chat-input{flex:1;order:2}
-  .hero .chat-input i{width:72%}
-  .hero .chat-foot{display:contents}
-  .hero .chat-agent{order:1}
-  .hero .chat-agent.agent i{border-radius:999px}
-  .hero .chat-send{order:3}
+  .app-rail{display:none}
+  .app-pdf{padding:14px 12px 0}
+  .hero .app-chat{display:none}
+  /* Room under the change for the capsule floating over the page. */
+  .hero .sheet-lines.fill{min-height:92px}
+  .m-decide,.m-tools{position:absolute;left:50%;bottom:12px;z-index:2;display:flex;align-items:center;gap:1px;max-width:calc(100% - 16px);padding:4px 6px;border:.5px solid color-mix(in srgb,var(--line-strong) 82%,transparent);border-radius:999px;background:color-mix(in srgb,var(--bg) 88%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);box-shadow:0 4px 14px rgb(0 0 0/.08),0 12px 32px rgb(0 0 0/.16);color:var(--text-2);transform:translateX(-50%);white-space:nowrap}
+  .m-tools{height:46px;overflow:hidden}
+  .m-tools>i{width:31px;height:36px;border-radius:999px}
+  .m-tools hr{flex:none;width:1px;height:18px;margin:0 2px;border:0;background:var(--line)}
+  .m-decide{gap:6px;height:54px;padding:6px 8px}
+  .m-decide>i{display:grid;flex:none;place-items:center;width:20px;color:var(--text-3)}
+  .m-decide>span{margin:0 4px;font:500 15px var(--sans);color:var(--text);font-variant-numeric:tabular-nums}
+  .m-decide>:is(button,a,.m-accept,.m-reject,.m-talk){display:grid;flex:none;place-items:center;width:50px;height:40px;border-radius:999px;transition:transform .12s}
+  .m-decide>.pressed{transform:scale(.9)}
+  .m-decide .ic{width:20px;height:20px}
+  .m-accept{background:var(--green-soft);color:var(--accept)}
+  .m-reject{background:var(--red-soft);color:var(--reject)}
+  .m-talk{background:var(--accent-soft);color:var(--comment)}
+  .hero .app-window:has(.review-change[data-state=pending]) .m-tools,.hero .app-window:not(:has(.review-change[data-state=pending])) .m-decide{display:none}
+  .review-head :is(.review-step,.review-where,.review-accept,.review-reject,.review-comment){display:none}
+  .review-number{margin-right:auto;padding-left:8px;font-size:15px}
   .review-page{padding-top:12px;font-size:15px}
   .review-head{flex-wrap:wrap;padding-left:12px;font-size:13px}
   .sheet-lines,.sheet-head{padding:0 16px}
@@ -741,9 +890,27 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
   .section-head{margin-bottom:40px}
   .features{padding-top:8px}
   .feature h3{font-size:28px}
-  .scene .app-body{grid-template-columns:minmax(0,1fr);grid-template-rows:394px 304px;height:auto}
-  .scene .app-pdf{padding-top:32px}
-  .scene :is(.app-chat,.app-git){min-height:0;overflow:hidden;border-left:0;border-top:1px solid var(--line)}
+  /* The feature windows show one pane at a time, as the phone app does: the
+     PDF, or the chat once the navigation bar switches to it. Version
+     Management stacks its two panes. */
+  .scene .app-body{grid-template-columns:minmax(0,1fr);grid-template-rows:470px;height:auto}
+  .scene .app-body>:is(.app-pdf,.app-chat){grid-area:1/1;min-height:0;transition:opacity .25s,visibility .25s}
+  .scene:not([data-tab=side]) .app-chat,.scene[data-tab=side] .app-pdf{visibility:hidden;opacity:0}
+  /* The chat has no PDF toolbar; its pane takes that row instead. */
+  .scene[data-tab=side] :is(.app-tb,.demo-box){display:none}
+  .scene[data-tab=side] .app-body{grid-template-rows:514px}
+  .scene .app-chat{overflow:hidden;border-left:0}
+  .scene .app-pdf{padding-top:16px}
+  .scene:not([data-tab=side]) .seg-pdf,.scene[data-tab=side] .seg-side{background:var(--bg);color:var(--text);box-shadow:0 1px 2px rgb(0 0 0/.06),0 0 0 1px var(--line)}
+  .scene:not([data-tab=side]) .seg-pdf .ic,.scene[data-tab=side] .seg-side .ic{color:var(--accent)}
+  .scene .m-tools,.scene .m-decide{display:flex}
+  .scene .app-body.vm{grid-template-columns:minmax(0,1fr);grid-template-rows:252px 250px}
+  .scene .review-head>i:is(.review-accept,.review-reject,.review-comment){display:none}
+  .scene .app-history{border-left:0;border-top:1px solid var(--line)}
+  .app-git .vm-tb{padding-left:2px}
+  .vm-tb .tb-sidebar{display:none}
+  .vm-tb .m-menu{display:grid;width:40px;height:40px}
+  .vm-tb .m-menu .ic{width:20px;height:20px}
   .scene .review-side{padding:22px 18px 12px}
   .scene .sheet-lines,.scene .sheet-head{padding:0 16px}
   .scene .scene-text{margin-inline:16px}
@@ -768,6 +935,11 @@ html[lang=ja] .hero h1{overflow-wrap:normal;line-break:strict}
 .privacy-controls .statistics-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
 .privacy-controls[hidden],.privacy-controls [hidden]{display:none}
 
+@media(max-width:360px){
+  .m-tools>i{width:27px}
+  .m-decide{gap:4px}
+  .m-decide>:is(button,a,.m-accept,.m-reject,.m-talk){width:44px}
+}
 @media(max-width:560px){
   .topbar-inner{gap:8px}
   .topbar .brand-name,.topbar .github-link>span{display:none}

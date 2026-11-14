@@ -140,6 +140,31 @@ npm 版本使用浏览器界面，需要 Node.js 22.22+。Nix 需要启用 flake
 
 <img src="../assets/readme-icons/pull-request.svg" width="20" height="20" align="absmiddle" alt=""> &nbsp;**成为贡献者。** 非常欢迎提交 pull request，用 AI 智能体写的也一样欢迎。先看看[贡献指南](../../.github/CONTRIBUTING.md)。
 
+<a id="contributors"></a>
+
+## 贡献者
+
+<p>
+  <a href="https://github.com/PapilotAI/papilot/graphs/contributors">
+    <picture>
+      <source media="(max-width: 600px)" srcset="../assets/readme-contributors/compact.svg">
+      <img src="../assets/readme-contributors/desktop.svg" alt="Papilot 的贡献者">
+    </picture>
+  </a>
+</p>
+
+<a id="star-history"></a>
+
+## Star 历史
+
+<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&logscale=&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />
+   <img alt="Star 历史图表" src="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />
+ </picture>
+</a>
+
 ---
 
 <p align="center"><sub><a href="../../LICENSE">MIT</a> © 2026 PapilotAI。感谢朋友 <a href="https://linux.do/">LINUX DO</a>。</sub></p>

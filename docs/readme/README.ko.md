@@ -140,6 +140,31 @@ npm 패키지는 브라우저 인터페이스를 사용하며 Node.js 22.22+가 
 
 <img src="../assets/readme-icons/pull-request.svg" width="20" height="20" align="absmiddle" alt=""> &nbsp;**기여자가 되어 주세요.** AI 에이전트와 함께 작성한 풀 리퀘스트(PR)를 포함하여 모든 기여를 환영합니다. [기여 가이드](../../.github/CONTRIBUTING.md)부터 확인해 보세요.
 
+<a id="contributors"></a>
+
+## 기여자
+
+<p>
+  <a href="https://github.com/PapilotAI/papilot/graphs/contributors">
+    <picture>
+      <source media="(max-width: 600px)" srcset="../assets/readme-contributors/compact.svg">
+      <img src="../assets/readme-contributors/desktop.svg" alt="Papilot 기여자">
+    </picture>
+  </a>
+</p>
+
+<a id="star-history"></a>
+
+## 스타 수 추이
+
+<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&logscale=&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />
+   <img alt="스타 수 추이 차트" src="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />
+ </picture>
+</a>
+
 ---
 
 <p align="center"><sub><a href="../../LICENSE">MIT</a> © 2026 PapilotAI. <a href="https://linux.do/">LINUX DO</a>의 동료들에게 감사드립니다.</sub></p>
