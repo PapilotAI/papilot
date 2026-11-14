@@ -4,6 +4,16 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-11-14
+
+Correct Antigravity task completion after historical API errors or denied operations, and honor explicit author authorization in task prompts.
+
+### Fixed
+
+- **Resumed Antigravity tasks no longer fail on an old API error.** Antigravity can return an earlier turn's failed request even after the current turn finishes successfully. Papilot now recognizes the completed final reply and generates the PDF comparison; new errors and unfinished work still report a failure. ([#158](https://github.com/PapilotAI/papilot/pull/158))
+- **Antigravity permission denials stay actionable.** When the agent stops at a denied operation without a final reply, the task now needs attention instead of appearing completed. The conversation identifies the declined operation, and translated guidance explains how to continue. ([#161](https://github.com/PapilotAI/papilot/pull/161))
+- **Task prompts honor explicit manuscript and Git authorization.** An author's explicit request to write to the manuscript, commit or push is no longer contradicted by blanket instructions. Normal task edits still use the isolated task directory, and the selected runtime permissions remain enforced. ([#159](https://github.com/PapilotAI/papilot/pull/159))
+
 ## [0.10.2] - 2026-11-13
 
 Fix Windows window controls and MiKTeX compilation, improve recovery from LaTeX build failures, and answer PDF-note questions without editing the manuscript.
