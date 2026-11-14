@@ -601,17 +601,18 @@ export class AntigravityAgent extends Adapter {
       if (stopped) return this.finish(turn, 'interrupted');
       const actions = result?.denied_actions || [];
       const denied = actions.map(action => action.display_name || action.action || 'an operation');
-      const denial = `Antigravity could not run ${[...new Set(denied)].join(', ')}: the operation needs permission, and its headless CLI cannot ask for approval.`;
-      if (denied.length) this.item(turn, { id: `${turn.id}:denied`, type: 'toolCall', status: 'declined', text: denial });
+      if (denied.length) this.item(turn, { id: `${turn.id}:denied`, type: 'toolCall', status: 'declined', text: `Antigravity could not run ${[...new Set(denied)].join(', ')}: the operation needs permission, and its headless CLI cannot ask for approval.` });
       // A soft-denied tool can be streamed as DONE and end with SUCCESS and
       // an empty response. Only a finished final reply shows the agent went on
       // to complete its turn after a denial; progress text is not that reply.
+      // The timeline keeps the denied operation and its target; the error is a
+      // fixed sentence so the app can translate it. A read-only helper cannot
+      // change its permissions and Always proceed is already broadest, so
+      // neither gets advice about them.
       if (result?.status === 'SUCCESS' && denied.length && !(lastReply >= 0 && lastReply === lastStep)) {
         const tool = lastTool;
-        const blocked = tool?.index === lastStep && actions.some(action => action.action === tool.name) ? tool.item : undefined;
-        if (blocked) this.item(turn, { ...blocked, status: 'declined' });
-        const operation = blocked?.text || blocked?.command || (blocked?.changes as { path: string }[] | undefined)?.map(change => change.path).join(', ');
-        return this.finish(turn, 'failed', `${denial}${operation ? `\nBlocked operation: ${operation}` : ''}\nTo continue, provide only the required files in the task worktree, or select Always proceed (approves all tools), then ask the agent to continue.`);
+        if (tool?.index === lastStep && actions.some(action => action.action === tool.name)) this.item(turn, { ...tool.item, status: 'declined' });
+        return this.finish(turn, 'failed', thread.readOnly || full ? 'Antigravity stopped because an operation needed permission.' : 'Antigravity stopped because an operation needed permission. Ask it to continue without that operation, or select Always proceed (approves all tools) and ask it to continue.');
       }
       // agy retries a failed model request itself and records each failed
       // attempt as an error step. It still reports the turn as an error when a

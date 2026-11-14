@@ -84,6 +84,16 @@
     "textHash": "836f031731222b907bdbcbe340d13c67dd2631b90c809445ab48bf797b85c381",
     "model": "gemini-4-argon-medium"
   },
+  "Antigravity stopped because an operation needed permission.": {
+    "revision": "86db0b36609cd7320d70d39dfc3c9f523d0a980b893142906df5947eaa7dad88",
+    "textHash": "b23d7e186b0ddfdc2eac9c0c5fb60a2789af43185a25f04665d287db52e180b7",
+    "model": "gemini-4-argon-medium"
+  },
+  "Antigravity stopped because an operation needed permission. Ask it to continue without that operation, or select Always proceed (approves all tools) and ask it to continue.": {
+    "revision": "5ef81adbd10655bdff8baadff644da57ab1def9dfa0117d75299cd0a9780c60f",
+    "textHash": "cee6e60a51188d18e7d3753ffd4a19726db74610f04eb58e13567ebbf6e94884",
+    "model": "gemini-4-argon-medium"
+  },
   "Attachment not found.": {
     "revision": "8c5ca54ad0e2bb71f451416562a5d07d05f4f279e365b6af6a47feb80c70950d",
     "textHash": "2b981265dba681a32116b14ae26a99b49b1af1147fbf73f21ebcf5deaa300b84",
