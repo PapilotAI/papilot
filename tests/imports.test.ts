@@ -94,6 +94,35 @@ test('ambiguous mains need a choice; engine hints and existing configuration are
   } finally { t.after(f.close); }
 });
 
+test('commented Unicode engine hints do not change the engine selected for import', async t => {
+  const f = fixture();
+  try {
+    for (const hint of ['\\usepackage{fontspec}', '\\usepackage{xeCJK}', '\\usepackage{unicode-math}', '\\usepackage{polyglossia}', '\\documentclass{ctexart}']) {
+      for (const comment of [`% ${hint}\n`, `\\newcommand{\\example}{example} % ${hint}\n`]) {
+        fs.writeFileSync(path.join(f.root, 'main.tex'), comment + source);
+        assert.equal((await inspectPaper(f.root)).engine, 'pdflatex', comment);
+      }
+    }
+    fs.writeFileSync(path.join(f.root, 'main.tex'), '% \\usepackage{fontspec}\n' + source);
+    const value = await f.imports.create({ path: f.root });
+    f.ready(); await f.imports.build(value.id, {});
+    assert.equal((await settled(f.imports, value.id)).phase, 'ready');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(f.root, '.latex-review.json'), 'utf8')).engine, 'pdflatex');
+  } finally { t.after(f.close); }
+});
+
+test('active Unicode engine hints and magic comments still select XeLaTeX on import', async t => {
+  const f = fixture();
+  try {
+    for (const hint of ['\\usepackage{fontspec}', '\\usepackage[UTF8]{xeCJK}', '\\usepackage{amsmath,unicode-math}', '\\usepackage{polyglossia}', '% !TEX program = xelatex']) {
+      fs.writeFileSync(path.join(f.root, 'main.tex'), hint + '\n' + source);
+      assert.equal((await inspectPaper(f.root)).engine, 'xelatex', hint);
+    }
+    fs.writeFileSync(path.join(f.root, 'main.tex'), source.replace('{article}', '{ctexart}'));
+    assert.equal((await inspectPaper(f.root)).engine, 'xelatex');
+  } finally { t.after(f.close); }
+});
+
 test('local folders can exceed upload limits and inspection leaves their files untouched', async t => {
   const f = fixture();
   try {
@@ -292,7 +321,10 @@ test('a real imported paper compiles with the manuscript builder', { timeout: 60
   const f = fixture();
   try {
     const imports = f.track(new PaperImports(f.trackManuscripts(new Manuscripts()), path.join(f.directory, 'real')));
-    const value = await imports.create({ zip: archive('main.tex').toString('base64') });
+    // A commented package example must not switch this pdfTeX document to XeLaTeX.
+    const pdftex = '% \\usepackage{fontspec}\n' + source.replace('\\begin{document}', '\\pdfoutput=1\n\\begin{document}');
+    const value = await imports.create({ zip: archive('main.tex', pdftex).toString('base64') });
+    assert.equal(value.engine, 'pdflatex');
     // A real TeX build needs extra time on busy CI or during desktop packaging.
     await imports.build(value.id, {}); const ready = await settled(imports, value.id, 45000); assert.equal(ready.phase, 'ready', ready.error);
     // Opening the paper reuses the import's PDF instead of compiling it again.
