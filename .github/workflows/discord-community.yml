@@ -1,0 +1,49 @@
+name: Discord Community
+
+on:
+  workflow_run:
+    workflows: [CI, Release, Pages, Desktop Dev]
+    types: [completed]
+  schedule:
+    - cron: '17 1 * * 1' # Monday, 09:17 Asia/Shanghai
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Notification to send
+        type: choice
+        options: [test, digest]
+        default: test
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+concurrency:
+  group: discord-${{ github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    if: >-
+      github.repository == 'PapilotAI/papilot' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.event != 'pull_request' &&
+        (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.name == 'Release')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Never check out the triggering PR/head SHA or download its artifacts.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: node --test tests/discord-community.test.mjs
+      - run: node scripts/discord-community.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DISCORD_DEV_WEBHOOK_URL: ${{ secrets.DISCORD_DEV_WEBHOOK_URL }}
