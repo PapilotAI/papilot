@@ -706,7 +706,10 @@ body.resizing iframe{pointer-events:none}
 .note-box.draft{border-style:dashed}
 .note-tag{position:absolute;z-index:1;transform:translateY(-50%);min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--primary);color:#fff;font-size:11.5px;font-weight:600;line-height:20px;text-align:center;box-shadow:var(--shadow-xs);pointer-events:auto;cursor:pointer}
 .note-tag.active{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
-.add-note{position:absolute;z-index:2;transform:translate(-100%,8px);display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:999px;background:var(--primary);color:#fff;font-size:13px;font-weight:500;white-space:nowrap;box-shadow:var(--float);pointer-events:auto;animation:menu-in .14s var(--ease)}
+/* Selection actions already use transforms for placement. Keep their hit
+   areas still as they appear, so aiming at a button cannot expose a PDF link. */
+@keyframes pdf-action-in{from{opacity:0}}
+.add-note{position:absolute;z-index:2;transform:translate(-100%,8px);display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:999px;background:var(--primary);color:#fff;font-size:13px;font-weight:500;white-space:nowrap;box-shadow:var(--float);pointer-events:auto;animation:pdf-action-in .14s var(--ease)}
 .add-note:hover{background:var(--primary-hover)}
 /* Touch screens select PDF words with Papilot's handles and menu
    (touch-select.ts), so the system's selection menu never covers them. The
