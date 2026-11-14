@@ -572,6 +572,7 @@ export class AntigravityAgent extends Adapter {
     const texts = new Map<number, string>();
     // Step indices of the latest step, failed model request and finished reply.
     let lastStep = -1, lastError = -1, lastReply = -1;
+    let lastTool: { index: number; name: string; item: Item } | undefined;
     createInterface({ input: child.stdout! }).on('line', line => {
       let event: any;
       try { event = JSON.parse(line); } catch { if (line.trim()) stderr = (stderr + '\n' + line).slice(-4000); return; }
@@ -587,6 +588,7 @@ export class AntigravityAgent extends Adapter {
         if (step.state === 'DONE' && texts.get(step.step_index)?.trim()) { this.item(turn, { id, type: 'agentMessage', text: texts.get(step.step_index)!.trim() }); lastReply = Math.max(lastReply, step.step_index); }
       } else if (step?.step_type === 'tool' && step.tool_name) {
         const item = toolItem(`${turn.id}:${step.step_index}`, step.tool_name, step.tool_info?.parameters || {});
+        if (Number.isInteger(step.step_index) && step.step_index >= (lastTool?.index ?? -1)) lastTool = { index: step.step_index, name: step.tool_name, item };
         if (step.state === 'ACTIVE') this.item(turn, item, false);
         else this.item(turn, { ...item, status: step.state === 'ERROR' ? 'failed' : 'completed', ...(item.type === 'commandExecution' && step.tool_info?.error?.message ? { aggregatedOutput: step.tool_info.error.message } : {}) });
       }
@@ -597,8 +599,21 @@ export class AntigravityAgent extends Adapter {
     child.stdin!.on('error', error => { child.kill(); this.finish(turn, 'failed', error.message); });
     child.on('close', () => {
       if (stopped) return this.finish(turn, 'interrupted');
-      const denied = (result?.denied_actions || []).map(action => action.display_name || action.action).filter(Boolean);
+      const actions = result?.denied_actions || [];
+      const denied = actions.map(action => action.display_name || action.action || 'an operation');
       if (denied.length) this.item(turn, { id: `${turn.id}:denied`, type: 'toolCall', status: 'declined', text: `Antigravity could not run ${[...new Set(denied)].join(', ')}: the operation needs permission, and its headless CLI cannot ask for approval.` });
+      // A soft-denied tool can be streamed as DONE and end with SUCCESS and
+      // an empty response. Only a finished final reply shows the agent went on
+      // to complete its turn after a denial; progress text is not that reply.
+      // The timeline keeps the denied operation and its target; the error is a
+      // fixed sentence so the app can translate it. A read-only helper cannot
+      // change its permissions and Always proceed is already broadest, so
+      // neither gets advice about them.
+      if (result?.status === 'SUCCESS' && denied.length && !(lastReply >= 0 && lastReply === lastStep)) {
+        const tool = lastTool;
+        if (tool?.index === lastStep && actions.some(action => action.action === tool.name)) this.item(turn, { ...tool.item, status: 'declined' });
+        return this.finish(turn, 'failed', thread.readOnly || full ? 'Antigravity stopped because an operation needed permission.' : 'Antigravity stopped because an operation needed permission. Ask it to continue without that operation, or select Always proceed (approves all tools) and ask it to continue.');
+      }
       // agy retries a failed model request itself and records each failed
       // attempt as an error step. It still reports the turn as an error when a
       // retry succeeded and the agent went on to finish. Resuming a conversation
