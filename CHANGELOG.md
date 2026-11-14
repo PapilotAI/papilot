@@ -4,6 +4,19 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-11-14
+
+Keep PDF selection buttons from triggering links underneath, and discover Codex backends installed with desktop apps.
+
+### Fixed
+
+- **Floating PDF buttons keep their click targets in place.** The Add note and Edit source buttons now fade in without moving. Clicking a newly appeared icon or button edge no longer exposes a PDF link beneath it and jumps to another page. Ordinary PDF links still navigate normally. ([#163](https://github.com/PapilotAI/papilot/pull/163))
+- **Find Codex without a separate CLI installation.** On native Windows, Papilot discovers the current user's registered Codex desktop package; on macOS, it checks Codex and ChatGPT apps in the standard Applications folders. Startup and diagnostics use the same discovery, and reconnect checks again after a desktop app is installed or updated. Existing CLI installations and explicit binary overrides keep their priority. ([#162](https://github.com/PapilotAI/papilot/pull/162))
+
+### Changed
+
+- Refresh the homepage, README showcase and social preview to reflect the current interface. Add contributor avatars and Star History across all README translations. ([#141](https://github.com/PapilotAI/papilot/pull/141))
+
 ## [0.10.3] - 2026-11-14
 
 Correct Antigravity task completion after historical API errors or denied operations, and honor explicit author authorization in task prompts.
