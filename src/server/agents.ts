@@ -26,7 +26,7 @@ export interface AgentRuntime extends EventEmitter {
   taskPermissionConfig?(value: TaskPermissions, cwd: string): Promise<{ thread: Record<string, unknown>; turn: Record<string, unknown> }>;
   // Whether the agent is present on this host (its CLI, SDK credentials or
   // key), checked without starting it. Agents that are not found are hidden.
-  detect?(): boolean;
+  detect?(): boolean | Promise<boolean>;
   /** Loads an SDK this host already has, without starting the agent. */
   preload?(): Promise<void>;
   start(): Promise<void>;

@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import type { TaskPermissions, TaskPermissionOption } from '../shared.ts';
 import { DATA, ROOT, VERSION } from './paths.ts';
 import { codexBinary } from './codex-binary.ts';
-import { codexCandidates, codexWorkingDirectory } from '../../bin/codex-lookup.mjs';
+import { codexInstallations, codexWorkingDirectory } from '../../bin/codex-lookup.mjs';
 import { taskAccessInstructions } from './task-permissions.ts';
 
 export class RpcResponseError extends Error {}
@@ -51,7 +51,11 @@ export class Codex extends EventEmitter {
   // sandbox cannot start; Papilot's threads then use the sandbox that needs no
   // administrator setup. A sandbox the user configured is kept.
   private threadConfig: Record<string, unknown> = {};
-  detect() { return Boolean(this.binary || codexCandidates(this.env, DATA, ROOT).length); }
+  async detect() {
+    if (this.binary) return true;
+    for await (const _file of codexInstallations(this.env, DATA, ROOT)) return true;
+    return false;
+  }
   start(): Promise<void> {
     if (this.ready) return Promise.resolve();
     if (this.starting) return this.starting;

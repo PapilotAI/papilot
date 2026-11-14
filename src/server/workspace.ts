@@ -201,7 +201,7 @@ export class Workspace extends EventEmitter {
   async preload() {
     await Promise.all(AGENTS.map(async id => {
       const agent = this.agents[id];
-      try { if (agent.preload && (!agent.detect || agent.detect())) await agent.preload(); } catch { /* Connecting reports it. */ }
+      try { if (agent.preload && (!agent.detect || await agent.detect()) && !this.closing) await agent.preload(); } catch { /* Connecting reports it. */ }
     }));
   }
   async connect() {
@@ -210,10 +210,12 @@ export class Workspace extends EventEmitter {
     return this.connecting;
   }
   private async connectAgent(id: AgentId) {
+    if (this.closing) return;
     const agent = this.agents[id], runtime = this.runtimes[id], name = AGENT_NAMES[id];
     // An agent that is not on this host is neither started nor offered;
     // Reconnect looks again. A running agent stays connected.
-    runtime.installed = agent.ready || !agent.detect || agent.detect();
+    runtime.installed = agent.ready || !agent.detect || await agent.detect();
+    if (this.closing) return;
     if (!runtime.installed) { Object.assign(runtime, blankRuntime(), { installed: false }); return; }
     // Codex reads its sign-in once, when it starts. Refreshing a signed-out
     // Codex starts it again, so it uses the host's current sign-in, such as

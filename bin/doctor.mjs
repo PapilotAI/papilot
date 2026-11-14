@@ -1,5 +1,5 @@
 import { agentPath, findExecutable, killTree, spawnCommand } from './agent-paths.mjs';
-import { codexCandidates } from './codex-lookup.mjs';
+import { codexInstallations } from './codex-lookup.mjs';
 // Deliberately uses only Node built-ins: diagnostics must work before npm setup.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -131,7 +131,8 @@ export async function doctor(args) {
 
   async function desktopCodexCheck() {
     const configured = process.env.PAPILOT_CODEX_BIN;
-    const candidates = codexCandidates(process.env, data, root);
+    const candidates = [];
+    for await (const file of codexInstallations(process.env, data, root)) candidates.push(file);
     const env = { ...process.env, PATH: agentPath(process.env) };
     // Probes and login share a budget within the diagnostics deadline.
     const deadline = Date.now() + 20000;

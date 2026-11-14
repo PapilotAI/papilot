@@ -15,6 +15,9 @@ function fixture() {
   const app = path.join(dir, 'app'), tools = path.join(dir, 'tools'), data = path.join(dir, 'data'), home = path.join(dir, 'home');
   for (const folder of [app, tools, home, path.join(app, 'dist'), path.join(app, 'engine/dist/web')]) fs.mkdirSync(folder, { recursive: true });
   fs.cpSync(path.join(root, 'bin'), path.join(app, 'bin'), { recursive: true });
+  // This fixture supplies its own CLIs; the host's signed-in desktop app
+  // must not answer a missing/failed installation check on its behalf.
+  fs.writeFileSync(path.join(app, 'bin/codex-desktop.mjs'), 'export async function desktopCodexCandidates() { return []; }\n');
   fs.copyFileSync(path.join(root, 'package.json'), path.join(app, 'package.json'));
   fs.symlinkSync(path.join(root, 'node_modules'), path.join(app, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   fs.symlinkSync(path.join(root, 'engine/src'), path.join(app, 'engine/src'), process.platform === 'win32' ? 'junction' : 'dir');
