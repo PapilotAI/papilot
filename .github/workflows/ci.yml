@@ -219,6 +219,17 @@ jobs:
       - name: pdf-tools
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-pdf-tools.mjs
+      - name: pdf-floating-links
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-pdf-floating-links.mjs
+      - name: Keep floating control screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-floating-links
+          path: test-results/pdf-floating-*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: pdf-words
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-pdf-words.mjs
