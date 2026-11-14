@@ -140,6 +140,31 @@ Vous voulez d'abord voir un exemple ? Exécutez `papilot demo`. Tous les détail
 
 <img src="../assets/readme-icons/pull-request.svg" width="20" height="20" align="absmiddle" alt=""> &nbsp;**Devenez contributeur.** Les pull requests sont les bienvenues, y compris celles rédigées avec des agents IA. Consultez le [guide de contribution](../../.github/CONTRIBUTING.md) pour commencer.
 
+<a id="contributors"></a>
+
+## Contributeurs
+
+<p>
+  <a href="https://github.com/PapilotAI/papilot/graphs/contributors">
+    <picture>
+      <source media="(max-width: 600px)" srcset="../assets/readme-contributors/compact.svg">
+      <img src="../assets/readme-contributors/desktop.svg" alt="Contributeurs de Papilot">
+    </picture>
+  </a>
+</p>
+
+<a id="star-history"></a>
+
+## Évolution des étoiles
+
+<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&logscale=&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />
+   <img alt="Graphique de l’évolution des étoiles" src="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />
+ </picture>
+</a>
+
 ---
 
 <p align="center"><sub><a href="../../LICENSE">MIT</a> © 2026 PapilotAI. Merci à nos amis de <a href="https://linux.do/">LINUX DO</a>.</sub></p>
