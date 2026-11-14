@@ -23,4 +23,6 @@ If a completed Antigravity task is already marked as failed by an old API error,
 
 Compiling your own papers requires Git and a TeX distribution; AI tasks use your connected agent.
 
+Thanks to @CatIIIIIIII for fixing explicit manuscript and Git authorization ([#159](https://github.com/PapilotAI/papilot/pull/159)), and to @landonnorris1027-dev for reporting the Antigravity permission-denial issue and providing detailed evidence ([#160](https://github.com/PapilotAI/papilot/issues/160)).
+
 [Detailed changelog](https://github.com/PapilotAI/papilot/blob/v0.10.3/CHANGELOG.md) · [All changes since 0.10.2](https://github.com/PapilotAI/papilot/compare/v0.10.2...v0.10.3)
