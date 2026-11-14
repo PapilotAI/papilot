@@ -46,6 +46,7 @@ test('Antigravity turns run agy in accept-edits mode, stream into items, and res
     JSON.stringify({ event: 'step_update', step_update: { step_index: 1, state: 'DONE', step_type: 'agent_response', text_delta: 'now.' } }),
     JSON.stringify({ event: 'step_update', step_update: { step_index: 2, state: 'ACTIVE', step_type: 'tool', tool_name: 'write_file', tool_info: { parameters: { Path: '/work/main.tex' } } } }),
     JSON.stringify({ event: 'step_update', step_update: { step_index: 2, state: 'DONE', step_type: 'tool', tool_name: 'write_file', tool_info: { parameters: { Path: '/work/main.tex' } } } }),
+    JSON.stringify({ event: 'step_update', step_update: { step_index: 3, state: 'DONE', step_type: 'agent_response', text_delta: 'Finished.' } }),
     'warning: not JSON',
     JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Editing now.', denied_actions: [{ action: 'command', display_name: 'RunCommand' }] } }),
   ];
@@ -64,12 +65,13 @@ test('Antigravity turns run agy in accept-edits mode, stream into items, and res
     assert.deepEqual(args.slice(2), ['--output-format', 'stream-json', '--mode', 'accept-edits', '--settings', JSON.stringify({ toolPermission: 'request-review', allowNonWorkspaceAccess: false, enableTerminalSandbox: false }), '--model', 'gemini-4-argon-high']);
     assert.deepEqual(args.slice(0, 2), ['--input-format', 'stream-json']);
     assert.match(JSON.parse(fake.launches[0].stdin).message.content, /^Only edit the worktree\.\n\n---\n\nShorten the abstract\.$/);
-    assert.deepEqual(seen.filter(e => e.method === 'item/agentMessage/delta').map(e => e.params.delta), ['Editing ', 'now.']);
+    assert.deepEqual(seen.filter(e => e.method === 'item/agentMessage/delta').map(e => e.params.delta), ['Editing ', 'now.', 'Finished.']);
     const items = seen.filter(e => e.method === 'item/completed').map(e => e.params.item);
-    assert.deepEqual(items.map(item => item.type), ['agentMessage', 'fileChange', 'toolCall']);
+    assert.deepEqual(items.map(item => item.type), ['agentMessage', 'fileChange', 'agentMessage', 'toolCall']);
     assert.equal(items[0].text, 'Editing now.');
     assert.deepEqual(items[1].changes, [{ path: '/work/main.tex' }]);
-    assert.match(items[2].text, /could not run RunCommand/);
+    assert.equal(items[2].text, 'Finished.');
+    assert.match(items[3].text, /could not run RunCommand/);
     assert.equal(seen.every(e => e.params.threadId === thread.id), true);
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'conversations.json'), 'utf8')), { [thread.id]: 'conv-1' });
     const read = await agent.request('thread/read', { threadId: thread.id });
