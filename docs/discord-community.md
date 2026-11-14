@@ -23,7 +23,7 @@ Mention Carl-bot followed by a name, e.g. `@Carl-bot download` (select the actua
 
 | Command | Function |
 | --- | --- |
-| papilot | Bilingual command directory and channel links |
+| papilot | Command directory and channel links |
 | download | Current desktop release, CLI install/update and guide |
 | doctor | Version/environment checks, `papilot doctor`, minimal reproduction and redacted logs |
 | bug | GitHub bug form, original Discord post link and private security reporting |

@@ -14,7 +14,7 @@ export function runNotice(run, previous) {
   const recovery = run.conclusion === 'success' && failed.has(previous?.conclusion);
   if (!failed.has(run.conclusion) && !recovery) return null;
   return envelope({
-    title: `${recovery ? 'Recovered / 已恢复' : 'Failed / 需要处理'}: ${safe(run.name, 100)}`,
+    title: `${recovery ? 'Recovered' : 'Failed'}: ${safe(run.name, 100)}`,
     url: `${root}/actions/runs/${run.id}`,
     color: recovery ? 0x22c55e : 0xef4444,
     description: `${safe(run.head_branch)} · \`${safe(run.head_sha, 7)}\` · attempt ${run.run_attempt}\n${safe(run.display_title, 350)}`,
@@ -27,15 +27,15 @@ export function weeklyDigest(issues, now = new Date()) {
   const needsTriage = open.filter(item => item.labels.some(label => label.name === 'needs-triage'));
   const bugs = open.filter(item => item.labels.some(label => label.name === 'bug'));
   const stale = open.filter(item => now - new Date(item.updated_at) >= 14 * 86400000);
-  const list = values => values.slice(0, 5).map(item => `[#${item.number}](${root}/issues/${item.number}) ${safe(item.title, 95)}`).join('\n') || 'None / 暂无';
+  const list = values => values.slice(0, 5).map(item => `[#${item.number}](${root}/issues/${item.number}) ${safe(item.title, 95)}`).join('\n') || 'None';
   return envelope({
-    title: 'Weekly feedback triage / 每周反馈整理', url: `${root}/issues`, color: 0x6366f1,
-    description: `${open.length} open issues · ${needsTriage.length} awaiting triage · ${bugs.length} bugs\nGitHub issue summary. Review Discord help/feedback forums separately.\n汇总 GitHub Issue；请同时查看 Discord 中尚未转成 Issue 的论坛帖。`,
+    title: 'Weekly feedback triage', url: `${root}/issues`, color: 0x6366f1,
+    description: `${open.length} open issues · ${needsTriage.length} awaiting triage · ${bugs.length} bugs\nGitHub issue summary. Review Discord help/feedback forums separately.`,
     fields: [
-      { name: 'Needs triage / 待分诊', value: list(needsTriage) },
-      { name: 'Open bugs / 未解决问题', value: list(bugs) },
-      { name: 'No update for 14+ days / 超过两周未更新', value: list(stale) },
-      { name: 'Review queue / 待审 PR', value: `[Open pull requests](${root}/pulls) · [Help forum](https://discord.com/channels/1568215729063329955/1568217164996018226) · [Feedback forum](https://discord.com/channels/1568215729063329955/1568217316234100827)` },
+      { name: 'Needs triage', value: list(needsTriage) },
+      { name: 'Open bugs', value: list(bugs) },
+      { name: 'No update for 14+ days', value: list(stale) },
+      { name: 'Review queue', value: `[Open pull requests](${root}/pulls) · [Help forum](https://discord.com/channels/1568215729063329955/1568217164996018226) · [Feedback forum](https://discord.com/channels/1568215729063329955/1568217316234100827)` },
     ],
     footer: { text: 'Triage → reproduce / clarify → link issue → implement → reply to the original post' },
   });
@@ -93,8 +93,8 @@ export async function main() {
     }
     payload = weeklyDigest(issues);
   } else if (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
-    payload = envelope({ title: 'Papilot community automation connected / 社区自动化已连接', color: 0x22c55e,
-      description: 'Development failure/recovery alerts and the weekly GitHub feedback digest are configured.\n开发失败与恢复通知、每周 GitHub 反馈摘要已配置。', url: `${root}/actions` });
+    payload = envelope({ title: 'Papilot community automation connected', color: 0x22c55e,
+      description: 'Development failure/recovery alerts and the weekly GitHub feedback digest are configured.', url: `${root}/actions` });
   }
   if (!payload) { console.log('No notification needed.'); return; }
   if (!process.env.DISCORD_DEV_WEBHOOK_URL) throw new Error('DISCORD_DEV_WEBHOOK_URL is not configured');
