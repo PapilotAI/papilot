@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { agentPath, findExecutables, killTree, spawnCommand, WINDOWS } from './agent-paths.mjs';
+import { desktopCodexCandidates } from './codex-desktop.mjs';
 
 const kernelRelease = (() => {
   try { return process.platform === 'linux' ? fs.readFileSync('/proc/sys/kernel/osrelease', 'utf8') : ''; }
@@ -19,6 +20,23 @@ export function codexCandidates(env, data, root, wsl = isWsl(env)) {
   return env.PAPILOT_CODEX_BIN ? [env.PAPILOT_CODEX_BIN] : findExecutables('codex', env, [path.join(root, 'node_modules', '.bin'), path.join(data, 'agents', 'node_modules', '.bin')], dir => !wsl || !windowsDrive(dir));
 }
 
+// Desktop discovery runs only after the ordinary installations were tried.
+// Do not cache package paths: Reconnect must see an app installed or updated
+// since the previous connection, and an explicit override remains exclusive.
+export async function* codexInstallations(env, data, root, signal) {
+  if (signal?.aborted) return;
+  const seen = new Set();
+  const fresh = file => {
+    let key = file;
+    try { key = fs.realpathSync(file); } catch { /* A missing override is still reported. */ }
+    if (WINDOWS) key = key.toLowerCase();
+    return !seen.has(key) && Boolean(seen.add(key));
+  };
+  for (const file of codexCandidates(env, data, root)) if (fresh(file)) yield file;
+  if (!env.PAPILOT_CODEX_BIN && !signal?.aborted)
+    for (const file of await desktopCodexCandidates(env, { signal })) if (fresh(file)) yield file;
+}
+
 // Volta resolves package commands from the working directory. The desktop
 // server's package.json declares Codex for development, but the installer
 // omits that dependency. Start the host's Codex outside the server package.
@@ -28,11 +46,11 @@ export function codexWorkingDirectory(env = process.env) {
 
 /** The first candidate that runs, tried with the PATH Codex is started with. */
 export async function firstRunnable(candidates, env = process.env, { timeout = 15000, budget = 30000, signal } = {}) {
-  if (signal?.aborted) return null;
+  if (signal?.aborted || budget <= 0) return null;
   const deadline = Date.now() + budget;
   const probe = { ...env, PATH: agentPath(env) };
   const cwd = codexWorkingDirectory(env);
-  for (const file of candidates) {
+  for await (const file of candidates) {
     const remaining = deadline - Date.now();
     if (signal?.aborted || remaining <= 0) return null;
     try {
@@ -58,6 +76,7 @@ export async function firstRunnable(candidates, env = process.env, { timeout = 1
       if (signal?.aborted) return null;
       if (runs) return file;
     } catch { /* a broken installation; try the next */ }
+    if (signal?.aborted || Date.now() >= deadline) return null;
   }
   return null;
 }

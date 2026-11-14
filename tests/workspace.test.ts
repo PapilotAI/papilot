@@ -2417,11 +2417,26 @@ test('other Codex failures leave it signed in, and an unauthorized account read 
   } finally { f.close(); }
 });
 
-test('agents that are not found on the host are neither started nor offered, and Reconnect looks again', async () => {
+test('closing the workspace during asynchronous discovery does not start the detected agent', async () => {
+  const f = fixture(), detection = deferred<boolean>();
+  let starts = 0;
+  f.codex.ready = false;
+  (f.codex as any).detect = () => detection.promise;
+  (f.codex as any).start = async () => { starts++; };
+  try {
+    const connecting = (f.workspace as any).connectAgent('codex');
+    f.workspace.close();
+    detection.resolve(true);
+    await connecting;
+    assert.equal(starts, 0);
+  } finally { detection.resolve(false); f.close(); }
+});
+
+for (const asynchronous of [false, true]) test(`agents with ${asynchronous ? 'asynchronous' : 'synchronous'} detection are only started when found, and Reconnect looks again`, async () => {
   const store = new Store(':memory:');
   class Detected extends FakeCodex {
     found = false; starts = 0;
-    detect() { return this.found; }
+    detect() { return asynchronous ? Promise.resolve(this.found) : this.found; }
     async start() { this.starts++; this.ready = true; }
     handler = async (method: string): Promise<any> => method === 'account/read' ? { account: { type: 'Local configuration' }, requiresOpenaiAuth: false } : method === 'model/list' ? { data: [] } : {};
   }
