@@ -36,7 +36,7 @@ For HTML, CSS and client-side TypeScript in `src/web/`, `engine/src/web/`, `desk
 3. Adapt the vanilla examples to React without dropping the platform feature: call `showModal()` through refs, use `useId()` for per-instance IDs and anchor names, and keep `:root` and `@starting-style` rules unscoped. Check the result against the guide before finishing.
 4. Name the guide IDs that shaped the change, and the pitfall each avoided, in the final report and PR description.
 
-- Search runs locally, but the CLI reports queries and guide IDs as anonymous telemetry; set `DISABLE_TELEMETRY=1` to opt out. Grant network access to `npx -y modern-web-guidance@latest …` specifically, never to bare `npx`.
+- Search runs locally, but the CLI reports queries and guide IDs as anonymous telemetry; set `DISABLE_TELEMETRY=1` to opt out. Grant network access to `npx -y modern-web-guidance@latest …` specifically, never to bare `npx`; when offline, retry with `npx --offline` from the npm cache.
 - Run `npx -y modern-web-guidance@latest legacy-scan <path> --json` only for an explicitly requested broad modernization audit. Check each finding against its `keepWhen`/`dropWhen` rubric and keep intentional fallbacks.
 
 The workspace and review viewer run in the Electron desktop app and in any desktop or mobile browser that opens the server, including iOS Safari over Tailscale; the site and playground are public. Browser support policy:
