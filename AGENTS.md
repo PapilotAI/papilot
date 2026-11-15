@@ -27,6 +27,24 @@ Repository guidelines for coding agents working in Papilot. See [CONTRIBUTING](.
 - For platform-specific bugs, verify on the reported platform or native CI covering the failure path, and state if only another OS or simulation was tested.
 - For PDF/LaTeX changes, verify the generated document and the end-to-end review/compile path, not only source-level assertions.
 
+## Web platform code
+
+For HTML, CSS and client-side TypeScript in `src/web/`, `engine/src/web/`, `desktop/` windows and `site/`, follow [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance) before writing ad hoc solutions or adding dependencies. Skip it for server, CLI, build, CI, test-only and copy-only changes.
+
+1. Search once per platform capability or UI pattern with a generic 2–5 word query that names the UI primitive, without React, Papilot, file or manuscript names: `npx -y modern-web-guidance@latest search "light dismiss dialog"`. If the results are weak, rephrase once with the concrete element (`dialog`, `popover`, `textarea`, `table`); if nothing matches, proceed without a guide.
+2. Retrieve the matching guides together with the discipline guide that applies (`html`, `css`, `forms`, `accessibility`, `performance`, `security`): `npx -y modern-web-guidance@latest retrieve "dialog,accessibility"`. When the CLI saves long output to a temporary file, read that file in full.
+3. Adapt the vanilla examples to React without dropping the platform feature: call `showModal()` through refs, use `useId()` for per-instance IDs and anchor names, and keep `:root` and `@starting-style` rules unscoped. Check the result against the guide before finishing.
+4. Name the guide IDs that shaped the change, and the pitfall each avoided, in the final report and PR description.
+
+- Search runs locally, but the CLI reports queries and guide IDs as anonymous telemetry; set `DISABLE_TELEMETRY=1` to opt out. Grant network access to `npx -y modern-web-guidance@latest …` specifically, never to bare `npx`.
+- Run `npx -y modern-web-guidance@latest legacy-scan <path> --json` only for an explicitly requested broad modernization audit. Check each finding against its `keepWhen`/`dropWhen` rubric and keep intentional fallbacks.
+
+The workspace and review viewer run in the Electron desktop app and in any desktop or mobile browser that opens the server, including iOS Safari over Tailscale; the site and playground are public. Browser support policy:
+
+- Use Baseline Widely available features without fallbacks, matching Vite's default `baseline-widely-available` build target.
+- Treat Newly available and limited-availability features as progressive enhancements: feature-detect APIs and apply the guide's fallback so the interface still works without them, as the code does for `requestIdleCallback` and `startViewTransition`. Electron support alone is not enough, except in windows that only Electron loads (`desktop/environment*`).
+- Prefer graceful degradation or a small local fallback over polyfills and new dependencies. Do not opt into Origin Trial or volatile-feature guides (`.mwgrc`).
+
 ## Repository map and checks
 
 Check `package.json` scripts and [.github/workflows/ci.yml](.github/workflows/ci.yml) for the current executable checks.
