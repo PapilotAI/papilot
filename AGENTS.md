@@ -29,7 +29,7 @@ Repository guidelines for coding agents working in Papilot. See [CONTRIBUTING](.
 
 ## Web platform code
 
-For HTML, CSS and client-side TypeScript in `src/web/`, `engine/src/web/`, `desktop/` windows and `site/`, follow [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance) before writing ad hoc solutions or adding dependencies. Skip it for server, CLI, build, CI, test-only and copy-only changes.
+For HTML, CSS and client-side JavaScript or TypeScript in `src/web/`, `engine/src/web/`, `desktop/` windows and `site/`, follow [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance) before writing ad hoc solutions or adding dependencies. Skip it for server, CLI, build, CI, test-only and copy-only changes.
 
 1. Search once per platform capability or UI pattern with a generic 2–5 word query that names the UI primitive, without React, Papilot, file or manuscript names: `npx -y modern-web-guidance@latest search "light dismiss dialog"`. If the results are weak, rephrase once with the concrete element (`dialog`, `popover`, `textarea`, `table`); if nothing matches, proceed without a guide.
 2. Retrieve the matching guides together with the discipline guide that applies (`html`, `css`, `forms`, `accessibility`, `performance`, `security`): `npx -y modern-web-guidance@latest retrieve "dialog,accessibility"`. When the CLI saves long output to a temporary file, read that file in full.
