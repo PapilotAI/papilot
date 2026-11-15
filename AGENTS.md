@@ -31,13 +31,15 @@ Repository guidelines for coding agents working in Papilot. See [CONTRIBUTING](.
 
 For HTML, CSS and client-side JavaScript or TypeScript in `src/web/`, `engine/src/web/`, `desktop/` windows and `site/`, follow [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance) before writing ad hoc solutions or adding dependencies. Skip it for server, CLI, build, CI, test-only and copy-only changes.
 
-1. Search once per platform capability or UI pattern with a generic 2–5 word query that names the UI primitive, without React, Papilot, file or manuscript names: `npx -y modern-web-guidance@latest search "light dismiss dialog"`. If the results are weak, rephrase once with the concrete element (`dialog`, `popover`, `textarea`, `table`); if nothing matches, proceed without a guide.
-2. Retrieve the matching guides together with the discipline guide that applies (`html`, `css`, `forms`, `accessibility`, `performance`, `security`): `npx -y modern-web-guidance@latest retrieve "dialog,accessibility"`. When the CLI saves long output to a temporary file, read that file in full.
+Run the CLI pinned to an exact release, `npx -y modern-web-guidance@1.0.0 <command>`, never `@latest`: published npm versions are immutable, so a later compromised release cannot run in the checkout. Bump the version in a reviewed change.
+
+1. Search once per platform capability or UI pattern with a generic 2–5 word query that names the UI primitive, without React, Papilot, file or manuscript names: `search "light dismiss dialog"`. If the results are weak, rephrase once with the concrete element (`dialog`, `popover`, `textarea`, `table`); if nothing matches, proceed without a guide.
+2. Retrieve the matching guides together with the discipline guide that applies (`html`, `css`, `forms`, `accessibility`, `performance`, `security`): `retrieve "dialog,accessibility"`. When the CLI saves long output to a temporary file, read that file in full.
 3. Adapt the vanilla examples to React without dropping the platform feature: call `showModal()` through refs, use `useId()` for per-instance IDs and anchor names, and keep `:root` and `@starting-style` rules unscoped. Check the result against the guide before finishing.
 4. Name the guide IDs that shaped the change, and the pitfall each avoided, in the final report and PR description.
 
-- Search runs locally, but the CLI reports queries and guide IDs as anonymous telemetry; set `DISABLE_TELEMETRY=1` to opt out. Grant network access to `npx -y modern-web-guidance@latest …` specifically, never to bare `npx`; when offline, retry with `npx --offline` from the npm cache.
-- Run `npx -y modern-web-guidance@latest legacy-scan <path> --json` only for an explicitly requested broad modernization audit. Check each finding against its `keepWhen`/`dropWhen` rubric and keep intentional fallbacks.
+- Search runs locally, but the CLI reports queries and guide IDs as anonymous telemetry; set `DISABLE_TELEMETRY=1` to opt out. Grant network access to the pinned command only, never to bare `npx`; when offline, retry with `npx --offline` from the npm cache.
+- Run `legacy-scan <path> --json` only for an explicitly requested broad modernization audit. Check each finding against its `keepWhen`/`dropWhen` rubric and keep intentional fallbacks.
 
 The workspace and review viewer run in the Electron desktop app and in any desktop or mobile browser that opens the server, including iOS Safari over Tailscale; the site and playground are public. Browser support policy:
 
