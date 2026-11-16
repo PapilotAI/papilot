@@ -1,17 +1,17 @@
 # Windows setup
 
-Windows support is available from Papilot 0.9.1. Download the Windows x64 installer (`Papilot-VERSION-win-x64.exe`) or portable app (`Papilot-VERSION-win-x64-portable.exe`) from [GitHub Releases](https://github.com/PapilotAI/papilot/releases/latest). The installer lets you choose an installation folder and adds Start menu and desktop shortcuts; the portable app runs without installation. Both include Node.js and npm; install Codex yourself. Windows installers are unsigned. The desktop workflow builds and tests Windows x64 alongside macOS and Linux.
+Windows support is available from Papilot 0.9.1. Download the Windows x64 installer (`Papilot-VERSION-win-x64.exe`) or portable app (`Papilot-VERSION-win-x64-portable.exe`) from [GitHub Releases](https://github.com/PapilotAI/papilot/releases/latest). The installer lets you choose an installation folder and adds Start menu and desktop shortcuts; the portable app runs without installation. Both include Node.js, npm and Git for the native Windows backend; install Codex yourself. Windows installers are unsigned. The desktop workflow builds and tests Windows x64 alongside macOS and Linux.
 
 ## Choose an environment
 
 The Windows desktop app recommends **WSL** on first launch. The setup screen detects installed distributions and checks Node.js/npm, Git and LaTeX in the selected environment. Missing tools get links to their official installation guides; **Check again** refreshes the results after installation. An existing environment selection is preserved. You can change it in **Settings → General → Environment**, or the **Environment** app menu.
 
-- **Windows** uses the Windows installations of Git, TeX and agents, and stores app data under `%APPDATA%\Papilot`.
+- **Windows** uses a working Windows Git installation or the bundled Git, plus the Windows installations of TeX and agents, and stores app data under `%APPDATA%\Papilot`.
 - **WSL** keeps the same Windows window but runs Papilot's backend, Git, TeX and agents inside the selected Linux distribution. Agent sign-ins stay in that distribution. App data is under `~/.local/share/papilot-desktop/data`, separate from Windows and from other distributions.
 
 If WSL is missing, the setup screen offers a copyable `wsl --install -d Ubuntu` command and Microsoft's installation guide. Run it in an administrator PowerShell, restart if requested, then open Ubuntu to finish its first setup. Inside that distribution, install Linux Node.js LTS (22.22+), npm, Git and TeX Live. Windows tools do not count as Linux dependencies. Choose the distribution and click **Prepare WSL**. This installs Papilot's Linux dependencies in its own user directory, without using Windows `node_modules`. Install Codex inside the distribution too (`npm install -g @openai/codex`); a Windows Codex does not count. The first setup needs access to your npm registry from WSL; subsequent launches use the prepared copy. Failed or canceled setup can be retried, with details available in an expandable log.
 
-The Windows runtime already includes Node.js and npm. Version Management is disabled when Git is missing in the selected backend environment, with a link to installation instructions. Normal workspace refreshes detect Git after installation and enable the entry; restoring a saved page cannot bypass the check. The example PDF can be read without Git or TeX, including after a restart. Installing Git initializes version management for the same example project while preserving its source edits and notes. An edited source is never marked as matching the bundled PDF; compiling edits requires Git and TeX. WSL preparation requires Linux Node.js and npm. Tool detection checks the TeX commands (`latexmk`, `synctex` and a LaTeX engine); a paper may need additional TeX packages. Agent sign-in is checked separately inside the workspace.
+The Windows runtime includes Node.js, npm and a fallback Git. WSL still needs Git installed inside the selected distribution. Version Management is disabled when Git is missing in the selected backend environment, with a link to installation instructions. Normal workspace refreshes detect Git after installation and enable the entry; restoring a saved page cannot bypass the check. The example PDF can be read without Git or TeX, including after a restart. Installing Git initializes version management for the same example project while preserving its source edits and notes. An edited source is never marked as matching the bundled PDF; compiling edits requires Git and TeX. WSL preparation requires Linux Node.js and npm. Tool detection checks the TeX commands (`latexmk`, `synctex` and a LaTeX engine); a paper may need additional TeX packages. Agent sign-in is checked separately inside the workspace.
 
 The folder picker starts in `\\wsl.localhost\DISTRIBUTION\home`. Prefer keeping WSL papers in the Linux filesystem. Windows drive folders are translated using that distribution's `wslpath`; folders in another distribution are rejected. Switching keeps each environment's paper list and tasks, and requires running tasks to finish or stop first. It does not move papers or copy agent credentials between environments.
 
@@ -36,7 +36,7 @@ npm.cmd run desktop:build
 npm.cmd run desktop:build -- --dir
 ```
 
-The installer is `release/desktop/Papilot-VERSION-win-x64.exe`; the portable executable is `release/desktop/Papilot-VERSION-win-x64-portable.exe`, and the unpacked executable is `release/desktop/win-unpacked/Papilot.exe`. Build on Windows with a Node runtime matching the target CPU. Native release CI currently targets x64. The installer bundles Node and npm; Git, TeX, Codex and other agent CLIs are host tools. Unsigned development installers do not have a trusted publisher signature.
+The installer is `release/desktop/Papilot-VERSION-win-x64.exe`; the portable executable is `release/desktop/Papilot-VERSION-win-x64-portable.exe`, and the unpacked executable is `release/desktop/win-unpacked/Papilot.exe`. Build on Windows with a Node runtime matching the target CPU. Native release CI currently targets x64. The installer bundles Node, npm and Git; TeX, Codex and other agent CLIs are host tools. Unsigned development installers do not have a trusted publisher signature.
 
 For the browser/server version from this checkout:
 
@@ -76,6 +76,7 @@ For source builds, npm packages, Electron binaries and electron-builder's instal
 ```powershell
 $env:HTTP_PROXY = 'http://YOUR_PROXY_HOST:PORT'
 $env:HTTPS_PROXY = $env:HTTP_PROXY
+$env:NODE_USE_ENV_PROXY = "1"
 $env:NO_PROXY = 'localhost,127.0.0.1,::1'
 npm.cmd ci
 ```

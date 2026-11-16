@@ -39,6 +39,8 @@ test('the shell fingerprint changes exactly when an update would need a new inst
       ['the Electron app', () => write(path.join(root, 'desktop/main.ts'), 'changed main')],
       ['a helper copied into Electron', () => write(path.join(root, 'engine/src/core/platform.mjs'), 'updated process handling')],
       ['how the installer is staged', () => write(path.join(root, 'scripts/desktop.mjs'), 'changed stage')],
+      ['the bundled Git version', () => write(path.join(root, 'desktop/git-distribution.json'), '{"version":"updated"}')],
+      ['how Git is bundled', () => write(path.join(root, 'scripts/bundle-git.mjs'), 'changed download')],
       ['how the installer is signed', () => write(path.join(root, 'scripts/desktop-signing.cjs'), 'changed signing')],
       ['how engine dependencies are deduplicated', () => write(path.join(root, 'scripts/desktop-dedupe.mjs'), 'changed dedupe')],
     ] as const) {

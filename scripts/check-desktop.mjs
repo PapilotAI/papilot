@@ -8,12 +8,12 @@ import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import http from 'node:http';
 import { buildLayer } from './desktop-layer.mjs';
-import { findCommand } from '../engine/src/core/platform.mjs';
 import { _electron as electron, expect } from './playwright.mjs';
 import { selectOption, selectedValue } from './select.mjs';
 import { checkDesktopNotifications } from './check-desktop-notifications.mjs';
 import { checkWindowsHitRegions } from './check-desktop-windows.mjs';
 import { assertInstalledTools } from './desktop-requirements.mjs';
+import { checkBundledGit } from './check-bundled-git.mjs';
 
 const require = createRequire(import.meta.url);
 const data = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-desktop-test-'));
@@ -26,13 +26,19 @@ const base = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
 // A nightly dev build bundles a dev version.
 const version = packaged ? JSON.parse(fs.readFileSync(path.join(resources, 'server/package.json'), 'utf8')).version : base;
 if (packaged) {
+  await checkBundledGit(resources);
   // Exercise the bundled tools with no development Node on PATH.
   for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
-  const git = process.platform === 'win32' && findCommand('git');
   env.PATH = process.platform === 'win32'
-    ? [path.join(process.env.SystemRoot || 'C:\\Windows', 'System32'), ...(git ? [path.dirname(git)] : [])].join(path.delimiter)
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32')
     : '/usr/bin:/bin';
   const node = path.join(resources, 'runtime/bin', process.platform === 'win32' ? 'node.exe' : 'node'), server = path.join(resources, 'server');
+  // A runnable non-Git executable shadows host installs, including the paths
+  // the desktop discovers itself. The real Electron launch must select Git
+  // from resources; testing the environment helper alone would miss that wiring.
+  const missingGit = path.join(data, 'missing-git'); fs.mkdirSync(missingGit);
+  fs.copyFileSync(node, path.join(missingGit, process.platform === 'win32' ? 'git.exe' : 'git'));
+  env.PATH = missingGit + path.delimiter + env.PATH;
   assert.match(execFileSync(node, ['--version'], { encoding: 'utf8' }), /^v\d+\./);
   assert.match(execFileSync(node, [path.join(resources, 'runtime/lib/node_modules/npm/bin/npm-cli.js'), '--version'], { encoding: 'utf8' }), /^\d+\./);
   // Codex is a host tool; the installer does not carry it.
@@ -47,6 +53,7 @@ const launch = () => electron.launch({ executablePath: packaged || require('elec
 async function dismissInitialSetup(page) {
   const requirements = await (await fetch(`${new URL(page.url()).origin}/api/runtime/requirements`)).json();
   assertInstalledTools(requirements, env);
+  if (packaged) assert.equal(requirements.checks.find(check => check.id === 'git')?.ok, true, 'Git is ready in every installer');
   if (requirements.checks.some(check => !check.ok)) {
     const setup = page.getByRole('dialog', { name: /^(Git|LaTeX)$/ });
     await expect(setup).toBeVisible();

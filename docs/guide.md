@@ -10,7 +10,9 @@ Built with TypeScript, React/Vite, Fastify, SQLite, the official Codex app-serve
 
 ## Install and run
 
-Papilot needs Node.js 22.22+, Git, a working TeX installation with `latexmk` and `synctex`, and at least one signed-in agent on the host.
+The npm/server installation needs Node.js 22.22+, Git, a working TeX installation with `latexmk` and `synctex`, and at least one signed-in agent on the host.
+
+The native desktop installers include Node.js, npm and Git. They use a working system Git when available, otherwise their bundled copy; users do not need to install Git separately. WSL requires Linux Git inside the selected distribution. See [Papilot Desktop](../desktop/README.md).
 
 ```sh
 npm install -g papilot

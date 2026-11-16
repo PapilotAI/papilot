@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { backendEnvironment, refreshWindowsPath } from './runtime.js';
 import { findCommand } from './platform.mjs';
+import { withBundledGit } from './git.js';
 import { archiveInfo, distributions, linuxArgs, NODE, wslCommand, type Environment } from './wsl.js';
 
 export const setupLinks = {
@@ -55,7 +56,7 @@ export async function inspectEnvironment(environment: Environment, assets: strin
     return wslReport(await wslCommand(linuxArgs(environment.distribution, WSL_CHECK, [id])));
   }
   const inherited = await refreshWindowsPath();
-  const env = backendEnvironment(process.execPath, root, root, inherited);
+  const env = await withBundledGit(backendEnvironment(process.execPath, root, root, inherited), path.resolve(root, '../runtime/git'));
   const missing = ['latexmk', 'synctex'].filter(tool => !findCommand(tool, env));
   if (!['pdflatex', 'xelatex', 'lualatex'].some(tool => findCommand(tool, env))) missing.push('LaTeX');
   const bundled = fs.existsSync(path.resolve(root, '../runtime/bin/node.exe'));

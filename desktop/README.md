@@ -4,7 +4,7 @@ The desktop app reuses the existing React + TypeScript + Vite interface. Electro
 
 ## Build and run
 
-Use macOS, Linux or Windows and an official Node.js distribution, version 22.22 or newer. The build bundles the Node and npm used by the build command. Codex is not included: like Git, LaTeX and the other agent CLIs it is a host tool.
+Use macOS, Linux or Windows and an official Node.js distribution, version 22.22 or newer. The build bundles the Node and npm used by the build command and a pinned Git distribution. A working system Git keeps priority; if it is missing or fails its version check, the native desktop backend and its child processes use the bundled Git. LaTeX and agent CLIs remain host tools. Source, Nix and WSL environments use their own Git.
 
 ```sh
 npm ci
@@ -14,7 +14,7 @@ npm run desktop:build    # build installers for this OS and CPU
 
 Artifacts are in `release/desktop/`. macOS produces DMG and ZIP files: Apple Silicon uses `mac-arm64/Papilot.app`; Intel uses `mac/Papilot.app`. Linux produces AppImage and deb files; the unpacked binary is `linux-unpacked/papilot` on x64 or `linux-arm64-unpacked/papilot` on ARM64. Windows produces an NSIS installer and a portable executable; the unpacked binary is `win-unpacked/Papilot.exe`. Build on each native architecture: the bundled Node and dependency binaries must match it. `npm run desktop:build -- --dir` builds only the app directory.
 
-Linux release CI builds on Ubuntu 22.04 x64. Other Linux versions and desktop environments need their own compatibility checks. The AppImage is a portable executable; the deb installs Papilot in the application menu and declares Git and desktop library dependencies. Install Git separately when using AppImage, and TeX Live to compile manuscript edits. The included demo PDF can be read without TeX. Windows builds produce a per-user NSIS installer (`Papilot-VERSION-win-x64.exe`), a portable executable (`Papilot-VERSION-win-x64-portable.exe`) and `win-unpacked/Papilot.exe`. Windows x64 is included in the native desktop CI matrix. See [Windows setup](../docs/windows.md) for prerequisites, PowerShell commands and network setup. Windows support must pass the native CI checks before publishing its installer.
+Linux release CI builds on Ubuntu 22.04 x64. Other Linux versions and desktop environments need their own compatibility checks. The AppImage is a portable executable; the deb installs Papilot in the application menu and declares desktop library dependencies. Both include Git; install TeX Live to compile manuscript edits. The included demo PDF can be read without TeX. Windows builds produce a per-user NSIS installer (`Papilot-VERSION-win-x64.exe`), a portable executable (`Papilot-VERSION-win-x64-portable.exe`) and `win-unpacked/Papilot.exe`. Windows x64 is included in the native desktop CI matrix. See [Windows setup](../docs/windows.md) for prerequisites, PowerShell commands and network setup. Windows support must pass the native CI checks before publishing its installer.
 
 After downloading an AppImage, grant execute permission with `chmod +x Papilot-*.AppImage`. If FUSE is unavailable, run it with `APPIMAGE_EXTRACT_AND_RUN=1` to use temporary extraction instead. The deb can be installed with `sudo apt install ./Papilot-*.deb`.
 
@@ -65,3 +65,9 @@ The approved app icon uses the blue-and-white Papilot pen nib on a rounded tile 
 `desktop/assets/icon-composer/` contains unmasked background and foreground SVG layers for a future Icon Composer integration. These are source assets, not a compiled `.icon` project; the current Electron build uses the ICNS above.
 
 The DMG uses `desktop/assets/dmg-background.svg`, rendered at 1× and 2× for Retina displays. Run `node scripts/render-dmg.mjs` with `rsvg-convert` installed to regenerate both PNGs. The fonts come from the existing web assets. To update the bundled example PDF after editing its sources, run `node scripts/build-demo-preview.mjs` with TeX Live/MacTeX installed. Release CI uses the checked-in previews and backgrounds.
+
+## Bundled Git
+
+Installer builds download the exact `dugite-native` archives and verify the SHA-256 values in `desktop/git-distribution.json` before extraction. Downloads are cached in `.desktop/downloads`; a checksum mismatch stops the build. No Git download or system installation happens at app startup. Git stays under `resources/runtime/git`, including its helpers, templates, certificates and licenses; only Papilot subprocesses receive its environment. The bundled system configuration supplies `Papilot <papilot@localhost>` when no author is configured. Existing system, global and repository identities take precedence; no user configuration files are changed. Explicit Git configuration environment overrides are preserved. macOS detection skips Apple's installer placeholder when developer tools are absent.
+
+Changing the distribution manifest or bundling script changes the desktop shell fingerprint and requires a new installer. Downloaded app layers continue using that installer's Git. To update Git, review the upstream release, update the pinned archives/checksums and `desktop/git-licenses`, then run native desktop builds. Every packaged smoke check creates a paper, snapshots/exports changes, creates/removes a worktree and clones locally with host Git excluded from PATH and an isolated Git configuration. Remote credential providers and SSH configurations still depend on the user's setup.

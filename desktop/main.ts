@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { backendEnvironment, refreshWindowsPath, startBackend, startServer, switchServer, type Bundle } from './runtime.js';
+import { withBundledGit } from './git.js';
 import { desktopNotifications } from './notifications.js';
 import { chooseEnvironment } from './environment-window.js';
 import { readEnvironment, saveEnvironment, startWsl, linuxPath, type Environment } from './wsl.js';
@@ -165,7 +166,7 @@ else {
       if (address) proxy = `http://${address}`;
     }
     const inheritedEnv = environment.kind === 'native' ? await refreshWindowsPath() : process.env;
-    const backendEnv = (server: string) => {
+    const backendEnv = async (server: string) => {
       const env: NodeJS.ProcessEnv = backendEnvironment(node, server, data, inheritedEnv);
       if (port) env.PAPILOT_PORT = String(port);
       if (proxy) env.HTTPS_PROXY = env.HTTP_PROXY = proxy;
@@ -173,7 +174,7 @@ else {
       // Node's fetch and SDK HTTP clients can use the system proxy as well.
       env.NODE_USE_ENV_PROXY = '1';
       if (bundle.fingerprint) { env.PAPILOT_DESKTOP_BUNDLE = root; env.PAPILOT_DESKTOP_FINGERPRINT = bundle.fingerprint; }
-      return env;
+      return !nix && app.isPackaged ? withBundledGit(env, path.join(process.resourcesPath, 'runtime/git')) : env;
     };
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -190,7 +191,7 @@ else {
     const launch = async (folder: string) => {
       const next = environment.kind === 'wsl'
         ? await startWsl({ distribution: environment.distribution, assets: wslAssets, fingerprint: bundle.fingerprint, nodeMajor: read(path.join(wslAssets, 'manifest.json'))?.nodeMajor || '', port, log })
-        : startBackend({ node, root: folder, data, log, env: backendEnv(folder) });
+        : startBackend({ node, root: folder, data, log, env: await backendEnv(folder) });
       backend = next;
       let url: string;
       try { url = await next.ready; } catch (error) { await next.stop(); throw error; }

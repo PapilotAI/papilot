@@ -8,6 +8,7 @@ import { buildLayer, desktopVersion, shellFingerprint } from './desktop-layer.mj
 import { dedupeEngine } from './desktop-dedupe.mjs';
 import { tarCommand } from '../bin/agent-paths.mjs';
 import { buildWindowsIcon } from './build-windows-icon.mjs';
+import { bundleGit } from './bundle-git.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 process.chdir(root);
@@ -67,6 +68,7 @@ if (process.argv[2] === 'layer') {
     path.resolve(path.dirname(node), '../share/doc/node/LICENSE.md')].find(file => fs.existsSync(file));
   if (!license) throw new Error('Use an official Node.js distribution with its LICENSE file to build the app.');
   fs.copyFileSync(license, '.desktop/runtime/LICENSE');
+  await bundleGit(root, path.join(root, '.desktop/runtime/git'));
 
   // Use npm's existing package allowlist; never copy the checkout or user data.
   fs.rmSync('.desktop/server', { recursive: true, force: true });
