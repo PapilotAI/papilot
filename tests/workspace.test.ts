@@ -22,10 +22,14 @@ function deferred<T>() {
   return { promise, resolve };
 }
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
-// An AI review saves its PDF text in the task copy, so its tasks need a real folder.
+// An AI review saves its PDF text in the task copy and excludes it from Git.
 const copies = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-copies-'));
 test.after(() => fs.rmSync(copies, { recursive: true, force: true }));
-const reviewCopy = () => fs.mkdtempSync(path.join(copies, 'task-'));
+const reviewCopy = () => {
+  const worktree = fs.mkdtempSync(path.join(copies, 'task-'));
+  execFileSync('git', ['init', '-q'], { cwd: worktree });
+  return worktree;
+};
 const savedText = (worktree: string) => fs.readFileSync(path.join(worktree, '.papilot-pdf-lines.txt'), 'utf8');
 // The preparation a new task started, while it is still in progress.
 const preparation = (f: { workspace: Workspace }, id: string) => {

@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { Annotation } from '../shared.ts';
 
+const exec = promisify(execFile);
 type Rect = Annotation['rect'];
 export interface ReviewLine { id: string; page: number; text: string; rect: Rect }
 export interface ReviewSnapshot { key: string; lines: ReviewLine[]; pdf?: string }
@@ -12,8 +16,24 @@ Reply with exactly one JSON object: {"summary":"Review summary", "notes":[{"star
 // every agent's tools can read it. Inline, a thesis exceeds agent input
 // limits (Codex refuses a message over 1 MiB) and most of a model's context.
 export async function saveReviewText(worktree: string, snapshot: ReviewSnapshot) {
-  const file = path.join(worktree, '.papilot-pdf-lines.txt');
-  await fs.promises.writeFile(file, snapshot.lines.map(({ id, text }) => `${id}\t${text.replace(/[\r\n]+/g, ' ')}\n`).join(''));
+  const name = '.papilot-pdf-lines.txt', file = path.join(worktree, name), pattern = '/' + name;
+  // Task copies are linked worktrees, so their exclude file belongs to the shared Git directory.
+  const { stdout } = await exec('git', ['rev-parse', '--git-common-dir'], { cwd: worktree });
+  const exclude = path.resolve(worktree, stdout.trim(), 'info', 'exclude');
+  let excluded = '';
+  try { excluded = await fs.promises.readFile(exclude, 'utf8'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  if (!excluded.split(/\r?\n/).includes(pattern)) {
+    await fs.promises.mkdir(path.dirname(exclude), { recursive: true });
+    await fs.promises.appendFile(exclude, `${excluded && !excluded.endsWith('\n') ? '\n' : ''}${pattern}\n`);
+  }
+  const content = snapshot.lines.map(({ id, text }) => `${id}\t${text.replace(/[\r\n\v\f\u0085\u2028\u2029\0]+/g, ' ')}\n`).join('');
+  try { if (await fs.promises.readFile(file, 'utf8') === content) return file; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  // A follow-up can arrive while the current turn is still reading this file.
+  const temporary = `${file}-${randomUUID()}.tmp`;
+  try { await fs.promises.writeFile(temporary, content); await fs.promises.rename(temporary, file); }
+  finally { await fs.promises.rm(temporary, { force: true }); }
   return file;
 }
 
