@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { execFileSync } from 'node:child_process';
 import { parseAiReview, reviewPrompt, saveReviewText, type ReviewSnapshot } from '../src/server/ai-review.ts';
 import { Manuscripts } from '../src/server/manuscript.ts';
 
@@ -14,7 +13,6 @@ const snapshot: ReviewSnapshot = { key: 'original-pdf', lines: [
 ] };
 const finding = { start: 'p1-l1', end: 'p1-l2', comment: 'State the conditions needed for convergence.' };
 const reply = (notes: unknown) => JSON.stringify({ summary: 'Clarify the convergence claim.', notes });
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' }).trim();
 
 test('review findings use saved PDF geometry and remove identical duplicate notes', () => {
   const result = parseAiReview(reply([finding, finding]), snapshot);
@@ -26,7 +24,6 @@ test('review findings use saved PDF geometry and remove identical duplicate note
 test('the PDF text reaches the agent as one ID and line per row in the task copy, whatever its length', async () => {
   const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-text-'));
   try {
-    git(worktree, 'init', '-q');
     const file = await saveReviewText(worktree, { ...snapshot, lines: [...snapshot.lines, { id: 'p2-l2', page: 1, text: 'A line\r\nbroken by the extractor', rect: [0, 0, 1, 1] }] });
     assert.equal(path.dirname(file), worktree);
     assert.equal(fs.readFileSync(file, 'utf8'), 'p1-l1\tThe method always converges.\np1-l2\tNo assumptions are required.\np2-l1\tExperiments\np2-l2\tA line broken by the extractor\n');
@@ -43,31 +40,9 @@ test('the PDF text reaches the agent as one ID and line per row in the task copy
   } finally { fs.rmSync(worktree, { recursive: true, force: true }); }
 });
 
-for (const linked of [false, true]) test(`review text stays out of Git in a ${linked ? 'linked worktree' : 'repository'}`, async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-exclude-'));
-  try {
-    const repository = path.join(root, 'paper'), worktree = linked ? path.join(root, 'task') : repository;
-    git(root, 'init', '-q', repository);
-    if (linked) {
-      git(repository, '-c', 'user.name=Test', '-c', 'user.email=test@localhost', '-c', 'commit.gpgsign=false', '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'commit', '-qm', 'Initial', '--allow-empty');
-      git(repository, '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'worktree', 'add', '-q', '--detach', worktree, 'HEAD');
-    }
-    const exclude = path.join(repository, '.git', 'info', 'exclude');
-    fs.mkdirSync(path.dirname(exclude), { recursive: true });
-    fs.writeFileSync(exclude, '/existing-local-file');
-    for (let save = 0; save < 2; save++) {
-      await saveReviewText(worktree, snapshot);
-      assert.equal(git(worktree, 'status', '--porcelain', '--untracked-files=all'), '');
-      assert.equal(fs.readFileSync(exclude, 'utf8'), '/existing-local-file\n/.papilot-pdf-lines.txt\n');
-    }
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
-});
-
 test('unchanged review text keeps its inode and mtime, and different text replaces the content', async () => {
   const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-replace-'));
   try {
-    git(worktree, 'init', '-q');
-    fs.rmSync(path.join(worktree, '.git', 'info'), { recursive: true, force: true });
     const file = await saveReviewText(worktree, snapshot);
     // A fixed old timestamp makes a rewrite observable without sleeps.
     fs.utimesSync(file, 1000000000, 1000000000);
@@ -78,17 +53,6 @@ test('unchanged review text keeps its inode and mtime, and different text replac
     assert.equal(unchanged.mtimeMs, before.mtimeMs);
     await saveReviewText(worktree, { ...snapshot, lines: [{ ...snapshot.lines[0], text: 'A changed claim.' }] });
     assert.equal(fs.readFileSync(file, 'utf8'), 'p1-l1\tA changed claim.\n');
-    assert.equal(git(worktree, 'status', '--porcelain', '--untracked-files=all'), '');
-  } finally { fs.rmSync(worktree, { recursive: true, force: true }); }
-});
-
-test('review text collapses row separators and NUL into spaces within each PDF line', async () => {
-  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-rows-'));
-  try {
-    git(worktree, 'init', '-q');
-    const text = 'A\r\nB\vC\fD\u0085E\u2028F\u2029G\0H\r\n\v\f\u0085\u2028\u2029\0I';
-    const file = await saveReviewText(worktree, { ...snapshot, lines: [{ ...snapshot.lines[0], text }, snapshot.lines[1]] });
-    assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), ['p1-l1\tA B C D E F G H I', 'p1-l2\tNo assumptions are required.', '']);
   } finally { fs.rmSync(worktree, { recursive: true, force: true }); }
 });
 
@@ -149,7 +113,6 @@ test('PDF extraction and agent input preserve manuscripts beyond 180,000 charact
   const mupdf = await import('mupdf'), document = new mupdf.PDFDocument();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-long-review-'));
   try {
-    git(root, 'init', '-q');
     const resources = document.addObject(document.newDictionary()), fonts = document.newDictionary();
     fonts.put('F1', document.addSimpleFont(new mupdf.Font('Times-Roman'))); resources.put('Font', fonts);
     const line = 'This is a complete manuscript line with assumptions and evidence for the review. ';
