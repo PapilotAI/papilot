@@ -23,9 +23,8 @@ fs.rmSync(out, { recursive: true, force: true });
 copy('site', ['style.css', 'statistics-preferences.js']);
 if (analytics) copy('site', ['analytics.js']);
 const source = fs.readFileSync(path.join(root, 'site/index.html'), 'utf8');
-// GitHub Pages lets browsers keep every file for ten minutes, so a fresh page
-// could meet a stylesheet or script cached from the previous release. Their
-// URLs carry a hash of their content instead.
+// Browsers and caches may keep a stylesheet or script from the previous
+// release, so their URLs carry a hash of their content.
 const version = name => crypto.createHash('sha256').update(fs.readFileSync(path.join(out, name))).digest('hex').slice(0, 10);
 // Deployments use the published release, which can differ from main after a
 // rollback or while the next release is still being prepared.

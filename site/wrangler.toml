@@ -1,0 +1,10 @@
+# Serves the website that scripts/build-site.mjs writes to _site at papilot.ai.
+# papilot.ai/universe* belongs to the PapilotAI/universe Worker; its more specific route wins.
+name = "papilot-site"
+compatibility_date = "2026-11-01"
+workers_dev = false
+routes = [{ pattern = "papilot.ai/*", zone_name = "papilot.ai" }]
+
+[assets]
+directory = "../_site"
+html_handling = "auto-trailing-slash"

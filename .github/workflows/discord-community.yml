@@ -2,7 +2,7 @@ name: Discord Community
 
 on:
   workflow_run:
-    workflows: [CI, Release, Pages, Desktop Dev]
+    workflows: [CI, Release, Site, Desktop Dev]
     types: [completed]
   schedule:
     - cron: '17 1 * * 1' # Monday, 09:17 Asia/Shanghai
