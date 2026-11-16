@@ -31,8 +31,8 @@ function mappedRange(before: string, after: string, start: number, end: number):
   return result;
 }
 
-async function preserveRanges(app: App, before: string, after: string, anchors: Unit[], original: (file: string) => string, proposed: (file: string) => string) {
-  const units = await diffUnitsAsync(app.repo, before, after, file => isFigure(app.project, file));
+async function preserveRanges(app: App, name: string, before: string, after: string, anchors: Unit[], original: (file: string) => string, proposed: (file: string) => string) {
+  const units = await diffUnitsAsync(app.repo, before, after, file => isFigure(app.projectOf(name), file));
   const files = new Map<string, { old: string; next: string; original: string; proposed: string }>();
   const source = (file: string) => {
     if (!files.has(file)) files.set(file, {
@@ -93,7 +93,7 @@ async function optionComparison(app: App, name: string, edits: OptionInput['edit
   const current = await app.tasks.snapshotAsync(task);
   const after = await app.repo.commitWithAsync(current, Object.fromEntries(writes.map(write => [write.file, Buffer.from(write.after, 'base64')])), 'Selected note option');
   const chosen = new Set(edits.map(edit => edit.unit));
-  return preserveRanges(app, before, after, candidate.units.filter(unit => chosen.has(unit.id)),
+  return preserveRanges(app, name, before, after, candidate.units.filter(unit => chosen.has(unit.id)),
     file => app.repo.blob(round.before, file)!.toString('utf8'), file => candidate.files[file]!.toString('utf8'));
 }
 
@@ -109,7 +109,7 @@ export async function noteOptionUnits(app: App, name: string, job: string, befor
   // or revert another proposal. Rebase the authorized spans, not their narrower
   // fresh diffs, so retained old words do not become unrelated insertions.
   if (saved.accept) {
-    const rebased = await preserveRanges(app, before, after, saved.accept.units,
+    const rebased = await preserveRanges(app, name, before, after, saved.accept.units,
       file => app.repo.blob(saved.comparison!.before, file)!.toString('utf8'),
       file => app.repo.blob(saved.comparison!.after, file)!.toString('utf8'));
     return rebased.comparison.units;

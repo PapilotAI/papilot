@@ -36,6 +36,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [{ id: 'review', name: 'Review', description: 'Review the paper', hint: '', source: 'builtin', output: 'annotations' }] });
   if (url.pathname.endsWith('/git')) return json({ branch: 'main', files: [] });
   if (url.pathname.endsWith('/git/overview')) return json({ worktrees: [], commits: [], truncated: false });

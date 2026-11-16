@@ -30,11 +30,15 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
     root.scrollTop = anchor ? root.scrollTop + top(anchor) + place.offset * anchor.offsetHeight : place.top;
     root.scrollLeft = place.left;
   };
+  const remember = () => {
+    if (!position) return;
+    saved = position; memory.set(key, saved);
+    try { localStorage.setItem(key, JSON.stringify(saved)); } catch { /* Keep the tab-local place. */ }
+  };
   const persist = () => {
     clearTimeout(timer);
     if (!initialized || !root.clientHeight) return;
-    saved = position = capture(); memory.set(key, saved);
-    try { localStorage.setItem(key, JSON.stringify(saved)); } catch { /* Keep the tab-local place. */ }
+    position = capture(); remember();
   };
   let announced: PdfReaderState | undefined;
   const announce = (force = false) => {
@@ -178,7 +182,9 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
   return {
     restored: Boolean(restore && saved),
     dispose() {
-      persist(); alive = false; clearTimeout(timer); cancelAnimationFrame(tick); observer.disconnect(); search.dispose();
+      // React may already have replaced the pages before effect cleanup runs.
+      // Keep the last measured place, not a measurement of the new geometry.
+      remember(); alive = false; clearTimeout(timer); cancelAnimationFrame(tick); observer.disconnect(); search.dispose();
       root.removeEventListener('scroll', scroll); root.removeEventListener('wheel', wheel);
       root.removeEventListener('touchstart', touchStart); root.removeEventListener('touchmove', touchMove); root.removeEventListener('touchend', touchEnd); root.removeEventListener('touchcancel', touchEnd);
       view.removeEventListener(PDF_READER_COMMAND, command); view.removeEventListener('keydown', keyboard); view.removeEventListener('pagehide', persist);

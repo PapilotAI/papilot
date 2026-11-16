@@ -35,6 +35,7 @@ await context.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return json({ version: 'test', csrf: 'fixture', projects: [project], tasks: [], requests: [], runtime });
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: 'test', phase: 'idle', checkedAt: 1, error: null, canUpdate: true });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });

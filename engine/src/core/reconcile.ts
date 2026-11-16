@@ -44,7 +44,7 @@ export class Reconciliations {
       throw new Error("Review the latest task edits before applying the manuscript changes.");
     const delivered = app.delivery.get(name);
     const sourceBase = previous?.base ?? (delivered && delivered.mode !== "branch" ? delivered.accepted : task.base);
-    const base = await app.repo.snapshotAsync([app.project.source_dir, ...task.scope.paths], GENERATED);
+    const base = await app.repo.snapshotAsync([app.projectOf(task).source_dir, ...task.scope.paths], GENERATED);
     const changed = await app.repo.changedFilesAsync(sourceBase, task.accepted);
     const [old, accepted, current] = await Promise.all([sourceBase, task.accepted, base].map((rev) => app.repo.blobsAsync(rev, changed)));
     const files: string[] = [], contents: Record<string, Buffer | null> = {};
@@ -82,7 +82,8 @@ export class Reconciliations {
     }
     let scope = task.scope;
     if (scope.sections.length) {
-      const outline = buildOutline(await revisionReaderAsync(app.repo, data.reviewBase, app.project.doc_dir), app.project.main);
+      const project = app.projectOf(task);
+      const outline = buildOutline(await revisionReaderAsync(app.repo, data.reviewBase, project.doc_dir), project.main);
       const [ranges, sections] = selectedRanges(outline.nodes, resolveSections(outline.nodes, scope.sections.map(section => section.id.replace(/^label:/, ""))));
       scope = { ranges, sections, paths: Object.keys(ranges).sort() };
     }

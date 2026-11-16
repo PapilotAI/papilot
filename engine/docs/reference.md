@@ -43,6 +43,15 @@ Usually none. The root document comes from `@default_files` in a `latexmkrc`, or
 | `worktrees` | Where task worktrees go (default: `../<repository>-tasks/`) |
 | `build_workers` | Number of independent tasks compiled and rendered concurrently, from 1 to 8 (default: 1). Restart Papilot after changing it. |
 
+A repository may hold several root documents, such as a thesis and its slides. The
+settings above apply to the one the paper compiles now, except `partial_builds`,
+`worktrees` and `build_workers`, which apply to the repository. When the author
+compiles another document, the first one's settings move to
+`.git/papilot/documents.json`, by main file, and come back with it. A document
+compiled for the first time shares `source_dir` when that folder contains it, and
+otherwise compiles with the whole repository. Each task records the root document
+it was started on and keeps compiling it with that document's settings.
+
 For example, add `"build_workers": 2` to let a small edit run while another task
 is building or rendering. Rounds of the same task still run in order, and repeated
 requests for a waiting round coalesce. Shared build snapshots retain their cache

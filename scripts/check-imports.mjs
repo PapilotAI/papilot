@@ -35,8 +35,8 @@ try {
   });
   const page = await context.newPage(); page.setDefaultTimeout(10000); page.on('pageerror', error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
-  await page.getByRole('button', { name: 'Add paper', exact: true }).first().click();
-  let dialog = page.getByRole('dialog', { name: 'Add a paper' }); await dialog.waitFor();
+  await page.getByRole('button', { name: 'Open paper', exact: true }).first().click();
+  let dialog = page.getByRole('dialog', { name: 'Open paper' }); await dialog.waitFor();
   assert.equal(await page.getByLabel('Folder path', { exact: true }).isVisible(), true);
   const [folderButton, zipButton] = await dialog.locator('.import-options button').evaluateAll(buttons => buttons.map(button => { const rect = button.getBoundingClientRect(); return { y: rect.y, height: rect.height }; }));
   assert.ok(Math.abs(folderButton.y - zipButton.y) < 1); assert.ok(folderButton.height <= 32 && zipButton.height <= 32);
@@ -47,7 +47,7 @@ try {
   assert.equal(requests[0].body.zip, Buffer.from('fixture zip bytes').toString('base64'));
   await page.getByText('The paper needs a little help').waitFor(); await page.getByText('This paper may need XeLaTeX. Change the engine below and retry.').waitFor();
   await page.getByRole('button', { name: 'Continue later' }).click();
-  await page.getByRole('button', { name: 'Add paper', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Open paper', exact: true }).first().click();
   await page.getByText('The paper needs a little help').waitFor();
   await selectOption(page.getByRole('combobox', { name: 'LaTeX engine', exact: true }), 'xelatex');
   await page.setViewportSize({ width: 360, height: 740 }); await page.emulateMedia({ colorScheme: 'dark' });
@@ -56,11 +56,11 @@ try {
   await page.getByRole('button', { name: 'Help fix compilation' }).click();
   await page.getByText('Your paper compiled successfully. It is ready for editing.').waitFor();
   await page.getByText('Fixed a missing package reference.').waitFor();
-  await page.getByRole('button', { name: 'Open paper', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
+  await dialog.getByRole('button', { name: 'Open paper', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
   assert.equal(state.projects.length, 1);
   await page.setViewportSize({ width: 1280, height: 850 }); await page.emulateMedia({ colorScheme: 'light' });
   await page.getByRole('button', { name: 'Paper: My paper', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Open paper…', exact: true }).click();
   // Browser folder input preserves relative file names, including binary assets.
   const temp = fs.mkdtempSync('/tmp/papilot-ui-import-');
   try {

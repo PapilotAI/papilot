@@ -1,0 +1,38 @@
+/* The Manuscript row names the compiled document; it opens the file menu. */
+.manuscript-row{position:relative;display:flex}
+.repo-files-anchor{position:absolute;top:50%;right:5px;transform:translateY(-50%);max-width:calc(100% - 128px)}
+.repo-files-trigger{display:flex;align-items:center;gap:3px;min-width:0;max-width:100%;height:26px;padding:0 5px 0 7px;border-radius:calc(var(--r) - 2px);font-size:11.5px;color:var(--text-3);transition:background-color .12s,color .12s}
+.repo-files-trigger:hover,.repo-files-trigger[aria-expanded=true]{background:var(--bg-active);color:var(--text-2)}
+.repo-files-trigger>svg{flex-shrink:0}
+.repo-files-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.repo-files-panel{position:fixed;inset:auto;margin:0;padding:5px;list-style:none;width:min(300px,calc(100vw - 16px));max-height:min(70vh,560px);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg);color:var(--text);box-shadow:var(--float);overflow:auto;overscroll-behavior:contain}
+.repo-files-panel:popover-open{display:block;animation:menu-in .14s var(--ease)}
+.repo-files-panel>li>.spinner{margin:8px 10px}
+.repo-files-error{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:6px 8px;font-size:12.5px;color:var(--text-2)}
+.repo-files-panel ul{list-style:none;margin:0;padding:0}
+.repo-row{position:relative}
+.repo-entry{display:flex;align-items:center;gap:6px;width:100%;min-height:28px;padding:0 30px 0 calc(8px + var(--depth) * 14px);border-radius:calc(var(--r) - 2px);font-size:13px;color:var(--text);text-align:left;transition:background-color .12s}
+.repo-entry:hover:not(:disabled){background:var(--bg-hover)}
+.repo-entry>svg{flex-shrink:0;color:var(--text-3)}
+.repo-row.folder>.repo-entry>svg:first-child{transition:transform .15s}
+.repo-row.folder>.repo-entry[aria-expanded=true]>svg:first-child{transform:rotate(90deg)}
+/* Files line their icons up with their sibling folders' icons, past the chevron. */
+.repo-row.file>.repo-entry{padding-left:calc(26px + var(--depth) * 14px)}
+.repo-entry:disabled{color:var(--text-3);cursor:default}
+.repo-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.repo-row.editing>.repo-entry{background:var(--bg-hover);font-weight:500}
+.repo-row.current>.repo-entry>svg{color:var(--accent)}
+.repo-row.current>.repo-entry{font-weight:500}
+/* Every root document shows the toolbar's green play button, sized to its row. */
+.repo-row>.repo-compile,.repo-row>.repo-state{position:absolute;top:2px;right:4px;display:grid;place-items:center;width:24px;height:24px;border-radius:calc(var(--r) - 2px)}
+.repo-row>.repo-compile{color:var(--green)}
+.repo-row>.repo-compile:hover:not(:disabled){background:var(--green-soft);color:var(--green)}
+.repo-row>.repo-compile:disabled{color:var(--text-3)}
+.repo-state{color:var(--accent)}
+.repo-state>.spinner{width:12px;height:12px;border-width:1.5px}
+@media (max-width:680px){
+  .repo-files-panel{inset:auto 8px calc(8px + env(safe-area-inset-bottom)) 8px;width:auto;max-height:70vh;max-height:70dvh;padding:8px;border-radius:20px}
+  .repo-entry{min-height:40px;font-size:15px}
+  .repo-row>.repo-compile,.repo-row>.repo-state{top:6px;width:28px;height:28px}
+}

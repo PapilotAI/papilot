@@ -9,8 +9,9 @@ export const MAX_ATTACHMENT_TOTAL = 100 * 1024 * 1024;
 export interface Attachment { id: string; projectId: string; name: string; size: number; mime: string }
 export type UpdateChannel = 'stable' | 'dev';
 export interface UpdateStatus {
+  // Present when the installation pins its own version (PAPILOT_INSTALL_METHOD).
+  packageManager?: 'nix' | 'managed';
   // Present when the update must be downloaded as a new desktop app.
-  packageManager?: 'nix';
   downloadUrl?: string;
   channel?: UpdateChannel;
   currentVersion: string; latestVersion: string | null;
@@ -42,6 +43,8 @@ export interface TaskReconciliation {
 export type TaskPermissions = string;
 export interface TaskPermissionOption { value: TaskPermissions; label: string; detail: string }
 export interface Task {
+  // A fresh session replaying another task's original request. Provider sessions are never reused.
+  restart?: { taskId: string; draftAttachments?: Attachment[] };
   permissions?: TaskPermissions;
   mode?: 'edit' | 'review';
   aiReview?: { key: string; notes?: number; revision?: number };
@@ -53,7 +56,7 @@ export interface Task {
   titleSource?: 'prompt' | 'generated' | 'manual'; titleRevision?: number; titleGeneration?: 'pending' | 'failed' | null;
   /** How full the agent's context window was after its latest reply. */
   context?: ContextUsage | null;
-  worktree: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
+  worktree: string; /** The root document the task compiles, as the review engine recorded it. */ document?: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
   // The agent's thread was started with Papilot's view_pdf tool.
   viewPdf?: boolean;
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
@@ -179,7 +182,9 @@ export interface GitOverview { worktrees: GitWorktree[]; commits: GitGraphCommit
 export interface BuildProgress { step: 'tex' | 'bibliography' | 'pdf'; pass: number; pages: number; total: number | null; startedAt: number }
 export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; failureId?: string; current: boolean;
   /** The working tree this build compiles or compiled, failed or not. */
-  tree?: string; problems?: BuildProblemCounts; progress?: BuildProgress }
+  tree?: string; problems?: BuildProblemCounts; progress?: BuildProgress;
+  /** The root document whose PDF `key` is. */
+  document?: string }
 // What the last finished build reported. Errors stop the build; warnings are
 // mistakes in the PDF (?? and missing citations); minor problems are
 // typesetting (overfull lines) and package remarks, listed but never counted.
@@ -213,10 +218,15 @@ export const isMarkKind = (value: unknown): value is MarkKind => value === 'dele
 export interface QuickNote { id: string; label?: string; instruction?: string; icon?: string }
 export const QUICK_NOTE_LIMIT = 8;
 export const PRESET_QUICK_NOTES = ['polish', 'tighten', 'runt', 'connect', 'verify'];
-export interface Annotation { aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; kind?: MarkKind; stamp?: string; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
+export interface Annotation { context?: string[]; /** The root document whose PDF it is on; absent on notes from before a paper could compile several. */ document?: string; aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; kind?: MarkKind; stamp?: string; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
 // Review findings stay with their task; only explicit copies belong to the manuscript.
 export const isTaskReviewNote = (note: Annotation) => Boolean(note.aiReview && !note.aiReview.sourceId);
-export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }
+export interface NoteSection { id: string; title: string; level: number; notes: string[] }
+// The repository's files, as Git sees them, with the TeX files that are root
+// documents, and the one the paper compiles (null when none is chosen yet).
+export interface RepositoryFile { path: string; root?: true }
+export interface RepositoryFiles { document: string | null; files: RepositoryFile[] }
+export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[]; noteSections?: NoteSection[]; unplacedSectionNotes?: number }
 // A source file for manual editing, as it is on disk: `revision` names its
 // bytes, so a save refuses when the file changed meanwhile, and `base` is the
 // file at the last commit (null when it has none), to show what changed.

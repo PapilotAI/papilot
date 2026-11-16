@@ -30,6 +30,7 @@ try {
       if (url.pathname.endsWith('/updates')) return json({ currentVersion: 'test', phase: 'idle' });
       if (url.pathname.endsWith('/indirect-changes')) return json({ indirectChanges: false });
       if (url.pathname.endsWith('/note-alternatives')) return json({ noteAlternatives: true, noteAlternativeRange: 'few' });
+      if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
       if (url.pathname.endsWith('/skills')) return json({ skills: [] });
       if (url.pathname.endsWith('/items')) return json({ items: [] });
       if (url.pathname.endsWith('/note-results')) return json({ notes: [] });

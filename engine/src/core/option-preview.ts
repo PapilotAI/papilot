@@ -86,7 +86,7 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
     if (decisions[unit.id] !== "pending") throw new Error("This option overlaps a reviewed change. Undo that decision before replacing it.");
     ids.add(unit.id);
   }
-  const project = app.project;
+  const project = app.projectOf(name);
   // A saved round is immutable. Opening it tomorrow or after an app restart
   // must not invalidate its comparisons (or change \today in the document).
   const date = round.summary.date ?? buildDate(new Date(round.created * 1000), {});

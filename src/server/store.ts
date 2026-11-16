@@ -110,7 +110,7 @@ export class Store extends EventEmitter {
     if (!row) throw new Error('The PDF snapshot for this review is unavailable. Start a new AI review.');
     return JSON.parse(row.data);
   }
-  annotations(projectId: string) { return (this.db.prepare('SELECT data FROM annotations WHERE project_id=? ORDER BY rowid').all(projectId) as { data: string }[]).map(r => JSON.parse(r.data) as Annotation).filter(note => note.deletedAt === undefined); }
+  annotations(projectId: string, deleted = false) { return (this.db.prepare('SELECT data FROM annotations WHERE project_id=? ORDER BY rowid').all(projectId) as { data: string }[]).map(r => JSON.parse(r.data) as Annotation).filter(note => deleted || note.deletedAt === undefined); }
   annotation(projectId: string, id: string) {
     const row = this.db.prepare('SELECT data FROM annotations WHERE id=? AND project_id=?').get(id, projectId) as { data: string } | undefined;
     if (!row) throw new Error('Note not found.');

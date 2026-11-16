@@ -977,12 +977,6 @@ kbd {
 }
 /* The paper as decided: plain pages, each painted at the screen's pixel
    density into a canvas that fills it, under its selectable text. */
-.applied-page {
-  background: var(--pdf-page, var(--paper));
-  box-shadow: var(--shadow);
-  border-radius: 3px;
-  margin-bottom: 14px;
-}
 .applied-page canvas {
   position: absolute;
   inset: 0;

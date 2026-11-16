@@ -172,6 +172,30 @@ try {
   assert.equal(await settingsDialog.getByRole('button', { name: '立即更新', exact: true }).count(), 0, 'An installer download is not an in-place update');
   await settingsDialog.screenshot({ path: 'test-results/desktop-installer-settings.png' });
   await settingsDialog.getByRole('button', { name: '关闭', exact: true }).click();
+  // Installations that pin their own version (PAPILOT_INSTALL_METHOD) update outside Papilot.
+  state.version = '0.9.0';
+  for (const [packageManager, notice] of [['managed', '更新不由 Papilot 管理。'], ['nix', '更新由 Nix 管理。']]) {
+    update = { currentVersion: '0.9.0', latestVersion: null, phase: 'idle', checkedAt: null, error: null, canUpdate: false, packageManager };
+    await page.reload();
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await page.getByRole('button', { name: '版本更新', exact: true }).click();
+    await expect(settingsDialog.getByText(notice, { exact: true })).toBeVisible();
+    await expect(settingsDialog.locator('.update-current-version code')).toHaveText('0.9.0');
+    assert.equal(await settingsDialog.getByRole('button', { name: '检查更新', exact: true }).count(), 0, 'There is nothing to check');
+    assert.equal(await settingsDialog.locator('.update-status').count(), 0, 'No status invites a check');
+    assert.equal(await channel.count(), 0, 'The installation chooses the version, so there is no channel');
+    assert.equal(await settingsDialog.getByText(/npm/).count(), 0);
+    assert.equal(await page.locator('.update-badge').count(), 0);
+    if (packageManager === 'managed') {
+      await settingsDialog.screenshot({ path: 'test-results/managed-updates.png' });
+      await page.setViewportSize({ width: 320, height: 700 });
+      await expect(settingsDialog.getByText(notice, { exact: true })).toBeVisible();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
+      await page.screenshot({ path: 'test-results/managed-updates-mobile.png', animations: 'disabled' });
+      await page.setViewportSize({ width: 1440, height: 900 });
+    }
+    await settingsDialog.getByRole('button', { name: '关闭', exact: true }).click();
+  }
   assert.deepEqual(errors, []);
-  console.log('PASS: Update discovery, compact badge, confirmation, progress, retry, automatic reconnect/reload, dark/mobile layout, desktop channels and installer links');
+  console.log('PASS: Update discovery, compact badge, confirmation, progress, retry, automatic reconnect/reload, dark/mobile layout, desktop channels, installer links and managed installations');
 } finally { await browser.close(); await server.close(); }

@@ -171,6 +171,9 @@ jobs:
       - name: appearance
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-appearance.mjs
+      - name: applied-pdf
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-applied-pdf.mjs
       - name: attachments
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-attachments.mjs
@@ -201,6 +204,9 @@ jobs:
       - name: manuscript-source
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-manuscript-source.mjs
+      - name: repository-files
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-repository-files.mjs
       - name: task-source
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-task-source.mjs
@@ -213,9 +219,15 @@ jobs:
       - name: note-selection
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-note-selection.mjs
+      - name: section-comments
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-section-comments.mjs
       - name: papers
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-papers.mjs
+      - name: create-paper
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-create-paper.mjs
       - name: pdf-tools
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-pdf-tools.mjs
@@ -254,6 +266,9 @@ jobs:
       - name: settings-layout
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-settings-layout.mjs
+      - name: writer-setup
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-writer-setup.mjs
       - name: skill-library
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-skill-library.mjs
@@ -269,6 +284,9 @@ jobs:
       - name: task-model
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-task-model.mjs
+      - name: task-restart
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-task-restart.mjs
       - name: task-permissions
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-task-permissions.mjs
@@ -290,6 +308,17 @@ jobs:
       - name: workspace-switcher
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-workspace-switcher.mjs
+      - name: Keep paper workflow screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-workflows
+          path: |
+            test-results/create-paper-*.png
+            test-results/task-restart-*.png
+            test-results/section-comments-*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Keep screenshots of a failed check
         if: failure()
         uses: actions/upload-artifact@v4

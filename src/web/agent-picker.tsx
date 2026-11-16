@@ -141,16 +141,25 @@ export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, 
     return () => { observer.disconnect(); window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
   }, [open]);
   useEffect(() => { if (disabled || noAgent) panel.current?.hidePopover(); }, [disabled, noAgent]);
+  function revealOption(option: HTMLElement | null | undefined) {
+    const container = list.current;
+    if (!container || !option) return;
+    const bounds = container.getBoundingClientRect(), item = option.getBoundingClientRect();
+    // scrollIntoView can also scroll the containing modal. That dismisses
+    // the picker as soon as it opens inside a scrollable dialog.
+    if (item.top < bounds.top) container.scrollTop -= bounds.top - item.top;
+    else if (item.bottom > bounds.bottom) container.scrollTop += item.bottom - bounds.bottom;
+  }
   // Keep the active option in view while moving through the list with the keyboard.
-  useEffect(() => { if (open && active) list.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(active)}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active, open]);
+  useEffect(() => { if (open && active) revealOption(list.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(active)}"]`)); }, [active, open]);
   function show() {
     setQuery(''); setRecent(readRecent());
     panel.current?.showPopover(); position(); setOpen(true);
     const chosen = visible.find(isSelected);
     setActive(chosen?.key || visible[0]?.key || '');
-    requestAnimationFrame(() => list.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }));
+    requestAnimationFrame(() => revealOption(list.current?.querySelector<HTMLElement>('[aria-selected="true"]')));
     // Typing filters right away; on a touch screen the keyboard would cover the list, so search waits for a tap.
-    if (!window.matchMedia('(pointer: coarse)').matches) search.current?.focus();
+    if (!window.matchMedia('(pointer: coarse)').matches) search.current?.focus({ preventScroll: true });
   }
   function choose(choice: Choice) {
     onSelect(choice.agent.value, choice.model);

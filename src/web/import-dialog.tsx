@@ -113,21 +113,12 @@ export function ImportDialog({ api, agent, canRepair, onDone, onClose }: { api: 
   return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="import-title" onKeyDown={keepDialogFocus} onCancel={event => { event.preventDefault(); close(); }} onClick={event => { if (event.target === event.currentTarget) close(); }}>
     <section className="modal import-dialog">
       <button type="button" className="modal-close icon-button" aria-label={t('Close')} disabled={busy} onClick={close}><Icon name="close"/></button>
-      <h2 id="import-title">{t('Add a paper')}</h2>
+      <h2 id="import-title">{t('Open paper')}</h2>
       {!draft ? <>
-        <p className="modal-description">{t('Choose a folder or ZIP, or drag it here.')}</p>
         <div className={'import-drop' + (dragging ? ' dragging' : '')} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={event => { event.preventDefault(); setDragging(false); if (!locked) drop(event.dataTransfer); }}>
           <div className="import-options">
-            <div className="import-option">
-              <div className="import-option-head"><Icon name="folder" size={17}/><strong>{t('Open a folder')}</strong></div>
-              <p>{t('Choose a folder to upload a copy. To use original files, open it in the desktop app.')}</p>
-              <button type="button" data-choose-folder className="button secondary compact" disabled={locked} onClick={() => folder.current?.click()}>{t('Choose folder')}</button>
-            </div>
-            <div className="import-option">
-              <div className="import-option-head"><Icon name="archive" size={17}/><strong>{t('Import a ZIP')}</strong></div>
-              <p>{t('Import a separate copy from Overleaf or a ZIP archive.')}</p>
-              <button type="button" className="button secondary compact" disabled={locked} onClick={() => zip.current?.click()}>{t('Choose ZIP')}</button>
-            </div>
+            <button type="button" data-choose-folder className="button secondary compact" disabled={locked} onClick={() => folder.current?.click()}><Icon name="folder" size={15}/>{t('Choose folder')}</button>
+            <button type="button" className="button secondary compact" disabled={locked} onClick={() => zip.current?.click()}><Icon name="archive" size={15}/>{t('Choose ZIP')}</button>
           </div>
           <span className="import-drop-hint">{t('Or drop a folder or ZIP here')}</span>
         </div>

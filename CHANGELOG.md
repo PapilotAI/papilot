@@ -4,9 +4,26 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- **Browse the repository and compile any of its documents.** **Manuscript** in the sidebar names the document it compiles; select the name to list the paper's repository, where any text file opens in the source editor beside the PDF. When a repository holds several root documents, such as a thesis, its slides and a response letter, the play button on a document's row compiles it instead of the current one. Each document keeps its own build settings, notes and reading position, and a task keeps compiling the document it was started on. ([#188](https://github.com/PapilotAI/papilot/pull/188))
+- **Run Papilot from an installation that pins its version.** Container images, server deployments and system packages can set `PAPILOT_INSTALL_METHOD=managed` to get the behavior the Nix package already has: Papilot never checks for or installs updates, ignores releases that earlier in-app updates installed, and never downloads Codex or agent SDKs at runtime. **Settings → Updates** shows the current version with a note that updates are managed outside Papilot, without the unavailable **Check for updates** button (Nix installations too). A missing SDK names the package to install, and `papilot doctor` suggests installing Codex and SDKs with the installation. Under Nix, `papilot doctor` now finds the agent SDKs the package includes. See [Updates](docs/guide.md#updates). ([#190](https://github.com/PapilotAI/papilot/pull/190))
+- **Start a paper from a template.** **New paper…** opens a gallery of [Papilot Universe](https://papilot.ai/universe/) templates (university theses, conference and journal author kits, slides, posters, CVs and books, plus more than 400 conferences, each pointing at the template its call for papers asks for) with type filters and search, beside **Blank paper**. Papilot downloads the chosen version, verifies its checksum, creates the folder with Git history and sets the template's main file and engine. **Open in Papilot** on a template's Universe page opens the desktop app with that template chosen. Offline, only the blank paper is offered.
+
+### Changed
+
+- **New paper and Open paper.** The paper menu and empty screen now say **New paper…** and **Open paper…** (a folder icon on every platform), and the desktop File menu says **Open Paper…**, instead of the easily confused *Create a new paper* and *Add paper…*. The new-paper dialog shows the folder it will create in place of explanatory text, and the open dialog is reduced to **Choose folder**, **Choose ZIP** and the drop zone. ([#182](https://github.com/PapilotAI/papilot/pull/182))
+
 ### Fixed
 
+- **AI review works on long theses.** The review used to put the whole PDF's text in its first message, and Codex refused it once the text passed 1 MiB, failing with `Input exceeds the maximum length of 1048576 characters`. Papilot now saves the text, one PDF line per row, in the review's task copy, and the reviewer reads the parts the request covers. A review focused on one chapter no longer sends the whole thesis to the model. Send a new message to a review that failed this way to continue it. ([#189](https://github.com/PapilotAI/papilot/pull/189))
 - **Claude starts with default permissions on native Windows.** Claude and GLM use **Accept edits** with an explicit **No sandbox** explanation instead of requiring an unavailable command sandbox. Native permission checks remain active: the CLI declines requests needing approval, while the SDK asks in Papilot. Sandboxed edits remain enforced on macOS, Linux and WSL. ([#167](https://github.com/PapilotAI/papilot/issues/167))
+- **Codex tasks can be deleted on native Windows.** While a task's conversation stays loaded, Codex keeps programs such as MCP servers running inside the task folder, and Windows cannot delete a folder another program is using. Deleting a task now archives its Codex conversation first, which stops them. If another program still holds the folder, the error shows its path, and **Retry deletion** finishes the cleanup once that program closes it, including for tasks already stuck at **Deleting task**. ([#179](https://github.com/PapilotAI/papilot/issues/179))
+- **Task titles and commit messages generate on native Windows with MCP servers configured.** Codex runs your MCP servers, such as the Codex app's `node_repl`, in the folder of each one-off conversation that writes a title or commit message, and Papilot never ended those conversations. Windows could not remove the folder, so task titles failed to generate and **Generate commit message** reported `EPERM`. Papilot now ends each one-off conversation when it finishes, so on every platform those MCP servers stop instead of running until Codex restarts. ([#186](https://github.com/PapilotAI/papilot/pull/186))
+
+### Changed
+
+- Shorten the **Delete task** and **Restart with another agent** dialogs to one line each. Deleting says what is lost and what stays: unaccepted edits and comments are lost, accepted changes stay in your manuscript. Restarting reruns the original request in a new task and leaves the current one as it is. Its stop option now reads **Stop this task first**.
 
 ## [0.10.4] - 2026-11-14
 

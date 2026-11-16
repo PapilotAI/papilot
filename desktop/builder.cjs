@@ -1,6 +1,8 @@
 module.exports = {
   appId: 'ai.papilot.desktop',
   productName: 'Papilot',
+  // Universe pages open templates with papilot://new?template=<id>&version=<version>.
+  protocols: [{ name: 'Papilot', schemes: ['papilot'] }],
   directories: { app: '.desktop/app', output: 'release/desktop', buildResources: 'desktop/assets' },
   files: ['*.js', '*.mjs', '*.cjs', '*.html', '*.css', 'package.json', '!node_modules{,/**/*}'],
   extraResources: [

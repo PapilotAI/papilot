@@ -42,6 +42,10 @@ export class Store {
     this.db.exec(SCHEMA);
     if (!this.all<{ name: string }>("PRAGMA table_info(tasks)").some(column => column.name === "deferred"))
       this.db.exec("ALTER TABLE tasks ADD COLUMN deferred INTEGER NOT NULL DEFAULT 0");
+    // Tasks from before a repository could compile several root documents
+    // compile the paper's current one.
+    if (!this.all<{ name: string }>("PRAGMA table_info(tasks)").some(column => column.name === "document"))
+      this.db.exec("ALTER TABLE tasks ADD COLUMN document TEXT");
     // Rounds from before insert-first publishing were inserted rendered.
     if (!this.all<{ name: string }>("PRAGMA table_info(rounds)").some(column => column.name === "visuals"))
       this.db.exec("ALTER TABLE rounds ADD COLUMN visuals TEXT NOT NULL DEFAULT 'ready'");

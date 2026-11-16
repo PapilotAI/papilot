@@ -312,6 +312,21 @@ test('the review full paper shows the round\'s changed chapters at once, then ea
   } finally { teX.restore(); f.close(); }
 });
 
+test('a task\'s full paper compiles the root document the task was started on', { skip: !tex && 'needs latexmk and pdflatex', timeout: 180000 }, async () => {
+  const { fullPaperPdf } = await import('../src/server/pdf.ts');
+  // The paper compiles its thesis now; the task was started on the letter.
+  const f = paper({ 'main.tex': document('Thesis.\n'), 'letter/response.tex': document('Letter.\n') });
+  try {
+    const rev = f.repo.rev('HEAD');
+    const connect = async () => ({ get: async () => ({ before: rev, after: rev, document: 'letter/response.tex' }) as any });
+    const pdf = await fullPaperPdf(connect, f.root, 'letter-task', 1, 'after');
+    assert.equal(path.basename(pdf), 'response.pdf');
+    // A round of a main file renamed since compiles as the current document, as the engine does.
+    const renamed = async () => ({ get: async () => ({ before: rev, after: rev, document: 'letter/old.tex' }) as any });
+    assert.equal(path.basename(await fullPaperPdf(renamed, f.root, 'renamed-task', 1, 'after')), 'main.pdf');
+  } finally { f.close(); }
+});
+
 test('the full paper of a round that compiled the whole paper is that round\'s own PDF', { skip: process.platform === 'win32' && 'uses a POSIX shell script', timeout: 60000 }, async () => {
   const { nextPaperPass, fullPaperPdf } = await import('../src/server/pdf.ts');
   const f = paper({ 'main.tex': document('Text.\n') });

@@ -37,6 +37,7 @@ async function open(options, { desktop = false } = {}) {
     if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
     if (url.pathname === '/api/updates') return json({ phase: 'idle', currentVersion: 'test', latestVersion: 'test', canUpdate: false });
     if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+    if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
     if (url.pathname.endsWith('/skills')) return json({ skills: [skill] });
     if (url.pathname.endsWith('/items')) return json({ items: [] });
     if (url.pathname.endsWith('/note-results')) return json({ notes: [] });

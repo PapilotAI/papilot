@@ -85,7 +85,8 @@ function fields(value: string) {
 export const contentsText = (text: string) => contentsEntry(text).title;
 
 /** Reads a build's trace and auxiliary files, by worktree-relative path. Null without a trace. */
-export function readTrace(build: CompiledPaper, worktree: string): Traced | null {
+/** Pass null to retain the compiled snapshot's coordinates, for PDF marks. */
+export function readTrace(build: CompiledPaper, worktree: string | null): Traced | null {
   const out = path.dirname(build.pdf), job = path.basename(build.pdf, '.pdf'), cwd = path.dirname(out);
   let trace: string;
   try { trace = fs.readFileSync(path.join(out, job + '.papilot'), 'latin1'); } catch { return null; }
@@ -110,8 +111,8 @@ export function readTrace(build: CompiledPaper, worktree: string): Traced | null
       const before = fs.readFileSync(file.snapshot, 'utf8');
       texts.set(file.rel, blankComments(before).split('\n'));
       lengths.set(file.rel, texts.get(file.rel)!.length);
-      let now: string | null = null;
-      try { now = fs.readFileSync(path.join(worktree, file.rel), 'utf8'); } catch { traced.missing.push(file.rel); }
+      let now: string | null = before;
+      if (worktree !== null) try { now = fs.readFileSync(path.join(worktree, file.rel), 'utf8'); } catch { now = null; traced.missing.push(file.rel); }
       if (now != null && now !== before) { traced.changed.push(file.rel); maps.set(file.rel, lineMap(before.split('\n'), now.split('\n'))); }
     }
     return lengths.get(file.rel)!;

@@ -48,6 +48,8 @@ export interface Task {
   scope: Scope;
   created: number;
   closed: number | null;
+  /** The root document the task was started on; null before tasks kept it. */
+  document?: string | null;
 }
 export interface Delivery {
   mode: "workspace" | "commit" | "branch";

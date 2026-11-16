@@ -27,7 +27,9 @@ export class Codex extends EventEmitter {
     // A loaded thread/resume can keep the previous policy (including full access).
     // Resolve a fresh native policy to retain configured roots and tmp exclusions,
     // then apply it atomically to the next turn, even on an already-loaded thread.
-    const resolved = await this.request('thread/start', { ...thread, cwd, ephemeral: true, config: { 'sandbox_workspace_write.network_access': true } });
+    // Unload the probe once unsubscribed, not a minute later: a loaded thread
+    // keeps MCP servers and folder watches in the task worktree (see closeThread).
+    const resolved = await this.request('thread/start', { ...thread, cwd, ephemeral: true, config: { 'sandbox_workspace_write.network_access': true, thread_unload_delay_secs: 0 } });
     try {
       if (resolved.sandbox?.type !== 'workspaceWrite' || resolved.approvalPolicy !== 'on-request') {
         throw new RpcResponseError('Codex could not apply workspace permissions.');
@@ -36,6 +38,15 @@ export class Codex extends EventEmitter {
     } finally {
       if (resolved.thread?.id) await this.request('thread/unsubscribe', { threadId: resolved.thread.id }).catch(() => {});
     }
+  }
+  // While a thread is loaded, Codex runs its stdio MCP servers in the thread's
+  // working directory and watches folders there; Windows cannot delete a
+  // folder that is another program's working directory. Archiving shuts the
+  // thread (and any subagent threads) down first. When it cannot (the thread
+  // was archived elsewhere, say), an unsubscribed thread still unloads soon.
+  async closeThread(threadId: string) {
+    try { await this.request('thread/archive', { threadId }, 20000); }
+    catch (error) { await this.request('thread/unsubscribe', { threadId }).catch(() => {}); throw error; }
   }
   child: ChildProcess | null = null;
   private sequence = 0;

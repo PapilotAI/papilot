@@ -19,7 +19,7 @@ import { readPlace, savePlace } from './places.ts';
 import { mergeLines } from './note-geometry.ts';
 import { touchSelection } from './touch-select.ts';
 import { t } from './i18n.ts';
-import { PdfNoteCard, type PdfNoteActions } from './pdf-suggestion.tsx';
+import { PdfNoteCard, type PdfNoteActions, type PdfNoteHandle } from './pdf-suggestion.tsx';
 import { cMapData } from '../../engine/src/web/pdf-cmaps.ts';
 
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
@@ -36,7 +36,7 @@ export type Rect = [number, number, number, number];
 export type { OutlineItem } from '../../engine/src/web/pdf-reader.ts';
 // `showPlace` scrolls a place into view and marks it briefly; with `keep`,
 // a place already in view is marked without moving the pages.
-export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note: Annotation) => void; showPlace: (page: number, rect: Rect, options?: { keep?: boolean }) => void; focus: () => void; fitWidth: () => void }
+export interface PdfHandle { goTo: (item: OutlineItem) => void; goToNote: (note: Annotation) => void; showPlace: (page: number, rect: Rect, options?: { keep?: boolean }) => void; focus: () => void; fitWidth: () => void; save: () => Promise<boolean> }
 // A touch selection also has its ends: the edge of its first and last word, with that line's top and bottom.
 // A passage quoted in an unsent chat message, numbered as in the message.
 export interface PdfComment { id: string; page: number; rects: Rect[]; number: number }
@@ -250,6 +250,7 @@ export const PdfView = forwardRef<PdfHandle, {
   // Keep drafts available when a save fails or a blank edit is closed.
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [newNoteDraft, setNewNoteDraft] = useState('');
+  const noteCard = useRef<PdfNoteHandle>(null);
   const [dismissedNote, setDismissedNote] = useState<Annotation | null>(null);
   // The chosen tool; holding Space borrows the hand without changing it.
   const [tool, setTool] = useState<PdfTool>(props.region ? 'region' : 'select'), [spaceHand, setSpaceHand] = useState(false);
@@ -318,6 +319,7 @@ export const PdfView = forwardRef<PdfHandle, {
 
   const handle = useRef<PdfHandle | null>(null);
   useImperativeHandle(ref, () => handle.current = ({
+    async save() { return await noteCard.current?.save() ?? true; },
     focus() { container.current?.focus({ preventScroll: true }); },
     fitWidth() { const viewer = tools.current?.viewer; if (viewer && viewer.currentScaleValue !== 'page-width') viewer.currentScaleValue = 'page-width'; },
     // Scroll to the section without pdf.js's link service, which focuses the
@@ -859,7 +861,7 @@ export const PdfView = forwardRef<PdfHandle, {
           <button type="button" className={'note-tag' + (props.active === note.id ? ' active' : '')} data-note={note.id} data-group={note.group} data-kind={note.kind} data-stamp={note.stamp ? true : undefined} data-review={note.aiReview ? true : undefined} style={{ ...spots[index], ...groupStyle(note.group) }} aria-label={tagLabel(note, label)} aria-expanded={props.noteActions ? props.active === note.id : undefined} title={note.group ? t('Annotation groups') : note.comment} onClick={() => props.onSelect(note)}>{label}{note.stamp && <span className="note-tag-stamp" hidden={compact}>{note.stamp}</span>}</button>
         </Fragment>);
       })()}
-      {activeNote?.note.page === number - 1 && props.noteActions && !editing && !wheel && !props.region && <PdfNoteCard key={activeNote.note.id} note={activeNote.note} number={activeNote.number} index={noteIndex} total={peers.length} selected={props.noteActions.has(activeNote.note.id)} busy={noteLocked} error={noteError}
+      {activeNote?.note.page === number - 1 && props.noteActions && !editing && !wheel && !props.region && <PdfNoteCard controller={noteCard} key={activeNote.note.id} note={activeNote.note} number={activeNote.number} index={noteIndex} total={peers.length} selected={props.noteActions.has(activeNote.note.id)} busy={noteLocked} error={noteError}
         draft={noteDrafts[activeNote.note.id] ?? null} onDraftChange={draft => setNoteDrafts(current => {
           const next = { ...current };
           if (draft === null) delete next[activeNote.note.id]; else next[activeNote.note.id] = draft;
@@ -913,7 +915,7 @@ export const PdfView = forwardRef<PdfHandle, {
       {markable && props.onSource && selection?.page === number - 1 && !selection.handles && !editing && active === 'select' && <button type="button" className="add-source" aria-label={t('Edit source')} title={t('Edit source')} style={{ left: `${selection.rects[selection.rects.length - 1][2] * 100}%`, top: `${selection.rects[selection.rects.length - 1][3] * 100}%` }} onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={() => { const target = selected(selection); clearSelection(); props.onSource!(target, shownRef.current.key); }}><Icon name="toolSource" size={15}/></button>}
       {editing?.page === number - 1 && <>
         {editing.point ? <div className="note-point draft" style={center(editing.rect)}/> : (editing.rects.length ? editing.rects : [editing.rect]).map((rect, index) => <div key={index} className={(editing.rects.length ? 'note-mark' : 'note-box') + ' draft'} style={percent(rect)}/>)}
-        <PdfNoteCard note={{ rect: editing.rect, comment: '', ...(editing.point ? { kind: 'point' as const } : {}) }} number={notes.length + 1} index={0} total={1} selected={false} busy={noteLocked} error={noteError}
+        <PdfNoteCard controller={noteCard} note={{ rect: editing.rect, comment: '', ...(editing.point ? { kind: 'point' as const } : {}) }} number={notes.length + 1} index={0} total={1} selected={false} busy={noteLocked} error={noteError}
           draft={newNoteDraft} onDraftChange={value => setNewNoteDraft(value ?? '')} onDismiss={closeNewNote} onClose={closeNewNote}
           onEditing={props.noteActions?.onEditing} onSave={saveNewNote}/>
       </>}

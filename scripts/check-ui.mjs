@@ -124,6 +124,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/git/overview')) return overviewFailure ? route.fulfill({ status: 503, json: { error: 'Repository unavailable.' } }) : json(overview());
   if (url.pathname.endsWith('/git/history')) return json({ versions: [], next: null });
   // Skills and the feedback bar have their own check (check-skills.mjs).
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git/diff')) return json({ path: url.searchParams.get('path'), diff: 'diff --git a/main.tex b/main.tex\n--- a/main.tex\n+++ b/main.tex\n@@ -1,2 +1,2 @@\n-Old line.\n+New line.\n Context.\n', truncated: false });
   if (url.pathname.endsWith('/git/commit')) {
@@ -633,8 +634,8 @@ try {
   await switcher.click();
   await page.getByRole('menuitemradio', { name: 'Example paper', exact: true }).waitFor();
   assert.equal(await page.getByRole('menuitemradio', { name: 'Example paper', exact: true }).getAttribute('aria-checked'), 'true');
-  await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Add a paper' });
+  await page.getByRole('menuitem', { name: 'Open paper…', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Open paper' });
   await dialog.waitFor();
   // The folder chooser leads; typing a path is a collapsed fallback.
   await expect(dialog.getByRole('button', { name: 'Choose folder', exact: true })).toBeFocused();
@@ -1856,9 +1857,9 @@ try {
     assert.equal(await drawerToggle.evaluate(el => el === document.activeElement), true);
     await drawerToggle.click();
     await drawer.getByRole('button', { name: 'Paper: Example paper', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Add a paper' }).waitFor();
-    await expect(page.getByRole('dialog', { name: 'Add a paper' }).getByRole('button', { name: 'Choose folder', exact: true })).toBeFocused();
+    await page.getByRole('menuitem', { name: 'Open paper…', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Open paper' }).waitFor();
+    await expect(page.getByRole('dialog', { name: 'Open paper' }).getByRole('button', { name: 'Choose folder', exact: true })).toBeFocused();
     await page.keyboard.press('Escape');
     if (width === 390) {
       await page.locator('.manuscript-link').click();

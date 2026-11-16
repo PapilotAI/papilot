@@ -30,7 +30,7 @@ export function shellFingerprint(root = process.cwd(), node = process.versions.n
   const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   // These sources build the installer or are copied into Electron, so a layer
   // cannot replace their effects. Older checkouts may not contain every helper.
-  const copied = ['scripts/desktop.mjs', 'scripts/desktop-dedupe.mjs', 'scripts/desktop-agent-paths.mjs', 'bin/agent-paths.mjs', 'engine/src/core/platform.mjs'].map(file => path.join(root, file)).filter(file => fs.existsSync(file));
+  const copied = ['scripts/desktop.mjs', 'scripts/desktop-signing.cjs', 'scripts/desktop-dedupe.mjs', 'scripts/desktop-agent-paths.mjs', 'bin/agent-paths.mjs', 'engine/src/core/platform.mjs'].map(file => path.join(root, file)).filter(file => fs.existsSync(file));
   const shell = [...files(path.join(root, 'desktop')), ...copied]
     .map(file => [path.relative(root, file).split(path.sep).join('/'), hash(file)]).sort(([a], [b]) => a.localeCompare(b));
   const inputs = {

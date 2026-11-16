@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode, type Ref, type RefObject } from 'react';
 import { AGENT_NAMES, type Annotation } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
@@ -82,14 +82,16 @@ export function TaskRemoveButton({ number, ai, disabled, onClick }: { number: nu
 
 // The PDF popover and reading list share the editor and actions. Floating cards
 // also follow their text anchor and close when the reader clicks elsewhere.
-export function PdfNoteCard({ note, number, index, total, selected, busy, error, draft, onDraftChange, onToggle, onDismiss, onClose, onPrevious, onNext, onSave, onEditing, destination, inline = false, inTask = false, header, children }: {
+export interface PdfNoteHandle { save: () => Promise<boolean> }
+export function PdfNoteCard({ controller, note, number, index, total, selected, busy, error, draft, onDraftChange, onToggle, onDismiss, onClose, onPrevious, onNext, onSave, onEditing, destination, inline = false, inTask = false, header, children }: {
+  controller?: Ref<PdfNoteHandle>;
   destination?: 'manuscript'; inline?: boolean; inTask?: boolean; header?: ReactNode; children?: ReactNode;
   note: Pick<Annotation, 'rect' | 'comment' | 'group' | 'aiReview' | 'kind' | 'stamp'> & { id?: string }; number: number; index: number; total: number; selected: boolean; busy: boolean; error: string;
   draft: string | null; onDraftChange: (draft: string | null) => void;
   onToggle?: () => void; onDismiss: () => void; onClose?: (restoreFocus?: boolean) => void; onPrevious?: () => void; onNext?: () => void;
   onSave: (comment: string, action: 'keep' | 'close' | 'quote') => Promise<boolean>; onEditing?: (editing: boolean) => void;
 }) {
-  const card = useRef<HTMLElement>(null), saving = useRef(false);
+  const card = useRef<HTMLElement>(null), saving = useRef<Promise<boolean> | null>(null);
   const text = useRef<HTMLParagraphElement>(null), input = useRef<HTMLTextAreaElement>(null);
   const editing = draft !== null, ai = Boolean(note.aiReview);
   // A delete mark's text is an optional replacement; clearing it goes back to deleting.
@@ -114,24 +116,30 @@ export function PdfNoteCard({ note, number, index, total, selected, busy, error,
     if (inline) { onDraftChange(null); if (restoreFocus) refocus.current = true; }
     else onClose?.(restoreFocus);
   }
-  async function save(action: 'keep' | 'close' | 'quote' = 'keep', restoreFocus = true) {
-    if (busy || saving.current) return;
-    const comment = draft?.trim();
-    // A deletion needs no text: left empty, it stays a deletion.
-    if (editing && !comment && !deleting) { if (action === 'close') close(restoreFocus); return; }
-    // Adding a note to the task closes its popover, so the card itself seems
-    // to fly there; taking one out keeps it open for the copy to land on.
-    const adding = action === 'quote' && !destination && !selected;
-    const flight = action === 'quote' && !destination && !inTask && card.current ? adding ? noteToTask(card.current) : note.id ? noteFromTask(note.id, card.current) : null : null;
-    if (editing && (comment || '') !== note.comment) {
-      saving.current = true;
-      try { if (!await onSave(comment || '', action)) return; }
-      finally { saving.current = false; }
-    } else if (action === 'quote') onToggle?.();
-    flight?.();
-    if (action === 'close' || (adding && !inline)) { onDraftChange(null); close(restoreFocus); }
-    else if (editing) finish();
+  async function save(action: 'keep' | 'close' | 'quote' = 'keep', restoreFocus = true): Promise<boolean> {
+    if (saving.current) return saving.current;
+    if (busy) return false;
+    const pending = (async () => {
+      const comment = draft?.trim();
+      // A deletion needs no text: left empty, it stays a deletion.
+      if (editing && !comment && !deleting) { if (action === 'close') close(restoreFocus); return true; }
+      // Adding a note to the task closes its popover, so the card itself seems
+      // to fly there; taking one out keeps it open for the copy to land on.
+      const adding = action === 'quote' && !destination && !selected;
+      const flight = action === 'quote' && !destination && !inTask && card.current ? adding ? noteToTask(card.current) : note.id ? noteFromTask(note.id, card.current) : null : null;
+      if (editing && (comment || '') !== note.comment) {
+        if (!await onSave(comment || '', action)) return false;
+      } else if (action === 'quote') onToggle?.();
+      flight?.();
+      if (action === 'close' || (adding && !inline)) { onDraftChange(null); close(restoreFocus); }
+      else if (editing) finish();
+      return true;
+    })();
+    saving.current = pending;
+    try { return await pending; }
+    finally { saving.current = null; }
   }
+  useImperativeHandle(controller, () => ({ save: () => save('close', false) }));
   useEffect(() => {
     if (inline && !editing) return;
     const element = card.current!;

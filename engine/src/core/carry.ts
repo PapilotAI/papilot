@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { opcodes } from "./diff.ts";
 import { splitLines, textOf, withHashesAsync } from "./changes.ts";
-import { isFigure } from "./config.ts";
+import { isFigure, type Project } from "./config.ts";
 import { atomicWriteAsync, readJson } from "./files.ts";
 import { bodyFiles, readingOrder, structuralSource, type ReadingOrder } from "./tex-source.ts";
 import { revisionReaderAsync } from "./tasks.ts";
@@ -153,7 +153,7 @@ export async function provisional(
 ): Promise<Provisional> {
   const result: RenderedRound = { units: {}, sections: [], loose: [], carried: {} },
     prior = previous ? rendered(app, name, previous.number) : null,
-    project = app.project,
+    project = app.projectOf(name),
     order = new Map(next.units.map((unit, index) => [unit.id, index])),
     // Earlier change → the new change showing its comparison.
     back = new Map<string, string>(),
@@ -185,7 +185,7 @@ export async function provisional(
       // Other files, such as packages, macros read in the preamble and
       // bibliographies, can change any page.
       local = (file) => isFigure(project, file) || (file.endsWith(".tex") && body.has(file));
-      changed = await changedPassages(app, previous, earlier, pages, next, local, current);
+      changed = await changedPassages(app, project, previous, earlier, pages, next, local, current);
     }
     for (const unit of next.units) {
       const found = match(unit),
@@ -318,6 +318,7 @@ function inFloat(text: string, offset: number) {
 // document body, a figure, or numbering.
 async function changedPassages(
   app: App,
+  project: Project,
   previous: Round,
   earlier: Unit[],
   pages: Map<string, Shown>,
@@ -325,8 +326,7 @@ async function changedPassages(
   local: (file: string) => boolean,
   after: Version,
 ): Promise<Changed | null> {
-  const result: Changed = { before: { passages: [], version: null }, after: { passages: [], version: null } },
-    project = app.project;
+  const result: Changed = { before: { passages: [], version: null }, after: { passages: [], version: null } };
   for (const [side, from, to] of [
     ["before", previous.before, next.before],
     ["after", previous.after, next.after],

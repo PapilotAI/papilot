@@ -106,6 +106,23 @@ export class Attachments {
     if (files.reduce((total, file) => total + file.size, 0) > MAX_ATTACHMENT_TOTAL) throw new Error('Attachments must total 100 MB or less.');
     return files;
   }
+  // Copies have independent ownership: deleting the original task must not
+  // invalidate either the replacement's request or its unsent draft.
+  async copy(projectId: string, ids: string[], sourceTaskId: string): Promise<Attachment[]> {
+    const originals = this.resolve(projectId, ids, sourceTaskId), copies: SavedAttachment[] = [];
+    try {
+      for (const original of originals) {
+        const file: SavedAttachment = { ...original, id: randomUUID(), createdAt: Date.now() };
+        await fs.promises.copyFile(this.path(original), this.path(file), fs.constants.COPYFILE_EXCL);
+        copies.push(file);
+        this.store.db.prepare('INSERT INTO attachments VALUES(?,?,?)').run(file.id, projectId, JSON.stringify(file));
+      }
+      return copies.map(publicFile);
+    } catch (error) {
+      for (const file of copies) this.remove(file);
+      throw error;
+    }
+  }
   // Called inside the transaction that saves a message, after async feedback loading.
   claim(projectId: string, ids: string[], taskId: string) {
     this.resolve(projectId, ids, taskId);

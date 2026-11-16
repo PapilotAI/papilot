@@ -10,6 +10,8 @@ declare global {
       openEnvironment?(): Promise<void>;
       environment?(): Promise<string>;
       onOpenFolder?(listener: (folder: string) => void): () => void;
+      takeNewPaper?(): Promise<{ id: string; version: string } | null>;
+      onNewPaper?(listener: () => void): () => void;
       notify?(alert: { taskId: string | null; title: string; body: string; sound: boolean }): Promise<boolean>;
       onOpenTask?(listener: (taskId: string) => void): () => void;
     };

@@ -16,7 +16,7 @@ const marked = (note: Pick<NoteSummary, 'kind' | 'quote'>) => note.kind === 'poi
 const comment = (note: Pick<NoteSummary, 'kind' | 'comment'>) => (note.kind === 'delete' ? note.comment.trim() ? REPLACE + note.comment.trim() : DELETE : note.comment.trim()).replace(/\n/g, '\n   ');
 
 const noteWhere = (note: Annotation) => [`Page ${note.page + 1}`, note.source ? `${note.source.file} ${note.source.lines[0] === note.source.lines[1] ? `line ${note.source.lines[0]}` : `lines ${note.source.lines[0]}–${note.source.lines[1]}`}` : '', note.author ? `from ${note.author.name}` : ''].filter(Boolean).join(' · ');
-export const summarizeNotes = (notes: Annotation[]): NoteSummary[] => notes.map(note => ({ ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(note.stamp ? { stamp: note.stamp } : {}), id: note.id, where: noteWhere(note), quote: note.quote, comment: note.comment, anchor: { sources: note.source ? [{ file: note.source.file, lines: note.source.lines }] : [] } }));
+export const summarizeNotes = (notes: Annotation[]): NoteSummary[] => notes.map(note => ({ ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(note.stamp ? { stamp: note.stamp } : {}), ...(note.context?.length ? { context: note.context } : {}), id: note.id, where: noteWhere(note), quote: note.quote, comment: note.comment, anchor: { sources: note.source ? [{ file: note.source.file, lines: note.source.lines }] : [] } }));
 
 // Also recover anchors from older messages, whose locations were only text.
 export function noteAnchor(note: NoteSummary): NoteAnchor {
@@ -45,7 +45,7 @@ export function notesInstructions(notes: Annotation[], request = '', groupInstru
     // excerpt, so no line of the excerpt can close it.
     const fence = '`'.repeat(Math.max(3, ...[...(note.source?.excerpt ?? '').matchAll(/`+/g)].map(run => run[0].length + 1)));
     const source = note.source?.excerpt ? ['   LaTeX source of the marked region:', `   ${fence}latex`, ...note.source.excerpt.split('\n').map(line => '   ' + line), `   ${fence}`] : [];
-    return [`${index + 1}. ${heading({ ...note, where })}`, ...source, marked(note), `${NOTE.slice(1)}${comment(note)}`].join('\n');
+    return [`${index + 1}. ${heading({ ...note, where })}`, ...(note.context || []).map(line => `   ${line}`), ...source, marked(note), `${NOTE.slice(1)}${comment(note)}`].join('\n');
   });
   const scope = request.trim() ? ` Follow both the overall request and the notes.\n\nOverall request:\n${request.trim()}` : '';
   const groups = NOTE_GROUPS.filter(group => groupInstructions[group]?.trim() && notes.some(note => note.group && canonicalGroup(note.group) === group));
@@ -61,6 +61,8 @@ export function readNotesInstructions(text: string): NoteSummary[] | null {
     const head = block.match(/^\d+\. (.*)\n/);
     if (!head) return null;
     let rest = block.slice(head[0].length);
+    const context: string[] = [];
+    while (rest.startsWith('   Section: ')) { const end = rest.indexOf('\n'); if (end < 0) return null; context.push(rest.slice(3, end)); rest = rest.slice(end + 1); }
     const fenced = /^ {3}LaTeX source of the marked region:\n {3}(`{3,})latex\n/.exec(rest);
     if (fenced) {
       // The closing fence has the opening fence's length and is followed by
@@ -85,7 +87,7 @@ export function readNotesInstructions(text: string): NoteSummary[] | null {
     const legacy = where.endsWith(' · Color group: Blue');
     const group = legacy ? 'blue' : NOTE_GROUPS.find(group => where.endsWith(` · Color group: ${GROUP_NAMES[group]}`));
     if (group) where = where.slice(0, -` · Color group: ${legacy ? 'Blue' : GROUP_NAMES[group]}`.length);
-    notes.push({ ...(group ? { group } : {}), ...(deleting ? { kind: 'delete' as const } : point ? { kind: 'point' as const } : {}), ...(stamp ? { stamp: stamp[1] } : {}), where, quote: mark === REGION ? '' : mark.slice((point ? POINT : QUOTE).length, -1), comment: text });
+    notes.push({ ...(context.length ? { context } : {}), ...(group ? { group } : {}), ...(deleting ? { kind: 'delete' as const } : point ? { kind: 'point' as const } : {}), ...(stamp ? { stamp: stamp[1] } : {}), where, quote: mark === REGION ? '' : mark.slice((point ? POINT : QUOTE).length, -1), comment: text });
   }
   return notes.length ? notes : null;
 }

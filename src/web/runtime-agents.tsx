@@ -83,16 +83,16 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
       </li>,
   ];
   const setupGuide = <a className="runtime-agent-guide" href={`${info.repository}/blob/main/docs/guide.md#agents`} target="_blank" rel="noopener noreferrer">{t('Setup guide')}<Icon name="external" size={12}/><span className="sr-only">{t('Opens in a new tab')}</span></a>;
-  const drawer = selected && setup && <section className="runtime-agent-detail runtime-agent-compact settings-card settings-card-body" id="runtime-agent-detail" aria-labelledby="runtime-agent-title" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
+  const drawer = selected && setup && <section className={'runtime-agent-detail runtime-agent-compact settings-card settings-card-body' + (selected === 'papilot' ? ' runtime-agent-writer' : '')} id="runtime-agent-detail" aria-labelledby="runtime-agent-title" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
       <header className="runtime-agent-header">
+        {selected === 'papilot' && <BrandIcon name="papilot" size={22}/>}
         <h4 id="runtime-agent-title" tabIndex={-1}>{AGENT_NAMES[selected]}</h4>
-        {current && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
+        {current && selected !== 'papilot' && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
         <button type="button" className="icon-button" aria-label={t('Close agent details')} onClick={close}><Icon name="close" size={16}/></button>
       </header>
       {selected === 'papilot' ? <>
-        <p className="runtime-agent-note">{setup.description}</p>
-        {current && <div className="runtime-agent-overview"><RuntimeModels key={selected} models={runtime.models} connected/></div>}
         {writer ? <WriterSetup writer={writer} online={online}/> : <p className="runtime-agent-note">{t('Connect to view account, models, and usage.')}</p>}
+        {current && <details className="writer-models"><summary>{t('Available models')}<span>{runtime.models.length}</span></summary><RuntimeModels key={selected} models={runtime.models} connected/></details>}
       </> : <>
       {blocked && guidance && <section className="runtime-agent-help" aria-label={t('Set up this agent')}>
         <p className="runtime-agent-reason" title={runtime?.error || undefined}>{state === 'missing' ? checked?.ok ? t('The latest configuration check found this agent. Reconnect to refresh its live status.') : guidance.summary : state === 'signin' ? t('Sign in on the Papilot host to continue.') : runtime?.error || t('The agent could not connect. Check its setup and try again.')}</p>

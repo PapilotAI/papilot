@@ -51,7 +51,7 @@ export function texFiles(root: string) {
   }
   return files.sort();
 }
-function existingTex(root: string, file: unknown): file is string {
+export function existingTex(root: string, file: unknown): file is string {
   if (typeof file !== 'string' || !/\.tex$/i.test(file)) return false;
   try {
     safeName(file);
@@ -70,6 +70,13 @@ function sourceHead(file: string) {
     return buffer.subarray(0, fs.readSync(fd, buffer, 0, buffer.length, 0)).toString('utf8');
   } finally { fs.closeSync(fd); }
 }
+/** Whether a TeX file of the folder is a root document: one that declares its
+ *  class and begins the document, outside comments. */
+export function isRootDocument(root: string, file: unknown): file is string {
+  if (!existingTex(root, file)) return false;
+  const text = sourceHead(path.join(root, file)).replace(/(?<!\\)%[^\n]*/g, '');
+  return /\\documentclass\b/.test(text) && /\\begin\s*\{document\}/.test(text);
+}
 export async function inspectPaper(root: string) {
   let settings: Record<string, unknown> = {}, error: string | undefined;
   try { settings = await config(root); } catch (failure) { error = (failure as Error).message; }
@@ -84,10 +91,7 @@ export async function inspectPaper(root: string) {
   }
   let candidates = main ? [main] : [];
   if (!main) {
-    const files = texFiles(root), roots = files.filter(file => {
-      const text = sourceHead(path.join(root, file)).replace(/(?<!\\)%[^\n]*/g, '');
-      return /\\documentclass\b/.test(text) && /\\begin\s*\{document\}/.test(text);
-    });
+    const files = texFiles(root), roots = files.filter(file => isRootDocument(root, file));
     main = roots.length === 1 ? roots[0] : '';
     const found = new Set(roots);
     candidates = [...roots, ...files.filter(file => !found.has(file))];
@@ -105,7 +109,7 @@ function engineFor(root: string, main: string, settings: Record<string, unknown>
 }
 // Keep the author's settings, including a source folder that still contains
 // the main file; without one, the whole folder compiles.
-async function rememberMain(root: string, main: string, engine: string) {
+export async function rememberMain(root: string, main: string, engine: string) {
   const { readSettings, writeSettings } = await configModule();
   const settings = readSettings(root), folder = typeof settings.source_dir === 'string' ? settings.source_dir.replace(/\/+$/, '') : null;
   const contains = folder === '' || (folder !== null && main.startsWith(folder + '/'));
@@ -118,14 +122,14 @@ async function repositoryRoot(root: string) {
   if (top && realPath(top) !== realPath(root)) throw new Error('This folder belongs to a parent Git repository. Select its root folder, or upload a copy.');
   return top;
 }
-export async function prepareRepository(root: string) {
+export async function prepareRepository(root: string, message = 'Import paper into Papilot') {
   const top = await repositoryRoot(root);
   if (!top) await git(root, 'init', '-q');
   try { await git(root, 'rev-parse', '--verify', 'HEAD'); return; } catch { /* Empty repositories need their first snapshot. */ }
   // Do not change the author's global identity or overwrite their ignore rules.
   if (!fs.existsSync(path.join(root, '.gitignore'))) fs.writeFileSync(path.join(root, '.gitignore'), '*.aux\n*.log\n*.fls\n*.fdb_latexmk\n*.synctex.gz\n*.toc\n*.out\n.DS_Store\n');
   await git(root, 'add', '--all');
-  await git(root, '-c', 'user.name=Papilot', '-c', 'user.email=papilot@localhost', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Import paper into Papilot');
+  await git(root, '-c', 'user.name=Papilot', '-c', 'user.email=papilot@localhost', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', message);
 }
 // The desktop app opens a folder the way an editor does. A paper already in
 // Papilot opens again; any other folder with a clear main file is added as it
@@ -150,7 +154,8 @@ export async function openFolder(input: { path?: unknown; main?: unknown }, know
   await rememberMain(root, main, engineFor(root, main, (await configModule()).readSettings(root)));
   return { project: await register(root, path.basename(root)) };
 }
-export async function extractZip(buffer: Buffer, root: string) {
+// Uploaded ZIPs and Universe templates share the same path, size and file-type rules.
+async function zipEntries(buffer: Buffer, visit: (name: string, stream: NodeJS.ReadableStream) => Promise<void>) {
   if (buffer.length > MAX_BYTES) throw new Error('Choose a ZIP smaller than 64 MB.');
   const zip = await new Promise<yauzl.ZipFile>((resolve, reject) => yauzl.fromBuffer(buffer, { lazyEntries: true, strictFileNames: true, validateEntrySizes: true }, (error, value) => error ? reject(error) : resolve(value)));
   await new Promise<void>((resolve, reject) => {
@@ -163,12 +168,29 @@ export async function extractZip(buffer: Buffer, root: string) {
       const mode = (entry.externalFileAttributes >>> 16) & 0o170000;
       if (mode && mode !== 0o100000 && mode !== 0o040000) throw new Error('ZIP links and special files are not supported.');
       if (name.split('/').some(skip) || entry.fileName.endsWith('/')) { zip.readEntry(); return; }
-      const target = path.join(root, name); fs.mkdirSync(path.dirname(target), { recursive: true });
       const stream = await new Promise<NodeJS.ReadableStream>((resolve, reject) => zip.openReadStream(entry, (error, stream) => error ? reject(error) : resolve(stream)));
-      await pipeline(stream, fs.createWriteStream(target, { flags: 'wx', mode: 0o600 })); zip.readEntry();
+      await visit(name, stream); zip.readEntry();
     })().catch(fail); });
     zip.readEntry();
   });
+}
+export function extractZip(buffer: Buffer, root: string) {
+  return zipEntries(buffer, async (name, stream) => {
+    const target = path.join(root, name); fs.mkdirSync(path.dirname(target), { recursive: true });
+    await pipeline(stream, fs.createWriteStream(target, { flags: 'wx', mode: 0o600 }));
+  });
+}
+export async function readZip(buffer: Buffer) {
+  const files = new Map<string, Buffer>(), seen = new Set<string>();
+  await zipEntries(buffer, async (name, stream) => {
+    // Case-insensitive file systems would merge these into one file.
+    if (seen.has(name.toLowerCase())) throw new Error('The ZIP contains the same file twice.');
+    seen.add(name.toLowerCase());
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    files.set(name, Buffer.concat(chunks));
+  });
+  return files;
 }
 
 export class PaperImports {

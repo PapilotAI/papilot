@@ -1,5 +1,4 @@
 import type { CSSProperties } from 'react';
-import type { AgentId } from '../shared.ts';
 import papilot from './brand-icons/papilot.svg';
 import codex from './brand-icons/codex.svg';
 import claude from './brand-icons/claude.svg';
@@ -14,10 +13,14 @@ import qwen from './brand-icons/qwen.svg';
 import opencode from './brand-icons/opencode.svg';
 import git from './brand-icons/git.svg';
 import latex from './brand-icons/latex.svg';
+import openai from './brand-icons/openai.svg';
+import gemini from './brand-icons/gemini.svg';
+import openrouter from './brand-icons/openrouter.svg';
+import mistral from './brand-icons/mistral.svg';
 import './brand-icon.css';
 
-const marks = { papilot, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, deepseek, qwen, opencode, git, latex };
-export type Brand = AgentId | 'git' | 'latex';
+const marks = { papilot, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, deepseek, qwen, opencode, git, latex, openai, gemini, openrouter, mistral };
+export type Brand = keyof typeof marks;
 
 // Decorative beside a visible name. Local assets work offline and inherit theme colors.
 export function BrandIcon({ name, size = 24 }: { name: Brand; size?: number }) {

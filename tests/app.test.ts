@@ -169,7 +169,7 @@ test('skill management is available locally and writes require CSRF', async () =
 test('paper imports require CSRF before receiving files or starting repairs', async () => {
   const f = await fixture();
   try {
-    for (const route of ['/api/imports', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/build', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/repair', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/finish']) {
+    for (const route of ['/api/projects/create', '/api/imports', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/build', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/repair', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/finish']) {
       const request = { method: 'POST' as const, url: route, payload: {} };
       assert.equal((await f.local.inject({ ...request, headers: { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'wrong' } })).statusCode, 403);
     }
@@ -471,6 +471,79 @@ test('annotation subsets go to separate agents while unselected notes keep their
     assert.equal(f.store.annotation('thesis', 'second').taskId, 'subset-note-task-1');
     assert.equal(f.store.annotation('thesis', 'kimi-note').taskId, 'subset-note-task-2');
     assert.deepEqual(f.store.annotation('thesis', 'later'), notes[3]);
+  } finally { await f.close(); }
+});
+
+test('selected comments carry host-derived section context into any agent request', async () => {
+  const f = await fixture();
+  try {
+    const note: Annotation = { id: 'section-note', projectId: 'thesis', key: 'pdf', page: 2, rect: [0.1, 0.2, 0.4, 0.3], quote: 'Original text', comment: 'Clarify.', source: { file: 'main.tex', lines: [12, 14] }, createdAt: 1 };
+    f.store.saveAnnotation(note);
+    const lookups: string[] = [];
+    f.manuscripts.noteSections = async (projectId, key, notes) => {
+      assert.equal(projectId, 'thesis'); assert.equal(key, 'pdf');
+      lookups.push(...notes.map(note => note.id));
+      return { sections: [], contexts: { 'section-note': ['Section: 2 Methods > 2.1 Model'] }, unplaced: 0 };
+    };
+    const id = 'section-context-task-01';
+    const response = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id, projectId: 'thesis', title: 'Revise comments', instructions: 'Keep the notation.', agent: 'papilot', annotations: [note.id, note.id], noteContexts: { 'section-note': ['Untrusted context'] } } });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().agent, 'papilot');
+    assert.deepEqual(lookups, [note.id]);
+    const sent = f.store.items(id)[0].meta!.notes!;
+    assert.equal(sent.length, 1);
+    assert.deepEqual(sent[0].context, ['Section: 2 Methods > 2.1 Model']);
+    assert.deepEqual(sent[0].anchor?.sources, [{ file: 'main.tex', lines: [12, 14] }]);
+    const prompt = f.store.runByKey('initial-' + id)!.prompt;
+    assert.match(prompt, /Section: 2 Methods > 2\.1 Model/);
+    assert.match(prompt, /Page 3 · main\.tex lines 12–14/);
+    assert.doesNotMatch(prompt, /Untrusted context/);
+  } finally { await f.close(); }
+});
+
+test('a comment reanchored during section lookup cannot send stale ancestry and can retry', async () => {
+  const f = await fixture();
+  try {
+    const note: Annotation = { id: 'moving-note', projectId: 'thesis', key: 'old-pdf', page: 1, rect: [0.1, 0.2, 0.4, 0.3], quote: 'A claim.', comment: 'Clarify.', source: { file: 'main.tex', lines: [12, 14] }, createdAt: 1 };
+    const moved: Annotation = { ...note, key: 'new-pdf', page: 5, source: { file: 'results.tex', lines: [70, 72] } };
+    f.store.saveAnnotation(note);
+    let reanchor = true;
+    f.manuscripts.noteSections = async () => {
+      if (reanchor) {
+        reanchor = false;
+        f.store.saveAnnotation(moved);
+        return { sections: [], contexts: { [note.id]: ['Section: 1 Introduction'] }, unplaced: 0 };
+      }
+      return { sections: [], contexts: { [note.id]: ['Section: 3 Results'] }, unplaced: 0 };
+    };
+    const id = 'section-race-task-001', payload = { id, projectId: 'thesis', title: 'Revise comments', instructions: 'Clarify.', annotations: [note.id] };
+    const refused = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
+    assert.equal(refused.statusCode, 400);
+    assert.match(refused.json().error, /Refresh the manuscript/);
+    assert.equal(f.store.findTask(id), undefined);
+    assert.deepEqual(f.store.annotation('thesis', note.id), moved, 'the unsent note keeps its updated location');
+    const retried = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
+    assert.equal(retried.statusCode, 200, retried.body);
+    const sent = f.store.items(id)[0].meta!.notes![0];
+    assert.deepEqual(sent.context, ['Section: 3 Results']);
+    assert.match(sent.where, /Page 6 · results.tex lines 70–72/);
+    assert.doesNotMatch(f.store.runByKey('initial-' + id)!.prompt, /Introduction/);
+  } finally { await f.close(); }
+});
+
+test('a released note cannot reuse old section context when its current scope is unavailable', async () => {
+  const f = await fixture();
+  try {
+    const note: Annotation = { id: 'released-note', projectId: 'thesis', key: 'new-pdf', page: 5, rect: [0.1, 0.2, 0.4, 0.3], quote: 'A result.', comment: 'Clarify.', source: { file: 'results.tex', lines: [70, 72] }, context: ['Section: 1 Introduction'], createdAt: 1 };
+    f.store.saveAnnotation(note);
+    f.manuscripts.noteSections = async () => ({ sections: [], contexts: {}, unplaced: 1 });
+    const id = 'released-note-task-01';
+    const response = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id, projectId: 'thesis', title: 'Revise', instructions: 'Clarify.', annotations: [note.id] } });
+    assert.equal(response.statusCode, 200, response.body);
+    const sent = f.store.items(id)[0].meta!.notes![0];
+    assert.equal(sent.context, undefined);
+    assert.match(sent.where, /Page 6 · results.tex lines 70–72/);
+    assert.doesNotMatch(f.store.runByKey('initial-' + id)!.prompt, /Introduction/);
   } finally { await f.close(); }
 });
 

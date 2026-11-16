@@ -14,6 +14,7 @@ function checkout() {
   write(path.join(root, 'engine/package-lock.json'), { packages: { '': {}, 'node_modules/diff': { version: '9.0.0', integrity: 'sha512-c' } } });
   write(path.join(root, 'desktop/main.ts'), 'main'); write(path.join(root, 'desktop/README.md'), 'docs');
   write(path.join(root, 'scripts/desktop.mjs'), 'stage');
+  write(path.join(root, 'scripts/desktop-signing.cjs'), 'signing');
   write(path.join(root, 'scripts/desktop-dedupe.mjs'), 'dedupe');
   write(path.join(root, 'src/server/start.ts'), 'server');
   return root;
@@ -38,6 +39,7 @@ test('the shell fingerprint changes exactly when an update would need a new inst
       ['the Electron app', () => write(path.join(root, 'desktop/main.ts'), 'changed main')],
       ['a helper copied into Electron', () => write(path.join(root, 'engine/src/core/platform.mjs'), 'updated process handling')],
       ['how the installer is staged', () => write(path.join(root, 'scripts/desktop.mjs'), 'changed stage')],
+      ['how the installer is signed', () => write(path.join(root, 'scripts/desktop-signing.cjs'), 'changed signing')],
       ['how engine dependencies are deduplicated', () => write(path.join(root, 'scripts/desktop-dedupe.mjs'), 'changed dedupe')],
     ] as const) {
       const before = shellFingerprint(root, '24.11.0');

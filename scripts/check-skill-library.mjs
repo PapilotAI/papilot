@@ -39,6 +39,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true, noteAlternativeRange: 'few' } });
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/quick-notes') return json({ quickNotes: null });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: loadSkills(project.path, roots).map(listedSkill) });
   if (url.pathname.endsWith('/git')) return json(git);
   if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792]], builtAt: 1 }, annotations: [] });

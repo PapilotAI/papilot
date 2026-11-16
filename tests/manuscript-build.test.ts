@@ -16,6 +16,26 @@ const latexmk = (() => {
   } catch { return ''; }
 })();
 
+test('switching to another document stops the speculative build of the one before', async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-switch-')), root = path.join(base, 'paper');
+  const manuscripts = new Manuscripts();
+  try {
+    fs.mkdirSync(path.join(root, 'letter'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nThesis.\n\\end{document}\n');
+    fs.writeFileSync(path.join(root, 'letter/response.tex'), '\\documentclass{article}\n\\begin{document}\nLetter.\n\\end{document}\n');
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root });
+    git('init', '-q'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Paper');
+    const speculating = new AbortController();
+    (manuscripts as unknown as { speculation: Map<string, AbortController> }).speculation.set('paper', speculating);
+    await manuscripts.documentChanged('paper', root, 'letter/response.tex');
+    assert.equal(speculating.signal.aborted, true);
+  } finally {
+    // Only this paper's builds stop: stop() ends every later process of the file's tests.
+    manuscripts.forgetProject('paper');
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('manual compilation runs TeX again on unchanged sources and preserves the last PDF on failure', { skip: !latexmk && 'needs latexmk and pdflatex', timeout: 60000 }, async () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-recompile-'));
   const root = path.join(base, 'paper'), bin = path.join(base, 'bin');

@@ -148,7 +148,7 @@ try {
     return { sandbox: preferences.sandbox, nodeIntegration: preferences.nodeIntegration, contextIsolation: preferences.contextIsolation };
   });
   assert.deepEqual(windowOptions, { sandbox: true, nodeIntegration: false, contextIsolation: true });
-  // Like an editor, Open a folder goes straight to the system picker and the
+  // Like an editor, Open paper… goes straight to the system picker and the
   // folder opens as a paper in place: nothing is typed, uploaded or copied.
   const localPaper = path.join(data, 'local-paper'); fs.mkdirSync(localPaper);
   fs.writeFileSync(path.join(localPaper, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nLocal paper.\n\\end{document}\n');
@@ -164,13 +164,13 @@ try {
     };
   }, folder);
   const paperMenu = page.getByRole('button', { name: /^Paper:|^论文：/ });
-  const openFromSidebar = async () => { await paperMenu.click(); await page.getByRole('menuitem', { name: /^(Open a folder|打开文件夹)$/ }).click(); };
+  const openFromSidebar = async () => { await paperMenu.click(); await page.getByRole('menuitem', { name: /^(Open paper…|打开论文…)$/ }).click(); };
   const openFromFileMenu = () => application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('open-folder').click());
   const opened = name => expect(page.getByRole('button', { name: new RegExp(`^(Paper: |论文：)${name}$`) })).toBeVisible({ timeout: 30000 });
   await pick(null);
   await openFromSidebar();
   await expect.poll(() => application.evaluate(() => globalThis.pickerCalls)).toBe(1);
-  assert.equal(await page.getByRole('dialog').count(), 0, 'Open a folder shows no import dialog');
+  assert.equal(await page.getByRole('dialog').count(), 0, 'Open paper… shows no import dialog');
   assert.equal(openRequests.length, 0, 'Canceling the picker opens nothing');
   await pick(localPaper);
   await openFromSidebar();
@@ -178,7 +178,7 @@ try {
   assert.deepEqual(openRequests, [{ route: '/api/projects/open', body: { path: localPaper } }]);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(localPaper, '.git/papilot/settings.json'), 'utf8')), { main: 'main.tex', engine: 'pdflatex', source_dir: '' });
   assert.ok(fs.existsSync(path.join(localPaper, '.git')), 'The opened folder gets its version history in place');
-  // File › Open Folder… asks for the main file only when several could be it.
+  // File › Open Paper… asks for the main file only when several could be it.
   const twoMains = path.join(data, 'two-mains'); fs.mkdirSync(twoMains);
   for (const name of ['a.tex', 'b.tex']) fs.writeFileSync(path.join(twoMains, name), '\\documentclass{article}\n\\begin{document}\nPaper.\n\\end{document}\n');
   await pick(twoMains);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { parseAiReview, reviewPrompt, type ReviewSnapshot } from '../src/server/ai-review.ts';
+import { parseAiReview, reviewPrompt, saveReviewText, type ReviewSnapshot } from '../src/server/ai-review.ts';
 import { Manuscripts } from '../src/server/manuscript.ts';
 
 const snapshot: ReviewSnapshot = { key: 'original-pdf', lines: [
@@ -19,8 +19,41 @@ test('review findings use saved PDF geometry and remove identical duplicate note
   assert.equal(result.notes.length, 1);
   assert.deepEqual(result.notes[0], { page: 0, rect: [0.1, 0.1, 0.8, 0.15], rects: snapshot.lines.slice(0, 2).map(line => line.rect), quote: 'The method always converges. No assumptions are required.', comment: finding.comment });
   assert.equal(parseAiReview('```json\n' + reply([]) + '\n```', snapshot).notes.length, 0);
-  assert.match(reviewPrompt('Check claims.', snapshot), /p1-l1/);
-  assert.doesNotMatch(reviewPrompt('', snapshot), /rect/);
+});
+
+test('the PDF text reaches the agent as one ID and line per row in the task copy, whatever its length', async () => {
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-text-'));
+  try {
+    const file = await saveReviewText(worktree, { ...snapshot, lines: [...snapshot.lines, { id: 'p2-l2', page: 1, text: 'A line\r\nbroken by the extractor', rect: [0, 0, 1, 1] }] });
+    assert.equal(path.dirname(file), worktree);
+    assert.equal(fs.readFileSync(file, 'utf8'), 'p1-l1\tThe method always converges.\np1-l2\tNo assumptions are required.\np2-l1\tExperiments\np2-l2\tA line broken by the extractor\n');
+    // A thesis with more PDF text than Codex accepts in one message (1 MiB).
+    const thesis: ReviewSnapshot = { key: 'thesis', pdf: '/reviews/thesis.pdf', lines: Array.from({ length: 16000 }, (_, index) => ({ id: `p${Math.floor(index / 50) + 1}-l${index % 50 + 1}`, page: Math.floor(index / 50), text: `Sentence ${index} of the related work, its supporting evidence and the comparison with earlier methods.`, rect: [0, 0, 1, 1] })) };
+    assert.ok(thesis.lines.reduce((sum, line) => sum + line.text.length, 0) > 1048576);
+    const prompt = reviewPrompt('Focus on the related work.', thesis, await saveReviewText(worktree, thesis));
+    assert.ok(prompt.length < 1000, 'The prompt names the file instead of carrying the text');
+    assert.ok(prompt.startsWith('Focus on the related work.'));
+    assert.ok(prompt.includes(file) && prompt.includes('/reviews/thesis.pdf'));
+    assert.equal(fs.readFileSync(file, 'utf8').split('\n').at(-2), `p320-l50\t${thesis.lines.at(-1)!.text}`);
+    assert.match(reviewPrompt('', snapshot, file), /^Review this manuscript and suggest improvements\./);
+    assert.doesNotMatch(reviewPrompt('', snapshot, file), /PDF itself/);
+  } finally { fs.rmSync(worktree, { recursive: true, force: true }); }
+});
+
+test('unchanged review text keeps its inode and mtime, and different text replaces the content', async () => {
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-replace-'));
+  try {
+    const file = await saveReviewText(worktree, snapshot);
+    // A fixed old timestamp makes a rewrite observable without sleeps.
+    fs.utimesSync(file, 1000000000, 1000000000);
+    const before = fs.statSync(file);
+    await saveReviewText(worktree, snapshot);
+    const unchanged = fs.statSync(file);
+    assert.equal(unchanged.ino, before.ino);
+    assert.equal(unchanged.mtimeMs, before.mtimeMs);
+    await saveReviewText(worktree, { ...snapshot, lines: [{ ...snapshot.lines[0], text: 'A changed claim.' }] });
+    assert.equal(fs.readFileSync(file, 'utf8'), 'p1-l1\tA changed claim.\n');
+  } finally { fs.rmSync(worktree, { recursive: true, force: true }); }
 });
 
 test('malformed, nonexistent, backwards and cross-page anchors are rejected as one batch', () => {
@@ -93,9 +126,8 @@ test('PDF extraction and agent input preserve manuscripts beyond 180,000 charact
     assert.ok(captured.lines.reduce((sum, line) => sum + line.text.length, 0) > 180000);
     assert.equal(captured.lines.length, 3000);
     assert.match(captured.lines.at(-1)!.text, /^50-60:/);
-    const prompt = reviewPrompt('Review chapter 50 in detail.', { ...captured, pdf });
-    assert.ok(prompt.includes(captured.lines.at(-1)!.text));
-    assert.ok(prompt.includes('Review chapter 50 in detail.'));
-    assert.ok(prompt.includes(pdf));
+    const text = fs.readFileSync(await saveReviewText(root, captured), 'utf8').split('\n');
+    assert.equal(text.length, 3001);
+    assert.equal(text.at(-2), `${captured.lines.at(-1)!.id}\t${captured.lines.at(-1)!.text}`);
   } finally { document.destroy(); fs.rmSync(root, { recursive: true, force: true }); }
 });

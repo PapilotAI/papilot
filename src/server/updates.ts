@@ -2,12 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { devRevision, newerVersion, readJson, stableVersion, writeJson } from '../../bin/installation.mjs';
+import { devRevision, managedInstall, newerVersion, readJson, stableVersion, writeJson } from '../../bin/installation.mjs';
 import { importLoader } from '../../bin/agent-paths.mjs';
 import { download, installLayer, installRelease, loaderFor, npmCli, type DesktopLayer } from './update-install.ts';
 import type { UpdateChannel, UpdateStatus } from '../shared.ts';
 
 const activePhases = new Set(['installing', 'waiting', 'restarting']);
+const managedError = (method: 'nix' | 'managed') => new Error(method === 'nix' ? 'Updates are managed by Nix.' : 'Updates are managed outside Papilot.');
 export const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 async function releaseInfo(url: string, fetcher: typeof fetch, limit = 256000) {
   const response = await fetcher(url, { signal: AbortSignal.timeout(10000), redirect: 'error', headers: { Accept: 'application/json', 'User-Agent': 'Papilot' } });
@@ -100,12 +101,13 @@ export class Updates {
     let supported = options.desktop ? this.layers : options.supported ?? true;
     if (!options.desktop && options.supported === undefined) try { npmCli(); } catch { supported = false; }
     this.state = { currentVersion: options.version, latestVersion: null, phase: 'idle', checkedAt: null, error: null, canUpdate: supported };
-    const saved = process.env.PAPILOT_INSTALL_METHOD === 'nix' || options.desktop && !this.layers ? null : readJson(this.file);
+    const saved = managedInstall() || options.desktop && !this.layers ? null : readJson(this.file);
     if (saved && ['failed', 'updated', 'installing', 'waiting', 'restarting'].includes(saved.phase)) this.state = { ...this.state, ...saved, currentVersion: options.version, canUpdate: supported };
     if (saved && activePhases.has(saved.phase) && !alive(saved.pid)) this.change({ phase: 'failed', checkedAt: Date.now(), error: 'The update was interrupted. Your current installation is still available; retry the update.' });
   }
   snapshot(): UpdateStatus {
-    if (process.env.PAPILOT_INSTALL_METHOD === 'nix') return { currentVersion: this.options.version, latestVersion: null, phase: 'idle', checkedAt: null, error: null, canUpdate: false, packageManager: 'nix' };
+    const method = managedInstall();
+    if (method) return { currentVersion: this.options.version, latestVersion: null, phase: 'idle', checkedAt: null, error: null, canUpdate: false, packageManager: method };
     const saved = readJson(this.file);
     if (saved && activePhases.has(this.state.phase) && ['updated', 'failed'].includes(saved.phase)) this.state = { ...this.state, ...saved, currentVersion: this.options.version };
     const { currentVersion, latestVersion, phase, checkedAt, error, canUpdate } = this.state, desktop = this.options.desktop;
@@ -124,7 +126,7 @@ export class Updates {
     };
   }
   start() {
-    if (process.env.PAPILOT_INSTALL_METHOD === 'nix') return;
+    if (managedInstall()) return;
     if (this.state.phase !== 'failed') void this.check();
     this.timer = setInterval(() => {
       if (this.state.phase === 'waiting') void this.activate();
@@ -137,7 +139,8 @@ export class Updates {
     writeJson(this.file, { ...this.state, pid: process.pid });
   }
   setChannel(channel: unknown) {
-    if (process.env.PAPILOT_INSTALL_METHOD === 'nix') throw new Error('Updates are managed by Nix.');
+    const method = managedInstall();
+    if (method) throw managedError(method);
     if (this.options.desktop && !this.layers) throw new Error('Download desktop updates from GitHub Releases.');
     if (channel !== 'stable' && channel !== 'dev') throw new Error('Choose a valid update channel.');
     if (activePhases.has(this.state.phase)) throw new Error('Wait for the current update to finish before changing channels.');
@@ -150,7 +153,7 @@ export class Updates {
     return this.check();
   }
   check(): Promise<UpdateStatus> {
-    if (process.env.PAPILOT_INSTALL_METHOD === 'nix') return Promise.resolve(this.snapshot());
+    if (managedInstall()) return Promise.resolve(this.snapshot());
     if (this.checking) return this.checking;
     if (activePhases.has(this.state.phase)) return Promise.resolve(this.snapshot());
     this.change({ phase: 'checking' });
@@ -199,7 +202,8 @@ export class Updates {
     return (this.options.installLayer || installLayer)(this.options.data, version, release.layer, bundle);
   }
   install(version: unknown) {
-    if (process.env.PAPILOT_INSTALL_METHOD === 'nix') throw new Error('Updates are managed by Nix.');
+    const method = managedInstall();
+    if (method) throw managedError(method);
     if (this.options.desktop && !this.layers) throw new Error('Download desktop updates from GitHub Releases.');
     if (activePhases.has(this.state.phase)) return this.snapshot();
     if (this.options.desktop && this.downloadUrl) throw new Error('Download desktop updates from GitHub Releases.');

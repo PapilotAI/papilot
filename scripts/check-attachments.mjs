@@ -32,6 +32,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname === '/api/updates') return json({});
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [{ id: 'polish', name: 'Polish', source: 'builtin', description: 'Polish', hint: '' }] });
   if (url.pathname.endsWith('/git')) return json(git);
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });

@@ -1,4 +1,6 @@
 {
+  "API key": "API 密钥",
+  "Sign in with a subscription or add an API key.": "使用订阅登录，或添加 API 密钥。",
   "Preparing option comparisons…": "正在准备备选方案的对比…",
   "After": "修改后",
   "Before": "修改前",
@@ -220,5 +222,7 @@
   "{n} files": "{n} 个文件",
   "{n} place in the paper": "论文中 {n} 处",
   "{n} places in the paper": "论文中 {n} 处",
-  "Add to chat": "添加到聊天"
+  "Add to chat": "添加到聊天",
+  "Add to task": "加入任务",
+  "Includes subsections": "包含子章节"
 }

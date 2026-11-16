@@ -6,11 +6,12 @@ import { t } from './i18n.ts';
 type Settings = Pick<Task, 'model' | 'effort' | 'serviceTier'>;
 const settingsOf = (task: Settings): Settings => ({ model: task.model, effort: task.effort, serviceTier: task.serviceTier });
 
-export function TaskModelPicker({ task, runtime, disabled, reconnecting, onReconnect, save, onSaving, refresh, reportError, permissions }: {
+export function TaskModelPicker({ task, runtime, disabled, reconnecting, onReconnect, save, onSaving, refresh, reportError, permissions, restart }: {
   task: Task; runtime?: RuntimeStatus; disabled: boolean; reconnecting: boolean; onReconnect: () => void;
   save: (settings: { model: string; effort: string; serviceTier?: string }) => Promise<Task>;
   onSaving: (saving: boolean) => void; refresh: () => void; reportError: (error: unknown) => void;
   permissions?: ReactNode;
+  restart?: ReactNode;
 }) {
   const [choice, setChoice] = useState(() => settingsOf(task));
   const current = useRef(choice), saved = useRef(choice), pending = useRef(0), queue = useRef(Promise.resolve());
@@ -33,7 +34,7 @@ export function TaskModelPicker({ task, runtime, disabled, reconnecting, onRecon
     });
   }
   return <AgentPicker agents={[{ value: agent, label: AGENT_NAMES[agent], runtime }]} agent={agent}
-    permissions={permissions}
+    permissions={<>{permissions}{restart}</>}
     permissionMode={task.mode !== 'review' ? task.permissions || 'workspace' : undefined}
     allowUnknownDefault={!choice.model}
     model={choice.model || ''} effort={choice.effort || ''} fast={Boolean(choice.serviceTier && choice.serviceTier !== 'default')}

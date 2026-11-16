@@ -334,7 +334,7 @@ export class Publisher {
     if (this.following.has(name) || this.guesses.has(name)) this.prefetch(name);
   }
   private async follow(name: string, signal: AbortSignal, replace: () => void) {
-    const app = this.app, task = app.tasks.get(name), project = app.project;
+    const app = this.app, task = app.tasks.get(name), project = app.projectOf(task);
     if (!fs.existsSync(task.worktree)) return replace();
     // The files as the turn's end will leave them: rejects queued meanwhile
     // reverted.
@@ -655,9 +655,8 @@ export class Publisher {
    *  a decision either comes before the round, or applies to it. */
   async insertNow(job: Pick<Job, "id" | "task">): Promise<{ result: JobResult } | { round: Round }> {
     const app = this.app,
-      name = job.task,
-      project = app.project;
-    const task = app.tasks.get(name);
+      name = job.task;
+    const task = app.tasks.get(name), project = app.projectOf(task);
     if (!fs.existsSync(task.worktree))
       throw new PublishError(
         `The task worktree ${task.worktree} no longer exists.`,
@@ -777,7 +776,7 @@ export class Publisher {
   private async renderComparison(job: Pick<Job, "id" | "task">, round: Round): Promise<JobResult> {
     const app = this.app,
       name = job.task,
-      project = app.project,
+      project = app.projectOf(name),
       { before, after, units } = round,
       superseded = { outcome: "published" as const, round: round.number, changes: units.length, superseded: true };
     // A newer round needs its own render; this one would only be replaced.

@@ -2,6 +2,8 @@ import { Worker } from 'node:worker_threads';
 import type { Annotation } from '../shared.ts';
 import type { AnnotationPlacement } from './annotation-placement.ts';
 import type { Located, MarkRequest } from './note-location.ts';
+import type { NoteSections } from './note-sections.ts';
+import type { CompiledPaper } from './writer/build-map.ts';
 import { ENGINE } from './paths.ts';
 
 /** Reads notes' places on manuscript PDFs in a worker thread. Opening a long
@@ -25,6 +27,10 @@ export class PdfReader {
    *  a note whose place is not proven. */
   place(current: string, notes: { note: Annotation; previous: string }[]): Promise<(AnnotationPlacement | null)[]> {
     return notes.length ? this.call('place', { current, notes }) : Promise.resolve([]);
+  }
+
+  sections(compiled: CompiledPaper, key: string, notes: Annotation[]): Promise<NoteSections> {
+    return this.call('sections', { compiled, key, notes });
   }
 
   private call<T>(op: string, args: unknown): Promise<T> {

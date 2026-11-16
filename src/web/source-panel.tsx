@@ -463,6 +463,8 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
     open, follow, close, editing: Boolean(edit),
     /** Opens a file at lines, with `marks` within them standing out and flashing. */
     reveal: (file: string, lines: Lines, marks: Lines[]) => void openAt(file, { lines, mark: marking, caret: true, marks, flash: marks }),
+    /** Opens a file at its start, or keeps the one open where it is. */
+    openFile: (file: string) => { if (latest.current?.file?.file !== file || latest.current.state !== 'ready') void openAt(file, { lines: [0, 1], mark: false, caret: true }); },
     passage: edit?.anchor ? { page: edit.anchor.page, marks: edit.anchor.marks } as PdfPassage : undefined,
     // The tab names the file, with a dot while there are unsaved changes.
     tab: edit ? { file: edit.file?.file || '', name, dirty, saving: Boolean(edit.saving) } : null,

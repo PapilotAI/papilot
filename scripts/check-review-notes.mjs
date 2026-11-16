@@ -27,6 +27,7 @@ await page.route('**/api/**', route => {
   if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
   if (url.pathname.endsWith('/manuscript')) return route.fulfill({ json: { annotations: [], build: { status: 'idle' }, git: { files: [] } } });
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
+  if (url.pathname.endsWith('/files')) return route.fulfill({ json: { document: null, files: [] } });
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: [{ id: 'reply', taskId: task.id, type: 'assistant', text: markdown, createdAt: 1 }] } });
   if (url.pathname.endsWith('/messages')) {

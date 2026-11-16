@@ -22,6 +22,11 @@ function deferred<T>() {
   return { promise, resolve };
 }
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+// An AI review saves its PDF text in the task copy, so its tasks need a real folder.
+const copies = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-copies-'));
+test.after(() => fs.rmSync(copies, { recursive: true, force: true }));
+const reviewCopy = () => fs.mkdtempSync(path.join(copies, 'task-'));
+const savedText = (worktree: string) => fs.readFileSync(path.join(worktree, '.papilot-pdf-lines.txt'), 'utf8');
 // The preparation a new task started, while it is still in progress.
 const preparation = (f: { workspace: Workspace }, id: string) => {
   const job = (f.workspace as any).preparing.get(id) as Promise<Task> | undefined;
@@ -129,6 +134,7 @@ const summary = { state: 'reviewing', round: 1, counts: { pending: 1 } };
 
 class FakeCodex extends EventEmitter {
   permissionOptions = Codex.prototype.permissionOptions;
+  closeThread = Codex.prototype.closeThread;
   async taskPermissionConfig(value: string, _cwd: string) {
     return { thread: { sandbox: value === 'full' ? 'danger-full-access' : 'workspace-write', approvalPolicy: value === 'full' ? 'never' : 'on-request' },
       turn: { sandboxPolicy: { type: value === 'full' ? 'dangerFullAccess' : 'workspaceWrite' }, approvalPolicy: value === 'full' ? 'never' : 'on-request' } };
@@ -1544,6 +1550,24 @@ test('deletion rejects active, queued, building, uncertain, and reserved tasks w
   });
 });
 
+test('deletion ends the task conversation before the engine removes its worktree, even when that fails', async () => {
+  for (const fails of [false, true]) {
+    const order: string[] = [];
+    const f = fixture(async (method, route) => { order.push(route); return deletionReview(method, route); });
+    try {
+      f.codex.handler = async method => {
+        order.push(method);
+        if (fails) throw new Error('Codex is not connected.');
+        return {};
+      };
+      assert.deepEqual(await f.workspace.deleteTask(f.task.id), { ok: true });
+      assert.deepEqual(order, [...fails ? ['thread/archive', 'thread/unsubscribe'] : ['thread/archive'], '/api/tasks/p-task/state', '/api/tasks/p-task/finish']);
+      assert.deepEqual(f.codex.calls.find(call => call.method === 'thread/archive')?.params, { threadId: 'thread' });
+      assert.equal(f.store.tasks().length, 0);
+    } finally { f.close(); }
+  }
+});
+
 test('deletion waits for every pending comment and then removes only the selected task', async () => {
   const first = deferred<void>(), second = deferred<void>();
   const f = fixture(deletionReview);
@@ -1723,6 +1747,44 @@ test('real engine deletion removes one temporary worktree while preserving accep
     assert.equal(closedState.closed, true);
     assert.equal(f.store.tasks().length, 0);
   } finally { f?.close(); await engine.close(); await disk.close(); }
+});
+
+test('a task folder another program keeps open is removed when deletion is retried', async () => {
+  const { Fixture, holdFolder } = await import(new URL('../engine/tests/ts/helpers.ts', import.meta.url).href);
+  const { createServer: createReviewServer } = await import(new URL('../engine/src/server.ts', import.meta.url).href);
+  const disk = new Fixture();
+  const app = disk.app();
+  const engine = createReviewServer(app);
+  let f: ReturnType<typeof fixture> | undefined, release = async () => {};
+  try {
+    const target = app.tasks.create('p-task', 'Remove this task', [], ['paper']);
+    const other = app.tasks.create('p-other', 'Keep this task', [], ['paper']);
+    const manuscript = disk.read('paper/main.tex'), head = app.repo.rev('HEAD');
+    app.url = await engine.listen({ port: 0, host: '127.0.0.1' });
+    f = fixture(async (method, route, body) => {
+      const response = await fetch(app.url + route, { method, headers: { 'Content-Type': 'application/json', 'X-Review-Token': app.csrf }, ...(method === 'POST' ? { body: JSON.stringify(body) } : {}) });
+      const value = await response.json();
+      if (!response.ok) throw new Error(value.error);
+      return value;
+    });
+    f.store.saveProject({ id: f.task.projectId, name: 'Temporary paper', path: disk.root, createdAt: 1 });
+    f.store.updateTask(f.task.id, { worktree: target.worktree });
+    release = await holdFolder(target.worktree);
+    await assert.rejects(f.workspace.deleteTask(f.task.id), /Could not delete the task folder/);
+    const stuck = f.store.task(f.task.id);
+    assert.equal(stuck.status, 'deleting');
+    assert.match(stuck.error!, /^Deletion has not been confirmed\. Retry deletion to finish cleanup\. Could not delete the task folder .+ If another program is using it, close that program and try again\./);
+    assert.equal(app.tasks.get(target.name).closed, null);
+    await release();
+    assert.deepEqual(await f.workspace.deleteTask(f.task.id), { ok: true });
+    assert.equal(fs.existsSync(target.worktree), false);
+    assert.equal(fs.existsSync(path.join(disk.root, '.git/worktrees', target.name)), false);
+    assert.equal(f.store.tasks().length, 0);
+    assert.equal(fs.existsSync(other.worktree), true);
+    assert.equal(app.tasks.get(other.name).closed, null);
+    assert.equal(disk.read('paper/main.tex'), manuscript);
+    assert.equal(app.repo.rev('HEAD'), head);
+  } finally { await release(); f?.close(); await engine.close(); await disk.close(); }
 });
 
 test('Codex models list their reasoning efforts, and a task runs every turn at its effort', async () => {
@@ -1991,6 +2053,7 @@ test('an agent writes a commit message from the chosen changes, in a read-only t
     const replies = ['```\nTighten the opening sentence.\n```', 'Shorten the opening sentence'];
     f.codex.handler = async method => {
       if (method === 'thread/start') return { thread: { id: 'commit-thread' } };
+      if (method !== 'turn/start') return {};
       const text = replies.shift();
       setImmediate(() => {
         f.codex.emit('notification', { method: 'item/completed', params: { threadId: 'commit-thread', turnId: 'commit-turn', item: { id: 'reply', type: 'agentMessage', text } } });
@@ -2019,6 +2082,41 @@ test('an agent writes a commit message from the chosen changes, in a read-only t
     f.codex.ready = false;
     await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex']), /Sign in to an agent, such as Codex/);
   } finally { f.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a helper turn lets go of its Codex thread and removes its folder once Codex has closed the thread', async () => {
+  const f = fixture();
+  try {
+    f.codex.ready = true;
+    let folder = '', fail = false;
+    const closedWithFolder: boolean[] = [];
+    f.codex.handler = async (method, params) => {
+      if (method === 'thread/start') { folder = params.cwd; return { thread: { id: 'helper-thread' } }; }
+      if (method === 'turn/start') {
+        setImmediate(() => {
+          if (!fail) f.codex.emit('notification', { method: 'item/completed', params: { threadId: 'helper-thread', turnId: 'helper-turn', item: { id: 'reply', type: 'agentMessage', text: 'Tighten the opening' } } });
+          f.codex.emit('notification', { method: 'turn/completed', params: { threadId: 'helper-thread', turn: { id: 'helper-turn', status: fail ? 'failed' : 'completed', ...(fail ? { error: { message: 'The model is overloaded.' } } : {}) } } });
+        });
+        return { turn: { id: 'helper-turn' } };
+      }
+      // Codex stops the MCP servers it runs in the thread's folder, then reports the thread closed.
+      if (method === 'thread/unsubscribe') {
+        setTimeout(() => { closedWithFolder.push(fs.existsSync(folder)); f.codex.emit('notification', { method: 'thread/closed', params: { threadId: 'helper-thread' } }); }, 20);
+        return { status: 'unsubscribed' };
+      }
+      return {};
+    };
+    const helper = () => (f.workspace as any).oneOff('codex', { cwd: '/unused', sandbox: 'read-only', instructions: 'Write a commit message.', prompt: 'Write.', timeout: 10000, what: 'write a commit message' });
+    assert.equal(await helper(), 'Tighten the opening');
+    assert.equal(f.codex.calls.find(call => call.method === 'thread/start')!.params.config.thread_unload_delay_secs, 0, 'the thread unloads as soon as it is released');
+    assert.deepEqual(f.codex.calls.map(call => call.method), ['thread/start', 'turn/start', 'thread/unsubscribe']);
+    assert.deepEqual(closedWithFolder, [true]); assert.equal(fs.existsSync(folder), false);
+    // A failed turn lets go of its thread as well.
+    fail = true; f.codex.calls.length = 0;
+    await assert.rejects(helper(), /The model is overloaded/);
+    assert.deepEqual(f.codex.calls.map(call => call.method), ['thread/start', 'turn/start', 'thread/unsubscribe']);
+    assert.deepEqual(closedWithFolder, [true, true]); assert.equal(fs.existsSync(folder), false);
+  } finally { f.close(); }
 });
 
 test('a build the agent broke goes back to it once, and its instructions name what the review covers', async () => {
@@ -2499,7 +2597,8 @@ for (const asynchronous of [false, true]) test(`agents with ${asynchronous ? 'as
 test('AI review uses normal agent tools and approvals, saves PDF notes, and never publishes or delivers edits', async () => {
   const f = fixture();
   try {
-    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf-original' }, threadId: null });
+    const worktree = reviewCopy();
+    f.store.updateTask(f.task.id, { mode: 'review', worktree, aiReview: { key: 'pdf-original' }, threadId: null });
     f.store.saveReviewInput(f.task.id, { key: 'pdf-original', lines: [{ id: 'p1-l1', page: 0, text: 'This always holds.', rect: [0.1, 0.2, 0.7, 0.25] }] });
     f.codex.ready = true;
     await f.workspace.enqueue(f.task.id, 'Check the assumptions.', 'ai-review-run');
@@ -2510,7 +2609,11 @@ test('AI review uses normal agent tools and approvals, saves PDF notes, and neve
     assert.equal(start.config.web_search, 'live');
     assert.equal(start.dynamicTools, undefined);
     assert.match(start.developerInstructions, /Do not edit the manuscript/);
-    assert.match(f.codex.calls.find(call => call.method === 'turn/start')!.params.input[0].text, /p1-l1/);
+    // A review started by an older Papilot, without a saved text file, gets one.
+    assert.equal(savedText(worktree), 'p1-l1\tThis always holds.\n');
+    const request = f.codex.calls.find(call => call.method === 'turn/start')!.params.input[0].text;
+    assert.ok(request.includes(path.join(worktree, '.papilot-pdf-lines.txt')));
+    assert.doesNotMatch(request, /This always holds/);
     (f.workspace as any).serverRequest({ id: 100, method: 'item/fileChange/requestApproval', params: { threadId: 'thread', turnId: 'turn-new' } });
     assert.equal(f.codex.rejections.length, 0);
     assert.equal(f.workspace.requests.size, 1);
@@ -2543,7 +2646,7 @@ test('a review containing a 14-line suggestion completes and retains every findi
   const f = fixture();
   try {
     const lines = Array.from({ length: 20 }, (_, index) => ({ id: `p13-l${index + 1}`, page: 12, text: `Line ${index + 1}`, rect: [0.1, index / 30, 0.8, (index + 1) / 30] as [number, number, number, number] }));
-    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf' } });
+    f.store.updateTask(f.task.id, { mode: 'review', worktree: reviewCopy(), aiReview: { key: 'pdf' } });
     f.store.saveReviewInput(f.task.id, { key: 'pdf', lines });
     f.codex.ready = true;
     await f.workspace.enqueue(f.task.id, 'Review.', 'long-passage-review');
@@ -2567,7 +2670,7 @@ test('a review containing a 14-line suggestion completes and retains every findi
 test('an invalid AI response creates no partial notes and a follow-up can recover', async () => {
   const f = fixture();
   try {
-    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf' } });
+    f.store.updateTask(f.task.id, { mode: 'review', worktree: reviewCopy(), aiReview: { key: 'pdf' } });
     f.store.saveReviewInput(f.task.id, { key: 'pdf', lines: [{ id: 'p1-l1', page: 0, text: 'A claim.', rect: [0, 0, 1, 1] }] });
     f.codex.ready = true;
     const finish = async (text: string, key: string) => {
@@ -2600,17 +2703,19 @@ test('reconciling an AI review recovers annotations from the completed thread re
 });
 
 test('creating an AI review skill task persists its snapshot and queues review-only instructions once', async () => {
-  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/isolated-review', deferred: true } : {});
+  const worktree = reviewCopy();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree, deferred: true } : {});
   try {
     const reviewInput = { key: 'pdf-at-start', lines: [{ id: 'p1-l1', page: 0, text: 'Read this claim.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async () => reviewInput };
     assert.equal((await f.workspace.createTask(input)).status, 'preparing');
     const created = await f.workspace.prepareTask(input.id);
     assert.equal(created.mode, 'review');
-    assert.equal(created.worktree, '/isolated-review');
+    assert.equal(created.worktree, worktree);
     assert.equal(created.status, 'queued');
     assert.deepEqual(f.store.reviewInput(created.id), reviewInput);
-    assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /Read this claim/);
+    assert.equal(savedText(worktree), 'p1-l1\tRead this claim.\n');
+    assert.ok(f.store.runs().find(run => run.taskId === created.id)!.prompt.includes(path.join(worktree, '.papilot-pdf-lines.txt')));
     assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /do not edit, rewrite, commit, or apply changes/i);
     assert.equal(f.store.items(created.id)[0].meta?.skill?.id, 'ai-review');
     assert.equal(f.store.items(created.id)[0].text, '');
@@ -2627,7 +2732,8 @@ test('creating an AI review skill task persists its snapshot and queues review-o
 });
 
 test('an AI review whose manuscript copy cannot be read discards the copy, so a retry copies it again', async () => {
-  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : route.endsWith('/finish') ? { task: 'p-ai-review-retry-task', finished: true } : {});
+  const worktree = reviewCopy();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree, deferred: true } : route.endsWith('/finish') ? { task: 'p-ai-review-retry-task', finished: true } : {});
   try {
     const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The fixed copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     let fail = true;
@@ -2643,25 +2749,78 @@ test('an AI review whose manuscript copy cannot be read discards the copy, so a 
     await f.workspace.createTask(input);
     const created = await preparation(f, input.id);
     assert.equal(created.aiReview?.key, 'task-pdf');
-    assert.match(f.store.runs().find(run => run.taskId === input.id)!.prompt, /The fixed copy/);
+    assert.equal(savedText(worktree), 'p1-l1\tThe fixed copy.\n');
     assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 2);
   } finally { f.close(); }
 });
 
 test('AI review captures the task worktree before enqueueing and retries keep that snapshot', async () => {
-  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : {});
+  const worktree = reviewCopy();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree, deferred: true } : {});
   try {
     const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The task copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     let calls = 0;
-    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async (worktree: string) => { calls++; assert.equal(worktree, '/task-copy'); return captured; } };
+    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async (copy: string) => { calls++; assert.equal(copy, worktree); return captured; } };
     await f.workspace.createTask(input);
     const created = await f.workspace.prepareTask(input.id);
     assert.equal(created.aiReview?.key, 'task-pdf');
     assert.deepEqual(f.store.reviewInput(created.id), captured);
-    assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /The task copy/);
+    assert.equal(savedText(worktree), 'p1-l1\tThe task copy.\n');
     await f.workspace.createTask(input); assert.equal(calls, 1);
     f.store.saveAnnotation({ id: 'private-finding', projectId: f.task.projectId, key: 'task-pdf', page: 0, rect: [0, 0, 1, 1], comment: 'Clarify.', quote: 'Claim', source: null, createdAt: 1, aiReview: { taskId: created.id, agent: 'codex' } });
     await assert.rejects(f.workspace.createTask({ id: 'send-private-finding', projectId: f.task.projectId, title: 'Edit', instructions: '', annotations: ['private-finding'] }), /no longer available/);
+  } finally { f.close(); }
+});
+
+test('a task prepared while the paper switched documents is created on the document it was started on', async () => {
+  let asks = 0;
+  const f = fixture(async (_method, route, body) => {
+    if (route !== '/api/tasks') return {};
+    // The paper switches while the engine is still making another copy.
+    if (++asks === 1) { f.store.updateTask('switched-document-task', { document: 'thesis/main.tex' }); throw new Error('Task "p-switched-document-task" is being created. Try again in a moment.'); }
+    return { worktree: '/task-copy', deferred: true, document: (body as { document?: string }).document ?? 'letter/response.tex' };
+  });
+  try {
+    const input = { id: 'switched-document-task', projectId: f.task.projectId, title: 'Revise', instructions: 'Revise.' };
+    await f.workspace.createTask(input);
+    const created = await preparation(f, input.id);
+    assert.deepEqual(f.calls.filter(call => call.route === '/api/tasks').map(call => (call.body as { document?: string }).document), [undefined, 'thesis/main.tex']);
+    assert.equal(created.document, 'thesis/main.tex');
+  } finally { f.close(); }
+});
+
+test('a retried AI review copies the document it was started on after the paper switched', async () => {
+  const worktree = reviewCopy();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree, deferred: true, document: 'thesis/main.tex' } : route.endsWith('/finish') ? { finished: true } : {});
+  try {
+    const captured = { key: 'thesis-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The thesis.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
+    let fail = true;
+    const input = { id: 'ai-review-switched-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async () => { if (fail) throw new Error('The manuscript could not be compiled for AI review.'); return captured; } };
+    await f.workspace.createTask(input);
+    await assert.rejects(preparation(f, input.id), /could not be compiled/);
+    // The paper switched to the letter, and stamped the task with the thesis.
+    f.store.updateTask(input.id, { document: 'thesis/main.tex' });
+    fail = false;
+    await f.workspace.createTask(input);
+    await preparation(f, input.id);
+    const asked = f.calls.filter(call => call.route === '/api/tasks').map(call => (call.body as { document?: string }).document);
+    assert.deepEqual(asked, [undefined, 'thesis/main.tex']);
+    assert.equal(savedText(worktree), 'p1-l1\tThe thesis.\n');
+  } finally { f.close(); }
+});
+
+test('a new AI review copies the document the engine recorded for it, though the paper switched meanwhile', async () => {
+  const worktree = reviewCopy();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree, deferred: true, document: 'thesis/main.tex' } : {});
+  try {
+    const captured = { key: 'thesis-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The thesis.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
+    let copied: string | undefined;
+    const input = { id: 'ai-review-document-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async (_worktree: string, document?: string) => { copied = document; return captured; } };
+    await f.workspace.createTask(input);
+    const created = await f.workspace.prepareTask(input.id);
+    assert.equal(copied, 'thesis/main.tex');
+    assert.equal(created.document, 'thesis/main.tex');
+    assert.equal(savedText(worktree), 'p1-l1\tThe thesis.\n');
   } finally { f.close(); }
 });
 
@@ -2698,7 +2857,7 @@ test('review threads use normal network access and inherit the resolved sandbox'
   const f = fixture();
   try {
     (f.workspace as any).loaded.clear();
-    f.store.updateTask(f.task.id, { mode: 'review', threadId: null, aiReview: { key: 'network-review' } });
+    f.store.updateTask(f.task.id, { mode: 'review', worktree: reviewCopy(), threadId: null, aiReview: { key: 'network-review' } });
     f.store.saveReviewInput(f.task.id, { key: 'network-review', lines: [{ id: 'p1-l1', page: 0, text: 'Review fixture.', rect: [0.1, 0.2, 0.7, 0.25] }] });
     f.codex.ready = true;
     await f.workspace.enqueue(f.task.id, 'Review the paper.', 'network-review', false);
@@ -2980,8 +3139,9 @@ test('a task being prepared refuses more messages and pausing, keeps its archive
 for (const stage of ['connect', 'engine', 'review'] as const) {
   test(`a failure while ${stage === 'connect' ? 'connecting' : stage === 'engine' ? 'making the copy' : 'reading the review PDF'} leaves the task for Retry`, async () => {
     let fail = true;
+    const worktree = reviewCopy();
     const f = fixture(async (_method, route) => {
-      if (route === '/api/tasks') { if (fail && stage === 'engine') throw new Error('The review engine is busy.'); return engineCopy(); }
+      if (route === '/api/tasks') { if (fail && stage === 'engine') throw new Error('The review engine is busy.'); return engineCopy(worktree); }
       if (route.endsWith('/finish')) return { task: 'p-failed-stage-task', finished: true };
       return summary;
     });
@@ -3008,15 +3168,15 @@ for (const stage of ['connect', 'engine', 'review'] as const) {
       const prepared = await preparation(f, input.id);
       assert.equal(prepared.status, 'queued');
       assert.equal(prepared.error, null);
-      assert.equal(prepared.worktree, '/unused/new-task');
+      assert.equal(prepared.worktree, worktree);
       if (stage === 'review') {
         assert.deepEqual(f.store.reviewInput(input.id), snapshot);
         assert.equal(prepared.aiReview?.key, 'review-pdf');
-        assert.match(f.store.runByKey('initial-' + input.id)!.prompt, /A claim\./);
+        assert.equal(savedText(worktree), 'p1-l1\tA claim.\n');
       }
       assert.equal(f.store.runs().filter(run => run.taskId === input.id).length, 1);
       assert.equal(f.store.items(input.id).length, 1);
-      await until(() => f.codex.calls.some(call => call.method === 'turn/start' && call.params.cwd === '/unused/new-task'));
+      await until(() => f.codex.calls.some(call => call.method === 'turn/start' && call.params.cwd === worktree));
     } finally { f.close(); }
   });
 }
@@ -3192,4 +3352,143 @@ test('review instructions retain read-only manuscript boundaries despite editing
       assert.doesNotMatch(instructions, /that request authorizes those writes|necessary Git fetch\/pull/);
     }
   } finally { f.close(); }
+});
+
+function restartFixture(handler?: (method: string, route: string, body?: unknown) => Promise<any>) {
+  const f = fixture(handler || (async (_method, route) => route === '/api/tasks' ? { worktree: '/replacement', deferred: true } : route.includes('/feedback') ? { cursor: 0, feedback: [] } : summary));
+  f.workspace.runtimes.claude = { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['high'], defaultEffort: 'high' }] };
+  const run: Run = { id: 'original-initial', taskId: f.task.id, requestKey: 'initial-' + f.task.id, prompt: 'Original request with exact skill and source excerpt.', status: 'completed', createdAt: 1, finishedAt: 2, reviewRound: 1 };
+  f.store.saveRun(run);
+  f.store.saveItem({ id: run.id, taskId: f.task.id, type: 'user', text: 'Original request.', createdAt: 1, meta: { notes: [{ id: 'old-note', where: 'main.tex:10–12, PDF page 2', quote: 'Original text', comment: 'Clarify.', anchor: { sources: [{ file: 'main.tex', lines: [10, 12] }] } }], skill: { id: 'polish', name: 'Polish' }, groupInstructions: { purple: 'Improve clarity.' } } });
+  return { ...f, run, choice: { id: 'replacement-task-id', agent: 'claude' as const, model: 'opus', effort: 'high' } };
+}
+
+test('restart preserves the original request and source context in a new session with independent attachments', async () => {
+  const f = restartFixture();
+  try {
+    const originalFile = await f.workspace.attachments.upload(f.task.projectId, 'reference.txt', Buffer.from('original reference'));
+    const draftFile = await f.workspace.attachments.upload(f.task.projectId, 'draft.txt', Buffer.from('unsent reference'));
+    f.workspace.attachments.claim(f.task.projectId, [originalFile.id], f.task.id);
+    const originalMessage = f.store.item(f.task.id, f.run.id)!;
+    f.store.saveItem({ ...originalMessage, meta: { ...originalMessage.meta, attachments: [originalFile] } });
+    f.store.saveRun({ ...f.run, noteOptionsRequested: true, prompt: f.run.prompt + f.workspace.attachments.prompt([originalFile]), attachments: [originalFile] });
+    f.store.updateTask(f.task.id, { permissions: 'full', model: 'codex-model', effort: 'xhigh', serviceTier: 'priority', review: { state: 'reviewing', round: 3, counts: { pending: 2 } } });
+    const originalTask = f.store.task(f.task.id), originalItems = f.store.items(f.task.id);
+    const replacement = await f.workspace.restartTask(f.task.id, { ...f.choice, draftAttachments: [draftFile.id] });
+    await f.workspace.prepareTask(replacement.id);
+    assert.equal(replacement.restart?.taskId, f.task.id);
+    assert.equal(replacement.threadId, null); assert.equal(replacement.turnId, null);
+    assert.equal(replacement.permissions, 'workspace'); assert.equal(replacement.serviceTier, undefined);
+    assert.equal(replacement.model, 'opus'); assert.equal(replacement.effort, 'high');
+    assert.deepEqual(f.store.task(f.task.id), originalTask);
+    assert.deepEqual(f.store.items(f.task.id), originalItems);
+    const request = f.store.runByKey('initial-' + replacement.id)!;
+    assert.equal(request.noteOptionsRequested, true);
+    assert.match(request.prompt, /exact skill and source excerpt/);
+    assert.ok(!request.prompt.includes(f.workspace.attachments.path(originalFile)));
+    const copied = request.attachments![0];
+    assert.notEqual(copied.id, originalFile.id);
+    assert.match(request.prompt, new RegExp(copied.id));
+    assert.deepEqual(f.store.items(replacement.id)[0].meta?.notes, originalMessage.meta?.notes);
+    assert.deepEqual(f.store.items(replacement.id)[0].meta?.skill, originalMessage.meta?.skill);
+    assert.deepEqual(f.store.items(replacement.id)[0].meta?.groupInstructions, originalMessage.meta?.groupInstructions);
+    const copiedDraft = replacement.restart!.draftAttachments![0];
+    assert.notEqual(copiedDraft.id, draftFile.id);
+    assert.ok(!request.prompt.includes(copiedDraft.id), 'An unsent attachment is not sent automatically');
+    f.workspace.attachments.removeTask(f.task.id);
+    assert.equal(fs.readFileSync(f.workspace.attachments.path(copied), 'utf8'), 'original reference');
+    assert.equal(fs.readFileSync(f.workspace.attachments.path(copiedDraft), 'utf8'), 'unsent reference');
+    assert.equal((await f.workspace.restartTask(f.task.id, { ...f.choice, draftAttachments: [draftFile.id] })).id, replacement.id);
+    assert.equal(f.store.tasks().length, 2, 'Retrying the same replacement ID never duplicates it');
+  } finally { f.close(); }
+});
+
+test('restart validates destination settings and preserves unavailable context rather than silently dropping it', async () => {
+  const f = restartFixture();
+  try {
+    for (const change of [{ model: 'codex-model' }, { effort: 'xhigh' }, { serviceTier: 'priority' }]) await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, ...change }), /available model|reasoning effort|Fast mode/);
+    f.workspace.runtimes.claude.authenticated = false;
+    await assert.rejects(f.workspace.restartTask(f.task.id, f.choice), /Connect and sign in/);
+    f.workspace.runtimes.claude.authenticated = true;
+    const file = await f.workspace.attachments.upload('paper', 'missing.txt', Buffer.from('reference'));
+    f.workspace.attachments.claim('paper', [file.id], f.task.id);
+    f.store.saveItem({ ...f.store.item(f.task.id, f.run.id)!, meta: { attachments: [file] } });
+    fs.rmSync(f.workspace.attachments.path(file));
+    await assert.rejects(f.workspace.restartTask(f.task.id, f.choice), /Attachment is missing/);
+    assert.equal(f.store.tasks().length, 1);
+  } finally { f.close(); }
+});
+
+test('restart requires stop confirmation and waits for the original agent to actually stop', async () => {
+  const f = restartFixture(), stopped = deferred<void>();
+  try {
+    f.store.updateTask(f.task.id, { status: 'running', turnId: 'original-turn' });
+    (f.workspace as any).active.set(f.task.id, f.run);
+    await assert.rejects(f.workspace.restartTask(f.task.id, f.choice), /Confirm stopping/);
+    let interrupts = 0;
+    f.workspace.interrupt = async () => { interrupts++; await stopped.promise; (f.workspace as any).active.delete(f.task.id); f.store.updateTask(f.task.id, { status: 'interrupted' }); };
+    const restarting = f.workspace.restartTask(f.task.id, { ...f.choice, stop: true });
+    assert.equal(interrupts, 1);
+    assert.equal(f.store.tasks().length, 1, 'No replacement is admitted while the original can still edit');
+    await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, id: 'another-replacement-id', stop: true }), /already being restarted/);
+    const same = f.workspace.restartTask(f.task.id, { ...f.choice, stop: true });
+    stopped.resolve();
+    const replacement = await restarting;
+    assert.equal((await same).id, replacement.id); assert.equal(interrupts, 1);
+    await f.workspace.prepareTask(replacement.id);
+  } finally { stopped.resolve(); f.close(); }
+});
+
+test('restart of a failed preparation cancels its saved queue and safely prepares a replacement', async () => {
+  const f = restartFixture();
+  try {
+    f.store.updateTask(f.task.id, { preparation: {}, status: 'failed', worktree: '', threadId: null });
+    f.store.saveRun({ ...f.run, status: 'queued' });
+    const replacement = await f.workspace.restartTask(f.task.id, { ...f.choice, stop: true });
+    await f.workspace.prepareTask(replacement.id);
+    assert.equal(f.store.runByKey(f.run.requestKey)?.status, 'interrupted');
+    assert.equal(f.store.task(replacement.id).worktree, '/replacement');
+    assert.equal(f.store.task(f.task.id).status, 'failed');
+  } finally { f.close(); }
+});
+
+test('AI review restarts capture the new manuscript PDF and never reuse the original PDF path', async () => {
+  const copy = reviewCopy();
+  const f = restartFixture(async (_method, route) => route === '/api/tasks' ? { worktree: copy, deferred: true } : route.includes('/feedback') ? { cursor: 0, feedback: [] } : summary);
+  try {
+    f.store.updateTask(f.task.id, { mode: 'review', instructions: 'Saved original review skill and request.' });
+    f.store.saveRun({ ...f.run, prompt: 'Original request\nPDF at /old-task/review.pdf\nOld snapshot content' });
+    let captured = '';
+    f.workspace.prepareReview = async (task, worktree) => { captured = task.id + ':' + worktree; return { key: 'new-pdf', pdf: '/replacement/review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'Current manuscript', rect: [0, 0, 1, 1] }] }; };
+    const replacement = await f.workspace.restartTask(f.task.id, f.choice);
+    await f.workspace.prepareTask(replacement.id);
+    assert.equal(captured, replacement.id + ':' + copy);
+    assert.equal(f.store.task(replacement.id).aiReview?.key, 'new-pdf');
+    const prompt = f.store.runByKey('initial-' + replacement.id)!.prompt;
+    assert.match(prompt, /Saved original review skill and request/); assert.equal(savedText(copy), 'p1-l1\tCurrent manuscript\n'); assert.match(prompt, /\/replacement\/review.pdf/);
+    assert.doesNotMatch(prompt, /old-task|Old snapshot/);
+  } finally { f.close(); }
+});
+
+test('restart excludes an in-flight follow-up and rejects project removal or stale destination settings during copying', async () => {
+  const feedbackGate = deferred<void>(), copyGate = deferred<void>();
+  const f = restartFixture(async (_method, route) => {
+    if (route.includes('/feedback')) { await feedbackGate.promise; return { cursor: 0, feedback: [] }; }
+    return route === '/api/tasks' ? { worktree: '/replacement', deferred: true } : summary;
+  });
+  try {
+    const followup = f.workspace.enqueue(f.task.id, 'Do not lose me.', 'racing-followup');
+    const rejected = assert.rejects(followup, /Wait for this task to restart/);
+    const copy = f.workspace.attachments.copy.bind(f.workspace.attachments);
+    f.workspace.attachments.copy = async (...args) => { await copyGate.promise; return copy(...args); };
+    const restarting = f.workspace.restartTask(f.task.id, f.choice);
+    feedbackGate.resolve(); await rejected;
+    assert.throws(() => f.workspace.removeProject('paper'), /Pause this paper/);
+    await assert.rejects(f.workspace.deleteTask(f.task.id), /Wait for this task to restart/);
+    f.workspace.runtimes.claude.models = [];
+    copyGate.resolve();
+    await assert.rejects(restarting, /destination model settings changed/);
+    assert.equal(f.store.tasks().length, 1);
+    assert.equal(f.store.runByKey('racing-followup'), undefined);
+  } finally { feedbackGate.resolve(); copyGate.resolve(); f.close(); }
 });

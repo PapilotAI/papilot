@@ -89,6 +89,7 @@ await page.route('**/api/**', async route => {
       { id: 'brief', label: 'Concise', reason: 'Keep the technical term in a shorter sentence.', edits: [{ unit: 'c1', text: alternateSource }] },
     ] }) } });
   }
+  if (url.pathname.endsWith('/files')) return route.fulfill({ json: { document: null, files: [] } });
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname.endsWith('/git')) return route.fulfill({ json: { files: [], branch: 'main' } });
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });

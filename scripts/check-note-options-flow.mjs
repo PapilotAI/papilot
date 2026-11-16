@@ -71,6 +71,7 @@ try {
         if (body.accept && body.option !== selected[unit]) { pendingBuild = { unit, option: body.option }; task.status = 'building'; changed(); return json({ building: true }); }
         decisions[unit] = body.accept ? 'accepted' : 'rejected'; changed(); return json(options(body.key));
       }
+      if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
       if (url.pathname.endsWith('/skills')) return json({ skills: [] });
       if (url.pathname.endsWith('/git')) return json({ files: [], branch: 'main' });
       if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });

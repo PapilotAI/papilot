@@ -1,6 +1,16 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
+  'Restart with another agent…': '用其他智能体重新开始…',
+  'Restart with another agent': '用其他智能体重新开始',
+  'Rerun the original request in a new task. This task stays as it is.': '在新任务中重新执行最初的请求，此任务保持不变。',
+  'Connect an agent with an available model before restarting.': '请先连接一个有可用模型的智能体，再重新开始。',
+  'Stop this task first': '先停止此任务',
+  'Resolve the pending task action before restarting.': '请先处理任务中尚未确认的操作，再重新开始。',
+  'Stopping and restarting…': '正在停止并重新开始…',
+  'Restart task': '重新开始任务',
+  'Restarted from': '原任务',
+  'Replacement task': '替代任务',
   'Switch tasks and manuscript': '快速切换任务和稿件',
   'Hold {key} and press ` to cycle. Shift reverses; release {key} to switch. Esc cancels.': '按住 {key}，连续按 ` 选择；加 Shift 反向选择，松开 {key} 切换，Esc 取消。',
   'Environment': '运行环境',
@@ -75,7 +85,6 @@ export const zhCN: Record<string, string> = {
   'Write a note…': '写下你的想法…',
   'Quote in chat': '引用到对话',
   'Added to task: {n}': '已加入任务：{n} 条', 'Add all to task': '全部加入任务',
-  'Notes stay here unless you add them to a task.': '批注默认仅保存，加入任务后才会发给 agent。',
   'Include suggestion {n} in this task': '将建议 {n} 加入任务',
   'Show suggestion {n} on the page': '在页面上显示建议 {n}',
   'Ignore suggestion {n}': '忽略建议 {n}', 'Ignore': '忽略', 'Suggestion ignored.': '已忽略建议。',
@@ -154,11 +163,7 @@ export const zhCN: Record<string, string> = {
   "Check the main file and engine, or ask the assistant to fix compilation. You can also edit the saved files and retry.": "请检查主文件和编译引擎，或请助手协助修复。也可以修改已保存的文件后重试。",
   "Choose folder": "选择文件夹",
   "Choose ZIP": "选择 ZIP",
-  'Open a folder': '打开文件夹',
-  'Import a ZIP': '导入 ZIP',
-  'Choose a folder or ZIP, or drag it here.': '选择文件夹或 ZIP，也可以直接拖到这里。',
-  'Choose a folder to upload a copy. To use original files, open it in the desktop app.': '选择文件夹并上传副本。使用桌面版可直接打开原始文件。',
-  'Import a separate copy from Overleaf or a ZIP archive.': '从 Overleaf 或 ZIP 压缩包导入一份副本。',
+  'Create a new paper': '新建论文', 'Blank paper': '空白论文', 'Templates': '模板', 'Template type': '模板类型', 'Search templates': '搜索模板', 'Theses': '学位论文', 'Conferences': '会议', 'Journals': '期刊', 'Slides': '演示文稿', 'Posters': '海报', 'CVs': '简历', 'Books': '书籍', 'Other': '其他', 'Create paper': '创建论文', 'Save in': '保存到', 'Creating your paper…': '正在创建论文…',
   'Or drop a folder or ZIP here': '也可以把文件夹或 ZIP 拖到这里',
   'Drop one folder or LaTeX ZIP file.': '请拖入一个文件夹或 LaTeX ZIP 文件。',
   'No files found in this folder.': '这个文件夹中没有可导入的文件。',
@@ -211,6 +216,7 @@ export const zhCN: Record<string, string> = {
   'The update did not finish. Your current version is still available. You can retry here.': '更新未完成，当前版本仍然可用。你可以在这里重试。',
   'Install the new version and restart automatically when tasks are idle. Your papers, tasks and settings stay in place.': '安装新版本，并在任务空闲时自动重启。论文、任务和设置都会保留。',
   'Updates are managed by Nix.': '更新由 Nix 管理。',
+  'Updates are managed outside Papilot.': '更新不由 Papilot 管理。',
   'Papilot cannot find npm on this computer. Updates are unavailable until npm is installed.': 'Papilot 未能在这台电脑上找到 npm，安装 npm 后即可更新。',
   'Generate task title': '生成任务标题', 'Generating task title…': '正在生成任务标题…', 'Retry title generation': '重新生成任务标题',
   'PDF annotations': 'PDF 标注',
@@ -334,12 +340,12 @@ export const zhCN: Record<string, string> = {
 
   'PDF preview': 'PDF 预览', 'The manuscript did not compile.': '稿件编译失败。', 'Opening the PDF…': '正在打开 PDF…',
   'Compiling the PDF…': '正在编译 PDF…',
+  'Files': '文件', 'Repository files': '仓库文件', 'Loading files…': '正在加载文件…',
+  'Compiled document': '当前编译的文档', 'Compile this document': '编译此文档', 'Compile {name}': '编译 {name}',
   'Manuscript panels': '稿件面板', 'Contents': '目录',
   'This PDF has no bookmarks.': '此 PDF 没有书签。', 'Contents will appear when the PDF is ready.': 'PDF 就绪后会显示目录。',
   'You are offline. Your draft is kept in this browser.': '你已离线。草稿保存在此浏览器中。',
   'Agent settings': '智能体设置', 'Add skill': '添加技能', 'Fast': '快速', 'Fast mode': '快速模式',
-  'Region note': '区域批注',
-  'or select text to annotate': '或选中文字批注',
   'Edit note': '编辑批注', 'Edit note {n}': '编辑批注 {n}', 'Edit note {n}: {comment}': '编辑批注 {n}：{comment}',
   'Next turn': '下轮生效',
   'Save': '保存', 'Saving…': '正在保存…',
@@ -368,7 +374,7 @@ export const zhCN: Record<string, string> = {
 
   // Sidebar and header
   'Rename {name}': '重命名 {name}',
-  'Papers and tasks': '论文和任务', 'Hide task list': '隐藏任务列表', 'Paper: {name}': '论文：{name}', 'Add paper…': '添加论文…', 'Add paper': '添加论文',
+  'Papers and tasks': '论文和任务', 'Hide task list': '隐藏任务列表', 'Paper: {name}': '论文：{name}', 'New paper…': '新建论文…', 'New paper': '新建论文', 'Open paper…': '打开论文…',
   'Manuscript': '稿件', 'Version management of the manuscript': '稿件的版本管理', 'New task': '新任务', 'Tasks': '任务', 'Task list': '任务列表',
   '{n} change to decide': '{n} 处修改待定', '{n} changes to decide': '{n} 处修改待定', 'Task actions for {title}': '{title} 的任务操作',
   'Rename…': '重命名…', 'Check status': '检查状态', 'Retry deletion…': '重试删除…', 'Delete task…': '删除任务…',
@@ -405,7 +411,7 @@ export const zhCN: Record<string, string> = {
   'Start task': '开始任务', 'Start task (Enter)': '开始任务（Enter）',
   'Task added: {title}': '已添加任务：{title}',
   'Add your first paper': '添加你的第一篇论文',
-  'Dismiss error': '关闭错误提示', 'Close': '关闭', 'Add a paper': '添加论文',
+  'Dismiss error': '关闭错误提示', 'Close': '关闭',
   'Repository path': '仓库路径', '/Users/you/papers/my-paper': '/Users/you/papers/my-paper', 'Cancel': '取消',
   'Copied path': '已复制路径', 'Copy path: {path}': '复制路径：{path}',
 
@@ -546,9 +552,8 @@ export const zhCN: Record<string, string> = {
   // Delete task
   'Pause this task before deleting it.': '删除前请先暂停此任务。', 'Wait for the PDF build to finish before deleting this task.': '请等 PDF 编译完成后再删除此任务。',
   'Check task status before deleting this task.': '删除前请先检查任务状态。', 'Delete task?': '删除任务？',
-  'This permanently removes the task from Papilot, including its conversation, worktree, and PDF review files. Unaccepted edits and saved comments will be discarded, and review decisions can no longer be undone.': '这会从 Papilot 中永久删除此任务，包括它的对话、工作树和 PDF 审阅文件。未接受的修改和已保存的评论将被丢弃，审阅决定也无法再撤销。',
-  'Accepted changes in your manuscript stay in place. Other tasks are not affected.': '稿件中已接受的修改会保留，其他任务不受影响。',
-  'Deletion has already started. Retry to confirm the cleanup and remove the task.': '删除已经开始。重试以确认清理并移除任务。',
+  'Unaccepted edits and comments will be lost. Accepted changes stay in your manuscript.': '未接受的修改和评论将丢失，已接受的修改会保留在稿件中。',
+  'The last deletion did not finish.': '上次删除没有完成。',
   'Deleting…': '正在删除…', 'Delete task': '删除任务',
 
   // Usage
@@ -714,4 +719,6 @@ export const zhCN: Record<string, string> = {
   'This passage changed after the PDF was compiled. It is shown as it is now.': 'PDF 生成后这段又改过，这里显示的是当前版本。',
   'Load the current source': '载入当前源码',
   'Task panels': '任务面板',
+  "{selected} of {total} selected": "已选择 {selected} / {total} 条",
+  'Add to task': '加入任务', 'Includes subsections': '包含子章节',
 };

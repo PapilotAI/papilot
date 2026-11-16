@@ -68,7 +68,7 @@ nix profile install .
 
 The `default` and `papilot` package outputs are the same. The launcher adds its Node.js, Git and TeX Live to the front of `PATH`. Paper repositories and application data remain writable outside the Nix store. Papilot's default data directory is `~/.papilot`.
 
-Nix installations ignore saved npm and desktop update layers. Update through Nix; the application displays the package manager and disables in-app installation.
+Nix installations ignore saved npm and desktop update layers. Update through Nix; the application displays the package manager and disables in-app installation. The launcher sets `PAPILOT_INSTALL_METHOD=nix`; other installations that pin their version, such as container images and system packages, get the same behavior for the `papilot` command and server with `managed` (see [Updates](guide.md#updates)).
 
 ## Develop
 

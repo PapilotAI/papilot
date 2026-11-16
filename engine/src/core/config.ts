@@ -19,7 +19,9 @@ interface Settings {
   build_workers?: number;
 }
 export type BuildOverrides = Pick<Settings, "engine" | "source_dir"> & { ignoreLatexmkrc?: boolean };
-interface BuildOverrideRecord { project: string; defaults: string; settings: BuildOverrides }
+// The repair of the document compiled last, and those of the repository's
+// other root documents by their settings (`others`).
+interface BuildOverrideRecord { project: string; defaults: string; settings: BuildOverrides; others?: Record<string, BuildOverrides> }
 
 const buildDefaults = (settings: Record<string, unknown>) => JSON.stringify([settings.main, settings.engine, settings.source_dir, settings.latexmkrc]);
 
@@ -36,8 +38,10 @@ export function buildOverridesFile(root: string) {
 export function readBuildOverrides(root: string, defaults?: Record<string, unknown>): BuildOverrides {
   const file = buildOverridesFile(root);
   const record = file && readJson<BuildOverrideRecord | null>(file, null);
+  if (!record) return {};
   // A later explicit choice in the paper's settings takes precedence.
-  return record && record.defaults === buildDefaults(defaults ?? readSettings(root)) ? record.settings ?? {} : {};
+  const key = buildDefaults(defaults ?? readSettings(root));
+  return (record.defaults === key ? record.settings : record.others?.[key]) ?? {};
 }
 export function saveBuildOverrides(root: string, settings: BuildOverrides) {
   const file = buildOverridesFile(root);
@@ -49,7 +53,13 @@ export function saveBuildOverrides(root: string, settings: BuildOverrides) {
   const relative = path.relative(project, location);
   if (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))
     throw new Error("The Papilot data directory for build settings must be outside the paper.");
-  writeJson(file, { project, defaults: buildDefaults(readSettings(root)), settings }, 0o600);
+  const defaults = buildDefaults(readSettings(root)), previous = readJson<BuildOverrideRecord | null>(file, null);
+  const others = { ...previous?.others, ...(previous?.project === project && previous.defaults !== defaults ? { [previous.defaults]: previous.settings } : {}) };
+  // This document's repair under its settings before an explicit choice
+  // changed them no longer applies, also if the choice is undone.
+  const mainOf = (key: string) => { try { return (JSON.parse(key) as unknown[])[0] ?? null; } catch { return undefined; } };
+  for (const key of Object.keys(others)) if (mainOf(key) === mainOf(defaults)) delete others[key];
+  writeJson(file, { project, defaults, settings, ...(Object.keys(others).length ? { others } : {}) }, 0o600);
 }
 
 export interface Project {
@@ -142,6 +152,63 @@ function createOnce(file: string, text: string) {
 export function writeSettings(root: string, settings: Record<string, unknown>) {
   writeJson(settingsFile(root), settings);
 }
+
+// A repository may hold several root documents, such as a thesis, its slides
+// and a response letter. The paper compiles one at a time; these settings
+// belong to it, and the others keep theirs, by main file, in documents.json.
+const DOCUMENT_SETTINGS = ["main", "engine", "latexmkrc", "source_dir", "preload", "dependencies", "figures"];
+export const documentsFile = (root: string) => path.join(stateOf(root), "documents.json");
+// The settings of the root documents the paper compiled before; nothing
+// usable from a file edited or written by something else.
+function readDocuments(root: string): Record<string, unknown> {
+  const documents = readJson<unknown>(documentsFile(root), {});
+  return documents && typeof documents === "object" && !Array.isArray(documents) ? documents as Record<string, unknown> : {};
+}
+const documentPart = (settings: Record<string, unknown>, document: boolean) =>
+  Object.fromEntries(Object.entries(settings).filter(([key]) => DOCUMENT_SETTINGS.includes(key) === document));
+function currentDocument(root: string, settings: Record<string, unknown>) {
+  if (typeof settings.main === "string" && settings.main) return cleanPath(settings.main);
+  try { return detectMain(root); } catch { return null; }
+}
+/** The settings `main` compiles with: the paper's own while it is the
+ *  current root document, otherwise the ones it had when the author last
+ *  compiled it. A document never compiled shares the source folder when the
+ *  folder contains it, and otherwise compiles with the whole repository. */
+export function documentSettings(root: string, main: string): Record<string, unknown> {
+  main = cleanPath(main);
+  const settings = readSettings(root), current = currentDocument(root, settings);
+  if (current === main) return settings;
+  const kept = readDocuments(root)[main];
+  const folder = typeof settings.source_dir === "string" ? cleanPath(settings.source_dir)
+    : current && path.posix.dirname(current) !== "." ? path.posix.dirname(current) : current ? "" : null;
+  const shared = { source_dir: folder !== null && within(main, [folder]) ? folder : "" };
+  const own: Record<string, unknown> = kept && typeof kept === "object" && !Array.isArray(kept) ? documentPart(kept as Record<string, unknown>, true)
+    // While no document could be told apart, such as with several and none
+    // named, the paper's own document settings are for the one chosen.
+    : current === null ? { ...documentPart(settings, true), ...shared } : shared;
+  // A main file that was detected stays so: its settings, and an agent's
+  // repair of them, are those it had.
+  if (own.main === undefined) {
+    let detected: string | null = null;
+    try { detected = detectMain(root); } catch { /* Then the main file is named. */ }
+    if (detected !== main) own.main = main;
+  }
+  return { ...documentPart(settings, false), ...own };
+}
+/** Makes `main` the root document the paper compiles, keeping the settings
+ *  of the one it replaces for when the author comes back to it. */
+export function chooseDocument(root: string, main: string) {
+  main = cleanPath(main);
+  const settings = readSettings(root), current = currentDocument(root, settings);
+  if (current === main) return false;
+  const next = documentSettings(root, main);
+  if (current) {
+    const documents = readDocuments(root);
+    writeJson(documentsFile(root), { ...documents, [current]: documentPart(settings, true) });
+  }
+  writeSettings(root, next);
+  return true;
+}
 export function detectMain(root: string) {
   const directories = [
     "",
@@ -217,9 +284,21 @@ export function loadBuildDocuments(root: string, settings: { main?: unknown; lat
         .find((f) => fs.existsSync(path.join(root, f))) ?? null);
   return { main, doc_dir, latexmkrc };
 }
-export function loadProject(root: string, overrides?: BuildOverrides): Project {
+/** The settings `document` compiles with: those of the paper's current
+ *  document without one, and once that file was renamed or removed, since
+ *  its text went to the current document. */
+export function projectFor(root: string, document?: string | null): Project {
+  if (document) {
+    document = cleanPath(document);
+    try { return loadProject(root, undefined, document); }
+    catch (error) { if (fs.existsSync(path.join(root, document))) throw error; }
+  }
+  return loadProject(root);
+}
+/** The paper's build settings, for its current root document or for `document`. */
+export function loadProject(root: string, overrides?: BuildOverrides, document?: string): Project {
   root = realPath(root);
-  const defaults = readSettings(root);
+  const defaults = document ? documentSettings(root, document) : readSettings(root);
   const { ignoreLatexmkrc, ...buildSettings } = overrides ?? readBuildOverrides(root, defaults);
   const settings = { ...defaults, ...buildSettings } as Settings;
   const allowed = new Set([

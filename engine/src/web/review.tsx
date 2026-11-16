@@ -2062,6 +2062,7 @@ export function ReviewApp({
                     url={applied.shown.pdf}
                     buildKey={applied.shown.key}
                     scrollRoot={paper}
+                    place={`${placeKey}:applied`}
                     status={<AppliedStatus applied={applied} />}
                   />
                 ) : (

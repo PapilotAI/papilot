@@ -2,7 +2,7 @@
 
 Papilot's existing paper workspace runs inside VS Code, alongside ordinary source editors. The extension reuses the app and review engine: project opening, compilation, agents, Git operations, annotations and review decisions use the same implementations.
 
-This initial integration keeps Papilot's existing project model: one configured main document per Git repository. Opening a TeX file does not register a project or scan the workspace.
+The extension uses Papilot's repository and document selection. The **Files** menu opens source files and lets you choose which root document to compile; existing tasks keep their own document. Opening a TeX file in VS Code does not register a project or scan the workspace.
 
 ## Use
 

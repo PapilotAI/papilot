@@ -44,6 +44,7 @@ The second page must only open when its link is deliberately clicked.
       if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
       if (url.pathname === '/api/runtime/requirements') return json(readyRequirements);
       if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: false });
+      if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
       if (url.pathname.endsWith('/skills')) return json({ skills: [] });
       if (url.pathname.endsWith('/git')) return json(git);
       if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'pdf', pages: [[612, 792], [612, 792]] }, annotations: notes });

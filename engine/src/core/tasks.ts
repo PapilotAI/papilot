@@ -5,6 +5,7 @@ import { REFS, Repo, cleanPath } from "./git.ts";
 import { now } from "./files.ts";
 import { buildOutline, resolveSections, selectedRanges } from "./outline.ts";
 import type { Task, Scope } from "../types.ts";
+import type { Project } from "./config.ts";
 import type { App } from "../server.ts";
 export const GENERATED = [
   ".aux",
@@ -44,6 +45,21 @@ export async function revisionReaderAsync(repo: Repo, rev: string, folder: strin
     blobs = await repo.blobsAsync(rev, files);
   return (file: string) => blobs[file]?.toString() ?? null;
 }
+// Deletes a task's worktree; `git worktree prune` then drops its
+// registration. Windows cannot delete a folder another program uses (as its
+// working directory, say), and `git worktree remove` gives up there only
+// after emptying and unregistering it, leaving a folder Git refuses to
+// remove. Deleting the folder directly also finishes such an attempt, and
+// briefly waits for a program that is closing it.
+async function removeWorktree(folder: string) {
+  try {
+    await fs.promises.rm(folder, { recursive: true, force: true, maxRetries: 5 });
+  } catch (error) {
+    throw new Error(
+      `Could not delete the task folder ${folder}. If another program is using it, close that program and try again. (${(error as Error).message})`,
+    );
+  }
+}
 export function revisionReader(repo: Repo, rev: string, folder: string) {
   const files = repo.files(rev, folder).filter((p) => p.endsWith(".tex")),
     blobs = repo.blobs(rev, files);
@@ -67,13 +83,13 @@ export class Tasks {
   }
   snapshot(task: Task) {
     return new Repo(task.worktree).snapshot(
-      [this.app.project.source_dir, ...task.scope.paths],
+      [this.app.projectOf(task).source_dir, ...task.scope.paths],
       GENERATED,
     );
   }
   snapshotAsync(task: Task) {
     return new Repo(task.worktree).snapshotAsync(
-      [this.app.project.source_dir, ...task.scope.paths],
+      [this.app.projectOf(task).source_dir, ...task.scope.paths],
       GENERATED,
     );
   }
@@ -83,14 +99,17 @@ export class Tasks {
     sections: string[] = [],
     files: string[] = [],
     deferred = false,
+    document?: string,
   ): Task {
-    const reserved = this.reserve(name, title, sections, files);
+    // The task compiles the root document asked for, by default the one the
+    // paper compiles now.
+    const project = this.app.projectFor(document), reserved = this.reserve(project, name, title, sections, files);
     if ("existing" in reserved) return reserved.existing;
-    const base = this.app.repo.snapshot([this.app.project.source_dir, ...reserved.paths], GENERATED);
-    const scope = this.scopeOf(sections.length ? revisionReader(this.app.repo, base, this.app.project.doc_dir) : null, sections, reserved.paths);
+    const base = this.app.repo.snapshot([project.source_dir, ...reserved.paths], GENERATED);
+    const scope = this.scopeOf(project, sections.length ? revisionReader(this.app.repo, base, project.doc_dir) : null, sections, reserved.paths);
     fs.mkdirSync(path.dirname(reserved.worktree), { recursive: true });
     this.app.repo.run(["worktree", "add", "--detach", reserved.worktree, base]);
-    return this.record(reserved, base, scope, deferred);
+    return this.record(reserved, base, scope, deferred, project.main);
   }
   /** `create` for the server: the snapshot and the checkout of the new
    *  worktree, seconds for a large paper, run while it answers requests. */
@@ -100,18 +119,19 @@ export class Tasks {
     sections: string[] = [],
     files: string[] = [],
     deferred = false,
+    document?: string,
   ): Promise<Task> {
-    const reserved = this.reserve(name, title, sections, files);
+    const project = this.app.projectFor(document), reserved = this.reserve(project, name, title, sections, files);
     if ("existing" in reserved) return reserved.existing;
     this.creating.add(reserved.name);
     try {
       // The manuscript is read between writes, which may be changing it; the
       // much longer checkout of the worktree is not.
-      const base = await this.app.exclusive(() => this.app.repo.snapshotAsync([this.app.project.source_dir, ...reserved.paths], GENERATED));
-      const scope = this.scopeOf(sections.length ? await revisionReaderAsync(this.app.repo, base, this.app.project.doc_dir) : null, sections, reserved.paths);
+      const base = await this.app.exclusive(() => this.app.repo.snapshotAsync([project.source_dir, ...reserved.paths], GENERATED));
+      const scope = this.scopeOf(project, sections.length ? await revisionReaderAsync(this.app.repo, base, project.doc_dir) : null, sections, reserved.paths);
       await fs.promises.mkdir(path.dirname(reserved.worktree), { recursive: true });
       await this.app.repo.runAsync(["worktree", "add", "--detach", reserved.worktree, base]);
-      return this.record(reserved, base, scope, deferred);
+      return this.record(reserved, base, scope, deferred, project.main);
     } finally {
       this.creating.delete(reserved.name);
     }
@@ -120,9 +140,8 @@ export class Tasks {
   private creating = new Set<string>();
   // The task's name, title, worktree and scope paths, or the open task that
   // already covers this request.
-  private reserve(name: string | undefined, title: string | undefined, sections: string[], files: string[]): { existing: Task } | { name: string; title: string; worktree: string; paths: string[] } {
-    const { app } = this,
-      project = app.project;
+  private reserve(project: Project, name: string | undefined, title: string | undefined, sections: string[], files: string[]): { existing: Task } | { name: string; title: string; worktree: string; paths: string[] } {
+    const { app } = this;
     if (sections.length && files.length)
       throw new Error("Choose sections or files for the scope, not both.");
     title = (title || name || "LaTeX review").trim().slice(0, 120);
@@ -144,7 +163,9 @@ export class Tasks {
         candidate,
       );
       if (!existing || existing.closed) break;
-      if (this.matches(existing, sections, files)) return { existing };
+      // A named task asked for again is that task, resumed on the document it
+      // recorded; an unnamed request reuses one only on the document compiled now.
+      if (this.matches(existing, sections, files) && (explicit || (existing.document ?? project.main) === project.main)) return { existing };
       if (explicit)
         throw new Error(
           `Task ${JSON.stringify(name)} already exists with a different scope. Finish it first or choose another name.`,
@@ -168,8 +189,7 @@ export class Tasks {
       );
     return { name, title, worktree, paths: files.map(cleanPath) };
   }
-  private scopeOf(read: ((file: string) => string | null) | null, sections: string[], paths: string[]): Scope {
-    const project = this.app.project;
+  private scopeOf(project: Project, read: ((file: string) => string | null) | null, sections: string[], paths: string[]): Scope {
     if (!sections.length || !read)
       return {
         sections: [],
@@ -184,7 +204,7 @@ export class Tasks {
     return { sections: chosen, ranges, paths: Object.keys(ranges).sort() };
   }
   // Records a task whose worktree was just checked out at `base`.
-  private record({ name, title, worktree }: { name: string; title: string; worktree: string }, base: string, scope: Scope, deferred: boolean) {
+  private record({ name, title, worktree }: { name: string; title: string; worktree: string }, base: string, scope: Scope, deferred: boolean, document: string) {
     const { app } = this;
     try {
       app.repo.updateRef(`${REFS}${name}/base`, base);
@@ -197,7 +217,7 @@ export class Tasks {
         for (const table of ["rounds", "actions", "messages", "jobs", "deliveries", "reconciliations", "source_edits"])
           app.store.execute(`DELETE FROM ${table} WHERE task=?`, name);
         app.store.execute(
-          "INSERT INTO tasks(name,title,worktree,base,accepted,scope,created,deferred) VALUES(?,?,?,?,?,?,?,?)",
+          "INSERT INTO tasks(name,title,worktree,base,accepted,scope,created,deferred,document) VALUES(?,?,?,?,?,?,?,?,?)",
           name,
           title,
           worktree,
@@ -206,6 +226,7 @@ export class Tasks {
           JSON.stringify(scope),
           now(),
           Number(deferred),
+          document,
         );
       });
     } catch (error) {
@@ -257,7 +278,8 @@ export class Tasks {
       problems.push(
         `${counts.pending} pending and ${counts.commented} commented changes`,
       );
-    const leftover = fs.existsSync(task.worktree)
+    // Only a finish without force refuses to discard the worktree's edits.
+    const leftover = !force && fs.existsSync(task.worktree)
       ? await app.repo.changedFilesAsync(task.accepted, await this.snapshotAsync(task))
       : [];
     if (leftover.length)
@@ -268,8 +290,7 @@ export class Tasks {
       throw new Error(
         `The task still has ${problems.join("; ")}. Publish and finish the review first, or use --force to discard them.`,
       );
-    if (fs.existsSync(task.worktree))
-      await app.repo.runAsync(["worktree", "remove", "--force", task.worktree]);
+    await removeWorktree(task.worktree);
     await app.repo.runAsync(["worktree", "prune"], { check: false });
     await app.repo.deleteRefsAsync(`${REFS}${name}/`);
     await fs.promises.rm(path.join(app.state, "rounds", name), {
