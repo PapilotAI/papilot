@@ -1,4 +1,4 @@
-import { aiReviewInstructions, parseAiReview, reviewPrompt, type ReviewSnapshot } from './ai-review.ts';
+import { aiReviewInstructions, parseAiReview, reviewPrompt, saveReviewText, type ReviewSnapshot } from './ai-review.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -581,10 +581,11 @@ export class Workspace extends EventEmitter {
         await delay(1000);
       }
     }
-    let snapshot: ReviewSnapshot | undefined;
+    let snapshot: ReviewSnapshot | undefined, file = '';
     if (task.mode === 'review') try {
       const current = task, capture = this.reviewCopies.get(taskId) ?? ((worktree: string) => this.prepareReview(current, worktree));
       snapshot = await capture(info.worktree);
+      file = await saveReviewText(info.worktree, snapshot);
     } catch (error) {
       // Discard the copy, so a retry copies the manuscript again with the author's fixes.
       if (await client.post(`${taskRoute(task.name)}/finish`, { force: true }).then(result => result?.finished === true, () => false)) this.store.updateTask(taskId, { preparation: {} });
@@ -595,7 +596,7 @@ export class Workspace extends EventEmitter {
       if (snapshot) {
         this.store.saveReviewInput(taskId, snapshot);
         // The review reads the PDF of this exact copy.
-        if (run?.status === 'queued') this.store.saveRun({ ...run, prompt: reviewPrompt(run.prompt, snapshot) });
+        if (run?.status === 'queued') this.store.saveRun({ ...run, prompt: reviewPrompt(run.prompt, snapshot, file) });
       }
       this.store.updateTask(taskId, { worktree: info.worktree, deferred: info.deferred === true, ...(snapshot ? { aiReview: { key: snapshot.key } } : {}), status: run?.status === 'queued' ? 'queued' : 'idle', preparation: null, error: null });
     });
@@ -636,8 +637,12 @@ export class Workspace extends EventEmitter {
       if (task.error) prompt += '\n\nLatest task/review error:\n' + task.error + '\nThe latest accepted manuscript is at ' + this.store.project(task.projectId).path + '. You may read it to understand accepted changes, but must only edit your isolated task worktree. Prepare a revised proposal for another review; never write to or accept changes in the manuscript checkout.';
     }
     if (files.length) prompt = (prompt || 'The user attached reference material without an instruction. Briefly identify the material and ask what they would like to do with it. Do not change the manuscript yet.') + this.attachments.prompt(files);
-    // A new AI review adds its PDF once its copy is prepared.
-    if (task.mode === 'review' && !options.admit) prompt = reviewPrompt(prompt, this.store.reviewInput(taskId));
+    // A new AI review adds its PDF once its copy is prepared. Later messages
+    // save the text again: a review started by an older Papilot has no file.
+    if (task.mode === 'review' && !options.admit) {
+      const snapshot = this.store.reviewInput(taskId);
+      prompt = reviewPrompt(prompt, snapshot, await saveReviewText(task.worktree, snapshot));
+    }
     const noteOptionsRequested = task.mode !== 'review' && Boolean(options.notes?.length || options.reviewNotes?.length) && this.store.preference<boolean>('note-alternatives') === true;
     if (noteOptionsRequested) prompt += '\n\n' + preparedNoteOptionsInstructions(this.store.preference('note-alternative-range'));
     const run: Run = { id: randomUUID(), taskId, requestKey, prompt, ...(noteOptionsRequested ? { noteOptionsRequested } : {}), ...(files.length ? { attachments: files } : {}), feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null, reviewRound: 0 };

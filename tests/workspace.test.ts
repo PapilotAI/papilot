@@ -22,6 +22,11 @@ function deferred<T>() {
   return { promise, resolve };
 }
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+// An AI review saves its PDF text in the task copy, so its tasks need a real folder.
+const copies = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-copies-'));
+test.after(() => fs.rmSync(copies, { recursive: true, force: true }));
+const reviewCopy = () => fs.mkdtempSync(path.join(copies, 'task-'));
+const savedText = (worktree: string) => fs.readFileSync(path.join(worktree, '.papilot-pdf-lines.txt'), 'utf8');
 // The preparation a new task started, while it is still in progress.
 const preparation = (f: { workspace: Workspace }, id: string) => {
   const job = (f.workspace as any).preparing.get(id) as Promise<Task> | undefined;
@@ -2592,7 +2597,8 @@ for (const asynchronous of [false, true]) test(`agents with ${asynchronous ? 'as
 test('AI review uses normal agent tools and approvals, saves PDF notes, and never publishes or delivers edits', async () => {
   const f = fixture();
   try {
-    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf-original' }, threadId: null });
+    const worktree = reviewCopy();
+    f.store.updateTask(f.task.id, { mode: 'review', worktree, aiReview: { key: 'pdf-original' }, threadId: null });
     f.store.saveReviewInput(f.task.id, { key: 'pdf-original', lines: [{ id: 'p1-l1', page: 0, text: 'This always holds.', rect: [0.1, 0.2, 0.7, 0.25] }] });
     f.codex.ready = true;
     await f.workspace.enqueue(f.task.id, 'Check the assumptions.', 'ai-review-run');
@@ -2603,7 +2609,11 @@ test('AI review uses normal agent tools and approvals, saves PDF notes, and neve
     assert.equal(start.config.web_search, 'live');
     assert.equal(start.dynamicTools, undefined);
     assert.match(start.developerInstructions, /Do not edit the manuscript/);
-    assert.match(f.codex.calls.find(call => call.method === 'turn/start')!.params.input[0].text, /p1-l1/);
+    // A review started by an older Papilot, without a saved text file, gets one.
+    assert.equal(savedText(worktree), 'p1-l1\tThis always holds.\n');
+    const request = f.codex.calls.find(call => call.method === 'turn/start')!.params.input[0].text;
+    assert.ok(request.includes(path.join(worktree, '.papilot-pdf-lines.txt')));
+    assert.doesNotMatch(request, /This always holds/);
     (f.workspace as any).serverRequest({ id: 100, method: 'item/fileChange/requestApproval', params: { threadId: 'thread', turnId: 'turn-new' } });
     assert.equal(f.codex.rejections.length, 0);
     assert.equal(f.workspace.requests.size, 1);
@@ -2636,7 +2646,7 @@ test('a review containing a 14-line suggestion completes and retains every findi
   const f = fixture();
   try {
     const lines = Array.from({ length: 20 }, (_, index) => ({ id: `p13-l${index + 1}`, page: 12, text: `Line ${index + 1}`, rect: [0.1, index / 30, 0.8, (index + 1) / 30] as [number, number, number, number] }));
-    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf' } });
+    f.store.updateTask(f.task.id, { mode: 'review', worktree: reviewCopy(), aiReview: { key: 'pdf' } });
     f.store.saveReviewInput(f.task.id, { key: 'pdf', lines });
     f.codex.ready = true;
     await f.workspace.enqueue(f.task.id, 'Review.', 'long-passage-review');
@@ -2660,7 +2670,7 @@ test('a review containing a 14-line suggestion completes and retains every findi
 test('an invalid AI response creates no partial notes and a follow-up can recover', async () => {
   const f = fixture();
   try {
-    f.store.updateTask(f.task.id, { mode: 'review', aiReview: { key: 'pdf' } });
+    f.store.updateTask(f.task.id, { mode: 'review', worktree: reviewCopy(), aiReview: { key: 'pdf' } });
     f.store.saveReviewInput(f.task.id, { key: 'pdf', lines: [{ id: 'p1-l1', page: 0, text: 'A claim.', rect: [0, 0, 1, 1] }] });
     f.codex.ready = true;
     const finish = async (text: string, key: string) => {
@@ -2693,17 +2703,19 @@ test('reconciling an AI review recovers annotations from the completed thread re
 });
 
 test('creating an AI review skill task persists its snapshot and queues review-only instructions once', async () => {
-  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/isolated-review', deferred: true } : {});
+  const worktree = reviewCopy();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree, deferred: true } : {});
   try {
     const reviewInput = { key: 'pdf-at-start', lines: [{ id: 'p1-l1', page: 0, text: 'Read this claim.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     const input = { id: 'ai-review-task-0001', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async () => reviewInput };
     assert.equal((await f.workspace.createTask(input)).status, 'preparing');
     const created = await f.workspace.prepareTask(input.id);
     assert.equal(created.mode, 'review');
-    assert.equal(created.worktree, '/isolated-review');
+    assert.equal(created.worktree, worktree);
     assert.equal(created.status, 'queued');
     assert.deepEqual(f.store.reviewInput(created.id), reviewInput);
-    assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /Read this claim/);
+    assert.equal(savedText(worktree), 'p1-l1\tRead this claim.\n');
+    assert.ok(f.store.runs().find(run => run.taskId === created.id)!.prompt.includes(path.join(worktree, '.papilot-pdf-lines.txt')));
     assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /do not edit, rewrite, commit, or apply changes/i);
     assert.equal(f.store.items(created.id)[0].meta?.skill?.id, 'ai-review');
     assert.equal(f.store.items(created.id)[0].text, '');
@@ -2720,7 +2732,8 @@ test('creating an AI review skill task persists its snapshot and queues review-o
 });
 
 test('an AI review whose manuscript copy cannot be read discards the copy, so a retry copies it again', async () => {
-  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : route.endsWith('/finish') ? { task: 'p-ai-review-retry-task', finished: true } : {});
+  const worktree = reviewCopy();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree, deferred: true } : route.endsWith('/finish') ? { task: 'p-ai-review-retry-task', finished: true } : {});
   try {
     const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The fixed copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     let fail = true;
@@ -2736,22 +2749,23 @@ test('an AI review whose manuscript copy cannot be read discards the copy, so a 
     await f.workspace.createTask(input);
     const created = await preparation(f, input.id);
     assert.equal(created.aiReview?.key, 'task-pdf');
-    assert.match(f.store.runs().find(run => run.taskId === input.id)!.prompt, /The fixed copy/);
+    assert.equal(savedText(worktree), 'p1-l1\tThe fixed copy.\n');
     assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 2);
   } finally { f.close(); }
 });
 
 test('AI review captures the task worktree before enqueueing and retries keep that snapshot', async () => {
-  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/task-copy', deferred: true } : {});
+  const worktree = reviewCopy();
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree, deferred: true } : {});
   try {
     const captured = { key: 'task-pdf', pdf: '/saved-review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'The task copy.', rect: [0.1, 0.2, 0.8, 0.3] as [number, number, number, number] }] };
     let calls = 0;
-    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async (worktree: string) => { calls++; assert.equal(worktree, '/task-copy'); return captured; } };
+    const input = { id: 'ai-review-copy-task', projectId: f.task.projectId, title: 'AI review', instructions: '', skill: 'ai-review', prepareReview: async (copy: string) => { calls++; assert.equal(copy, worktree); return captured; } };
     await f.workspace.createTask(input);
     const created = await f.workspace.prepareTask(input.id);
     assert.equal(created.aiReview?.key, 'task-pdf');
     assert.deepEqual(f.store.reviewInput(created.id), captured);
-    assert.match(f.store.runs().find(run => run.taskId === created.id)!.prompt, /The task copy/);
+    assert.equal(savedText(worktree), 'p1-l1\tThe task copy.\n');
     await f.workspace.createTask(input); assert.equal(calls, 1);
     f.store.saveAnnotation({ id: 'private-finding', projectId: f.task.projectId, key: 'task-pdf', page: 0, rect: [0, 0, 1, 1], comment: 'Clarify.', quote: 'Claim', source: null, createdAt: 1, aiReview: { taskId: created.id, agent: 'codex' } });
     await assert.rejects(f.workspace.createTask({ id: 'send-private-finding', projectId: f.task.projectId, title: 'Edit', instructions: '', annotations: ['private-finding'] }), /no longer available/);
@@ -2791,7 +2805,7 @@ test('review threads use normal network access and inherit the resolved sandbox'
   const f = fixture();
   try {
     (f.workspace as any).loaded.clear();
-    f.store.updateTask(f.task.id, { mode: 'review', threadId: null, aiReview: { key: 'network-review' } });
+    f.store.updateTask(f.task.id, { mode: 'review', worktree: reviewCopy(), threadId: null, aiReview: { key: 'network-review' } });
     f.store.saveReviewInput(f.task.id, { key: 'network-review', lines: [{ id: 'p1-l1', page: 0, text: 'Review fixture.', rect: [0.1, 0.2, 0.7, 0.25] }] });
     f.codex.ready = true;
     await f.workspace.enqueue(f.task.id, 'Review the paper.', 'network-review', false);
@@ -3073,8 +3087,9 @@ test('a task being prepared refuses more messages and pausing, keeps its archive
 for (const stage of ['connect', 'engine', 'review'] as const) {
   test(`a failure while ${stage === 'connect' ? 'connecting' : stage === 'engine' ? 'making the copy' : 'reading the review PDF'} leaves the task for Retry`, async () => {
     let fail = true;
+    const worktree = reviewCopy();
     const f = fixture(async (_method, route) => {
-      if (route === '/api/tasks') { if (fail && stage === 'engine') throw new Error('The review engine is busy.'); return engineCopy(); }
+      if (route === '/api/tasks') { if (fail && stage === 'engine') throw new Error('The review engine is busy.'); return engineCopy(worktree); }
       if (route.endsWith('/finish')) return { task: 'p-failed-stage-task', finished: true };
       return summary;
     });
@@ -3101,15 +3116,15 @@ for (const stage of ['connect', 'engine', 'review'] as const) {
       const prepared = await preparation(f, input.id);
       assert.equal(prepared.status, 'queued');
       assert.equal(prepared.error, null);
-      assert.equal(prepared.worktree, '/unused/new-task');
+      assert.equal(prepared.worktree, worktree);
       if (stage === 'review') {
         assert.deepEqual(f.store.reviewInput(input.id), snapshot);
         assert.equal(prepared.aiReview?.key, 'review-pdf');
-        assert.match(f.store.runByKey('initial-' + input.id)!.prompt, /A claim\./);
+        assert.equal(savedText(worktree), 'p1-l1\tA claim.\n');
       }
       assert.equal(f.store.runs().filter(run => run.taskId === input.id).length, 1);
       assert.equal(f.store.items(input.id).length, 1);
-      await until(() => f.codex.calls.some(call => call.method === 'turn/start' && call.params.cwd === '/unused/new-task'));
+      await until(() => f.codex.calls.some(call => call.method === 'turn/start' && call.params.cwd === worktree));
     } finally { f.close(); }
   });
 }
@@ -3386,7 +3401,8 @@ test('restart of a failed preparation cancels its saved queue and safely prepare
 });
 
 test('AI review restarts capture the new manuscript PDF and never reuse the original PDF path', async () => {
-  const f = restartFixture();
+  const copy = reviewCopy();
+  const f = restartFixture(async (_method, route) => route === '/api/tasks' ? { worktree: copy, deferred: true } : route.includes('/feedback') ? { cursor: 0, feedback: [] } : summary);
   try {
     f.store.updateTask(f.task.id, { mode: 'review', instructions: 'Saved original review skill and request.' });
     f.store.saveRun({ ...f.run, prompt: 'Original request\nPDF at /old-task/review.pdf\nOld snapshot content' });
@@ -3394,10 +3410,10 @@ test('AI review restarts capture the new manuscript PDF and never reuse the orig
     f.workspace.prepareReview = async (task, worktree) => { captured = task.id + ':' + worktree; return { key: 'new-pdf', pdf: '/replacement/review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'Current manuscript', rect: [0, 0, 1, 1] }] }; };
     const replacement = await f.workspace.restartTask(f.task.id, f.choice);
     await f.workspace.prepareTask(replacement.id);
-    assert.equal(captured, replacement.id + ':/replacement');
+    assert.equal(captured, replacement.id + ':' + copy);
     assert.equal(f.store.task(replacement.id).aiReview?.key, 'new-pdf');
     const prompt = f.store.runByKey('initial-' + replacement.id)!.prompt;
-    assert.match(prompt, /Saved original review skill and request/); assert.match(prompt, /Current manuscript/); assert.match(prompt, /\/replacement\/review.pdf/);
+    assert.match(prompt, /Saved original review skill and request/); assert.equal(savedText(copy), 'p1-l1\tCurrent manuscript\n'); assert.match(prompt, /\/replacement\/review.pdf/);
     assert.doesNotMatch(prompt, /old-task|Old snapshot/);
   } finally { f.close(); }
 });
