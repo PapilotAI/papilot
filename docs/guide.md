@@ -315,6 +315,8 @@ The `papilot` command, `npm start` and the installed macOS service use the selec
 
 If installation or its initial startup check fails, the existing server keeps running. If activation fails, Papilot restores the previous runtime and its pre-update SQLite database, including any WAL, and restarts it. The badge offers **Retry update**. Installation and restart diagnostics are in `PAPILOT_DATA/updates/install.log` and `restart.log`; the standalone restarted server writes to `updates/server.log`.
 
+**Container images and system packages:** When the installation pins Papilot's version itself, as a container image, a server deployment built from a release or a system package does, set `PAPILOT_INSTALL_METHOD=managed` in the environment that starts the `papilot` command or server; the desktop app does not use this setting. Papilot then never checks for or installs updates, ignores releases that in-app updates installed in the data folder, and **Settings → Updates** shows the current version with a note that updates are managed outside Papilot. Update by rebuilding the image or upgrading the package. Papilot also never downloads Codex or agent SDKs at runtime. Install Codex 0.164.0 or newer with the installation, or set `PAPILOT_CODEX_BIN`, and install any other agent CLIs you use. Cursor, GLM, and Claude with an API key but without Claude Code run on an SDK, which must be installed in Papilot's `node_modules`; a source checkout installed with `npm ci` already includes the Claude Agent SDK as a development dependency, which `--omit=dev` leaves out. A missing SDK is reported with the package to install, and `papilot doctor` checks the result. The [Nix package](nix.md) sets `PAPILOT_INSTALL_METHOD=nix` for the same behavior.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -323,6 +325,7 @@ If installation or its initial startup check fails, the existing server keeps ru
 | `PAPILOT_DATA` | `~/.papilot` for the `papilot` command, `.papilot` in a source checkout | SQLite state and generated example project. |
 | `PAPILOT_CODEX_BIN` | `papilot`: `codex` on `PATH` (0.164.0 or newer), else one installed into the data folder. Desktop app: the first `codex` on `PATH` that runs | Codex executable used by the backend. |
 | `PAPILOT_SERVICE_PATH` | Unset | Absolute tool directories to prioritize in the macOS service; retained across service reinstalls. |
+| `PAPILOT_INSTALL_METHOD` | Unset | `managed` for an installation that pins Papilot's version, such as a container image or system package: no in-app updates and no runtime downloads of Codex or agent SDKs (see [Updates](#updates)). The Nix package sets `nix`. |
 | `PAPILOT_CLAUDE_BIN` | `claude` on `PATH` | Claude Code CLI used for Claude tasks; when found, Claude runs `claude -p` on its login instead of the Agent SDK. |
 | `ANTHROPIC_API_KEY` | Unset | Anthropic API key for Claude tasks (the Agent SDK does not accept a Claude subscription login). |
 | `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` | Unset | Run Claude tasks on a gateway or another service's Anthropic-compatible endpoint, with that service's key. `ANTHROPIC_DEFAULT_OPUS_MODEL` and its Sonnet, Fable and Haiku counterparts map the model menu onto its models. |

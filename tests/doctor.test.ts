@@ -169,6 +169,33 @@ test('doctor uses the supported managed Codex and never leaks login output or kn
   } finally { f.cleanup(); }
 });
 
+test('doctor in an installation that pins its version never suggests downloads and checks SDKs where Papilot loads them', async () => {
+  const f = fixture();
+  try {
+    f.baseTools();
+    f.tool('codex', 'console.log("codex-cli 0.1.0");');
+    const sdk = (folder: string) => { const dir = path.join(folder, 'node_modules/@cursor/sdk'); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"@cursor/sdk","version":"1.2.0"}'); };
+    // A copy an unmanaged run downloaded into the data folder earlier.
+    sdk(path.join(f.data, 'agents'));
+    const keys = { CURSOR_API_KEY: 'cursor-test-key' };
+    const unmanaged = (await f.run(['--json'], keys)).report;
+    assert.equal(item(unmanaged, 'agent.codex').fix, 'Run papilot codex login; it installs the supported Codex when needed.');
+    assert.equal(item(unmanaged, 'agent.cursor').ok, true);
+    const managed = (await f.run(['--json'], { ...keys, PAPILOT_INSTALL_METHOD: 'managed' })).report;
+    assert.equal(item(managed, 'agent.codex').fix, 'Install a supported Codex separately or set PAPILOT_CODEX_BIN to an existing installation.');
+    const cursor = item(managed, 'agent.cursor');
+    assert.equal(cursor.ok, false);
+    assert.equal(cursor.detail, 'Cursor SDK credentials detected; the SDK is not installed.');
+    assert.equal(cursor.fix, 'Install @cursor/sdk into Papilot\'s node_modules, then restart Papilot.');
+    // Nix ships its SDKs in a locked runtime beside the application.
+    sdk(path.join(f.app, 'nix-agent-runtime'));
+    const nix = (await f.run(['--json'], { ...keys, PAPILOT_INSTALL_METHOD: 'nix' })).report;
+    assert.equal(item(nix, 'agent.codex').fix, 'Install a supported Codex separately with Nix or set PAPILOT_CODEX_BIN to an existing installation.');
+    assert.equal(item(nix, 'agent.cursor').ok, true);
+    assert.equal(fs.existsSync(path.join(f.data, 'papilot.sqlite')), false);
+  } finally { f.cleanup(); }
+});
+
 test('desktop doctor searches PATH, the package and data in order with the server probe PATH', async () => {
   const f = fixture();
   try {

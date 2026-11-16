@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentPath, findExecutable, spawnSyncCommand, WINDOWS } from './agent-paths.mjs';
 import { npmCli } from './npm-cli.mjs';
-import { activeInstallation } from './installation.mjs';
+import { activeInstallation, managedInstall } from './installation.mjs';
 
 const usage = `Usage: papilot [doctor | demo | codex <args> | service install | service stop] [--port <number>] [--data <folder>]
 
@@ -89,7 +89,7 @@ async function main() {
 
   // Papilot drives Codex through its app server. A codex on PATH at least as new
   // as the tested version is used as it is; otherwise that version is installed
-  // once into the data folder.
+  // once into the data folder, except in a managed installation.
   function findCodex() {
     if (process.env.PAPILOT_CODEX_BIN) return process.env.PAPILOT_CODEX_BIN;
     const tested = pkg.devDependencies['@openai/codex'];
@@ -100,8 +100,9 @@ async function main() {
     const prefix = path.join(process.env.PAPILOT_DATA, 'agents'), bin = path.join(prefix, 'node_modules/.bin');
     const installed = findExecutable('codex', { ...process.env, PATH: bin + path.delimiter + (process.env.PATH || '') }) || path.join(bin, 'codex');
     if (existsSync(installed) && recent(installed)) return installed;
-    if (process.env.PAPILOT_INSTALL_METHOD === 'nix') {
-      console.warn('Install a supported Codex separately with Nix, or set PAPILOT_CODEX_BIN to an existing installation.');
+    const method = managedInstall();
+    if (method) {
+      console.warn(`Install a supported Codex separately${method === 'nix' ? ' with Nix' : ''}, or set PAPILOT_CODEX_BIN to an existing installation.`);
       return '';
     }
     console.log(`Installing Codex ${tested} for Papilot (first run only)...`);

@@ -1120,6 +1120,7 @@
   "Update to {version}": "Uppdatera till {version}",
   "Updates": "Uppdateringar",
   "Updates are managed by Nix.": "Uppdateringar hanteras av Nix.",
+  "Updates are managed outside Papilot.": "Uppdateringar hanteras utanför Papilot.",
   "Updating…": "Uppdaterar…",
   "Upload failed. Please retry.": "Uppladdningen misslyckades. Försök igen.",
   "Uploading…": "Laddar upp…",

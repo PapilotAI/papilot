@@ -271,6 +271,7 @@
   "Unknown PDF.": "未知的 PDF。",
   "Unused attachments have reached 500 MB. Remove attachments from your drafts before uploading more.": "未使用的附件已達 500 MB。上傳更多檔案前，請先從草稿中移除附件。",
   "Updates are managed by Nix.": "更新由 Nix 管理。",
+  "Updates are managed outside Papilot.": "更新不由 Papilot 管理。",
   "Upload a file as binary data.": "請以二進位資料格式上傳檔案。",
   "Use your authorized Tailscale account to access Papilot.": "請使用已獲授權的 Tailscale 帳號存取 Papilot。",
   "Wait for repository preparation to finish.": "請等待儲存庫準備完成。",

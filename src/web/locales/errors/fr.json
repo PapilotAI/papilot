@@ -271,6 +271,7 @@
   "Unknown PDF.": "PDF inconnu.",
   "Unused attachments have reached 500 MB. Remove attachments from your drafts before uploading more.": "Les pièces jointes inutilisées ont atteint 500 Mo. Supprimez des pièces jointes de vos brouillons avant d’en téléverser d’autres.",
   "Updates are managed by Nix.": "Les mises à jour sont gérées par Nix.",
+  "Updates are managed outside Papilot.": "Les mises à jour sont gérées en dehors de Papilot.",
   "Upload a file as binary data.": "Téléversez un fichier sous forme de données binaires.",
   "Use your authorized Tailscale account to access Papilot.": "Utilisez votre compte Tailscale autorisé pour accéder à Papilot.",
   "Wait for repository preparation to finish.": "Patientez jusqu’à la fin de la préparation du dépôt.",

@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- **Run Papilot from an installation that pins its version.** Container images, server deployments and system packages can set `PAPILOT_INSTALL_METHOD=managed` to get the behavior the Nix package already has: Papilot never checks for or installs updates, ignores releases that earlier in-app updates installed, and never downloads Codex or agent SDKs at runtime. **Settings → Updates** shows the current version with a note that updates are managed outside Papilot, without the unavailable **Check for updates** button (Nix installations too). A missing SDK names the package to install, and `papilot doctor` suggests installing Codex and SDKs with the installation. Under Nix, `papilot doctor` now finds the agent SDKs the package includes. See [Updates](docs/guide.md#updates).
+
 ### Fixed
 
 - **Claude starts with default permissions on native Windows.** Claude and GLM use **Accept edits** with an explicit **No sandbox** explanation instead of requiring an unavailable command sandbox. Native permission checks remain active: the CLI declines requests needing approval, while the SDK asks in Papilot. Sandboxed edits remain enforced on macOS, Linux and WSL. ([#167](https://github.com/PapilotAI/papilot/issues/167))

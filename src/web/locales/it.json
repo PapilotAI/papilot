@@ -1120,6 +1120,7 @@
   "Update to {version}": "Aggiorna alla versione {version}",
   "Updates": "Aggiornamenti",
   "Updates are managed by Nix.": "Gli aggiornamenti sono gestiti da Nix.",
+  "Updates are managed outside Papilot.": "Gli aggiornamenti sono gestiti all'esterno di Papilot.",
   "Updating…": "Aggiornamento in corso…",
   "Upload failed. Please retry.": "Caricamento non riuscito. Riprova.",
   "Uploading…": "Caricamento in corso…",

@@ -43,6 +43,7 @@ export { AGENT_NAMES };
 
 import { agentDirs, execCommand, findExecutable, agentPath, spawnCommand } from '../../bin/agent-paths.mjs';
 import { npmCli } from '../../bin/npm-cli.mjs';
+import { agentSdkFolder, managedInstall } from '../../bin/installation.mjs';
 export { agentDirs, findExecutable };
 
 export interface Thread { permissions?: TaskPermissions; readOnly?: boolean; ephemeral?: boolean; webSearch?: boolean; cwd: string; instructions: string; model: string | null; started: boolean }
@@ -129,18 +130,18 @@ export function claudeConfigured(env: NodeJS.ProcessEnv = process.env) {
 }
 // Agent SDKs carry large native parts, so an installed Papilot fetches one
 // into the data folder the first time its agent can be used. ready() runs
-// before the download and throws when the agent is not configured.
-const PACKAGES = path.join(DATA, 'agents');
+// before the download and throws when the agent is not configured. Managed
+// installations never download one: Nix ships a locked runtime, and other
+// managed installations use only Papilot's own dependencies.
 export async function loadPackage(name: string, version: string, label: string, ready: () => void = () => {}): Promise<any> {
   try { return await import(name); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw error; }
-  if (process.env.PAPILOT_INSTALL_METHOD === 'nix') {
-    const entry = createRequire(path.join(ROOT, 'nix-agent-runtime/package.json')).resolve(name);
-    return import(pathToFileURL(entry).href);
-  }
-  const prefix = PACKAGES, resolve = () => createRequire(path.join(prefix, 'package.json')).resolve(name);
+  const prefix = agentSdkFolder(ROOT, DATA);
+  if (!prefix) { ready(); throw new Error(`This installation does not include ${label}. Install ${name}@${version} into Papilot's node_modules, then restart Papilot.`); }
+  const resolve = () => createRequire(path.join(prefix, 'package.json')).resolve(name);
   let entry: string;
-  try { entry = resolve(); } catch {
+  try { entry = resolve(); } catch (error) {
+    if (managedInstall()) throw error;
     ready();
     console.log(`Installing ${label} (first use only)...`);
     await promisify(execFile)(process.execPath, [npmCli(), 'install', '--prefix', prefix, `${name}@${version}`, '--no-audit', '--no-fund', '--loglevel=error'], { maxBuffer: 16 * 1024 * 1024 });
@@ -148,10 +149,11 @@ export async function loadPackage(name: string, version: string, label: string, 
   }
   return import(pathToFileURL(entry).href);
 }
-// The file a package loaded from: Papilot's own dependencies, or the copy
-// fetched on first use.
+// The file a package loaded from: Papilot's own dependencies, or the SDK
+// folder above.
 export function packageFile(name: string) {
-  for (const from of [import.meta.url, ...(process.env.PAPILOT_INSTALL_METHOD === 'nix' ? [path.join(ROOT, 'nix-agent-runtime/package.json')] : [path.join(PACKAGES, 'package.json')])]) {
+  const folder = agentSdkFolder(ROOT, DATA);
+  for (const from of [import.meta.url, ...(folder ? [path.join(folder, 'package.json')] : [])]) {
     try { return createRequire(from).resolve(name); } catch { /* Not installed there. */ }
   }
   return null;

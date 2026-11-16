@@ -1120,6 +1120,7 @@
   "Update to {version}": "Mettre à jour vers {version}",
   "Updates": "Mises à jour",
   "Updates are managed by Nix.": "Les mises à jour sont gérées par Nix.",
+  "Updates are managed outside Papilot.": "Les mises à jour sont gérées en dehors de Papilot.",
   "Updating…": "Mise à jour…",
   "Upload failed. Please retry.": "Échec du téléversement. Veuillez réessayer.",
   "Uploading…": "Téléversement…",

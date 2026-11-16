@@ -228,6 +228,7 @@ export const zhCN: Record<string, string> = {
   'The update did not finish. Your current version is still available. You can retry here.': '更新未完成，当前版本仍然可用。你可以在这里重试。',
   'Install the new version and restart automatically when tasks are idle. Your papers, tasks and settings stay in place.': '安装新版本，并在任务空闲时自动重启。论文、任务和设置都会保留。',
   'Updates are managed by Nix.': '更新由 Nix 管理。',
+  'Updates are managed outside Papilot.': '更新不由 Papilot 管理。',
   'Papilot cannot find npm on this computer. Updates are unavailable until npm is installed.': 'Papilot 未能在这台电脑上找到 npm，安装 npm 后即可更新。',
   'Generate task title': '生成任务标题', 'Generating task title…': '正在生成任务标题…', 'Retry title generation': '重新生成任务标题',
   'PDF annotations': 'PDF 标注',

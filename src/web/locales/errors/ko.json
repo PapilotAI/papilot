@@ -271,6 +271,7 @@
   "Unknown PDF.": "알 수 없는 PDF입니다.",
   "Unused attachments have reached 500 MB. Remove attachments from your drafts before uploading more.": "미사용 첨부파일이 500MB에 도달했습니다. 더 업로드하려면 초안에서 첨부파일을 제거하세요.",
   "Updates are managed by Nix.": "업데이트는 Nix에서 관리합니다.",
+  "Updates are managed outside Papilot.": "업데이트는 Papilot 외부에서 관리됩니다.",
   "Upload a file as binary data.": "파일을 바이너리 데이터로 업로드하세요.",
   "Use your authorized Tailscale account to access Papilot.": "승인된 Tailscale 계정으로 Papilot에 접속하세요.",
   "Wait for repository preparation to finish.": "저장소 준비가 완료될 때까지 기다려 주세요.",

@@ -4754,6 +4754,11 @@
     "textHash": "22e2bada8f1c65cd83f4ba976f0027c5dd7cb81d5d2199cd1b0130792841eef4",
     "model": "gemini-4-argon-medium"
   },
+  "Updates are managed outside Papilot.": {
+    "revision": "1dcba5c1d10b4a3d9e81f0dc8c52b386b683c0da7ef5443f4d23145c435195e1",
+    "textHash": "21e12fef9ba6be135e16dc8a8d5dc6813c6574e8fafe06ffa5181c60cc695ec7",
+    "model": "gemini-4-argon-medium"
+  },
   "Updating…": {
     "revision": "9a783ffb4c0fac48accc93cb8d0eb0d73a5d6befa1872aa0a4921fa2ff01a6d5",
     "textHash": "0dc394d0d9ee7ffc464dcb7d68ccd9abe38f5148486985e4d09b76ba393208a4",

@@ -271,6 +271,7 @@
   "Unknown PDF.": "PDF desconocido.",
   "Unused attachments have reached 500 MB. Remove attachments from your drafts before uploading more.": "Los archivos adjuntos sin usar han alcanzado los 500 MB. Elimina archivos adjuntos de tus borradores antes de subir más.",
   "Updates are managed by Nix.": "Nix gestiona las actualizaciones.",
+  "Updates are managed outside Papilot.": "Las actualizaciones se gestionan fuera de Papilot.",
   "Upload a file as binary data.": "Sube un archivo como datos binarios.",
   "Use your authorized Tailscale account to access Papilot.": "Usa tu cuenta autorizada de Tailscale para acceder a Papilot.",
   "Wait for repository preparation to finish.": "Espera a que termine la preparación del repositorio.",
