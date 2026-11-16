@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Annotation } from '../shared.ts';
@@ -18,7 +17,7 @@ Reply with exactly one JSON object: {"summary":"Review summary", "notes":[{"star
 export async function saveReviewText(worktree: string, snapshot: ReviewSnapshot) {
   const name = '.papilot-pdf-lines.txt', file = path.join(worktree, name), pattern = '/' + name;
   // Task copies are linked worktrees, so their exclude file belongs to the shared Git directory.
-  const { stdout } = await exec('git', ['rev-parse', '--git-common-dir'], { cwd: worktree });
+  const { stdout } = await exec('git', ['rev-parse', '--git-common-dir'], { cwd: worktree, timeout: 15_000 });
   const exclude = path.resolve(worktree, stdout.trim(), 'info', 'exclude');
   let excluded = '';
   try { excluded = await fs.promises.readFile(exclude, 'utf8'); }
@@ -28,12 +27,11 @@ export async function saveReviewText(worktree: string, snapshot: ReviewSnapshot)
     await fs.promises.appendFile(exclude, `${excluded && !excluded.endsWith('\n') ? '\n' : ''}${pattern}\n`);
   }
   const content = snapshot.lines.map(({ id, text }) => `${id}\t${text.replace(/[\r\n\v\f\u0085\u2028\u2029\0]+/g, ' ')}\n`).join('');
+  // A task's snapshot never changes. Leave identical text untouched so a
+  // follow-up cannot rewrite the file while the current turn is reading it.
   try { if (await fs.promises.readFile(file, 'utf8') === content) return file; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  // A follow-up can arrive while the current turn is still reading this file.
-  const temporary = `${file}-${randomUUID()}.tmp`;
-  try { await fs.promises.writeFile(temporary, content); await fs.promises.rename(temporary, file); }
-  finally { await fs.promises.rm(temporary, { force: true }); }
+  await fs.promises.writeFile(file, content);
   return file;
 }
 

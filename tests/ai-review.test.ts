@@ -50,9 +50,10 @@ for (const linked of [false, true]) test(`review text stays out of Git in a ${li
     git(root, 'init', '-q', repository);
     if (linked) {
       git(repository, '-c', 'user.name=Test', '-c', 'user.email=test@localhost', '-c', 'commit.gpgsign=false', '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'commit', '-qm', 'Initial', '--allow-empty');
-      git(repository, 'worktree', 'add', '-q', '--detach', worktree, 'HEAD');
+      git(repository, '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'worktree', 'add', '-q', '--detach', worktree, 'HEAD');
     }
     const exclude = path.join(repository, '.git', 'info', 'exclude');
+    fs.mkdirSync(path.dirname(exclude), { recursive: true });
     fs.writeFileSync(exclude, '/existing-local-file');
     for (let save = 0; save < 2; save++) {
       await saveReviewText(worktree, snapshot);
@@ -62,12 +63,12 @@ for (const linked of [false, true]) test(`review text stays out of Git in a ${li
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('unchanged review text keeps its inode and mtime, and changed text replaces the file for active readers', async () => {
+test('unchanged review text keeps its inode and mtime, and different text replaces the content', async () => {
   const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-replace-'));
   try {
     git(worktree, 'init', '-q');
     fs.rmSync(path.join(worktree, '.git', 'info'), { recursive: true, force: true });
-    const file = await saveReviewText(worktree, snapshot), original = fs.readFileSync(file, 'utf8');
+    const file = await saveReviewText(worktree, snapshot);
     // A fixed old timestamp makes a rewrite observable without sleeps.
     fs.utimesSync(file, 1000000000, 1000000000);
     const before = fs.statSync(file);
@@ -75,13 +76,8 @@ test('unchanged review text keeps its inode and mtime, and changed text replaces
     const unchanged = fs.statSync(file);
     assert.equal(unchanged.ino, before.ino);
     assert.equal(unchanged.mtimeMs, before.mtimeMs);
-    const reader = fs.openSync(file, 'r');
-    try {
-      await saveReviewText(worktree, { ...snapshot, lines: [{ ...snapshot.lines[0], text: 'A changed claim.' }] });
-      assert.equal(fs.readFileSync(file, 'utf8'), 'p1-l1\tA changed claim.\n');
-      assert.notEqual(fs.statSync(file).ino, before.ino);
-      assert.equal(fs.readFileSync(reader, 'utf8'), original);
-    } finally { fs.closeSync(reader); }
+    await saveReviewText(worktree, { ...snapshot, lines: [{ ...snapshot.lines[0], text: 'A changed claim.' }] });
+    assert.equal(fs.readFileSync(file, 'utf8'), 'p1-l1\tA changed claim.\n');
     assert.equal(git(worktree, 'status', '--porcelain', '--untracked-files=all'), '');
   } finally { fs.rmSync(worktree, { recursive: true, force: true }); }
 });
