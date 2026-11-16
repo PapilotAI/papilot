@@ -1448,5 +1448,7 @@
   "Compiled document": "Documento compilato",
   "Files": "File",
   "Loading files…": "Caricamento dei file…",
-  "Repository files": "File del repository"
+  "Repository files": "File del repository",
+  "Contribute a template": "Contribuisci con un modello",
+  "Templates are unavailable. You can still create a blank paper.": "I modelli non sono disponibili. Puoi comunque creare un articolo vuoto."
 }

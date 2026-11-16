@@ -1080,7 +1080,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Contribute": {
-    "revision": "f9aaeb5aa61cb838ee8856cfb2c803e0d2547114b05b675046e9bfb0218ff52f",
+    "revision": "31d89220f507d1c6268a364d34b7c18b44566f0312e08d3df2f19ccd94e4d90d",
     "textHash": "b59e1d096958a0f72062d0bb419c4bbd25045179c45af6db7e1ac56ce82ed5f2",
     "model": "gemini-4-argon-medium"
   },
@@ -3540,7 +3540,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Retry": {
-    "revision": "d364c58da91ac18eded0166a7fc8f153c77bbba4e4b3254376a2fdf4ce1e49c3",
+    "revision": "676d6076df044f9d713e84f32f0ef2b1ad531e9a78a75d52db1f99556fc64278",
     "textHash": "196856a662bd90843ddb2e1f68e1cc74617b43b35778c7b5f520c38ea80038e1",
     "model": "gemini-4-argon-medium"
   },
@@ -5793,5 +5793,15 @@
     "revision": "5c65200c1d54ea5ea9044be97f802bf9e35216885fc86a67884d13ff52dd8b4a",
     "textHash": "5f9ab2cc5ef6a157c23494f326d9b2b125cd82d54b4559e7a640e039ef9c87fa",
     "model": "gemini-4-argon-medium"
+  },
+  "Contribute a template": {
+    "revision": "47261a2fabc224a84ab0c8f477b755d364465b11b0d5a3622a8b967b3c79275e",
+    "textHash": "2594358dd1f3cb6f58b211b07866a6558a8bdca777810ae609763b07e6423348",
+    "model": "codex"
+  },
+  "Templates are unavailable. You can still create a blank paper.": {
+    "revision": "e74befdb27ef51d7ffa4fb53bbbbadc09412de0bbc3c8d80e5626b578e3684ef",
+    "textHash": "1bae99158bd41cc3253ff0b02e728cde0304463a9f58637367222c823224c6d5",
+    "model": "codex"
   }
 }

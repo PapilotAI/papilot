@@ -12,6 +12,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- Match the template gallery to Papilot's existing controls, with compact search, category filters, the same preview cards for conferences and other templates, and a GitHub **Contribute** button. When the catalog cannot load, keep **Blank paper** available and offer **Retry** without losing the draft.
 - **New paper and Open paper.** The paper menu and empty screen now say **New paper…** and **Open paper…** (a folder icon on every platform), and the desktop File menu says **Open Paper…**, instead of the easily confused *Create a new paper* and *Add paper…*. The new-paper dialog shows the folder it will create in place of explanatory text, and the open dialog is reduced to **Choose folder**, **Choose ZIP** and the drop zone. ([#182](https://github.com/PapilotAI/papilot/pull/182))
 
 ### Fixed

@@ -164,6 +164,7 @@ export const zhCN: Record<string, string> = {
   "Choose folder": "选择文件夹",
   "Choose ZIP": "选择 ZIP",
   'Create a new paper': '新建论文', 'Blank paper': '空白论文', 'Templates': '模板', 'Template type': '模板类型', 'Search templates': '搜索模板', 'Theses': '学位论文', 'Conferences': '会议', 'Journals': '期刊', 'Slides': '演示文稿', 'Posters': '海报', 'CVs': '简历', 'Books': '书籍', 'Other': '其他', 'Create paper': '创建论文', 'Save in': '保存到', 'Creating your paper…': '正在创建论文…',
+  'Contribute a template': '贡献模板', 'Templates are unavailable. You can still create a blank paper.': '模板暂不可用，仍可创建空白论文。',
   'Or drop a folder or ZIP here': '也可以把文件夹或 ZIP 拖到这里',
   'Drop one folder or LaTeX ZIP file.': '请拖入一个文件夹或 LaTeX ZIP 文件。',
   'No files found in this folder.': '这个文件夹中没有可导入的文件。',

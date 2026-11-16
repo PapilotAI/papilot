@@ -1448,5 +1448,7 @@
   "Compiled document": "Kompilerat dokument",
   "Files": "Filer",
   "Loading files…": "Läser in filer…",
-  "Repository files": "Arkivfiler"
+  "Repository files": "Arkivfiler",
+  "Contribute a template": "Bidra med en mall",
+  "Templates are unavailable. You can still create a blank paper.": "Mallarna är inte tillgängliga. Du kan fortfarande skapa en tom artikel."
 }

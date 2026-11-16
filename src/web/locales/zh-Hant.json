@@ -1448,5 +1448,7 @@
   "Compiled document": "已編譯的文件",
   "Files": "檔案",
   "Loading files…": "正在載入檔案…",
-  "Repository files": "儲存庫檔案"
+  "Repository files": "儲存庫檔案",
+  "Contribute a template": "貢獻範本",
+  "Templates are unavailable. You can still create a blank paper.": "範本暫時無法使用，仍可建立空白論文。"
 }

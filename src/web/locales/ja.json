@@ -1448,5 +1448,7 @@
   "Compiled document": "コンパイル済みドキュメント",
   "Files": "ファイル",
   "Loading files…": "ファイルを読み込み中…",
-  "Repository files": "リポジトリのファイル"
+  "Repository files": "リポジトリのファイル",
+  "Contribute a template": "テンプレートを投稿",
+  "Templates are unavailable. You can still create a blank paper.": "テンプレートを読み込めません。空白の論文は作成できます。"
 }
