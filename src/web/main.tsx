@@ -47,6 +47,8 @@ import { ImportDialog } from './import-dialog.tsx';
 import { CompileButton } from './compile-button.tsx';
 import { ProblemsButton, fixRequest, type ProblemsHandle } from './build-problems.tsx';
 import { SourceTab, useSourceEdit } from './source-panel.tsx';
+import { openHostSource, sourceHostAvailable } from './host-source.ts';
+import { SELECT_PAPER, HOST_READY } from '../host-events.ts';
 import type { OpenSource, ReviewChanges } from '../../engine/src/web/review-events.ts';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog, type SettingsInitialPage } from './settings.tsx';
@@ -1010,7 +1012,7 @@ function ManuscriptView({ notesRequest, taskCards, navigationGuard, collapsed, s
   const source = useSourceEdit({ api, projectId: project.id, build, head: git?.head?.hash ?? null, pdf, onProblems: () => problems.current?.open(),
     onLine: (file, line) => { if (modeRef.current === 'changes') review.current?.select(file, line); } });
   modeRef.current = mode;
-  useEffect(() => { if (view === 'source' && !source.editing) setView(window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'task'); }, [source.editing, view]);
+  useEffect(() => { if (view === 'source' && !source.editing) setView(sourceHostAvailable() || window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'task'); }, [source.editing, view]);
   const problemsButton = <ProblemsButton ref={problems} counts={build?.problems} status={build?.status} failureId={build?.failureId} pdfKey={build?.key} logUrl={`/api/projects/${project.id}/manuscript/log`} diagnose={diagnoseBuild}
     load={() => api<ManuscriptProblems>(`/projects/${project.id}/manuscript/problems`)}
     onJump={problem => { if (problem.page === undefined || !problem.rect) return; if (phone()) setView('pdf'); const { page, rect } = problem; requestAnimationFrame(() => pdf.current?.showPlace(page, rect)); }}
@@ -1094,6 +1096,17 @@ function App() {
   const [savedTask] = useState(() => browserStorage.getItem('papilot:task'));
   const [selected, setSelected] = useState(savedTask || '');
   const [projectId, setProjectId] = useState(() => browserStorage.getItem('papilot:project') || '');
+  useEffect(() => {
+    const select = (event: Event) => {
+      const value = (event as CustomEvent<{ projectId: string; taskId?: string }>).detail;
+      if (typeof value?.projectId !== 'string') return;
+      setProjectId(value.projectId); setSelected(value.taskId || '');
+      setPage('manuscript'); setManuscriptView('pdf'); setMobileTab('review'); setSidebar(false);
+    };
+    window.addEventListener(SELECT_PAPER, select);
+    window.dispatchEvent(new Event(HOST_READY));
+    return () => window.removeEventListener(SELECT_PAPER, select);
+  }, []);
   const [timeline, setTimeline] = useState<{ taskId: string; items: TimelineItem[] }>({ taskId: '', items: [] });
   const [itemsLoading, setItemsLoading] = useState(false);
   const [timelineError, setTimelineError] = useState({ taskId: '', message: '' });
@@ -1854,7 +1867,8 @@ function App() {
   useEffect(() => { if (!taskSource.editing) setTaskSide('chat'); }, [taskSource.editing]);
   // Phones and the static demo, which has no files to edit, keep the review's
   // own inline LaTeX.
-  const openTaskSource = mobile || isPlayground ? undefined : (request: OpenSource) => {
+  const openTaskSource = (mobile && !sourceHostAvailable()) || isPlayground ? undefined : (request: OpenSource) => {
+    if (task && openHostSource({ projectId: task.projectId, taskId: task.id, file: request.file, lines: request.lines })) return true;
     taskSource.reveal(request.file, request.lines, request.marks);
     setTaskSide('source');
     setLayout(current => current === 'review' ? 'split' : current);

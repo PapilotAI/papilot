@@ -9,6 +9,8 @@ import { browserStorage } from './storage.ts';
 import { isPlayground } from './playground-mode.ts';
 import { findPicked, lineSpan } from './source-match.ts';
 import './source-panel.css';
+import { openHostSource } from './host-source.ts';
+import { SHOW_SOURCE, SOURCE_SAVED, SOURCE_READY, type SourceLocation } from '../host-events.ts';
 
 // Editing the manuscript's LaTeX by hand. A click on the PDF, or a change
 // picked in the Changes view, opens its file in a tab beside New task, at
@@ -86,6 +88,30 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   // Drafts are kept per paper, and per task. A task's changes show in the
   // text, so its passages are not highlighted as well.
   const scope = taskId ? `task:${taskId}` : projectId, marking = !taskId;
+  const hostCallbacks = useRef({ onLine, onTaskSaved });
+  hostCallbacks.current = { onLine, onTaskSaved };
+  useEffect(() => {
+    const matches = (value: SourceLocation) => value?.projectId === projectId && value.taskId === taskId;
+    const show = (event: Event) => {
+      const location = (event as CustomEvent<SourceLocation>).detail;
+      if (!matches(location)) return;
+      hostCallbacks.current.onLine?.(location.file, location.lines[0]);
+      if (!taskId && build?.key) {
+        const query = new URLSearchParams({ key: build.key, file: location.file, start: String(location.lines[0]), end: String(location.lines[1]), near: '0' });
+        void api<{ place: SourcePlace | null }>(`/projects/${projectId}/manuscript/source/place?${query}`).then(({ place }) => {
+          if (place) pdf?.current?.showPlace(place.page, place.rect, { keep: true });
+        }).catch(() => undefined);
+      }
+    };
+    const saved = (event: Event) => {
+      const detail = (event as CustomEvent<SourceLocation & { state: unknown }>).detail;
+      if (matches(detail)) hostCallbacks.current.onTaskSaved?.(detail.state, detail.file, detail.lines[0]);
+    };
+    window.addEventListener(SHOW_SOURCE, show);
+    window.addEventListener(SOURCE_SAVED, saved);
+    if (projectId) window.dispatchEvent(new CustomEvent(SOURCE_READY, { detail: { projectId, taskId, ready: taskId ? true : build?.status === 'ready' && build.current } }));
+    return () => { window.removeEventListener(SHOW_SOURCE, show); window.removeEventListener(SOURCE_SAVED, saved); };
+  }, [projectId, taskId, build?.key, build?.status, build?.current]);
   const reviewing = useRef(review); reviewing.current = review;
   const read = async (file: string) => normalize(await api<SourceFile>(taskId ? `/tasks/${taskId}/source?file=${encodeURIComponent(file)}` : `/projects/${projectId}/manuscript/source?file=${encodeURIComponent(file)}`));
   const [edit, setEdit] = useState<Edit | null>(null);
@@ -211,6 +237,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
       if (id !== request.current) return;
       if (!source) { update(current => ({ ...current, state: current.file ? 'ready' : 'missing', error: current.file ? t('No LaTeX source was found here. Click a line of text instead.') : undefined })); return; }
       const file = normalize(source);
+      if (openHostSource({ projectId, taskId, file: file.file, lines: file.focus })) { setEdit(null); return; }
       // A click names a point; the page then marks the whole passage, and
       // the whole passage flashes in the editor.
       let marked = anchor, lines: Lines = file.focus;
@@ -240,6 +267,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   async function follow(change: CurrentChange, showTab: () => void) {
     if (change.from === 'source' || !change.units.length) return;
     const unit = change.units[0], lines: Lines = [Math.min(...unit.lines.map(range => range[0])), Math.max(...unit.lines.map(range => Math.max(range[1], range[0] + 1)))];
+    if (change.from === 'pick' && openHostSource({ projectId, taskId, file: unit.file, lines })) return;
     const current = latest.current, again = followed.current === change.stop;
     followed.current = change.stop;
     if (change.from === 'scroll') {
@@ -254,6 +282,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
 
   // Opens a file, or moves within the one open, and shows `reveal` there.
   async function openAt(name: string, reveal: Reveal) {
+    if (openHostSource({ projectId, taskId, file: name, lines: reveal.lines })) return;
     const id = ++request.current;
     if (latest.current?.file?.file === name) {
       update(value => ({ ...value, anchor: null, state: 'ready' }));

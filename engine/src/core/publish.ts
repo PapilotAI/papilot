@@ -9,7 +9,8 @@ import { acceptNoteOption, noteOptionUnits } from "./note-options.ts";
 import { isFigure, signature } from "./config.ts";
 import { REFS } from "./git.ts";
 import { now, readJson, writeJson } from "./files.ts";
-import { Cancelled, runAsync } from "./process.ts";
+import { Cancelled } from "./process.ts";
+import { runNodeScript } from './node-script.ts';
 import { Lease } from "./pool.ts";
 import type { App } from "../server.ts";
 import type {
@@ -71,9 +72,8 @@ async function work(output: string, request: object, priority: () => BuildPriori
   try {
     await lease.ready;
     if (signal?.aborted) throw new Cancelled();
-    await runAsync(
-      process.execPath,
-      ["--import", "tsx", path.join(ROOT, "src/render/worker.ts"), file],
+    await runNodeScript(
+      path.join(ROOT, "src/render/worker.ts"), [file],
       { cwd: ROOT, timeout: 1200000, signal, started: (child) => lease.attach(child) },
     );
   } catch (error) {

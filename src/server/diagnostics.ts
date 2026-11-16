@@ -1,5 +1,5 @@
-import { execFile } from 'node:child_process';
 import path from 'node:path';
+import { runNodeScript } from '../../engine/src/core/node-script.ts';
 import type { DiagnosticCheck, DiagnosticReport } from '../shared.ts';
 import { DATA, PORT, ROOT } from './paths.ts';
 
@@ -16,16 +16,16 @@ export function parseDoctorReport(output: string): DoctorReport {
 }
 
 async function runDoctor(repo?: string, port = PORT): Promise<DoctorReport> {
-  return new Promise((resolve, reject) => {
-    const args = [path.join(ROOT, 'bin/papilot.mjs'), 'doctor', '--json', '--data', DATA, '--port', String(port), ...(repo ? ['--repo', repo] : [])];
-    const child = execFile(process.execPath, args, { cwd: ROOT, timeout: 45000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 }, (error, stdout) => {
-      if (!error || error.code === 1) {
-        try { resolve(parseDoctorReport(stdout)); return; } catch { /* Report only the safe failure below. */ }
-      }
-      reject(new Error('Could not complete the environment checks. Please try again.'));
-    });
-    child.stdin?.end();
-  });
+  let output: Buffer;
+  try {
+    output = await runNodeScript(path.join(ROOT, 'bin/papilot.mjs'), ['doctor', '--json', '--data', DATA, '--port', String(port), ...(repo ? ['--repo', repo] : [])], { cwd: ROOT, timeout: 45000 });
+  } catch (error) {
+    const failed = error as { code?: number; stdout?: Buffer };
+    if (failed.code !== 1 || !failed.stdout) throw new Error('Could not complete the environment checks. Please try again.');
+    output = failed.stdout;
+  }
+  try { return parseDoctorReport(output.toString()); }
+  catch { throw new Error('Could not complete the environment checks. Please try again.'); }
 }
 
 // Tabs checking the same paper share one probe, without caching old results.

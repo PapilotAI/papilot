@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import * as pdfjs from "pdfjs-dist";
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import worker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { t } from "./i18n.ts";
 import { cMapData } from "./pdf-cmaps.ts";
 import { paintAppliedPages } from "./applied-pages.ts";
