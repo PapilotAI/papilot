@@ -17,7 +17,7 @@ Reply with exactly one JSON object: {"summary":"Review summary", "notes":[{"star
 export async function saveReviewText(worktree: string, snapshot: ReviewSnapshot) {
   const name = '.papilot-pdf-lines.txt', file = path.join(worktree, name), pattern = '/' + name;
   // Task copies are linked worktrees, so their exclude file belongs to the shared Git directory.
-  const { stdout } = await exec('git', ['rev-parse', '--git-common-dir'], { cwd: worktree, timeout: 15_000 });
+  const { stdout } = await exec('git', ['rev-parse', '--git-common-dir'], { cwd: worktree });
   const exclude = path.resolve(worktree, stdout.trim(), 'info', 'exclude');
   let excluded = '';
   try { excluded = await fs.promises.readFile(exclude, 'utf8'); }
