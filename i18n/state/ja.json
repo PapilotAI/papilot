@@ -1075,7 +1075,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Contribute": {
-    "revision": "f8274b239a9f66647066ebd73c4559d270f3bf4da71f881d6331b4fdbbeb8ac1",
+    "revision": "e8dd23fa6e9b281c86e0e28f9e402fb2bd7a54984dde253c9c2332ea712b3c7b",
     "textHash": "564c4107c1e9f291896e88b89f9f698a6edf6e844f705e6e48936aafcdc0a08e",
     "model": "gemini-4-argon-medium"
   },
@@ -3515,7 +3515,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Retry": {
-    "revision": "04ad019e6f0609288a488a4fa633dd301b4c4dad276a382c18472716182b52df",
+    "revision": "f4849983b5217641594f27423d34cc6ddc81dc99af5a900739ffa8cfed5ce4dd",
     "textHash": "fb6cc190949da044499f8bcfc763929640af9ae3a3e929b2d230f4e423b6482b",
     "model": "gemini-4-argon-medium"
   },
@@ -5873,5 +5873,10 @@
     "revision": "c5666361b24ae52ccfd77567db21564bf99a1ecfac1f8f7f8e965237adf2af94",
     "textHash": "eaca4b30692888d0183a2b77143637676909413108ce72808d7bf7438679536a",
     "model": "manual-review"
+  },
+  "Templates are unavailable. You can still create a blank paper.": {
+    "revision": "8c75bd83cb579d5d1cb83a07ce85d6fc2664408cf7907a48a4fd26b3b9ebc5e0",
+    "textHash": "1828ddbc2a749b13911b60e6bd24a8dbc39a8419de64b2928c0b056b62811297",
+    "model": "codex"
   }
 }

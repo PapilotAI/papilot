@@ -16,6 +16,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- Show common AI conference templates before theses, with conference cards, compact search and a GitHub **Contribute** link. Retry catalog failures without losing a draft; **Blank** stays available, and late template links respect an explicit choice.
+
 - Simplify the PDF toolbars with one separator before Undo and Redo, keeping the other tools together.
 - Add a [Universe](https://papilot.ai/universe/) template-library link with a blue planet icon beside the homepage logo, visible on desktop and phones. Simplify the left navigation to Universe and Blog, and add translated template links below the downloads and in the footer. The orbit turns once on hover or keyboard focus and respects reduced motion; the online demo uses a play icon in narrow headers.
 - Choose any agent’s model from the existing model menu below the chat. A restart icon marks models that start a new task. Models from the current agent keep the conversation; choosing another agent automatically stops the current task and reruns its original request in a linked replacement task, preserving unsent drafts.

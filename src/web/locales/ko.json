@@ -1459,5 +1459,6 @@
   "Paper or repository link": "논문 또는 저장소 링크",
   "Paper source": "논문 소스",
   "Paste a link…": "링크 붙여넣기…",
-  "ZIP": "ZIP"
+  "ZIP": "ZIP",
+  "Templates are unavailable. You can still create a blank paper.": "템플릿을 불러올 수 없습니다. 빈 논문은 만들 수 있습니다."
 }

@@ -97,19 +97,25 @@ try {
     { id: 'beamer', version: '1', name: 'Beamer Slides', category: 'slides', tags: ['slides'], engine: 'pdflatex' },
     { id: 'moderncv', version: '1', name: 'Modern CV', category: 'cv', tags: ['cv'], engine: 'pdflatex' },
     { id: 'book', version: '1', name: 'Book', category: 'book', tags: ['book'], engine: 'pdflatex' },
-    // A conference that reuses a shared template is a row, not another first page.
+    // Shared kits appear once in All; venue aliases are cards in Conferences and search.
     { id: 'pldi', version: '2.21', name: 'PLDI 2027', description: 'Programming Language Design and Implementation', category: 'conference', tags: ['PLDI'], venue: { name: 'PLDI', year: 2027, ccf: 'A', full: 'Programming Language Design and Implementation' }, template: 'acm-pacmpl', engine: 'pdflatex', thumbnail: origin + '/favicon.png' },
+    { id: 'acl', version: '2026', name: 'ACL 2026', category: 'conference', tags: ['nlp'], venue: { name: 'ACL' }, engine: 'pdflatex' },
+    { id: 'iclr', version: '2027', name: 'ICLR 2027', category: 'conference', tags: ['machine learning'], venue: { name: 'ICLR' }, engine: 'pdflatex' },
+    { id: 'icml', version: '2027', name: 'ICML 2027', category: 'conference', tags: ['machine learning'], venue: { name: 'ICML' }, engine: 'pdflatex' },
+    { id: 'emnlp', version: '2026', name: 'EMNLP 2026', category: 'conference', tags: ['nlp'], venue: { name: 'EMNLP' }, template: 'acl', engine: 'pdflatex' },
     { id: 'popl', version: '2.21', name: 'POPL 2027', description: 'Principles of Programming Languages', category: 'conference', tags: ['POPL'], venue: { name: 'POPL', year: 2027, ccf: 'A', full: 'Principles of Programming Languages' }, template: 'acm-pacmpl', engine: 'pdflatex', thumbnail: origin + '/favicon.png' },
   ];
   for (const link of [null, { id: 'neurips', version: '2026' }, { id: 'neurips', version: '2025' }]) {
     const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
     const requests = [], state = { version: '0.10.4', csrf: 'fixture', projects: [], tasks: [], requests: [], runtime: { connected: true, authenticated: false, account: null, error: null, models: [] } };
+    let releaseCatalog;
+    const catalogGate = new Promise(resolve => { releaseCatalog = resolve; });
     // A saved blank-paper draft must not be created while a linked template is still loading.
     if (link) await context.addInitScript(() => localStorage.setItem('papilot:create-paper', JSON.stringify({ name: 'Old draft', parent: '/home/author', template: null })));
     if (link) await context.addInitScript(link => { let pending = link; window.papilotDesktop = { platform: 'darwin', minimize() {}, maximize() {}, close() {}, chooseDirectory: async () => '/home/author/local-paper', takeNewPaper: async () => { const value = pending; pending = null; return value; }, onNewPaper: () => () => {} }; }, link);
     await context.route('**/api/**', async route => {
       const url = new URL(route.request().url());
-      if (url.pathname === '/api/universe') { if (link) await new Promise(resolve => setTimeout(resolve, 1500)); return route.fulfill({ json: { templates } }); }
+      if (url.pathname === '/api/universe') { if (link) await catalogGate; return route.fulfill({ json: { templates } }); }
       if (url.pathname === '/api/projects/create-defaults') return route.fulfill({ json: { parent: '/home/author' } });
       if (url.pathname === '/api/projects/create') { const body = route.request().postDataJSON(); requests.push(body); return route.fulfill({ status: 400, json: { error: 'Stop here.' } }); }
       if (url.pathname === '/api/projects/open') { const project = { id: 'local-paper', name: 'Local paper', path: '/home/author/local-paper', createdAt: 1 }; state.projects = [project]; return route.fulfill({ json: { project } }); }
@@ -127,6 +133,7 @@ try {
     if (link) {
       await dialog.locator('.template-card.placeholder').first().waitFor();
       assert.equal(await dialog.getByRole('button', { name: 'Create paper', exact: true }).count(), 0, 'Create waits for the linked template');
+      releaseCatalog();
     }
     if (link?.version === '2025') {
       // A version the index no longer has asks for a new choice instead of substituting one.
@@ -140,10 +147,10 @@ try {
       await page.getByRole('button', { name: 'New paper', exact: true }).first().click();
       await dialog.getByRole('tab', { name: 'Templates', exact: true }).click();
       const grid = dialog.getByRole('list', { name: 'Templates' });
-      await grid.getByRole('listitem').nth(7).waitFor();
+      await grid.getByRole('listitem').nth(10).waitFor();
       assert.equal(await dialog.getByRole('button', { name: /^(Featured|Browse all)$/ }).count(), 0);
       assert.equal(await dialog.getByRole('searchbox', { name: 'Search templates' }).isVisible(), true);
-      assert.deepEqual(await grid.getByRole('listitem').allInnerTexts().then(items => items.map(item => item.split('\n')[0])), ['Example project', 'Tsinghua University Thesis', 'NeurIPS 2026', 'PACMPL (POPL, PLDI, ICFP, OOPSLA)', 'IEEE Article', 'Beamer Slides', 'Modern CV', 'Book']);
+      assert.deepEqual(await grid.getByRole('listitem').allInnerTexts().then(items => items.map(item => item.split('\n')[0])), ['Example project', 'NeurIPS 2026', 'ICML 2027', 'ICLR 2027', 'ACL 2026', 'PACMPL (POPL, PLDI, ICFP, OOPSLA)', 'IEEE Article', 'Tsinghua University Thesis', 'Beamer Slides', 'Modern CV', 'Book'], 'Common AI conferences precede theses regardless of upstream order');
       await page.screenshot({ path: 'test-results/create-paper-all-templates.png', animations: 'disabled' });
       await page.setViewportSize({ width: 320, height: 640 });
       await page.emulateMedia({ colorScheme: 'dark' });
@@ -156,16 +163,22 @@ try {
       await grid.getByRole('listitem').filter({ hasText: /^Book$/ }).click();
       assert.equal(await chosen.locator('strong').innerText(), 'Book');
       await chosen.getByRole('button', { name: 'Change…', exact: true }).click();
-      const venues = dialog.getByRole('group', { name: 'Conferences' }).locator('.template-venue-name');
-      assert.equal(await venues.count(), 0, 'Conferences are listed only in their group or when a search matches them');
+      const names = grid.locator('.template-name');
+      const types = await dialog.getByRole('group', { name: 'Template type' }).getByRole('button').allTextContents();
+      assert.ok(types.indexOf('Conferences') < types.indexOf('Theses'));
+      const contribute = dialog.getByRole('link', { name: 'Contribute', exact: true });
+      assert.equal(await contribute.getAttribute('href'), 'https://github.com/PapilotAI/universe/blob/main/CONTRIBUTING.md');
+      assert.ok((await dialog.locator('.template-search').boundingBox()).width <= 242, 'Search remains compact');
       await dialog.getByRole('button', { name: 'Conferences', exact: true }).click();
-      assert.equal(await grid.getByRole('listitem').count(), 0);
-      assert.deepEqual(await venues.allInnerTexts(), ['NeurIPS 2026', 'PLDI 2027', 'POPL 2027'], 'Conferences are alphabetical, not ordered by a ranking');
+      assert.deepEqual(await names.allInnerTexts(), ['NeurIPS 2026', 'ICML 2027', 'ICLR 2027', 'ACL 2026', 'EMNLP 2026', 'PLDI 2027', 'POPL 2027'], 'Priority also applies to conference aliases; remaining venues are alphabetical');
+      assert.equal(await grid.getByRole('button').count(), 7, 'Each card keeps native button semantics');
       await dialog.getByRole('button', { name: 'All', exact: true }).click();
-      // A search matches a conference by its own name, not by the shared template's name.
+      await dialog.getByRole('searchbox', { name: 'Search templates' }).fill('neurips');
+      assert.deepEqual(await names.allInnerTexts(), ['NeurIPS 2026'], 'Own-kit conferences are not duplicated in search');
+      // Search matches each conference by its own name, not its shared kit name.
       await dialog.getByRole('searchbox', { name: 'Search templates' }).fill('pldi');
-      assert.deepEqual(await venues.allInnerTexts(), ['PLDI 2027']);
-      await venues.first().click();
+      assert.deepEqual(await names.allInnerTexts(), ['PACMPL (POPL, PLDI, ICFP, OOPSLA)', 'PLDI 2027']);
+      await grid.getByRole('button', { name: /^PLDI 2027/ }).click();
       await chosen.getByText('PACMPL (POPL, PLDI, ICFP, OOPSLA) · pdfLaTeX', { exact: true }).waitFor();
       await chosen.getByRole('button', { name: 'Change…', exact: true }).click();
       await dialog.getByRole('searchbox', { name: 'Search templates' }).fill('tsinghua');
@@ -220,6 +233,94 @@ try {
     }
     await context.close();
   }
+  // Catalog failure/recovery and late responses preserve explicit choices and drafts.
+  for (const scenario of ['offline', 'saved', 'link', 'retry-link', 'pending-link', 'pending-example']) {
+    const context = await browser.newContext({ locale: 'en-US', viewport: { width: 320, height: 740 }, hasTouch: true, colorScheme: 'dark' });
+    const linked = scenario.includes('link') || scenario === 'pending-example', requests = [];
+    let recover = false, release;
+    const gate = new Promise(resolve => { release = resolve; });
+    if (scenario === 'saved') await context.addInitScript(template => localStorage.setItem('papilot:create-paper', JSON.stringify({ name: 'Saved paper', parent: '/home/author', template })), templates[1]);
+    if (linked) await context.addInitScript(() => { let pending = { id: 'neurips', version: '2026' }; window.papilotDesktop = { platform: 'darwin', minimize() {}, maximize() {}, close() {}, chooseDirectory: async () => null, takeNewPaper: async () => { const value = pending; pending = null; return value; }, onNewPaper: () => () => {} }; });
+    await context.route('**/api/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/api/universe') {
+        if (scenario.startsWith('pending') || recover) { await gate; return route.fulfill({ json: { templates } }); }
+        if (scenario === 'saved') return route.abort('failed');
+        return route.fulfill({ json: { templates: [], error: 'Could not load templates.' } });
+      }
+      if (url.pathname === '/api/projects/create-defaults') return route.fulfill({ json: { parent: '/home/author' } });
+      if (url.pathname === '/api/projects/create') { requests.push(route.request().postDataJSON()); return route.fulfill({ status: 400, json: { error: 'Stop here.' } }); }
+      if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
+      if (url.pathname === '/api/state') return route.fulfill({ json: { version: '0.10.4', csrf: 'fixture', projects: [], tasks: [], requests: [], runtime: { connected: true, authenticated: false, account: null, error: null, models: [] } } });
+      if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+      return route.fulfill({ json: {} });
+    });
+    const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
+    await page.goto(origin);
+    const dialog = page.getByRole('dialog', { name: 'New paper', exact: true });
+    if (!linked) {
+      await page.getByRole('button', { name: 'New paper', exact: true }).click();
+      await dialog.getByRole('tab', { name: 'Templates', exact: true }).click();
+    }
+    const notice = dialog.getByRole('status').filter({ hasText: 'Templates are unavailable.' });
+    if (scenario.startsWith('pending')) await dialog.locator('.template-card.placeholder').first().waitFor();
+    else await notice.waitFor();
+    if (scenario === 'retry-link') {
+      recover = true;
+      const response = page.waitForResponse('**/api/universe');
+      await dialog.getByRole('button', { name: 'Retry', exact: true }).focus(); await page.keyboard.press('Enter');
+      assert.equal(await dialog.getByRole('searchbox').evaluate(element => element === document.activeElement), true, 'Retry keeps focus on the persistent search field');
+      await page.screenshot({ path: 'test-results/create-paper-loading-mobile.png', animations: 'disabled' });
+      release(); await response;
+      await dialog.locator('.template-chosen strong').filter({ hasText: 'NeurIPS 2026' }).waitFor();
+      await dialog.getByRole('textbox', { name: 'Paper name' }).fill('Recovered template');
+      await dialog.getByRole('button', { name: 'Create paper', exact: true }).click();
+      await dialog.getByRole('alert').filter({ hasText: 'Stop here.' }).waitFor();
+      assert.deepEqual(requests.at(-1).template, { id: 'neurips', version: '2026' }, 'Retry resolves the exact linked version until the user makes a choice');
+      await page.screenshot({ path: 'test-results/create-paper-recovered-mobile.png', animations: 'disabled' });
+      await context.close(); continue;
+    }
+    if (scenario === 'saved') assert.equal(await dialog.locator('.template-chosen strong').innerText(), 'NeurIPS 2026', 'An outage does not discard a saved template');
+    if (scenario === 'offline') await page.screenshot({ path: 'test-results/create-paper-offline-mobile.png', animations: 'disabled' });
+    if (scenario === 'pending-example') await dialog.getByRole('button', { name: 'Example project', exact: true }).click();
+    else await dialog.getByRole('tab', { name: 'Blank', exact: true }).click();
+    const name = dialog.getByRole('textbox', { name: 'Paper name' });
+    if (scenario === 'saved') assert.equal(await name.inputValue(), 'Saved paper');
+    else await name.fill('Offline paper');
+    if (scenario.startsWith('pending')) {
+      const response = page.waitForResponse('**/api/universe'); release(); await response;
+      await dialog.getByRole('tab', { name: 'Templates', exact: true }).click();
+      if (scenario === 'pending-example') assert.equal(await dialog.locator('.template-chosen strong').innerText(), 'Example project');
+      else {
+        await dialog.getByRole('button', { name: /^NeurIPS 2026/ }).waitFor();
+        assert.equal(await dialog.locator('.template-chosen').count(), 0, 'Late preset does not overwrite explicit Blank choice');
+        await dialog.getByRole('tab', { name: 'Blank', exact: true }).click();
+      }
+    }
+    await dialog.getByRole('button', { name: 'Create paper', exact: true }).click();
+    await dialog.getByRole('alert').filter({ hasText: 'Stop here.' }).waitFor();
+    assert.equal('template' in requests.at(-1), false, `${scenario}: create stays local`);
+    assert.equal(Boolean(requests.at(-1).example), scenario === 'pending-example');
+    assert.equal(requests.at(-1).parent, '/home/author');
+    if (!scenario.startsWith('pending')) {
+      await dialog.getByRole('tab', { name: 'Templates', exact: true }).click();
+      recover = true;
+      const response = page.waitForResponse('**/api/universe');
+      await dialog.getByRole('button', { name: 'Retry', exact: true }).focus(); await page.keyboard.press('Enter');
+      const focused = scenario === 'saved' ? name : dialog.getByRole('searchbox');
+      assert.equal(await focused.evaluate(element => element === document.activeElement), true);
+      release(); await response;
+      await notice.waitFor({ state: 'hidden' });
+      if (scenario === 'saved') assert.equal(await dialog.locator('.template-chosen strong').innerText(), 'NeurIPS 2026');
+      else await dialog.getByRole('button', { name: /^NeurIPS 2026/ }).waitFor();
+      await dialog.getByRole('tab', { name: 'Blank', exact: true }).click();
+      assert.equal(await name.inputValue(), scenario === 'saved' ? 'Saved paper' : 'Offline paper');
+      await dialog.getByRole('button', { name: 'Create paper', exact: true }).click();
+      await dialog.getByRole('alert').filter({ hasText: 'Stop here.' }).waitFor();
+      assert.equal('template' in requests.at(-1), false, 'Catalog recovery preserves the explicit blank choice');
+    }
+    await context.close();
+  }
   assert.deepEqual(errors, []);
-  console.log('PASS: Create paper from empty state and switcher, native Windows/WSL picker paths, browser host location, mobile layout, retry across reload, workspace compilation errors, Universe templates and website links');
+  console.log('PASS: Create paper from empty state and switcher, native Windows/WSL picker paths, browser host location, mobile layout, retry across reload, workspace compilation errors, AI-first template cards, contribution link, offline recovery and website links');
 } finally { await browser.close(); await server.close(); }

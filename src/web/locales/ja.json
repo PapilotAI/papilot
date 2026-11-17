@@ -1459,5 +1459,6 @@
   "Paper or repository link": "論文またはリポジトリのリンク",
   "Paper source": "論文のソース",
   "Paste a link…": "リンクを貼り付け…",
-  "ZIP": "ZIP"
+  "ZIP": "ZIP",
+  "Templates are unavailable. You can still create a blank paper.": "テンプレートを読み込めません。空白の論文は作成できます。"
 }

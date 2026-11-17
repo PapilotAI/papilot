@@ -21,42 +21,55 @@ function initialForm(): Form {
   } catch { /* Ignore an unreadable draft. */ }
   return { name: '', parent: '', template: null };
 }
-const GROUPS = ['thesis', 'conference', 'journal', 'slides', 'poster', 'cv', 'book', 'other'] as const;
+const GROUPS = ['conference', 'journal', 'thesis', 'slides', 'poster', 'cv', 'book', 'other'] as const;
+// Product browsing order, independent of years and the upstream catalog order.
+const AI_CONFERENCES = ['neurips', 'icml', 'iclr', 'cvpr', 'iccv', 'eccv', 'acl', 'emnlp', 'naacl', 'aaai', 'ijcai', 'aistats', 'uai', 'sigkdd'];
+const priority = (template: PaperTemplate) => { const index = AI_CONFERENCES.indexOf(template.id); return index < 0 ? AI_CONFERENCES.length : index; };
 type Group = typeof GROUPS[number] | 'all';
-const groupOf = (template: PaperTemplate): Group => (GROUPS as readonly string[]).includes(template.category) ? template.category as Group : 'other';
+const groupOf = (template: PaperTemplate): typeof GROUPS[number] => (GROUPS as readonly string[]).includes(template.category) ? template.category as typeof GROUPS[number] : 'other';
 const groupLabel = (group: Group) => ({ all: t('All'), thesis: t('Theses'), conference: t('Conferences'), journal: t('Journals'), slides: t('Slides'), poster: t('Posters'), cv: t('CVs'), book: t('Books'), other: t('Other') })[group];
 const ENGINE: Record<string, string> = { pdflatex: 'pdfLaTeX', xelatex: 'XeLaTeX', lualatex: 'LuaLaTeX' };
 const templateName = (template: Choice) => locale().startsWith('zh') && template.zh?.name ? template.zh.name : template.name;
 // Where a template comes from, unless its name already says so (NeurIPS 2026).
 const templateMeta = (template: Choice) => { if (template.family) return template.family; const from = template.venue ? [template.venue.name, template.venue.year].filter(Boolean).join(' ') : template.organization ?? ''; return template.name.includes(from) ? '' : from; };
 const choiceOf = ({ id, version, name, zh, engine, thumbnail, organization, venue }: PaperTemplate, family?: string): Choice => ({ id, version, name, ...(zh ? { zh } : {}), engine, ...(thumbnail ? { thumbnail } : {}), ...(organization ? { organization } : {}), ...(venue ? { venue } : {}), ...(family ? { family } : {}) });
-// Conferences are listed alphabetically: Universe serves every field, not one ranking.
 const isVenue = (template: PaperTemplate) => Boolean(template.template || template.venue);
 // crypto.randomUUID is unavailable on LAN HTTP. Keep a UUID-shaped random ID.
 const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
 export function CreatePaperPanel({ api, onDone, preset, tab, active, onBusyChange }: { api: <T>(url: string, body?: unknown) => Promise<T>; onDone: (paper: Project) => Promise<void>; preset?: { id: string; version: string }; tab: 'blank' | 'templates'; active: boolean; onBusyChange: (busy: boolean) => void }) {
   const dialog = useRef<HTMLDivElement>(null), pending = useRef(false), id = useId();
+  const presetPending = useRef(Boolean(preset));
   const [form, setForm] = useState(initialForm), [busy, setBusy] = useState(false), [error, setError] = useState('');
   // A saved draft starts at the details. A link from the Universe website waits on
   // the template step until its exact version is found, so Create cannot use another.
   const [step, setStep] = useState<'template' | 'details'>(() => !preset && (initialForm().template || initialForm().example) ? 'details' : 'template');
-  const [templates, setTemplates] = useState<PaperTemplate[] | null>(null), [unavailable, setUnavailable] = useState('');
+  const [templates, setTemplates] = useState<PaperTemplate[] | null>(null), [unavailable, setUnavailable] = useState(false), [catalogAttempt, setCatalogAttempt] = useState(0);
   const [group, setGroup] = useState<Group>('all'), [query, setQuery] = useState('');
+  // Choosing Blank is explicit, even if a website link is still resolving.
+  useEffect(() => { if (active && tab === 'blank') presetPending.current = false; }, [active, tab]);
   useEffect(() => {
     let live = true;
     if (!form.parent) void api<{ parent: string }>('/projects/create-defaults').then(value => { if (live) setForm(current => current.parent ? current : { ...current, parent: value.parent }); }, failure => { if (live) setError(failure instanceof Error ? failure.message : String(failure)); });
-    // Without templates (offline, or none published) the dialog is the plain form.
-    const loaded = (list: PaperTemplate[], problem = '') => {
-      if (!live) return;
-      setTemplates(list); setUnavailable(list.length ? '' : problem);
-      const found = preset && list.find(item => item.id === preset.id && item.version === preset.version);
-      if (found) { setForm(current => ({ ...current, example: false, template: choiceOf(found, list.find(item => item.id === found.template)?.name) })); setStep('details'); }
-    };
-    void api<{ templates?: PaperTemplate[]; error?: string }>('/universe').then(value => loaded(Array.isArray(value?.templates) ? value.templates : [], value?.error), failure => loaded([], failure instanceof Error ? failure.message : String(failure)));
     return () => { live = false; };
   }, []);
   useEffect(() => {
-    if (active && tab === 'templates' && step === 'details') dialog.current?.querySelector<HTMLInputElement>('[name="name"]')?.focus();
+    let live = true;
+    setTemplates(null); setUnavailable(false);
+    const loaded = (list: PaperTemplate[], problem = '') => {
+      if (!live) return;
+      setTemplates(list); setUnavailable(!list.length && Boolean(problem));
+      const found = presetPending.current && preset && list.find(item => item.id === preset.id && item.version === preset.version);
+      if (found) { presetPending.current = false; setForm(current => ({ ...current, example: false, template: choiceOf(found, list.find(item => item.id === found.template)?.name) })); setStep('details'); }
+    };
+    void api<{ templates?: PaperTemplate[]; error?: string }>('/universe').then(value => loaded(Array.isArray(value?.templates) ? value.templates : [], value?.error), failure => loaded([], failure instanceof Error ? failure.message : String(failure)));
+    return () => { live = false; };
+  }, [catalogAttempt]);
+  function focusStep() {
+    const selector = step === 'details' || tab === 'blank' ? '[name="name"]' : '.template-search input';
+    dialog.current?.querySelector<HTMLInputElement>(selector)?.focus();
+  }
+  useEffect(() => {
+    if (active && tab === 'templates') focusStep();
   }, [step]);
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
   useEffect(() => { browserStorage.setItem(draftKey, JSON.stringify(form)); }, [form]);
@@ -89,37 +102,40 @@ export function CreatePaperPanel({ api, onDone, preset, tab, active, onBusyChang
   // A conference matches its shared template by id (lipics), not by that template's name,
   // which lists other venues (PACMPL (POPL, PLDI, …)).
   const matches = (item: PaperTemplate) => words.every(word => [item.id, item.name, item.zh?.name, item.organization, item.venue?.name, item.venue?.full, item.template, ...item.tags].some(value => value?.toLowerCase().includes(word)));
-  // Shared templates show as first pages; conferences that reuse them as a list, in
-  // the Conferences group or when a search matches them.
-  const shown = group === 'conference' ? [] : (templates || []).filter(item => !item.template && (group === 'all' || groupOf(item) === group) && matches(item));
-  const venues = group === 'conference' || (group === 'all' && words.length) ? (templates || []).filter(item => isVenue(item) && matches(item)).sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })) : [];
-  const pick = (template: PaperTemplate | null) => { setForm(current => ({ ...current, example: !template, template: template && choiceOf(template, familyName(template)) })); setError(''); setStep('details'); };
+  // One card per result, including conferences with their own author kits. Shared
+  // kit aliases appear in Conferences and search without duplicating the All grid.
+  const shown = (templates || []).filter(item => {
+    if (!matches(item)) return false;
+    if (group === 'conference') return isVenue(item);
+    if (group === 'all') return !item.template || words.length > 0;
+    return !item.template && groupOf(item) === group;
+  });
+  shown.sort((a, b) => priority(a) - priority(b)
+    || (group === 'all' ? GROUPS.indexOf(groupOf(a)) - GROUPS.indexOf(groupOf(b)) : 0)
+    || a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  const pick = (template: PaperTemplate | null) => { presetPending.current = false; setForm(current => ({ ...current, example: !template, template: template && choiceOf(template, familyName(template)) })); setError(''); setStep('details'); };
   return <div ref={dialog} className="create-paper-dialog">
+      {tab === 'templates' && unavailable && <div className="template-status" role="status"><span>{t('Templates are unavailable. You can still create a blank paper.')}</span><button type="button" className="button ghost compact" disabled={busy} onClick={() => { focusStep(); setCatalogAttempt(value => value + 1); }}>{t('Retry')}</button></div>}
       {tab === 'templates' && step === 'template' ? <>
         <search className="template-tools" aria-label={t('Templates')}>
-          {groups.length > 1 && <div className="template-groups" role="group" aria-label={t('Template type')}>{(['all', ...groups] as Group[]).map(key => <button key={key} type="button" aria-pressed={group === key} onClick={() => setGroup(key)}>{groupLabel(key)}</button>)}</div>}
-          {Boolean(templates?.length) && <label className="template-search"><Icon name="search" size={14}/><input type="search" value={query} placeholder={t('Search templates')} aria-label={t('Search templates')} autoComplete="off" spellCheck={false} onChange={event => setQuery(event.target.value)}/></label>}
+          <div className="template-browse">
+            <label className="template-search" htmlFor={id + '-search'}><Icon name="search" size={14}/><input id={id + '-search'} type="search" value={query} placeholder={t('Search templates')} aria-label={t('Search templates')} autoComplete="off" spellCheck={false} onChange={event => setQuery(event.target.value)}/></label>
+            <a className="button ghost compact template-contribute" href="https://github.com/PapilotAI/universe/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer" aria-label={t('Contribute')} title={t('Contribute')}><Icon name="github" size={16}/><span>{t('Contribute')}</span></a>
+          </div>
+          {groups.length > 1 && <div className="template-groups" role="group" aria-label={t('Template type')}>{(['all', ...groups] as Group[]).map(key => <button key={key} type="button" className="button ghost compact" aria-pressed={group === key} onClick={() => setGroup(key)}>{groupLabel(key)}</button>)}</div>}
         </search>
-        <div className="template-grid" role="list" aria-label={t('Templates')}>
-          {group === 'all' && !words.length && <button type="button" role="listitem" className="template-card" aria-pressed={!form.template} onClick={() => pick(null)}>
+        <ul className="template-grid" role="list" aria-label={t('Templates')}>
+          {group === 'all' && !words.length && <li><button type="button" className="template-card" aria-pressed={Boolean(form.example)} onClick={() => pick(null)}>
             <span className="template-thumb blank"><Icon name="paper" size={24}/></span>
             <span className="template-name">{t('Example project')}</span>
-          </button>}
-          {shown.map(item => <button key={item.id} type="button" role="listitem" className="template-card" aria-pressed={form.template?.id === item.id} title={templateName(item)} onClick={() => pick(item)}>
+          </button></li>}
+          {shown.map(item => <li key={item.id}><button type="button" className="template-card" aria-pressed={form.template?.id === item.id} title={item.venue?.full ?? templateName(item)} onClick={() => pick(item)}>
             <span className="template-thumb">{item.thumbnail && <img src={item.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer"/>}</span>
             <span className="template-name">{templateName(item)}</span>
-            <span className="template-meta">{templateMeta(item)}</span>
-          </button>)}
-          {templates === null && [0, 1, 2].map(key => <span key={key} className="template-card placeholder" aria-hidden="true"><span className="template-thumb"/></span>)}
-          {venues.length > 0 && <div className="template-venues" role="group" aria-label={t('Conferences')}>
-            {venues.map(item => <button key={item.id} type="button" className="template-venue" aria-pressed={form.template?.id === item.id} title={item.venue?.full ?? item.description} onClick={() => pick(item)}>
-              <span className="template-venue-name">{templateName(item)}</span>
-              <span className="template-venue-full">{item.venue?.full ?? item.description}</span>
-              <span className="template-venue-family">{familyName(item) ?? ''}</span>
-            </button>)}
-          </div>}
-        </div>
-        {unavailable && <p className="template-status" role="status">{unavailable}</p>}
+            <span className="template-meta">{familyName(item) ?? templateMeta(item)}</span>
+          </button></li>)}
+          {templates === null && [0, 1, 2].map(key => <li key={key} className="template-card placeholder" aria-hidden="true"><span className="template-thumb"/></li>)}
+        </ul>
       </> : <>
         {tab === 'templates' && <div className="template-chosen">
           <span className="template-thumb">{chosen?.thumbnail ? <img src={chosen.thumbnail} alt="" referrerPolicy="no-referrer"/> : <Icon name="paper" size={14}/>}</span>

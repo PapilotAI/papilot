@@ -81,6 +81,17 @@ test('index keeps valid templates under the Universe base and caches the list', 
   await assert.rejects(offline.client.templates(), /Could not load templates/);
 });
 
+test('blank paper creation stays local when the Universe catalog is unavailable', async t => {
+  const f = universe(t, {});
+  await assert.rejects(f.client.templates(), /Could not load templates/);
+  const calls = f.calls.length;
+  const project = await f.creations.create({ id: randomUUID(), name: 'Offline paper', parent: f.parent }, f.register);
+  assert.equal(f.calls.length, calls, 'Creating a blank paper must not fetch a catalog or archive');
+  assert.ok(fs.readFileSync(path.join(project.path, 'main.tex'), 'utf8').includes('\\begin{document}'));
+  assert.equal(git(project.path, 'status', '--porcelain'), '');
+  assert.deepEqual(git(project.path, 'ls-files').split('\n'), ['.gitignore', 'main.tex']);
+});
+
 test('a template creates a committed paper with its main file and engine', async t => {
   const archive = zip({ 'thesis.tex': MAIN, 'chapters/intro.tex': 'Hello.\n', 'figures/logo.txt': 'logo' });
   const f = universe(t, { 'v1/templates/thesis/1.0.0.zip': archive }, { schema: 1, templates: [entry('thesis', archive)] });
