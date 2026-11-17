@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import type { NoteGroup } from '../note-groups.ts';
 import { GroupPicker } from './note-groups.tsx';
 import { StampMenu } from './stamp-menu.tsx';
@@ -24,7 +24,7 @@ function showRailTip(button: Element | null) {
   if (menu && document.getElementById(menu)?.matches(':popover-open')) { hideRailTips(rail); return; }
   const tip = button.querySelector<HTMLElement>('.rail-tip');
   if (!tip) { hideRailTips(rail); return; }
-  const rect = button.getBoundingClientRect(), viewport = button.closest('.rail-tools')?.getBoundingClientRect();
+  const rect = button.getBoundingClientRect(), viewport = button.closest('.rail-tools, .pdf-anchor-slots')?.getBoundingClientRect();
   if (viewport && (rect.bottom <= viewport.top || rect.top >= viewport.bottom)) { hideRailTips(rail); return; }
   hideRailTips(rail, tip);
   if (!tip.matches(':popover-open')) tip.showPopover();
@@ -33,8 +33,11 @@ function showRailTip(button: Element | null) {
 }
 
 // Shared by the manuscript and the embedded review; gestures stay with each viewer.
-export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended, editing, stamps, locked, onLock, history, sourceTool, readingTools, endTools }: {
+export interface PdfToolRailHandle { expand: () => void }
+export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended, editing, stamps, locked, onLock, history, sourceTool, navigation, anchors, controller, readingTools, endTools }: {
   tool: PdfTool; onTool: (tool: PdfTool) => void;
+  navigation?: ReactNode;
+  anchors?: ReactNode; controller?: Ref<PdfToolRailHandle>;
   /** Offer the tool that opens a passage's LaTeX for editing by hand. */
   sourceTool?: boolean;
   readingTools?: ReactNode;
@@ -57,6 +60,7 @@ export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended,
     browserStorage.setItem('papilot:pdf-tools-collapsed', String(next));
     if (mobile && next && tool !== 'select') onTool('select');
   }
+  useImperativeHandle(controller, () => ({ expand: () => toggleCollapse(false) }));
   // Menu dismissal restores focus synchronously. Defer all tooltip operations
   // until that native popover operation has finished, and coalesce focus/scroll.
   function queueRailTip(button: Element | null = railTipTarget.current) {
@@ -98,9 +102,9 @@ export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended,
     { id: 'hand', icon: 'toolHand', label: t('Hand'), key: 'H', hint: t('Drag to move around the page. Hold Space to use it with any tool.') },
   ];
   const visibleTools = mobile ? railTools.filter(item => item.id !== 'hand') : railTools;
-  return <div ref={rail} className="pdf-rail" data-collapsed={collapsed} data-suspended={suspended || editing || undefined} role="toolbar" aria-orientation={mobile ? 'horizontal' : 'vertical'} aria-label={t('Marking tools')}
+  return <div ref={rail} className="pdf-rail" data-navigation={Boolean(navigation) || undefined} data-collapsed={collapsed} data-suspended={suspended || editing || undefined} role="toolbar" aria-orientation={mobile ? 'horizontal' : 'vertical'} aria-label={t('Marking tools')}
       onTouchStart={event => {
-        if (!mobile || event.touches.length !== 1) { swipeStart.current = null; return; }
+        if (!mobile || event.touches.length !== 1 || (event.target as Element).closest('[popover], dialog, [role="dialog"]')) { swipeStart.current = null; return; }
         swipeStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
       }} onTouchEnd={event => {
         const start = swipeStart.current; swipeStart.current = null;
@@ -129,6 +133,7 @@ export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended,
       </button>
       <div id={railId} className="rail-items" hidden={collapsed}>
       <div className="rail-tools">
+      {!collapsed && navigation && <>{navigation}<span className="rail-separator" aria-hidden="true"/></>}
       {!collapsed && readingTools}
       {!collapsed && visibleTools.map(item => {
         const content = <><Icon name={item.icon} size={item.id === 'magic' ? 22 : 18}/>
@@ -159,6 +164,7 @@ export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended,
           </button>;
         })}
       </div>}
+      {anchors && <div className="rail-anchors">{anchors}</div>}
       </div>
     </div>;
 }

@@ -1477,5 +1477,17 @@
   "{n} task": "작업 {n}개",
   "{n} task failed.": "작업 {n}개 처리에 실패했습니다.",
   "Delete all": "모두 삭제",
-  "{done} of {total}": "{done} / {total}"
+  "{done} of {total}": "{done} / {total}",
+  "Add anchor": "앵커 추가",
+  "Anchors": "앵커",
+  "Back in PDF": "PDF에서 뒤로",
+  "Edit anchor: {name}": "앵커 편집: {name}",
+  "Forward in PDF": "PDF에서 앞으로",
+  "Page unavailable": "페이지를 사용할 수 없음",
+  "Save a place to return to later.": "나중에 돌아올 위치를 저장하세요.",
+  "Source unavailable": "소스를 찾을 수 없음",
+  "Saved anchors": "저장된 앵커",
+  "Previous anchor": "이전 앵커",
+  "Next anchor": "다음 앵커",
+  "Anchor shortcuts work while the PDF is focused.": "PDF에 포커스가 있을 때 앵커 단축키를 사용할 수 있습니다."
 }

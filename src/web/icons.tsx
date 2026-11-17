@@ -25,6 +25,7 @@ const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode
   arrowUp: <path d="M12 19V5m-7 7 7-7 7 7"/>,
   arrowDown: <path d="M12 5v14m7-7-7 7-7-7"/>,
   arrowRight: <path d="M5 12h14m-6-6 6 6-6 6"/>,
+  arrowLeft: <path d="M19 12H5m6-6-6 6 6 6"/>,
   stop: <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>,
   updown: <path d="m7 15 5 5 5-5M7 9l5-5 5 5"/>,
   more: <><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></>,

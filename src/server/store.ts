@@ -24,6 +24,7 @@ export class Store extends EventEmitter {
       CREATE TABLE IF NOT EXISTS ai_review_inputs(task_id TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS annotations(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS anchor_sources(project_id TEXT NOT NULL, revision TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY(project_id, revision));
       CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS task_items ON items(task_id,created);
       CREATE INDEX IF NOT EXISTS task_runs ON runs(task_id,status);
@@ -64,13 +65,20 @@ export class Store extends EventEmitter {
       this.db.prepare('INSERT OR IGNORE INTO deleted_tasks SELECT id, ? FROM tasks WHERE project_id=?').run(Date.now(), id);
       for (const table of ['items', 'runs', 'ai_review_inputs']) this.db.prepare(`DELETE FROM ${table} WHERE task_id IN (SELECT id FROM tasks WHERE project_id=?)`).run(id);
       for (const task of tasks) { const prefix = `note-options:${task}:`; this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(prefix.length, prefix); }
-      for (const table of ['tasks', 'annotations']) this.db.prepare(`DELETE FROM ${table} WHERE project_id=?`).run(id);
+      for (const table of ['tasks', 'annotations', 'anchor_sources']) this.db.prepare(`DELETE FROM ${table} WHERE project_id=?`).run(id);
       this.db.prepare('DELETE FROM projects WHERE id=?').run(id);
     });
     for (const task of tasks) this.itemRevisions.delete(task);
     this.emit('change');
   }
   preference<T>(key: string) { const row = this.db.prepare('SELECT data FROM settings WHERE key=?').get(key) as { data: string } | undefined; return row ? JSON.parse(row.data) as T : undefined; }
+  // One durable copy per revision, shared by all anchors made in that file.
+  saveAnchorSource(projectId: string, revision: string, text: string) {
+    this.db.prepare('INSERT OR IGNORE INTO anchor_sources VALUES(?,?,?)').run(projectId, revision, text);
+  }
+  anchorSource(projectId: string, revision: string) {
+    return (this.db.prepare('SELECT text FROM anchor_sources WHERE project_id=? AND revision=?').get(projectId, revision) as { text: string } | undefined)?.text;
+  }
   savePreference(key: string, value: unknown) {
     if (value === undefined) this.db.prepare('DELETE FROM settings WHERE key=?').run(key);
     else this.db.prepare('INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data').run(key, JSON.stringify(value));

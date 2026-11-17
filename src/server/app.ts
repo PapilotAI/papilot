@@ -19,6 +19,7 @@ import { bibliography, confirmEntry } from './references.ts';
 import { type Manuscripts, gitAbortMerge, gitCommit, gitDiff, gitDiscard, gitFinishMerge, gitIgnore, gitRemote, gitStage, gitStatus, gitSync } from './manuscript.ts';
 import { gitHistory, gitVersion, gitVersionDiff, gitRestoreVersion } from './git-history.ts';
 import { locateSource, placeSource, readFile, saveSource } from './manuscript-source.ts';
+import { captureAnchor, resolveAnchors, isSourceAnchor } from './manuscript-anchors.ts';
 import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
@@ -761,6 +762,17 @@ export async function buildApp(options: AppOptions) {
     return { document: main };
   }));
   const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] > value[0] && value[3] > value[1];
+  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript/anchors', project(), request => {
+    const b = (request.body || {}) as any;
+    if (!isRect(b.rect) || !Number.isInteger(b.page) || b.page < 0) throw new Error('Select text or mark a region on the page first.');
+    return captureAnchor(manuscripts, store, request.params.id, string(b.key, 'Preview key', 64), b.page, b.rect,
+      Array.isArray(b.rects) ? b.rects.filter(isRect).slice(0, 200) : [], typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '');
+  });
+  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript/anchors/resolve', project(), request => {
+    const b = (request.body || {}) as any;
+    if (!Array.isArray(b.anchors) || !b.anchors.every((anchor: any) => anchor && typeof anchor.id === 'string' && isSourceAnchor(anchor.source) && Number.isInteger(anchor.near) && anchor.near >= 0)) throw new Error('Invalid line range.');
+    return resolveAnchors(manuscripts, store, request.params.id, string(b.key, 'Preview key', 64), b.anchors);
+  });
   // Manual LaTeX edits from the PDF, without an agent: the passage under a
   // click as it is on disk now, any lines of a file, a save of those lines
   // (which compiles the manuscript), and where saved lines were printed.

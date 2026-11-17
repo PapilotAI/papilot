@@ -332,7 +332,9 @@ Second page fixture with a different passage for search and links.
   try {
     const { page, dialog } = resizing;
     const rail = page.getByRole('toolbar', { name: 'Marking tools' });
+    await rail.getByRole('button', { name: 'Crop margins', exact: true }).scrollIntoViewIfNeeded();
     await expect(rail.getByRole('button', { name: 'Crop margins', exact: true })).toBeInViewport();
+    await rail.getByRole('button', { name: 'Find in PDF', exact: true }).scrollIntoViewIfNeeded();
     await expect(rail.getByRole('button', { name: 'Find in PDF', exact: true })).toBeInViewport();
     await rail.getByRole('button', { name: 'Collapse marking tools', exact: true }).click();
     await rail.getByRole('button', { name: 'Expand marking tools', exact: true }).click();
@@ -353,7 +355,8 @@ Second page fixture with a different passage for search and links.
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(resizing.cropButton).toBeFocused();
     await page.setViewportSize({ width: 1000, height: 900 });
-    await expect(page.locator('.pdf-compact-tools .pdf-crop-toggle')).toBeVisible();
+    await expect(page.locator('.pdf-rail .pdf-crop-toggle')).toBeVisible();
+    await expect(page.locator('.pdf-compact-tools')).toBeHidden();
     await resizing.openCrop();
     await page.setViewportSize({ width: 1440, height: 1000 });
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -361,7 +364,7 @@ Second page fixture with a different passage for search and links.
     await resizing.openCrop();
     await page.setViewportSize({ width: 1000, height: 900 });
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(page.locator('.pdf-compact-tools .pdf-crop-toggle')).toBeFocused();
+    await expect(page.locator('.pdf-rail .pdf-crop-toggle')).toBeFocused();
     await page.getByRole('button', { name: 'Find in PDF', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Search the PDF', exact: true })).toBeFocused();
   } finally { await resizing.context.close(); }

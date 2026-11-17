@@ -144,7 +144,13 @@ The second page must only open when its link is deliberately clicked.
   } finally { await f.page.close(); }
 
   const ordinary = await open();
-  try { await ordinary.link.click(); await expect(ordinary.pageNumber).toHaveValue('2'); }
+  try {
+    await ordinary.link.click(); await expect(ordinary.pageNumber).toHaveValue('2');
+    await ordinary.page.getByRole('button', { name: 'Back in PDF', exact: true }).click();
+    await expect(ordinary.pageNumber).toHaveValue('1');
+    await ordinary.page.getByRole('button', { name: 'Forward in PDF', exact: true }).click();
+    await expect(ordinary.pageNumber).toHaveValue('2');
+  }
   finally { await ordinary.page.close(); }
   assert.deepEqual(errors, []);
   console.log('PASS: floating note/source buttons keep their aimed-at hit area over PDF links, magic pen clicks stay in the menu, and ordinary links still navigate.');

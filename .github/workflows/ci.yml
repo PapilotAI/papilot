@@ -327,6 +327,7 @@ jobs:
             test-results/import-*.png
             test-results/task-restart-*.png
             test-results/section-comments-*.png
+            test-results/anchors-*.png
             test-results/bulk-tasks-*.png
           if-no-files-found: ignore
           retention-days: 7

@@ -7,11 +7,13 @@ import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy } from 'pdf
 import { EventBus, FindState, LinkTarget, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import viewerStyles from 'pdfjs-dist/web/pdf_viewer.css?inline';
 import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import type { Annotation, MarkKind } from '../shared.ts';
+import type { Annotation, MarkKind, SourcePlace } from '../shared.ts';
 import { loadStamps, useStamps, type Stamp } from './stamps.ts';
 import { StampWheel } from './stamp-wheel.tsx';
-import { PdfToolRail, TOOL_KEYS, type PdfTool } from './pdf-tool-rail.tsx';
+import { PdfToolRail, TOOL_KEYS, type PdfTool, type PdfToolRailHandle } from './pdf-tool-rail.tsx';
 import { PdfContents, PdfPageControls, PdfFind, PdfFindButton } from './pdf-controls.tsx';
+import { PdfAnchors, type PdfAnchorsHandle } from './pdf-anchors.tsx';
+import type { PdfAnchor, PdfPosition } from './pdf-anchors.ts';
 import { readOutline, pdfZoom, PDF_ZOOM_STORAGE, type OutlineItem } from '../../engine/src/web/pdf-reader.ts';
 import { Icon } from './icons.tsx';
 import { browserStorage } from './storage.ts';
@@ -21,7 +23,7 @@ import { touchSelection } from './touch-select.ts';
 import { t } from './i18n.ts';
 import { PdfNoteCard, type PdfNoteActions, type PdfNoteHandle } from './pdf-suggestion.tsx';
 import { cMapData } from '../../engine/src/web/pdf-cmaps.ts';
-import { cropDocument, cropLayerStyle, isCropped, originalPageRect, readPdfCrop, savePdfCrop, type PdfCrop } from './pdf-crop.ts';
+import { cropDocument, cropLayerStyle, fullPageViewport, isCropped, originalPageRect, readPdfCrop, savePdfCrop, type PdfCrop } from './pdf-crop.ts';
 import { PdfCropDialog } from './pdf-crop-dialog.tsx';
 import { PdfSelectionActions } from './pdf-selection-actions.tsx';
 
@@ -194,6 +196,8 @@ export const PdfView = forwardRef<PdfHandle, {
   url: string; words?: string; notes: { note: Annotation; number: number }[]; active: string; region: boolean; setRegion: (on: boolean) => void;
   /** The build `url` shows; new marks name the build whose pages they were made on. */
   pdfKey?: string;
+  /** Source binding is available for a live manuscript; task PDFs are immutable snapshots. */
+  anchorApi?: (action: 'capture' | 'resolve', body: unknown) => Promise<any>;
   onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup, options?: { reveal?: boolean; quote?: boolean; kind?: MarkKind; stamp?: string; key?: string }) => Promise<void>;
   onSelect: (note: Annotation) => void; outline: OutlineItem[]; section: number;
   noteActions?: PdfNoteActions; onDeselect?: () => void;
@@ -216,6 +220,7 @@ export const PdfView = forwardRef<PdfHandle, {
 }>(function PdfView(props, ref) {
   const latest = useRef(props); latest.current = props;
   const root = useRef<HTMLDivElement>(null), container = useRef<HTMLDivElement>(null), inner = useRef<HTMLDivElement>(null), findInput = useRef<HTMLInputElement>(null);
+  const anchorControls = useRef<PdfAnchorsHandle>(null), railControls = useRef<PdfToolRailHandle>(null);
   const tools = useRef<{ bus: EventBus; links: PDFLinkService; find: PDFFindController; viewer: PDFViewer; cropTo: (crop: PdfCrop) => void } | null>(null);
   const [crop, setCrop] = useState(() => readPdfCrop(props.place)), cropRef = useRef(crop);
   const [cropping, setCropping] = useState(false);
@@ -240,6 +245,8 @@ export const PdfView = forwardRef<PdfHandle, {
   const [flash, setFlash] = useState<{ page: number; rect: Rect; id: number } | null>(null);
   // A place asked for while a new PDF opens is shown once its pages have a size.
   const pagesReady = useRef(false), pendingPlace = useRef<{ page: number; rect: Rect; keep?: boolean } | null>(null);
+  const position = useRef<PdfPosition | null>(null), navigation = useRef<{ back: PdfPosition[]; forward: PdfPosition[] }>({ back: [], forward: [] });
+  const [, updateNavigation] = useState(0), [navigationReady, setNavigationReady] = useState(false);
   const [editing, setEditing] = useState<Target | null>(null), editingRef = useRef(editing); editingRef.current = editing;
   // A recompiled manuscript waits while a note is being written: replacing the
   // pages would close the card and lose its place. The pages on screen, their
@@ -323,6 +330,87 @@ export const PdfView = forwardRef<PdfHandle, {
     finally { setNoteBusy(false); }
   }
 
+  function capturePosition(): PdfPosition | null {
+    if (!position.current || !container.current?.clientHeight) return null;
+    tools.current?.viewer.update();
+    return position.current ? { ...position.current } : null;
+  }
+  const anchorTarget = useRef<{ position: PdfPosition; reading: PdfPosition; target: Target; key?: string } | null>(null);
+  function prepareAnchor() {
+    anchorTarget.current = null;
+    const position = capturePosition(), box = container.current?.getBoundingClientRect();
+    if (!position || !box) return;
+    let target = selection ? selected(selection) : null;
+    if (!target) {
+      // Bind the first readable line near the top of the viewport. A margin or
+      // page-number click would otherwise make SyncTeX choose unrelated source.
+      const word = Array.from(container.current!.querySelectorAll<HTMLElement>('.textLayer span')).find(span => {
+        const rect = span.getBoundingClientRect(), page = span.closest('.page')!.getBoundingClientRect();
+        const x = (rect.left + rect.right) / 2, y = (rect.top + rect.bottom) / 2;
+        return !span.firstElementChild && span.textContent?.trim() && !/^\d+$/.test(span.textContent.trim()) && rect.top >= box.top + 24 && rect.bottom <= box.bottom && rect.right > box.left && rect.left < box.right
+          && x >= page.left && x <= page.right && y >= page.top && y <= page.bottom;
+      });
+      if (word) {
+        const rect = word.getBoundingClientRect();
+        target = pointAt(word.closest<HTMLElement>('.page')!, (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+      }
+    }
+    if (target) {
+      const reading = { ...position };
+      // A viewport can start in the blank tail of the previous page. Name
+      // the page containing the source passage, not that preceding margin.
+      if (target.page + 1 !== position.page) {
+        const view = tools.current?.viewer.getPageView(target.page);
+        const viewport = view?.pdfPage && fullPageViewport(view.pdfPage, { scale: view.viewport.scale, rotation: view.viewport.rotation });
+        if (viewport) {
+          const [left, top] = viewport.convertToPdfPoint(target.rect[0] * viewport.width, Math.max(0, target.rect[1] * viewport.height - 24));
+          Object.assign(position, { page: target.page + 1, left, top });
+        }
+      }
+      anchorTarget.current = { position, reading, target, key: shownRef.current.key };
+    }
+  }
+  async function captureAnchor(): Promise<Omit<PdfAnchor, 'id' | 'name'> | null> {
+    if (!props.anchorApi) return capturePosition();
+    const current = capturePosition(), prepared = anchorTarget.current;
+    if (!prepared || prepared.key !== shownRef.current.key || !current || prepared.reading.page !== current.page || prepared.reading.left !== current.left || prepared.reading.top !== current.top) prepareAnchor();
+    const captured = anchorTarget.current;
+    if (!captured?.key) throw new Error(t('No LaTeX source was found here. Click a line of text instead.'));
+    const { source } = await props.anchorApi('capture', { ...captured.target, key: captured.key });
+    if (!source) throw new Error(t('No LaTeX source was found here. Click a line of text instead.'));
+    return { ...captured.position, source, key: captured.key };
+  }
+  async function resolveAnchors(anchors: PdfAnchor[]) {
+    const doc = loaded.current, key = shownRef.current.key;
+    const results: { id: string; place: SourcePlace | null }[] = await props.anchorApi!('resolve', { key, anchors: anchors.map(anchor => ({ id: anchor.id, source: anchor.source, near: anchor.page - 1 })) });
+    return Promise.all(results.map(async ({ id, place }) => {
+      if (!place || !doc || place.page < 0 || place.page >= doc.numPages) return { id, position: null };
+      const page = await doc.getPage(place.page + 1), viewport = fullPageViewport(page, { scale: 1 });
+      const [left, top] = viewport.convertToPdfPoint(place.rect[0] * viewport.width, Math.max(0, place.rect[1] * viewport.height - 24));
+      return { id, position: { page: place.page + 1, left, top } };
+    }));
+  }
+  function navigate(move: () => void) {
+    const from = capturePosition();
+    move();
+    const to = capturePosition();
+    if (!from || !to || (from.page === to.page && Math.abs(from.top - to.top) < 1 && Math.abs(from.left - to.left) < 1)) return;
+    navigation.current.back.push(from); navigation.current.forward = [];
+    updateNavigation(value => value + 1);
+  }
+  function restorePosition(target: PdfPosition) {
+    tools.current?.viewer.scrollPageIntoView({ pageNumber: target.page, destArray: [null, { name: 'XYZ' }, target.left, target.top, null], allowNegativeOffset: !isCropped(cropRef.current) });
+  }
+  function travel(direction: 'back' | 'forward') {
+    const from = capturePosition();
+    if (!from) return;
+    const target = navigation.current[direction].pop();
+    if (!target) return;
+    navigation.current[direction === 'back' ? 'forward' : 'back'].push(from);
+    restorePosition(target);
+    updateNavigation(value => value + 1);
+    container.current?.focus({ preventScroll: true });
+  }
   const handle = useRef<PdfHandle | null>(null);
   useImperativeHandle(ref, () => handle.current = ({
     async save() { return await noteCard.current?.save() ?? true; },
@@ -339,8 +427,8 @@ export const PdfView = forwardRef<PdfHandle, {
         const dest = typeof item.dest === 'string' ? await doc.getDestination(item.dest) : item.dest as unknown[] | null;
         const ref = Array.isArray(dest) ? dest[0] : null;
         const index = ref && typeof ref === 'object' ? await doc.getPageIndex(ref as Parameters<typeof doc.getPageIndex>[0]) : Number.isInteger(ref) ? ref as number : -1;
-        if (index < 0) return;
-        viewer.scrollPageIntoView({ pageNumber: index + 1, destArray: dest as unknown[] });
+        if (index < 0 || viewer.pdfDocument !== doc) return;
+        navigate(() => viewer.scrollPageIntoView({ pageNumber: index + 1, destArray: dest as unknown[] }));
         container.current?.focus({ preventScroll: true });
       })().catch(() => { /* A broken outline entry stays where it is. */ });
     },
@@ -396,7 +484,7 @@ export const PdfView = forwardRef<PdfHandle, {
         const ref = target as { num: number; gen: number };
         pageNumber = document.cachedPageNumber(ref) ?? await document.getPageIndex(ref).then(index => index + 1, () => null);
       } else if (Number.isInteger(target)) pageNumber = (target as number) + 1;
-      if (pageNumber && pageNumber >= 1 && pageNumber <= viewer.pagesCount) viewer.scrollPageIntoView({ pageNumber, destArray: explicit });
+      if (loaded.current === document && pageNumber && pageNumber >= 1 && pageNumber <= viewer.pagesCount) navigate(() => viewer.scrollPageIntoView({ pageNumber: pageNumber!, destArray: explicit }));
     };
     let location: { page: number; left: number; top: number } | undefined;
     tools.current = { bus, links, find, viewer, cropTo(next) {
@@ -434,6 +522,7 @@ export const PdfView = forwardRef<PdfHandle, {
       if (keep) { returning = undefined; box.scrollTop = keep.top; box.scrollLeft = keep.left; }
       else goBack();
       pagesReady.current = true;
+      setNavigationReady(true);
       const pending = pendingPlace.current; pendingPlace.current = null;
       if (pending) requestAnimationFrame(() => handle.current?.showPlace(pending.page, pending.rect, { keep: pending.keep }));
     });
@@ -466,6 +555,7 @@ export const PdfView = forwardRef<PdfHandle, {
     // (PDF units grow upwards); at the end of the document it is the last one.
     bus.on('updateviewarea', ({ location: current }: { location?: { pageNumber: number; top: number; left: number; scale: number } }) => {
       if (!current || !box.clientHeight) return;
+      position.current = { page: current.pageNumber, left: current.left, top: current.top };
       location = { page: current.pageNumber, left: current.left, top: current.top };
       if (place && !returning) savePlace(place, { ...location, scale: viewer.currentScaleValue });
       const items = latest.current.outline, reading = current.top - box.clientHeight * 0.4 / (viewer.currentScale * 96 / 72);
@@ -660,6 +750,7 @@ export const PdfView = forwardRef<PdfHandle, {
       await document.getPage(1);
       if (cancelled || editingRef.current) { restore.current = null; closeDocument(task); return; }
       const previous = loaded.current;
+      position.current = null; navigation.current = { back: [], forward: [] }; setNavigationReady(false);
       loaded.current = document; attached = true; layerMap.current.clear(); setLayers(new Map()); setSelection(null); setEditing(null);
       // Marks always name the pages actually attached, never a pending fetch.
       shownRef.current = next; setShown(next);
@@ -746,6 +837,27 @@ export const PdfView = forwardRef<PdfHandle, {
     const blur = () => setSpaceHand(false);
     document.addEventListener('keydown', keyDown); document.addEventListener('keyup', keyUp); window.addEventListener('blur', blur);
     return () => { document.removeEventListener('keydown', keyDown); document.removeEventListener('keyup', keyUp); window.removeEventListener('blur', blur); };
+  }, []);
+
+  useEffect(() => {
+    let focusFrame: number | undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || event.metaKey || event.ctrlKey || event.altKey
+        || latest.current.suspended || !container.current?.clientHeight || !anchorControls.current) return;
+      const focus = document.activeElement;
+      if (typing(event.target) || !focus || !root.current?.contains(focus) || document.querySelector('dialog[open]')
+        || (event.target instanceof Element && event.target.closest('[role="dialog"],[role="menu"],[role="listbox"]'))) return;
+      const key = event.key.toLowerCase();
+      if (key === 'b') {
+        event.preventDefault(); railControls.current?.expand();
+        if (event.shiftKey) anchorControls.current.add();
+        else focusFrame = requestAnimationFrame(() => anchorControls.current?.focus());
+      } else if (!event.shiftKey && (key === '[' || key === ']')) {
+        event.preventDefault(); anchorControls.current.travel(key === '[' ? -1 : 1);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); if (focusFrame !== undefined) cancelAnimationFrame(focusFrame); };
   }, []);
 
   function search(again: boolean, previous = false, text = query) {
@@ -840,6 +952,19 @@ export const PdfView = forwardRef<PdfHandle, {
 
   const cropTool = (className: string) => <button type="button" className={className + ' pdf-crop-toggle' + (isCropped(crop) ? ' active' : '')} aria-label={t('Crop margins')} title={t('Crop margins')} aria-haspopup="dialog" disabled={loading || Boolean(error) || Boolean(editing) || noteLocked} onClick={() => { clearSelection(); setCropping(true); }}><Icon name="crop" size={16}/></button>;
   const findTool = (className: string) => <PdfFindButton className={className} open={findOpen} onClick={() => { if (findOpen) closeFind(); else setFindOpen(true); }}/>;
+  const navigationTools = props.place ? <div className="pdf-navigation">
+    {(['back', 'forward'] as const).map(direction => {
+      const label = direction === 'back' ? t('Back in PDF') : t('Forward in PDF');
+      return <button key={direction} type="button" className="rail-tool" aria-label={label} title={label} disabled={!navigationReady || !navigation.current[direction].length} onClick={() => travel(direction)}>
+        <Icon name={direction === 'back' ? 'arrowLeft' : 'arrowRight'} size={18}/>
+        <span className="rail-tip" popover="manual" aria-hidden="true"><span className="rail-tip-title">{label}</span></span>
+      </button>;
+    })}
+  </div> : null;
+  const anchorTools = props.place ? <PdfAnchors key={props.place} ref={anchorControls} place={props.place} pages={pages} ready={navigationReady && !loading && !error} title={props.outline[props.section]?.title}
+    buildKey={shown.key} prepare={prepareAnchor} resolve={props.anchorApi ? resolveAnchors : undefined}
+    capture={captureAnchor} jump={target => { navigate(() => restorePosition(target)); container.current?.focus({ preventScroll: true }); }}/> : null;
+
   return <div ref={root} className={'pdf-view' + (isCropped(crop) ? ' pdf-cropped' : '') + (props.region ? ' marking' : '') + (markable ? ` tool-${active}` : '')} onKeyDown={event => {
     if (!activeSuggestion || noteLocked || editing || props.region || event.defaultPrevented || event.nativeEvent.isComposing || event.keyCode === 229 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
@@ -855,11 +980,11 @@ export const PdfView = forwardRef<PdfHandle, {
       {props.lead}
       <PdfContents outline={props.outline} section={props.section} ready={!loading} onSelect={item => { void tools.current?.links.goToDestination(item.dest as string | unknown[]); }}/>
       <div className="pdf-toolbar-spacer"/>
-      <PdfPageControls page={page} pages={pages} zoom={zoom} onPage={number => { if (tools.current) tools.current.viewer.currentPageNumber = number; }} onZoom={value => { if (tools.current) tools.current.viewer.currentScaleValue = value; }} onZoomBy={factor => tools.current?.viewer.updateScale({ scaleFactor: factor })}/>
+      <PdfPageControls page={page} pages={pages} zoom={zoom} onPage={number => { navigate(() => { if (tools.current) tools.current.viewer.currentPageNumber = number; }); }} onZoom={value => { if (tools.current) tools.current.viewer.currentScaleValue = value; }} onZoomBy={factor => tools.current?.viewer.updateScale({ scaleFactor: factor })}/>
       {!markable && <>{findTool('icon-button')}{cropTool('icon-button')}</>}
 
       {/* Narrow desktop panes keep compact tools; phones show a collapsible bottom capsule. */}
-      {markable && <span className="pdf-compact-tools">
+      {markable && !props.place && <span className="pdf-compact-tools">
         {findTool('icon-button')}
         <button type="button" className={'icon-button region-toggle' + (props.region ? ' active' : '')} aria-label={t('Mark region')} aria-pressed={props.region} title={t('Mark a figure or region')} onClick={() => pickTool(props.region ? 'select' : 'region')}><Icon name="region" size={16}/></button>
         {props.onGroupChange && <GroupPicker value={props.group || null} onChange={group => { props.onGroupChange!(group); if (group && tool !== 'region') choose('note'); }} disabled={props.markingDisabled || Boolean(editing)}/>}
@@ -870,7 +995,8 @@ export const PdfView = forwardRef<PdfHandle, {
     </div>
     {findOpen && <PdfFind inputRef={findInput} query={query} matches={matches} notFound={notFound} onQuery={text => { setQuery(text); search(false, false, text); }} onNext={previous => search(true, previous)} onClose={closeFind}/>}
     <div className="pdf-body">
-    {markable && <PdfToolRail tool={tool} onTool={pickTool} group={props.group || null} onGroup={props.onGroupChange} disabled={props.markingDisabled} suspended={props.suspended} editing={Boolean(editing)} stamps={stamps} locked={locked} onLock={slot => slot === null ? setLocked(null) : lock(slot)} history={props.history} sourceTool={Boolean(props.onSource)} readingTools={findTool('rail-tool')} endTools={cropTool('rail-tool')}/>}
+    {markable && <PdfToolRail controller={railControls} tool={tool} onTool={pickTool} group={props.group || null} onGroup={props.onGroupChange} disabled={props.markingDisabled} suspended={props.suspended} editing={Boolean(editing)} stamps={stamps} locked={locked} onLock={slot => slot === null ? setLocked(null) : lock(slot)} history={props.history} sourceTool={Boolean(props.onSource)} navigation={navigationTools} anchors={anchorTools} readingTools={findTool('rail-tool')} endTools={cropTool('rail-tool')}/>}
+    {!markable && navigationTools && <div className="pdf-rail" data-navigation role="group" aria-label={t('PDF controls')}><div className="rail-items"><div className="rail-tools">{navigationTools}</div><div className="rail-anchors">{anchorTools}</div></div></div>}
     <div className="pdf-scroll-host">
       <div ref={container} className="pdf-container" tabIndex={0} aria-label={t('PDF pages')}>
         <div ref={inner} className="pdfViewer"/>

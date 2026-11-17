@@ -1,0 +1,40 @@
+.pdf-anchors-menu{width:300px;max-width:calc(100vw - 16px);padding:6px;max-height:calc(100dvh - 16px)}
+.pdf-anchors-menu:not([popover])[data-open]{display:flex;flex-direction:column;gap:2px;z-index:100}
+.pdf-anchors-menu[hidden]{display:none}
+.pdf-anchors-menu::before{display:none}
+.pdf-anchors-heading{flex:none;padding:7px 10px;color:var(--text-3);font-size:12px;font-weight:600}
+.pdf-anchor-list{min-height:0;overflow-y:auto;overscroll-behavior:contain;margin:0;padding:0;list-style:none;scrollbar-width:thin}
+.pdf-anchor-row{display:flex;align-items:center;gap:3px;min-height:44px;padding:3px 3px 3px 8px;border-radius:var(--r)}
+.pdf-anchor-row:hover,.pdf-anchor-row:focus-within{background:var(--bg-hover)}
+.pdf-anchor-page{flex:none;min-width:24px;color:var(--text-3);font-size:11px;font-variant-numeric:tabular-nums;text-align:center}
+.pdf-anchor-jump{flex:1;min-width:0;padding:6px;text-align:left;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:2px}
+.pdf-anchor-jump small{color:var(--text-3);font-size:11px}
+.pdf-anchor-name{flex:1;min-width:0;width:0;padding:5px 6px;border:0;border-bottom:1px solid var(--accent);border-radius:0;background:transparent;font:inherit;color:var(--text)}
+.pdf-anchor-action{display:flex;align-items:center;justify-content:center;flex:none;width:28px;height:30px;border-radius:6px;color:var(--text-3)}
+.pdf-anchor-action:hover{color:var(--text);background:var(--bg-muted)}
+.pdf-anchor-remove:hover{color:var(--red)}
+.pdf-anchor-jump:focus-visible,.pdf-anchor-action:focus-visible,.pdf-anchor-name:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px}
+.pdf-anchors-empty{margin:0;padding:10px 12px 16px;color:var(--text-3);font-size:13px;line-height:1.5}
+.pdf-anchors-menu>.pdf-anchor-add{flex:none;border-top:1px solid var(--line);border-radius:0;min-height:40px;margin-top:3px;color:var(--accent)}
+.pdf-anchors-trigger[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent)}
+.pdf-navigation{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
+.rail-anchors{display:flex;flex-direction:column;align-items:center;flex:0 1 auto;min-height:0;max-height:max(40%,113px);width:100%;padding-top:6px;border-top:1px solid var(--line)}
+.pdf-anchor-tools{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:0;width:100%}
+.pdf-anchor-slots{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:0;width:100%;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.pdf-anchor-slots:empty{display:none}
+.pdf-anchor-slot{min-width:24px;min-height:24px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--accent);border:1px solid transparent}
+.pdf-anchor-slot[aria-disabled=true]{opacity:.45;color:var(--text-3)}
+.pdf-anchor-slot[aria-disabled=true]:hover{background:transparent;cursor:default}
+.pdf-anchor-quick-add{color:var(--accent)}
+@media (forced-colors:active){.pdf-anchor-slot{border-color:ButtonText}.pdf-anchor-slot[aria-disabled=true]{color:GrayText}}
+@media (hover:hover){.pdf-anchor-action{opacity:0}.pdf-anchor-row:hover .pdf-anchor-action,.pdf-anchor-row:focus-within .pdf-anchor-action{opacity:1}}
+@media (max-width:680px){
+  .pdf-navigation{flex-direction:row;gap:1px}
+  .rail-anchors{order:-1;flex:none;width:auto;max-height:none;padding-top:0;border-top:0}
+  .pdf-anchor-tools{width:auto;flex-direction:row}
+  .pdf-anchor-slots,.pdf-anchor-quick-add{display:none}
+  .pdf-anchors-menu{width:calc(100vw - 16px);bottom:max(8px,env(safe-area-inset-bottom),calc(var(--anchor-keyboard-inset,0px) + 8px))!important}
+  .pdf-anchor-row{min-height:48px}
+  .pdf-anchor-action{width:36px;height:40px}
+  .pdf-anchor-name,.pdf-anchor-jump{font-size:16px}
+}

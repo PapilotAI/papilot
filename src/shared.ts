@@ -245,6 +245,8 @@ export interface TaskSourceSave { source: SourceFile; state: unknown }
 export interface SourceSave { source: SourceFile; changed: [number, number]; tree: string; at: number }
 // Where saved lines were printed in a PDF: a page (0-based) and a box as fractions of it.
 export interface SourcePlace { page: number; rect: [number, number, number, number] }
+/** A 1-based inclusive range in a durable source snapshot. */
+export interface SourceAnchor { file: string; revision: string; lines: [number, number]; quote?: string }
 export interface PaperImport {
   id: string; path: string; name: string; copied: boolean; candidates: string[]; main: string; engine: string;
   phase: 'choose' | 'building' | 'failed' | 'ready' | 'repairing';

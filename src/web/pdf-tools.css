@@ -32,10 +32,10 @@
 .group-picker:has(>.rail-tool){display:flex;flex:none}
 .rail-tool[data-group] .tool-note-line{fill:var(--note-color)}
 .rail-tool.has-menu::after{content:"";position:absolute;right:4px;bottom:4px;border-left:4px solid transparent;border-bottom:4px solid currentColor;border-radius:0 0 1px 0;opacity:.4}
-/* Narrow desktop panes hide the rail and expose compact toolbar actions;
+/* Narrow desktop panes keep navigation in the rail; other viewers use compact actions.
    phones show a collapsible frosted capsule at the bottom edge by default. */
 .pdf-compact-tools{display:none;align-items:center;gap:2px}
-@media (min-width:681px){@container (max-width:560px){.pdf-rail{display:none}.pdf-compact-tools{display:inline-flex}}}
+@media (min-width:681px){@container (max-width:560px){.pdf-rail:not([data-navigation]){display:none}.pdf-compact-tools{display:inline-flex}}}
 @keyframes markup-dock-in{from{opacity:0;transform:translate(-50%,8px) scale(.96)}}
 @keyframes markup-pill-in{from{opacity:0;transform:translate(-50%,-6px) scale(.95)}}
 @media (max-width:680px){
@@ -52,8 +52,7 @@
   .pdf-rail[data-collapsed=true]{bottom:max(6px,env(safe-area-inset-bottom));height:30px;padding:0;box-shadow:0 2px 8px rgb(0 0 0/.08),0 6px 18px rgb(0 0 0/.12);animation:markup-pill-in .16s var(--ease)}
   .pdf-rail[data-collapsed=true] .rail-toggle{width:auto;height:30px;padding:0 13px;gap:4px;color:var(--text-2)}
 }
-/* Ten tools need about 400px at full size; narrower phones (375–430px) get
-   slightly narrower buttons so the whole bar shows without scrolling. */
+/* Smaller phones show more tools before the capsule needs to scroll. */
 @media (max-width:430px){
   .rail-tool{width:32px}
   .rail-separator{margin:0 1px}

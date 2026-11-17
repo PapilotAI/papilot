@@ -6,6 +6,7 @@ import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
 import { chromium, expect } from './playwright.mjs';
 import { annotateReviewState, rewriteReviewHtml } from '../src/server/review.ts';
+import { checkPdfAnchors } from './pdf-anchors-check.mjs';
 
 // Leaving the manuscript for a task (or a task for the manuscript) unmounts
 // the view. Coming back opens it where the author was, not at the top.
@@ -15,7 +16,8 @@ await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
-const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } });
+const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 900 }, hasTouch: true });
+const page = await context.newPage();
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const prefix = '/review/paper';
 const runtime = { connected: true, authenticated: true, models: [] };
@@ -54,6 +56,11 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/manuscript')) return json({ git: { branch: 'main', files: [] }, build: { status: 'ready', key: manuscriptKey, document: manuscriptDocument, pages: [[612, 792], [612, 792]] }, annotations: [] });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
+  if (url.pathname.endsWith('/manuscript/anchors')) {
+    const target = route.request().postDataJSON(), line = Math.round(target.rect[1] * 10000) + 1;
+    return json({ source: { file: manuscriptDocument, revision: 'a'.repeat(64), lines: [line, line] } });
+  }
+  if (url.pathname.endsWith('/manuscript/anchors/resolve')) return json(route.request().postDataJSON().anchors.map(anchor => ({ id: anchor.id, place: { page: anchor.near, rect: [.1, (anchor.source.lines[0] - 1) / 10000, .9, Math.min(1, anchor.source.lines[0] / 10000 + .02)] } })));
   if (url.pathname.endsWith('/items')) return json({ items });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   throw Error(`Unexpected request ${url.pathname}`);
@@ -386,6 +393,13 @@ try {
   await expect.poll(async () => Math.abs(await scrollOf(box) - 200)).toBeLessThan(4);
   near(await scrollOf(box), 200, 'the cached letter restores its own position');
   await page.screenshot({ path: 'test-results/places-documents.png' });
+  await checkPdfAnchors(page, { switchDocument, recompile: async () => {
+    manuscriptKey += '-recompiled';
+    const loaded = page.waitForResponse(response => response.url().includes('/manuscript.pdf?key=' + manuscriptKey));
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await loaded;
+    await page.locator('.manuscript .page[data-page-number="2"] canvas').waitFor();
+  } });
   assert.deepEqual(errors, []);
   console.log('Places check passed');
 } catch (error) {

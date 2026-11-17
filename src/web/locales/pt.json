@@ -1477,5 +1477,17 @@
   "{n} task": "{n} tarefa",
   "{n} task failed.": "{n} tarefa falhou.",
   "Delete all": "Excluir todas",
-  "{done} of {total}": "{done} de {total}"
+  "{done} of {total}": "{done} de {total}",
+  "Add anchor": "Adicionar âncora",
+  "Anchors": "Âncoras",
+  "Back in PDF": "Voltar no PDF",
+  "Edit anchor: {name}": "Editar âncora: {name}",
+  "Forward in PDF": "Avançar no PDF",
+  "Page unavailable": "Página indisponível",
+  "Save a place to return to later.": "Guarde uma posição para voltar mais tarde.",
+  "Source unavailable": "Fonte indisponível",
+  "Saved anchors": "Âncoras salvas",
+  "Previous anchor": "Âncora anterior",
+  "Next anchor": "Próxima âncora",
+  "Anchor shortcuts work while the PDF is focused.": "Os atalhos de âncoras funcionam quando o PDF está em foco."
 }

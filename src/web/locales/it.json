@@ -1477,5 +1477,17 @@
   "{n} task": "{n} attività",
   "{n} task failed.": "{n} attività non riuscita.",
   "Delete all": "Elimina tutte",
-  "{done} of {total}": "{done} di {total}"
+  "{done} of {total}": "{done} di {total}",
+  "Add anchor": "Aggiungi un punto di riferimento",
+  "Anchors": "Punti di riferimento",
+  "Back in PDF": "Indietro nel PDF",
+  "Edit anchor: {name}": "Modifica punto di riferimento: {name}",
+  "Forward in PDF": "Avanti nel PDF",
+  "Page unavailable": "Pagina non disponibile",
+  "Save a place to return to later.": "Salva una posizione per tornarci in seguito.",
+  "Source unavailable": "Sorgente non disponibile",
+  "Saved anchors": "Ancoraggi salvati",
+  "Previous anchor": "Ancoraggio precedente",
+  "Next anchor": "Ancoraggio successivo",
+  "Anchor shortcuts work while the PDF is focused.": "Le scorciatoie degli ancoraggi funzionano quando il PDF ha il focus."
 }

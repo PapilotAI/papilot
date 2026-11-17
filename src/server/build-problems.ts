@@ -288,10 +288,20 @@ function pageFraction(rect: number[], text: Pick<PageText, 'bounds' | 'width' | 
 /** Where source lines were printed: of the pages that show them, the one
  *  nearest `near` (a section title also prints in the contents), and the box
  *  around them there, as fractions of the page. */
-export async function placeLines(pdf: string, source: string, lines: number[], near: number, openPage: (page: number) => Pick<PageText, 'bounds' | 'width' | 'height'> | null) {
+export async function placeLines(pdf: string, source: string, lines: number[], near: number, openPage: (page: number) => (Pick<PageText, 'bounds' | 'width' | 'height'> & Partial<Pick<PageText, 'search'>>) | null, quote?: string) {
   const boxes = (await Promise.all(lines.map(line => syncView(pdf, source, line)))).flat();
   if (!boxes.length) return null;
   const pages = [...new Set(boxes.map(box => box.page))].sort((a, b) => Math.abs(a - near) - Math.abs(b - near) || a - b);
+  if (quote !== undefined && pages.length > 1) {
+    // One TeX line can span several pages (or print in both a heading and
+    // the contents). An anchor must identify its passage, not pick the old page.
+    if (!quote) return null;
+    const matches = pages.flatMap(page => {
+      const text = openPage(page);
+      return text ? (text.search?.(quote) || []).map(rect => ({ page, rect: pageFraction(rect, text) })) : [];
+    });
+    return matches.length === 1 ? matches[0] : null;
+  }
   const page = pages[0], text = openPage(page);
   if (!text) return null;
   return { page, rect: pageFraction(boxRect(boxes, page, text).rect, text) };

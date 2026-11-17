@@ -1477,5 +1477,17 @@
   "{n} task": "{n} Aufgabe",
   "{n} task failed.": "{n} Aufgabe fehlgeschlagen.",
   "Delete all": "Alle löschen",
-  "{done} of {total}": "{done} von {total}"
+  "{done} of {total}": "{done} von {total}",
+  "Add anchor": "Anker hinzufügen",
+  "Anchors": "Anker",
+  "Back in PDF": "Im PDF zurück",
+  "Edit anchor: {name}": "Anker bearbeiten: {name}",
+  "Forward in PDF": "Im PDF vorwärts",
+  "Page unavailable": "Seite nicht verfügbar",
+  "Save a place to return to later.": "Eine Stelle speichern, um später zurückzukehren.",
+  "Source unavailable": "Quelle nicht verfügbar",
+  "Saved anchors": "Gespeicherte Anker",
+  "Previous anchor": "Vorheriger Anker",
+  "Next anchor": "Nächster Anker",
+  "Anchor shortcuts work while the PDF is focused.": "Anker-Tastenkürzel funktionieren, wenn das PDF den Fokus hat."
 }

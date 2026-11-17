@@ -1477,5 +1477,17 @@
   "{n} task": "{n} tarea",
   "{n} task failed.": "Ha fallado {n} tarea.",
   "Delete all": "Eliminar todas",
-  "{done} of {total}": "{done} de {total}"
+  "{done} of {total}": "{done} de {total}",
+  "Add anchor": "Añadir ancla",
+  "Anchors": "Anclas",
+  "Back in PDF": "Atrás en el PDF",
+  "Edit anchor: {name}": "Editar ancla: {name}",
+  "Forward in PDF": "Adelante en el PDF",
+  "Page unavailable": "Página no disponible",
+  "Save a place to return to later.": "Guarda una posición para volver más tarde.",
+  "Source unavailable": "Fuente no disponible",
+  "Saved anchors": "Anclas guardadas",
+  "Previous anchor": "Ancla anterior",
+  "Next anchor": "Ancla siguiente",
+  "Anchor shortcuts work while the PDF is focused.": "Los atajos de anclas funcionan cuando el PDF tiene el foco."
 }

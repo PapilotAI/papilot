@@ -85,6 +85,49 @@ try {
   });
   const flashed = () => page.evaluate(() => (window.flashedLines || []).join('\n'));
 
+  // Saved anchors bind to selected TeX, then update after actual recompilation.
+  const anchors = page.getByRole('dialog', { name: 'Anchors', exact: true });
+  const anchorButton = page.getByRole('button', { name: 'Anchors', exact: true });
+  await page.locator('.pdf-container').focus(); await page.keyboard.press('v');
+  await expect(async () => {
+    await word('pelicans').dblclick();
+    await expect(page.locator('.add-source')).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 30000 });
+  await page.keyboard.press('Shift+B');
+  await expect(page.locator('.pdf-anchor-slot')).toHaveCount(1);
+  await anchorButton.click();
+  const anchorRow = anchors.locator('.pdf-anchor-row');
+  await expect(anchorRow).toHaveCount(1);
+  const defaultName = await anchorRow.locator('.pdf-anchor-jump').getAttribute('aria-label');
+  await anchorRow.getByRole('button', { name: `Edit anchor: ${defaultName}`, exact: true }).click();
+  await anchorRow.getByRole('textbox').fill('Pelican passage'); await anchorRow.getByRole('textbox').press('Enter');
+  await expect(anchorRow).toContainText('sections/intro.tex');
+  await anchors.press('Escape');
+  const movedSource = ORIGINAL.replace('A separate paragraph', 'Inserted page text.\\newpage\n\nA separate paragraph');
+  fs.writeFileSync(intro, movedSource); await manuscripts.written('paper', root); await compiled();
+  await anchorButton.click();
+  await expect(anchorRow.locator('.pdf-anchor-page')).toHaveText('2', { timeout: 30000 });
+  await shot('anchor-moved');
+  await anchors.getByRole('button', { name: 'Pelican passage', exact: true }).click();
+  await expect.poll(async () => {
+    const passage = await word('pelicans').boundingBox(), reader = await page.locator('.pdf-container').boundingBox();
+    return passage && reader && passage.y >= reader.y && passage.y + passage.height <= reader.y + reader.height;
+  }).toBe(true);
+  await page.reload(); await expect(word('pelicans')).toBeVisible({ timeout: 60000 });
+  await anchorButton.click(); await expect(anchorRow.locator('.pdf-anchor-page')).toHaveText('2');
+  await anchors.press('Escape');
+  fs.writeFileSync(intro, movedSource.replace('A separate paragraph about pelicans.\nPelicans glide over the water.\n', ''));
+  await manuscripts.written('paper', root); await compiled();
+  await expect(page.locator('.pdf-anchor-row')).toContainText('Source unavailable', { timeout: 30000 });
+  await anchorButton.click();
+  await expect(anchors.getByRole('button', { name: 'Pelican passage', exact: true })).toBeDisabled();
+  await shot('anchor-deleted'); await anchors.press('Escape');
+  fs.writeFileSync(intro, ORIGINAL); await manuscripts.written('paper', root); await compiled();
+  await expect(page.locator('.pdf-anchor-page')).toHaveText('1', { timeout: 30000 });
+  await anchorButton.click();
+  await anchors.getByRole('button', { name: 'Delete: Pelican passage', exact: true }).click(); await anchors.press('Escape');
+  await expect(word('pelicans')).toBeVisible({ timeout: 30000 });
+
   // The tool opens the clicked passage's file in a tab beside New task, at
   // the passage, with the clicked line highlighted and flashing.
   await rail.getByRole('button', { name: 'Edit source' }).click();

@@ -1477,5 +1477,17 @@
   "{n} task": "{n} tâche",
   "{n} task failed.": "{n} tâche a échoué.",
   "Delete all": "Tout supprimer",
-  "{done} of {total}": "{done} sur {total}"
+  "{done} of {total}": "{done} sur {total}",
+  "Add anchor": "Ajouter un repère",
+  "Anchors": "Repères",
+  "Back in PDF": "Reculer dans le PDF",
+  "Edit anchor: {name}": "Modifier le repère : {name}",
+  "Forward in PDF": "Avancer dans le PDF",
+  "Page unavailable": "Page indisponible",
+  "Save a place to return to later.": "Enregistrez une position pour y revenir plus tard.",
+  "Source unavailable": "Source indisponible",
+  "Saved anchors": "Repères enregistrés",
+  "Previous anchor": "Repère précédent",
+  "Next anchor": "Repère suivant",
+  "Anchor shortcuts work while the PDF is focused.": "Les raccourcis des repères fonctionnent lorsque le PDF a le focus."
 }

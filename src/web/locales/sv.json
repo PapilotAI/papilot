@@ -1477,5 +1477,17 @@
   "{n} task": "{n} uppgift",
   "{n} task failed.": "{n} uppgift misslyckades.",
   "Delete all": "Radera alla",
-  "{done} of {total}": "{done} av {total}"
+  "{done} of {total}": "{done} av {total}",
+  "Add anchor": "Lägg till ankare",
+  "Anchors": "Ankare",
+  "Back in PDF": "Bakåt i PDF",
+  "Edit anchor: {name}": "Redigera ankare: {name}",
+  "Forward in PDF": "Framåt i PDF",
+  "Page unavailable": "Sidan är inte tillgänglig",
+  "Save a place to return to later.": "Spara en plats att återvända till senare.",
+  "Source unavailable": "Källan är inte tillgänglig",
+  "Saved anchors": "Sparade ankare",
+  "Previous anchor": "Föregående ankare",
+  "Next anchor": "Nästa ankare",
+  "Anchor shortcuts work while the PDF is focused.": "Kortkommandon för ankare fungerar när PDF-filen har fokus."
 }

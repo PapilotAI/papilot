@@ -189,7 +189,7 @@ export async function saveSource(projectId: string, root: string, input: unknown
 
 /** Where lines [start, end) of a file were printed in the PDF named `key`:
  *  the page nearest `near` that shows them, and the box around them there. */
-export async function placeSource(manuscripts: Manuscripts, projectId: string, key: string, file: unknown, start: unknown, end: unknown, near: unknown): Promise<{ place: SourcePlace | null }> {
+export async function placeSource(manuscripts: Manuscripts, projectId: string, key: string, file: unknown, start: unknown, end: unknown, near: unknown, anchorQuote?: string): Promise<{ place: SourcePlace | null }> {
   const name = fileName(file), from = lineNumber(start), to = Math.max(from + 1, lineNumber(end));
   const build = manuscripts.compiled(projectId, key), input = path.join(build.root, path.posix.relative(build.sourceDir || '.', name));
   if (!fs.existsSync(input)) return { place: null };
@@ -200,9 +200,18 @@ export async function placeSource(manuscripts: Manuscripts, projectId: string, k
     const place = await placeLines(build.pdf, input, lines, Number.isInteger(Number(near)) ? Number(near) : 0, page => {
       if (!Number.isInteger(page) || page < 0 || page >= document.length) return null;
       const raw = document.raw.loadPage(page);
-      try { const bounds = raw.getBounds(); return { bounds, width: bounds[2] - bounds[0], height: bounds[3] - bounds[1] }; }
+      try {
+        const bounds = raw.getBounds();
+        return { bounds, width: bounds[2] - bounds[0], height: bounds[3] - bounds[1], ...(anchorQuote === undefined ? {} : {
+          // Keep each search hit whole even when the quoted text wraps lines.
+          search: (needle: string) => document.page(page).raw.search(needle, {}).map((quads: number[][]) => {
+            const xs = quads.flatMap(q => [q[0], q[2], q[4], q[6]]), ys = quads.flatMap(q => [q[1], q[3], q[5], q[7]]);
+            return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+          }),
+        }) };
+      }
       finally { raw.destroy(); }
-    });
+    }, anchorQuote);
     return { place };
   } finally { document.close(); }
 }

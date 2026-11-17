@@ -1145,15 +1145,6 @@ body.resizing iframe{pointer-events:none}
   .agent-picker-panel .effort-description{display:none}
   .agent-picker-panel .task-permissions{margin-top:8px;padding-top:8px}
 }
-/* A resized desktop pane needs the same room for controls as a small phone. */
-@media(min-width:681px){
-  @container (max-width:480px){
-    .pdf-toolbar:has(.pdf-contents-trigger){height:auto;min-height:var(--toolbar-height);flex-wrap:wrap;padding:4px}
-    .pdf-toolbar:has(.pdf-contents-trigger) .pdf-toolbar-spacer{flex:0 0 100%;height:0}
-    .pdf-contents-trigger{width:auto;padding:0 8px}
-    .pdf-contents-trigger>span,.pdf-contents-trigger>svg:last-child{display:inline}
-  }
-}
 /* On ultra-narrow phones (320px), collapse segmented text labels to icons and allow PDF toolbar wrap if crowded. */
 @media(max-width:359px){
   .view-selector>button>span{display:none}

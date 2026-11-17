@@ -54,6 +54,16 @@ export function ShortcutSettings() {
       <p className="settings-intro">{t('Hold {key} and press ` to cycle. Shift reverses; release {key} to switch. Esc cancels.', { key: workspaceModifierLabel })}</p>
       <dl><div><dt>{t('Switch tasks and manuscript')}</dt><dd><kbd>{workspaceShortcutLabel}</kbd></dd></div></dl>
     </section>
+    <section className="shortcut-system">
+      <h3 className="settings-section-title">{t('Anchors')}</h3>
+      <p className="settings-intro">{t('Anchor shortcuts work while the PDF is focused.')}</p>
+      <dl>
+        <div><dt>{t('Add anchor')}</dt><dd><kbd>Shift+B</kbd></dd></div>
+        <div><dt>{t('Anchors')}</dt><dd><kbd>B</kbd></dd></div>
+        <div><dt>{t('Previous anchor')}</dt><dd><kbd>[</kbd></dd></div>
+        <div><dt>{t('Next anchor')}</dt><dd><kbd>]</kbd></dd></div>
+      </dl>
+    </section>
     <ShortcutKeyboard shortcuts={shortcuts} labels={labels} mac={mac} keyLabel={keyLabel} active={editing || highlighted} onHighlight={setHighlighted} onEdit={edit}/>
     <div className="shortcut-customize-header">
       <h3 className="settings-section-title">{t('Customize shortcuts')}</h3>

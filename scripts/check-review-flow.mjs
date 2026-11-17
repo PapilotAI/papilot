@@ -296,6 +296,8 @@ try {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'Keyboard shortcuts', exact: true }).click();
   const shortcuts = page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true });
+  await expect(shortcuts).toContainText('Anchor shortcuts work while the PDF is focused.');
+  await expect(shortcuts).toContainText('Shift+B');
   const acceptKey = shortcuts.getByRole('button', { name: 'Change shortcut: Accept change', exact: true });
   await acceptKey.click(); await acceptKey.press('r');
   await expect(shortcuts.getByRole('alert')).toContainText('Already used for Reject change');

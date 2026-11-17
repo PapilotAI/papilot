@@ -1477,5 +1477,17 @@
   "{n} task": "{n} 個任務",
   "{n} task failed.": "{n} 個任務處理失敗。",
   "Delete all": "全部刪除",
-  "{done} of {total}": "{done} / {total}"
+  "{done} of {total}": "{done} / {total}",
+  "Add anchor": "新增錨點",
+  "Anchors": "錨點",
+  "Back in PDF": "PDF 上一步",
+  "Edit anchor: {name}": "編輯錨點：{name}",
+  "Forward in PDF": "PDF 下一步",
+  "Page unavailable": "頁面無法使用",
+  "Save a place to return to later.": "儲存位置，方便稍後返回。",
+  "Source unavailable": "原始碼無法使用",
+  "Saved anchors": "已儲存的錨點",
+  "Previous anchor": "上一個錨點",
+  "Next anchor": "下一個錨點",
+  "Anchor shortcuts work while the PDF is focused.": "PDF 取得焦點時可使用錨點快捷鍵。"
 }

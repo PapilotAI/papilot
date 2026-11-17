@@ -1280,7 +1280,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Delete": {
-    "revision": "88e4415a34172a692e85497809c70ec62ea42856ce740e735b96bf02dcb7bc58",
+    "revision": "f6e3cd78e91012c25672fdb8a85d8022aaf843d2418eca50068f134233c5f350",
     "textHash": "616a9731e22f6d6ca7936666837a15f9b80bb6a833d17c0870929b3e95cd02f8",
     "model": "gemini-4-argon-medium"
   },
@@ -1700,7 +1700,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Finding the source…": {
-    "revision": "e8a5e83649a796ca29f6c52241a4ba03268ad84374598bdf60adddc05409d173",
+    "revision": "1ad4684e4bc1aa3451795cedb22657c95a53ab78660e75fbff62373d843b80a6",
     "textHash": "4e5f27f0efb36be436cc323a21ad44749b6e14bd184df10fb4d0b913fd6794a3",
     "model": "gemini-4-argon-medium"
   },
@@ -2435,7 +2435,7 @@
     "model": "gemini-4-argon-medium"
   },
   "No LaTeX source was found here. Click a line of text instead.": {
-    "revision": "d0dd2312fd0105222c00f5442ea11687eed2462117a3b1aa17eb138d64602fad",
+    "revision": "902adf713889f9408c3116fd7699d4e114a8192868dc000607fbbf373adf94c6",
     "textHash": "ebb28a7896d3ff1fd6b1c689542bb2027d46bc014d2f3c596a549216cd27ee20",
     "model": "gemini-4-argon-medium"
   },
@@ -2875,7 +2875,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Page {page}": {
-    "revision": "c802c8b1baa2b71129162cab12f8cff5d1dfd21a947940d5e5fe75386393fe31",
+    "revision": "4b3055e148916249630e96e383b696e7fde84d2c3ed96cd68b9c177f67880725",
     "textHash": "a70a1604aaa17de405fac56cf134c88254c196ab5716ba6820d8520e6b01facf",
     "model": "codex-reviewed"
   },
@@ -3515,7 +3515,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Retry": {
-    "revision": "3b98fc007103dca43fd7fe80fcc23dc717730c3354c7b48d3198a15e28881640",
+    "revision": "dcd40108c44bb4468a81991444ff8ba2a0d7d524e9c074dc308081c2c3e3138e",
     "textHash": "3c2b3d01dfbdaa224720e904c8e8b6fc22bcd565ebfe68ddc46c25c52933d361",
     "model": "gemini-4-argon-medium"
   },
@@ -3695,7 +3695,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Save": {
-    "revision": "9d7bb3f62dc2f25d47900baaf7ab74c36aeebed55100f7d640bb493c030a77f7",
+    "revision": "6b02e1b8f981645995d87e0eec729fdeae56a6f1b2e18defeb9f33992982132e",
     "textHash": "2ac5c9c2bb0c3a253048591d67d8ac6e4d3c430d9cd637b7964dd3ec1d8897e6",
     "model": "codex-reviewed"
   },
@@ -5963,5 +5963,65 @@
     "revision": "c9abe3e37e5f3a7cfb227b3c110e6a144ff8e6fbd24c7d07224da846446b1fa7",
     "textHash": "e9a5c6c79487822236ae01d153818aabb18469743c552a9471bb559864c96848",
     "model": "codex"
+  },
+  "Add anchor": {
+    "revision": "1959c1db74f1d47b1f1219364cf675f1b482c68d2142afde2ac4c9600e9abbc9",
+    "textHash": "53c2a39548329531a3aa41281fd7af0a7cec04350eac9639331dea134ddc87f5",
+    "model": "manual"
+  },
+  "Anchors": {
+    "revision": "833cf951d5e6f95bcfd1cffae3043b5f10295c62b9b669405e5ce76ab07cd963",
+    "textHash": "edd9649a6a610c4e8c59bba0e007e923b4e4ab0924a212e4c225c0e6a8099fbd",
+    "model": "manual"
+  },
+  "Back in PDF": {
+    "revision": "463e7ad54de1ac9ac03561d7ae90178df599bb45e9b0df59c5e67e9338e2740b",
+    "textHash": "766eb83fb2bc5d239700a44d23cbcce539a166103a212259c194b32efacd3201",
+    "model": "manual"
+  },
+  "Edit anchor: {name}": {
+    "revision": "be46e75ce79b7fa90fc599bdbcf5177faa4bf655efaffc88ce8b4195599ae840",
+    "textHash": "0f74a7845d7f8a5dfa82bb93507d61e145abe6c4225adcdc59aca7b45569215b",
+    "model": "manual"
+  },
+  "Forward in PDF": {
+    "revision": "d4624ebeff6bf2fb493d5477991cd3117ff9bcd4cabc38cf1caa35746bbbb8a9",
+    "textHash": "5a961ecb884726b6177e44999ce3c364d1b4dcc161290d3302f5d223c557af5a",
+    "model": "manual"
+  },
+  "Page unavailable": {
+    "revision": "54db288c01db391b5f8b68ce47c075f0a9989c6e76a798df90c2b2f7ca00d131",
+    "textHash": "70fc83e0928373a3954404fa830c61c8180cc3f78f412e3515b201849169eaec",
+    "model": "manual"
+  },
+  "Save a place to return to later.": {
+    "revision": "cd8c98d30f0e1b7044e498bac8355faffbf3ae9617c8f1a3d2790fee3fb7cb2f",
+    "textHash": "618844fc19034639b3491eb540583f3b651cf1db8b814d59ffe95999082f3397",
+    "model": "manual"
+  },
+  "Source unavailable": {
+    "revision": "6c46daf3106a207b1889712cf1e5f7b4684814cb6af9a6b1d191ad5e5c3dec00",
+    "textHash": "c7d5ae5e035736ba00f86be16f3242c0889d238c656ee8ab4dcf7e94a2b05c12",
+    "model": "manual"
+  },
+  "Saved anchors": {
+    "revision": "85c8c2fc1e8adaefb73df5a0a460f244ada8b9da090551be954e11eee4134f57",
+    "textHash": "7141af731c19233257d216237dbfde3045ccf7104a0e30cd4f8ccaeebfda7b40",
+    "model": "manual"
+  },
+  "Previous anchor": {
+    "revision": "c4fc009a2381f96a9bbd3e34950215f94b0711fc3913529f40882bb9225dc55c",
+    "textHash": "f92e4cf38af3fe91ac41996eb50fa7b9ab72c4a8e3334ed2b2d8f43063703aab",
+    "model": "manual"
+  },
+  "Next anchor": {
+    "revision": "925cf8a1f0b9acd2035100c546133230cd449413241ecd1a4b3bac70084f325c",
+    "textHash": "ac430fdd192d37ddee698021f7126f2c3ab3dfea1d022245793d3a21f5d7f724",
+    "model": "manual"
+  },
+  "Anchor shortcuts work while the PDF is focused.": {
+    "revision": "aec6c62955799d1d5bf97f567707e1dda25d0d33449c5de10dd5d2a2a7296031",
+    "textHash": "c43e907562d1b1deb00cf4375d8df61a6ca94eb0afd722464e566e283f017eea",
+    "model": "manual"
   }
 }
