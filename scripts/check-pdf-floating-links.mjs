@@ -146,10 +146,7 @@ The second page must only open when its link is deliberately clicked.
   const ordinary = await open();
   try {
     await ordinary.link.click(); await expect(ordinary.pageNumber).toHaveValue('2');
-    await ordinary.page.getByRole('button', { name: 'Back in PDF', exact: true }).click();
-    await expect(ordinary.pageNumber).toHaveValue('1');
-    await ordinary.page.getByRole('button', { name: 'Forward in PDF', exact: true }).click();
-    await expect(ordinary.pageNumber).toHaveValue('2');
+    await expect(ordinary.page.getByRole('button', { name: /^(Back|Forward) in PDF$/ })).toHaveCount(0);
   }
   finally { await ordinary.page.close(); }
   assert.deepEqual(errors, []);

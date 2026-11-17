@@ -140,13 +140,15 @@ From a source checkout, use `npm run doctor -- --data .papilot` (or `node bin/pa
 
 ## Reading with anchors
 
-On desktop, saved anchors appear as numbered buttons at the end of the PDF tool rail. Click a number to jump there, hover or focus to see its name, and use **+** to save the current passage. On phones, **Anchors** (the bookmark icon) opens the compact list. The bookmark button also opens naming and deletion controls on desktop: click a pencil to rename in place; Enter or leaving the row saves it, and Escape cancels. The trash button removes an anchor. **Back in PDF** and **Forward in PDF** retrace jumps through anchors, the contents, page controls and links inside the PDF; ordinary scrolling does not add a history entry.
+On desktop, saved anchors appear as numbered buttons at the end of the PDF tool rail. Click a number to jump there, hover or focus to see its name, and use **+** to save the current passage. Each compact numbered anchor shows a **×** in its upper-right corner on hover or keyboard focus to delete it directly; touch input keeps the delete action visible. On phones, **+** also saves the current passage directly, and **Anchors** (the bookmark icon) opens the compact list. The bookmark button also opens naming and deletion controls on desktop: click a pencil to rename in place; Enter or leaving the row saves it, and Escape cancels. The trash button removes an anchor.
 
-With the PDF focused, **Shift+B** adds an anchor, **B** focuses the saved anchors (or opens their list on a phone), and **[** / **]** jump to the previous / next available anchor in saved order, wrapping at either end. These keys leave typing and text composition alone. Arrow keys move within the desktop anchor buttons. The shortcuts are also listed in **Settings → Keyboard shortcuts**.
+![A numbered anchor with its corner delete action inside the shared hover background](assets/pdf-anchor-controls.png)
+
+With the PDF focused, **Shift+B** adds an anchor, **B** focuses the saved anchors (or opens their list on a phone), and **[** / **]** jump to the previous / next available anchor in saved order, wrapping at either end. These keys leave typing and text composition alone. Arrow keys move between desktop anchor buttons and their delete actions; deleting focuses the next anchor, the previous anchor, or **+** when none remain. The shortcuts are also listed in **Settings → Keyboard shortcuts**.
 
 Manuscript anchors bind to the selected TeX passage, or the first visible text near the top of the reader. After each successful compilation, their page numbers and destinations update to follow that source, including content moved to another page. Deleted or ambiguous source is shown as unavailable instead of jumping to an old page. Older anchors saved without a source binding must be recreated. Task and AI review PDFs are fixed snapshots and retain page positions.
 
-Anchor names stay in this browser across reloads and reopening, separately for each paper and main document. Papilot retains a shared source snapshot on the server so source bindings survive build-cache cleanup. Anchors are not shared across devices or written into the TeX or PDF. Zoom and resizing preserve positions; a new PDF resets back/forward history.
+Anchor names stay in this browser across reloads and reopening, separately for each paper and main document. Papilot retains a shared source snapshot on the server so source bindings survive build-cache cleanup. Anchors are not shared across devices or written into the TeX or PDF. Zoom and resizing preserve positions.
 
 ## Workflow
 

@@ -17,22 +17,39 @@
 .pdf-anchors-empty{margin:0;padding:10px 12px 16px;color:var(--text-3);font-size:13px;line-height:1.5}
 .pdf-anchors-menu>.pdf-anchor-add{flex:none;border-top:1px solid var(--line);border-radius:0;min-height:40px;margin-top:3px;color:var(--accent)}
 .pdf-anchors-trigger[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent)}
-.pdf-navigation{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
-.rail-anchors{display:flex;flex-direction:column;align-items:center;flex:0 1 auto;min-height:0;max-height:max(40%,113px);width:100%;padding-top:6px;border-top:1px solid var(--line)}
-.pdf-anchor-tools{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:0;width:100%}
-.pdf-anchor-slots{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:0;width:100%;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.rail-anchors{display:flex;flex-direction:column;align-items:center;flex:0 1 auto;min-height:0;max-height:max(40%,113px);width:100%;padding-top:4px}
+.pdf-rail[role=group] .rail-anchors{max-height:100%;padding-top:0;border-top:0}
+.pdf-anchor-tools{display:flex;flex-direction:column;align-items:center;gap:0;min-height:0;width:100%}
+.pdf-anchor-slots{display:flex;flex-direction:column;align-items:center;gap:0;min-height:0;width:100%;padding:3px 0;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
 .pdf-anchor-slots:empty{display:none}
-.pdf-anchor-slot{min-width:24px;min-height:24px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--accent);border:1px solid transparent}
+.pdf-anchor-item{position:relative;display:flex;justify-content:center;flex:none;width:44px;height:24px;border-radius:5px}
+.pdf-anchor-item:focus-within{background:var(--bg-hover)}
+.pdf-anchor-slot{width:24px;height:24px;min-width:24px;min-height:24px;border-radius:5px;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--text-3);border:1px solid transparent}
+.pdf-anchor-item>.pdf-anchor-slot:hover:not(:disabled){background:transparent}
 .pdf-anchor-slot[aria-disabled=true]{opacity:.45;color:var(--text-3)}
 .pdf-anchor-slot[aria-disabled=true]:hover{background:transparent;cursor:default}
-.pdf-anchor-quick-add{color:var(--accent)}
+.pdf-anchor-slot-remove{position:absolute;top:0;right:0;display:flex;align-items:center;justify-content:center;width:10px;height:12px;border-radius:2px;color:var(--text-3)}
+.pdf-anchor-slot-remove svg{width:8px;height:8px}
+.pdf-anchor-slot-remove:hover{color:var(--red)}
+.pdf-anchor-slot-remove:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.pdf-anchor-quick-add{color:var(--text-3)}
+.pdf-anchor-quick-add[aria-disabled=true]{opacity:.4;cursor:default}
+.pdf-anchor-quick-add[aria-disabled=true]:hover{background:transparent;color:var(--text-3)}
+@media (min-width:681px){
+  .pdf-anchor-tools>.menu-anchor>.pdf-anchors-trigger,.pdf-anchor-quick-add{width:24px;height:24px;border-radius:5px;color:var(--text-3)}
+  .pdf-anchors-trigger>svg,.pdf-anchor-quick-add>svg{width:14px;height:14px}
+}
+@media (hover:hover){
+  .pdf-anchor-item:hover{background:var(--bg-hover)}
+  .pdf-anchor-slot-remove{opacity:0;pointer-events:none}
+  .pdf-anchor-item:hover .pdf-anchor-slot-remove,.pdf-anchor-item:focus-within .pdf-anchor-slot-remove{opacity:1;pointer-events:auto}
+}
 @media (forced-colors:active){.pdf-anchor-slot{border-color:ButtonText}.pdf-anchor-slot[aria-disabled=true]{color:GrayText}}
 @media (hover:hover){.pdf-anchor-action{opacity:0}.pdf-anchor-row:hover .pdf-anchor-action,.pdf-anchor-row:focus-within .pdf-anchor-action{opacity:1}}
 @media (max-width:680px){
-  .pdf-navigation{flex-direction:row;gap:1px}
   .rail-anchors{order:-1;flex:none;width:auto;max-height:none;padding-top:0;border-top:0}
   .pdf-anchor-tools{width:auto;flex-direction:row}
-  .pdf-anchor-slots,.pdf-anchor-quick-add{display:none}
+  .pdf-anchor-slots{display:none}
   .pdf-anchors-menu{width:calc(100vw - 16px);bottom:max(8px,env(safe-area-inset-bottom),calc(var(--anchor-keyboard-inset,0px) + 8px))!important}
   .pdf-anchor-row{min-height:48px}
   .pdf-anchor-action{width:36px;height:40px}

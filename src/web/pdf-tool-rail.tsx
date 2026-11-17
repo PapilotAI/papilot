@@ -34,9 +34,8 @@ function showRailTip(button: Element | null) {
 
 // Shared by the manuscript and the embedded review; gestures stay with each viewer.
 export interface PdfToolRailHandle { expand: () => void }
-export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended, editing, stamps, locked, onLock, history, sourceTool, navigation, anchors, controller, readingTools, endTools }: {
+export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended, editing, stamps, locked, onLock, history, sourceTool, anchors, controller, readingTools, endTools }: {
   tool: PdfTool; onTool: (tool: PdfTool) => void;
-  navigation?: ReactNode;
   anchors?: ReactNode; controller?: Ref<PdfToolRailHandle>;
   /** Offer the tool that opens a passage's LaTeX for editing by hand. */
   sourceTool?: boolean;
@@ -102,7 +101,7 @@ export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended,
     { id: 'hand', icon: 'toolHand', label: t('Hand'), key: 'H', hint: t('Drag to move around the page. Hold Space to use it with any tool.') },
   ];
   const visibleTools = mobile ? railTools.filter(item => item.id !== 'hand') : railTools;
-  return <div ref={rail} className="pdf-rail" data-navigation={Boolean(navigation) || undefined} data-collapsed={collapsed} data-suspended={suspended || editing || undefined} role="toolbar" aria-orientation={mobile ? 'horizontal' : 'vertical'} aria-label={t('Marking tools')}
+  return <div ref={rail} className="pdf-rail" data-anchors={Boolean(anchors) || undefined} data-collapsed={collapsed} data-suspended={suspended || editing || undefined} role="toolbar" aria-orientation={mobile ? 'horizontal' : 'vertical'} aria-label={t('Marking tools')}
       onTouchStart={event => {
         if (!mobile || event.touches.length !== 1 || (event.target as Element).closest('[popover], dialog, [role="dialog"]')) { swipeStart.current = null; return; }
         swipeStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
@@ -133,7 +132,6 @@ export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended,
       </button>
       <div id={railId} className="rail-items" hidden={collapsed}>
       <div className="rail-tools">
-      {!collapsed && navigation && <>{navigation}<span className="rail-separator" aria-hidden="true"/></>}
       {!collapsed && readingTools}
       {!collapsed && visibleTools.map(item => {
         const content = <><Icon name={item.icon} size={item.id === 'magic' ? 22 : 18}/>

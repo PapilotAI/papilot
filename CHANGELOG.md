@@ -8,7 +8,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 - **Archive or delete tasks in bulk.** The task-list menu can archive or delete all current tasks in a paper, and clear all archived tasks from the archive view. Confirmations show the scope and count, processing shows progress, and failed tasks can be retried without repeating successful operations.
 - **Crop PDF margins for mobile reading.** Choose **Crop margins** near the end of the PDF tool rail, drag the four edges in the page-shaped preview, then apply the crop to every page. The preview fills the available screen space. **Fit width** fits the remaining area, and each document remembers its crop on this device across reopening and recompilation. **Reset** restores the full page. Notes and source locations stay aligned, and exported PDFs keep their original margins. ([#194](https://github.com/PapilotAI/papilot/issues/194))
-- **Save reading anchors in a PDF.** Desktop anchors appear as numbered buttons at the end of the tool rail; phones keep a compact bookmark list. Use **Shift+B** to add, **B** to focus anchors, and **[** / **]** to jump between them. Rename in place and use **Back in PDF** / **Forward in PDF** to retrace anchor, contents, page and internal-link jumps. Manuscript anchors follow their TeX source after recompilation, updating page numbers when content moves. Deleted or ambiguous source is marked unavailable. Anchors persist separately for each document in the current browser and can be renamed or deleted. See [Reading with anchors](docs/guide.md#reading-with-anchors).
+- **Save reading anchors in a PDF.** Desktop anchors appear as numbered buttons at the end of the tool rail; phones keep a compact bookmark list. Use **Shift+B** to add, **B** to focus anchors, and **[** / **]** to jump between them. Rename anchors in place. Manuscript anchors follow their TeX source after recompilation, updating page numbers when content moves. Deleted or ambiguous source is marked unavailable. Anchors persist separately for each document in the current browser and can be renamed or deleted. See [Reading with anchors](docs/guide.md#reading-with-anchors).
 
 - Support the native Pi CLI as a separate agent alongside Papilot Writer, using existing Pi providers, skills and extensions, with streamed tools and replies, image attachments, extension dialogs and resumable task sessions ([discussion #192](https://github.com/PapilotAI/papilot/discussions/192)). Requires Pi 1.5.1 or newer.
 
@@ -20,6 +20,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Changed
 
 - Continue compiling after recoverable LaTeX errors and show the resulting PDF with its diagnostics. Set `"halt_on_error": true` in the document's `.git/papilot/settings.json` to stop at the first error.
+
+- Simplify PDF reading controls: remove back/forward history buttons and their separator, align the outline bookmark, anchor numbers and **+** in one compact column, and show a corner delete button on hover or keyboard focus. Phones also show **+** for direct anchor creation. Deletion keeps the current reading position and moves keyboard focus to the next anchor or **+**. Contents, page controls and internal links remain available.
 
 - Show common AI conference templates before theses, with conference cards, compact search and a GitHub **Contribute** link. Retry catalog failures without losing a draft; **Blank** stays available, and late template links respect an explicit choice.
 
