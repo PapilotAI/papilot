@@ -7,12 +7,14 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   const box = page.locator('.manuscript .pdf-container');
   const trigger = page.getByRole('button', { name: 'Anchors', exact: true });
   const menu = page.getByRole('dialog', { name: 'Anchors', exact: true });
-  const back = page.getByRole('button', { name: 'Back in PDF', exact: true });
-  const forward = page.getByRole('button', { name: 'Forward in PDF', exact: true });
   const top = () => box.evaluate(element => element.scrollTop);
   const near = expected => expect.poll(async () => Math.abs(await top() - expected)).toBeLessThan(4);
   const scroll = async value => { await box.evaluate((element, value) => { element.scrollTop = value; }, value); await near(value); };
   const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem('papilot:pdf-anchors:pdf:paper:main.tex') || '[]'));
+  const replace = anchors => page.evaluate(anchors => {
+    const key = 'papilot:pdf-anchors:pdf:paper:main.tex'; localStorage.setItem(key, JSON.stringify(anchors));
+    window.dispatchEvent(new StorageEvent('storage', { key }));
+  }, anchors);
   const rename = async (from, to) => {
     await menu.getByRole('button', { name: `Edit anchor: ${from}`, exact: true }).click();
     const input = menu.getByRole('textbox', { name: `Edit anchor: ${from}`, exact: true });
@@ -40,10 +42,9 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
     element.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [touch(250)] }));
   });
   const checkRail = async () => {
-    await expect(page.locator('.pdf-toolbar .pdf-navigation')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^(Back|Forward) in PDF$/ })).toHaveCount(0);
+    await expect(page.locator('.rail-tools .rail-separator')).toHaveCount(0);
     await expect(page.locator('.pdf-rail').getByRole('button', { name: 'Anchors', exact: true })).toBeVisible();
-    await expect(page.locator('.pdf-rail').getByRole('button', { name: 'Back in PDF', exact: true })).toBeVisible();
-    await expect(page.locator('.pdf-rail').getByRole('button', { name: 'Forward in PDF', exact: true })).toBeVisible();
     const rail = await page.locator('.pdf-rail').boundingBox();
     assert.ok(rail.x >= 0 && rail.x + rail.width <= page.viewportSize().width, 'Navigation fits inside the viewport');
     assert.ok(await page.locator('.pdf-toolbar').evaluate(element => element.clientHeight < 55), 'PDF header stays on one row');
@@ -56,7 +57,6 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   await trigger.focus(); await trigger.press('ArrowDown');
   await expect(menu.getByRole('button', { name: 'Add anchor', exact: true })).toBeFocused();
   await menu.press('Escape'); await expect(trigger).toBeFocused();
-  await expect(back).toBeDisabled(); await expect(forward).toBeDisabled();
   await trigger.click(); await scroll(100);
   await expect(menu, 'scrolling the PDF keeps the list available; Add captures the updated reading position').toBeVisible();
   await menu.press('Escape');
@@ -83,18 +83,15 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   assert.deepEqual(afterScrolling.source.lines, original[1].source.lines, 'the prepared TeX target updates with the reading position');
   await menu.locator('.pdf-anchor-row').last().locator('.pdf-anchor-remove').click(); await menu.press('Escape');
   await jump('Introduction'); await near(introTop);
-  await back.click(); await near(equationTop);
-  await forward.click(); await near(introTop);
-  // Ordinary reading after a jump is the position restored on a forward trip.
-  await scroll(350); await back.click(); await near(equationTop); await forward.click(); await near(350);
-  await back.click();
+  await jump('A useful equation'); await near(equationTop);
   const pageNumber = page.getByRole('textbox', { name: 'Page number', exact: true });
   await pageNumber.fill('2'); await pageNumber.press('Enter');
-  await expect(forward).toBeDisabled();
-  await back.click(); await near(equationTop);
+  await expect(pageNumber).toHaveValue('2');
+  await jump('A useful equation'); await near(equationTop);
   await page.getByRole('button', { name: 'Contents', exact: true }).click();
   await page.locator('.pdf-contents-menu [role="menuitemradio"]').last().click();
-  await back.click(); await near(equationTop);
+  await expect(pageNumber).toHaveValue('2');
+  await jump('A useful equation'); await near(equationTop);
 
   // At another zoom level, the anchor still names the same PDF point.
   await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
@@ -130,15 +127,14 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   } finally { await other.close(); }
 
   await recompile();
-  await expect(back).toBeDisabled();
   await jump('Lemma 2');
-  await jump('Introduction'); await expect(back).toBeEnabled();
+  await jump('Introduction');
   await trigger.click(); await expect(menu).toBeVisible(); await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-desktop.png' }); await menu.press('Escape');
   await page.getByRole('button', { name: 'Collapse marking tools', exact: true }).click();
   await expect(trigger).toHaveCount(0);
   await page.getByRole('button', { name: 'Expand marking tools', exact: true }).click();
-  await jump('Lemma 2'); await expect(back).toBeEnabled();
-  // Navigation remains in the rail when the desktop PDF pane gets narrow.
+  await jump('Lemma 2');
+  // Anchors remain in the rail when the desktop PDF pane gets narrow.
   await page.setViewportSize({ width: 1000, height: 900 });
   await checkRail();
   await trigger.click(); await expect(menu).toBeVisible();
@@ -230,6 +226,17 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   await rename('Unavailable introduction', 'Introduction');
   await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-load-error.png' });
   await menu.press('Escape');
+  // A failed PDF still allows deleting saved anchors. The disabled quick-add
+  // cannot receive focus after the last deletion; use the visible list trigger.
+  const failedAnchors = await stored();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await replace([failedAnchors[0]]);
+  await expect(page.locator('.pdf-anchor-slot-remove')).toHaveCount(1);
+  await expect(page.locator('.pdf-anchor-quick-add')).toBeDisabled();
+  await page.locator('.pdf-anchor-slot-remove').click();
+  await expect(page.locator('.pdf-anchor-slot')).toHaveCount(0); await expect(trigger).toBeFocused();
+  await expect(menu).toBeHidden();
+  await replace(failedAnchors); await page.setViewportSize({ width: 390, height: 844 });
   await page.unroute(pdfPattern); await page.reload();
   await page.locator('.manuscript .page[data-page-number="2"]').waitFor();
   await jump('Lemma 2'); await save('After recovery');
@@ -242,6 +249,7 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   await box.click({ position: { x: 150, y: 150 } }); await expect(menu).toBeHidden();
   await page.setViewportSize({ width: 1440, height: 900 });
   const slots = page.locator('.pdf-anchor-slots'), buttons = slots.locator('.pdf-anchor-slot');
+  const removals = slots.locator('.pdf-anchor-slot-remove');
   const quickAdd = page.locator('.pdf-anchor-quick-add');
   const count = (await stored()).length;
   await expect(buttons).toHaveCount(count); await expect(slots).toBeVisible();
@@ -253,7 +261,7 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   await box.focus(); await page.keyboard.press('['); await near(firstTop);
   await page.keyboard.press(']'); await near(secondTop);
   await page.keyboard.press('b'); await expect(buttons.nth(1)).toBeFocused();
-  await page.keyboard.press('End'); await expect(buttons.last()).toBeFocused();
+  await page.keyboard.press('End'); await expect(removals.last()).toBeFocused();
   await page.keyboard.press('Tab'); await expect(quickAdd).toBeFocused();
   await near(secondTop);
   await page.getByRole('button', { name: 'Collapse marking tools', exact: true }).click();
@@ -289,39 +297,76 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   await expect(buttons).toHaveCount(count + 2); await expect(buttons.last()).toBeFocused();
   await expect(menu).toBeHidden();
   await quickAdd.click(); await expect(buttons).toHaveCount(count + 3); await expect(menu).toBeHidden();
+  // Anchor controls share the rail's centre line and stay inside its boundary.
+  const aligned = await Promise.all([trigger, buttons.first(), quickAdd].map(button => button.boundingBox()));
+  const centre = aligned[0].x + aligned[0].width / 2;
+  assert.ok(aligned.every(box => Math.abs(box.x + box.width / 2 - centre) <= 1), 'bookmark, numbers and add share one centre line');
+  // Each numbered anchor has a separate corner delete action. Removing it
+  // preserves the reading position and focuses its surviving neighbour.
+  const added = (await stored()).at(-1);
+  // Hover must not let the corner delete button take over the number's hit area.
+  await buttons.last().hover();
+  const jumpBounds = await buttons.last().boundingBox(), deleteBounds = await removals.last().boundingBox();
+  const railBounds = await page.locator('.pdf-rail').boundingBox();
+  assert.ok(deleteBounds.x + deleteBounds.width <= railBounds.x + railBounds.width - 1, 'delete stays inside the rail');
+  assert.ok(deleteBounds.x >= jumpBounds.x + jumpBounds.width, 'jump and delete targets do not overlap');
+  assert.ok(deleteBounds.x > jumpBounds.x && deleteBounds.y + deleteBounds.height / 2 < jumpBounds.y + jumpBounds.height / 2, 'delete sits at the anchor upper-right corner');
+  await buttons.last().click({ position: { x: jumpBounds.width - 3, y: jumpBounds.height / 2 } });
+  await expect(buttons).toHaveCount(count + 3);
+  await buttons.first().click(); const beforeRemoval = await top();
+  await buttons.last().hover();
+  await removals.last().click();
+  await expect(buttons).toHaveCount(count + 2); await expect(buttons.last()).toBeFocused();
+  await near(beforeRemoval); await expect(menu).toBeHidden();
+  assert.ok(!(await stored()).some(anchor => anchor.id === added.id));
+  await page.reload(); await page.locator('.manuscript .page[data-page-number="2"]').waitFor();
+  await expect(buttons).toHaveCount(count + 2);
 
   // All anchors remain reachable in a short desktop window, without hiding history.
   const saved = await stored();
-  const replace = anchors => page.evaluate(anchors => {
-    const key = 'papilot:pdf-anchors:pdf:paper:main.tex'; localStorage.setItem(key, JSON.stringify(anchors));
-    window.dispatchEvent(new StorageEvent('storage', { key }));
-  }, anchors);
   await replace([...saved, ...Array.from({ length: 30 }, (_, index) => ({ ...saved[0], id: `overflow-${index}`, name: `Saved passage ${index + 1}` }))]);
   await page.setViewportSize({ width: 1000, height: 360 });
   await box.focus(); await page.keyboard.press('b');
-  await expect(buttons.nth(saved.length - 1)).toBeFocused();
+  await expect(buttons.first()).toBeFocused();
   await page.keyboard.press('End');
-  await expect(buttons.last()).toBeFocused();
-  const last = await buttons.last().boundingBox(), strip = await slots.boundingBox();
+  await expect(removals.last()).toBeFocused();
+  const last = await removals.last().boundingBox(), strip = await slots.boundingBox();
   assert.ok(last.y >= strip.y - 1 && last.y + last.height <= strip.y + strip.height + 1);
   assert.ok(await slots.evaluate(element => element.scrollTop > 0));
+  assert.ok(await slots.evaluate(element => element.scrollWidth <= element.clientWidth), 'corner actions fit without horizontal scrolling');
   await expect(page.locator('.rail-history')).toBeInViewport();
   await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-expanded-short.png' });
   await replace(saved); await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-expanded-desktop.png' });
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(slots).toBeHidden(); await expect(quickAdd).toBeHidden();
+  await page.locator('.manuscript-view-selector').getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(slots).toBeHidden(); await expect(quickAdd).toBeVisible();
+  await quickAdd.click(); await expect(menu).toBeVisible();
+  assert.equal((await stored()).length, saved.length + 1);
+  await menu.locator('.pdf-anchor-row').last().locator('.pdf-anchor-remove').click();
+  await expect(menu.locator('.pdf-anchor-row')).toHaveCount(saved.length); await menu.press('Escape');
   await box.focus(); await page.keyboard.press('b'); await expect(menu).toBeVisible(); await menu.press('Escape');
   // Browsers without focusgroup still expose one tab stop and arrow navigation.
   await page.addInitScript(() => { delete HTMLElement.prototype.focusGroup; });
   await page.setViewportSize({ width: 1440, height: 900 }); await page.reload();
   await page.locator('.manuscript .page[data-page-number="2"]').waitFor();
   await box.focus(); await page.keyboard.press('b'); await expect(buttons.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown'); await expect(removals.first()).toBeFocused();
   await page.keyboard.press('ArrowDown'); await expect(buttons.nth(1)).toBeFocused();
-  await page.keyboard.press('End'); await expect(buttons.last()).toBeFocused();
+  await page.keyboard.press('End'); await expect(removals.last()).toBeFocused();
   await page.keyboard.press('Home'); await expect(buttons.first()).toBeFocused();
   await expect(slots.locator('[tabindex="0"]')).toHaveCount(1);
   await page.keyboard.press('Tab'); await expect(quickAdd).toBeFocused();
+  // Deletion remains possible for an unavailable anchor and for the final
+  // item, with focus returning to the visible quick-add action.
+  await replace([{ ...saved[0], id: 'unavailable-only', page: 999 }]);
+  await expect(buttons).toHaveCount(1); await expect(buttons.first()).toHaveAttribute('aria-disabled', 'true');
+  await box.focus(); await page.keyboard.press('b'); await expect(buttons.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(removals.first()).toBeFocused(); await page.keyboard.press('Enter');
+  await expect(buttons).toHaveCount(0); await expect(quickAdd).toBeFocused();
+  await expect(menu).toBeHidden(); assert.deepEqual(await stored(), []);
+  await replace(saved);
 
   // Cropping changes the displayed viewport, not the TeX/PDF coordinate system.
   const reading = () => page.evaluate(() => JSON.parse(localStorage.getItem('papilot:places') || '{}')['pdf:paper:main.tex']);
@@ -332,8 +377,7 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   await jump('Lemma 2');
   await expect.poll(async () => Math.abs((await reading()).top - expectedTop)).toBeLessThan(2);
   const croppedTop = await top();
-  await buttons.first().click(); await back.click(); await near(croppedTop);
-  await forward.click(); await back.click(); await near(croppedTop);
+  await buttons.first().click(); await jump('Lemma 2'); await near(croppedTop);
   await recompile(); await jump('Lemma 2');
   await expect.poll(async () => Math.abs((await reading()).top - expectedTop)).toBeLessThan(2);
   await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-cropped-desktop.png' });

@@ -9,7 +9,7 @@ import { dragPdfText } from './pdf-selection-fixture.mjs';
 
 // The PDF's tool rail: each tool marks the way its name says, keys pick
 // tools, the magic pen's wheel and number keys add quick notes, its menu and
-// settings change them, and navigation shares the rail without widening the header.
+// settings change them, and anchors share the rail without widening the header.
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
@@ -89,7 +89,9 @@ const key = async value => { await page.locator('.pdf-container').focus(); await
 try {
   await page.goto(origin);
   await words().first().waitFor();
-  await expect(rail().getByRole('button')).toHaveCount(17);
+  await expect(rail().getByRole('button')).toHaveCount(15);
+  await expect(rail().getByRole('button', { name: /^(Back|Forward) in PDF$/ })).toHaveCount(0);
+  await expect(rail().locator('.rail-separator')).toHaveCount(1);
   await expect(tool('Undo')).toBeDisabled(); await expect(tool('Redo')).toBeDisabled();
   assert.deepEqual(await rail().getByRole('button').evaluateAll(buttons => buttons.slice(-4).map(button => button.getAttribute('aria-label'))), ['Undo', 'Redo', 'Anchors', 'Add anchor']);
   const railBox = await rail().boundingBox(), addBox = await tool('Add anchor').boundingBox();
@@ -119,7 +121,7 @@ try {
   await page.keyboard.press('Enter');
   await expect(collapse()).toHaveAttribute('aria-expanded', 'true');
   await expect(collapse()).toBeFocused();
-  await expect(rail().getByRole('button')).toHaveCount(17);
+  await expect(rail().getByRole('button')).toHaveCount(15);
   // The note tool is its own color picker: a click picks it, a second opens colors.
   await tool('Note').click();
   await expect(tool('Note')).toHaveAttribute('aria-pressed', 'true');
@@ -439,8 +441,9 @@ try {
   await expect(page.locator('.pdf-compact-tools')).toBeHidden();
   await expect(rail()).toBeVisible();
   await expect(rail()).toHaveAttribute('aria-orientation', 'horizontal');
-  // Every desktop tool but Hand: one finger already scrolls the page.
-  await expect(rail().getByRole('button')).toHaveCount(15);
+  // Hand stays on desktop; phones keep direct anchor creation beside the list.
+  await expect(rail().getByRole('button')).toHaveCount(14);
+  await expect(rail().locator('.pdf-anchor-quick-add')).toBeVisible();
   await expect(rail().getByRole('button', { name: 'Hand', exact: true })).toHaveCount(0);
   const mobileRailBox = await settled(rail());
   assert.ok(mobileRailBox.x >= 0 && mobileRailBox.x + mobileRailBox.width <= 390 && mobileRailBox.y > 700, 'Phone marking capsule floats within the bottom viewport');
@@ -459,7 +462,7 @@ try {
   await expect(page.locator('.pdf-view')).toHaveClass(/tool-select/);
   await expand().click();
   await expect(rail()).toHaveAttribute('data-collapsed', 'false');
-  await expect(rail().getByRole('button')).toHaveCount(15);
+  await expect(rail().getByRole('button')).toHaveCount(14);
   assert.deepEqual(errors, []);
   console.log('PASS: collapsible rail, bottom undo/redo, history retries and keyboard shortcuts, native text undo, deletions with replacements, the magic pen wheel, number lock, menu and settings, points, sticky notes, hand and Space, tool-after-selection, and phone collapsible bottom capsule.');
 } finally { await browser.close(); await server.close(); }

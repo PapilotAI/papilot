@@ -32,10 +32,10 @@
 .group-picker:has(>.rail-tool){display:flex;flex:none}
 .rail-tool[data-group] .tool-note-line{fill:var(--note-color)}
 .rail-tool.has-menu::after{content:"";position:absolute;right:4px;bottom:4px;border-left:4px solid transparent;border-bottom:4px solid currentColor;border-radius:0 0 1px 0;opacity:.4}
-/* Narrow desktop panes keep navigation in the rail; other viewers use compact actions.
+/* Narrow desktop panes keep anchors in the rail; other viewers use compact actions.
    phones show a collapsible frosted capsule at the bottom edge by default. */
 .pdf-compact-tools{display:none;align-items:center;gap:2px}
-@media (min-width:681px){@container (max-width:560px){.pdf-rail:not([data-navigation]){display:none}.pdf-compact-tools{display:inline-flex}}}
+@media (min-width:681px){@container (max-width:560px){.pdf-rail:not([data-anchors]){display:none}.pdf-compact-tools{display:inline-flex}}}
 @keyframes markup-dock-in{from{opacity:0;transform:translate(-50%,8px) scale(.96)}}
 @keyframes markup-pill-in{from{opacity:0;transform:translate(-50%,-6px) scale(.95)}}
 @media (max-width:680px){

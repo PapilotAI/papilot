@@ -109,14 +109,10 @@ try {
   await page.getByRole('button', { name: 'Contents', exact: true }).click();
   await contents.first().click();
   await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('1');
-  // Read-only copies keep reading navigation in a rail without marking tools.
+  // Read-only copies keep anchors in a rail without marking or history buttons.
   const readingRail = page.locator('.ai-review-view .pdf-rail');
-  await expect(readingRail.getByRole('button')).toHaveCount(4);
-  await expect(page.locator('.pdf-toolbar .pdf-navigation')).toHaveCount(0);
-  await readingRail.getByRole('button', { name: 'Back in PDF', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('2');
-  await readingRail.getByRole('button', { name: 'Forward in PDF', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('1');
+  await expect(readingRail.getByRole('button')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: /^(Back|Forward) in PDF$/ })).toHaveCount(0);
   await readingRail.getByRole('button', { name: 'Anchors', exact: true }).click();
   const anchors = page.getByRole('dialog', { name: 'Anchors', exact: true });
   await anchors.getByRole('button', { name: 'Add anchor', exact: true }).click();

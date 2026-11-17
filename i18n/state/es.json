@@ -5974,19 +5974,9 @@
     "textHash": "2d60b6a9fe547ea2426f833f163c7d853aa6757d1b0dbea8a79ccd89b3fe229b",
     "model": "manual"
   },
-  "Back in PDF": {
-    "revision": "6ae4a32dbbecc207c514390844ba38a606420497c2d719e9b6bd1ec991158f4e",
-    "textHash": "ce51a328155d265e2291ba1bc72e4ae877bf521236b818821dcdd5306e62c99c",
-    "model": "manual"
-  },
   "Edit anchor: {name}": {
     "revision": "c04036842bbeaa17de82d06dfe842303cc2658539961ffebbac3499c4424afab",
     "textHash": "f45d4843dcef1fc381682edd003bfe9b7e790e7c6257236f07b116bc337bb68d",
-    "model": "manual"
-  },
-  "Forward in PDF": {
-    "revision": "665e38b5382c08d63b66c3229c2aaf0050c687482eaa19520a6518e0cc6dba13",
-    "textHash": "87df4866317cc1d9385f42a1b425efef614c0b2169c5e89d2742aaa518160dcc",
     "model": "manual"
   },
   "Page unavailable": {

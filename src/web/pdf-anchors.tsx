@@ -22,7 +22,7 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
   const [saving, setSaving] = useState(false), [error, setError] = useState(''), [retry, setRetry] = useState(0);
   const resolveFailed = useRef(false);
   const savingRef = useRef(false), currentAnchor = useRef<string | null>(null);
-  const [tabAnchor, setTabAnchor] = useState<string | null>(null);
+  const [tabAnchor, setTabAnchor] = useState<{ id: string; remove?: boolean } | null>(null);
   const nativeFocus = typeof HTMLElement !== 'undefined' && 'focusGroup' in HTMLElement.prototype;
   const mobile = () => window.matchMedia('(max-width: 680px)').matches;
   const [resolved, setResolved] = useState<{ key?: string; positions: Record<string, PdfPosition | null> }>({ positions: {} });
@@ -50,13 +50,13 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
   function visit(anchor: PdfAnchor) {
     const target = available(anchor);
     if (!target) return;
-    currentAnchor.current = anchor.id; setTabAnchor(anchor.id); close(); jump(target);
+    currentAnchor.current = anchor.id; setTabAnchor({ id: anchor.id }); close(); jump(target);
   }
   useImperativeHandle(ref, () => ({
     add: () => { prepare(); void add(); },
     focus: () => {
       if (mobile()) { prepare(); show(); }
-      else document.getElementById(anchors.length ? id + '-slot-' + (anchors.find(anchor => anchor.id === tabAnchor)?.id || anchors[0].id) : id + '-quick-add')?.focus();
+      else document.getElementById(anchors.length ? id + '-slot-' + (anchors.find(anchor => anchor.id === tabAnchor?.id)?.id || anchors[0].id) : id + '-quick-add')?.focus();
     },
     travel: direction => {
       const destinations = anchors.filter(anchor => available(anchor));
@@ -146,7 +146,7 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
       const position = await capture();
       if (!position || !alive.current) return;
       const anchor = { ...position, id: anchorId(), name: title || t('Page {page}', { page: position.page }) };
-      currentAnchor.current = anchor.id; setTabAnchor(anchor.id);
+      currentAnchor.current = anchor.id; setTabAnchor({ id: anchor.id });
       if (mayFocus()) {
         if (open) focus.current = id + '-' + anchor.id;
         else if (mobile()) { show(); focus.current = id + '-' + anchor.id; }
@@ -156,10 +156,13 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
     } catch (failure) { if (alive.current) { resolveFailed.current = false; setError(failure instanceof Error ? failure.message : String(failure)); if (mayFocus()) show(); } }
     finally { savingRef.current = false; if (alive.current) setSaving(false); }
   }
-  function remove(anchor: PdfAnchor) {
+  function remove(anchor: PdfAnchor, fromRail = false) {
     if (draft.current?.id === anchor.id) { draft.current = null; setEditing(null); }
     const index = anchors.findIndex(item => item.id === anchor.id), next = anchors[index + 1] || anchors[index - 1];
-    focus.current = id + '-' + (next?.id ?? 'add');
+    const emptyRailTarget = ready && !saving ? 'quick-add' : 'trigger';
+    focus.current = fromRail ? next ? id + '-slot-' + next.id : id + '-' + emptyRailTarget : id + '-' + (next?.id ?? 'add');
+    if (currentAnchor.current === anchor.id) currentAnchor.current = null;
+    if (fromRail) setTabAnchor(next ? { id: next.id } : null);
     update(current => current.filter(item => item.id !== anchor.id));
   }
   const contents = <div ref={panel} id={id} popover={native ? 'auto' : undefined} hidden={!native && !open} role="dialog" aria-label={t('Anchors')} tabIndex={-1} className="action-menu pdf-anchors-menu" data-open={open || undefined}
@@ -206,7 +209,7 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
         if (!open) prepare();
         if (['ArrowDown', 'ArrowUp', 'ArrowRight'].includes(event.key)) { event.preventDefault(); show(); }
       }}>
-      <Icon name={anchors.length ? 'bookmarkFilled' : 'bookmark'} size={18}/>
+      <Icon name="bookmark" size={18}/>
       <span className="rail-tip" popover="manual" aria-hidden="true"><span className="rail-tip-title">{t('Anchors')}<kbd>B</kbd></span></span>
     </button>
     {native ? contents : createPortal(contents, document.body)}
@@ -214,7 +217,7 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
     <div className="pdf-anchor-slots" role="group" aria-label={t('Saved anchors')} {...{ focusgroup: 'toolbar wrap block' }} onKeyDown={event => {
       if (nativeFocus || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault(); event.stopPropagation();
-      const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('.pdf-anchor-slot'));
+      const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
       const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
       const index = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
       buttons[index]?.focus();
@@ -222,14 +225,20 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
       {anchors.map((anchor, index) => {
         const target = available(anchor), label = `${index + 1}. ${anchor.name}`;
         const description = !ready || targetOf(anchor) === undefined ? t('Finding the source…') : !target ? resolve ? t('Source unavailable') : t('Page unavailable') : t('Page {page}', { page: target.page });
-        return <button key={anchor.id} id={id + '-slot-' + anchor.id} type="button" className="rail-tool pdf-anchor-slot" aria-label={label} aria-description={description} aria-disabled={!target} title={label + ' · ' + description}
-          tabIndex={nativeFocus ? undefined : (anchors.some(item => item.id === tabAnchor) ? anchor.id === tabAnchor : index === 0) ? 0 : -1}
-          onFocus={() => setTabAnchor(anchor.id)} onClick={() => visit(anchor)}>
+        const active = anchors.some(item => item.id === tabAnchor?.id) ? anchor.id === tabAnchor?.id : index === 0;
+        return <div key={anchor.id} className="pdf-anchor-item">
+        <button id={id + '-slot-' + anchor.id} type="button" className="rail-tool pdf-anchor-slot" aria-label={label} aria-description={description} aria-disabled={!target} title={label + ' · ' + description}
+          tabIndex={nativeFocus ? undefined : active && !tabAnchor?.remove ? 0 : -1}
+          onFocus={() => setTabAnchor({ id: anchor.id })} onClick={() => visit(anchor)}>
           <span>{index + 1}</span><span className="rail-tip" popover="manual" aria-hidden="true"><span className="rail-tip-title">{anchor.name}</span><span>{description}</span></span>
-        </button>;
+        </button>
+        <button type="button" className="pdf-anchor-slot-remove" aria-label={t('Delete') + ': ' + anchor.name} title={t('Delete') + ': ' + anchor.name}
+          tabIndex={nativeFocus ? undefined : active && Boolean(tabAnchor?.remove) ? 0 : -1}
+          onFocus={() => setTabAnchor({ id: anchor.id, remove: true })} onClick={() => remove(anchor, true)}><Icon name="close" size={12}/></button>
+        </div>;
       })}
     </div>
-    <button id={id + '-quick-add'} type="button" className="rail-tool pdf-anchor-quick-add" aria-label={t('Add anchor')} aria-keyshortcuts="Shift+B" title={t('Add anchor') + ' (Shift+B)'} disabled={!ready || saving}
+    <button id={id + '-quick-add'} type="button" className="rail-tool pdf-anchor-quick-add" aria-label={t('Add anchor')} aria-keyshortcuts="Shift+B" title={t('Add anchor') + ' (Shift+B)'} aria-disabled={!ready || saving}
       onPointerDown={prepare} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') prepare(); }} onClick={() => void add()}><Icon name="plus" size={17}/><span className="rail-tip" popover="manual" aria-hidden="true"><span className="rail-tip-title">{t('Add anchor')}<kbd>Shift+B</kbd></span></span></button>
   </div>;
 });
