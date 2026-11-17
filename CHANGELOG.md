@@ -15,6 +15,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Changed
 
 - Add a [Universe](https://papilot.ai/universe/) template-library link with a blue planet icon beside the homepage logo, visible on desktop and phones. Simplify the left navigation to Universe and Blog, and add translated template links below the downloads and in the footer. The orbit turns once on hover or keyboard focus and respects reduced motion; the online demo uses a play icon in narrow headers.
+- Choose any agent’s model from the existing model menu below the chat. A restart icon marks models that start a new task. Models from the current agent keep the conversation; choosing another agent automatically stops the current task and reruns its original request in a linked replacement task, preserving unsent drafts.
 - **New paper and Open paper.** The paper menu and empty screen now say **New paper…** and **Open paper…** (a folder icon on every platform), and the desktop File menu says **Open Paper…**, instead of the easily confused *Create a new paper* and *Add paper…*. The new-paper dialog shows the folder it will create in place of explanatory text, and the open dialog is reduced to **Choose folder**, **Choose ZIP** and the drop zone. ([#182](https://github.com/PapilotAI/papilot/pull/182))
 
 ### Fixed
@@ -26,7 +27,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
-- Shorten the **Delete task** and **Restart with another agent** dialogs to one line each. Deleting says what is lost and what stays: unaccepted edits and comments are lost, accepted changes stay in your manuscript. Restarting reruns the original request in a new task and leaves the current one as it is. Its stop option now reads **Stop this task first**.
+- Shorten the **Delete task** dialog to one line. It says what is lost and what stays: unaccepted edits and comments are lost, accepted changes stay in your manuscript.
 
 ## [0.10.4] - 2026-11-14
 

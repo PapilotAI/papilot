@@ -1,12 +1,6 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
-  'Restart with another agent…': '用其他智能体重新开始…',
-  'Restart with another agent': '用其他智能体重新开始',
-  'Rerun the original request in a new task. This task stays as it is.': '在新任务中重新执行最初的请求，此任务保持不变。',
-  'Connect an agent with an available model before restarting.': '请先连接一个有可用模型的智能体，再重新开始。',
-  'Stop this task first': '先停止此任务',
-  'Resolve the pending task action before restarting.': '请先处理任务中尚未确认的操作，再重新开始。',
   'Stopping and restarting…': '正在停止并重新开始…',
   'Restart task': '重新开始任务',
   'Restarted from': '原任务',

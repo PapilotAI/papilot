@@ -557,6 +557,9 @@ body.resizing iframe{pointer-events:none}
 .model-option-agent{margin-left:auto}
 .model-option-agent+svg{margin-left:0}
 .model-option-agent.warn{color:var(--amber-text)}
+.model-option-restart{display:flex;flex:none;margin-left:auto;color:var(--text-3)}
+.model-option-restart svg{stroke-width:1.5}
+.model-option-agent+.model-option-restart{margin-left:0}
 .model-empty{padding:14px 8px;font-size:13px;color:var(--text-3)}
 .agent-picker-panel>.agent-connection{margin:8px 2px 2px}
 .agent-picker-panel>.agent-effort,.agent-picker-panel>.agent-fast{margin-left:6px;margin-right:6px}
@@ -1307,8 +1310,5 @@ body.resizing iframe{pointer-events:none}
 .note-source-side del { color: var(--red); background: var(--red-soft); }
 .note-source-side ins { color: var(--green); background: var(--green-soft); text-decoration: none; }
 
-.restart-task-action { display: block; width: 100%; margin-top: 8px; padding: 10px; text-align: left; color: var(--accent); border-top: 1px solid var(--line); }
-.restart-stop { display: flex; align-items: flex-start; gap: 8px; margin: 16px 0; }
-.modal .restart-stop input { margin: 3px 0 0; width: 16px; height: 16px; flex: none; padding: 0; box-shadow: none; }
 .restart-link { color: var(--text-3); font-size: 12px; }
 .restart-link button { color: var(--accent); text-decoration: underline; text-align: left; }

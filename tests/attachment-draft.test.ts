@@ -65,3 +65,34 @@ test('upgrading restores an account-scoped file draft without replacing a curren
   assert.deepEqual(new AttachmentDraft(key, storage).getSnapshot().files, [uploaded]);
   assert.equal(saved.has('papilot:files:old-account:task:task-1'), true);
 });
+
+
+test('restoring restart attachments updates a live draft and keeps new uploads', async () => {
+  const { draft, storage } = setup();
+  let finish!: (file: Attachment) => void;
+  const uploading = draft.add([file()], async () => new Promise<Attachment>(resolve => { finish = resolve; }));
+  let notifications = 0;
+  draft.subscribe(() => { notifications++; });
+  draft.restore([uploaded, uploaded]);
+  assert.equal(notifications, 1);
+  assert.equal(draft.getSnapshot().entries.length, 2);
+  assert.equal(draft.getSnapshot().blocked, true);
+  finish({ ...uploaded, id: 'new-file' }); await uploading;
+  assert.deepEqual(draft.getSnapshot().files.map(file => file.id), ['new-file', 'file-1']);
+  assert.deepEqual(new AttachmentDraft('files', storage).getSnapshot().files, draft.getSnapshot().files);
+});
+
+test('merged drafts retain files above the send limit until the author removes enough', () => {
+  const { draft, storage } = setup();
+  const files = Array.from({ length: 11 }, (_, i) => ({ ...uploaded, id: 'file-' + i }));
+  draft.restore(files);
+  assert.equal(draft.getSnapshot().files.length, 11);
+  assert.equal(draft.getSnapshot().blocked, true);
+  assert.equal(draft.getSnapshot().error, 'Attach up to 10 files per message.');
+  const reopened = new AttachmentDraft('files', storage);
+  assert.equal(reopened.getSnapshot().files.length, 11);
+  assert.equal(reopened.getSnapshot().blocked, true);
+  reopened.remove('file-10');
+  assert.equal(reopened.getSnapshot().blocked, false);
+  assert.equal(reopened.getSnapshot().error, '');
+});

@@ -62,9 +62,9 @@ try {
   await expect(taskSettings).toContainText('Medium');
   await taskSettings.click();
   await taskModelMenu.getByText('Next turn', { exact: true }).waitFor();
-  assert.ok((await taskModelMenu.getByRole('option').allTextContents()).every(name => !/Opus/.test(name)), 'recent choices cannot switch the task agent');
+  await expect(taskModelMenu.getByRole('option', { name: 'Opus · Claude', exact: true }).last()).toBeVisible();
   await taskModelMenu.getByRole('combobox').fill('opus');
-  await expect(taskModelMenu.getByRole('option')).toHaveCount(0);
+  await expect(taskModelMenu.getByRole('option', { name: 'Opus · Claude', exact: true })).toHaveCount(1);
   await taskModelMenu.getByRole('combobox').fill('');
   await taskModelMenu.getByRole('option', { name: 'Deep model · Codex', exact: true }).last().click();
   await expect.poll(() => task.model).toBe('deep-model');
@@ -90,12 +90,12 @@ try {
   await expect(taskEffort).toHaveAttribute('aria-valuetext', 'Medium');
   runtime.models[0].isDefault = false;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await expect(taskModelMenu.locator('.model-option-tag').filter({ hasText: 'Default' })).toHaveCount(0);
+  await expect(taskModelMenu.getByRole('group', { name: 'Codex', exact: true }).locator('.model-option-tag').filter({ hasText: 'Default' })).toHaveCount(0);
   await expect(taskModelMenu.getByRole('option', { name: 'Default model · Codex', exact: true })).toHaveCount(0);
   await expect(taskSettings, 'an existing task keeps its explicit selection when the host default is unknown').toContainText('Fast model');
   runtime.models[0].isDefault = true;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await expect(taskModelMenu.locator('.model-option-tag').filter({ hasText: 'Default' })).toHaveCount(1);
+  await expect(taskModelMenu.getByRole('group', { name: 'Codex', exact: true }).locator('.model-option-tag').filter({ hasText: 'Default' })).toHaveCount(1);
   // Rapid changes are saved in order; instructions wait for their settings.
   holdModel = new Promise(resolve => { releaseModel = resolve; });
   await taskEffort.press('End');
@@ -221,6 +221,7 @@ try {
   await expect(modelName).toHaveText('Default model');
   await composer.getByRole('button', { name: 'Agent settings', exact: true }).click();
   const unknown = composer.getByRole('dialog', { name: 'Agent settings', exact: true });
+  await expect(unknown.locator('.model-option-restart')).toHaveCount(0); // New tasks have no conversation to restart.
   await expect(unknown.getByRole('option', { name: 'Default model · Codex', exact: true })).toHaveAttribute('aria-selected', 'true');
   await composer.keyboard.press('Escape');
   await composer.getByRole('button', { name: 'Settings', exact: true }).click();

@@ -475,7 +475,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Cancel": {
-    "revision": "20e03cd36e6c1fbd2741bb11bc1207dfcd86530c1e22cb7c715b6fc377e60751",
+    "revision": "eab317b5f647ee3b28825195ea4a6f8d0780fcb4a2d8e97923084adb41212e7a",
     "textHash": "bca84ea5c65fee0eccd1f23a972b95cce908f83977c65b4e8b32ca72a772a9a5",
     "model": "codex-reviewed"
   },
@@ -3479,11 +3479,6 @@
     "textHash": "5b2c7704f726e1b81ed10f9b8bd47fa3055812884ffcdcdb8fd8b4f8170ee6b7",
     "model": "gemini-4-argon-medium"
   },
-  "Rerun the original request in a new task. This task stays as it is.": {
-    "revision": "20ca72bd86d4d104698b0153648778b9e33c06fb78f4ce2775f3cefe44b0bf80",
-    "textHash": "21fd61c6295144987db1bf3ec662421bfe18bc120de513f2b28072e360853148",
-    "model": "gemini-3.8-flash-high"
-  },
   "Reset appearance": {
     "revision": "e6c59e8b74f79052bbefb8d5d49b26f5902cdfc6da351661611adf1cedf9268f",
     "textHash": "8cc1498d3f315a1529e826fd24a93b453c1599a16edad2d42b78d578b7012ed3",
@@ -4193,11 +4188,6 @@
     "revision": "7a517ac3aa8b16eb27d32189e8f673e905b051fdf738741d8e93f15f043d9579",
     "textHash": "2a8063397717bf86168291ed458dd6c467a4bb9010848b5791720cedc8e95e84",
     "model": "gemini-4-argon-medium"
-  },
-  "Stop this task first": {
-    "revision": "1034e2045a505c7ebda3cd86368dba16b2c12fcf4c8dd45a065c0009a4238c43",
-    "textHash": "6a53d040e749720927598a548e05f6d94f8d7ad273d32454be67bb2020f415cd",
-    "model": "gemini-3.8-flash-high"
   },
   "Strike out text to ask for it to be removed. Open the mark to give a replacement.": {
     "revision": "855c426e3b8dd73074c51714f959f9ab3cd60e03c727f569c9ba7605e934d8cb",
