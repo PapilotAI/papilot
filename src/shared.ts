@@ -247,6 +247,8 @@ export interface SourceSave { source: SourceFile; changed: [number, number]; tre
 export interface SourcePlace { page: number; rect: [number, number, number, number] }
 /** A 1-based inclusive range in a durable source snapshot. */
 export interface SourceAnchor { file: string; revision: string; lines: [number, number]; quote?: string }
+// Folders on the computer running Papilot, for choosing a location from a browser.
+export interface FolderListing { path: string; parent: string | null; folders: { name: string; path: string }[] }
 export interface PaperImport {
   id: string; path: string; name: string; copied: boolean; candidates: string[]; main: string; engine: string;
   phase: 'choose' | 'building' | 'failed' | 'ready' | 'repairing';

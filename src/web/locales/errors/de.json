@@ -29,7 +29,6 @@
   "Check the task status before sending more instructions.": "Prüfen Sie den Aufgabenstatus, bevor Sie weitere Anweisungen senden.",
   "Choose a ZIP smaller than 64 MB.": "Wählen Sie eine ZIP-Datei aus, die kleiner als 64 MB ist.",
   "Choose a file with a valid name.": "Wählen Sie eine Datei mit einem gültigen Namen aus.",
-  "Choose a folder smaller than 64 MB.": "Wählen Sie einen Ordner aus, der kleiner als 64 MB ist.",
   "Choose a source file.": "Wählen Sie eine Quelldatei aus.",
   "Choose a supported LaTeX engine.": "Wählen Sie eine unterstützte LaTeX-Engine aus.",
   "Choose a valid update channel.": "Wählen Sie einen gültigen Update-Kanal.",
@@ -37,7 +36,6 @@
   "Choose an available model for this agent.": "Ein verfügbares Modell für diesen Agenten auswählen.",
   "Choose an entry to confirm.": "Wählen Sie einen Eintrag zum Bestätigen aus.",
   "Choose an existing TeX main file.": "Wählen Sie eine vorhandene TeX-Hauptdatei aus.",
-  "Choose between 1 and 5,000 files.": "Wählen Sie zwischen 1 und 5.000 Dateien aus.",
   "Choose one of the offered answers.": "Wählen Sie eine der angebotenen Antworten.",
   "Choose stage, unstage or revert.": "Wählen Sie Vormerken (stage), Vormerkung aufheben (unstage) oder Zurücksetzen (revert).",
   "Choose whether to archive or restore the task.": "Wählen Sie aus, ob die Aufgabe archiviert oder wiederhergestellt werden soll.",
@@ -373,5 +371,8 @@
   "Use a public GitHub repository link, or upload its source ZIP.": "Verwende einen öffentlichen GitHub-Repository-Link oder lade dessen Quell-ZIP hoch.",
   "Use a public HTTPS link without a username, password or custom port.": "Verwende einen öffentlichen HTTPS-Link ohne Benutzername, Passwort oder benutzerdefinierten Port.",
   "Use an arXiv abstract, PDF, HTML or source link for one paper.": "Verwende einen arXiv-Link zur Zusammenfassung, PDF, HTML-Version oder Quelle eines einzelnen Papers.",
-  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "Verwende einen aktivierten schreibgeschützten Overleaf-Freigabelink. Private Projektlinks erfordern eine Anmeldung bei Overleaf; alternativ kannst du das Quell-ZIP hochladen."
+  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "Verwende einen aktivierten schreibgeschützten Overleaf-Freigabelink. Private Projektlinks erfordern eine Anmeldung bei Overleaf; alternativ kannst du das Quell-ZIP hochladen.",
+  "Drop one folder or LaTeX ZIP file.": "Legen Sie einen Ordner oder eine LaTeX-ZIP-Datei ab.",
+  "No files found in this folder.": "Keine Dateien in diesem Ordner gefunden.",
+  "Papilot cannot read this folder.": "Papilot kann diesen Ordner nicht lesen."
 }

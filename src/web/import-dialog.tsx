@@ -3,16 +3,14 @@ import type { AgentId, PaperImport, Project } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
 import { ChipSelect } from './chip-select.tsx';
+import { FolderField } from './folder-browser.tsx';
 import { t } from './i18n.ts';
 import { browserStorage } from './storage.ts';
-import { checkUpload, droppedFolder, ignoredImportPath, type ImportFile } from './import-files.ts';
+import { droppedFolder, ignoredImportPath, type ImportFile } from './import-files.ts';
 import './import-dialog.css';
 
 type Api = <T = any>(route: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
 const memoryKey = 'papilot:paper-import';
-function base64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error(t('Could not read the selected file.'))); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.readAsDataURL(file); });
-}
 const clock = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; };
 // What a long compilation is doing, so it never looks stuck: latexmk's step,
 // the LaTeX pass with the pages typeset in it, and the time since it started.
@@ -79,20 +77,20 @@ export function ImportPanel({ api, agent, canRepair, onChooseFolder, onDone, onC
   async function uploadFiles(list: ImportFile[], archive: boolean) {
     const files = list.filter(item => !ignoredImportPath(item.path));
     if (!files.length) throw new Error(t('No files found in this folder.'));
-    checkUpload(files.length, files.reduce((total, item) => total + item.file.size, 0));
     if (archive && (files.length !== 1 || !/\.zip$/i.test(files[0].file.name))) throw new Error(t('Drop one folder or LaTeX ZIP file.'));
     const name = archive ? files[0].file.name.replace(/\.zip$/i, '') : files[0].path.split('/')[0];
-    const body = archive ? { zip: await base64(files[0].file), name: name.slice(0, 120) } : { files: await Promise.all(files.map(async item => ({ path: item.path, data: await base64(item.file) }))), name: name.slice(0, 120) };
-    await start(await api<PaperImport>('/imports', body));
+    const body = new FormData();
+    for (const item of files) body.append('files', item.file, encodeURIComponent(item.path));
+    await start(await api<PaperImport>(`/imports/upload?name=${encodeURIComponent(name.slice(0, 120))}&archive=${archive}`, body));
   }
   const upload = (list: File[], archive: boolean) => run(() => uploadFiles(list.map(file => ({ file, path: file.webkitRelativePath || file.name })), archive));
   const openFolder = async (path: string) => start(await api<PaperImport>('/imports', { path }));
   const importLink = (url: string) => run(async () => start(await api<PaperImport>('/imports', { url: url.trim() })), true);
+  const focusChooser = () => requestAnimationFrame(() => dialog.current?.querySelector<HTMLButtonElement>('[data-choose-folder]')?.focus());
+  // The desktop app opens the folder chosen in its system picker at once.
   async function chooseFolder() {
-    if (!onChooseFolder) { folder.current?.click(); return; }
-    if (pending.current) return;
-    await run(onChooseFolder);
-    requestAnimationFrame(() => dialog.current?.querySelector<HTMLButtonElement>('[data-choose-folder]')?.focus());
+    if (pending.current || !onChooseFolder) return;
+    await run(onChooseFolder); focusChooser();
   }
   function drop(transfer: DataTransfer) {
     // Capture entries while the drop event still owns access to the data store.
@@ -124,30 +122,38 @@ export function ImportPanel({ api, agent, canRepair, onChooseFolder, onDone, onC
   function close() { if (!busy) onClose(); }
   return <div ref={dialog} className="import-dialog">
       {!draft ? <>
-        <form className="import-path import-link" aria-labelledby={linkId + '-label'} onSubmit={event => { event.preventDefault(); void importLink(link); }}>
-          <label id={linkId + '-label'} htmlFor={linkId}>{t('Paper or repository link')}</label>
-          <div className="import-path-row">
-            <input ref={linkInput} id={linkId} name="url" type="url" inputMode="url" enterKeyHint="go" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={link} required disabled={locked} maxLength={8000} aria-describedby={linkId + '-hint' + (fromLink && error ? ' ' + linkId + '-error' : '')} aria-invalid={fromLink && !!error || undefined} onChange={event => { setLink(event.target.value); if (fromLink) setError(''); }} placeholder={t('Paste a link…')}/>
-            <button type="submit" className="button primary compact" aria-label={t('Import link')} disabled={locked}><Icon name="arrowRight" size={15}/>{t('Import')}</button>
+        <section className="import-copy" aria-labelledby={linkId + '-copy'}>
+          <h3 id={linkId + '-copy'}>{t('Import a copy')}</h3>
+          <p>{t('Save a separate copy in Papilot. Your original files stay unchanged.')}</p>
+          <form className="import-path import-link" aria-labelledby={linkId + '-label'} onSubmit={event => { event.preventDefault(); void importLink(link); }}>
+            <label id={linkId + '-label'} htmlFor={linkId}>{t('Paper or repository link')}</label>
+            <div className="import-path-row">
+              <input ref={linkInput} id={linkId} name="url" type="url" inputMode="url" enterKeyHint="go" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={link} required disabled={locked} maxLength={8000} aria-describedby={linkId + '-hint' + (fromLink && error ? ' ' + linkId + '-error' : '')} aria-invalid={fromLink && !!error || undefined} onChange={event => { setLink(event.target.value); if (fromLink) setError(''); }} placeholder={t('Paste a link…')}/>
+              <button type="submit" className="button primary compact" aria-label={t('Import link')} disabled={locked}><Icon name="arrowRight" size={15}/>{t('Import')}</button>
+            </div>
+            <div className="import-link-hint" id={linkId + '-hint'}><span className="import-source"><BrandIcon name="arxiv" size={16}/><span>arXiv</span></span><span className="import-source"><BrandIcon name="overleaf" size={16}/><span>Overleaf</span></span><span className="import-source"><BrandIcon name="github" size={16}/><span>GitHub</span></span></div>
+          </form>
+          <div className={'import-drop' + (dragging ? ' dragging' : '')} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={event => { event.preventDefault(); setDragging(false); if (!locked) drop(event.dataTransfer); }}>
+            <span className="import-drop-hint"><Icon name="folder" size={15}/>{t('Drop a source ZIP or folder')}</span>
+            <div className="import-options">
+              <button type="button" className="button secondary compact" aria-label={t('Import ZIP')} disabled={locked} onClick={() => zip.current?.click()}><Icon name="archive" size={15}/>{t('Import ZIP')}</button>
+              <button type="button" className="button secondary compact" disabled={locked} onClick={() => folder.current?.click()}><Icon name="folder" size={15}/>{t('Import folder')}</button>
+            </div>
           </div>
-          <div className="import-link-hint" id={linkId + '-hint'}><span className="import-source"><BrandIcon name="arxiv" size={16}/><span>arXiv</span></span><span className="import-source"><BrandIcon name="overleaf" size={16}/><span>Overleaf</span></span><span className="import-source"><BrandIcon name="github" size={16}/><span>GitHub</span></span></div>
-        </form>
-        <div className={'import-drop' + (dragging ? ' dragging' : '')} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={event => { event.preventDefault(); setDragging(false); if (!locked) drop(event.dataTransfer); }}>
-          <span className="import-drop-hint"><Icon name="folder" size={15}/>{t('Drop a source ZIP or folder')}</span>
-          <div className="import-options">
-            <button type="button" className="button secondary compact" aria-label={t('Choose ZIP')} disabled={locked} onClick={() => zip.current?.click()}><Icon name="archive" size={15}/>{t('ZIP')}</button>
-            <button type="button" data-choose-folder className="button secondary compact" aria-label={t('Choose folder')} disabled={locked} onClick={() => void chooseFolder()}><Icon name="folder" size={15}/>{t('Folder')}</button>
-          </div>
-        </div>
-        <input hidden {...{ webkitdirectory: '' }} ref={folder} type="file" multiple aria-label={t('Choose folder')} onChange={event => { void upload(Array.from(event.target.files || []), false); event.target.value = ''; }}/>
-        <input hidden ref={zip} type="file" accept=".zip,application/zip" aria-label={t('Choose ZIP')} onChange={event => { void upload(Array.from(event.target.files || []), true); event.target.value = ''; }}/>
-        {!onChooseFolder && <details className="import-host-folder"><summary>{t('Open a folder on this computer')}</summary><form className="import-path" onSubmit={event => { event.preventDefault(); void run(() => openFolder(form.path)); }}>
-          <label htmlFor={linkId + '-path'}>{t('Folder path')}</label>
-          <div className="import-path-row">
-            <input id={linkId + '-path'} value={form.path} required disabled={locked} maxLength={4000} onChange={event => setForm({ ...form, path: event.target.value })} placeholder={t('/Users/you/papers/my-paper')} spellCheck={false}/>
-            <button className={'button compact ' + (form.path.trim() ? 'primary' : 'secondary')} disabled={locked}>{t('Open')}</button>
-          </div>
-        </form></details>}
+          <input hidden {...{ webkitdirectory: '' }} ref={folder} type="file" multiple aria-label={t('Choose folder')} onChange={event => { void upload(Array.from(event.target.files || []), false); event.target.value = ''; }}/>
+          <input hidden ref={zip} type="file" accept=".zip,application/zip" aria-label={t('Import ZIP')} onChange={event => { void upload(Array.from(event.target.files || []), true); event.target.value = ''; }}/>
+        </section>
+        <section className="import-original" aria-labelledby={linkId + '-original'}>
+          <h3 id={linkId + '-original'}>{t('Open existing folder')}</h3>
+          <p id={linkId + '-original-hint'}>{t('Work in the original folder. Changes are saved directly to your files.')}</p>
+          {onChooseFolder ? <button type="button" data-choose-folder className="button secondary compact" aria-describedby={linkId + '-original-hint'} disabled={locked} onClick={() => void chooseFolder()}><Icon name="folder" size={15}/>{t('Choose folder…')}</button>
+            : <form className="import-path" aria-labelledby={linkId + '-original'} onSubmit={event => { event.preventDefault(); void run(() => openFolder(form.path)); }}>
+              <FolderField id={linkId + '-path'} api={api} label={t('Folder path')} value={form.path} onChange={path => setForm(current => ({ ...current, path }))} title={t('Open existing folder')} action={t('Open this folder')}
+                placeholder={t('/Users/you/papers/my-paper')} describedBy={linkId + '-original-hint'} disabled={locked} onError={setError} onPicked={path => { setForm(current => ({ ...current, path })); void run(() => openFolder(path)); }}>
+                <button type="submit" className={'button compact ' + (form.path.trim() ? 'primary' : 'secondary')} disabled={locked}>{t('Open')}</button>
+              </FolderField>
+            </form>}
+        </section>
         {busy && <p className="import-reading" role="status"><span className="spinner"/>{fromLink ? t('Downloading paper source…') : t('Reading paper files…')}</p>}
         {error && <p id={linkId + '-error'} className="inline-error" role="alert">{error}</p>}
       </> : <>
@@ -166,7 +172,12 @@ export function ImportPanel({ api, agent, canRepair, onChooseFolder, onDone, onC
         </div>
         <form onSubmit={event => { event.preventDefault(); void build(); }}>
           <label>{t('Paper name')}<input required maxLength={120} value={form.name} disabled={locked} onChange={event => setForm({ ...form, name: event.target.value })}/></label>
-          <div className="import-settings"><label>{t('Main TeX file')}<input aria-label={t('Main TeX file')} list="import-main-files" value={form.main} disabled={locked} onChange={event => setForm({ ...form, main: event.target.value })} placeholder="main.tex" spellCheck={false}/><datalist id="import-main-files">{draft.candidates.map(file => <option key={file} value={file}/>)}</datalist></label>
+          <div className="import-settings"><label>{t('Main TeX file')}{draft.candidates.length > 1
+            // The app's list matches the theme and shows long nested paths as name and folder.
+            // A detected main file stays editable, since other files are not listed then.
+            ? <ChipSelect className="field-select" label={t('Main TeX file')} value={form.main} disabled={locked} onChange={main => setForm({ ...form, main })} display={form.main.split('/').at(-1) || t('Select')}
+              options={draft.candidates.map(file => ({ value: file, label: file.split('/').at(-1)!, detail: file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : undefined }))}/>
+            : <input aria-label={t('Main TeX file')} value={form.main} disabled={locked} onChange={event => setForm({ ...form, main: event.target.value })} placeholder="main.tex" spellCheck={false}/>}</label>
           <label>{t('LaTeX engine')}<ChipSelect className="field-select" label={t('LaTeX engine')} value={form.engine} disabled={locked} onChange={engine => setForm({ ...form, engine })} options={[{ value: 'pdflatex', label: 'pdfLaTeX' }, { value: 'xelatex', label: 'XeLaTeX' }, { value: 'lualatex', label: 'LuaLaTeX' }]}/></label></div>
           {!draft.candidates.length && <p className="import-notice warn" role="alert"><Icon name="alert" size={15}/><span>{t('Could not detect a main file. Enter its path relative to the paper folder.')}</span></p>}
           {draft.candidates.length > 1 && draft.phase === 'choose' && <p className="import-notice"><Icon name="info" size={15}/><span>{t('Several TeX files were found. Check the selected main document before continuing.')}</span></p>}

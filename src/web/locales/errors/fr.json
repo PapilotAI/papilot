@@ -29,7 +29,6 @@
   "Check the task status before sending more instructions.": "Vérifiez l’état de la tâche avant d’envoyer d’autres instructions.",
   "Choose a ZIP smaller than 64 MB.": "Choisissez un fichier ZIP de moins de 64 Mo.",
   "Choose a file with a valid name.": "Choisissez un fichier portant un nom valide.",
-  "Choose a folder smaller than 64 MB.": "Choisissez un dossier de moins de 64 Mo.",
   "Choose a source file.": "Choisissez un fichier source.",
   "Choose a supported LaTeX engine.": "Choisissez un moteur LaTeX pris en charge.",
   "Choose a valid update channel.": "Choisissez un canal de mise à jour valide.",
@@ -37,7 +36,6 @@
   "Choose an available model for this agent.": "Choisissez un modèle disponible pour cet agent.",
   "Choose an entry to confirm.": "Choisissez une entrée à confirmer.",
   "Choose an existing TeX main file.": "Choisissez un fichier principal TeX existant.",
-  "Choose between 1 and 5,000 files.": "Choisissez entre 1 et 5 000 fichiers.",
   "Choose one of the offered answers.": "Choisissez l’une des réponses proposées.",
   "Choose stage, unstage or revert.": "Choisissez d’indexer, de désindexer ou d’annuler.",
   "Choose whether to archive or restore the task.": "Choisissez d’archiver ou de restaurer la tâche.",
@@ -373,5 +371,8 @@
   "Use a public GitHub repository link, or upload its source ZIP.": "Utilisez le lien d’un dépôt GitHub public ou importez son ZIP source.",
   "Use a public HTTPS link without a username, password or custom port.": "Utilisez un lien HTTPS public sans nom d’utilisateur, mot de passe ni port personnalisé.",
   "Use an arXiv abstract, PDF, HTML or source link for one paper.": "Utilisez un lien arXiv vers le résumé, le PDF, le HTML ou les sources d’un seul article.",
-  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "Utilisez un lien de partage Overleaf en lecture seule activé. Les liens de projets privés nécessitent une connexion à Overleaf ; vous pouvez aussi importer le ZIP des sources."
+  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "Utilisez un lien de partage Overleaf en lecture seule activé. Les liens de projets privés nécessitent une connexion à Overleaf ; vous pouvez aussi importer le ZIP des sources.",
+  "Drop one folder or LaTeX ZIP file.": "Déposez un seul dossier ou fichier ZIP LaTeX.",
+  "No files found in this folder.": "Aucun fichier trouvé dans ce dossier.",
+  "Papilot cannot read this folder.": "Papilot ne peut pas lire ce dossier."
 }

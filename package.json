@@ -93,6 +93,7 @@
   },
   "dependencies": {
     "@fastify/compress": "^9.2.2",
+    "@fastify/multipart": "10.1.9",
     "@fastify/rate-limit": "^11.2.2",
     "@fastify/static": "^10.1.7",
     "@mariozechner/pi-coding-agent": "0.73.1",

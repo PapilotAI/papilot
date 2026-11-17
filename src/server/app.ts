@@ -2,6 +2,10 @@ import { isNoteGroup } from '../note-groups.ts';
 import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES } from '../shared.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
+import { registerImportUpload } from './import-upload.ts';
+import { listFolders, nearestFolder } from './folders.ts';
+import { isLocalRequest } from './security.ts';
+import { chooseFolder, closeFolderPicker } from './folder-picker.ts';
 import rateLimit from '@fastify/rate-limit';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -362,6 +366,21 @@ export async function buildApp(options: AppOptions) {
   });
   app.post('/api/projects/create', request => creations!.create((request.body || {}) as any, (root, name) => workspace.addProject(root, name)));
   app.post('/api/projects/open', request => openFolder((request.body || {}) as any, root => workspace.projectByPath(root), (root, name) => workspace.addProject(root, name)));
+  registerImportUpload(app, imports);
+  app.post('/api/folders', request => listFolders((request.body || {}) as any));
+  // The system picker appears on this computer's screen, so only a browser here may open it.
+  app.post<{ Body: { path?: unknown; title?: unknown } }>('/api/folders/choose', async (request, reply) => {
+    if (!isLocalRequest(request.headers, listener.port)) return { unavailable: true };
+    const body = request.body || {}, title = typeof body.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 200) : 'Choose a folder';
+    const start = await nearestFolder(body.path), controller = new AbortController();
+    const closed = () => { if (!reply.raw.writableFinished) controller.abort(); };
+    reply.raw.on('close', closed);
+    try { return await chooseFolder(title, start, controller.signal); }
+    finally { reply.raw.off('close', closed); }
+  });
+  // A waiting picker request would otherwise hold shutdown open.
+  app.addHook('preClose', async () => closeFolderPicker());
+  // Legacy base64 clients still buffer JSON; browser file uploads use the streaming route above.
   app.post('/api/imports', { bodyLimit: 90 * 1024 * 1024 }, request => imports!.create((request.body || {}) as any));
   app.get<{ Params: { id: string } }>('/api/imports/:id', request => imports!.get(request.params.id));
   app.post<{ Params: { id: string } }>('/api/imports/:id/build', request => imports!.build(request.params.id, (request.body || {}) as any));

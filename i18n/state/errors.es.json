@@ -134,11 +134,6 @@
     "textHash": "8842ea30ebc2d8cc6df0e996369ca730e95614d53386ae3d0745372e53268a92",
     "model": "gemini-4-argon-medium"
   },
-  "Choose a folder smaller than 64 MB.": {
-    "revision": "505e13d825fa44dd4d939065b202d0ae7e7811b5ee1ff006247bdab3a16e2e46",
-    "textHash": "27e75459fab3ae1abbd969828fe0f932231cd162ff0556aa956c9a7a2ee88589",
-    "model": "gemini-4-argon-medium"
-  },
   "Choose a source file.": {
     "revision": "3566ec5925ef71a361d210dd44c3f87eeb08f2ec48a9c150856e85d2afc7a9f2",
     "textHash": "8f04398852dc5b63549004313dd7d4d02cb6e092eb9309add8df2e57419dbf42",
@@ -172,11 +167,6 @@
   "Choose an existing TeX main file.": {
     "revision": "f7cf113b6f06ea29b31032b4814cdb5adfe328f0c12b294ad403fea9514446f8",
     "textHash": "dcb1a8c251a92f8b654cff39ca0a084f25735c8bc5fa36a7c7dbd34e1ee427be",
-    "model": "gemini-4-argon-medium"
-  },
-  "Choose between 1 and 5,000 files.": {
-    "revision": "5ebda4456af0b34bd5578f8f7f9be95ea966cfabce54c581e7050496554440ae",
-    "textHash": "7ab01117f92fa28d88df4be42f1f1a6d86d321e0bb9894fd6b714a53139c29f4",
     "model": "gemini-4-argon-medium"
   },
   "Choose one of the offered answers.": {
@@ -1443,5 +1433,20 @@
     "revision": "db4bc08c973aa08490c1752e561b8f0115899d150da2d2f27ac73f39c7ab8d0a",
     "textHash": "6de15c50c0870eb0d02569800c88aab606ab1ba2d21e58dd97ea6e1cf8c4c0f8",
     "model": "codex"
+  },
+  "Drop one folder or LaTeX ZIP file.": {
+    "revision": "5a3e716129b6c33f58ad44411fcadd63a6219eecf97d0a1994735e227e48f954",
+    "textHash": "92943fda893e74133779d56acf97d5eecaba9d7a871a410cd94f57a99738fc67",
+    "model": "manual"
+  },
+  "No files found in this folder.": {
+    "revision": "21a4a67412f94b769ac012929dcbd29554d8494656653e092cef5772939c24d1",
+    "textHash": "8d9dcfc40e334e59ff03d0d730f16061fd49f6e934dea2c44e699781ded1725b",
+    "model": "manual"
+  },
+  "Papilot cannot read this folder.": {
+    "revision": "c8750b9bb2eb67209387a8bea2ff3d64a97b279da234fd6e9098499aaf10dd0b",
+    "textHash": "535792a36ecf4ebd6635a4d0d315e6ba05e9615a3c6a4acc4913f12e00ebb7ab",
+    "model": "manual"
   }
 }

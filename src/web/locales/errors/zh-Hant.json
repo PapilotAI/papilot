@@ -29,7 +29,6 @@
   "Check the task status before sending more instructions.": "傳送更多指示前，請先檢查任務狀態。",
   "Choose a ZIP smaller than 64 MB.": "請選擇小於 64 MB 的 ZIP 檔案。",
   "Choose a file with a valid name.": "請選擇名稱有效的檔案。",
-  "Choose a folder smaller than 64 MB.": "請選擇小於 64 MB 的資料夾。",
   "Choose a source file.": "請選擇原始碼檔案。",
   "Choose a supported LaTeX engine.": "請選擇支援的 LaTeX 引擎。",
   "Choose a valid update channel.": "請選擇有效的更新頻道。",
@@ -37,7 +36,6 @@
   "Choose an available model for this agent.": "請為此智慧代理選擇可用的模型。",
   "Choose an entry to confirm.": "請選擇要確認的項目。",
   "Choose an existing TeX main file.": "請選擇現有的 TeX 主檔案。",
-  "Choose between 1 and 5,000 files.": "請選擇 1 到 5,000 個檔案。",
   "Choose one of the offered answers.": "請從提供的選項中選擇一個答案。",
   "Choose stage, unstage or revert.": "請選擇暫存、取消暫存或還原。",
   "Choose whether to archive or restore the task.": "請選擇要封存或還原任務。",
@@ -373,5 +371,8 @@
   "Use a public GitHub repository link, or upload its source ZIP.": "請使用公開 GitHub 儲存庫連結，或上傳其原始碼 ZIP。",
   "Use a public HTTPS link without a username, password or custom port.": "請使用公開的 HTTPS 連結，且不要包含使用者名稱、密碼或自訂連接埠。",
   "Use an arXiv abstract, PDF, HTML or source link for one paper.": "請使用單篇論文的 arXiv 摘要、PDF、HTML 或原始碼連結。",
-  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "請使用已啟用的 Overleaf 唯讀分享連結。私人專案連結需要登入 Overleaf；也可以上傳原始碼 ZIP。"
+  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "請使用已啟用的 Overleaf 唯讀分享連結。私人專案連結需要登入 Overleaf；也可以上傳原始碼 ZIP。",
+  "Drop one folder or LaTeX ZIP file.": "請拖放一個資料夾或 LaTeX ZIP 檔案。",
+  "No files found in this folder.": "在此資料夾中找不到檔案。",
+  "Papilot cannot read this folder.": "Papilot 無法讀取此資料夾。"
 }

@@ -857,7 +857,7 @@ body.resizing iframe{pointer-events:none}
 .select-group{display:flex;flex-direction:column;gap:1px}
 .select-group+.select-group{margin-top:4px;padding-top:4px;border-top:1px solid var(--line)}
 .select-group-label{padding:6px 10px 3px 36px;font-size:11.5px;font-weight:600;letter-spacing:.02em;color:var(--text-3)}
-.select-option{display:flex;align-items:center;gap:10px;min-height:34px;padding:5px 10px;border-radius:var(--r);cursor:pointer;user-select:none}
+.select-option{display:flex;flex:none;align-items:center;gap:10px;min-height:34px;padding:5px 10px;border-radius:var(--r);cursor:pointer;user-select:none}
 .select-option.active{background:var(--bg-hover)}
 .select-option[aria-selected=true] .menu-label{font-weight:500}
 .select-option[aria-disabled]{opacity:.45;cursor:default}

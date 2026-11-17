@@ -8,8 +8,9 @@
 .import-options .button svg { color: var(--text-3); }
 .import-drop-hint { display:flex;align-items:center;gap:7px;font-size: 13px; color: var(--text-2); line-height: 1.4; text-align: center; }
 .import-drop-hint svg{flex:none}
-.import-host-folder{margin-top:18px;font-size:12px;color:var(--text-3)}
-.import-host-folder summary{cursor:pointer;padding-block:5px}
+.import-original h3, .import-copy h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.import-original > p, .import-copy > p { margin: 6px 0 12px; font-size: 12px; color: var(--text-2); line-height: 1.5; }
+.import-original { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 
 /* Direct local path field */
 .import-path { margin: 16px 0 0; }
@@ -123,6 +124,6 @@
 .import-dialog input[hidden] { display: none; }
 
 @media (pointer: coarse) {
-  .import-link .import-path-row input { font-size: 16px; height: 48px; }
-  .import-link .import-path-row .button { height: auto; min-height: 48px; }
+  .import-dialog .import-path-row input { font-size: 16px; height: 48px; }
+  :is(.import-copy, .import-original) .button { height: auto; min-height: 48px; }
 }

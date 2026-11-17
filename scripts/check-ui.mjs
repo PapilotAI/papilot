@@ -661,10 +661,10 @@ try {
   await switcher.click();
   await page.getByRole('menuitemradio', { name: 'Example paper', exact: true }).waitFor();
   assert.equal(await page.getByRole('menuitemradio', { name: 'Example paper', exact: true }).getAttribute('aria-checked'), 'true');
-  await page.getByRole('menuitem', { name: 'Import', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Import or open', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'New paper' });
   await dialog.waitFor();
-  // The paper-link field leads the import dialog.
+  // Importing a copy leads the dialog; the link field receives focus.
   await expect(dialog.getByRole('textbox', { name: 'Paper or repository link', exact: true })).toBeFocused();
   for (let i = 0; i < 18; i++) {
     await page.keyboard.press(i < 9 ? 'Tab' : 'Shift+Tab');
@@ -1894,7 +1894,7 @@ try {
     assert.equal(await drawerToggle.evaluate(el => el === document.activeElement), true);
     await drawerToggle.click();
     await drawer.getByRole('button', { name: 'Paper: Example paper', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Import', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Import or open', exact: true }).click();
     await page.getByRole('dialog', { name: 'New paper' }).waitFor();
     await expect(page.getByRole('dialog', { name: 'New paper' }).getByRole('textbox', { name: 'Paper or repository link', exact: true })).toBeFocused();
     await page.keyboard.press('Escape');

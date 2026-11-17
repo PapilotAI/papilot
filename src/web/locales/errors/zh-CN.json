@@ -29,7 +29,6 @@
   "Check the task status before sending more instructions.": "发送更多指令前，请先检查任务状态。",
   "Choose a ZIP smaller than 64 MB.": "请选择小于 64 MB 的 ZIP 文件。",
   "Choose a file with a valid name.": "请选择文件名有效的文件。",
-  "Choose a folder smaller than 64 MB.": "请选择小于 64 MB 的文件夹。",
   "Choose a source file.": "请选择源文件。",
   "Choose a supported LaTeX engine.": "请选择受支持的 LaTeX 引擎。",
   "Choose a valid update channel.": "请选择有效的更新通道。",
@@ -37,7 +36,6 @@
   "Choose an available model for this agent.": "请为此智能体选择可用的模型。",
   "Choose an entry to confirm.": "请选择要确认的条目。",
   "Choose an existing TeX main file.": "请选择现有的 TeX 主文件。",
-  "Choose between 1 and 5,000 files.": "请选择 1 到 5,000 个文件。",
   "Choose one of the offered answers.": "请从提供的选项中选择一个答案。",
   "Choose stage, unstage or revert.": "请选择暂存、取消暂存或还原。",
   "Choose whether to archive or restore the task.": "请选择要归档还是恢复该任务。",
@@ -373,5 +371,8 @@
   "Use a public GitHub repository link, or upload its source ZIP.": "请使用公开 GitHub 仓库链接，或上传其源码 ZIP。",
   "Use a public HTTPS link without a username, password or custom port.": "请使用公开的 HTTPS 链接，且不要包含用户名、密码或自定义端口。",
   "Use an arXiv abstract, PDF, HTML or source link for one paper.": "请使用单篇论文的 arXiv 摘要、PDF、HTML 或源码链接。",
-  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "请使用已启用的 Overleaf 只读分享链接。私有项目链接需要登录 Overleaf；也可以上传源码 ZIP。"
+  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "请使用已启用的 Overleaf 只读分享链接。私有项目链接需要登录 Overleaf；也可以上传源码 ZIP。",
+  "Drop one folder or LaTeX ZIP file.": "请拖入一个文件夹或 LaTeX ZIP 文件。",
+  "No files found in this folder.": "这个文件夹中没有可导入的文件。",
+  "Papilot cannot read this folder.": "Papilot 无法读取此文件夹。"
 }

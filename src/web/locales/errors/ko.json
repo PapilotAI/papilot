@@ -29,7 +29,6 @@
   "Check the task status before sending more instructions.": "추가 지침을 보내기 전에 작업 상태를 확인하세요.",
   "Choose a ZIP smaller than 64 MB.": "64 MB 미만의 ZIP 파일을 선택하세요.",
   "Choose a file with a valid name.": "유효한 이름의 파일을 선택하세요.",
-  "Choose a folder smaller than 64 MB.": "64 MB 미만의 폴더를 선택하세요.",
   "Choose a source file.": "소스 파일을 선택하세요.",
   "Choose a supported LaTeX engine.": "지원되는 LaTeX 엔진을 선택하세요.",
   "Choose a valid update channel.": "유효한 업데이트 채널을 선택하세요.",
@@ -37,7 +36,6 @@
   "Choose an available model for this agent.": "이 에이전트에 사용할 수 있는 모델을 선택하세요.",
   "Choose an entry to confirm.": "확인할 항목을 선택하세요.",
   "Choose an existing TeX main file.": "기존 TeX 메인 파일을 선택하세요.",
-  "Choose between 1 and 5,000 files.": "1개에서 5,000개 사이의 파일을 선택하세요.",
   "Choose one of the offered answers.": "제시된 답변 중 하나를 선택하세요.",
   "Choose stage, unstage or revert.": "스테이징, 스테이징 취소 또는 되돌리기를 선택하세요.",
   "Choose whether to archive or restore the task.": "작업을 보관할지 복원할지 선택하세요.",
@@ -373,5 +371,8 @@
   "Use a public GitHub repository link, or upload its source ZIP.": "공개 GitHub 저장소 링크를 사용하거나 소스 ZIP을 업로드하세요.",
   "Use a public HTTPS link without a username, password or custom port.": "사용자 이름, 비밀번호 또는 사용자 지정 포트가 없는 공개 HTTPS 링크를 사용하세요.",
   "Use an arXiv abstract, PDF, HTML or source link for one paper.": "논문 한 편의 arXiv 초록, PDF, HTML 또는 소스 링크를 사용하세요.",
-  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "활성화된 Overleaf 읽기 전용 공유 링크를 사용하세요. 비공개 프로젝트 링크는 Overleaf 로그인이 필요합니다. 소스 ZIP을 업로드할 수도 있습니다."
+  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "활성화된 Overleaf 읽기 전용 공유 링크를 사용하세요. 비공개 프로젝트 링크는 Overleaf 로그인이 필요합니다. 소스 ZIP을 업로드할 수도 있습니다.",
+  "Drop one folder or LaTeX ZIP file.": "하나의 폴더 또는 LaTeX ZIP 파일을 끌어다 놓으세요.",
+  "No files found in this folder.": "이 폴더에 파일이 없습니다.",
+  "Papilot cannot read this folder.": "Papilot이 이 폴더를 읽을 수 없습니다."
 }

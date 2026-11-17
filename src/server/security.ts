@@ -13,3 +13,9 @@ export function authorize(headers: IncomingHttpHeaders, remoteAddress: string | 
   if (headers.origin && headers.origin !== publicOrigin) return 'The request origin does not match.';
   return null;
 }
+
+// A request from a browser on this computer, not one forwarded by Tailscale Serve.
+// Call only after `authorize` accepted the connection.
+export function isLocalRequest(headers: IncomingHttpHeaders, port: number) {
+  return !headers['x-forwarded-for'] && !headers['tailscale-user-login'] && [`localhost:${port}`, `127.0.0.1:${port}`].includes(headers.host || '');
+}

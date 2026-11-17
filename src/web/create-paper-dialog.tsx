@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { Project } from '../shared.ts';
 import { Icon } from './icons.tsx';
+import { FolderField } from './folder-browser.tsx';
 import { locale, t } from './i18n.ts';
 import { chooseDirectory, nativeFolders } from './desktop-chrome.tsx';
 import { browserStorage } from './storage.ts';
@@ -144,10 +145,10 @@ export function CreatePaperPanel({ api, onDone, preset, tab, active, onBusyChang
         </div>}
       <form onSubmit={event => { event.preventDefault(); void submit(); }}>
         <label htmlFor={id + '-name'}>{t('Paper name')}</label><input id={id + '-name'} name="name" value={form.name} required maxLength={120} autoComplete="off" disabled={busy} onChange={event => setForm({ ...form, name: event.target.value })}/>
-        {nativeFolders ? <div className="create-paper-save-label" id={id + '-location'}>{t('Save in')}</div> : <label htmlFor={id + '-parent'}>{t('Save in')}</label>}
-        <div className="create-paper-location">
-          {nativeFolders ? <><Icon name="folder" size={16}/><div className="create-paper-location-copy" role="group" aria-labelledby={id + '-location'}><strong>{form.parent.split(/[\\/]/).filter(Boolean).at(-1) || form.parent}</strong><span>{form.parent}</span></div><button type="button" className="button secondary compact" disabled={busy} onClick={() => void browse()}>{t('Change…')}</button></> : <input id={id + '-parent'} name="parent" value={form.parent} required maxLength={4000} autoComplete="off" spellCheck={false} disabled={busy} onChange={event => setForm({ ...form, parent: event.target.value })}/>}
-        </div>
+        {nativeFolders ? <>
+          <div className="create-paper-save-label" id={id + '-location'}>{t('Save in')}</div>
+          <div className="create-paper-location"><Icon name="folder" size={16}/><div className="create-paper-location-copy" role="group" aria-labelledby={id + '-location'}><strong>{form.parent.split(/[\\/]/).filter(Boolean).at(-1) || form.parent}</strong><span>{form.parent}</span></div><button type="button" className="button secondary compact" disabled={busy} onClick={() => void browse()}>{t('Change…')}</button></div>
+        </> : <FolderField id={id + '-parent'} name="parent" api={api} label={t('Save in')} value={form.parent} onChange={parent => setForm(current => ({ ...current, parent }))} title={t('Save in')} action={t('Use this folder')} disabled={busy} onError={setError} onPicked={parent => setForm(current => ({ ...current, parent }))}/>}
         {busy && <p className="create-paper-status" role="status"><span className="spinner"/>{t('Creating your paper…')}</p>}
         {error && <p className="inline-error" role="alert">{error}</p>}
         <div className="create-paper-footer">
