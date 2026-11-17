@@ -40,7 +40,6 @@ export function CreatePaperPanel({ api, onDone, preset, tab, active, onBusyChang
   // A saved draft starts at the details. A link from the Universe website waits on
   // the template step until its exact version is found, so Create cannot use another.
   const [step, setStep] = useState<'template' | 'details'>(() => !preset && (initialForm().template || initialForm().example) ? 'details' : 'template');
-  const [browseAll, setBrowseAll] = useState(Boolean(preset));
   const [templates, setTemplates] = useState<PaperTemplate[] | null>(null), [unavailable, setUnavailable] = useState('');
   const [group, setGroup] = useState<Group>('all'), [query, setQuery] = useState('');
   useEffect(() => {
@@ -97,17 +96,16 @@ export function CreatePaperPanel({ api, onDone, preset, tab, active, onBusyChang
   const pick = (template: PaperTemplate | null) => { setForm(current => ({ ...current, example: !template, template: template && choiceOf(template, familyName(template)) })); setError(''); setStep('details'); };
   return <div ref={dialog} className="create-paper-dialog">
       {tab === 'templates' && step === 'template' ? <>
-        <div className="template-heading"><h3>{browseAll ? t('Templates') : t('Featured templates')}</h3><button type="button" className="button ghost compact" onClick={() => { setBrowseAll(!browseAll); setGroup('all'); setQuery(''); }}>{browseAll ? t('Featured') : t('Browse all')}<Icon name="arrowRight" size={14}/></button></div>
-        {browseAll && <div className="template-tools">
+        <search className="template-tools" aria-label={t('Templates')}>
           {groups.length > 1 && <div className="template-groups" role="group" aria-label={t('Template type')}>{(['all', ...groups] as Group[]).map(key => <button key={key} type="button" aria-pressed={group === key} onClick={() => setGroup(key)}>{groupLabel(key)}</button>)}</div>}
           {Boolean(templates?.length) && <label className="template-search"><Icon name="search" size={14}/><input type="search" value={query} placeholder={t('Search templates')} aria-label={t('Search templates')} autoComplete="off" spellCheck={false} onChange={event => setQuery(event.target.value)}/></label>}
-        </div>}
+        </search>
         <div className="template-grid" role="list" aria-label={t('Templates')}>
           {group === 'all' && !words.length && <button type="button" role="listitem" className="template-card" aria-pressed={!form.template} onClick={() => pick(null)}>
             <span className="template-thumb blank"><Icon name="paper" size={24}/></span>
             <span className="template-name">{t('Example project')}</span>
           </button>}
-          {(browseAll ? shown : shown.slice(0, 5)).map(item => <button key={item.id} type="button" role="listitem" className="template-card" aria-pressed={form.template?.id === item.id} title={templateName(item)} onClick={() => pick(item)}>
+          {shown.map(item => <button key={item.id} type="button" role="listitem" className="template-card" aria-pressed={form.template?.id === item.id} title={templateName(item)} onClick={() => pick(item)}>
             <span className="template-thumb">{item.thumbnail && <img src={item.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer"/>}</span>
             <span className="template-name">{templateName(item)}</span>
             <span className="template-meta">{templateMeta(item)}</span>

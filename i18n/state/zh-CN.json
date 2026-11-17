@@ -64,19 +64,9 @@
     "textHash": "6174a4abcf511c047ec04c31a7c685f1cb43f23d29cdc2078edefdf4f72d1b12",
     "model": "codex"
   },
-  "Browse all": {
-    "revision": "31da8f0f589fddb9c0bf4dc8fa31db5dabb996fabcefd1ddceda2c302c5cd2ed",
-    "textHash": "9b245b95c3b92990a57c3ddc4038134bbdad6b072b947d08748f0a6b65928c6b",
-    "model": "manual-review"
-  },
   "Drop a source ZIP or folder": {
     "revision": "e7a28da5de9eb8c37d4656daf4c72186da54aeaab3933ae4745fd0e6eb8c7907",
     "textHash": "e7caf470717d912d7296d332a7bb0b5d104da4b1bc34264152a54bbb6ef1b4a0",
-    "model": "manual-review"
-  },
-  "Featured templates": {
-    "revision": "d92c0e94c7ce808afb6ca107f96b13d9932940b9a8b9ea31a2df8b665f986cb5",
-    "textHash": "a89a28606337304314f0034bbc8796744fe6dd4c367d5cdb7e29a5fc29eb18f8",
     "model": "manual-review"
   },
   "Import link": {
@@ -98,11 +88,6 @@
     "revision": "a7e2c7ab9a1e95ed985b37facc0eaf26f34bad9de6f4f5aef599102f1b09e45c",
     "textHash": "576d81bb0631b16569bcdc0dc7345292763e2bc5045d2f8b85599f830fdc45c2",
     "model": "codex"
-  },
-  "Featured": {
-    "revision": "e9dc338ba230875879cacb7e7c72492d182251b25bc71fe256ef6b834a4aded0",
-    "textHash": "15b26cdaf900a12c8679581d686bbe4869d7809771a39e50e8f6ea784fe7e84f",
-    "model": "manual-review"
   },
   "Open a folder on this computer": {
     "revision": "96dbf6bbe0a7e6d9be9b8fb2d66f9b2ddb62f62a9acef50e959c8b492983011a",

@@ -235,9 +235,7 @@
   "The page preview could not be loaded.": "无法加载页面预览。",
   "Top margin": "上边距",
   "Drag the edges to crop.": "拖动边缘裁剪。",
-  "Featured": "精选",
   "Open": "打开",
-  "Browse all": "浏览全部",
   "Paste a link…": "粘贴链接…",
   "Import link": "导入链接",
   "Downloading paper source…": "正在下载论文源码…",
@@ -248,6 +246,5 @@
   "Blank": "空白",
   "Open a folder on this computer": "打开此电脑上的文件夹",
   "Example project": "示例项目",
-  "ZIP": "ZIP",
-  "Featured templates": "精选模板"
+  "ZIP": "ZIP"
 }

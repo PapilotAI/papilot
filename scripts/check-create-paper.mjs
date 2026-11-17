@@ -93,6 +93,10 @@ try {
     { id: 'thuthesis', version: '7.6.0', name: 'Tsinghua University Thesis', zh: { name: '清华大学学位论文' }, category: 'thesis', tags: ['tsinghua'], organization: 'Tsinghua University', engine: 'xelatex', thumbnail: origin + '/favicon.png' },
     { id: 'neurips', version: '2026', name: 'NeurIPS 2026', category: 'conference', tags: ['machine learning'], venue: { name: 'NeurIPS', year: 2026 }, engine: 'pdflatex', thumbnail: origin + '/favicon.png' },
     { id: 'acm-pacmpl', version: '2.21', name: 'PACMPL (POPL, PLDI, ICFP, OOPSLA)', category: 'conference', tags: ['acm'], organization: 'ACM', engine: 'pdflatex', thumbnail: origin + '/favicon.png' },
+    { id: 'ieee', version: '1', name: 'IEEE Article', category: 'journal', tags: ['ieee'], engine: 'pdflatex' },
+    { id: 'beamer', version: '1', name: 'Beamer Slides', category: 'slides', tags: ['slides'], engine: 'pdflatex' },
+    { id: 'moderncv', version: '1', name: 'Modern CV', category: 'cv', tags: ['cv'], engine: 'pdflatex' },
+    { id: 'book', version: '1', name: 'Book', category: 'book', tags: ['book'], engine: 'pdflatex' },
     // A conference that reuses a shared template is a row, not another first page.
     { id: 'pldi', version: '2.21', name: 'PLDI 2027', description: 'Programming Language Design and Implementation', category: 'conference', tags: ['PLDI'], venue: { name: 'PLDI', year: 2027, ccf: 'A', full: 'Programming Language Design and Implementation' }, template: 'acm-pacmpl', engine: 'pdflatex', thumbnail: origin + '/favicon.png' },
     { id: 'popl', version: '2.21', name: 'POPL 2027', description: 'Principles of Programming Languages', category: 'conference', tags: ['POPL'], venue: { name: 'POPL', year: 2027, ccf: 'A', full: 'Principles of Programming Languages' }, template: 'acm-pacmpl', engine: 'pdflatex', thumbnail: origin + '/favicon.png' },
@@ -135,10 +139,23 @@ try {
     } else {
       await page.getByRole('button', { name: 'New paper', exact: true }).first().click();
       await dialog.getByRole('tab', { name: 'Templates', exact: true }).click();
-      await dialog.getByRole('button', { name: 'Browse all', exact: true }).click();
       const grid = dialog.getByRole('list', { name: 'Templates' });
-      await grid.getByRole('listitem').nth(2).waitFor();
-      assert.deepEqual(await grid.getByRole('listitem').allInnerTexts().then(items => items.map(item => item.split('\n')[0])), ['Example project', 'Tsinghua University Thesis', 'NeurIPS 2026', 'PACMPL (POPL, PLDI, ICFP, OOPSLA)']);
+      await grid.getByRole('listitem').nth(7).waitFor();
+      assert.equal(await dialog.getByRole('button', { name: /^(Featured|Browse all)$/ }).count(), 0);
+      assert.equal(await dialog.getByRole('searchbox', { name: 'Search templates' }).isVisible(), true);
+      assert.deepEqual(await grid.getByRole('listitem').allInnerTexts().then(items => items.map(item => item.split('\n')[0])), ['Example project', 'Tsinghua University Thesis', 'NeurIPS 2026', 'PACMPL (POPL, PLDI, ICFP, OOPSLA)', 'IEEE Article', 'Beamer Slides', 'Modern CV', 'Book']);
+      await page.screenshot({ path: 'test-results/create-paper-all-templates.png', animations: 'disabled' });
+      await page.setViewportSize({ width: 320, height: 640 });
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.ok(await dialog.locator('.modal').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'The full catalog and filters fit a narrow phone');
+      await page.screenshot({ path: 'test-results/create-paper-all-templates-mobile.png', animations: 'disabled' });
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.emulateMedia({ colorScheme: 'light' });
+      // A template beyond the former five-item preview is directly selectable.
+      await grid.getByRole('listitem').filter({ hasText: /^Book$/ }).click();
+      assert.equal(await chosen.locator('strong').innerText(), 'Book');
+      await chosen.getByRole('button', { name: 'Change…', exact: true }).click();
       const venues = dialog.getByRole('group', { name: 'Conferences' }).locator('.template-venue-name');
       assert.equal(await venues.count(), 0, 'Conferences are listed only in their group or when a search matches them');
       await dialog.getByRole('button', { name: 'Conferences', exact: true }).click();

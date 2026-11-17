@@ -5819,11 +5819,6 @@
     "textHash": "9c0d6afacb1580e2588d888ca9e52aefcaec5fc63ef3d5f3c3ae236f5bb926f0",
     "model": "manual-review"
   },
-  "Browse all": {
-    "revision": "4e5ababd0c61429bcb6247388d6c01a39594fe58304101c28c7dd8e0d9ada990",
-    "textHash": "04193132807ae47dbee4fcfca8bfe5ef3a8e4c089c60e764e4dd311b59a2cdaf",
-    "model": "manual-review"
-  },
   "Downloading paper source…": {
     "revision": "3b3af5235750a94a703f5337f1282ca8600d6466f06e9fda2035f21a574cc14c",
     "textHash": "aea0aa91b08062d4231158342ed36288bb9f3b258146a3ba9c9d7a0e55d2fde0",
@@ -5837,16 +5832,6 @@
   "Example project": {
     "revision": "eafe9ee078020b1db5009f28d00cfdae3e692708090cf71708d4ca8391c4279d",
     "textHash": "24c7bd4810e964a11e1a9e019a334b2dbd110c25f343bf1a395f287ce86243a7",
-    "model": "manual-review"
-  },
-  "Featured": {
-    "revision": "463973bcc690d9363c70e259c59f0109342870ed1ca88815f9ddab5ca016ba21",
-    "textHash": "1239b81c565094d51f45b8048d5ad691df541c2e0a9d5e2be54fd242546f0a3d",
-    "model": "manual-review"
-  },
-  "Featured templates": {
-    "revision": "3d93c54fb4880204f95386ec4f42a723453165005bdb68dcba266fe0f15cabdf",
-    "textHash": "8b7b98240f2d281adabf1367ad2d8e9d06ae04092197b5b570469314c4f5cf33",
     "model": "manual-review"
   },
   "Import": {

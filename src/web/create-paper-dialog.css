@@ -17,8 +17,6 @@
 .create-paper-footer .create-paper-target{flex:1}
 .create-paper-footer>.button{flex:none}
 .create-paper-dialog form>input{margin:0 0 18px}
-.template-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
-.template-heading h3{font-size:13px;font-weight:500;margin:0}
 .create-paper-location input{flex-basis:auto;min-height:38px}
 /* Template step: the dialog widens into a grid of first pages. */
 .template-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:18px 0 14px}
