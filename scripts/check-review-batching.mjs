@@ -8,8 +8,11 @@ import { afterRender, chromium, expect } from './playwright.mjs';
 import { Fixture, METHOD } from '../engine/tests/ts/helpers.ts';
 import { createServer } from '../engine/src/server.ts';
 import { Builder } from '../engine/src/core/build.ts';
+import { writeSettings } from '../engine/src/core/config.ts';
 
 const f = new Fixture();
+// The failed round uses a recoverable error without changing input dependencies.
+writeSettings(f.root, { halt_on_error: true });
 process.env.PAPILOT_DATA = path.join(f.base, 'data');
 const [{ Store }, { Workspace }, { Manuscripts }, { buildApp, gitQueue }, { AGENT_IDS }] = await Promise.all([
   import('../src/server/store.ts'), import('../src/server/workspace.ts'), import('../src/server/manuscript.ts'),

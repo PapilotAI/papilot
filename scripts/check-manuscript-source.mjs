@@ -177,7 +177,7 @@ try {
 
   // A version that does not compile keeps the last PDF and shows the error on its line.
   const before = (await settle()).key;
-  await setText(herons.replace('Herons wade in the shallows.', 'Herons \\undefinedcommand{wade}.'));
+  await setText(herons.replace('Herons wade in the shallows.', 'Herons \\input{missing-manuscript-fixture}.'));
   await field.press('ControlOrMeta+s');
   await expect(panel.locator('.source-panel-problems')).toBeVisible({ timeout: 60000 });
   await expect(panel.locator('.source-panel-problem').first()).toContainText(/Line \d+/);
