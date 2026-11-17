@@ -37,6 +37,9 @@ try {
     if (pathname === '/api/updates') return route.fulfill({ json: { currentVersion: 'test', phase: 'idle', error: null } });
     if (pathname === '/api/skills') return route.fulfill({ json: { skills: [] } });
     if (pathname === '/api/imports') return route.fulfill({ status: 400, json: { error: 'Paper name is too long.' } });
+    // A browser on another device browses folders in the page.
+    if (pathname === '/api/folders/choose') return route.fulfill({ json: { unavailable: true } });
+    if (pathname === '/api/folders') return route.fulfill({ json: { path: '/tmp/example', parent: '/tmp', folders: [{ name: 'paper', path: '/tmp/example/paper' }] } });
     return route.fulfill({ json: {} });
   });
   await page.goto(origin);
@@ -62,8 +65,18 @@ try {
     await page.reload();
     await page.getByRole('button', { name: label(id, 'Settings'), exact: true }).waitFor();
     assert.equal(await page.locator('html').getAttribute('lang'), id, 'preference survives reload');
-    await page.locator('.home').getByRole('button', { name: label(id, 'Import'), exact: true }).click();
-    await page.locator('.import-host-folder summary').click();
+    await page.locator('.home').getByRole('button', { name: label(id, 'Import or open'), exact: true }).click();
+    const importDialog = page.getByRole('dialog', { name: label(id, 'New paper'), exact: true });
+    await importDialog.getByRole('button', { name: label(id, 'Browse…'), exact: true }).click();
+    await importDialog.getByRole('button', { name: 'paper', exact: true }).waitFor();
+    for (const width of [1440, 390, 320]) {
+      await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
+      assert.equal(await importDialog.getByRole('heading', { name: label(id, 'Open existing folder'), exact: true }).isVisible(), true);
+      assert.ok(await importDialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1), `${id} import content overflows at ${width}px`);
+      await importDialog.screenshot({ path: `test-results/locales/import-${id}-${width}.png`, animations: 'disabled' });
+    }
+    // Later steps use the desktop sidebar controls.
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.getByRole('textbox', { name: label(id, 'Folder path'), exact: true }).fill('/tmp/example');
     await page.getByRole('button', { name: label(id, 'Open'), exact: true }).click();
     const error = id === 'en' ? 'Paper name is too long.' : errorMessages[id]['Paper name is too long.'];

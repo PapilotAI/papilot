@@ -20,6 +20,8 @@ try {
     const requests = [], state = { version: '0.10.4', csrf: 'fixture', projects: [], tasks: [], requests: [], runtime: { connected: true, authenticated: false, account: null, error: null, models: [] } };
     if (desktop) await context.addInitScript(picked => { window.papilotDesktop = { platform: 'win32', minimize() {}, maximize() {}, close() {}, chooseDirectory: async () => picked }; }, picked);
     let fail = !desktop;
+    // A browser on another device cannot show the system picker and browses in the page instead.
+    let picker = { unavailable: true };
     await context.route('**/api/**', route => {
       const url = new URL(route.request().url());
       if (url.pathname === '/api/projects/create-defaults') return route.fulfill({ json: { parent } });
@@ -28,6 +30,11 @@ try {
         if (fail) return route.fulfill({ status: 400, json: { error: 'Could not create the paper folder. Check the save location and its permissions.' } });
         const project = { id: 'created-' + mode, name: body.name, path: body.parent + (mode === 'windows' ? '\\' : '/') + body.name, createdAt: 1 };
         state.projects = [project]; return route.fulfill({ json: project });
+      }
+      if (url.pathname === '/api/folders/choose') { assert.equal(desktop, false, 'Desktop uses its own folder picker'); return route.fulfill({ json: picker }); }
+      if (url.pathname === '/api/folders') {
+        const current = route.request().postDataJSON().path.replace(/\/$/, '') || '/';
+        return route.fulfill({ json: { path: current, parent: current === '/' ? null : current.slice(0, current.lastIndexOf('/')) || '/', folders: current === '/home/author' ? [{ name: 'papers', path: '/home/author/papers' }] : [] } });
       }
       if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
       if (url.pathname === '/api/state') return route.fulfill({ json: state });
@@ -60,6 +67,21 @@ try {
       assert.ok((await location.boundingBox()).height >= 36, 'Save location remains a usable input on mobile');
       const bounds = await dialog.locator('.modal').boundingBox(); assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 321, 'Creation dialog fits a narrow phone');
       assert.ok(await target.evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'The target folder truncates instead of widening the dialog');
+      // The save path can be typed or browsed; browsing updates the field as it moves.
+      const browse = dialog.getByRole('button', { name: 'Browse…', exact: true });
+      await browse.click();
+      await dialog.getByRole('button', { name: 'papers', exact: true }).click();
+      await dialog.getByText('No folders inside.', { exact: true }).waitFor();
+      assert.equal(await location.inputValue(), '/home/author/papers');
+      assert.ok(await dialog.locator('.modal').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'The folder browser fits a narrow phone');
+      await page.screenshot({ path: 'test-results/create-paper-browse-mobile.png', animations: 'disabled' });
+      await dialog.getByRole('button', { name: 'Use this folder', exact: true }).click();
+      assert.equal(await target.textContent(), '/home/author/papers/研究论文');
+      assert.equal(requests.length, 0, 'Choosing a folder does not create the paper');
+      // A browser on the Papilot computer uses the system picker.
+      picker = { path: parent };
+      await browse.click();
+      await page.waitForFunction(parent => document.querySelector('[name=parent]')?.value === parent, parent);
     }
     await dialog.getByRole('button', { name: 'Create paper', exact: true }).click();
     if (!desktop) {
@@ -201,7 +223,7 @@ try {
     assert.deepEqual(requests.at(-1).template, link ? { id: 'neurips', version: '2026' } : { id: 'thuthesis', version: '7.6.0' });
     if (link?.version === '2026') {
       // Tabs retain each draft, but a blank creation never inherits a template.
-      await dialog.getByRole('tab', { name: 'Import', exact: true }).click();
+      await dialog.getByRole('tab', { name: 'Import or open', exact: true }).click();
       const url = dialog.getByRole('textbox', { name: 'Paper or repository link', exact: true });
       await url.fill('https://arxiv.org/abs/1706.03762');
       const blankTab = dialog.getByRole('tab', { name: 'Blank', exact: true });
@@ -211,7 +233,7 @@ try {
       await dialog.getByRole('alert').waitFor();
       assert.equal(requests.at(-1).template, undefined);
       await blankTab.focus(); await page.keyboard.press('ArrowRight');
-      assert.equal(await dialog.getByRole('tab', { name: 'Import', exact: true }).getAttribute('aria-selected'), 'true');
+      assert.equal(await dialog.getByRole('tab', { name: 'Import or open', exact: true }).getAttribute('aria-selected'), 'true');
       assert.equal(await url.inputValue(), 'https://arxiv.org/abs/1706.03762');
       await page.keyboard.press('End');
       assert.equal(await chosen.locator('strong').textContent(), 'NeurIPS 2026');
@@ -220,11 +242,11 @@ try {
       await dialog.getByRole('button', { name: 'Create paper', exact: true }).click();
       await dialog.getByRole('alert').waitFor();
       assert.equal(requests.at(-1).example, true); assert.equal(requests.at(-1).template, undefined);
-      await dialog.getByRole('tab', { name: 'Import', exact: true }).click();
-      await dialog.getByRole('button', { name: 'Choose folder', exact: true }).click();
+      await dialog.getByRole('tab', { name: 'Import or open', exact: true }).click();
+      await dialog.getByRole('button', { name: 'Choose folder…', exact: true }).click();
       await dialog.waitFor({ state: 'hidden' });
       const switcher = page.getByRole('button', { name: 'Paper: Local paper', exact: true });
-      for (const [entry, tab] of [['New paper…', 'Blank'], ['Import', 'Import']]) {
+      for (const [entry, tab] of [['New paper…', 'Blank'], ['Import or open', 'Import or open']]) {
         await switcher.click(); await page.getByRole('menuitem', { name: entry, exact: true }).click();
         assert.equal(await dialog.getByRole('tab', { name: tab, exact: true }).getAttribute('aria-selected'), 'true', 'Ordinary entries do not reuse a closed template link');
         await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });

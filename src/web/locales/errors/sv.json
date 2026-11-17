@@ -29,7 +29,6 @@
   "Check the task status before sending more instructions.": "Kontrollera uppgiftens status innan du skickar fler instruktioner.",
   "Choose a ZIP smaller than 64 MB.": "Välj en ZIP-fil som är mindre än 64 MB.",
   "Choose a file with a valid name.": "Välj en fil med ett giltigt namn.",
-  "Choose a folder smaller than 64 MB.": "Välj en mapp som är mindre än 64 MB.",
   "Choose a source file.": "Välj en källfil.",
   "Choose a supported LaTeX engine.": "Välj en LaTeX-motor som stöds.",
   "Choose a valid update channel.": "Välj en giltig uppdateringskanal.",
@@ -37,7 +36,6 @@
   "Choose an available model for this agent.": "Välj en tillgänglig modell för den här agenten.",
   "Choose an entry to confirm.": "Välj en post att bekräfta.",
   "Choose an existing TeX main file.": "Välj en befintlig TeX-huvudfil.",
-  "Choose between 1 and 5,000 files.": "Välj mellan 1 och 5 000 filer.",
   "Choose one of the offered answers.": "Välj ett av de givna svarsalternativen.",
   "Choose stage, unstage or revert.": "Välj köa, avköa eller återställ.",
   "Choose whether to archive or restore the task.": "Välj om du vill arkivera eller återställa uppgiften.",
@@ -373,5 +371,8 @@
   "Use a public GitHub repository link, or upload its source ZIP.": "Använd en länk till ett offentligt GitHub-kodförråd eller ladda upp dess källkods-ZIP.",
   "Use a public HTTPS link without a username, password or custom port.": "Använd en offentlig HTTPS-länk utan användarnamn, lösenord eller anpassad port.",
   "Use an arXiv abstract, PDF, HTML or source link for one paper.": "Använd en arXiv-länk till sammanfattning, PDF, HTML eller källfiler för en enda artikel.",
-  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "Använd en aktiverad skrivskyddad delningslänk från Overleaf. Privata projektlänkar kräver inloggning på Overleaf; du kan också ladda upp en ZIP med källfiler."
+  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "Använd en aktiverad skrivskyddad delningslänk från Overleaf. Privata projektlänkar kräver inloggning på Overleaf; du kan också ladda upp en ZIP med källfiler.",
+  "Drop one folder or LaTeX ZIP file.": "Släpp en mapp eller en LaTeX-ZIP-fil.",
+  "No files found in this folder.": "Inga filer hittades i den här mappen.",
+  "Papilot cannot read this folder.": "Papilot kan inte läsa den här mappen."
 }

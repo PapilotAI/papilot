@@ -65,7 +65,7 @@ test('folder upload preserves binary assets, unwraps export folder, and detects 
   } finally { t.after(f.close); }
 });
 
-test('ZIP import unwraps source and rejects traversal, symlinks, oversized and invalid archives', async t => {
+test('ZIP import unwraps source and rejects traversal, symlinks, size mismatches and invalid archives', async t => {
   const f = fixture();
   try {
     const value = await f.imports.create({ zip: archive('export/main.tex').toString('base64') }); assert.equal(value.main, 'main.tex');

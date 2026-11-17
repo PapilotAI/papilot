@@ -29,7 +29,6 @@
   "Check the task status before sending more instructions.": "追加の指示を送信する前に、タスクの状態を確認してください。",
   "Choose a ZIP smaller than 64 MB.": "64 MB 未満の ZIP を選択してください。",
   "Choose a file with a valid name.": "有効な名前のファイルを選択してください。",
-  "Choose a folder smaller than 64 MB.": "64 MB 未満のフォルダを選択してください。",
   "Choose a source file.": "ソースファイルを選択してください。",
   "Choose a supported LaTeX engine.": "サポートされている LaTeX エンジンを選択してください。",
   "Choose a valid update channel.": "有効な更新チャンネルを選択してください。",
@@ -37,7 +36,6 @@
   "Choose an available model for this agent.": "このエージェントで使用可能なモデルを選択してください。",
   "Choose an entry to confirm.": "確認する項目を選択してください。",
   "Choose an existing TeX main file.": "既存の TeX メインファイルを選択してください。",
-  "Choose between 1 and 5,000 files.": "1〜5,000 個のファイルを選択してください。",
   "Choose one of the offered answers.": "提示された選択肢から 1 つ選んでください。",
   "Choose stage, unstage or revert.": "ステージ、アンステージ、または元に戻す（revert）を選択してください。",
   "Choose whether to archive or restore the task.": "タスクをアーカイブするか復元するかを選択してください。",
@@ -373,5 +371,8 @@
   "Use a public GitHub repository link, or upload its source ZIP.": "公開 GitHub リポジトリのリンクを使うか、ソース ZIP をアップロードしてください。",
   "Use a public HTTPS link without a username, password or custom port.": "ユーザー名、パスワード、独自のポート番号を含まない公開 HTTPS リンクを使ってください。",
   "Use an arXiv abstract, PDF, HTML or source link for one paper.": "論文 1 件の arXiv 概要、PDF、HTML、またはソースへのリンクを使ってください。",
-  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "有効な Overleaf の読み取り専用共有リンクを使ってください。非公開プロジェクトのリンクには Overleaf へのログインが必要です。ソース ZIP をアップロードすることもできます。"
+  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": "有効な Overleaf の読み取り専用共有リンクを使ってください。非公開プロジェクトのリンクには Overleaf へのログインが必要です。ソース ZIP をアップロードすることもできます。",
+  "Drop one folder or LaTeX ZIP file.": "1つのフォルダまたはLaTeXのZIPファイルをドロップしてください。",
+  "No files found in this folder.": "このフォルダにファイルが見つかりませんでした。",
+  "Papilot cannot read this folder.": "Papilot はこのフォルダーを読み取れません。"
 }
