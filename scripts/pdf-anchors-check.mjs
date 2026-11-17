@@ -306,9 +306,9 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   assert.ok(last.y >= strip.y - 1 && last.y + last.height <= strip.y + strip.height + 1);
   assert.ok(await slots.evaluate(element => element.scrollTop > 0));
   await expect(page.locator('.rail-history')).toBeInViewport();
-  await page.screenshot({ path: 'test-results/anchors-expanded-short.png' });
+  await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-expanded-short.png' });
   await replace(saved); await page.setViewportSize({ width: 1440, height: 900 });
-  await page.screenshot({ path: 'test-results/anchors-expanded-desktop.png' });
+  await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-expanded-desktop.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(slots).toBeHidden(); await expect(quickAdd).toBeHidden();
   await box.focus(); await page.keyboard.press('b'); await expect(menu).toBeVisible(); await menu.press('Escape');
@@ -336,7 +336,7 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   await forward.click(); await back.click(); await near(croppedTop);
   await recompile(); await jump('Lemma 2');
   await expect.poll(async () => Math.abs((await reading()).top - expectedTop)).toBeLessThan(2);
-  await page.screenshot({ path: 'test-results/anchors-cropped-desktop.png' });
+  await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-cropped-desktop.png' });
 
   // The previous page's blank tail can expose text DOM that the next page
   // clips away. Capture a visible passage, using its original page fractions.
