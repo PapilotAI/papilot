@@ -49,11 +49,6 @@
     "textHash": "b8db71c3cce7acc540abd11f624eed89f236d776ad8e6bb461821eeeae197b58",
     "model": "gemini-4-argon-high"
   },
-  "Agents": {
-    "revision": "36d6e70ca9bb71ba26f7dfe4bfcddd6655322f8497d5ddbe2acf8c307681dd5c",
-    "textHash": "08a28e4cc1aacda4c773d8bc7561efd13f1f2f68328a14cba1ba605e4f20af0c",
-    "model": "gemini-4-argon-high"
-  },
   "All downloads": {
     "revision": "c1f906ebf96106cfda9a3907093ad5120f8849459a5a2ef184a898461ab01b51",
     "textHash": "f89a5738d8cbf59ec493554eca74a5213262207120a1cb29e6be81892e5a0937",
@@ -69,11 +64,6 @@
     "textHash": "6ad30660ad546afa36a33bec62ae86fa4478e352200d25b7f138bf831b54953e",
     "model": "gemini-4-argon-high"
   },
-  "Approach": {
-    "revision": "65d8d57130b584caf35922b6659a14c4b8668e0145562474c4a45edf299ad544",
-    "textHash": "80b53305e8cdd2007c2bbc29adcd0dedd3b494c1ca723a4643e82ddede0f7ac4",
-    "model": "gemini-4-argon-high"
-  },
   "Before": {
     "revision": "cd9859e13338015e7d4744cabb4de442ae09e9eedda3fe7727993169f9b3e8b4",
     "textHash": "8159db18b7756a9f9478b3b59b74cad4e50aad6ee34ff3da8f796d45a07efd45",
@@ -83,6 +73,11 @@
     "revision": "1cc7082b45c7f2f941be8141dd12722aec54a876e909d888dcf9a1239e4686b8",
     "textHash": "ce8e52a69b3b03f1d6ed725b6a68d8ed444d7a1d326a70b2f2ecc64e08ec6085",
     "model": "gemini-4-argon-high"
+  },
+  "Browse LaTeX templates in Universe": {
+    "revision": "13f41e60422789fb7a7921ce73891b4d0f11ba9637268f4d7286415b3119482f",
+    "textHash": "0b8fffb09b8e4e9c3afce259adf9e536597d9382810ed27ed049a5e69fbcf30d",
+    "model": "manual"
   },
   "Change 1": {
     "revision": "1390c19d04f7ed0d1cadc487d5240eec8a13baaef3c1c8b910b5fa71d280ef19",
@@ -129,11 +124,6 @@
     "textHash": "f79356803c07cc197d94bf84d6a4bf8dc8718291a0410e0fdbff57d1b7c26281",
     "model": "gemini-4-argon-high"
   },
-  "Download": {
-    "revision": "cd79a17c976401c95f2fb479712b6b466bf0b31f87bc470bed04bac1e02ffdef",
-    "textHash": "b45ae836a031074e4de4679e972b037f008c0f8b10015759bbbc0e96d2ba9a83",
-    "model": "gemini-4-argon-high"
-  },
   "Download for Linux": {
     "revision": "ea497eccbf98703858c4c986abd094e686812d1fe1907ced667e62a434f60225",
     "textHash": "bf0cffde654c3507b9b6b59d83112c85fc8cc387414ce76d659b24b84001ce1b",
@@ -167,11 +157,6 @@
   "Every Change, Decided One by One": {
     "revision": "e55a2f86309d06b7e37c39600a4849798d7899a77b6208fad0a0e6200ab19cfb",
     "textHash": "43807a6742f17d68f5d847c94ede04a4788f196a5496c474f7960ba17675ad97",
-    "model": "gemini-4-argon-high"
-  },
-  "Features": {
-    "revision": "781f45d2e9ee9c0ae9057f5def7add2011e9e5758794621b86a63895d9f09382",
-    "textHash": "9b2274d648272eee5f56622c17e52346b1ef727fc5bbc13aa520dca005197f47",
     "model": "gemini-4-argon-high"
   },
   "Get Papilot": {

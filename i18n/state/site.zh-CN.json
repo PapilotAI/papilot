@@ -1,4 +1,9 @@
 {
+  "Browse LaTeX templates in Universe": {
+    "revision": "eb7762b7a16866d81bb9395a489dfd4ba1eed43df381098fc89243d1abbdb5c5",
+    "textHash": "22e961bddc85581a5f7c189807cfb8799c6f7f7bf1f15f4f2baab24ac7479cf5",
+    "model": "manual"
+  },
   "Download for Windows": {
     "revision": "941ba606f0f47df1cfe0a8a65a0609f6e4c86523a61236e0dc9330f2b499d8c5",
     "textHash": "fdf8d22d152cb52dafd0ff60b4b85e1494d7f706c4b9c405092a84058c101c70",

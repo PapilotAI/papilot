@@ -130,11 +130,24 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .brand{display:inline-flex;align-items:center;gap:10px;color:var(--text);font:400 21px/1 var(--serif);letter-spacing:-.005em}
 .brand:hover{text-decoration:none}
 .brand-mark{width:26px;height:26px}
-.nav{display:flex;gap:2px;flex:1}
-.nav a{padding:7px 12px;border-radius:999px;font-size:14.5px;color:var(--text-2);transition:background-color .15s,color .15s}
+.nav{display:flex;align-items:center;gap:2px;flex:1}
+.nav a:not(.topbar-universe){padding:7px 12px;border-radius:999px;font-size:14.5px;color:var(--text-2);transition:background-color .15s,color .15s}
 .nav a:hover{background:var(--bg-hover);color:var(--text);text-decoration:none}
-.nav a[aria-current]{color:var(--text)}
 .topbar-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+.topbar-universe{display:inline-flex;flex:none;align-items:center;gap:7px;min-height:38px;padding:7px 14px 7px 11px;border-radius:999px;color:var(--text);font-size:14px;font-weight:500;line-height:1.4;white-space:nowrap}
+.topbar-universe:hover,.topbar-universe:focus-visible{background:var(--bg-hover);color:var(--text);text-decoration:none}
+.universe-icon{flex:none;overflow:visible;color:var(--accent)}
+.universe-planet{fill:color-mix(in srgb,currentColor 26%,var(--bg))}
+.universe-orbit{transform-origin:12px 12px}
+.demo-icon{display:none}
+@media(prefers-reduced-motion:no-preference){
+  .topbar-universe{transition:background-color .15s,color .15s}
+  .topbar-universe:focus-visible .universe-orbit{animation:universe-orbit 1.4s ease-in-out}
+}
+@media(prefers-reduced-motion:no-preference) and (hover:hover){
+  .topbar-universe:hover .universe-orbit{animation:universe-orbit 1.4s ease-in-out}
+}
+@keyframes universe-orbit{to{transform:rotate(360deg)}}
 .topbar-demo{flex-shrink:0;margin-right:12px}
 .icon-button{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:999px;color:var(--text-2);transition:background-color .15s,color .15s}
 .icon-button:hover,.icon-button[aria-expanded=true]{background:var(--bg-hover);color:var(--text)}
@@ -501,7 +514,8 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .download-list a strong{font-weight:500}
 .download-meta{font-size:13px;color:var(--text-3);white-space:nowrap}
 .download-list a:hover,.download-list a:focus-visible{background:var(--bg-hover);outline:none;text-decoration:none}
-.hero-note{margin-top:16px;text-align:center;font-size:13.5px;color:var(--text-3)}
+.hero-note{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;column-gap:18px;margin-top:16px;text-align:center;font-size:13.5px;color:var(--text-3)}
+.hero-universe{padding-block:3px;text-wrap:balance}
 
 /* Sections share one header: a serif title. */
 .section{padding:112px 0}
@@ -811,10 +825,9 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
   .scene{max-width:640px}
   .get-inner{grid-template-columns:minmax(0,1fr);gap:40px}
 }
-/* Keep the demo action on the right even when section links no longer fit. */
-@media(max-width:1080px){.nav{display:none}}
+/* Universe stays beside the brand; the footer also links to the blog. */
 @media(max-width:720px){
-  .nav{display:none}
+  .nav>a:not(.topbar-universe){display:none}
   .topbar-inner{gap:10px;height:60px}
   .hero-screen{min-height:calc(100svh - 60px);padding:24px 0 76px}
   .hero .app-window{margin-top:24px}
@@ -941,11 +954,15 @@ html[lang=ja] .hero h1{overflow-wrap:normal;line-break:strict}
   .m-decide{gap:4px}
   .m-decide>:is(button,a,.m-accept,.m-reject,.m-talk){width:44px}
 }
-@media(max-width:560px){
+@media(max-width:600px){
   .topbar-inner{gap:8px}
   .topbar .brand-name,.topbar .github-link>span{display:none}
   .topbar-actions{gap:2px}
+  .topbar-universe{min-height:34px;gap:5px;padding:5px 10px 5px 8px;font-size:13px}
+  .universe-icon{width:22px;height:22px}
   .topbar .icon-button{width:30px;height:32px}
   .topbar .github-link{width:30px;height:32px;padding:0;border-color:transparent;background:transparent}
-  .topbar-demo{min-height:34px;margin-right:6px;font-size:13px}
+  .topbar-demo{justify-content:center;width:30px;min-height:34px;margin-right:2px}
+  .topbar-demo .demo-icon{display:block}
+  .topbar-demo>[lang]{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 }

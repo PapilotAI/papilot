@@ -75,14 +75,18 @@
   <div class="wrap topbar-inner">
     <a class="brand" href="./" aria-label="Papilot"><img class="brand-mark" src="assets/logo.svg" alt="" width="26" height="26"><span class="brand-name">Papilot</span></a>
     <nav class="nav" aria-label="Sections" data-zh-aria-label="页面导航">
-      <a href="#agents"><span lang="en">Agents</span><span lang="zh-CN">智能体</span></a>
-      <a href="#why"><span lang="en">Approach</span><span lang="zh-CN">理念</span></a>
-      <a href="#features"><span lang="en">Features</span><span lang="zh-CN">功能</span></a>
+      <a class="topbar-universe" href="https://papilot.ai/universe/">
+        <svg class="universe-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <g class="universe-orbit"><g transform="rotate(-25 12 12)"><ellipse cx="12" cy="12" rx="10" ry="4"/><circle class="universe-planet" cx="12" cy="12" r="5.5"/><path d="M2 12a10 4 0 0 0 20 0" stroke-linecap="round"/></g></g>
+          <path d="M19 2v3m-1.5-1.5h3" stroke-linecap="round"/>
+        </svg>
+        <span>Universe</span>
+      </a>
       <!-- blog-navigation -->
-      <a href="#download"><span lang="en">Download</span><span lang="zh-CN">下载</span></a>
     </nav>
     <div class="topbar-actions">
       <a class="try-demo topbar-demo" href="/demo">
+        <svg class="demo-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4Z" fill="currentColor" stroke="none"/></svg>
         <span lang="en">Try online demo</span><span lang="zh-CN">体验在线演示</span>
       </a>
       <button class="icon-button theme-button" type="button" id="theme-button" aria-pressed="false" aria-label="Dark mode" data-zh-aria-label="深色模式" title="Dark mode" data-zh-title="深色模式" hidden>
@@ -230,7 +234,10 @@
         </button>
       </div>
     </div>
-    <p class="hero-note"><span lang="en">Version {{version}} · Free and open source · <a href="https://github.com/PapilotAI/papilot/blob/main/LICENSE">MIT License</a></span><span lang="zh-CN">版本 {{version}} · 免费开源 · <a href="https://github.com/PapilotAI/papilot/blob/main/LICENSE">MIT 许可证</a></span></p>
+    <p class="hero-note">
+      <a class="hero-universe" href="https://papilot.ai/universe/"><span lang="en">Browse LaTeX templates in Universe</span><span lang="zh-CN">在 Universe 浏览 LaTeX 模板</span></a>
+      <span lang="en">Version {{version}} · Free and open source · <a href="https://github.com/PapilotAI/papilot/blob/main/LICENSE">MIT License</a></span><span lang="zh-CN">版本 {{version}} · 免费开源 · <a href="https://github.com/PapilotAI/papilot/blob/main/LICENSE">MIT 许可证</a></span>
+    </p>
     <a class="scroll-cue" href="#agents" aria-label="Scroll down" data-zh-aria-label="向下滚动"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a>
   </div>
 </section>
@@ -566,6 +573,7 @@ progress and preservation.</pre></div>
   <div class="wrap footer-inner">
     <a class="brand" href="./"><img class="brand-mark" src="assets/logo.svg" alt="" width="22" height="22">Papilot</a>
     <nav aria-label="Links" data-zh-aria-label="链接">
+      <a href="https://papilot.ai/universe/">Universe</a>
       <!-- blog-navigation -->
       <a href="https://github.com/cu1ch3n/papilot">GitHub</a>
       <a href="https://github.com/PapilotAI/papilot/releases/latest"><span lang="en">Downloads</span><span lang="zh-CN">下载</span></a>
@@ -1190,15 +1198,6 @@ const pick = (chat, texts) => {
   system.addEventListener('change', sync);
   sync(); button.hidden = false;
 }
-
-// The navbar marks the section in the middle of the window.
-const links = new Map([...document.querySelectorAll('.nav a[href^="#"]')].map(link => [link.hash.slice(1), link]));
-new IntersectionObserver(entries => {
-  for (const entry of entries) if (entry.isIntersecting) for (const [id, link] of links) link.toggleAttribute('aria-current', id === entry.target.id);
-}, { rootMargin: '-45% 0px -54% 0px' }).observe(document.querySelector('.hero'));
-for (const id of links.keys()) document.getElementById(id) && new IntersectionObserver(entries => {
-  for (const entry of entries) if (entry.isIntersecting) for (const [other, link] of links) link.toggleAttribute('aria-current', other === id);
-}, { rootMargin: '-45% 0px -54% 0px' }).observe(document.getElementById(id));
 
 const topbar = document.querySelector('.topbar');
 const cue = document.querySelector('.scroll-cue');

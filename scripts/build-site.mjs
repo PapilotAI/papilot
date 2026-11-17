@@ -107,6 +107,8 @@ for (const page of [...locales.map(locale => locale === 'en' ? '' : locale), 'pr
   for (const ref of refs) {
     const url = new URL(ref, site + (page ? page + '/' : ''));
     if (url.origin !== new URL(site).origin) continue;
+    // Universe is served by its own Worker, not this static build (site/wrangler.toml).
+    if (url.href === 'https://papilot.ai/universe/') continue;
     const file = path.join(out, decodeURIComponent(url.pathname), url.pathname.endsWith('/') ? 'index.html' : '');
     if (!fs.existsSync(file)) missing.push(`${page || 'en'}: ${ref}`);
   }

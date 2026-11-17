@@ -11,6 +11,7 @@ import { loadBlogPosts, blogLocales } from './site-blog.mjs';
 
 const languages = JSON.parse(fs.readFileSync('i18n/languages.json', 'utf8'));
 const route = locale => locale === 'en' ? '/' : `/${locale}/`;
+const universe = 'https://papilot.ai/universe/';
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('_site') });
 await server.listen({ host: '127.0.0.1', port: 0 });
@@ -49,15 +50,15 @@ try {
   assert.ok(fold.cue <= fold.inner && fold.agents >= fold.inner - 1, 'the first screen holds the hero');
   assert.equal(await page.locator('video').count(), 0);
 
-  // Section links stay together; the static demo is a separate action on the right.
+  // The left navigation is just Universe and the blog; the demo stays on the right.
   const anchors = await page.locator('.nav a').evaluateAll(links => links.map(link => link.getAttribute('href')));
-  assert.ok(anchors.filter(href => href.startsWith('#')).length >= 3);
-  assert.equal(anchors.filter(href => href === '/demo').length, 0);
+  assert.deepEqual(anchors, [universe, '/blog/']);
   assert.equal(await page.locator('.topbar-actions > .topbar-demo').getAttribute('href'), '/demo');
+  assert.equal(await page.locator('.brand + .nav > .topbar-universe').getAttribute('href'), universe);
+  assert.equal(await page.getByRole('link', { name: 'Universe', exact: true }).count(), 2, 'the decorative icon does not change the link name');
   assert.equal(await page.locator('.topbar-demo + #theme-button').count(), 1);
   assert.equal(await page.locator('.topbar-demo').innerText(), 'Try online demo');
   assert.equal(await page.locator('.hero .actions a[href="/demo"]').count(), 0);
-  for (const href of anchors.filter(href => href.startsWith('#'))) assert.equal(await page.locator(href).count(), 1, href);
 
   // A round plays by itself: the plain sentence, a boxed note, the diff, and
   // the accepted sentence, without the headline or the window moving.
@@ -178,6 +179,23 @@ try {
     }
     assert.deepEqual(await staticVisitor.locator('main [lang]').evaluateAll(nodes => [...new Set(nodes.map(node => node.lang))]), [locale]);
     assert.equal(await staticVisitor.locator('.no-js-languages a').count(), Object.keys(languages).length);
+    // The shared template library is outside this static build. Every locale
+    // links to it directly, including on phones and without JavaScript.
+    for (const selector of ['.nav', '.hero-note', '.footer nav']) {
+      assert.equal(await staticVisitor.locator(`${selector} a[href="${universe}"]`).count(), 1, `${locale}: ${selector} links to Universe`);
+    }
+    assert.equal(await staticVisitor.locator('.hero-universe').isVisible(), true, `${locale}: templates remain discoverable on phones`);
+    assert.equal(await staticVisitor.locator('.topbar-universe').isVisible(), true, `${locale}: Universe stays in the phone header without JavaScript`);
+  }
+  // Exercise native keyboard navigation without depending on the live service.
+  await staticVisitor.route(universe, request => request.fulfill({ contentType: 'text/html', body: '<h1>Universe templates</h1>' }));
+  for (const width of [1440, 390]) {
+    await staticVisitor.setViewportSize({ width, height: 900 });
+    await staticVisitor.goto(origin);
+    const link = staticVisitor.locator('.topbar-universe');
+    await link.focus();
+    await Promise.all([staticVisitor.waitForURL(universe), link.press('Enter')]);
+    assert.equal(await staticVisitor.getByRole('heading', { name: 'Universe templates' }).isVisible(), true);
   }
   await staticContext.close();
 
@@ -244,14 +262,14 @@ try {
 
   // Every language fits at every width: no sideways scroll, the first screen
   // still holds the hero, and buttons, menus, cards and windows fit.
-  for (const width of [1440, 961, 768, 390, 320]) {
+  for (const width of [1440, 1200, 1121, 1081, 961, 768, 601, 600, 561, 390, 320]) {
     await page.setViewportSize({ width, height: width < 600 ? 844 : 900 });
     for (const locale of Object.keys(languages)) {
       await page.goto(origin + route(locale));
       await page.evaluate(() => document.fonts.ready);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${locale}/${width}: no sideways scroll`);
       await page.locator('#download-button').click();
-      for (const selector of ['#download-button', '#download-list', '.era', '.app-window']) {
+      for (const selector of ['.topbar-inner', '.topbar .brand', '.nav', '.topbar-universe', '.topbar-demo', '.hero-universe', '#download-button', '#download-list', '.era', '.app-window']) {
         const boxes = await page.locator(selector).evaluateAll(nodes => nodes.map(el => ({ width: el.clientWidth, scroll: el.scrollWidth, left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })));
         for (const box of boxes) {
           assert.ok(box.scroll <= box.width + 1, `${locale}/${width}: ${selector} contents fit`);
@@ -271,9 +289,19 @@ try {
       }
     }
   }
+  // The decoration responds once to intent, and becomes still with reduced motion.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(origin);
+  const orbit = page.locator('.universe-orbit');
+  assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationName), 'none');
+  await page.locator('.topbar-universe').hover();
+  assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationName), 'universe-orbit');
+  assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationIterationCount), '1');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationName), 'none');
   assert.deepEqual(errors, []);
   assert.equal(requests.some(url => /\.(mp4|gif|jpe?g)|feature-.*\.png/.test(url)), false);
-  console.log('Site checks passed: annotations during scroll and resize, first screen, the hero round and takeover, feature windows, reduced motion, no-JS, all language URLs and SEO, saved language, both download menus, and layouts at 320/390/768/961/1440px.');
+  console.log('Site checks passed: annotations during scroll and resize, first screen, the hero round and takeover, feature windows, reduced motion, no-JS, Universe links and keyboard navigation, all language URLs and SEO, saved language, both download menus, and layouts from 320px to 1440px including header breakpoints.');
 } finally {
   await browser.close();
   await server.close();
