@@ -51,8 +51,8 @@ import { CreatePaperDialog } from './create-paper-dialog.tsx';
 import { CompileButton } from './compile-button.tsx';
 import { ProblemsButton, fixRequest, type ProblemsHandle } from './build-problems.tsx';
 import { SourceTab, useSourceEdit } from './source-panel.tsx';
-import { openHostSource, sourceHostAvailable } from './host-source.ts';
-import { SELECT_PAPER, HOST_READY } from '../host-events.ts';
+import { openHostPaper, openHostSource, sourceHostAvailable } from './host.ts';
+import { SELECT_PAPER, HOST_READY, type PaperSelection } from '../host-events.ts';
 import type { OpenSource, ReviewChanges } from '../../engine/src/web/review-events.ts';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog, type SettingsInitialPage } from './settings.tsx';
@@ -1141,17 +1141,17 @@ function App() {
   const [savedTask] = useState(() => browserStorage.getItem('papilot:task'));
   const [selected, setSelected] = useState(savedTask || '');
   const [projectId, setProjectId] = useState(() => browserStorage.getItem('papilot:project') || '');
+  const hostSelection = useRef<(value: PaperSelection) => Promise<void>>(async () => {});
   useEffect(() => {
     const select = (event: Event) => {
-      const value = (event as CustomEvent<{ projectId: string; taskId?: string }>).detail;
-      if (typeof value?.projectId !== 'string') return;
-      setProjectId(value.projectId); setSelected(value.taskId || '');
-      setPage('manuscript'); setManuscriptView('pdf'); setMobileTab('review'); setSidebar(false);
+      const value = (event as CustomEvent<PaperSelection>).detail;
+      if (typeof value?.projectId !== 'string' || (value.main !== undefined && typeof value.main !== 'string') || (value.taskId !== undefined && typeof value.taskId !== 'string')) return;
+      void hostSelection.current(value);
     };
     window.addEventListener(SELECT_PAPER, select);
-    window.dispatchEvent(new Event(HOST_READY));
     return () => window.removeEventListener(SELECT_PAPER, select);
   }, []);
+  useEffect(() => { if (state) window.dispatchEvent(new Event(HOST_READY)); }, [Boolean(state)]);
   const [timeline, setTimeline] = useState<{ taskId: string; items: TimelineItem[] }>({ taskId: '', items: [] });
   const [itemsLoading, setItemsLoading] = useState(false);
   const [timelineError, setTimelineError] = useState({ taskId: '', message: '' });
@@ -1443,7 +1443,7 @@ function App() {
   // The desktop app opens a folder the way an editor does: the system picker,
   // then the paper itself. The browser imports a folder or ZIP in a dialog.
   function createProject() { if (isPlayground) { requestPlaygroundDownload(); return; } setModal('create'); }
-  function openProject() { if (isPlayground) { requestPlaygroundDownload(); return; } if (nativeFolders) void openFolder(); else setModal('project'); }
+  function openProject() { if (isPlayground) { requestPlaygroundDownload(); return; } if (openHostPaper()) return; if (nativeFolders) void openFolder(); else setModal('project'); }
   async function openFolder(folder?: string, main?: string) {
     if (folderRequest.current) return;
     folderRequest.current = true;
@@ -1748,16 +1748,25 @@ function App() {
   }
   async function compileDocument(file: string) {
     if (!project) return;
+    await selectPaper({ projectId: project.id, main: file });
+  }
+  // The file menu and an embedding host share the same draft-save guard and
+  // navigation ordering before changing the repository's selected document.
+  async function selectPaper(value: PaperSelection) {
     try {
       const request = ++switchRequest.current, context = switchContext.current;
-      if (manuscriptNavigationGuard.current && !await manuscriptNavigationGuard.current.save()) return;
-      if (request !== switchRequest.current || context !== switchContext.current) return;
-      await api(`/projects/${project.id}/document`, { main: file });
-      if (request !== switchRequest.current || context !== switchContext.current) return;
-      setSelected(''); setPage('manuscript'); setSidebar(false);
-      window.dispatchEvent(new Event('papilot:manuscript'));
-    } catch (error) { reportError(error); }
+      if (manuscriptNavigationGuard.current && !await manuscriptNavigationGuard.current.save()) return false;
+      if (request !== switchRequest.current || context !== switchContext.current) return false;
+      if (value.main) await api(`/projects/${value.projectId}/document`, { main: value.main });
+      if (request !== switchRequest.current || context !== switchContext.current) return false;
+      setProjectId(value.projectId); setSelected(value.taskId || ''); setPage('manuscript'); setSidebar(false);
+      if (value.main) window.dispatchEvent(new Event('papilot:manuscript'));
+      return true;
+    } catch (error) { reportError(error); return false; }
   }
+  hostSelection.current = async value => {
+    if (await selectPaper(value)) { setManuscriptView('pdf'); setMobileTab('review'); }
+  };
   // The reference check reads the bibliography while it is open, again when
   // the working tree changes; the sidebar keeps its last count.
   const bibliography = useBibliography(project?.id || '', JSON.stringify(projectGit?.files?.map(file => [file.path, file.lines]) || []), api, referencesOpen);

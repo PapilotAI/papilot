@@ -268,13 +268,21 @@ try {
   // can retry the same switch without losing text.
   await notes.getByRole('button', { name: 'Edit note 1: Saved before switching documents', exact: true }).click();
   await edit.fill('Retained after a failed save');
-  await page.route(noteRoute, route => route.fulfill({ status: 400, json: { error: 'The note could not be saved.' } }));
+  let failedSaves = 0;
+  await page.route(noteRoute, route => { failedSaves++; return route.fulfill({ status: 400, json: { error: 'The note could not be saved.' } }); });
   await compileFromKeyboard('response.tex');
   await expect(notes.getByRole('alert')).toHaveText('The note could not be saved.');
   await expect(menu).toHaveText('main.tex');
   await expect(edit).toHaveValue('Retained after a failed save');
   assert.equal((await api('/projects/paper/manuscript')).build.document, 'thesis/main.tex');
   await shot('document-switch-save-failed');
+  // Host-driven paper selection must use this same guard before it changes
+  // the document, including when a previous save has already failed.
+  const savesBeforeHostSwitch = failedSaves;
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('papilot:host:select-paper', { detail: { projectId: 'paper', main: 'letter/response.tex' } })));
+  await expect.poll(() => failedSaves).toBeGreaterThan(savesBeforeHostSwitch);
+  await expect(edit).toHaveValue('Retained after a failed save');
+  assert.equal((await api('/projects/paper/manuscript')).build.document, 'thesis/main.tex');
   await page.unroute(noteRoute);
   await compileFromKeyboard('response.tex');
   await expect(word('reviewers')).toBeVisible({ timeout: 60000 });

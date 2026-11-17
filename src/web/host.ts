@@ -1,4 +1,8 @@
-import { OPEN_SOURCE, HOST_CAPABILITIES, type SourceLocation } from '../host-events.ts';
+import { OPEN_PAPER, OPEN_SOURCE, HOST_CAPABILITIES, type SourceLocation } from '../host-events.ts';
+
+export function openHostPaper(): boolean {
+  return !window.dispatchEvent(new CustomEvent(OPEN_PAPER, { cancelable: true }));
+}
 
 export function sourceHostAvailable() {
   const capabilities = { source: false };

@@ -7,6 +7,7 @@ import type { SourceLocation } from '../../../src/host-events.ts';
 import { bridgeScript, panelHtml } from './bridge.ts';
 import { RuntimeClient } from './runtime-client.ts';
 import { TaskFiles, taskLocation, taskUri } from './task-files.ts';
+import { workspacePapers } from './workspace-papers.ts';
 
 let active: PapilotExtension | undefined;
 export function activate(context: vscode.ExtensionContext) {
@@ -19,6 +20,7 @@ class PapilotExtension implements vscode.Disposable {
   private client?: RuntimeClient;
   private panel?: vscode.WebviewPanel;
   private opening?: Promise<vscode.WebviewPanel>;
+  private choosing?: Promise<vscode.WebviewPanel | undefined>;
   private log = vscode.window.createOutputChannel('Papilot');
   private token = randomBytes(32).toString('hex');
   private ready = false;
@@ -31,7 +33,7 @@ class PapilotExtension implements vscode.Disposable {
     context.subscriptions.push(this.log, this.files,
       vscode.workspace.registerFileSystemProvider('papilot-task', this.files, { isCaseSensitive: true }),
       vscode.workspace.onDidCloseTextDocument(document => { if (document.uri.scheme === 'papilot-task') this.files.forget(document.uri); }),
-      command('papilot.open', () => this.open()),
+      command('papilot.open', () => this.panel ? this.openPanel() : this.openWorkspace()),
       command('papilot.openWorkspace', () => this.openWorkspace()),
       command('papilot.showPdf', () => this.showPdf()),
     );
@@ -49,7 +51,7 @@ class PapilotExtension implements vscode.Disposable {
     await this.client.ready;
     return this.client;
   }
-  private open(): Promise<vscode.WebviewPanel> {
+  private openPanel(): Promise<vscode.WebviewPanel> {
     if (this.opening) return this.opening;
     if (this.panel) { this.panel.reveal(this.panel.viewColumn, true); return Promise.resolve(this.panel); }
     return this.opening = (async () => {
@@ -68,7 +70,8 @@ class PapilotExtension implements vscode.Disposable {
         } else if (message.type === 'ready') {
           this.ready = true;
           for (const queued of this.queue.splice(0)) this.send(queued.type, queued.detail);
-        } else if (message.type === 'open-source') void this.openSource(message.detail).catch(error => this.error(error));
+        } else if (message.type === 'open-paper') void this.openWorkspace().catch(error => this.error(error));
+        else if (message.type === 'open-source') void this.openSource(message.detail).catch(error => this.error(error));
         else if (message.type === 'source-ready') {
           const pending = this.reveal, current = message.detail;
           if (pending && current?.ready && pending.projectId === current.projectId && pending.taskId === current.taskId) {
@@ -93,20 +96,33 @@ class PapilotExtension implements vscode.Disposable {
     if (!this.ready) { this.queue.push({ type, detail }); return; }
     void this.panel.webview.postMessage({ channel: 'papilot', token: this.token, type, detail });
   }
-  private async openWorkspace() {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders?.length) throw new Error('Open a workspace folder first.');
-    const folder = folders.length === 1 ? folders[0] : await vscode.window.showWorkspaceFolderPick();
-    if (!folder) return;
-    const runtime = await this.runtime();
-    type Opened = { project: Project } | { name: string; candidates: string[] };
-    let result = await runtime.request<Opened>('/projects/open', { path: folder.uri.fsPath });
-    if (!('project' in result)) {
-      const main = await vscode.window.showQuickPick(result.candidates, { title: `Main TeX file for ${result.name}` });
-      if (!main) return;
-      result = await runtime.request<Opened>('/projects/open', { path: folder.uri.fsPath, main });
+  private openWorkspace(): Promise<vscode.WebviewPanel | undefined> {
+    return this.choosing ??= this.choosePaper().finally(() => { this.choosing = undefined; });
+  }
+  private async choosePaper() {
+    if (!vscode.workspace.workspaceFolders?.length) {
+      void vscode.window.showInformationMessage('Open a workspace folder to find its papers.');
+      return;
     }
-    if ('project' in result) { await this.open(); this.send('select', { projectId: result.project.id }); }
+    const papers = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Finding papers…', cancellable: true },
+      async (_progress, token) => {
+        const papers = await workspacePapers(() => this.runtime(), token);
+        return token.isCancellationRequested ? undefined : papers;
+      });
+    if (!papers) return;
+    if (!papers.length) {
+      void vscode.window.showInformationMessage('No LaTeX root documents found in the open workspace folders.');
+      return;
+    }
+    const selected = papers.length === 1 ? papers[0] : (await vscode.window.showQuickPick(papers.map(paper => ({
+      label: vscode.workspace.asRelativePath(vscode.Uri.file(paper.file), true), paper,
+    })), { title: 'Open Workspace Paper', placeHolder: 'Select a LaTeX document' }))?.paper;
+    if (!selected) return;
+    const runtime = await this.runtime();
+    const { project } = await runtime.request<{ project: Project }>('/projects/open', { path: selected.root, main: selected.main });
+    const panel = await this.openPanel();
+    this.send('select', { projectId: project.id, main: selected.main });
+    return panel;
   }
   private async openSource(location: SourceLocation) {
     if (!location || typeof location.projectId !== 'string' || typeof location.file !== 'string' || !Array.isArray(location.lines) || location.lines.length !== 2 || !location.lines.every(line => Number.isSafeInteger(line) && line >= 0) || location.lines[1] < location.lines[0]) throw new Error('Invalid source location.');
@@ -145,11 +161,11 @@ class PapilotExtension implements vscode.Disposable {
         const relative = path.relative(project.path, file);
         return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
       });
-      if (!project) throw new Error('Open this repository with Papilot: Open Workspace Folder first.');
+      if (!project) throw new Error('Open this paper with Papilot: Open Workspace Paper first.');
       location = { projectId: project.id, file: path.relative(project.path, file).split(path.sep).join('/'), lines: [0, 1] };
     }
     location.lines = [editor.selection.start.line, Math.max(editor.selection.start.line + 1, editor.selection.end.line + 1)];
-    await this.open();
+    await this.openPanel();
     this.reveal = location;
     this.send('select', location);
     // Also works when the selected paper was already ready and stays selected.

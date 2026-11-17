@@ -4,8 +4,9 @@ import path from 'node:path';
 import fs from 'node:fs';
 const moduleAt = file => import(pathToFileURL(path.join(workerData.root, file)).href);
 await moduleAt('engine/src/core/worker-loader.mjs');
-const [{ createRuntime }, { OwnedEngines }, { stopAll }] = await Promise.all([
+const [{ createRuntime }, { OwnedEngines }, { stopAll }, { discoverPapers }] = await Promise.all([
   moduleAt('src/server/runtime.ts'), moduleAt('engine/src/owned-engines.ts'), moduleAt('engine/src/core/process.ts'),
+  moduleAt('src/server/paper-discovery.ts'),
 ]);
 const engines = new OwnedEngines(), frameAncestors = [];
 const portFile = path.join(process.env.PAPILOT_DATA, 'editor-port.json');
@@ -33,6 +34,8 @@ try {
       if (message.type === 'host') {
         frameAncestors.splice(0, frameAncestors.length, ...message.ancestors);
         runtime.listener.trustedOrigins.splice(0, runtime.listener.trustedOrigins.length, new URL(message.origin).origin);
+      } else if (message.type === 'papers') {
+        value = await discoverPapers(message.folders);
       } else if (message.type === 'request') {
         if (typeof message.route !== 'string' || !message.route.startsWith('/api/')) throw new Error('Invalid Papilot route.');
         const response = await runtime.app.inject({ url: message.route, method: message.body === undefined ? 'GET' : 'POST', headers,

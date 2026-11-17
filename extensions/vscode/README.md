@@ -2,16 +2,18 @@
 
 Papilot's existing paper workspace runs inside VS Code, alongside ordinary source editors. The extension reuses the app and review engine: project opening, compilation, agents, Git operations, annotations and review decisions use the same implementations.
 
-The extension uses Papilot's repository and document selection. The **Files** menu opens source files and lets you choose which root document to compile; existing tasks keep their own document. Opening a TeX file in VS Code does not register a project or scan the workspace.
+Opening Papilot scans the current workspace folders for LaTeX root documents, using the same detection as Papilot's imports. A single paper opens directly; several papers appear in a native picker with their workspace paths. Included chapters, Git-ignored files, build folders and files excluded by VS Code's search settings are omitted. The scan itself does not register papers or change Git.
 
 ## Use
 
-1. Open a repository in VS Code and run **Papilot: Open Workspace Folder**. Papilot uses its existing main-file detection and asks you to choose when needed.
-2. Use the paper workspace in the Papilot editor tab. **Papilot: Open Papilot** reopens that tab without opening another project.
+1. Open your workspace in VS Code and run **Papilot: Open Papilot**. Select a discovered paper if there is more than one.
+2. Use **Papilot: Open Workspace Paper** or **Open paper** in Papilot to scan again and choose another document. **Papilot: Open Papilot** reopens an existing panel without changing its selection.
 3. Select **Edit source** in the PDF tools and click a passage to open its LaTeX file in a native editor.
 4. Run **Papilot: Show Selection in Paper** from a source editor to navigate back to the paper. It saves pending edits first.
 
 Manuscript files open as ordinary workspace files. Task source opens through a `papilot-task:` filesystem provider. Its saves use Papilot's existing revision checks and review publication API, so a stale draft cannot silently overwrite a task's newer edits. Creating, deleting and renaming task files remains in Papilot's existing workflows.
+
+Documents in the same Git repository share one Papilot project. Selecting another document uses Papilot's existing document-switch API; earlier tasks keep their own document. A workspace folder inside a repository uses that repository's root. A plain folder uses Papilot's existing Git initialization when you open a discovered paper.
 
 Install Git, a working LaTeX distribution including `latexmk`, and any agent CLI you want to use on the workspace machine. The extension package includes Papilot's code, web assets and JavaScript dependencies. It uses VS Code's Node runtime and does not require a separate Papilot or Node installation. VS Code 1.119 or later is required.
 

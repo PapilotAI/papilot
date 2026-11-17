@@ -1,10 +1,13 @@
-import { OPEN_SOURCE, SELECT_PAPER, SHOW_SOURCE, SOURCE_READY, SOURCE_SAVED, HOST_READY, HOST_CAPABILITIES } from '../../../src/host-events.ts';
+import { OPEN_PAPER, OPEN_SOURCE, SELECT_PAPER, SHOW_SOURCE, SOURCE_READY, SOURCE_SAVED, HOST_READY, HOST_CAPABILITIES } from '../../../src/host-events.ts';
 
 /** Installed only by this host. The app itself knows only the generic events. */
 export function bridgeScript(token: string) {
   return `(() => {
     const token = ${JSON.stringify(token)};
     const send = (type, detail) => parent.postMessage({ channel: 'papilot', token, type, detail }, '*');
+    window.addEventListener(${JSON.stringify(OPEN_PAPER)}, event => {
+      event.preventDefault(); send('open-paper');
+    });
     window.addEventListener(${JSON.stringify(OPEN_SOURCE)}, event => {
       event.preventDefault(); send('open-source', event.detail);
     });
@@ -41,7 +44,7 @@ export function panelHtml(url: string, token: string, nonce: string) {
       window.addEventListener('message', event => {
         const message = event.data;
         if (event.source === frame.contentWindow) {
-          if (event.origin === origin && message?.channel === 'papilot' && message.token === token && ['ready', 'source-ready', 'open-source', 'open-external'].includes(message.type)) host.postMessage(message);
+          if (event.origin === origin && message?.channel === 'papilot' && message.token === token && ['ready', 'source-ready', 'open-paper', 'open-source', 'open-external'].includes(message.type)) host.postMessage(message);
         } else if (message?.channel === 'papilot' && message.token === token) {
           if (message.type === 'load') frame.src = ${JSON.stringify(url)};
           else frame.contentWindow.postMessage(message, origin);

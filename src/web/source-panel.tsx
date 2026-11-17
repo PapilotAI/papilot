@@ -9,7 +9,7 @@ import { browserStorage } from './storage.ts';
 import { isPlayground } from './playground-mode.ts';
 import { findPicked, lineSpan } from './source-match.ts';
 import './source-panel.css';
-import { openHostSource } from './host-source.ts';
+import { openHostSource } from './host.ts';
 import { SHOW_SOURCE, SOURCE_SAVED, SOURCE_READY, type SourceLocation } from '../host-events.ts';
 
 // Editing the manuscript's LaTeX by hand. A click on the PDF, or a change

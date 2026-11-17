@@ -14,7 +14,7 @@
   "contributes": {
     "commands": [
       { "command": "papilot.open", "title": "Open Papilot", "category": "Papilot" },
-      { "command": "papilot.openWorkspace", "title": "Open Workspace Folder", "category": "Papilot" },
+      { "command": "papilot.openWorkspace", "title": "Open Workspace Paper", "category": "Papilot" },
       { "command": "papilot.showPdf", "title": "Show Selection in Paper", "category": "Papilot" }
     ],
     "menus": { "editor/context": [{ "command": "papilot.showPdf", "when": "resourceExtname == .tex", "group": "navigation" }] }

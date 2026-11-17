@@ -13,6 +13,11 @@ git('init', '-q'); git('config', 'user.name', 'Test'); git('config', 'user.email
 git('config', 'commit.gpgsign', 'false'); git('config', 'core.hooksPath', path.join(home, 'no-hooks'));
 fs.writeFileSync(path.join(repo, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nOriginal wording.\n\\end{document}\n');
 git('add', '.'); git('commit', '-qm', 'Initial');
+// Start in a multi-folder workspace: converting a folder window during a test
+// restarts the extension host and interrupts the running test.
+const second = path.join(home, 'second'), workspace = path.join(home, 'papers.code-workspace');
+fs.mkdirSync(second);
+fs.writeFileSync(workspace, JSON.stringify({ folders: [{ path: repo }, { path: second }] }));
 const server = net.createServer();
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const port = server.address().port;
@@ -28,7 +33,7 @@ if (process.platform === 'linux') {
 }
 const child = spawn(code, ['--new-window', '--wait', '--disable-workspace-trust', '--disable-extensions', '--skip-welcome', '--skip-release-notes',
   '--user-data-dir', path.join(home, 'user'), '--extensions-dir', path.join(home, 'extensions'),
-  `--remote-debugging-port=${port}`, `--extensionDevelopmentPath=${testedExtension}`, `--extensionTestsPath=${path.join(extension, 'dist/vscode-test.cjs')}`, repo],
+  `--remote-debugging-port=${port}`, `--extensionDevelopmentPath=${testedExtension}`, `--extensionTestsPath=${path.join(extension, 'dist/vscode-test.cjs')}`, workspace],
   { stdio: 'inherit', env: environment });
 const timeout = setTimeout(() => { child.kill(); process.exitCode = 1; }, 180000);
 try {

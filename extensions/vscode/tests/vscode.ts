@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { TaskFiles, taskUri } from '../src/task-files.ts';
 import type { RuntimeClient } from '../src/runtime-client.ts';
+import { workspacePapers } from '../src/workspace-papers.ts';
 
 const until = async (check: () => boolean | Promise<boolean>, message: string, timeout = 30000) => {
   const deadline = Date.now() + timeout;
@@ -24,7 +25,6 @@ export async function run() {
     panel = await vscode.commands.executeCommand<vscode.WebviewPanel>('papilot.open');
     assert.ok(panel?.webview.html, 'The command opens the shared UI');
     const url = JSON.parse(/frame.src = ("[^"]+")/.exec(panel.webview.html)![1]);
-    await vscode.commands.executeCommand('papilot.openWorkspace');
     const state = await fetch(url + 'api/state').then(response => response.json()) as any;
     assert.equal(state.projects.length, 1);
     const project = state.projects[0];
@@ -60,6 +60,49 @@ export async function run() {
     assert.ok((await (await placed).json()).place, 'Source selection resolves to the PDF');
     await fs.promises.mkdir(path.join(root, 'test-results'), { recursive: true });
     await frame.page().screenshot({ path: path.join(root, 'test-results/vscode.png') });
+
+    // Discover new documents on the next open, without registering chapters or
+    // generated files. Cancelling a choice leaves the current paper alone.
+    const manuscript = fs.readFileSync(file, 'utf8');
+    fs.writeFileSync(path.join(project.path, 'talk.tex'), manuscript.replace('Revised wording from the editor.', 'Slides document.'));
+    fs.writeFileSync(path.join(project.path, 'chapter.tex'), 'Included chapter.');
+    fs.mkdirSync(path.join(project.path, 'build'));
+    fs.writeFileSync(path.join(project.path, 'build/generated.tex'), manuscript);
+    const picker = frame.page().locator('.quick-input-widget');
+    const cancelled = vscode.commands.executeCommand('papilot.openWorkspace');
+    await picker.waitFor({ state: 'visible' });
+    assert.equal(await picker.locator('.monaco-list-row').count(), 2);
+    await frame.page().screenshot({ path: path.join(root, 'test-results/vscode-papers.png') });
+    await picker.locator('input').press('Escape');
+    await cancelled;
+    assert.equal((await fetch(url + `api/projects/${project.id}/files`).then(r => r.json()) as any).document, 'main.tex');
+
+    // The app's Open paper event reaches the native workspace picker too.
+    assert.equal(await frame.evaluate(() => window.dispatchEvent(new CustomEvent('papilot:host:open-paper', { cancelable: true }))), false);
+    await picker.waitFor({ state: 'visible' });
+    await picker.locator('.monaco-list-row').filter({ hasText: 'talk.tex' }).click();
+    await word('Slides').waitFor({ timeout: 60000 });
+    assert.equal((await fetch(url + 'api/state').then(r => r.json()) as any).projects.length, 1);
+    assert.equal(await frame.locator('.import-dialog').count(), 0);
+
+    // Use the actual VS Code file search to check configured exclusions and
+    // multiple workspace roots; the server receives only relative TeX paths.
+    const sibling = vscode.workspace.workspaceFolders![1].uri.fsPath;
+    fs.writeFileSync(path.join(sibling, 'other.TEX'), manuscript);
+    fs.writeFileSync(path.join(sibling, 'hidden.tex'), manuscript);
+    fs.writeFileSync(path.join(sibling, 'excluded.tex'), manuscript);
+    const config = vscode.workspace.getConfiguration(undefined, vscode.Uri.file(sibling));
+    await config.update('files.exclude', { '**/hidden.tex': true }, vscode.ConfigurationTarget.WorkspaceFolder);
+    await config.update('search.exclude', { '**/excluded.tex': true }, vscode.ConfigurationTarget.WorkspaceFolder);
+    const seen: any[] = [];
+    const token = new vscode.CancellationTokenSource();
+    try {
+      await workspacePapers(async () => ({ call: async (message: any) => { seen.push(...message.folders); return []; } }) as unknown as RuntimeClient, token.token);
+      assert.equal(seen.length, 2);
+      assert.ok(seen[0].files.includes('talk.tex'));
+      assert.ok(!seen[0].files.includes('build/generated.tex'));
+      assert.deepEqual(seen[1].files, ['other.TEX']);
+    } finally { token.dispose(); }
 
     // The provider keeps the editor's original revision, including after a
     // failed save; a retry uses the same request identity.

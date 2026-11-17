@@ -65,6 +65,13 @@ jobs:
       - run: npm run i18n -- check
       - run: npm run i18n:check-app
       - run: npm run build
+      - name: Check VS Code extension
+        if: matrix.node == 22
+        run: |
+          npm --prefix extensions/vscode ci
+          npm --prefix extensions/vscode run typecheck
+          npm --prefix extensions/vscode run build
+          npm --prefix extensions/vscode test
       # Checks the generated UI demos and local asset links before main.
       - run: npm run site
       - name: Verify the static playground without a backend
