@@ -37,6 +37,7 @@ Usually none. The root document comes from `@default_files` in a `latexmkrc`, or
 | `latexmkrc` | latexmkrc to use (default: next to the root document) |
 | `source_dir` | Folder copied for each build (default: the root document's folder; use `"."` if the document inputs files outside it) |
 | `partial_builds` | `false` to always compile the whole document |
+| `halt_on_error` | Stop at the first LaTeX error when `true`. Default: `false`; continue compiling and keep a newly generated PDF together with its errors. |
 | `preload` | For partial builds: `\include` target → file to `\input` when that chapter is left out (e.g. macros it defines) |
 | `dependencies` | For partial builds: `\include` target → targets that must be compiled with it |
 | `figures` | Folders whose files are reviewed as whole figures (default: `figures/` or `figs/` beside the root document) |

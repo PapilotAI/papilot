@@ -68,6 +68,7 @@ test('working tree snapshots reuse index state and match a fresh snapshot withou
 test('builds export every file and continue like latexmk in the same folder; stale auxiliary state falls back to a clean build', { skip: !tex && 'needs latexmk and pdflatex', timeout: 180000 }, async () => {
   const f = fixture();
   try {
+    fs.writeFileSync(path.join(f.root, '.git/papilot/settings.json'), JSON.stringify({ main: 'main.tex', engine: 'pdflatex', halt_on_error: true }));
     // A package outside the TeX search path, found only because the whole
     // tree is exported, and auxiliary output that a later edit makes invalid.
     const preamble = '\\usepackage{materials/local}\n\\newcommand\\stale{}\\makeatletter\\AtBeginDocument{\\immediate\\write\\@auxout{\\string\\stale}}\\makeatother';
@@ -392,6 +393,7 @@ for (const entry of ['comparison', 'agent preview']) test(`${entry} recovers an 
   process.env.TEXINPUTS = `${external.split(path.sep).join('/')}//${path.delimiter}${inputs ?? ''}`;
   let app: App | undefined;
   try {
+    fs.writeFileSync(path.join(f.root, '.git/papilot/settings.json'), JSON.stringify({ main: 'main.tex', engine: 'pdflatex', halt_on_error: true }));
     const style = path.join(external, 'seedcompat.sty');
     fs.writeFileSync(style, String.raw`\ProvidesPackage{seedcompat}
 \newcommand\oldauxcommand{}

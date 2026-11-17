@@ -200,12 +200,12 @@ it.skipIf(!tex)(
   120000,
 );
 it.skipIf(!tex)(
-  "shares a cached compilation and retains useful logs on failure",
+  "shares a cached compilation and retains useful logs when stopping on errors",
   async () => {
     const f = new Fixture(),
       app = f.app();
     try {
-      const builder = new Builder(app.project, app.repo),
+      const builder = new Builder({ ...app.project, halt_on_error: true }, app.repo),
         [a, b] = await Promise.all([
           builder.build("HEAD"),
           builder.build("HEAD"),
@@ -277,6 +277,7 @@ it.skipIf(!tex)(
   "compares a task that fixes a compilation error with its text typeset past the error",
   async () => {
     const f = new Fixture();
+    f.write(".git/papilot/settings.json", JSON.stringify({ halt_on_error: true }));
     f.write(METHOD, f.read(METHOD).replace("Method sentence 3.", "Method sentence 3. \\thiscommanddoesnotexist"));
     f.repo.run(["commit", "-qam", "broken"]);
     const app = f.app();

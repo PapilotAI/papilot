@@ -298,7 +298,12 @@ export function errors(text: string) {
   return result;
 }
 export function compilerDiagnostics(log: string, transcript: string) {
-  const details = errors(log);
+  // The final TeX log can omit an error from an earlier pass.
+  const details = [...errors(log), ...errors(transcript)];
+  // BibTeX and Biber report outside the TeX log. Later TeX passes can push
+  // their diagnostics out of latexmk's final error summary.
+  for (const line of transcript.split(/\r?\n/))
+    if (/---line \d+ of file |\b(?:ERROR|FATAL) - /.test(line)) details.push(line.trim());
   // Errors from shell-escape helpers go to latexmk's stderr, not the TeX log.
   for (const traceback of transcript
     .split("Traceback (most recent call last):")
@@ -512,9 +517,9 @@ export class Builder {
        *  request it replaces can be cancelled without stopping a
        *  compilation both need. */
       onKey?: (key: string) => void;
-      /** TeX typesets past errors it can recover from, as LaTeX does without
-       *  -halt-on-error, and the PDF it writes is the result, with those
-       *  errors in `errors`. For a version shown only for comparison, such
+      /** Continue past recoverable errors even when halt_on_error is enabled,
+       *  returning the PDF with those errors in `errors`.
+       *  For a version shown only for comparison, such
        *  as the text a task fixing a compilation error starts from. */
       pastErrors?: boolean;
     } = {},
@@ -669,7 +674,7 @@ export class Builder {
             continue;
           }
           // As before, retry from clean auxiliary state if it broke the build.
-          if (!continuation || (error instanceof BuildError && !error.details.some(line => /(?:^|\s|\()(?:\.\/)?build\//.test(line)))) throw error;
+          if (!continuation || !auxiliaryBuildError(error)) throw error;
           continuation = null;
         }
       }
@@ -678,7 +683,7 @@ export class Builder {
       schedule();
     }
     // What TeX left after errors is no state for another build to continue.
-    if (!pastErrors) await this.remember(targets, { key, context, date: date.SOURCE_DATE_EPOCH, tree, dated });
+    if (!pastErrors && !result.errors?.length) await this.remember(targets, { key, context, date: date.SOURCE_DATE_EPOCH, tree, dated });
     if (options.force) {
       const preferred = this.preferredFile(cacheKey);
       await withLock(preferred, () => writeJsonAsync(preferred, { key }));
@@ -769,6 +774,7 @@ export class Builder {
     pastErrors = false,
   ): Promise<BuildInfo> {
     const p = this.project,
+      haltOnError = p.halt_on_error && !pastErrors,
       partial = JSON.stringify(targets) !== '["full"]',
       folder = path.join(this.cache, key);
     // A cancelled build leaves nothing behind: no result, log or folder, so
@@ -837,8 +843,10 @@ export class Builder {
         }));
     }
     if (signal?.aborted) return abandon();
-    // A clean build must generate its own PDF, even if the paper tracks one.
-    if (!start || pastErrors) await Promise.all(["pdf", "xdv"].map((ext) => fs.promises.rm(path.join(out, `${job}.${ext}`), { force: true })));
+    // Only a matching completed build can supply an existing PDF.
+    if (!reused) await Promise.all(["pdf", "xdv"].map((ext) => fs.promises.rm(path.join(out, `${job}.${ext}`), { force: true })));
+    const pdf = path.join(out, job + ".pdf"),
+      previousPdf = await fs.promises.stat(pdf, { bigint: true }).catch(() => null);
     const args = [
       "-norc",
       ...(p.latexmkrc
@@ -852,7 +860,7 @@ export class Builder {
       "-synctex=1",
       "-interaction=nonstopmode",
       // latexmk -f runs the remaining passes and the PDF driver after errors.
-      ...(pastErrors ? ["-f"] : ["-halt-on-error"]),
+      ...(haltOnError ? ["-halt-on-error"] : ["-f"]),
       "-file-line-error",
     ];
     // The outline trace comes first; a chapter build adds its \includeonly.
@@ -998,21 +1006,25 @@ export class Builder {
     // Passes that were not shown are not needed.
     if (scheduled) scheduled.followed = undefined;
     if (keeping) for (let number = 1; number <= saved; number++) if (!kept.has(number)) await fs.promises.rm(path.join(passes, String(number)), { recursive: true, force: true });
-    const pdf = path.join(out, job + ".pdf"),
-      texLog = path.join(out, job + ".log");
+    const texLog = path.join(out, job + ".log"),
+      writtenPdf = await fs.promises.stat(pdf, { bigint: true }).catch(() => null),
+      freshPdf = writtenPdf && (!previousPdf || writtenPdf.ino !== previousPdf.ino || writtenPdf.mtimeNs !== previousPdf.mtimeNs || writtenPdf.ctimeNs !== previousPdf.ctimeNs);
     if (reused && !failure)
       await Promise.all([path.join(out, job + ".synctex.gz"), texLog].map((file) => relocate(file, path.dirname(base!.root), folder)));
     const logText = await fs.promises.readFile(texLog, "utf8").catch(() => ""),
       // latexmk reports the errors TeX went past with its exit status. A
       // latexmk that a timeout or a shutdown killed has none, and may have
       // left the PDF unfinished.
-      past = pastErrors && failure instanceof ProcessError && / failed \(\d+\)$/.test(failure.message) && fs.existsSync(pdf);
+      past = !haltOnError && failure instanceof ProcessError && / failed \(\d+\)$/.test(failure.message) && freshPdf;
     let errors: string[] | undefined;
     if (past) {
       const transcriptText = await fs.promises.readFile(transcript, "utf8");
       errors = compilerDiagnostics(logText, transcriptText);
       if (!errors.length) errors = transcriptText.split("\n").slice(-25);
-    } else if (failure || !fs.existsSync(pdf)) {
+    }
+    // Stale auxiliary files still need a clean retry, even if TeX wrote a PDF.
+    const auxiliaryFailure = errors?.length && (start || (partial && seed)) && auxiliaryBuildError(new BuildError("LaTeX failed to compile.", errors));
+    if ((!past && failure) || !writtenPdf || auxiliaryFailure) {
       const transcriptText = await fs.promises.readFile(transcript, "utf8"),
         details = compilerDiagnostics(logText, transcriptText),
         kept = path.join(p.state, "logs", key + ".log");

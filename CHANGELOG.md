@@ -19,6 +19,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- Continue compiling after recoverable LaTeX errors and show the resulting PDF with its diagnostics. Set `"halt_on_error": true` in the document's `.git/papilot/settings.json` to stop at the first error.
+
 - Show common AI conference templates before theses, with conference cards, compact search and a GitHub **Contribute** link. Retry catalog failures without losing a draft; **Blank** stays available, and late template links respect an explicit choice.
 
 - Simplify the PDF toolbars with one separator before Undo and Redo, keeping the other tools together.

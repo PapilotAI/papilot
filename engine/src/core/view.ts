@@ -215,7 +215,7 @@ export async function view(
       page.destroy();
       return { index, label, shows: wanted.get(index)!, file };
     });
-    return { pages, missing, targets };
+    return { pages, missing, targets, ...(build.errors?.length ? { errors: build.errors } : {}) };
   } finally {
     document.destroy();
   }

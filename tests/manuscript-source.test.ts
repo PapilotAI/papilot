@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { opcodes } from '../engine/src/core/diff.ts';
+import { writeSettings } from '../engine/src/core/config.ts';
 import { sourceRange as paragraph } from '../engine/src/render/locate.ts';
 import { PdfDocument } from '../engine/src/render/pdf.ts';
 import { Manuscripts } from '../src/server/manuscript.ts';
@@ -156,6 +157,7 @@ test('a click on the PDF opens its source, a save compiles it, and the saved lin
     assert.ok(place!.rect[1] <= herons[1] + 0.01 && place!.rect[3] >= herons[3] - 0.01, `the box covers the saved text: ${place!.rect} vs ${herons}`);
 
     // A save that does not compile keeps the last PDF and reports the error on its lines.
+    writeSettings(root, { halt_on_error: true });
     const broken = await saveSource('paper', root, { id: 'broken', file: saved.source.file, revision: saved.source.revision, text: edited.replace('Herons wade in the shallows.', 'Herons \\undefinedcommand{wade}.') });
     const brokenTree = await manuscripts.written('paper', root);
     const third = await settled();

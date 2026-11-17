@@ -235,6 +235,10 @@ Switching documents saves pending note edits first, including when using the key
 
 ### Fix a LaTeX build
 
+Papilot continues past recoverable LaTeX errors by default and shows the generated PDF with the errors in **Compilation Problems**. For example, `minted` can display code without syntax highlighting when its helper is unavailable. If compilation cannot produce a new PDF, the build still fails and the previous preview stays visible.
+
+To stop at the first error instead, add `"halt_on_error": true` to the existing object in `.git/papilot/settings.json`, then recompile. Set it to `false` or remove it to restore the default. This setting belongs to the selected root document and is restored when you switch back to it.
+
 In the manuscript's **Compilation Problems** panel, select **Fix with an agent…** to have the selected agent diagnose the failed build. Papilot gives it the compiler diagnostics and relevant source excerpts in a read-only turn. If the agent proposes changes to the engine, source directory, or use of the current `latexmkrc`, Papilot tests them and saves a successful configuration in its data directory for this paper and compiler host. Later builds use those settings after a restart. A subsequent change to the paper's explicit build settings takes precedence. If the agent thinks a different main document should be used, it asks you to check the selection.
 
 If the agent recommends editing the paper, review its diagnosis and select **Start task** to let the agent make the proposed edits in a task worktree. If the original cannot produce a PDF and the revision compiles, the review shows the source changes and the original compiler errors. You can accept the changes and apply them to the manuscript from that review.

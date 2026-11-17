@@ -98,6 +98,7 @@ it.skipIf(!tex)(
   "a chapter's fix compiles the whole paper when the task's starting text does not compile",
   async () => {
     const f = new Fixture();
+    f.write(".git/papilot/settings.json", JSON.stringify({ halt_on_error: true }));
     try {
       f.write("paper/main.tex", String.raw`\documentclass{book}
 \begin{document}
