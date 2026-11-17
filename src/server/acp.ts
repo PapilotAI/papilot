@@ -184,6 +184,14 @@ export class AcpAgent extends Adapter {
     await this.closing;
     if (generation !== this.generation) throw new Error(`${this.name} disconnected.`);
     const cwd = this.launchCwd || fs.mkdtempSync(path.join(os.tmpdir(), `papilot-${this.profile.id}-`));
+    let removed = Boolean(this.launchCwd);
+    const removeProbe = async () => {
+      if (removed) return;
+      // Some agents acknowledge session deletion before their watchers finish
+      // retiring. Windows keeps those directory handles locked briefly.
+      await fs.promises.rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      removed = true;
+    };
     try {
       // The probe folder is removed below, so the agent itself runs from the home folder.
       const env = this.profile.env?.() || process.env;
@@ -225,12 +233,18 @@ export class AcpAgent extends Adapter {
       const sessionCapabilities = this.capabilities.sessionCapabilities || {};
       if (sessionCapabilities.delete) await this.rpc('session/delete', { sessionId: probe.sessionId });
       else if (sessionCapabilities.close) await this.rpc('session/close', { sessionId: probe.sessionId });
+      await removeProbe();
       if (generation !== this.generation) throw new Error(`${this.name} disconnected.`);
       this.ready = true;
     } catch (error) {
-      this.close();
+      try {
+        await this.shutdown();
+        await removeProbe();
+      } catch (cleanupError) {
+        error = new Error(`${error instanceof Error ? error.message : String(error)}; cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
+      }
       throw new Error(`${this.name} is unavailable: ${error instanceof Error ? error.message.replace(/\.$/, '') : String(error)}. ${this.profile.setup}`);
-    } finally { if (!this.launchCwd) fs.rmSync(cwd, { recursive: true, force: true }); }
+    }
   }
   protected account() { return { account: this.ready ? { type: `Local ${this.name} configuration` } : null, requiresOpenaiAuth: !this.ready }; }
   protected models() { return { data: this.catalog }; }

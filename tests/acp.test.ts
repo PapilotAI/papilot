@@ -911,6 +911,59 @@ test('ACP agents are detected by their executable', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+for (const cancel of [false, true]) {
+  test(`ACP waits for probe cleanup before ${cancel ? 'honoring a startup cancellation' : 'publishing availability'}`, { timeout: 5000 }, async t => {
+    const f = profileFixture(ACP_PROFILES.qoder, { modes: { availableModes: [{ id: 'default' }] } }, () => assert.fail('No prompt expected'));
+    const remove = fs.promises.rm.bind(fs.promises);
+    let release: (() => void) | undefined;
+    t.mock.method(fs.promises, 'rm', async (folder: fs.PathLike, options: fs.RmOptions) => {
+      assert.equal(f.agent.ready, false);
+      assert.ok(f.calls.some(call => call.method === 'session/close'));
+      assert.equal(options.maxRetries, 5);
+      assert.equal(options.retryDelay, 100);
+      await new Promise<void>(resolve => { release = resolve; });
+      await remove(folder, options);
+    });
+    try {
+      const starting = f.agent.start();
+      const settled = cancel ? assert.rejects(starting, /disconnected/) : starting;
+      while (!release) await tick();
+      assert.equal(f.agent.ready, false);
+      assert.equal((await f.agent.request('account/read')).account, null);
+      if (cancel) f.agent.close();
+      release();
+      await settled;
+      assert.equal(f.agent.ready, !cancel);
+    } finally { release?.(); await f.agent.shutdown(); }
+  });
+}
+
+test('ACP stops its process when probe cleanup fails and can reconnect after the lock clears', { timeout: 5000 }, async t => {
+  const f = profileFixture(ACP_PROFILES.qoder, { modes: { availableModes: [{ id: 'default' }] } }, () => assert.fail('No prompt expected'));
+  const remove = fs.promises.rm.bind(fs.promises), folders = new Set<fs.PathLike>();
+  let closed = false;
+  const cleanup = t.mock.method(fs.promises, 'rm', async (folder: fs.PathLike) => {
+    assert.equal(f.agent.ready, false);
+    if (!folders.size) f.rpc().child.once('close', () => { closed = true; });
+    else assert.equal(closed, true, 'retry cleanup only after the process releases its handles');
+    folders.add(folder);
+    throw Object.assign(new Error('EPERM: directory is still locked'), { code: 'EPERM' });
+  });
+  try {
+    await assert.rejects(f.agent.start(), /EPERM.*cleanup failed/);
+    assert.equal(closed, true);
+    assert.equal(f.agent.ready, false);
+    assert.equal((await f.agent.request('account/read')).requiresOpenaiAuth, true);
+    cleanup.mock.restore();
+    await f.agent.start();
+    assert.equal(f.agent.ready, true);
+    assert.equal(f.launches.length, 2);
+  } finally {
+    cleanup.mock.restore(); await f.agent.shutdown();
+    for (const folder of folders) await remove(folder, { recursive: true, force: true });
+  }
+});
+
 test('ACP can reconnect after a shutdown deadline once the old process actually exits', { timeout: 5000 }, async t => {
   const f = profileFixture(ACP_PROFILES.qoder, { modes: { availableModes: [{ id: 'default' }] } }, () => assert.fail('No prompt expected'));
   try {
