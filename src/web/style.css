@@ -905,6 +905,11 @@ body.resizing iframe{pointer-events:none}
 .delete-dialog>p{font-size:14px;line-height:1.65;overflow-wrap:anywhere;color:var(--text-2)}
 .delete-dialog .delete-task-name{color:var(--text);font-weight:500;padding:10px 12px;border-radius:var(--r-md);background:var(--bg-muted)}
 .delete-dialog .button-row{margin-top:22px}
+.bulk-task-backdrop:modal,.bulk-task-backdrop::backdrop{overscroll-behavior:contain}
+.bulk-task-backdrop::backdrop{overflow:hidden}
+.bulk-task-errors{max-height:30vh;overflow:auto;padding-left:22px;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.bulk-task-errors li+li{margin-top:10px}
+.bulk-task-errors span{display:block;color:var(--text-2)}
 /* Settings: one row per preference, each applied as soon as it changes. */
 .settings-dialog h2{margin-bottom:12px}
 .settings-back{display:flex;align-items:center;gap:3px;margin:0 0 8px -4px;color:var(--text-3);font-size:13px}

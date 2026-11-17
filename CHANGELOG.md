@@ -6,6 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
+- **Archive or delete tasks in bulk.** The task-list menu can archive or delete all current tasks in a paper, and clear all archived tasks from the archive view. Confirmations show the scope and count, processing shows progress, and failed tasks can be retried without repeating successful operations.
 - **Crop PDF margins for mobile reading.** Choose **Crop margins** near the end of the PDF tool rail, drag the four edges in the page-shaped preview, then apply the crop to every page. The preview fills the available screen space. **Fit width** fits the remaining area, and each document remembers its crop on this device across reopening and recompilation. **Reset** restores the full page. Notes and source locations stay aligned, and exported PDFs keep their original margins. ([#194](https://github.com/PapilotAI/papilot/issues/194))
 - Support the native Pi CLI as a separate agent alongside Papilot Writer, using existing Pi providers, skills and extensions, with streamed tools and replies, image attachments, extension dialogs and resumable task sessions ([discussion #192](https://github.com/PapilotAI/papilot/discussions/192)). Requires Pi 1.5.1 or newer.
 

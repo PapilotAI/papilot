@@ -1460,5 +1460,22 @@
   "Paper source": "Artikelkälla",
   "Paste a link…": "Klistra in en länk…",
   "ZIP": "ZIP",
-  "Templates are unavailable. You can still create a blank paper.": "Mallarna är inte tillgängliga. Du kan fortfarande skapa en tom artikel."
+  "Templates are unavailable. You can still create a blank paper.": "Mallarna är inte tillgängliga. Du kan fortfarande skapa en tom artikel.",
+  "Archive all tasks?": "Arkivera alla uppgifter?",
+  "{n} tasks failed.": "{n} uppgifter misslyckades.",
+  "Delete all archived tasks…": "Radera alla arkiverade uppgifter…",
+  "Delete all current tasks…": "Radera alla aktuella uppgifter…",
+  "{n} tasks": "{n} uppgifter",
+  "Delete all current tasks?": "Radera alla aktuella uppgifter?",
+  "Archive all tasks…": "Arkivera alla uppgifter…",
+  "Cannot be undone. Manuscript changes are kept.": "Kan inte ångras. Ändringar i manuskriptet behålls.",
+  "Archiving…": "Arkiverar…",
+  "Delete all archived tasks?": "Radera alla arkiverade uppgifter?",
+  "Archive all": "Arkivera alla",
+  "Task progress": "Uppgiftsförlopp",
+  "Task list actions": "Åtgärder för uppgiftslistan",
+  "{n} task": "{n} uppgift",
+  "{n} task failed.": "{n} uppgift misslyckades.",
+  "Delete all": "Radera alla",
+  "{done} of {total}": "{done} av {total}"
 }

@@ -1460,5 +1460,22 @@
   "Paper source": "Origine dell’articolo",
   "Paste a link…": "Incolla un link…",
   "ZIP": "ZIP",
-  "Templates are unavailable. You can still create a blank paper.": "I modelli non sono disponibili. Puoi comunque creare un articolo vuoto."
+  "Templates are unavailable. You can still create a blank paper.": "I modelli non sono disponibili. Puoi comunque creare un articolo vuoto.",
+  "Archive all tasks?": "Archiviare tutte le attività?",
+  "{n} tasks failed.": "{n} attività non riuscite.",
+  "Delete all archived tasks…": "Elimina tutte le attività archiviate…",
+  "Delete all current tasks…": "Elimina tutte le attività attuali…",
+  "{n} tasks": "{n} attività",
+  "Delete all current tasks?": "Eliminare tutte le attività attuali?",
+  "Archive all tasks…": "Archivia tutte le attività…",
+  "Cannot be undone. Manuscript changes are kept.": "Non si può annullare. Le modifiche al manoscritto restano.",
+  "Archiving…": "Archiviazione…",
+  "Delete all archived tasks?": "Eliminare tutte le attività archiviate?",
+  "Archive all": "Archivia tutte",
+  "Task progress": "Avanzamento attività",
+  "Task list actions": "Azioni dell’elenco attività",
+  "{n} task": "{n} attività",
+  "{n} task failed.": "{n} attività non riuscita.",
+  "Delete all": "Elimina tutte",
+  "{done} of {total}": "{done} di {total}"
 }

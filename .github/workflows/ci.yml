@@ -287,6 +287,9 @@ jobs:
       - name: system-requirements
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-system-requirements.mjs
+      - name: bulk-tasks
+        if: ${{ !cancelled() }}
+        run: node scripts/check-bulk-tasks.mjs
       - name: task-model
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-task-model.mjs
@@ -324,6 +327,7 @@ jobs:
             test-results/import-*.png
             test-results/task-restart-*.png
             test-results/section-comments-*.png
+            test-results/bulk-tasks-*.png
           if-no-files-found: ignore
           retention-days: 7
       - name: Keep screenshots of a failed check

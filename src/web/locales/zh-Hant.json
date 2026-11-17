@@ -1460,5 +1460,22 @@
   "Paper source": "論文來源",
   "Paste a link…": "貼上連結…",
   "ZIP": "ZIP",
-  "Templates are unavailable. You can still create a blank paper.": "範本暫時無法使用，仍可建立空白論文。"
+  "Templates are unavailable. You can still create a blank paper.": "範本暫時無法使用，仍可建立空白論文。",
+  "Archive all tasks?": "封存所有任務？",
+  "{n} tasks failed.": "{n} 個任務處理失敗。",
+  "Delete all archived tasks…": "刪除所有已封存任務…",
+  "Delete all current tasks…": "刪除所有未封存任務…",
+  "{n} tasks": "{n} 個任務",
+  "Delete all current tasks?": "刪除所有未封存任務？",
+  "Archive all tasks…": "封存所有任務…",
+  "Cannot be undone. Manuscript changes are kept.": "無法復原，原稿中的修改會保留。",
+  "Archiving…": "正在封存…",
+  "Delete all archived tasks?": "刪除所有已封存任務？",
+  "Archive all": "全部封存",
+  "Task progress": "任務進度",
+  "Task list actions": "任務列表操作",
+  "{n} task": "{n} 個任務",
+  "{n} task failed.": "{n} 個任務處理失敗。",
+  "Delete all": "全部刪除",
+  "{done} of {total}": "{done} / {total}"
 }

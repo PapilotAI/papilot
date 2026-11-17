@@ -1460,5 +1460,22 @@
   "Paper source": "Source de l’article",
   "Paste a link…": "Collez un lien…",
   "ZIP": "ZIP",
-  "Templates are unavailable. You can still create a blank paper.": "Les modèles sont indisponibles. Vous pouvez toujours créer un article vierge."
+  "Templates are unavailable. You can still create a blank paper.": "Les modèles sont indisponibles. Vous pouvez toujours créer un article vierge.",
+  "Archive all tasks?": "Archiver toutes les tâches ?",
+  "{n} tasks failed.": "{n} tâches ont échoué.",
+  "Delete all archived tasks…": "Supprimer toutes les tâches archivées…",
+  "Delete all current tasks…": "Supprimer toutes les tâches actuelles…",
+  "{n} tasks": "{n} tâches",
+  "Delete all current tasks?": "Supprimer toutes les tâches actuelles ?",
+  "Archive all tasks…": "Archiver toutes les tâches…",
+  "Cannot be undone. Manuscript changes are kept.": "Irréversible. Les modifications du manuscrit sont conservées.",
+  "Archiving…": "Archivage…",
+  "Delete all archived tasks?": "Supprimer toutes les tâches archivées ?",
+  "Archive all": "Tout archiver",
+  "Task progress": "Progression des tâches",
+  "Task list actions": "Actions de la liste des tâches",
+  "{n} task": "{n} tâche",
+  "{n} task failed.": "{n} tâche a échoué.",
+  "Delete all": "Tout supprimer",
+  "{done} of {total}": "{done} sur {total}"
 }

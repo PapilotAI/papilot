@@ -246,5 +246,22 @@
   "Blank": "空白",
   "Open a folder on this computer": "打开此电脑上的文件夹",
   "Example project": "示例项目",
-  "ZIP": "ZIP"
+  "ZIP": "ZIP",
+  "Archive all tasks?": "归档全部任务？",
+  "Task progress": "任务进度",
+  "Delete all current tasks…": "删除全部未归档任务…",
+  "Task list actions": "任务列表操作",
+  "{n} tasks": "{n} 个任务",
+  "{n} task": "{n} 个任务",
+  "{n} task failed.": "{n} 个任务处理失败。",
+  "Cannot be undone. Manuscript changes are kept.": "无法撤销，原稿中的修改会保留。",
+  "Archiving…": "正在归档…",
+  "Delete all current tasks?": "删除全部未归档任务？",
+  "{n} tasks failed.": "{n} 个任务处理失败。",
+  "Delete all": "全部删除",
+  "{done} of {total}": "{done} / {total}",
+  "Delete all archived tasks…": "删除全部归档任务…",
+  "Archive all": "全部归档",
+  "Archive all tasks…": "归档全部任务…",
+  "Delete all archived tasks?": "删除全部归档任务？"
 }

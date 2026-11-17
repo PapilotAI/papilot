@@ -35,6 +35,7 @@ import { ReviewFrame, reviewUrl, type ReviewSources } from './review-frame.tsx';
 import { AiReviewView } from './ai-review.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { DeleteTaskDialog } from './task-dialog.tsx';
+import { BulkTaskDialog, type BulkTaskAction } from './bulk-task-dialog.tsx';
 import { restartDraftText } from './restart-draft.ts';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
@@ -1150,6 +1151,7 @@ function App() {
   const [connectionError, setConnectionError] = useState('');
   const sidebarRef = useRef<HTMLElement>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
+  const [bulkTarget, setBulkTarget] = useState<BulkTaskAction | null>(null);
   const [modal, setModal] = useState<'project' | 'create' | null>(null);
   const [createPreset, setCreatePreset] = useState<{ id: string; version: string } | null>(null);
   const [openingFolder, setOpeningFolder] = useState(false), [mainChoice, setMainChoice] = useState<{ path: string; name: string; candidates: string[] } | null>(null);
@@ -1402,7 +1404,7 @@ function App() {
     browserStorage.setItem('papilot:project', id);
   }, [project?.id, Boolean(state)]);
   useEffect(() => { setTaskSearch(''); setShowArchived(false); }, [project?.id]);
-  useEffect(() => { if (task) setShowArchived(Boolean(task.archivedAt)); }, [task?.id, Boolean(task?.archivedAt)]);
+  useEffect(() => { if (task && !bulkTarget) setShowArchived(Boolean(task.archivedAt)); }, [task?.id, Boolean(task?.archivedAt)]);
   const requirements = useSystemRequirements(!isPlayground && Boolean(state) && online, loadRequirements);
   const setupPrompted = useRef(false);
   const firstSetupVisit = useRef(!browserStorage.getItem('papilot:setup-seen') && !browserStorage.getItem('papilot:project'));
@@ -1592,6 +1594,21 @@ function App() {
     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.task-search input')?.focus());
   }
   const sidebarShown = narrow ? sidebar : sidebarVisible;
+  function openBulkAction(action: BulkTaskAction['action']) {
+    if (isPlayground) { requestPlaygroundDownload(); return; }
+    if (!project || !listedTasks.length) return;
+    setBulkTarget({ action, archived: showArchived, paper: project.name, tasks: [...listedTasks] });
+  }
+  function bulkTaskSucceeded(target: Task) {
+    if (selectedRef.current === target.id) { setProjectId(target.projectId); setSelected(''); }
+    if (bulkTarget?.action === 'delete') {
+      browserStorage.removeItem('papilot:draft:' + target.id); composers.current.delete(target.id); timelineCache.current.delete(target.id);
+    }
+    snapshotText.current = '';
+    setState(previous => previous ? bulkTarget?.action === 'archive'
+      ? { ...previous, tasks: previous.tasks.map(task => task.id === target.id ? { ...task, archivedAt: Date.now() } : task) }
+      : { ...previous, tasks: previous.tasks.filter(task => task.id !== target.id), requests: previous.requests.filter(request => request.taskId !== target.id) } : previous);
+  }
   useLayoutEffect(() => {
     if (addedTask && sidebarShown) sidebarRef.current?.querySelector('.task-list')?.scrollTo({ top: 0 });
   }, [addedTask, sidebarShown]);
@@ -2105,6 +2122,10 @@ function App() {
       <div className="task-list-tools" role="group" aria-label={showArchived ? t('Archived tasks') : t('Tasks')}>
         <div className="task-search"><Icon name="search" size={14}/><input type="search" aria-label={t('Search tasks')} placeholder={showArchived ? t('Search archived tasks…') : t('Search tasks…')} title={t('Search task titles and instructions')} value={taskSearch} onChange={event => setTaskSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Escape' && taskSearch) { event.preventDefault(); event.stopPropagation(); setTaskSearch(''); } }}/>{taskSearch && <button type="button" className="icon-button" aria-label={t('Clear task search')} onClick={() => { setTaskSearch(''); document.querySelector<HTMLInputElement>('.task-search input')?.focus(); }}><Icon name="close" size={13}/></button>}</div>
         <button type="button" className="icon-button archive-toggle" aria-pressed={showArchived} aria-label={showArchived ? t('Show current tasks') : t('Show archived tasks')} title={showArchived ? t('Show current tasks') : t('Show archived tasks')} onClick={() => setShowArchived(value => !value)}><Icon name="archive" size={15}/></button>
+        <ActionMenu label={t('Task list actions')} disabled={!listedTasks.length || !online} actions={[
+          ...(!showArchived ? [{ label: t('Archive all tasks…'), icon: 'archive', select: () => openBulkAction('archive') }] : []),
+          { label: showArchived ? t('Delete all archived tasks…') : t('Delete all current tasks…'), icon: 'trash', danger: true, select: () => openBulkAction('delete') },
+        ]}/>
       </div>
       <nav className="task-list" aria-label={t('Task list')}>{visibleTasks.length ? [...visibleTasks].reverse().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt) || b.createdAt - a.createdAt).map(row => <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '') + (row.id === flyingTask?.id ? ' task-arriving' : '') + (row.id === addedTask?.id ? ' task-added' : '')}>
         {renaming === row.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); refocus.current = row.id; e.currentTarget.querySelector('input')?.blur(); }}>
@@ -2171,6 +2192,9 @@ function App() {
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
     {settings && <SettingsDialog requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] })), agent: agentChoice, model: chosenModel, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }) }} updates={!isPlayground ? api : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body) } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
+    {bulkTarget && <BulkTaskDialog target={bulkTarget}
+      submit={target => api('/tasks/' + target.id + '/' + bulkTarget.action, bulkTarget.action === 'archive' ? { archived: true } : { confirm: true })}
+      onSuccess={bulkTaskSucceeded} refresh={() => void refresh(true)} onClose={() => { setShowArchived(bulkTarget.archived); setBulkTarget(null); }}/>}
     {editingPaper && <PaperDialog key={editingPaper.id} paper={editingPaper} onClose={() => setEditingPaper(null)} save={async form => {
       const paper = editingPaper, pathChanged = form.path !== paper.path;
       await api(`/projects/${paper.id}/${pathChanged ? 'path' : 'rename'}`, pathChanged ? form : { name: form.name });

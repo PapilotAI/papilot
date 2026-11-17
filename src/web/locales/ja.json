@@ -1460,5 +1460,22 @@
   "Paper source": "論文のソース",
   "Paste a link…": "リンクを貼り付け…",
   "ZIP": "ZIP",
-  "Templates are unavailable. You can still create a blank paper.": "テンプレートを読み込めません。空白の論文は作成できます。"
+  "Templates are unavailable. You can still create a blank paper.": "テンプレートを読み込めません。空白の論文は作成できます。",
+  "Archive all tasks?": "すべてのタスクをアーカイブしますか？",
+  "{n} tasks failed.": "{n} 件のタスクの処理に失敗しました。",
+  "Delete all archived tasks…": "アーカイブ済みタスクをすべて削除…",
+  "Delete all current tasks…": "未アーカイブのタスクをすべて削除…",
+  "{n} tasks": "{n} 件のタスク",
+  "Delete all current tasks?": "未アーカイブのタスクをすべて削除しますか？",
+  "Archive all tasks…": "すべてのタスクをアーカイブ…",
+  "Cannot be undone. Manuscript changes are kept.": "取り消せません。原稿の変更は保持されます。",
+  "Archiving…": "アーカイブ中…",
+  "Delete all archived tasks?": "アーカイブ済みタスクをすべて削除しますか？",
+  "Archive all": "すべてアーカイブ",
+  "Task progress": "タスクの進行状況",
+  "Task list actions": "タスクリストの操作",
+  "{n} task": "{n} 件のタスク",
+  "{n} task failed.": "{n} 件のタスクの処理に失敗しました。",
+  "Delete all": "すべて削除",
+  "{done} of {total}": "{done} / {total}"
 }
