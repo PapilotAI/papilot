@@ -8,5 +8,6 @@
 .new-paper-dialog .import-path-row input,.new-paper-dialog .import-path-row .button{margin:0;height:38px}
 .new-paper-backdrop:modal,.new-paper-backdrop::backdrop{overscroll-behavior:contain}
 .new-paper-backdrop::backdrop{overflow:hidden}
+@media(max-width:680px){.new-paper-dialog .import-path-row input,.new-paper-dialog .import-path-row .button{height:44px}}
 @media(max-width:520px){.modal.new-paper-dialog{padding:22px 18px 18px}.new-paper-tabs{gap:18px}}
 @media(pointer:coarse){.new-paper-tabs [role=tab]{min-height:44px}.new-paper-dialog .button{min-height:44px}.new-paper-dialog input{font-size:16px}.new-paper-dialog .import-path-row input,.new-paper-dialog .import-path-row .button{height:48px}}
