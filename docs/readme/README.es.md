@@ -90,7 +90,7 @@ Marca una oración, una ecuación o una figura y escribe una anotación.<br>
       <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-agents/compact-dark.svg">
       <source media="(prefers-color-scheme: dark)" srcset="../assets/readme-agents/desktop-dark.svg">
       <source media="(max-width: 600px)" srcset="../assets/readme-agents/compact.svg">
-      <img src="../assets/readme-agents/desktop.svg" alt="Papilot Writer, Pi, Codex, Claude, Cursor, Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode" width="816">
+      <img src="../assets/readme-agents/desktop.svg" alt="Papilot Writer, Pi, Codex, Claude, Cursor, Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode, Qoder, CodeBuddy, WorkBuddy" width="816">
     </picture>
   </a>
 </p>

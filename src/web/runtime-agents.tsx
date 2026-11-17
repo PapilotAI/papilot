@@ -27,8 +27,11 @@ function connectionInfo(id: AgentId) {
     deepseek: t('Uses DeepSeek Harness and the providers configured in dsh.'),
     qwen: t('Uses Qwen Code and its saved login through ACP.'),
     opencode: t('Uses OpenCode with the providers and models you have connected.'),
+    qoder: t('Uses Qoder CLI and its saved login through ACP.'),
+    codebuddy: t('Uses CodeBuddy CLI and its saved login through ACP.'),
+    workbuddy: t('Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.'),
   };
-  const commands = { papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login' };
+  const commands = { papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login', qoder: 'qoder login', codebuddy: 'codebuddy', workbuddy: 'PAPILOT_WORKBUDDY_BIN' };
   return { description: descriptions[id], command: commands[id], key: id === 'cursor' || id === 'glm' };
 }
 

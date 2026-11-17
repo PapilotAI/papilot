@@ -70,6 +70,27 @@ test('doctor detects native Pi versions without prompting or claiming authentica
   } finally { f.cleanup(); }
 });
 
+test('doctor checks Qoder, CodeBuddy and an explicit WorkBuddy launcher without claiming login', async () => {
+  const f = fixture();
+  try {
+    f.baseTools();
+    for (const name of ['qoder', 'codebuddy', 'workbuddy']) f.tool(name, 'console.log("--acp  Agent Client Protocol");');
+    const unconfigured = await f.run(['--json']);
+    assert.equal(item(unconfigured.report, 'agent.qoder').ok, true);
+    assert.equal(item(unconfigured.report, 'agent.codebuddy').ok, true);
+    assert.equal(item(unconfigured.report, 'agent.workbuddy').ok, false, 'WorkBuddy never borrows another product login or arbitrary PATH command');
+    const launcher = f.tool('workbuddy', 'console.log("--acp  Agent Client Protocol");');
+    const configured = await f.run(['--json'], { PAPILOT_WORKBUDDY_BIN: launcher });
+    for (const id of ['qoder', 'codebuddy', 'workbuddy']) {
+      const check = item(configured.report, `agent.${id}`);
+      assert.equal(check.ok, true);
+      assert.match(check.detail, /login and generation were not tested/);
+    }
+    const calls = fs.readFileSync(f.log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.ok(calls.filter(call => ['qoder', 'codebuddy', 'workbuddy'].includes(call[0])).every(call => call[1] === '--help'));
+  } finally { f.cleanup(); }
+});
+
 test('doctor help and invalid options never run tools or create data', async () => {
   const f = fixture();
   try {

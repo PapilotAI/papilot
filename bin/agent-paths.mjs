@@ -40,6 +40,7 @@ export function agentDirs(env = process.env) {
     ...['.local/bin', '.claude/local', '.kimi-code/bin', '.grok/bin', '.opencode/bin', '.bun/bin', '.npm-global/bin'].map(dir => path.join(home, dir)),
     '/opt/homebrew/bin', '/usr/local/bin',
     ...(WINDOWS ? [path.join(appData, 'npm'), path.join(localAppData, 'Programs'), path.join(home, '.volta/bin'),
+      path.join(localAppData, 'agy/bin'), path.join(localAppData, 'Programs/DeepSeek Harness/resources/runtime/cli/bin'),
       path.join(home, 'scoop/shims'), path.join(programData, 'chocolatey/bin'), path.join(programFiles, 'nodejs'),
       path.join(programFiles, 'Git/cmd'), path.join(programFiles, 'Git/bin'),
       path.join(localAppData, 'Programs/Git/cmd'),

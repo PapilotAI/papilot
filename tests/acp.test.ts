@@ -911,6 +911,81 @@ test('ACP agents are detected by their executable', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('ACP can reconnect after a shutdown deadline once the old process actually exits', { timeout: 5000 }, async t => {
+  const f = profileFixture(ACP_PROFILES.qoder, { modes: { availableModes: [{ id: 'default' }] } }, () => assert.fail('No prompt expected'));
+  try {
+    await f.agent.start();
+    const child = f.rpc().child;
+    child.kill = () => true; // Both TERM and KILL fail to release the process.
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const stopped = assert.rejects(f.agent.shutdown(), /did not exit/);
+    t.mock.timers.tick(10000);
+    await stopped;
+    await assert.rejects(f.agent.start(), /did not exit/);
+    child.exitCode = 0;
+    child.emit('close', 0); // The user closes it after the deadline.
+    await f.agent.start();
+    assert.equal(f.agent.ready, true);
+    assert.equal(f.launches.length, 2);
+  } finally { f.agent.close(); }
+});
+
+test('ACP close cancels startup before the process is launched', { timeout: 5000 }, async () => {
+  const f = profileFixture(ACP_PROFILES.qoder, { modes: { availableModes: [{ id: 'default' }] } }, () => assert.fail('No prompt expected'));
+  try {
+    const starting = f.agent.start();
+    f.agent.close();
+    await assert.rejects(starting, /disconnected/);
+    assert.equal(f.launches.length, 0);
+    assert.equal(f.agent.ready, false);
+    await f.agent.start();
+    assert.equal(f.launches.length, 1);
+    assert.equal(f.agent.ready, true);
+  } finally { f.agent.close(); }
+});
+
+// Qoder CLI 1.1.91 advertises camel-case acceptEdits and yolo, while
+// CodeBuddy Code 2.185.0 calls its broader mode bypassPermissions.
+for (const [provider, broader] of [['qoder', 'yolo'], ['codebuddy', 'bypassPermissions']] as const) {
+  test(`${provider} pins manual permissions, forwards approvals and rejects read-only sessions`, { timeout: 5000 }, async () => {
+    const modes = ['default', 'acceptEdits', 'auto', 'dontAsk', broader, ...(provider === 'codebuddy' ? ['plan', 'fullAccess'] : [])];
+    const f = profileFixture(ACP_PROFILES[provider], {
+      modes: { currentModeId: broader, availableModes: modes.map(id => ({ id })) },
+      models: { currentModelId: 'auto', availableModels: [{ modelId: 'auto', name: 'Auto' }] },
+    }, (message, rpc) => {
+      rpc.send({ id: 'permission', method: 'session/request_permission', params: { sessionId: message.params.sessionId,
+        toolCall: { kind: 'execute', title: 'Build the PDF', rawInput: { command: 'latexmk main.tex' } },
+        options: [{ optionId: 'once', kind: 'allow_once' }, { optionId: 'deny', kind: 'reject_once' }] } });
+    }, { loadSession: true, promptCapabilities: { image: true } }, ['browser-login']);
+    try {
+      await f.agent.start();
+      assert.deepEqual(f.launches[0].args, ['--acp', '--permission-mode', 'default']);
+      assert.equal(f.calls.some(call => call.method === 'authenticate' || call.method === 'session/prompt'), false);
+      assert.equal((await f.agent.request('model/list')).data[0].model, 'auto');
+      assert.deepEqual(f.agent.permissionOptions().map(option => option.value), ['workspace', 'acceptEdits', 'full', ...(provider === 'codebuddy' ? ['plan'] : [])]);
+      const { thread } = await f.agent.request('thread/start', { cwd: '/paper', taskPermissions: 'full' });
+      assert.equal(f.calls.filter(call => call.method === 'session/set_mode').at(-1)?.params.modeId, broader);
+      await f.agent.request('thread/resume', { threadId: thread.id, cwd: '/paper', taskPermissions: 'workspace' });
+      assert.equal(f.calls.filter(call => call.method === 'session/set_mode').at(-1)?.params.modeId, 'default');
+      const done = completion(f.agent), requested = new Promise<any>(resolve => f.agent.once('request', resolve));
+      await f.agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Build it.' }] });
+      const approval = await requested;
+      assert.equal(approval.method, 'item/commandExecution/requestApproval');
+      f.agent.respond(approval.id, { decision: 'decline' });
+      await tick();
+      assert.deepEqual(f.calls.find(call => call.id === 'permission' && !call.method).result.outcome, { outcome: 'selected', optionId: 'deny' });
+      const prompt = f.calls.find(call => call.method === 'session/prompt');
+      f.rpc().update(thread.id, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Build declined.' } });
+      f.rpc().reply(prompt.id, { stopReason: 'end_turn' });
+      assert.equal((await done).status, 'completed');
+      const count = f.calls.filter(call => call.method === 'session/new' || call.method === 'session/load').length;
+      await assert.rejects(f.agent.request('thread/start', { cwd: '/paper', sandbox: 'read-only' }), /does not support read-only tasks/);
+      await assert.rejects(f.agent.request('thread/resume', { threadId: thread.id, cwd: '/paper', sandbox: 'read-only' }), /does not support read-only tasks/);
+      assert.equal(f.calls.filter(call => call.method === 'session/new' || call.method === 'session/load').length, count);
+    } finally { f.agent.close(); }
+  });
+}
+
 test('empty and whitespace-only text chunks never become empty messages', { timeout: 5000 }, async () => {
   const f = profileFixture(ACP_PROFILES.qwen, { modes: { availableModes: [{ id: 'auto-edit' }] } }, (m, rpc) => {
     const id = m.params.sessionId, chunk = (text: string) => rpc.update(id, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });

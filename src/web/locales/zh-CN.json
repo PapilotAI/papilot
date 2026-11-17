@@ -273,5 +273,10 @@
   "Saved anchors": "已保存的锚点",
   "Previous anchor": "上一个锚点",
   "Next anchor": "下一个锚点",
-  "Anchor shortcuts work while the PDF is focused.": "PDF 获得焦点时可使用锚点快捷键。"
+  "Anchor shortcuts work while the PDF is focused.": "PDF 获得焦点时可使用锚点快捷键。",
+  "Uses Qoder CLI and its saved login through ACP.": "通过 ACP 使用 Qoder CLI 及其已保存的登录信息。",
+  "Uses CodeBuddy CLI and its saved login through ACP.": "通过 ACP 使用 CodeBuddy CLI 及其已保存的登录信息。",
+  "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": "使用已配置的 WorkBuddy ACP 启动器。该启动器必须能够使用登录信息。",
+  "No WorkBuddy ACP launcher is configured.": "尚未配置 WorkBuddy ACP 启动器。",
+  "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": "将 {variable} 设为 WorkBuddy ACP 启动器的路径，然后重启 Papilot。"
 }

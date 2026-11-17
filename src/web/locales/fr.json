@@ -1487,5 +1487,10 @@
   "Saved anchors": "Repères enregistrés",
   "Previous anchor": "Repère précédent",
   "Next anchor": "Repère suivant",
-  "Anchor shortcuts work while the PDF is focused.": "Les raccourcis des repères fonctionnent lorsque le PDF a le focus."
+  "Anchor shortcuts work while the PDF is focused.": "Les raccourcis des repères fonctionnent lorsque le PDF a le focus.",
+  "Uses Qoder CLI and its saved login through ACP.": "Utilise Qoder CLI et sa connexion enregistrée via ACP.",
+  "Uses CodeBuddy CLI and its saved login through ACP.": "Utilise CodeBuddy CLI et sa connexion enregistrée via ACP.",
+  "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": "Utilise un lanceur ACP WorkBuddy configuré. Le lanceur doit avoir accès à sa connexion.",
+  "No WorkBuddy ACP launcher is configured.": "Aucun lanceur ACP WorkBuddy n’est configuré.",
+  "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": "Définissez {variable} sur un lanceur ACP WorkBuddy, puis redémarrez Papilot."
 }

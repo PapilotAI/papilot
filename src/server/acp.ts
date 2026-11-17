@@ -1,4 +1,4 @@
-import { agentPath, spawnCommand } from '../../bin/agent-paths.mjs';
+import { agentPath, killTree, spawnCommand } from '../../bin/agent-paths.mjs';
 import { type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
@@ -33,6 +33,8 @@ const sessionModel = (session: Session) => session.configOptions?.find(option =>
 // Additional permissions are offered only when advertised by the ACP session.
 export interface AcpProfile {
   id: AgentId; name: string; bin: string; binEnv: string; args: string[]; modes: string[]; setup: string;
+  /** False when the native ACP modes cannot enforce a read-only task. */
+  readOnly?: false;
   env?: () => NodeJS.ProcessEnv;
   config?: Record<string, string>;
   authMethods?: string[];
@@ -88,6 +90,22 @@ export const ACP_PROFILES = {
     setup: 'Install Kimi Code CLI and run kimi login on this host, then select Reconnect. Set PAPILOT_KIMI_BIN if kimi is not on PATH.' },
   qwen: { id: 'qwen', name: 'Qwen', bin: 'qwen', binEnv: 'PAPILOT_QWEN_BIN', args: ['--acp'], modes: ['auto-edit', 'default'], permissionModes,
     setup: 'Install Qwen Code and sign in by running qwen once on this host, then select Reconnect. Set PAPILOT_QWEN_BIN if qwen is not on PATH.' },
+  qoder: { id: 'qoder', name: 'Qoder', bin: 'qoder', binEnv: 'PAPILOT_QODER_BIN', args: ['--acp', '--permission-mode', 'default'], modes: ['default'], readOnly: false,
+    permissionModes: {
+      default: permissionModes.default,
+      acceptEdits: { label: 'Accept edits', detail: 'Approve edits' },
+      yolo: permissionModes.yolo,
+    },
+    setup: 'Install Qoder CLI from https://qoder.com/cli and run qoder login on this host, then select Reconnect. Set PAPILOT_QODER_BIN to the CLI executable if needed; the Qoder desktop launcher is not an agent CLI.' },
+  codebuddy: { id: 'codebuddy', name: 'CodeBuddy', bin: 'codebuddy', binEnv: 'PAPILOT_CODEBUDDY_BIN', args: ['--acp', '--permission-mode', 'default'], modes: ['default'], readOnly: false,
+    permissionModes: {
+      default: permissionModes.default,
+      acceptEdits: { label: 'Accept edits', detail: 'Approve edits' },
+      plan: { label: 'Plan', detail: 'Plan before editing' },
+      bypassPermissions: { value: 'full', label: 'Bypass permissions', detail: 'Skip approval prompts; native rules still apply' },
+    },
+    env: () => ({ ...process.env, CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS: '1' }),
+    setup: 'Install CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code) and sign in by running codebuddy on this host, then select Reconnect. Set PAPILOT_CODEBUDDY_BIN if the CLI is not on PATH.' },
   // Papilot adds a per-session permission config option to DSH's ACP adapter.
   // Read-only remains available for restricted task sessions, while the picker
   // offers sandboxed editing and full access.
@@ -131,7 +149,10 @@ export function opencodeConfig(own?: string) {
 // credentials and conversation storage; the adapter only translates JSON-RPC
 // over stdio.
 export class AcpAgent extends Adapter {
+  get supportsReadOnlyTasks() { return this.profile.readOnly !== false; }
   private child: ChildProcess | null = null;
+  private closing: Promise<void> = Promise.resolve();
+  private generation = 0;
   private starting: Promise<void> | null = null;
   private sequence = 0;
   private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer?: NodeJS.Timeout }>();
@@ -145,7 +166,7 @@ export class AcpAgent extends Adapter {
   permissionOptions() { return this.availablePermissions; }
   private readonly name: string;
   private readonly binary: string;
-  constructor(private profile: AcpProfile, binary?: string, private launch: typeof spawnCommand = spawnCommand) {
+  constructor(private profile: AcpProfile, binary?: string, private launch: typeof spawnCommand = spawnCommand, private launchCwd?: string) {
     super();
     this.name = profile.name;
     this.binary = binary || process.env[profile.binEnv] || profile.bin;
@@ -159,7 +180,10 @@ export class AcpAgent extends Adapter {
     return this.starting;
   }
   private async connect() {
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), `papilot-${this.profile.id}-`));
+    const generation = this.generation;
+    await this.closing;
+    if (generation !== this.generation) throw new Error(`${this.name} disconnected.`);
+    const cwd = this.launchCwd || fs.mkdtempSync(path.join(os.tmpdir(), `papilot-${this.profile.id}-`));
     try {
       // The probe folder is removed below, so the agent itself runs from the home folder.
       const env = this.profile.env?.() || process.env;
@@ -167,9 +191,9 @@ export class AcpAgent extends Adapter {
       const invocation = this.profile.id === 'deepseek'
         ? deepseekLaunch(this.binary, this.profile.args, launchEnv)
         : { command: findExecutable(this.binary) || this.binary, args: this.profile.args, env: launchEnv };
-      const child = this.launch(invocation.command, invocation.args, { cwd: os.homedir(), env: invocation.env, stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = this.launch(invocation.command, invocation.args, { cwd: this.launchCwd || os.homedir(), env: invocation.env, stdio: ['pipe', 'pipe', 'pipe'] });
       this.child = child;
-      const failed = (error: Error) => { if (this.child === child) this.disconnect(error); };
+      const failed = (error: Error, exited = false) => { if (this.child === child) this.disconnect(error, true, exited); };
       createInterface({ input: child.stdout! }).on('line', line => {
         let message: any;
         try { message = JSON.parse(line); } catch { return; }
@@ -178,7 +202,7 @@ export class AcpAgent extends Adapter {
       child.stderr?.resume();
       child.stdin?.on('error', failed);
       child.once('error', failed);
-      child.once('close', (code, signal) => failed(new Error(`${this.name} exited (${signal || code}). ${this.profile.setup}`)));
+      child.once('close', (code, signal) => failed(new Error(`${this.name} exited (${signal || code}). ${this.profile.setup}`), true));
       // The first start of some agents installs their plugins, so allow it a minute.
       const init = await this.rpc('initialize', { protocolVersion: 1, clientInfo: { name: 'papilot', version: VERSION }, clientCapabilities: {} }, 60000);
       if (init.protocolVersion !== 1) throw new Error(`${this.name} returned an unsupported ACP version. Update it.`);
@@ -201,11 +225,12 @@ export class AcpAgent extends Adapter {
       const sessionCapabilities = this.capabilities.sessionCapabilities || {};
       if (sessionCapabilities.delete) await this.rpc('session/delete', { sessionId: probe.sessionId });
       else if (sessionCapabilities.close) await this.rpc('session/close', { sessionId: probe.sessionId });
+      if (generation !== this.generation) throw new Error(`${this.name} disconnected.`);
       this.ready = true;
     } catch (error) {
       this.close();
       throw new Error(`${this.name} is unavailable: ${error instanceof Error ? error.message.replace(/\.$/, '') : String(error)}. ${this.profile.setup}`);
-    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+    } finally { if (!this.launchCwd) fs.rmSync(cwd, { recursive: true, force: true }); }
   }
   protected account() { return { account: this.ready ? { type: `Local ${this.name} configuration` } : null, requiresOpenaiAuth: !this.ready }; }
   protected models() { return { data: this.catalog }; }
@@ -214,6 +239,7 @@ export class AcpAgent extends Adapter {
     if (method === 'thread/start' || method === 'thread/resume') {
       const resumed = method === 'thread/resume';
       const readOnly = params.sandbox === 'read-only';
+      if (readOnly && this.profile.readOnly === false) throw new Error(`${this.name} does not support read-only tasks through ACP. Select another agent for this task.`);
       const permissions = readOnly ? (this.profile.id === 'deepseek' ? 'read-only' : 'workspace') : params.taskPermissions || 'workspace';
       // Local model metadata is authoritative only for a still-cached session.
       // After reconnecting, the CLI may restore a different model from disk.
@@ -512,15 +538,47 @@ export class AcpAgent extends Adapter {
       this.send({ id, method, params });
     });
   }
-  private disconnect(error: Error, notify = true) {
+  private disconnect(error: Error, notify = true, exited = false) {
+    this.generation++;
     const child = this.child;
     this.child = null; this.ready = false; this.sessions.clear();
     for (const wait of this.pending.values()) { if (wait.timer) clearTimeout(wait.timer); wait.reject(error); }
     this.pending.clear(); this.approvals.clear();
-    child?.stdin?.end(); child?.kill('SIGTERM');
+    if (child && !exited && child.exitCode == null && child.signalCode == null) {
+      // close() is synchronous, but callers deleting a worktree or restoring
+      // the same session must still be able to await this process later.
+      const closing: Promise<void> = new Promise<void>((resolve, reject) => {
+        const onClose = () => {
+          clearTimeout(force); clearTimeout(deadline);
+          // A timed-out shutdown rejects its current waiter, but a later real
+          // exit (including manual cleanup) must allow a subsequent reconnect.
+          if (this.closing === closing) this.closing = Promise.resolve();
+          resolve();
+        };
+        child.once('close', onClose);
+        const force = setTimeout(() => { child.kill('SIGKILL'); }, 5000);
+        const deadline = setTimeout(() => {
+          reject(new Error(`${this.name} did not exit. Close its process before resuming the task.`));
+        }, 10000);
+        force.unref(); deadline.unref();
+      });
+      this.closing = closing;
+      // Most disconnect callers only need to stop the transport. shutdown()
+      // and a subsequent connect() observe any failure to release the process.
+      void this.closing.catch(() => {});
+    }
+    child?.stdin?.end();
+    if (child && !exited && child.exitCode == null && child.signalCode == null) {
+      if (child.pid && process.platform === 'win32') killTree(child.pid);
+      else child.kill('SIGTERM');
+    }
     if (child && notify) this.emit('disconnected', error);
   }
   close() { this.disconnect(new Error(`${this.name} disconnected.`), false); }
+  async shutdown() {
+    this.close();
+    await this.closing;
+  }
 }
 
 export class KimiAgent extends AcpAgent {

@@ -6013,5 +6013,30 @@
     "revision": "85f9330da6bd0a2c2107cbc3d2716227f8570fcb8421f065f2631596707e05d9",
     "textHash": "234adc79cf66cca9b7382bd028426742bb5a282f2745c25c5ab6e93d97fb6393",
     "model": "manual"
+  },
+  "Uses Qoder CLI and its saved login through ACP.": {
+    "revision": "974340f178d8c3fa5b4c117e43fd8e4f8c2bcf336bfcecb006cd85a41fef5807",
+    "textHash": "3c1a4c3d3cbe2ecb3513125be198c88ea6f858843f32116945f052ea0747440c",
+    "model": "manual"
+  },
+  "Uses CodeBuddy CLI and its saved login through ACP.": {
+    "revision": "c35d0872668a481d4ce0c2ae04333cc45caf9882726a2cf0b526801f22a9ffaf",
+    "textHash": "d748c70a99272c890d81c2015ed3d2873c97dae2a3fe1a05d4b28a893651d5e1",
+    "model": "manual"
+  },
+  "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": {
+    "revision": "16076b768947bd99cd53de6da2f18ef341fd153578664d4087e59d4311fdfac7",
+    "textHash": "6da4f6df94566265f1caf6185e3acad1e5e55cb333b3cf8cd51cedec35c425ea",
+    "model": "manual"
+  },
+  "No WorkBuddy ACP launcher is configured.": {
+    "revision": "8ad014b1697c7c103dbec12ec13d0b6347bb4ffc9a5123f3f7fd50342c291049",
+    "textHash": "4cea922cb3bc8e1bd275bc3c31bced92e8b0f55eb36e35d167066cca16c8fa2e",
+    "model": "manual"
+  },
+  "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": {
+    "revision": "3ee5ffa25fcebf51cfc2e50acd12f64a3f5a067ff12ff672769f18877951977e",
+    "textHash": "6e338a7430cb028be9b49f0a037c8d052a5705b75111340f8804896b2bc84867",
+    "model": "manual"
   }
 }

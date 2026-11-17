@@ -82,7 +82,7 @@ Mark a sentence, an equation or a figure, and write a note.<br>
       <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="docs/assets/readme-agents/compact-dark.svg">
       <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme-agents/desktop-dark.svg">
       <source media="(max-width: 600px)" srcset="docs/assets/readme-agents/compact.svg">
-      <img src="docs/assets/readme-agents/desktop.svg" alt="Papilot Writer, Pi, Codex, Claude, Cursor, Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode" width="816">
+      <img src="docs/assets/readme-agents/desktop.svg" alt="Papilot Writer, Pi, Codex, Claude, Cursor, Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode, Qoder, CodeBuddy, WorkBuddy" width="816">
     </picture>
   </a>
 </p>

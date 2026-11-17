@@ -1487,5 +1487,10 @@
   "Saved anchors": "Sparade ankare",
   "Previous anchor": "Föregående ankare",
   "Next anchor": "Nästa ankare",
-  "Anchor shortcuts work while the PDF is focused.": "Kortkommandon för ankare fungerar när PDF-filen har fokus."
+  "Anchor shortcuts work while the PDF is focused.": "Kortkommandon för ankare fungerar när PDF-filen har fokus.",
+  "Uses Qoder CLI and its saved login through ACP.": "Använder Qoder CLI och dess sparade inloggning via ACP.",
+  "Uses CodeBuddy CLI and its saved login through ACP.": "Använder CodeBuddy CLI och dess sparade inloggning via ACP.",
+  "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": "Använder en konfigurerad WorkBuddy-startare för ACP. Inloggningen måste vara tillgänglig för startaren.",
+  "No WorkBuddy ACP launcher is configured.": "Ingen WorkBuddy-startare för ACP är konfigurerad.",
+  "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": "Ange en WorkBuddy-startare för ACP i {variable} och starta sedan om Papilot."
 }

@@ -12,6 +12,9 @@ import glm from './brand-icons/glm.svg';
 import deepseek from './brand-icons/deepseek.svg';
 import qwen from './brand-icons/qwen.svg';
 import opencode from './brand-icons/opencode.svg';
+import qoder from './brand-icons/qoder.svg';
+import codebuddy from './brand-icons/codebuddy.svg';
+import workbuddy from './brand-icons/workbuddy.svg';
 import git from './brand-icons/git.svg';
 import latex from './brand-icons/latex.svg';
 import openai from './brand-icons/openai.svg';
@@ -23,7 +26,7 @@ import overleaf from './brand-icons/overleaf.svg';
 import github from './brand-icons/github.svg';
 import './brand-icon.css';
 
-const marks = { papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, deepseek, qwen, opencode, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github };
+const marks = { papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, deepseek, qwen, opencode, qoder, codebuddy, workbuddy, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github };
 export type Brand = keyof typeof marks;
 
 // Decorative beside a visible name. Local assets work offline and inherit theme colors.

@@ -22,6 +22,7 @@ import { ClaudeText } from './claude-text.ts';
 // (queueing, approvals, pausing, review rounds) stays in one place.
 export interface AgentRuntime extends EventEmitter {
   ready: boolean;
+  readonly supportsReadOnlyTasks?: boolean;
   permissionOptions?(): TaskPermissionOption[];
   taskPermissionConfig?(value: TaskPermissions, cwd: string): Promise<{ thread: Record<string, unknown>; turn: Record<string, unknown> }>;
   // Whether the agent is present on this host (its CLI, SDK credentials or

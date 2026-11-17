@@ -1487,5 +1487,10 @@
   "Saved anchors": "Âncoras salvas",
   "Previous anchor": "Âncora anterior",
   "Next anchor": "Próxima âncora",
-  "Anchor shortcuts work while the PDF is focused.": "Os atalhos de âncoras funcionam quando o PDF está em foco."
+  "Anchor shortcuts work while the PDF is focused.": "Os atalhos de âncoras funcionam quando o PDF está em foco.",
+  "Uses Qoder CLI and its saved login through ACP.": "Usa o Qoder CLI e o seu login salvo por meio do ACP.",
+  "Uses CodeBuddy CLI and its saved login through ACP.": "Usa o CodeBuddy CLI e o seu login salvo por meio do ACP.",
+  "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": "Usa um inicializador ACP do WorkBuddy configurado. O login deve estar disponível para o inicializador.",
+  "No WorkBuddy ACP launcher is configured.": "Nenhum inicializador ACP do WorkBuddy está configurado.",
+  "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": "Defina {variable} como um inicializador ACP do WorkBuddy e reinicie o Papilot."
 }

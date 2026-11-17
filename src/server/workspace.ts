@@ -16,6 +16,8 @@ import { ACP_PROFILES, AcpAgent } from './acp.ts';
 import { CursorAgent } from './cursor.ts';
 import { GrokAgent } from './grok.ts';
 import { PiAgent } from './pi.ts';
+import { CodeBuddyAgent } from './codebuddy.ts';
+import { WorkBuddyAgent } from './workbuddy.ts';
 import { WriterAgent } from './writer/agent.ts';
 import type { CompiledPaper } from './writer/build-map.ts';
 import { fileEdit } from './writer/edits.ts';
@@ -187,7 +189,8 @@ export class Workspace extends EventEmitter {
     this.attachments = new Attachments(store);
     this.agents = { papilot: others.papilot || new WriterAgent(), pi: others.pi || new PiAgent(), codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), copilot: others.copilot || new AcpAgent(ACP_PROFILES.copilot), grok: others.grok || new GrokAgent(), antigravity: others.antigravity || new AntigravityAgent(),
       kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
-      qwen: others.qwen || new AcpAgent(ACP_PROFILES.qwen), opencode: others.opencode || new AcpAgent(ACP_PROFILES.opencode) };
+      qwen: others.qwen || new AcpAgent(ACP_PROFILES.qwen), opencode: others.opencode || new AcpAgent(ACP_PROFILES.opencode),
+      qoder: others.qoder || new AcpAgent(ACP_PROFILES.qoder), codebuddy: others.codebuddy || new CodeBuddyAgent(), workbuddy: others.workbuddy || new WorkBuddyAgent() };
     store.on('change', () => this.emit('change'));
     for (const id of AGENTS) {
       const agent = this.agents[id];
@@ -403,6 +406,7 @@ export class Workspace extends EventEmitter {
       if (input.prepareReview && existing.preparation) this.reviewCopies.set(existing.id, input.prepareReview);
       return this.retryTask(existing.id);
     }
+    if (input.prepareReview) this.requireReviewAgent(input.agent || 'codex');
     this.validateTaskPermissions(input.permissions ?? 'workspace', input.agent || 'codex', Boolean(input.prepareReview));
     if (input.prepareReview && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
     // Pin the model shown to the author, including for clients using the default.
@@ -463,6 +467,7 @@ export class Workspace extends EventEmitter {
       if (existing.restart?.taskId !== taskId || existing.projectId !== original.projectId) throw new Error('Invalid replacement task ID.');
       return this.retryTask(existing.id);
     }
+    if (original.mode === 'review') this.requireReviewAgent(input.agent);
     const runtime = this.runtimes[input.agent];
     if (!runtime?.connected || !runtime.authenticated) throw new Error('Connect and sign in to the destination agent before restarting.');
     const model = runtime.models.find(model => input.model ? model.id === input.model : model.isDefault);
@@ -542,6 +547,7 @@ export class Workspace extends EventEmitter {
   // Retry after a failed preparation; any other task is returned as it is.
   retryTask(taskId: string) {
     const task = this.store.task(taskId);
+    if (task.mode === 'review') this.requireReviewAgent(this.agentOf(task));
     if (task.preparation && task.status === 'failed') void this.prepareTask(taskId);
     return this.store.task(taskId);
   }
@@ -745,6 +751,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   private async startRun(run: Run) {
     let task = this.store.task(run.taskId);
+    // Saved reviews can predate an adapter's capability check. Refuse them
+    // before loading a thread or sending a prompt, including loaded sessions.
+    if (task.mode === 'review') this.requireReviewAgent(this.agentOf(task));
     if (task.titleSource === 'prompt' && !task.titleGeneration) {
       try { this.requestTaskTitle(task.id); } catch { /* Naming remains optional when the agent reconnects. */ }
     }
@@ -1694,6 +1703,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if ([...this.reviewWrites].some(id => this.store.task(id).projectId === projectId)) throw new Error('Wait for the current review action before committing.');
     this.committing.add(projectId);
     try { return await work(); } finally { this.committing.delete(projectId); }
+  }
+  private requireReviewAgent(agent: AgentId) {
+    if (this.agents[agent].supportsReadOnlyTasks === false) throw new Error(`${AGENT_NAMES[agent]} does not support read-only AI review. Select another agent for this task.`);
   }
   private validateTaskPermissions(value: unknown, agent: AgentId, reviewing: boolean) {
     if (typeof value !== 'string' || !value) throw new Error('Invalid task permissions.');

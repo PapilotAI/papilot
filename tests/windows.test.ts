@@ -40,6 +40,26 @@ test('Windows Path and PATHEXT find native commands instead of POSIX npm shims',
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('Windows detects installed Antigravity and DeepSeek CLIs before PATH is refreshed', { skip: !windows }, () => {
+  const dir = temporary();
+  try {
+    const env = { USERPROFILE: dir, LOCALAPPDATA: path.join(dir, 'Local'), APPDATA: path.join(dir, 'Roaming'), PATH: '', PATHEXT: '.EXE;.CMD' };
+    const agy = path.join(env.LOCALAPPDATA, 'agy/bin/agy.exe');
+    const dsh = path.join(env.LOCALAPPDATA, 'Programs/DeepSeek Harness/resources/runtime/cli/bin/dsh.cmd');
+    for (const file of [agy, dsh]) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, 'fixture');
+    }
+    assert.equal(findExecutable('agy', env)?.toLowerCase(), agy.toLowerCase());
+    assert.equal(findExecutable('dsh', env)?.toLowerCase(), dsh.toLowerCase());
+    // An explicitly selected installation on PATH still wins over discovery.
+    const custom = path.join(dir, 'preferred/dsh.cmd');
+    fs.mkdirSync(path.dirname(custom), { recursive: true });
+    fs.writeFileSync(custom, 'fixture');
+    assert.equal(findExecutable('dsh', { ...env, PATH: path.dirname(custom) })?.toLowerCase(), custom.toLowerCase());
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // Regression from https://github.com/PapilotAI/papilot/pull/13 (blessedcursed).
 test('desktop retains every inherited Windows PATH casing variant', { skip: !windows }, () => {
   const inherited = { Path: 'C:\\TeXLive\\bin\\windows', PATH: 'C:\\custom-bin', pAtH: 'C:\\extra-tools', KEEP: 'yes' };

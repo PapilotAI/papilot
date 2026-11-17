@@ -9,6 +9,13 @@ export function agentSetup(id: AgentId) {
     copilot: ['copilot', 'PAPILOT_COPILOT_BIN'], grok: ['grok', 'PAPILOT_GROK_BIN'],
     antigravity: ['agy', 'PAPILOT_AGY_BIN'], kimi: ['kimi', 'PAPILOT_KIMI_BIN'],
     deepseek: ['dsh', 'PAPILOT_DSH_BIN'], qwen: ['qwen', 'PAPILOT_QWEN_BIN'], opencode: ['opencode', 'PAPILOT_OPENCODE_BIN'],
+    qoder: ['qoder', 'PAPILOT_QODER_BIN'], codebuddy: ['codebuddy', 'PAPILOT_CODEBUDDY_BIN'],
+  };
+  if (id === 'workbuddy') return {
+    summary: t('No WorkBuddy ACP launcher is configured.'),
+    reason: t('Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.'),
+    steps: [t('Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.', { variable: 'PAPILOT_WORKBUDDY_BIN' })],
+    existing: t('The browser and the Papilot server may run on different computers. Background services can also use a different PATH or user account from your terminal.'),
   };
   if (id === 'cursor') return {
     summary: t('Cursor SDK credentials were not detected.'),

@@ -90,7 +90,7 @@ AI와 함께하는 책임감 있는 집필 및 조판의 **새로운 패러다�
       <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-agents/compact-dark.svg">
       <source media="(prefers-color-scheme: dark)" srcset="../assets/readme-agents/desktop-dark.svg">
       <source media="(max-width: 600px)" srcset="../assets/readme-agents/compact.svg">
-      <img src="../assets/readme-agents/desktop.svg" alt="Papilot Writer, Pi, Codex, Claude, Cursor, Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode" width="816">
+      <img src="../assets/readme-agents/desktop.svg" alt="Papilot Writer, Pi, Codex, Claude, Cursor, Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode, Qoder, CodeBuddy, WorkBuddy" width="816">
     </picture>
   </a>
 </p>

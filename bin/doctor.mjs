@@ -245,6 +245,15 @@ export async function doctor(args) {
   const qwenCheck = () => acpCheck('qwen', 'Qwen Code', { env: 'PAPILOT_QWEN_BIN', name: 'qwen' }, ['--help'], 'Install Qwen Code and sign in by running qwen once', 'Update Qwen Code and sign in by running qwen once.');
   const deepseekCheck = () => acpCheck('deepseek', 'DeepSeek Harness (dsh)', { env: 'PAPILOT_DSH_BIN', name: 'dsh' }, ['acp', '--help'], 'Install DeepSeek Harness with npm install -g @deepseek-ai/dsh and set up a model in dsh', 'Update DeepSeek Harness and set up a model in dsh.');
   const opencodeCheck = () => acpCheck('opencode', 'OpenCode', { env: 'PAPILOT_OPENCODE_BIN', name: 'opencode' }, ['acp', '--help'], 'Install OpenCode and connect a provider with opencode auth login', 'Update OpenCode and connect a provider with opencode auth login.');
+  const qoderCheck = () => acpCheck('qoder', 'Qoder CLI', { env: 'PAPILOT_QODER_BIN', name: 'qoder' }, ['--help'], 'Install Qoder CLI and run qoder login', 'Update Qoder CLI and run qoder login.');
+  const codebuddyCheck = () => acpCheck('codebuddy', 'CodeBuddy CLI', { env: 'PAPILOT_CODEBUDDY_BIN', name: 'codebuddy' }, ['--help'], 'Install CodeBuddy CLI and sign in by running codebuddy', 'Update CodeBuddy CLI and sign in by running codebuddy.');
+  const workbuddyCheck = () => {
+    if (!process.env.PAPILOT_WORKBUDDY_BIN) {
+      check('agent.workbuddy', false, 'info', 'No WorkBuddy ACP launcher is configured.', 'Set PAPILOT_WORKBUDDY_BIN to a WorkBuddy ACP launcher with its own login, then restart Papilot. The desktop application alone is not an ACP launcher.');
+      return false;
+    }
+    return acpCheck('workbuddy', 'WorkBuddy', { env: 'PAPILOT_WORKBUDDY_BIN', name: 'workbuddy' }, ['--help'], 'Configure a WorkBuddy ACP launcher with its own login', 'Check the WorkBuddy ACP launcher and its login.');
+  };
   // SDK agents: a key in the environment (or the SDK's own login) selects them; keys are not validated.
   async function cursorCheck() {
     const configured = Boolean(process.env.CURSOR_API_KEY) || fs.existsSync(path.join(os.homedir(), '.cursor/sdk/auth.json'));
@@ -266,7 +275,7 @@ export async function doctor(args) {
     check('agent.pi', ready, 'warn', `${file}: ${ready ? 'Pi CLI available; login and generation were not tested' : result.reason || `Pi ${PI_MIN_VERSION} or newer is required`}.`, 'Update Pi, run pi and use /login or configure a provider, then reconnect.');
     return ready;
   }
-  const agents = await Promise.all([piCheck(), codexCheck(), claudeCheck(), cursorCheck(), copilotCheck(), grokCheck(), agyCheck(), kimiCheck(), glmCheck(), deepseekCheck(), qwenCheck(), opencodeCheck()]);
+  const agents = await Promise.all([piCheck(), codexCheck(), claudeCheck(), cursorCheck(), copilotCheck(), grokCheck(), agyCheck(), kimiCheck(), glmCheck(), deepseekCheck(), qwenCheck(), opencodeCheck(), qoderCheck(), codebuddyCheck(), workbuddyCheck()]);
   check('agents', agents.some(Boolean), 'warn', agents.some(Boolean) ? 'At least one agent passed its configuration check; live editing was not tested.' : 'No agent passed its configuration check. PDF reading can still be used with a working TeX installation.', 'Configure one agent before starting editing tasks.');
 
   if (repo) {
@@ -333,7 +342,7 @@ export async function doctor(args) {
     }
   }
   // Keep reports stable even though independent probes finish in any order.
-  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.pi', 'agent.codex', 'agent.claude', 'agent.cursor', 'agent.copilot', 'agent.grok', 'agent.antigravity', 'agent.kimi', 'agent.glm', 'agent.deepseek', 'agent.qwen', 'agent.opencode', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
+  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.pi', 'agent.codex', 'agent.claude', 'agent.cursor', 'agent.copilot', 'agent.grok', 'agent.antigravity', 'agent.kimi', 'agent.glm', 'agent.deepseek', 'agent.qwen', 'agent.opencode', 'agent.qoder', 'agent.codebuddy', 'agent.workbuddy', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
   checks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const report = { name: 'Papilot', version: pkg.version, ok: !checks.some(item => !item.ok && item.severity === 'error'), checks };
   if (json) console.log(JSON.stringify(report, null, 2));

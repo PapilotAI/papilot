@@ -133,6 +133,7 @@ const feedback = { cursor: 7, feedback: [{ body: 'Preserve the boundary conditio
 const summary = { state: 'reviewing', round: 1, counts: { pending: 1 } };
 
 class FakeCodex extends EventEmitter {
+  supportsReadOnlyTasks?: boolean;
   permissionOptions = Codex.prototype.permissionOptions;
   closeThread = Codex.prototype.closeThread;
   async taskPermissionConfig(value: string, _cwd: string) {
@@ -2594,6 +2595,50 @@ for (const asynchronous of [false, true]) test(`agents with ${asynchronous ? 'as
   } finally { workspace.close(); store.close(); }
 });
 
+test('AI review refuses an adapter without read-only support before creating a task or manuscript copy', async () => {
+  const f = fixture();
+  try {
+    f.codex.supportsReadOnlyTasks = false;
+    let prepared = false;
+    await assert.rejects(f.workspace.createTask({ id: 'unsupported-review-task', projectId: f.task.projectId, title: 'Review', instructions: 'Check assumptions.',
+      prepareReview: async () => { prepared = true; return { key: 'never', lines: [] }; } }), /Codex does not support read-only AI review.*Select another agent/);
+    assert.equal(f.store.findTask('unsupported-review-task'), undefined);
+    assert.equal(prepared, false);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.codex.calls.length, 0);
+  } finally { f.close(); }
+});
+
+test('saved AI reviews cannot retry or run on an adapter without read-only support', async () => {
+  const f = fixture();
+  try {
+    f.codex.supportsReadOnlyTasks = false;
+    f.codex.ready = true;
+    f.store.updateTask(f.task.id, { mode: 'review', worktree: reviewCopy(), aiReview: { key: 'saved-review' } });
+    f.store.saveReviewInput(f.task.id, { key: 'saved-review', lines: [] });
+    assert.throws(() => f.workspace.retryTask(f.task.id), /does not support read-only AI review/);
+    // The fixture's thread is already loaded, so this exercises the path that
+    // never asks the adapter for thread/start or thread/resume again.
+    const run = await f.workspace.enqueue(f.task.id, 'Continue this review.', 'unsupported-saved-review', false);
+    await tick(); await tick();
+    assert.equal(f.store.runByKey(run.requestKey)?.status, 'failed');
+    assert.match(f.store.task(f.task.id).error!, /does not support read-only AI review/);
+    assert.equal(f.codex.calls.some(call => ['thread/start', 'thread/resume', 'turn/start'].includes(call.method)), false);
+    assert.equal(f.calls.length, 0);
+  } finally { f.close(); }
+});
+
+test('an adapter that refuses read-only tasks can still run editing turns', async () => {
+  const f = fixture();
+  try {
+    f.codex.supportsReadOnlyTasks = false;
+    f.codex.ready = true;
+    await f.workspace.enqueue(f.task.id, 'Edit the introduction.', 'supported-editing-turn', false);
+    await tick(); await tick();
+    assert.ok(f.codex.calls.some(call => call.method === 'turn/start'));
+  } finally { f.close(); }
+});
+
 test('AI review uses normal agent tools and approvals, saves PDF notes, and never publishes or delivers edits', async () => {
   const f = fixture();
   try {
@@ -2723,7 +2768,13 @@ test('creating an AI review skill task persists its snapshot and queues review-o
     assert.equal(f.calls.filter(call => call.route === '/api/tasks').length, 1);
     await assert.rejects(f.workspace.createTask({ ...input, prepareReview: undefined, instructions: 'Edit it.' }), /Invalid task ID/);
     for (const agent of AGENT_IDS) {
-      const task = await f.workspace.createTask({ ...input, id: `ai-review-client-${agent}`, agent });
+      const selection = { ...input, id: `ai-review-client-${agent}`, agent };
+      if (['qoder', 'codebuddy', 'workbuddy'].includes(agent)) {
+        await assert.rejects(f.workspace.createTask(selection), /does not support read-only AI review/);
+        assert.equal(f.store.findTask(selection.id), undefined);
+        continue;
+      }
+      const task = await f.workspace.createTask(selection);
       assert.equal(task.agent, agent);
       assert.equal(task.mode, 'review');
       await f.workspace.prepareTask(task.id);
@@ -3449,6 +3500,20 @@ test('restart of a failed preparation cancels its saved queue and safely prepare
     assert.equal(f.store.runByKey(f.run.requestKey)?.status, 'interrupted');
     assert.equal(f.store.task(replacement.id).worktree, '/replacement');
     assert.equal(f.store.task(f.task.id).status, 'failed');
+  } finally { f.close(); }
+});
+
+test('AI review cannot restart on an adapter without read-only support or stop the original task', async () => {
+  const f = restartFixture();
+  try {
+    Object.defineProperty((f.workspace as any).agents.claude, 'supportsReadOnlyTasks', { value: false });
+    f.store.updateTask(f.task.id, { mode: 'review', status: 'running', turnId: 'original-turn' });
+    const original = f.store.task(f.task.id);
+    await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, stop: true }), /Claude does not support read-only AI review/);
+    assert.deepEqual(f.store.task(f.task.id), original);
+    assert.equal(f.store.findTask(f.choice.id), undefined);
+    assert.equal(f.codex.calls.length, 0);
+    assert.equal(f.calls.length, 0);
   } finally { f.close(); }
 });
 
