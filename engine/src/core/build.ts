@@ -71,6 +71,8 @@ const AUXILIARY = new Set([
   ".loe",
   ".out",
   ".thm",
+  ".nav",
+  ".snm",
 ]);
 // Only generated-state diagnostics justify rebuilding a cached seed. Source
 // errors and interrupted compilers must keep their original failure.

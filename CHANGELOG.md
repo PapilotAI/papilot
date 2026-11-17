@@ -19,7 +19,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
-- Continue compiling after recoverable LaTeX errors and show the resulting PDF with its diagnostics. Set `"halt_on_error": true` in the document's `.git/papilot/settings.json` to stop at the first error.
+- Continue compiling after recoverable LaTeX errors and show the resulting PDF with its diagnostics, including in task reviews and agent PDF tool responses. Set `"halt_on_error": true` in the document's `.git/papilot/settings.json` to stop at the first error. Stale Beamer navigation files still trigger an automatic clean rebuild.
 
 - Simplify PDF reading controls: remove back/forward history buttons and their separator, align the outline bookmark, anchor numbers and **+** in one compact column, and show a corner delete button on hover or keyboard focus. Phones also show **+** for direct anchor creation. Deletion keeps the current reading position and moves keyboard focus to the next anchor or **+**. Contents, page controls and internal links remain available.
 

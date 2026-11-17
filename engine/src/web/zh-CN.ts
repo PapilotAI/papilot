@@ -98,6 +98,7 @@ export const zhCN: Record<string, string> = {
   "The same edit now prints elsewhere, on another page or in a float.": "这处改动的文字现在排到了别处：另一页或浮动体中。",
   "No visible change": "无可见变化",
   "Source only": "仅源码",
+  "The revised text has compilation errors.": "修改后的文本有编译错误。",
   Reflow: "重新排版",
   Before: "修改前",
   After: "修改后",

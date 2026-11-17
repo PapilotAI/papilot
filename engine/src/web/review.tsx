@@ -2030,6 +2030,14 @@ export function ReviewApp({
               </details>
             </div>
           ) : null}
+          {detail?.revisedErrors?.length ? (
+            <div className="banner">
+              <details>
+                <summary>{t("The revised text has compilation errors.")}</summary>
+                <pre className="details" tabIndex={0} role="region" aria-label={t("The revised text has compilation errors.")}>{detail.revisedErrors.join("\n")}</pre>
+              </details>
+            </div>
+          ) : null}
           {detail?.baselineErrors?.length ? (
             <div className="banner">
               <details>

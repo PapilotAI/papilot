@@ -70,3 +70,54 @@ it.skipIf(!tex)("a fatal build cannot return a PDF retained from an earlier buil
     await expect(builder.build("HEAD", ["full"], null, { force: true })).rejects.toBeInstanceOf(BuildError);
   } finally { await f.close(); }
 });
+
+it.skipIf(!tex)("published reviews retain revised compiler errors and clear them after a repair", async () => {
+  const f = new Fixture();
+  try {
+    f.write("paper/main.tex", paper("Original text."));
+    f.repo.run(["commit", "-qam", "simple paper"]);
+    const app = f.app(), task = app.tasks.create("recoverable");
+    const publish = async () => {
+      const job = app.publisher.submit(task.name, undefined, false);
+      await app.publisher.join();
+      const done = app.publisher.job(job.id);
+      expect(done.status, JSON.stringify(done.result)).toBe("done");
+      return app.review.latestRound(task.name)!;
+    };
+    f.edit(task, "paper/main.tex", "Original text.", "Revised \\undefinedcommand text.");
+    const first = await publish();
+    expect(first.summary.revisedErrors?.join("\n")).toContain("Undefined control sequence");
+    const detail = app.review.roundDetail(task.name, first.number);
+    expect(detail.revisedErrors).toEqual(first.summary.revisedErrors);
+    expect(detail.baselineErrors).toBeUndefined();
+    const built = await new Builder(app.project, app.repo).completed(detail.build!.key);
+    const pdf = new PdfDocument(built!.pdf);
+    try { expect(pdf.page(0).text()).toMatch(/Revised\s+text/); } finally { pdf.close(); }
+
+    f.edit(task, "paper/main.tex", "\\undefinedcommand ", "");
+    const repaired = await publish();
+    expect(app.review.roundDetail(task.name, repaired.number).revisedErrors).toBeUndefined();
+    expect(app.review.roundDetail(task.name, first.number).revisedErrors).toEqual(detail.revisedErrors);
+  } finally { await f.close(); }
+}, 120000);
+
+it.skipIf(!tex).each(["nav", "snm"])("strict Beamer builds recover from stale .%s files", async extension => {
+  const f = new Fixture();
+  try {
+    // Beamer reads .nav automatically; the companion-document API reads .snm.
+    f.write("paper/main.tex", "\\documentclass{beamer}\n\\setjobnamebeamerversion{main}\n\\begin{document}\n\\begin{frame}{Example}\nOriginal text.\n\\end{frame}\n\\end{document}\n");
+    f.repo.run(["commit", "-qam", "slides"]);
+    writeSettings(f.root, { halt_on_error: true });
+    const project = loadProject(f.root), builder = new Builder(project, f.repo);
+    const first = await builder.build("HEAD");
+    fs.appendFileSync(path.join(path.dirname(first.pdf), `main.${extension}`), "\\obsoletecommand\n");
+    f.write("paper/main.tex", f.read("paper/main.tex").replace("Original", "Revised"));
+    f.repo.run(["commit", "-qam", "revise slides"]);
+    const next = await builder.build("HEAD");
+    expect(fs.readFileSync(path.join(project.state, "logs", next.key + ".log"), "utf8")).toContain(`main.${extension}`);
+    const pdf = new PdfDocument(next.pdf);
+    try { expect(pdf.page(0).text()).toContain("Revised text."); } finally { pdf.close(); }
+    expect(next.errors).toBeUndefined();
+    expect(fs.existsSync(first.pdf)).toBe(true);
+  } finally { await f.close(); }
+}, 120000);

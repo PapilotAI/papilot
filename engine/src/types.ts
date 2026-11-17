@@ -106,6 +106,8 @@ export interface Round {
     job?: string;
     /** Compilation errors in the accepted text. */
     baselineErrors?: string[];
+    /** Compilation errors in the revised text, which still produced a PDF. */
+    revisedErrors?: string[];
     /** The accepted text produced no PDF, so the review shows source diffs. */
     sourceOnly?: true;
   };
@@ -497,6 +499,8 @@ export interface RoundDetail extends Omit<RenderedRound, "units"> {
   warnings: string[];
   /** Compilation errors in the accepted text. */
   baselineErrors?: string[];
+  /** Compilation errors in the revised text, which still produced a PDF. */
+  revisedErrors?: string[];
   sourceOnly?: true;
   /** The round's own comparison is still rendering, or failed. */
   rendering?: "pending" | "failed";

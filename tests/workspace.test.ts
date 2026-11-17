@@ -2221,6 +2221,24 @@ test('Codex threads get the view_pdf tool, which Papilot answers with typeset pa
   } finally { f.close(); }
 });
 
+test('view_pdf reports recovered compiler errors alongside usable page files', async () => {
+  const errors = ['main.tex:12: Undefined control sequence.'];
+  const f = fixture(async (_method, route) => route.endsWith('/view')
+    ? { pages: [{ index: 1, label: '1', shows: ['main.tex:12'], file: '/paper/page-1.png' }], missing: [], targets: ['full'], errors }
+    : summary);
+  try {
+    f.codex.ready = true;
+    await f.workspace.enqueue(f.task.id, 'Inspect the PDF.', 'request', false);
+    await tick(); await tick();
+    (f.workspace as any).serverRequest({ id: 43, method: 'item/tool/call', params: { threadId: 'thread', turnId: f.store.task(f.task.id).turnId, tool: 'view_pdf', arguments: { pages: ['1'] } } });
+    for (let i = 0; i < 20 && !f.codex.replies.length; i++) await tick();
+    const reply = f.codex.replies[0] as { result: { success: boolean; contentItems: { text: string }[] } };
+    assert.equal(reply.result.success, true);
+    assert.match(reply.result.contentItems[0].text, /Page 1 shows main.tex:12: \/paper\/page-1.png/);
+    assert.match(reply.result.contentItems[0].text, /Errors:\n- main.tex:12: Undefined control sequence\./);
+  } finally { f.close(); }
+});
+
 test('PDF tool replies are discarded after disconnect, reconnect, turn completion or shutdown', async t => {
   for (const scenario of ['disconnect', 'reconnect', 'completed', 'closed']) await t.test(scenario, async () => {
     const gate = deferred<any>();

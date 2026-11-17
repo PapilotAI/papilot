@@ -9,6 +9,36 @@ async function totalUnits(page: Page) {
   await expect(progress).toHaveAttribute("aria-valuenow", "0");
   return Number(await progress.getAttribute("aria-valuemax"));
 }
+test("recovered revised errors stay separate from baseline errors and clear after repair", async ({ page }) => {
+  const revised = 'main.tex:12: Undefined control sequence.', baseline = 'main.tex:5: Missing number.';
+  let repaired = false;
+  await page.route('**/rounds/1', async route => {
+    const response = await route.fetch(), detail = await response.json();
+    await route.fulfill({ response, json: { ...detail, baselineErrors: [baseline], revisedErrors: repaired ? undefined : [revised] } });
+  });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.reload();
+    const summary = page.locator('summary').filter({ hasText: 'The revised text has compilation errors.' });
+    const errors = page.getByRole('region', { name: 'The revised text has compilation errors.' });
+    await expect(summary).toBeVisible();
+    await expect(errors).toBeHidden();
+    await summary.focus();
+    await page.keyboard.press('Enter');
+    await expect(errors).toHaveText(revised);
+    await expect(errors).not.toContainText(baseline);
+    await expect(page.locator('.change').first()).toBeVisible();
+    const bounds = await errors.boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: `.cache/revised-errors-${width}.png` });
+  }
+  repaired = true;
+  await page.reload();
+  await expect(page.locator('.change').first()).toBeVisible();
+  await expect(page.locator('summary').filter({ hasText: 'The revised text has compilation errors.' })).toHaveCount(0);
+  await expect(page.locator('summary').filter({ hasText: 'The text before these changes has compilation errors.' })).toBeVisible();
+});
 test("focusing a note and switching options preserves unrelated resolved groups", async ({ page }) => {
   const groups = await page.locator('.change[data-units]').evaluateAll(elements => elements.map(element => element.getAttribute('data-units')!.split(' ')));
   expect(groups.length).toBeGreaterThan(1);

@@ -852,6 +852,7 @@ export class Publisher {
       date,
       builds: old ? [seed, old, next].filter((b) => b !== null).map((b) => b.key) : [next.key],
       baselineErrors: old?.errors ?? baselineErrors,
+      revisedErrors: next.errors,
       sourceOnly: old ? undefined : true,
     };
     try {
