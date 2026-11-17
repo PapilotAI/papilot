@@ -53,6 +53,12 @@ export class Client {
     return call<T>(this.url, route, data, this.token, timeout);
   }
 }
+/** Hosts may own the engine in a thread instead of launching a Node process.
+ * Connection discovery, locking and version checks stay the same. */
+export interface ConnectOptions {
+  owned?: boolean;
+  launch?: (root: string, port: number, owned: boolean) => Promise<Client>;
+}
 // Every request an app forwards connects first, so the Git directory is
 // looked up once per repository rather than with a Git command each time.
 export const serverHome = (root: string) => path.join(stateOf(root), "server");
@@ -163,14 +169,14 @@ export async function connect(
 export async function connect(
   root: string,
   start?: true,
-  options?: { owned?: boolean },
+  options?: ConnectOptions,
 ): Promise<Client>;
 /** With `owned`, a server this call starts stops with the calling process.
  *  A server that is already running is reused and keeps its own lifetime. */
 export async function connect(
   root: string,
   start = true,
-  { owned = false }: { owned?: boolean } = {},
+  { owned = false, launch: startServer = launch }: ConnectOptions = {},
 ): Promise<Client | null> {
   // Match the canonical repository path reported by the server (e.g. macOS /var).
   root = realPath(root);
@@ -225,7 +231,7 @@ export async function connect(
         await waitForExit(info.url, answer.pid);
       }
     }
-    return launch(root, info?.port ?? last?.port ?? 0, owned);
+    return startServer(root, info?.port ?? last?.port ?? 0, owned);
   });
 }
 /** Stops the review server recorded in `home` if it still serves `root`,
@@ -237,9 +243,13 @@ export async function stopServerIn(home: string, root: string) {
   if (!answer || !info) return;
   await call(info.url, "/api/shutdown", { force: true }, answer.csrf, 5000);
   await waitForExit(info.url, answer.pid);
-  // It stops answering before it closes its database and exits.
-  for (const deadline = Date.now() + 15000; Date.now() < deadline; await sleep(100))
-    try { process.kill(answer.pid, 0); } catch { return; }
+  // Process servers must exit before their files move. Thread-owned servers
+  // share the host's PID and remove the connection after closing the database.
+  for (const deadline = Date.now() + 15000; Date.now() < deadline; await sleep(100)) {
+    if (answer.runtime === 'typescript-thread') {
+      if (!fs.existsSync(path.join(home, 'connection.json'))) return;
+    } else try { process.kill(answer.pid, 0); } catch { return; }
+  }
   throw new ServerError("The earlier review server has not exited yet.");
 }
 export async function stop(root: string, force = false) {

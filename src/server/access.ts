@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { authorize } from './security.ts';
 
-export interface Listener { kind: 'local'; port: number; publicOrigin: string; owner: string }
+export interface Listener { kind: 'local'; port: number; publicOrigin: string; owner: string; trustedOrigins?: readonly string[] }
 
 declare module 'fastify' {
   // Resource metadata holds the paper's request lock while a route runs.
@@ -14,10 +14,14 @@ declare module 'fastify' {
 
 export const equals = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 
-export function guard(app: FastifyInstance, { listener, csrf }: { listener: Listener; csrf: string }) {
+export function guard(app: FastifyInstance, { listener, csrf, frameAncestors }: { listener: Listener; csrf: string; frameAncestors?: readonly string[] }) {
   app.addHook('onRequest', async (request, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff').header('Referrer-Policy', 'same-origin').header('X-Frame-Options', 'SAMEORIGIN').header('Cache-Control', 'no-store');
-    const denied = authorize(request.headers, request.raw.socket.remoteAddress, listener.port, listener.publicOrigin, listener.owner);
+    if (frameAncestors?.length) {
+      reply.removeHeader('X-Frame-Options');
+      reply.header('Content-Security-Policy', `frame-ancestors 'self' ${frameAncestors.join(' ')}`);
+    }
+    const denied = authorize(request.headers, request.raw.socket.remoteAddress, listener.port, listener.publicOrigin, listener.owner, listener.trustedOrigins);
     if (denied) return reply.code(403).send({ error: denied });
     // Serve authenticates the owner; Funnel must never expose the workspace.
     if (request.headers['tailscale-funnel-request']) return reply.code(403).send({ error: 'Use your authorized Tailscale account to access Papilot.' });

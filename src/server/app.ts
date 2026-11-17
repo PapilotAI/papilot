@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { registerFrontend } from './frontend.ts';
+import { registerFrontend, type FrontendOptions } from './frontend.ts';
 import type { Store } from './store.ts';
 import type { TaskNoteContext, Workspace } from './workspace.ts';
 import { WriterAgent } from './writer/agent.ts';
@@ -117,6 +117,8 @@ function readQuickNotes(value: unknown): QuickNote[] {
 }
 
 export interface AppOptions {
+  frontend?: FrontendOptions;
+  frameAncestors?: readonly string[];
   universe?: Universe;
   listener: Listener; store: Store; workspace: Workspace; manuscripts: Manuscripts; changes?: Changes;
   csrf: string; serialGit: ReturnType<typeof gitQueue>; dist: string | null; version: string;
@@ -158,7 +160,7 @@ export async function buildApp(options: AppOptions) {
   const buildSettingsChanged = (projectId: string) => changes.buildSettingsChanged(projectId);
   manuscripts.on('build-settings', buildSettingsChanged);
   app.addHook('onClose', async () => { manuscripts.off('build-settings', buildSettingsChanged); });
-  guard(app, { listener, csrf: options.csrf });
+  guard(app, { listener, csrf: options.csrf, frameAncestors: options.frameAncestors });
   const updateRequests = new WeakMap<object, () => void>();
   app.addHook('onRequest', async (request, reply) => {
     if (!options.updates || !/^\/(api|review)\//.test(request.url) || /^\/api\/(?:updates(?:\/|$)|health(?:\?|$)|events(?:\?|$)|state(?:\?|$))/.test(request.url)) return;
@@ -1015,7 +1017,7 @@ export async function buildApp(options: AppOptions) {
     },
   });
 
-  if (options.dist) await registerFrontend(app, options.dist);
+  if (options.dist) await registerFrontend(app, options.dist, options.frontend);
   else app.get('/', (_request, reply) => reply.type('text/plain').send('Papilot: run npm run build, then restart the server.'));
   return app;
 }

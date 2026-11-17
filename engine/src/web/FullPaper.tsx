@@ -8,9 +8,9 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import * as pdfjs from "pdfjs-dist";
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
-import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import worker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import type { ChangeBlock } from "../types.ts";
 import { t } from "./i18n.ts";
 import { paperPlan, type Cut, type PlacedChange } from "./paper.ts";

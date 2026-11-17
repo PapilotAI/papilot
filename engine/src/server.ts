@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { isMainThread } from "node:worker_threads";
 import Fastify from "fastify";
 import staticFiles from "@fastify/static";
 import compress from "@fastify/compress";
@@ -209,7 +210,7 @@ export function createServer(app: App) {
       busy: app.publisher.busy(),
       build_workers: app.project.build_workers,
       csrf: app.csrf,
-      runtime: "typescript",
+      runtime: isMainThread ? "typescript" : "typescript-thread",
     }));
     server.get("/api/tasks", () => ({
       tasks: app.tasksOverview(),
@@ -611,33 +612,39 @@ export function createServer(app: App) {
   });
   return server;
 }
-interface Owner {
+export interface ServerOwner {
   left: boolean;
   stop: () => void;
 }
-export async function serve(root: string, port = 0, idle = 12 * 3600) {
+export interface ServeOptions {
+  owner?: ServerOwner;
+  ready?: (connection: { url: string; token: string }) => void;
+}
+export async function serve(root: string, port = 0, idle = 12 * 3600, options: ServeOptions = {}) {
   // A server started with an IPC channel belongs to the app that started it
   // (see launch in client.ts) and stops when that app ends, even while it is
   // still starting. Closing the channel on the way out keeps it from holding
   // this process open.
-  if (!process.send) return run(root, port, idle);
+  if (options.owner) return run(root, port, idle, options.owner, options.ready);
+  if (!process.send) return run(root, port, idle, undefined, options.ready);
   if (!process.connected) return;
-  const owner: Owner = { left: false, stop: () => {} };
+  const owner: ServerOwner = { left: false, stop: () => {} };
   const left = () => {
     owner.left = true;
     owner.stop();
   };
   process.once("disconnect", left);
   try {
-    await run(root, port, idle, owner);
+    await run(root, port, idle, owner, options.ready);
   } finally {
     process.off("disconnect", left);
     if (process.connected) process.disconnect();
   }
 }
-async function run(root: string, port: number, idle: number, owner?: Owner) {
+async function run(root: string, port: number, idle: number, owner?: ServerOwner, ready?: ServeOptions['ready']) {
   root = new Repo(root).toplevel();
-  process.chdir(root);
+  // Commands use explicit repository paths; only the CLI owns the process cwd.
+  if (isMainThread) process.chdir(root);
   // Losing the server lock means another engine now serves this paper. Stop,
   // closing open requests, rather than write its review state beside it;
   // Papilot's next request connects to that engine.
@@ -668,7 +675,7 @@ async function run(root: string, port: number, idle: number, owner?: Owner) {
       pid: process.pid,
       version: codeVersion(),
       root,
-      runtime: "typescript",
+      runtime: isMainThread ? "typescript" : "typescript-thread",
     };
     writeJson(path.join(home, "connection.json"), info, 0o600);
     writeJson(path.join(home, "last.json"), { port: address.port });
@@ -694,7 +701,8 @@ async function run(root: string, port: number, idle: number, owner?: Owner) {
       },
       Math.min(30000, idle * 1000),
     );
-    console.log(JSON.stringify(info));
+    if (ready) ready({ url: app.url, token: app.csrf });
+    else console.log(JSON.stringify(info));
     await new Promise<void>((resolve) => server.server.once("close", resolve));
   } finally {
     if (timer) clearInterval(timer);
@@ -702,8 +710,7 @@ async function run(root: string, port: number, idle: number, owner?: Owner) {
     stopAll();
     await app.close();
     if (
-      readJson<{ pid?: number }>(path.join(home, "connection.json"), {}).pid ===
-      process.pid
+      readJson<{ url?: string }>(path.join(home, "connection.json"), {}).url === app.url
     )
       fs.rmSync(path.join(home, "connection.json"), { force: true });
     await release();

@@ -1,5 +1,5 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { EventBus, FindState, PDFFindController, SimpleLinkService } from 'pdfjs-dist/web/pdf_viewer.mjs';
+import { EventBus, FindState, PDFFindController, SimpleLinkService } from 'pdfjs-dist/legacy/web/pdf_viewer.mjs';
 
 // Use PDF.js's matching engine in both readers (including accents and matches
 // spanning text runs). The review maps the results into its surviving slices.

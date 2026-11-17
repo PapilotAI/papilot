@@ -475,7 +475,7 @@ for (const version of ['0.7.0', devVersion]) test(`a browser install of ${versio
     fs.symlinkSync(path.join(process.cwd(), 'node_modules'), path.join(root, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
     fs.symlinkSync(path.join(process.cwd(), 'engine'), path.join(root, 'engine'), process.platform === 'win32' ? 'junction' : 'dir');
     const start = path.join(root, 'src/server/start.ts');
-    fs.appendFileSync(start, "\nfs.writeFileSync(path.join(DATA, 'test-server.pid'), String(process.pid));\n");
+    fs.appendFileSync(start, "\n(await import('node:fs')).writeFileSync((await import('node:path')).join((await import('./paths.ts')).DATA, 'test-server.pid'), String(process.pid));\n");
   };
   const stop = async () => {
     const file = path.join(data, 'test-server.pid');

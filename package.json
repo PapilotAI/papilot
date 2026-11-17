@@ -58,6 +58,8 @@
   },
   "desktopShell": 2,
   "scripts": {
+    "vscode:build": "npm --prefix extensions/vscode run build",
+    "vscode:package": "npm --prefix extensions/vscode run package",
     "dev": "tsx watch src/server/main.ts",
     "start": "tsx src/server/main.ts",
     "build": "tsc --noEmit && vite build",
