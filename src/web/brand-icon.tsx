@@ -18,9 +18,12 @@ import openai from './brand-icons/openai.svg';
 import gemini from './brand-icons/gemini.svg';
 import openrouter from './brand-icons/openrouter.svg';
 import mistral from './brand-icons/mistral.svg';
+import arxiv from './brand-icons/arxiv.svg';
+import overleaf from './brand-icons/overleaf.svg';
+import github from './brand-icons/github.svg';
 import './brand-icon.css';
 
-const marks = { papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, deepseek, qwen, opencode, git, latex, openai, gemini, openrouter, mistral };
+const marks = { papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, deepseek, qwen, opencode, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github };
 export type Brand = keyof typeof marks;
 
 // Decorative beside a visible name. Local assets work offline and inherit theme colors.

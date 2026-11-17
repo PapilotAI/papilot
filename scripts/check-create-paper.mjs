@@ -42,15 +42,16 @@ try {
     await page.goto(origin);
     const create = page.getByRole('button', { name: 'New paper', exact: true });
     await create.click();
-    let dialog = page.getByRole('dialog', { name: 'Create a new paper', exact: true });
+    let dialog = page.getByRole('dialog', { name: 'New paper', exact: true });
     const name = dialog.getByRole('textbox', { name: 'Paper name', exact: true }), location = dialog.getByRole('textbox', { name: 'Save in', exact: true });
     await name.fill('研究论文');
-    await page.waitForFunction(parent => document.querySelector('#create-paper-parent')?.value === parent, parent);
+    await page.waitForFunction(parent => document.querySelector('[name=parent]')?.value === parent || document.querySelector('.create-paper-location-copy span')?.textContent === parent, parent);
     // The dialog shows the folder it will create instead of explaining it.
     const target = dialog.locator('.create-paper-target'), separator = mode === 'windows' ? '\\' : '/';
     await page.waitForFunction(([selector, expected]) => document.querySelector(selector)?.textContent === expected, ['.create-paper-target', parent + separator + '研究论文']);
     if (desktop) {
-      await dialog.getByRole('button', { name: 'Choose folder', exact: true }).click(); assert.equal(await location.inputValue(), picked);
+      assert.equal(await location.count(), 0, 'Desktop uses a native picker without a path textbox');
+      await dialog.locator('.create-paper-location').getByRole('button', { name: 'Change…', exact: true }).click(); assert.equal(await dialog.locator('.create-paper-location-copy span').textContent(), picked);
       assert.equal(await target.textContent(), picked + separator + '研究论文');
     } else {
       await page.setViewportSize({ width: 320, height: 640 });
@@ -66,7 +67,7 @@ try {
       const first = requests.at(-1);
       assert.equal(await name.inputValue(), '研究论文'); assert.equal(await location.inputValue(), parent);
       await page.reload(); await create.click();
-      dialog = page.getByRole('dialog', { name: 'Create a new paper', exact: true });
+      dialog = page.getByRole('dialog', { name: 'New paper', exact: true });
       assert.equal(await dialog.getByRole('textbox', { name: 'Paper name', exact: true }).inputValue(), '研究论文');
       fail = false;
       await dialog.getByRole('button', { name: 'Create paper', exact: true }).click();
@@ -80,10 +81,11 @@ try {
     if (!(await switcher.isVisible())) await page.getByRole('button', { name: 'Show task list', exact: true }).click();
     await switcher.click();
     await page.getByRole('menuitem', { name: 'New paper…', exact: true }).click();
-    dialog = page.getByRole('dialog', { name: 'Create a new paper', exact: true });
+    dialog = page.getByRole('dialog', { name: 'New paper', exact: true });
     await dialog.waitFor();
     assert.equal(await dialog.getByRole('textbox', { name: 'Paper name', exact: true }).inputValue(), '', 'Successful creation clears the saved draft');
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    assert.equal(await switcher.evaluate(element => element === document.activeElement), true, 'Closing returns focus before React removes the dialog');
     await context.close();
   }
   // Universe templates: a grid before the details, filters, search, and links from the website.
@@ -100,12 +102,15 @@ try {
     const requests = [], state = { version: '0.10.4', csrf: 'fixture', projects: [], tasks: [], requests: [], runtime: { connected: true, authenticated: false, account: null, error: null, models: [] } };
     // A saved blank-paper draft must not be created while a linked template is still loading.
     if (link) await context.addInitScript(() => localStorage.setItem('papilot:create-paper', JSON.stringify({ name: 'Old draft', parent: '/home/author', template: null })));
-    if (link) await context.addInitScript(link => { let pending = link; window.papilotDesktop = { platform: 'darwin', minimize() {}, maximize() {}, close() {}, chooseDirectory: async () => null, takeNewPaper: async () => { const value = pending; pending = null; return value; }, onNewPaper: () => () => {} }; }, link);
+    if (link) await context.addInitScript(link => { let pending = link; window.papilotDesktop = { platform: 'darwin', minimize() {}, maximize() {}, close() {}, chooseDirectory: async () => '/home/author/local-paper', takeNewPaper: async () => { const value = pending; pending = null; return value; }, onNewPaper: () => () => {} }; }, link);
     await context.route('**/api/**', async route => {
       const url = new URL(route.request().url());
       if (url.pathname === '/api/universe') { if (link) await new Promise(resolve => setTimeout(resolve, 1500)); return route.fulfill({ json: { templates } }); }
       if (url.pathname === '/api/projects/create-defaults') return route.fulfill({ json: { parent: '/home/author' } });
       if (url.pathname === '/api/projects/create') { const body = route.request().postDataJSON(); requests.push(body); return route.fulfill({ status: 400, json: { error: 'Stop here.' } }); }
+      if (url.pathname === '/api/projects/open') { const project = { id: 'local-paper', name: 'Local paper', path: '/home/author/local-paper', createdAt: 1 }; state.projects = [project]; return route.fulfill({ json: { project } }); }
+      if (url.pathname.endsWith('/manuscript')) return route.fulfill({ json: { git: { files: [] }, build: { status: 'failed', error: 'Fixture preview' }, annotations: [] } });
+      if (url.pathname.endsWith('/git')) return route.fulfill({ json: { files: [] } });
       if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
       if (url.pathname === '/api/state') return route.fulfill({ json: state });
       if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
@@ -113,7 +118,7 @@ try {
     });
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(origin);
-    const dialog = page.getByRole('dialog', { name: 'Create a new paper', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'New paper', exact: true });
     const chosen = dialog.locator('.template-chosen');
     if (link) {
       await dialog.locator('.template-card.placeholder').first().waitFor();
@@ -129,9 +134,11 @@ try {
       assert.equal(await dialog.getByRole('textbox', { name: 'Paper name', exact: true }).isVisible(), true, 'A website link opens the details with its template');
     } else {
       await page.getByRole('button', { name: 'New paper', exact: true }).first().click();
+      await dialog.getByRole('tab', { name: 'Templates', exact: true }).click();
+      await dialog.getByRole('button', { name: 'Browse all', exact: true }).click();
       const grid = dialog.getByRole('list', { name: 'Templates' });
       await grid.getByRole('listitem').nth(2).waitFor();
-      assert.deepEqual(await grid.getByRole('listitem').allInnerTexts().then(items => items.map(item => item.split('\n')[0])), ['Blank paper', 'Tsinghua University Thesis', 'NeurIPS 2026', 'PACMPL (POPL, PLDI, ICFP, OOPSLA)']);
+      assert.deepEqual(await grid.getByRole('listitem').allInnerTexts().then(items => items.map(item => item.split('\n')[0])), ['Example project', 'Tsinghua University Thesis', 'NeurIPS 2026', 'PACMPL (POPL, PLDI, ICFP, OOPSLA)']);
       const venues = dialog.getByRole('group', { name: 'Conferences' }).locator('.template-venue-name');
       assert.equal(await venues.count(), 0, 'Conferences are listed only in their group or when a search matches them');
       await dialog.getByRole('button', { name: 'Conferences', exact: true }).click();
@@ -162,6 +169,38 @@ try {
     await dialog.getByRole('button', { name: 'Create paper', exact: true }).click();
     await dialog.getByRole('alert').filter({ hasText: 'Stop here.' }).waitFor();
     assert.deepEqual(requests.at(-1).template, link ? { id: 'neurips', version: '2026' } : { id: 'thuthesis', version: '7.6.0' });
+    if (link?.version === '2026') {
+      // Tabs retain each draft, but a blank creation never inherits a template.
+      await dialog.getByRole('tab', { name: 'Import', exact: true }).click();
+      const url = dialog.getByRole('textbox', { name: 'Paper or repository link', exact: true });
+      await url.fill('https://arxiv.org/abs/1706.03762');
+      const blankTab = dialog.getByRole('tab', { name: 'Blank', exact: true });
+      await blankTab.click();
+      assert.equal(await dialog.getByRole('textbox', { name: 'Paper name', exact: true }).inputValue(), 'Thesis');
+      await dialog.getByRole('button', { name: 'Create paper', exact: true }).click();
+      await dialog.getByRole('alert').waitFor();
+      assert.equal(requests.at(-1).template, undefined);
+      await blankTab.focus(); await page.keyboard.press('ArrowRight');
+      assert.equal(await dialog.getByRole('tab', { name: 'Import', exact: true }).getAttribute('aria-selected'), 'true');
+      assert.equal(await url.inputValue(), 'https://arxiv.org/abs/1706.03762');
+      await page.keyboard.press('End');
+      assert.equal(await chosen.locator('strong').textContent(), 'NeurIPS 2026');
+      await chosen.getByRole('button', { name: 'Change…', exact: true }).click();
+      await dialog.getByRole('listitem').filter({ hasText: 'Example project' }).click();
+      await dialog.getByRole('button', { name: 'Create paper', exact: true }).click();
+      await dialog.getByRole('alert').waitFor();
+      assert.equal(requests.at(-1).example, true); assert.equal(requests.at(-1).template, undefined);
+      await dialog.getByRole('tab', { name: 'Import', exact: true }).click();
+      await dialog.getByRole('button', { name: 'Choose folder', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+      const switcher = page.getByRole('button', { name: 'Paper: Local paper', exact: true });
+      for (const [entry, tab] of [['New paper…', 'Blank'], ['Import', 'Import']]) {
+        await switcher.click(); await page.getByRole('menuitem', { name: entry, exact: true }).click();
+        assert.equal(await dialog.getByRole('tab', { name: tab, exact: true }).getAttribute('aria-selected'), 'true', 'Ordinary entries do not reuse a closed template link');
+        await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+        assert.equal(await switcher.evaluate(element => element === document.activeElement), true);
+      }
+    }
     await context.close();
   }
   assert.deepEqual(errors, []);

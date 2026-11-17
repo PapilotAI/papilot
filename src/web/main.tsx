@@ -45,8 +45,7 @@ import { UpdateNotice, versionLabel } from './update-notice.tsx';
 import { chooseDirectory, DesktopWindowChrome, nativeFolders } from './desktop-chrome.tsx';
 import { MainFileDialog } from './main-file-dialog.tsx';
 import { PaperDialog } from './paper-dialog.tsx';
-import { ImportDialog } from './import-dialog.tsx';
-import { CreatePaperDialog } from './create-paper-dialog.tsx';
+import { NewPaperDialog } from './new-paper-dialog.tsx';
 import { CompileButton } from './compile-button.tsx';
 import { ProblemsButton, fixRequest, type ProblemsHandle } from './build-problems.tsx';
 import { SourceTab, useSourceEdit } from './source-panel.tsx';
@@ -1440,17 +1439,17 @@ function App() {
     return searchTerms.every(term => text.includes(term));
   });
   const running = state?.tasks.filter(t => ['preparing', 'running', 'waiting_input', 'building'].includes(t.status)).length || 0;
-  // The desktop app opens a folder the way an editor does: the system picker,
-  // then the paper itself. The browser imports a folder or ZIP in a dialog.
-  function createProject() { if (isPlayground) { requestPlaygroundDownload(); return; } setModal('create'); }
-  function openProject() { if (isPlayground) { requestPlaygroundDownload(); return; } if (nativeFolders) void openFolder(); else setModal('project'); }
+  // One import entry offers links, folders and ZIPs. Desktop folder choices
+  // open the original folder in place through the system picker.
+  function createProject() { if (isPlayground) { requestPlaygroundDownload(); return; } setCreatePreset(null); setModal('create'); }
+  function importProject() { if (isPlayground) { requestPlaygroundDownload(); return; } setCreatePreset(null); setModal('project'); }
   async function openFolder(folder?: string, main?: string) {
     if (folderRequest.current) return;
     folderRequest.current = true;
     try {
       const path = folder ?? await chooseDirectory();
       if (!path) return;
-      setOpeningFolder(true); setError('');
+      setModal(null); setCreatePreset(null); setOpeningFolder(true); setError('');
       const opened = await api<{ project: Project } | { name: string; candidates: string[] }>('/projects/open', { path, ...(main ? { main } : {}) });
       if ('candidates' in opened) { setMainChoice({ path, ...opened }); return; }
       // Select the paper once the state lists it; an unknown ID falls back to the first paper.
@@ -2088,9 +2087,9 @@ function App() {
         {state?.projects.length && project ? <ActionMenu label={t('Paper: {name}', { name: project.name })} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
           ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), title: p.path, checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); }, edit: { label: t('Edit {name}', { name: p.name }), select: () => setEditingPaper(p) } })),
           { label: t('New paper…'), icon: 'plus', divider: true, select: createProject },
-          { label: t('Open paper…'), icon: 'folder', select: () => openProject() },
+          { label: t('Import'), icon: 'download', select: importProject },
         ]}><span className="project-switcher-name">{project.name}</span><Icon name="chevronDown" size={13}/></ActionMenu>
-          : <button className="add-project" disabled={!state} onClick={() => openProject()}><Icon name="folder" size={16}/>{t('Open paper')}</button>}
+          : <button className="add-project" disabled={!state} onClick={importProject}><Icon name="download" size={16}/>{t('Import')}</button>}
         <button className="icon-button" aria-label={t('Hide task list')} title={t('Hide task list')} onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button>
       </div>
       <div className="sidebar-actions">
@@ -2167,7 +2166,7 @@ function App() {
           <ReferencesPanel key={project.id} place={'references:' + project.id} data={bibliography} onInvestigate={draftInvestigation}/>
         </section>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>{t('Opening your workspace')}</h1><p className="home-copy" role="status">{connectionError || t('Connecting to your papers and tasks…')}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>{t('Retry connection')}</button>}</div></div>
-      : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={() => openProject()}><Icon name="folder" size={16}/>{t('Open paper')}</button></div></div></div>}
+      : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={importProject}><Icon name="download" size={16}/>{t('Import')}</button></div></div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
     {settings && <SettingsDialog requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] })), agent: agentChoice, model: chosenModel, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }) }} updates={!isPlayground ? api : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body) } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
@@ -2188,14 +2187,10 @@ function App() {
     }}/>}
     {mainChoice && <MainFileDialog key={mainChoice.path} name={mainChoice.name} candidates={mainChoice.candidates} open={main => openFolder(mainChoice.path, main)} onClose={() => setMainChoice(null)}/>}
     {openingFolder && !mainChoice && <div role="status" className="toast toast-status"><span className="spinner"/><span>{t('Reading paper files…')}</span></div>}
-    {modal === 'create' && <CreatePaperDialog key={createPreset ? createPreset.id + '@' + createPreset.version : 'new'} preset={createPreset ?? undefined} api={api} onClose={() => { setModal(null); setCreatePreset(null); }} onDone={async paper => {
+    {(modal === 'create' || modal === 'project') && <NewPaperDialog key={createPreset ? createPreset.id + '@' + createPreset.version : 'new'} initialTab={modal === 'project' ? 'import' : 'blank'} preset={createPreset ?? undefined} api={api} agent={agentChoice} canRepair={Object.values(runtimes).some(runtime => runtime?.connected && runtime.authenticated)} onChooseFolder={nativeFolders ? async () => { const path = await chooseDirectory(); if (path) await openFolder(path); } : undefined} onClose={() => { setModal(null); setCreatePreset(null); }} onDone={async paper => {
       setCreatePreset(null);
       await refresh(true);
       setProjectId(paper.id); setSelected(''); setPage('manuscript'); setManuscriptView('pdf'); setModal(null); setSidebar(false);
-    }}/>}
-    {modal === 'project' && <ImportDialog api={api} agent={agentChoice} canRepair={Object.values(runtimes).some(runtime => runtime?.connected && runtime.authenticated)} onClose={() => setModal(null)} onDone={async paper => {
-      await refresh(true);
-      setProjectId(paper.id); setSelected(''); setModal(null); setSidebar(false);
     }}/>}
 
   </div></NoteResultsProvider>;

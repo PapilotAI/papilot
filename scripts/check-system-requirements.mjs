@@ -70,8 +70,10 @@ try {
   const banner = f.page.locator('.requirements-banner');
   await banner.getByRole('button', { name: 'LaTeX', exact: true }).waitFor();
   assert.equal(await dialog.count(), 0, 'returning users without a paper are not prompted again');
-  await f.page.getByRole('button', { name: 'Open paper', exact: true }).first().click();
+  await f.page.getByRole('button', { name: 'Import', exact: true }).first().click();
+  await f.page.getByRole('dialog', { name: 'New paper', exact: true }).getByRole('button', { name: 'Choose folder', exact: true }).click();
   assert.equal(await f.page.evaluate(() => window.fixtureFolderRequests), 1, 'setup guidance does not block the folder picker');
+  await f.page.getByRole('dialog', { name: 'New paper', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
   const bannerBox = await banner.boundingBox();
   assert.ok(bannerBox.y > 46, 'the desktop notice stays clear of the window controls');
   await banner.getByRole('button', { name: 'LaTeX', exact: true }).click();

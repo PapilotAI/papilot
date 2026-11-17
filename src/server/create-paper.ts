@@ -11,6 +11,15 @@ import { templateChoice, type TemplateChoice, type Universe, type UniverseTempla
 // or TeX commands, while this document compiles with a minimal pdfLaTeX setup.
 export const NEW_PAPER_SOURCE = String.raw`\documentclass[11pt]{article}
 
+\begin{document}
+
+\thispagestyle{empty}
+\null
+
+\end{document}
+`;
+export const EXAMPLE_PAPER_SOURCE = String.raw`\documentclass[11pt]{article}
+
 \title{Your paper title}
 \author{Your name}
 \date{\today}
@@ -31,9 +40,9 @@ Summarize your findings and next steps here.
 \end{document}
 `;
 const ignores = '*.aux\n*.log\n*.fls\n*.fdb_latexmk\n*.synctex.gz\n*.toc\n*.out\nmain.pdf\n.DS_Store\n';
-type Input = { id?: unknown; name?: unknown; parent?: unknown; template?: unknown };
-type Receipt = { id: string; name: string; parent: string; root: string; dev: number; ino: number; prepared: boolean; template?: TemplateChoice & { sha256: string } };
-const blank = () => new Map<string, string | Buffer>([['main.tex', NEW_PAPER_SOURCE], ['.gitignore', ignores]]);
+type Input = { id?: unknown; name?: unknown; parent?: unknown; template?: unknown; example?: unknown };
+type Receipt = { id: string; name: string; parent: string; root: string; dev: number; ino: number; prepared: boolean; example?: boolean; template?: TemplateChoice & { sha256: string } };
+const starterFiles = (example: boolean) => new Map<string, string | Buffer>([['main.tex', example ? EXAMPLE_PAPER_SOURCE : NEW_PAPER_SOURCE], ['.gitignore', ignores]]);
 // Every file in the folder is a starter file nobody has edited since it was written.
 function untouched(root: string, starter: Map<string, string | Buffer>) {
   const walk = (relative: string): boolean => fs.readdirSync(path.join(root, relative), { withFileTypes: true }).every(entry => {
@@ -61,6 +70,8 @@ export class PaperCreations {
   async create(input: Input, register: (root: string, name: string) => Promise<Project>) {
     if (typeof input.id !== 'string' || !/^[a-f0-9-]{36}$/.test(input.id)) throw new Error('Invalid paper creation ID.');
     const id = input.id, name = newPaperName(input.name), template = templateChoice(input.template);
+    if (input.example !== undefined && typeof input.example !== 'boolean' || input.example && template) throw new Error('Choose one paper source.');
+    const example = input.example === true;
     if (template && !this.universe) throw new Error('Templates are not available here.');
     if (typeof input.parent !== 'string' || !input.parent.trim() || input.parent.length > 4000 || /[\x00-\x1f]/.test(input.parent)) throw new Error('Choose an existing folder to save the paper in.');
     const expanded = input.parent.trim().replace(/^~(?=$|[\/\\])/, os.homedir());
@@ -68,24 +79,24 @@ export class PaperCreations {
     let parent: string;
     try { parent = realPath(expanded); if (!fs.statSync(parent).isDirectory()) throw new Error(); }
     catch { throw new Error('Choose an existing folder to save the paper in.'); }
-    const key = JSON.stringify([name, parent, template ? template.id + '@' + template.version : '']), running = this.pending.get(id);
+    const key = JSON.stringify([name, parent, template ? template.id + '@' + template.version : '', example]), running = this.pending.get(id);
     if (running) {
       if (running.key !== key) throw new Error('This creation request already belongs to another paper.');
       return running.work;
     }
-    const work = this.prepare(id, name, parent, template, register);
+    const work = this.prepare(id, name, parent, template, example, register);
     this.pending.set(id, { key, work });
     try { return await work; } finally { this.pending.delete(id); }
   }
-  private async prepare(id: string, name: string, parent: string, template: TemplateChoice | undefined, register: (root: string, name: string) => Promise<Project>) {
+  private async prepare(id: string, name: string, parent: string, template: TemplateChoice | undefined, example: boolean, register: (root: string, name: string) => Promise<Project>) {
     const folder = path.join(this.directory, 'paper-creations'), receiptFile = path.join(folder, id + '.json'), root = path.join(parent, name);
     fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
     let receipt: Receipt;
     const save = () => { fs.writeFileSync(receiptFile + '.tmp', JSON.stringify(receipt), { mode: 0o600 }); fs.renameSync(receiptFile + '.tmp', receiptFile); };
     const saved = fs.existsSync(receiptFile) ? JSON.parse(fs.readFileSync(receiptFile, 'utf8')) as Receipt : undefined;
-    if (saved && (saved.name !== name || saved.parent !== parent || saved.root !== root || saved.template?.id !== template?.id || saved.template?.version !== template?.version)) throw new Error('This creation request already belongs to another paper.');
+    if (saved && (saved.name !== name || saved.parent !== parent || saved.root !== root || saved.template?.id !== template?.id || saved.template?.version !== template?.version || Boolean(saved.example) !== example)) throw new Error('This creation request already belongs to another paper.');
     // Download before touching the disk, so an offline attempt leaves nothing behind.
-    let starter = blank(), chosen: UniverseTemplate | undefined;
+    let starter = starterFiles(example), chosen: UniverseTemplate | undefined;
     if (template && !saved?.prepared) {
       const downloaded = await this.universe!.download(template, saved?.template?.sha256);
       chosen = downloaded.template;
@@ -102,7 +113,7 @@ export class PaperCreations {
         throw new Error('Could not create the paper folder. Check the save location and its permissions.');
       }
       const stat = fs.lstatSync(root);
-      receipt = { id, name, parent, root, dev: stat.dev, ino: stat.ino, prepared: false, ...(chosen ? { template: { id: chosen.id, version: chosen.version, sha256: chosen.archive.sha256 } } : {}) };
+      receipt = { id, name, parent, root, dev: stat.dev, ino: stat.ino, prepared: false, ...(example ? { example: true } : {}), ...(chosen ? { template: { id: chosen.id, version: chosen.version, sha256: chosen.archive.sha256 } } : {}) };
       try { save(); } catch (error) { fs.rmdirSync(root); throw error; }
     }
     function owned() {

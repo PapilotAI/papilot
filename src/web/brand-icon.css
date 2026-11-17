@@ -10,3 +10,6 @@
 .brand-icon[data-brand=latex]{--brand-color:var(--text-2)}
 .brand-icon[data-brand=gemini]{--brand-color:#4285f4}
 .brand-icon[data-brand=mistral]{--brand-color:#f28c28}
+.brand-icon[data-brand=arxiv]{--brand-color:#b31b1b}
+.brand-icon[data-brand=overleaf]{--brand-color:#04652f}
+:root[data-theme="dark"] .brand-icon:is([data-brand=arxiv],[data-brand=overleaf]){--brand-color:#fff}

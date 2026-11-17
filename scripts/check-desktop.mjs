@@ -148,8 +148,8 @@ try {
     return { sandbox: preferences.sandbox, nodeIntegration: preferences.nodeIntegration, contextIsolation: preferences.contextIsolation };
   });
   assert.deepEqual(windowOptions, { sandbox: true, nodeIntegration: false, contextIsolation: true });
-  // Like an editor, Open paper… goes straight to the system picker and the
-  // folder opens as a paper in place: nothing is typed, uploaded or copied.
+  // Import offers every source; Choose folder uses the system picker and
+  // opens the original paper in place, without uploading or copying it.
   const localPaper = path.join(data, 'local-paper'); fs.mkdirSync(localPaper);
   fs.writeFileSync(path.join(localPaper, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nLocal paper.\n\\end{document}\n');
   const largeAsset = path.join(localPaper, 'large.dat'); fs.writeFileSync(largeAsset, ''); fs.truncateSync(largeAsset, 65 * 1024 * 1024);
@@ -164,17 +164,19 @@ try {
     };
   }, folder);
   const paperMenu = page.getByRole('button', { name: /^Paper:|^论文：/ });
-  const openFromSidebar = async () => { await paperMenu.click(); await page.getByRole('menuitem', { name: /^(Open paper…|打开论文…)$/ }).click(); };
+  const importDialog = page.getByRole('dialog', { name: /^(New paper|新建论文)$/ });
+  const openFromSidebar = async () => { await paperMenu.click(); await page.getByRole('menuitem', { name: /^(Import|导入)$/ }).click(); await importDialog.getByRole('button', { name: /^(Choose folder|选择文件夹)$/ }).click(); };
   const openFromFileMenu = () => application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('open-folder').click());
   const opened = name => expect(page.getByRole('button', { name: new RegExp(`^(Paper: |论文：)${name}$`) })).toBeVisible({ timeout: 30000 });
   await pick(null);
   await openFromSidebar();
   await expect.poll(() => application.evaluate(() => globalThis.pickerCalls)).toBe(1);
-  assert.equal(await page.getByRole('dialog').count(), 0, 'Open paper… shows no import dialog');
+  await expect(importDialog).toBeVisible();
   assert.equal(openRequests.length, 0, 'Canceling the picker opens nothing');
   await pick(localPaper);
-  await openFromSidebar();
+  await importDialog.getByRole('button', { name: /^(Choose folder|选择文件夹)$/ }).click();
   await opened('local-paper');
+  await expect(importDialog).toBeHidden();
   assert.deepEqual(openRequests, [{ route: '/api/projects/open', body: { path: localPaper } }]);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(localPaper, '.git/papilot/settings.json'), 'utf8')), { main: 'main.tex', engine: 'pdflatex', source_dir: '' });
   assert.ok(fs.existsSync(path.join(localPaper, '.git')), 'The opened folder gets its version history in place');

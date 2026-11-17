@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { NEW_PAPER_SOURCE, PaperCreations, newPaperName } from '../src/server/create-paper.ts';
+import { NEW_PAPER_SOURCE, EXAMPLE_PAPER_SOURCE, PaperCreations, newPaperName } from '../src/server/create-paper.ts';
 import type { Project } from '../src/shared.ts';
 import { Manuscripts } from '../src/server/manuscript.ts';
 
@@ -57,6 +57,18 @@ test('same request joins an in-flight creation and survives response loss and re
   assert.equal(fs.readFileSync(path.join(a.path, 'main.tex'), 'utf8'), edited);
   await assert.rejects(recovered.create({ ...input, name: 'Changed' }, f.register), /another paper/);
   assert.equal(f.projects.size, 1);
+});
+
+test('example projects have sample sections and cannot reuse a blank creation receipt', async t => {
+  const f = fixture(t), input = { id: randomUUID(), name: 'Example', parent: f.parent, example: true };
+  const project = await f.creations.create(input, f.register);
+  assert.equal(fs.readFileSync(path.join(project.path, 'main.tex'), 'utf8'), EXAMPLE_PAPER_SOURCE);
+  assert.match(EXAMPLE_PAPER_SOURCE, /\\section\{Introduction\}/);
+  assert.doesNotMatch(NEW_PAPER_SOURCE, /\\section/);
+  assert.equal((await new PaperCreations(f.data).create(input, f.register)).id, project.id);
+  await assert.rejects(f.creations.create({ ...input, example: false }, f.register), /another paper/);
+  await assert.rejects(f.creations.create({ ...input, id: randomUUID(), example: 'yes' }, f.register), /one paper source/);
+  await assert.rejects(f.creations.create({ ...input, id: randomUUID(), template: { id: 'example', version: '1' } }, f.register), /one paper source/);
 });
 
 test('existing files, folders and symlinks are never overwritten or adopted by another request', async t => {

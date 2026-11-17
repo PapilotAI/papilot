@@ -157,13 +157,12 @@ export const zhCN: Record<string, string> = {
   "Check the main file and engine, or ask the assistant to fix compilation. You can also edit the saved files and retry.": "请检查主文件和编译引擎，或请助手协助修复。也可以修改已保存的文件后重试。",
   "Choose folder": "选择文件夹",
   "Choose ZIP": "选择 ZIP",
-  'Create a new paper': '新建论文', 'Blank paper': '空白论文', 'Templates': '模板', 'Template type': '模板类型', 'Search templates': '搜索模板', 'Theses': '学位论文', 'Conferences': '会议', 'Journals': '期刊', 'Slides': '演示文稿', 'Posters': '海报', 'CVs': '简历', 'Books': '书籍', 'Other': '其他', 'Create paper': '创建论文', 'Save in': '保存到', 'Creating your paper…': '正在创建论文…',
-  'Or drop a folder or ZIP here': '也可以把文件夹或 ZIP 拖到这里',
+    'Templates': '模板', 'Template type': '模板类型', 'Search templates': '搜索模板', 'Theses': '学位论文', 'Conferences': '会议', 'Journals': '期刊', 'Slides': '演示文稿', 'Posters': '海报', 'CVs': '简历', 'Books': '书籍', 'Other': '其他', 'Create paper': '创建论文', 'Save in': '保存到', 'Creating your paper…': '正在创建论文…',
   'Drop one folder or LaTeX ZIP file.': '请拖入一个文件夹或 LaTeX ZIP 文件。',
   'No files found in this folder.': '这个文件夹中没有可导入的文件。',
   'Could not detect a main file. Enter its path relative to the paper folder.': '未能识别主文件，请输入它相对于论文文件夹的路径。',
   "Folder path": "文件夹路径",
-  "Read folder": "读取文件夹",
+
   "Reading paper files…": "正在读取论文文件…",
   "Import progress": "导入进度",
   "Files received": "已接收文件",
@@ -368,7 +367,7 @@ export const zhCN: Record<string, string> = {
 
   // Sidebar and header
   'Rename {name}': '重命名 {name}',
-  'Papers and tasks': '论文和任务', 'Hide task list': '隐藏任务列表', 'Paper: {name}': '论文：{name}', 'New paper…': '新建论文…', 'New paper': '新建论文', 'Open paper…': '打开论文…',
+  'Papers and tasks': '论文和任务', 'Hide task list': '隐藏任务列表', 'Paper: {name}': '论文：{name}', 'New paper…': '新建论文…', 'New paper': '新建论文', 'Import': '导入',
   'Manuscript': '稿件', 'Version management of the manuscript': '稿件的版本管理', 'New task': '新任务', 'Tasks': '任务', 'Task list': '任务列表',
   '{n} change to decide': '{n} 处修改待定', '{n} changes to decide': '{n} 处修改待定', 'Task actions for {title}': '{title} 的任务操作',
   'Rename…': '重命名…', 'Check status': '检查状态', 'Retry deletion…': '重试删除…', 'Delete task…': '删除任务…',

@@ -179,11 +179,6 @@
     "textHash": "eec4ba06a02225a2a77230a6a8c09540d4aef478d53c574c204f6badf2c8e147",
     "model": "gemini-4-argon-medium"
   },
-  "Choose one folder or ZIP.": {
-    "revision": "f931e0bcde976cb6156ac6eda91d1c98ad972c537dd2edfe7cae147e79fbf0b2",
-    "textHash": "97e47168faa8ac3f422fe0f2e6e392735ba25893d77787aa4c918c180c5a7cd7",
-    "model": "gemini-4-argon-medium"
-  },
   "Choose one of the offered answers.": {
     "revision": "ef985d766ef8d0675184d235e12ea96bd6ac2fa583e8ebf1e8ebbbe07d974777",
     "textHash": "606428f0fa3ba952b2b745e72478d6b46df3942c31e3a4562e47e0d179c73a67",
@@ -1288,5 +1283,165 @@
     "revision": "f9c08b36faddbfb2358537dd088a5b043e3b40c3b3b7086847588669083aaaa7",
     "textHash": "d568c2c0edf0adb6ce09f246bb1625bdc4ed69e4cf24b58561e801e1364b1f06",
     "model": "manual"
+  },
+  "Choose one folder, ZIP or paper link.": {
+    "revision": "5e8ac807d2312a0afb12292b2ea3f5986fcad1e432472883401efd874ab2f8d0",
+    "textHash": "257400136666106e3150bf45965ff0ea136f6e3aab9343da57b95d7f989da9dc",
+    "model": "codex"
+  },
+  "Choose one paper source.": {
+    "revision": "ecec788fdf71e477cf514fbde159d96d708367f8af5c787450234b794f48e84b",
+    "textHash": "db51eae0165d1ca12c1cd798b914ba70f1d9cf9498eaac74a2c529f677c9b0de",
+    "model": "manual-review"
+  },
+  "Could not download the source. Check the link and try again.": {
+    "revision": "c514a347c5543a6f91030f822a865e10955db034d7ceff39cefb80288a1fff6e",
+    "textHash": "dc5f045db30bce2b6c306b0ea3e7e0acadb27b10307070bd8917686872619d40",
+    "model": "codex"
+  },
+  "Could not reach the source website. Check the internet connection and try again.": {
+    "revision": "b0451fb2f38c8069c846fd7cac7a9a9f166cf7e3b299f8d73f622bbf45a44100",
+    "textHash": "055234f53a1996e8624879cad6cb3164a471fdd50f196e342793c55fedb7db37",
+    "model": "codex"
+  },
+  "GitHub could not download this repository. Check that it is public and the link is correct, or upload the source ZIP.": {
+    "revision": "394b951b08a6c5fabeb8a6cece72ff004ae7c62dce4cac74072d83ba835220c3",
+    "textHash": "2527ba7d4fe7750401758f510018434a29b565d69717b72e13fad9031250b163",
+    "model": "manual-review"
+  },
+  "No source was found at this link. Check the paper link and version.": {
+    "revision": "bd32428dc66dac5b0c34c217f29bbee47d6129fa5d4148dfea66fe227d393bba",
+    "textHash": "dae9aa32bf43fccdf3a9ca4340e166c1f092b4eb479461199c1e53f957a52d13",
+    "model": "codex"
+  },
+  "Overleaf could not grant access. Use an enabled read-only sharing link.": {
+    "revision": "81aea41a09eacebf8f60bd6965ae8353ae4fe8b689f48506130c7f0231b8deb3",
+    "textHash": "8567f305e61401a5d86f719e0035ce1ec021fa489962dbd54e831a97b54f17ac",
+    "model": "codex"
+  },
+  "Overleaf could not open this sharing link. Check that sharing is enabled and use the read-only link, or upload the source ZIP.": {
+    "revision": "cbb44f12ac962ea16503f3afcc36ccb383b7bc0515e46bcde63a64fec09ecaae",
+    "textHash": "7b6fd99a3793764a4071a76384832616a3ddeae999bf14b3c9a82327c752cc44",
+    "model": "codex"
+  },
+  "Overleaf did not provide access to the source. Try a read-only sharing link or upload the source ZIP.": {
+    "revision": "318745ab5d6f268f64db884c756485de8a2816d77756939b5ebc7793f0fd9f15",
+    "textHash": "4d46105c9286029c2d1bed3d9ac861ead37012c367e8e533a5558a07463fc7bb",
+    "model": "codex"
+  },
+  "Overleaf did not return a source ZIP. Try a read-only sharing link or upload the ZIP.": {
+    "revision": "fd9dd6e88faf6289be2422ec3ea94e946fc13c43266aab59825c19d552964ada",
+    "textHash": "91775fdf622cbfcbc454cb35d0649e3807a960764ac5e5d2a02a08ab9dad0882",
+    "model": "codex"
+  },
+  "Overleaf returned an unexpected response. Try again or upload the source ZIP.": {
+    "revision": "368973210303465f3ae74bb7f7a6c2e019f074502f7098ca1c2c1391a6da2e13",
+    "textHash": "b9ff4f2fe876c973a2ab06da7a6091cf0009827e6def3645bd20a74a4ddd175c",
+    "model": "codex"
+  },
+  "Paper source imports need an HTTP or HTTPS proxy. Check the configured proxy.": {
+    "revision": "cb70425592f13a4443cd59e7c118a6bcf0cfd0f2198d1489fb249394a27df132",
+    "textHash": "8d4eed21d43bb816837e4934b7e6af2999e2fd43b4103cbf82940cb9166de60b",
+    "model": "codex"
+  },
+  "Paste an arXiv paper link, an Overleaf sharing link, a public GitHub repository link, or a source archive link.": {
+    "revision": "1aa437331b87e7851e38fb773a50aeec746b054e77b2448eb90f64d303491eb7",
+    "textHash": "1ac2ecdd4ff851fbd4c1abf01ae4bffc92c4e5afd5604756d5d2617c26f85b5d",
+    "model": "manual-review"
+  },
+  "Source archive links and special files are not supported.": {
+    "revision": "2214dab88eff8263e9185e83e94fcedcc2a6f584be34a069555f535f16d1d3f6",
+    "textHash": "7c893ad9e3b0ecb2560a7e3cd9a063732dd44f04de489308127543b4bdd1db97",
+    "model": "codex"
+  },
+  "The download contains no TeX source files. This paper may only provide a PDF.": {
+    "revision": "153912dfdb9813e2daa521cc9fde95ae30fd4a9bb5ad3dbac14a374643288d8d",
+    "textHash": "d9c34c4adca472321eeb6ea939760063545ac7f69d984b00d48e0fb016c3e489",
+    "model": "codex"
+  },
+  "The source archive contains the same file twice.": {
+    "revision": "0e0ed75ba33e0bb5ea58f2855494f2f918999b2eb11c656b753dc83402c3ff45",
+    "textHash": "b86a6f647ef2aff9bd29def39bab496ac400ee3897e7146b821e4422ab7f7f5a",
+    "model": "codex"
+  },
+  "The source archive expands beyond 64 MB or 5,000 files.": {
+    "revision": "0e0a52868fe8a947c60b8f9f1bf1bd4da3e6cdd7b12b55b02778b315066a47e1",
+    "textHash": "2dfb1499ab8b06f6fa560245857cdd9eb6a8fcde52b9420c3d741eb452f469cf",
+    "model": "codex"
+  },
+  "The source archive is damaged or expands beyond 64 MB.": {
+    "revision": "d14c08fc50b2f2c293af688ab00a738d1d6e30a9fee2e167f18cce0c7318317f",
+    "textHash": "fe719d1b43b3f818ad496e32da4a5e5ef2f8a53b83a6eeb246874ac0f738fe19",
+    "model": "codex"
+  },
+  "The source download exceeds 64 MB.": {
+    "revision": "51d0d171779f19e9aa4e52440dbf3b69d31e9adc0756a4665cba24d006aae058",
+    "textHash": "d47d42d853e1a333b7b2c4d295ba0182c715de34d5edfb878af5f3921e0d9db5",
+    "model": "codex"
+  },
+  "The source download timed out. Try again or upload the source archive.": {
+    "revision": "60441b6b04b272b81779743b63843f3c71902cabc738404dbdfcb4223760050f",
+    "textHash": "3d23040ae1ad1d5bcc250758f4880de6b4e3fda3096924fc417e27aca99701e0",
+    "model": "codex"
+  },
+  "The source link redirected to an unexpected website.": {
+    "revision": "8f7f6962ae4e8fd8338573e8d48a0f3901466d3bfe93db5334eb40cf72139efc",
+    "textHash": "8829b65eb388f8fe1a057046dc18aee76fbe6a0d63d9d371d7af568bf31901e1",
+    "model": "codex"
+  },
+  "The source link redirected too many times.": {
+    "revision": "3ddc8ebab2bd468d5bbe9aa6bd4a473d90e12c5ded2e4e60057a0036f761be60",
+    "textHash": "119bd7d94d75c550631b6a41cd63d52ff6f82013efdc1af585fdc077167bd2a4",
+    "model": "codex"
+  },
+  "The source response is damaged or too large.": {
+    "revision": "1e9dbba881eaafcbd9faf8e3d43125354e63a125c457449dc1abf44abda2eec9",
+    "textHash": "25cd91f68058aa5cf1800875f331460b3063e5c63bf50565c497d3f524597cb9",
+    "model": "codex"
+  },
+  "The source response is too large to import.": {
+    "revision": "a5b0991c1bd3ba65732ce84a5d8b007771973df70134815a803890701b6660f6",
+    "textHash": "012c9f526bbd647c71c6c56f4a0d73b8a9c8ef63b8f25951ccf54f57291c3520",
+    "model": "codex"
+  },
+  "The source website is busy. Wait a little and try again.": {
+    "revision": "ad6036b713d8384b93f28291181402f96e11e0199615366fa3fb55752d3877e4",
+    "textHash": "d8740618aa789f61eb36fef63bdaa4d3b82b457cfe3f47b8a653ac0b5de29191",
+    "model": "codex"
+  },
+  "The source website returned an unsupported response encoding.": {
+    "revision": "b396e44a117ee45b9bfd9df20bcec2dcf0751d89ab6d58a0cd62350d0c2f6ae8",
+    "textHash": "6b342e01b599812b7f475e1bc28e72f96d4b1223be2c7d827e3b0b51a59d9754",
+    "model": "codex"
+  },
+  "This Overleaf sharing link is incomplete. Copy the full link, including the part after #.": {
+    "revision": "52fe681196bb3da90cfc40ff5f08732ab1f4218ab1a20226b1748c2e9c10e2b1",
+    "textHash": "418594eade41a1a9eb6d582ffe36bd9df5eff4702f78c3363ac7e44dbbb732f7",
+    "model": "codex"
+  },
+  "This link returned a web page or PDF, not LaTeX source. Use an arXiv paper link, an Overleaf sharing link, or a source archive download.": {
+    "revision": "4ecf035cb35e135cd9763f6f350e5b600c82df12a8fa8123138ab0cda9edba6d",
+    "textHash": "43185a8ef3c2778eab9ab206c448b32fa8d1a1f1ebc791e73f12d9d5a224f08f",
+    "model": "codex"
+  },
+  "Use a public GitHub repository link, or upload its source ZIP.": {
+    "revision": "86dee9a7122631045d46fa12c20dad6a04fcdf2abcc54acbb8447184b4c8041a",
+    "textHash": "bf7cf0c0d2015d37f915c7ac75cb6a9575c60c84fce1d2767354c833dad2fde3",
+    "model": "manual-review"
+  },
+  "Use a public HTTPS link without a username, password or custom port.": {
+    "revision": "0c30dddb52b2e7d80cea188f3d56e86e8ebe3164f7fb497c1f8f00da4afd55bc",
+    "textHash": "0667e2823dc0c656dbc2ce46bebd6b074bb546faa231dd420873a07fe93f98a5",
+    "model": "codex"
+  },
+  "Use an arXiv abstract, PDF, HTML or source link for one paper.": {
+    "revision": "0b4dd1d1d8878d27d7b3487f779ad3f9ada4fe32c49500ba16323d228a2caaab",
+    "textHash": "05fbd4590f7f5c6d34ea9070f274b3cf979c8d51c41e7603443d37f15bb28b77",
+    "model": "codex"
+  },
+  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": {
+    "revision": "03cf4e359fcca9c4daa34b3245aa66d9f477006c62d4e9dc1782441c2158d9b0",
+    "textHash": "a2d449a4eff75ed8a03a322ed12a15587c9d0086e266f08f87b1232b1f97f30c",
+    "model": "codex"
   }
 }

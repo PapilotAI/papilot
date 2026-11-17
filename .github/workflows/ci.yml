@@ -321,6 +321,7 @@ jobs:
           name: paper-workflows
           path: |
             test-results/create-paper-*.png
+            test-results/import-*.png
             test-results/task-restart-*.png
             test-results/section-comments-*.png
           if-no-files-found: ignore

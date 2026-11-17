@@ -7,6 +7,9 @@ import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import yauzl from 'yauzl';
+import tar from 'tar-stream';
+import { gunzip } from 'node:zlib';
+import { downloadPaperSource } from './paper-link.ts';
 import { DATA, ENGINE } from './paths.ts';
 import { realPath } from './real-path.ts';
 import type { PaperImport, Project } from '../shared.ts';
@@ -193,11 +196,45 @@ export async function readZip(buffer: Buffer) {
   return files;
 }
 
+export async function extractSource(buffer: Buffer, root: string, zipOnly = false) {
+  if (buffer.length > MAX_BYTES) throw new Error('The source download exceeds 64 MB.');
+  if (buffer.subarray(0, 2).toString() === 'PK') return extractZip(buffer, root);
+  if (zipOnly) throw new Error('Overleaf did not return a source ZIP. Try a read-only sharing link or upload the ZIP.');
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    try { buffer = await promisify(gunzip)(buffer, { maxOutputLength: MAX_BYTES }); }
+    catch { throw new Error('The source archive is damaged or expands beyond 64 MB.'); }
+  }
+  const head = buffer.subarray(0, 300000).toString('utf8');
+  if (/^\s*(?:<!doctype\s+html|<html|<\?xml)|^%PDF-/i.test(head)) throw new Error('This link returned a web page or PDF, not LaTeX source. Use an arXiv paper link, an Overleaf sharing link, or a source archive download.');
+  // arXiv also serves single TeX submissions, with or without gzip.
+  if (!buffer.includes(0) && /\\(?:documentclass|documentstyle|begin\s*\{document\})/.test(head)) {
+    fs.writeFileSync(path.join(root, 'main.tex'), buffer, { flag: 'wx', mode: 0o600 }); return;
+  }
+  const archive = tar.extract(), seen = new Set<string>(); let count = 0, total = 0;
+  await new Promise<void>((resolve, reject) => {
+    archive.on('error', reject); archive.on('finish', resolve);
+    archive.on('entry', (header, stream, next) => { void (async () => {
+      if (++count > MAX_FILES || (total += header.size ?? 0) > MAX_BYTES) throw new Error('The source archive expands beyond 64 MB or 5,000 files.');
+      if (header.type !== 'file' && header.type !== 'directory') throw new Error('Source archive links and special files are not supported.');
+      // Conventional tar exports prefix names with ./ and may include ./ itself.
+      const raw = header.name.replace(/^(?:\.\/)+/, '').replace(/\/$/, '');
+      if (!raw && header.type === 'directory') { stream.resume(); next(); return; }
+      const name = safeName(raw);
+      if (header.type === 'directory' || name.split('/').some(skip)) { stream.resume(); next(); return; }
+      if (seen.has(name.toLowerCase())) throw new Error('The source archive contains the same file twice.');
+      seen.add(name.toLowerCase());
+      const target = path.join(root, name); fs.mkdirSync(path.dirname(target), { recursive: true });
+      await pipeline(stream, fs.createWriteStream(target, { flags: 'wx', mode: 0o600 })); next();
+    })().catch(error => archive.destroy(error)); });
+    archive.end(buffer);
+  });
+}
+
 export class PaperImports {
   private sessions = new Map<string, PaperImport>();
   private active = new Set<string>();
   get busy() { return this.active.size > 0; }
-  constructor(private manuscripts: Manuscripts, private directory = DATA, private registered: (root: string) => boolean = () => false) {
+  constructor(private manuscripts: Manuscripts, private directory = DATA, private registered: (root: string) => boolean = () => false, private source = downloadPaperSource) {
     const folder = path.join(directory, 'imports');
     if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder)) {
       if (/^[a-f0-9-]{36}\.json$/.test(file)) try { this.get(file.slice(0, -5)); } catch { /* An unreadable receipt must not prevent other papers from opening. */ }
@@ -221,10 +258,11 @@ export class PaperImports {
     }
     return { ...value };
   }
-  async create(input: { path?: unknown; name?: unknown; zip?: unknown; files?: unknown }) {
-    const id = randomUUID(); let root = '', copied = false;
-    if ([input.path, input.zip, input.files].filter(value => value !== undefined).length !== 1) throw new Error('Choose one folder or ZIP.');
+  async create(input: { path?: unknown; name?: unknown; zip?: unknown; files?: unknown; url?: unknown }) {
+    const id = randomUUID(); let root = '', copied = false, sourceName = '';
+    if ([input.path, input.zip, input.files, input.url].filter(value => value !== undefined).length !== 1) throw new Error('Choose one folder, ZIP or paper link.');
     if (input.name !== undefined && (typeof input.name !== 'string' || input.name.length > 120)) throw new Error('Paper name is too long.');
+    this.active.add(id);
     try {
       if (input.path !== undefined) {
         if (typeof input.path !== 'string' || !input.path.trim()) throw new Error('Enter a folder path.');
@@ -232,7 +270,10 @@ export class PaperImports {
         if (!fs.statSync(root).isDirectory()) throw new Error('Select a folder containing the paper.');
       } else {
         root = path.join(this.directory, 'papers', id); copied = true; fs.mkdirSync(root, { recursive: true, mode: 0o700 });
-        if (input.zip !== undefined) await extractZip(bytes(input.zip), root);
+        if (input.url !== undefined) {
+          const source = await this.source(input.url); sourceName = source.name;
+          await extractSource(source.data, root, source.zip);
+        } else if (input.zip !== undefined) await extractZip(bytes(input.zip), root);
         else {
           if (!Array.isArray(input.files) || !input.files.length || input.files.length > MAX_FILES) throw new Error('Choose between 1 and 5,000 files.');
           let total = 0;
@@ -251,10 +292,12 @@ export class PaperImports {
       if (this.registered(root)) throw new Error('This paper is already added. Open it from the paper list.');
       if (!copied && [...this.sessions.values()].some(item => item.path === root)) return this.get([...this.sessions.values()].find(item => item.path === root)!.id);
       const detected = await inspectPaper(root);
+      if (input.url !== undefined && !detected.candidates.length) throw new Error('The download contains no TeX source files. This paper may only provide a PDF.');
       const existing = !copied && [...this.sessions.values()].find(item => item.path === root);
       if (existing) return this.get(existing.id);
-      return this.save({ id, path: root, copied, name: (input.name as string)?.trim() || path.basename(root), ...detected, phase: 'choose' });
+      return this.save({ id, path: root, copied, name: (input.name as string)?.trim() || sourceName || path.basename(root), ...detected, phase: 'choose' });
     } catch (error) { if (copied) fs.rmSync(path.join(this.directory, 'papers', id), { recursive: true, force: true }); throw error; }
+    finally { this.active.delete(id); }
   }
   async build(id: string, input: { main?: unknown; engine?: unknown; name?: unknown }, repair?: (root: string, error: string) => Promise<string>) {
     const value = this.get(id);
