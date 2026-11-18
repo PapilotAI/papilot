@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { it, expect } from "vitest";
-import { Builder, BuildError } from "../../src/core/build.ts";
+import { it, expect, vi } from "vitest";
+import { Builder, BuildError, auxiliaryBuildError, auxiliaryDiagnostics } from "../../src/core/build.ts";
 import { chooseDocument, loadProject, readSettings, writeSettings } from "../../src/core/config.ts";
 import { which } from "../../src/core/process.ts";
 import { PdfDocument } from "../../src/render/pdf.ts";
@@ -9,6 +9,25 @@ import { Fixture } from "./helpers.ts";
 
 const tex = Boolean(which("latexmk") && which("pdflatex"));
 const paper = (body: string) => `\\documentclass{article}\n\\begin{document}\n${body}\n\\end{document}\n`;
+
+it.each([
+  ["build/main.lol:3: Undefined control sequence.", true],
+  ["./build/main.loa:3: Undefined control sequence.", true],
+  ["build/main.package-list:3: Undefined control sequence.", true],
+  ["build\\main.lol:3: Undefined control sequence.", true],
+  ["/tmp/paper/build/main.loa:3: Undefined control sequence.", true],
+  ["C:\\paper\\build\\main.lol:3: Undefined control sequence.", true],
+  ["main.lol:3: Undefined control sequence.", false],
+  ["chapters/build/main.tex:3: Undefined control sequence.", false],
+  ["build/../main.tex:3: Undefined control sequence.", false],
+  ["build\\..\\main.tex:3: Undefined control sequence.", false],
+  ["/tmp/paper/build/../main.tex:3: Undefined control sequence.", false],
+  ["main.tex:3: Could not read build/main.lol:1: input.", false],
+  ["latexmk failed (1)", false],
+])("recognizes generated-output diagnostics: %s", (diagnostic, expected) => {
+  expect(auxiliaryDiagnostics([diagnostic])).toBe(expected);
+  expect(auxiliaryBuildError(new BuildError("LaTeX failed to compile.", [diagnostic]))).toBe(expected);
+});
 
 it("defaults to continuing after errors, validates the option and keeps it per document", async () => {
   const f = new Fixture();
@@ -136,6 +155,74 @@ it.skipIf(!tex).each(["nav", "snm"])("strict Beamer builds recover from stale .%
     try { expect(pdf.page(0).text()).toContain("Revised text."); } finally { pdf.close(); }
     expect(next.errors).toBeUndefined();
     expect(fs.existsSync(first.pdf)).toBe(true);
+  } finally { await f.close(); }
+}, 120000);
+
+it.skipIf(!tex).each([
+  { extension: "lol", strict: true },
+  { extension: "loa", strict: true },
+  { extension: "lol", strict: false },
+  { extension: "loa", strict: false },
+  { extension: "package-list", strict: true },
+])("clears stale generated .$extension files with strict=$strict", async ({ extension, strict }) => {
+  const f = new Fixture();
+  try {
+    // LaTeX's list machinery writes arbitrary package-specific extensions.
+    // The next version removes a macro used only by the previous list file.
+    const source = (old: boolean) => `\\documentclass{article}\n${old ? "\\newcommand{\\obsoletecommand}{Original list entry.}\n" : ""}\\begin{document}\n\\makeatletter\\@starttoc{${extension}}\\makeatother\n\\addtocontents{${extension}}{${old ? "\\protect\\obsoletecommand" : "Revised list entry."}}\n${old ? "Original" : "Revised"} text.\n\\end{document}\n`;
+    f.write("paper/main.tex", source(true));
+    f.repo.run(["commit", "-qam", "write generated list"]);
+    writeSettings(f.root, { halt_on_error: strict });
+    const project = loadProject(f.root), builder = new Builder(project, f.repo), first = await builder.build("HEAD");
+    expect(fs.readFileSync(path.join(path.dirname(first.pdf), `main.${extension}`), "utf8")).toContain("\\obsoletecommand");
+    f.write("paper/main.tex", source(false));
+    f.repo.run(["commit", "-qam", "remove old list macro"]);
+    const compile = vi.spyOn(builder as any, "compile");
+    const next = await builder.build("HEAD");
+    expect(next.errors).toBeUndefined();
+    if (strict) {
+      expect(compile).toHaveBeenCalledTimes(2);
+      const stale = fs.readFileSync(path.join(project.state, "logs", next.key + ".log"), "utf8");
+      expect(stale).toContain(`main.${extension}`);
+      expect(stale).toContain("Undefined control sequence");
+    }
+    const pdf = new PdfDocument(next.pdf);
+    try { expect(pdf.page(0).text()).toMatch(/Revised list entry\.[\s\S]*Revised text\./); } finally { pdf.close(); }
+    expect(fs.existsSync(first.pdf)).toBe(true);
+
+    // A genuine source error does not justify clearing the auxiliary state.
+    f.write("paper/main.tex", source(false).replace("Revised text.", "Revised \\undefinedcommand text."));
+    f.repo.run(["commit", "-qam", "source error"]);
+    compile.mockClear();
+    if (strict) {
+      await expect(builder.build("HEAD")).rejects.toMatchObject({ details: expect.arrayContaining([expect.stringMatching(/main\.tex:\d+: Undefined control sequence/)]) });
+      expect(await builder.cached("HEAD", ["full"], null)).toBeNull();
+    } else {
+      const broken = await builder.build("HEAD");
+      expect(broken.errors?.join("\n")).toMatch(/main\.tex:\d+: Undefined control sequence/);
+    }
+    expect(compile).toHaveBeenCalledTimes(1);
+    compile.mockRestore();
+  } finally { await f.close(); }
+}, 120000);
+
+it.skipIf(!tex).each([true, false])("stops retrying persistent generated-output errors with strict=%s", async strict => {
+  const f = new Fixture();
+  try {
+    f.write("paper/main.tex", paper("\\newwrite\\listing\n\\immediate\\openout\\listing=main.package-list\n\\immediate\\write\\listing{\\string\\undefinedcommand}\n\\immediate\\closeout\\listing\n\\input{build/main.package-list}\nText after the error."));
+    f.repo.run(["commit", "-qam", "persistent list error"]);
+    writeSettings(f.root, { halt_on_error: strict });
+    const builder = new Builder(loadProject(f.root), f.repo), compile = vi.spyOn(builder as any, "compile");
+    if (strict) {
+      await expect(builder.build("HEAD")).rejects.toMatchObject({ details: expect.arrayContaining([expect.stringContaining("build/main.package-list:1: Undefined control sequence")]) });
+      expect(await builder.cached("HEAD", ["full"], null)).toBeNull();
+    } else {
+      const built = await builder.build("HEAD");
+      expect(built.errors?.join("\n")).toContain("build/main.package-list:1: Undefined control sequence");
+      expect(fs.existsSync(built.pdf)).toBe(true);
+    }
+    expect(compile).toHaveBeenCalledTimes(2);
+    compile.mockRestore();
   } finally { await f.close(); }
 }, 120000);
 

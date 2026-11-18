@@ -75,15 +75,22 @@ const AUXILIARY = new Set([
   ".nav",
   ".snm",
 ]);
-// Only generated-state diagnostics justify rebuilding a cached seed. Source
-// errors and interrupted compilers must keep their original failure.
+// Recovery follows the output directory, not AUXILIARY's seed-copy list:
+// packages write their own list/cache extensions there. Source errors and
+// interrupted compilers must keep their original failure.
 export function auxiliaryBuildError(error: unknown): error is BuildError {
   return error instanceof BuildError && auxiliaryDiagnostics(error.details);
 }
 export function auxiliaryDiagnostics(details: readonly string[] = []) {
   return details.some((line) => {
-    const file = /(?:^|[/\\\s(])(?:\.\/)?build[/\\]([^:\r\n]+):\d+:/.exec(line)?.[1];
-    return file !== undefined && AUXILIARY.has(path.extname(file));
+    // Read only the diagnostic's filename, never a path quoted in its message.
+    const file = /^([^\r\n]+?):\d+:/.exec(line)?.[1];
+    if (!file) return false;
+    const normalized = path.posix.normalize(file.replaceAll("\\", "/")),
+      absolute = path.posix.isAbsolute(normalized) || /^[a-z]:\//i.test(normalized);
+    // latexmk always uses -outdir=build. Relative source paths such as
+    // chapters/build/example.tex and build/../main.tex are not its output.
+    return normalized.startsWith("build/") || (absolute && normalized.includes("/build/"));
   });
 }
 // Output that TeX writes for this folder: SyncTeX data and the log name its
