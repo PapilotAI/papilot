@@ -84,6 +84,7 @@ test('a commit message stops the MCP servers Codex runs for its helper turn and 
     const child = codex.child, closed = child && child.exitCode === null ? once(child, 'close') : null;
     workspace.close(); await closed;
     store.close(); model.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    // Windows can retain native Codex file handles briefly after stdio closes.
+    await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
