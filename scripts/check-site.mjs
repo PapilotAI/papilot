@@ -8,8 +8,15 @@ import { chromium, webkit } from '../engine/node_modules/playwright/index.mjs';
 import { checkAnnotations } from './site-annotation-checks.mjs';
 import { checkSiteTheme } from './site-theme-checks.mjs';
 import { loadBlogPosts, blogLocales } from './site-blog.mjs';
+import { AGENT_IDS } from '../src/shared.ts';
 
 const languages = JSON.parse(fs.readFileSync('i18n/languages.json', 'utf8'));
+const codingAgents = AGENT_IDS.filter(id => id !== 'papilot');
+const checkAgentRoster = async page => {
+  const grid = page.getByRole('list').filter({ has: page.locator('.agent') });
+  assert.deepEqual(await grid.getByRole('listitem').evaluateAll(items => items.map(item => [...item.classList].find(name => name !== 'agent'))), codingAgents, 'the homepage lists every supported coding agent');
+  assert.equal(await grid.locator('i[aria-hidden="true"]').count(), codingAgents.length, 'brand marks do not duplicate the visible names');
+};
 const route = locale => locale === 'en' ? '/' : `/${locale}/`;
 const universe = 'https://papilot.ai/universe/';
 const server = Fastify();
@@ -94,7 +101,7 @@ try {
 
   // Every agent shows at once; on screen they arrive, then one at a time lights up.
   const grid = page.locator('.agent-grid');
-  assert.equal(await grid.locator('li').count(), 12);
+  await checkAgentRoster(page);
   await grid.scrollIntoViewIfNeeded();
   await page.waitForFunction(() => document.querySelector('.agent-grid.arrived'));
   const view = await page.evaluate(() => innerHeight);
@@ -144,6 +151,26 @@ try {
   assert.equal(await calmPage.locator('.era.old').evaluateAll(cards => cards.every(card => card.style.getPropertyValue('--old') === '1')), true, 'the older ways are simply grey');
   await calmPage.locator(`${change} .review-accept`).click();
   assert.equal(await calmPage.locator(`${change} .before`).isVisible(), false, 'decisions are immediate');
+  for (const width of [1440, 390]) for (const colorScheme of ['light', 'dark']) for (const locale of ['en', 'zh-CN']) {
+    await calmPage.setViewportSize({ width, height: 900 });
+    await calmPage.emulateMedia({ colorScheme });
+    await calmPage.goto(origin + route(locale));
+    await checkAgentRoster(calmPage);
+    // CSS masks load separately from the DOM; wait for the actual artwork
+    // before capturing the entire support grid in both themes and layouts.
+    await calmPage.locator('.agent i').evaluateAll(async icons => {
+      await document.fonts.ready;
+      await Promise.all(icons.map(async icon => {
+        const mask = getComputedStyle(icon, '::before').maskImage;
+        const url = mask.match(/^url\(["']?(.*?)["']?\)$/)?.[1];
+        if (!url) throw new Error(`Missing agent icon: ${icon.parentElement.textContent}`);
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+      }));
+    });
+    await calmPage.locator('#agents').screenshot({ path: `test-results/site/agents-${locale}-${width}-${colorScheme}.png` });
+  }
   await calm.close();
 
   // Without JavaScript every window shows where its round ends.
@@ -165,6 +192,7 @@ try {
   const staticVisitor = await staticContext.newPage();
   for (const [locale] of Object.entries(languages)) {
     await staticVisitor.goto(origin + route(locale));
+    await checkAgentRoster(staticVisitor);
     const canonical = 'https://papilot.ai' + route(locale);
     assert.equal(await staticVisitor.locator('html').getAttribute('lang'), locale);
     assert.equal(await staticVisitor.locator('link[rel=canonical]').getAttribute('href'), canonical);
@@ -269,7 +297,7 @@ try {
       await page.evaluate(() => document.fonts.ready);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${locale}/${width}: no sideways scroll`);
       await page.locator('#download-button').click();
-      for (const selector of ['.topbar-inner', '.topbar .brand', '.nav', '.topbar-universe', '.topbar-demo', '.hero-universe', '#download-button', '#download-list', '.era', '.app-window']) {
+      for (const selector of ['.topbar-inner', '.topbar .brand', '.nav', '.topbar-universe', '.topbar-demo', '.hero-universe', '#download-button', '#download-list', '.agent-grid', '.agent-grid li', '.era', '.app-window']) {
         const boxes = await page.locator(selector).evaluateAll(nodes => nodes.map(el => ({ width: el.clientWidth, scroll: el.scrollWidth, left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })));
         for (const box of boxes) {
           assert.ok(box.scroll <= box.width + 1, `${locale}/${width}: ${selector} contents fit`);

@@ -487,6 +487,9 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .agent.deepseek{--logo:url("assets/agents/deepseek.svg");--brand:#4d6bfe}
 .agent.qwen{--logo:url("assets/agents/qwen.svg");--brand:#8b5cf6}
 .agent.opencode{--logo:url("assets/agents/opencode.svg")}
+.agent.qoder{--logo:url("assets/agents/qoder.svg")}
+.agent.codebuddy{--logo:url("assets/agents/codebuddy.svg")}
+.agent.workbuddy{--logo:url("assets/agents/workbuddy.svg")}
 
 /* The agents under the hero: every logo pill at once, wrapping. With
    script they wait out of sight and arrive one after another. */
