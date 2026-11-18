@@ -960,6 +960,8 @@ html[lang=ja] .hero h1{overflow-wrap:normal;line-break:strict}
 .privacy-controls .statistics-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
 .privacy-controls[hidden],.privacy-controls [hidden]{display:none}
 
+/* Narrow headers keep their room for the demo and GitHub; Discord stays in the footer. */
+@media(max-width:720px){.topbar .discord-link{display:none}}
 @media(max-width:360px){
   .m-tools>i{width:27px}
   .m-decide{gap:4px}

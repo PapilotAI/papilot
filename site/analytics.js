@@ -12,7 +12,7 @@
     copy_install: { placement: ['hero', 'download'] },
     copy_install_failed: { placement: ['hero', 'download'] },
     navigation: { target: ['hero', 'agents', 'why', 'features', 'download'], placement: ['header', 'hero', 'footer'] },
-    outbound_click: { destination: ['github', 'releases', 'npm', 'readme', 'guide', 'changelog', 'license', 'discussions', 'mactex', 'texlive'], placement: ['header', 'hero', 'download', 'footer'] },
+    outbound_click: { destination: ['github', 'discord', 'releases', 'npm', 'readme', 'guide', 'changelog', 'license', 'discussions', 'mactex', 'texlive'], placement: ['header', 'hero', 'download', 'footer'] },
     menu_open: { menu: ['download', 'language'], placement: ['header', 'hero', 'download'] },
     language_change: { language: languages },
     theme_change: { theme: ['light', 'dark'] },
@@ -113,7 +113,7 @@
     document.head.append(script);
   };
   const destinations = new Map([
-    ['https://github.com/PapilotAI/papilot', 'github'], ['https://github.com/cu1ch3n/papilot', 'github'],
+    ['https://github.com/PapilotAI/papilot', 'github'], ['https://github.com/cu1ch3n/papilot', 'github'], ['https://discord.gg/WdgZDDAvwj', 'discord'],
     ['https://github.com/PapilotAI/papilot/releases/latest', 'releases'], ['https://www.npmjs.com/package/papilot', 'npm'],
     ['https://github.com/PapilotAI/papilot/discussions', 'discussions'], ['https://github.com/PapilotAI/papilot/blob/main/LICENSE', 'license'],
     ['https://github.com/PapilotAI/papilot/blob/main/docs/guide.md', 'guide'], ['https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#agents', 'guide'],

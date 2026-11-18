@@ -101,7 +101,8 @@ try {
           if (window.trackerConfig.autoTrack !== 'false') window.umami.track();
         ` });
       }
-      if (url.origin === 'https://github.com') return route.fulfill({ contentType: 'application/octet-stream', headers: { 'Content-Disposition': 'attachment; filename="test.dmg"' }, body: 'test download' });
+      // Outbound destinations answer with a download, so a click stays on the page under test.
+      if (['https://github.com', 'https://discord.gg'].includes(url.origin)) return route.fulfill({ contentType: 'application/octet-stream', headers: { 'Content-Disposition': 'attachment; filename="test.dmg"' }, body: 'test download' });
       assert.ok(['https://papilot.ai', 'https://www.papilot.ai', 'http://localhost:7274', 'https://preview.example', 'https://papilot.ai.preview.example'].includes(url.origin), `unexpected external request: ${url}`);
       const html = !enabled && disabledPages.get(url.pathname);
       if (html) return route.fulfill({ contentType: 'text/html', body: html });

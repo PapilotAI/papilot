@@ -48,6 +48,8 @@ export async function checkSiteBehavior(context) {
     assert.deepEqual(await events('download_click'), [], 'all downloads is a destination click, not an installer click');
     await downloadLink('.topbar a[href="https://github.com/cu1ch3n/papilot"]');
     assert.deepEqual((await events('outbound_click')).at(-1).data, { locale: 'en', destination: 'github', placement: 'header' });
+    await downloadLink('.topbar a[href="https://discord.gg/WdgZDDAvwj"]');
+    assert.deepEqual((await events('outbound_click')).at(-1).data, { locale: 'en', destination: 'discord', placement: 'header' });
     await downloadLink('.footer a[href$="#readme"]');
     assert.deepEqual((await events('outbound_click')).at(-1).data, { locale: 'en', destination: 'readme', placement: 'footer' });
 
