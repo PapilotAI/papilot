@@ -295,6 +295,14 @@ export function projectFor(root: string, document?: string | null): Project {
   }
   return loadProject(root);
 }
+/** Package and class hints shared by import and compilation. */
+export function hasUnicodeEngineHint(text: string): boolean {
+  // Consume escaped characters first: \% is literal, while \\% starts a comment.
+  // Strip comments throughout package lists too; callers keep raw magic directives.
+  const commands = text.replace(/(\\[\s\S])|%[^\r\n]*/g, "$1");
+  return /\\(?:usepackage(?:\[[^\]]*\])?\{[^}]*\b(?:fontspec|xeCJK|unicode-math|polyglossia)\b|documentclass(?:\[[^\]]*\])?\{ctex)/.test(commands);
+}
+
 /** The paper's build settings, for its current root document or for `document`. */
 export function loadProject(root: string, overrides?: BuildOverrides, document?: string): Project {
   root = realPath(root);
@@ -355,10 +363,6 @@ export function loadProject(root: string, overrides?: BuildOverrides, document?:
   const mode = latexmkrc
     ? read(root, latexmkrc).match(/^\s*\$pdf_mode\s*=\s*(\d)/m)?.[1]
     : null;
-  const hinted =
-    /^[^%\n]*(?:\\usepackage(?:\[[^\]]*\])?\{[^}]*\b(?:fontspec|xeCJK|unicode-math|polyglossia)\b|\\documentclass(?:\[[^\]]*\])?\{ctex)/m.test(
-      text,
-    );
   const engine =
     settings.engine ??
     ((magic && aliases[magic]) ||
@@ -368,7 +372,7 @@ export function loadProject(root: string, overrides?: BuildOverrides, document?:
           Engine
         >
       )[mode ?? ""] ||
-      (hinted ? "xelatex" : "pdflatex"));
+      (hasUnicodeEngineHint(text) ? "xelatex" : "pdflatex"));
   if (!ENGINES.includes(engine as Engine))
     throw new Error(`"engine" must be one of ${ENGINES.join(", ")}.`);
   const source_dir = cleanPath(settings.source_dir ?? doc_dir);

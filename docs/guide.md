@@ -237,6 +237,8 @@ Switching documents saves pending note edits first, including when using the key
 
 ### Fix a LaTeX build
 
+Papilot preserves an explicit engine setting. Otherwise, an engine directive such as `% !TEX program = lualatex` takes precedence over `latexmkrc`'s `$pdf_mode`, followed by active Unicode package or class hints such as `fontspec` or `ctexart`; without a hint, it uses pdfLaTeX. Commented examples do not select an engine, including comments inside multiline package lists. A literal `\%` does not hide commands later on the same line.
+
 In the manuscript's **Compilation Problems** panel, select **Fix with an agent…** to have the selected agent diagnose the failed build. Papilot gives it the compiler diagnostics and relevant source excerpts in a read-only turn. If the agent proposes changes to the engine, source directory, or use of the current `latexmkrc`, Papilot tests them and saves a successful configuration in its data directory for this paper and compiler host. Later builds use those settings after a restart. A subsequent change to the paper's explicit build settings takes precedence. If the agent thinks a different main document should be used, it asks you to check the selection.
 
 If the agent recommends editing the paper, review its diagnosis and select **Start task** to let the agent make the proposed edits in a task worktree. If the original cannot produce a PDF and the revision compiles, the review shows the source changes and the original compiler errors. You can accept the changes and apply them to the manuscript from that review.

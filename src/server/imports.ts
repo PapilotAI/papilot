@@ -99,16 +99,16 @@ export async function inspectPaper(root: string) {
     const found = new Set(roots);
     candidates = [...roots, ...files.filter(file => !found.has(file))];
   }
-  try { if (main) engine = engineFor(root, main, settings); } catch (failure) { error = (failure as Error).message; }
+  try { if (main) engine = await engineFor(root, main, settings); } catch (failure) { error = (failure as Error).message; }
   return { candidates, main, engine: engine || 'pdflatex', error };
 }
 // Engine detection also works before Git initialization by reading the source hints.
-function engineFor(root: string, main: string, settings: Record<string, unknown>) {
+async function engineFor(root: string, main: string, settings: Record<string, unknown>) {
   if (typeof settings.engine === 'string' && settings.engine) return settings.engine;
   const text = sourceHead(path.join(root, main));
   const rc = [path.join(path.dirname(main), '.latexmkrc'), path.join(path.dirname(main), 'latexmkrc'), '.latexmkrc', 'latexmkrc'].find(file => fs.existsSync(path.join(root, file)));
   const mode = rc ? fs.readFileSync(path.join(root, rc), 'utf8').match(/^\s*\$pdf_mode\s*=\s*(\d)/m)?.[1] : undefined;
-  return text.match(/^%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex|lualatex)/im)?.[1].toLowerCase() || ({ '1': 'pdflatex', '4': 'lualatex', '5': 'xelatex' } as Record<string, string>)[mode || ''] || (/^[^%\n]*\\(?:usepackage(?:\[[^\]]*\])?\{[^}]*\b(?:fontspec|xeCJK|unicode-math|polyglossia)\b|documentclass(?:\[[^\]]*\])?\{ctex)/m.test(text) ? 'xelatex' : 'pdflatex');
+  return text.match(/^%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex|lualatex)/im)?.[1].toLowerCase() || ({ '1': 'pdflatex', '4': 'lualatex', '5': 'xelatex' } as Record<string, string>)[mode || ''] || ((await configModule()).hasUnicodeEngineHint(text) ? 'xelatex' : 'pdflatex');
 }
 // Keep the author's settings, including a source folder that still contains
 // the main file; without one, the whole folder compiles.
@@ -154,7 +154,7 @@ export async function openFolder(input: { path?: unknown; main?: unknown }, know
   const main = input.main ?? detected.main;
   if (!existingTex(root, main)) throw new Error('Choose an existing TeX main file.');
   await prepareRepository(root);
-  await rememberMain(root, main, engineFor(root, main, (await configModule()).readSettings(root)));
+  await rememberMain(root, main, await engineFor(root, main, (await configModule()).readSettings(root)));
   return { project: await register(root, path.basename(root)) };
 }
 // Uploaded ZIPs and Universe templates share path and file-type validation.
