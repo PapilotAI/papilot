@@ -630,7 +630,9 @@ export class AcpAgent extends Adapter {
         const deadline = setTimeout(() => {
           reject(new Error(`${this.name} did not exit. Close its process before resuming the task.`));
         }, 10000);
-        force.unref(); deadline.unref();
+        // The bounded deadline keeps awaited cleanup alive after the ACP
+        // parent's handles close; an orphaned tool has no Node handle here.
+        force.unref();
         if (group) void checkGroup();
       });
       this.closing = closing;

@@ -1088,12 +1088,16 @@ for (const ending of ['shutdown', 'parent exit', 'cancel timeout', 'forced shutd
   test(`ACP ${ending} waits for tools with independent stdio before releasing their worktree`, { skip: process.platform === 'win32', timeout: 15000 }, async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-acp-tool-tree-'));
     const ready = path.join(cwd, 'tool-ready'), writes = path.join(cwd, 'tool-writes'), stopped = path.join(cwd, 'tool-stopped');
+    const stopping = path.join(cwd, 'tool-stopping'), release = path.join(cwd, 'tool-release');
     const tool = `
       const fs = require('node:fs');
       setInterval(() => fs.appendFileSync(${JSON.stringify(writes)}, 'write\\n'), 10);
       process.on('SIGTERM', () => {
         if (${JSON.stringify(ending)} === 'forced shutdown') return;
-        setTimeout(() => { fs.writeFileSync(${JSON.stringify(stopped)}, 'stopped'); process.exit(0); }, 300);
+        fs.writeFileSync(${JSON.stringify(stopping)}, 'stopping');
+        setInterval(() => {
+          if (fs.existsSync(${JSON.stringify(release)})) { fs.writeFileSync(${JSON.stringify(stopped)}, 'stopped'); process.exit(0); }
+        }, 10);
       });
       fs.writeFileSync(${JSON.stringify(ready)}, String(process.pid));
     `;
@@ -1139,11 +1143,16 @@ for (const ending of ['shutdown', 'parent exit', 'cancel timeout', 'forced shutd
       if (ending === 'parent exit') worker.stdin!.write(JSON.stringify({ method: 'test/exit' }) + '\n');
       if (ending === 'cancel timeout') await agent.request('turn/interrupt', { turnId: turn.id });
       let released = false;
-      const releasing = ending === 'shutdown' || ending === 'forced shutdown' ? agent.closeWorktree(cwd).then(() => { released = true; }) : undefined;
+      let releasing = ending === 'shutdown' || ending === 'forced shutdown' ? agent.closeWorktree(cwd).then(() => { released = true; }) : undefined;
       await closed;
-      assert.equal(fs.existsSync(stopped), false, 'the ACP parent closes before its independently piped tool finishes');
-      assert.equal(released, false, 'parent close must not release a worktree still being written by its tool');
-      await (releasing || agent.closeWorktree(cwd));
+      releasing ??= agent.closeWorktree(cwd).then(() => { released = true; });
+      if (ending !== 'forced shutdown') {
+        await untilFile(stopping); await tick();
+        assert.equal(fs.existsSync(stopped), false, 'the tool remains alive until the test explicitly releases it');
+        assert.equal(released, false, 'parent close must not release a worktree still being written by its tool');
+        fs.writeFileSync(release, 'release');
+      }
+      await releasing;
       assert.equal(fs.existsSync(stopped), ending !== 'forced shutdown', 'cooperative tools must finish their shutdown before releasing the worktree');
       const completedWrites = fs.readFileSync(writes, 'utf8');
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -1161,6 +1170,66 @@ for (const ending of ['shutdown', 'parent exit', 'cancel timeout', 'forced shutd
     }
   });
 }
+
+test('awaited ACP shutdown keeps a standalone caller alive until its orphaned tool exits', { skip: process.platform === 'win32', timeout: 15000 }, async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-acp-shutdown-anchor-'));
+  const ready = path.join(cwd, 'tool-ready'), writes = path.join(cwd, 'tool-writes'), finished = path.join(cwd, 'shutdown-finished');
+  const tool = `
+    const fs = require('node:fs');
+    process.on('SIGTERM', () => {});
+    setInterval(() => fs.appendFileSync(${JSON.stringify(writes)}, 'write\\n'), 10);
+    fs.writeFileSync(${JSON.stringify(ready)}, String(process.pid));
+  `;
+  const server = `
+    const { spawn } = require('node:child_process');
+    const { createInterface } = require('node:readline');
+    let serial = 0;
+    createInterface({ input: process.stdin }).on('line', line => {
+      const message = JSON.parse(line);
+      if (message.method === 'session/prompt') {
+        spawn(process.execPath, ['-e', ${JSON.stringify(tool)}], { stdio: 'ignore' }).unref(); return;
+      }
+      const result = message.method === 'initialize' ? { protocolVersion: 1, agentCapabilities: {} }
+        : message.method === 'session/new' ? { sessionId: 'session-' + ++serial, modes: { availableModes: [{ id: 'default' }] } } : {};
+      if (message.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
+    });
+  `;
+  const harness = `
+    import fs from 'node:fs';
+    import { spawn } from 'node:child_process';
+    import { AcpAgent, ACP_PROFILES } from ${JSON.stringify(new URL('../src/server/acp.ts', import.meta.url).href)};
+    const agent = new AcpAgent(ACP_PROFILES.qoder, 'fake-qoder', (_binary, _args, options) => spawn(process.execPath, ['-e', ${JSON.stringify(server)}], options), ${JSON.stringify(cwd)});
+    await agent.start();
+    const { thread } = await agent.request('thread/start', { cwd: ${JSON.stringify(cwd)} });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Run the tool.' }] });
+    const deadline = Date.now() + 5000;
+    while (!fs.existsSync(${JSON.stringify(ready)}) || !fs.existsSync(${JSON.stringify(writes)})) {
+      if (Date.now() >= deadline) throw new Error('Tool did not start');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    // No server, unrelated children, or other referenced timers remain after
+    // the ACP parent closes. Only shutdown itself can keep this process alive.
+    await agent.shutdown();
+    fs.writeFileSync(${JSON.stringify(finished)}, 'finished');
+  `;
+  const caller = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', harness], { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] });
+  const closed = once(caller, 'close');
+  let stderr = '';
+  caller.stderr!.on('data', chunk => { stderr += String(chunk); });
+  try {
+    const [code] = await closed;
+    assert.equal(code, 0, stderr);
+    assert.equal(fs.existsSync(finished), true, 'the awaited cleanup must finish before the caller exits');
+    const completedWrites = fs.readFileSync(writes, 'utf8');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(fs.readFileSync(writes, 'utf8'), completedWrites, 'the orphaned tool must no longer write');
+  } finally {
+    if (caller.exitCode == null && caller.signalCode == null) caller.kill('SIGKILL');
+    if (fs.existsSync(ready)) try { process.kill(Number(fs.readFileSync(ready, 'utf8')), 'SIGKILL'); } catch { /* already gone */ }
+    await closed;
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
 test('ACP shutdown and reconnect wait for a real descendant to release inherited streams', { skip: process.platform === 'win32', timeout: 5000 }, async () => {
   const script = `
