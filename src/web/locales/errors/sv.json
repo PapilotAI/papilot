@@ -459,5 +459,7 @@
   "Choose a supported worker for each collaboration role.": "Välj en arbetare som stöds för varje samarbetsroll.",
   "Choose the quick, polish or rigorous role.": "Välj rollen quick, polish eller rigorous.",
   "Send enabled or routes.": "Skicka enabled eller routes.",
-  "This worker has already finished.": "Den här arbetaren är redan klar."
+  "This worker has already finished.": "Den här arbetaren är redan klar.",
+  "Connect an agent that supports read-only tasks, such as Codex.": "Anslut en agent som stöder uppgifter med enbart läsåtkomst, till exempel Codex.",
+  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "Den valda agenten stöder inte kompileringsdiagnostik med enbart läsåtkomst. Välj en annan agent."
 }

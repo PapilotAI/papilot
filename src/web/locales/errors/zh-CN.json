@@ -459,5 +459,7 @@
   "Choose a supported worker for each collaboration role.": "请为每个协作角色选择受支持的执行器。",
   "Choose the quick, polish or rigorous role.": "请选择 quick、polish 或 rigorous 角色。",
   "Send enabled or routes.": "请发送 enabled 或 routes。",
-  "This worker has already finished.": "此工作进程已完成。"
+  "This worker has already finished.": "此工作进程已完成。",
+  "Connect an agent that supports read-only tasks, such as Codex.": "请连接支持只读任务的智能体，例如 Codex。",
+  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "所选智能体不支持只读编译诊断。请选择其他智能体。"
 }

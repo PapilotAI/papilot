@@ -459,5 +459,7 @@
   "Choose a supported worker for each collaboration role.": "Elige un trabajador compatible para cada rol de colaboración.",
   "Choose the quick, polish or rigorous role.": "Elige el rol quick, polish o rigorous.",
   "Send enabled or routes.": "Envía enabled o routes.",
-  "This worker has already finished.": "Este trabajador ya ha terminado."
+  "This worker has already finished.": "Este trabajador ya ha terminado.",
+  "Connect an agent that supports read-only tasks, such as Codex.": "Conecta un agente que admita tareas de solo lectura, como Codex.",
+  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "El agente seleccionado no admite diagnósticos de compilación en modo de solo lectura. Selecciona otro agente."
 }

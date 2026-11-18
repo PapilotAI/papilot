@@ -1873,5 +1873,15 @@
     "revision": "a136b17261aae19bdec7301da988ec09bfb1a2e53ff38a94df99c5b8899b733d",
     "textHash": "819a59015b917140edf495a1ad1f5518223f91b9130f26c7e619dd8322634146",
     "model": "gemini-4-argon-medium"
+  },
+  "Connect an agent that supports read-only tasks, such as Codex.": {
+    "revision": "42fcc0ec77a706dca9ddf7e6d987d7527afc1a8c08a1701ea00de6440b671a8e",
+    "textHash": "57aef5f94dbecc7295db5911f6ca3dddc98f3fee5cee2f7b7ad2a5723bd766ea",
+    "model": "codex-manual"
+  },
+  "The selected agent does not support read-only compilation diagnosis. Select another agent.": {
+    "revision": "050daa7d51ee6cbfc21b9f377337909f72a73a937469dc1e5ed38170692f714c",
+    "textHash": "1751be8aa8de71a4fc7ae854fac368d3430530acf3e32370bfeb4b42ea184c9e",
+    "model": "codex-manual"
   }
 }

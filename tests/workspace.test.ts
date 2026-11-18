@@ -2109,8 +2109,83 @@ test('an agent writes a commit message from the chosen changes, in a read-only t
     assert.equal(turns(), 2);
     assert.equal((await f.workspace.commitMessage(f.task.projectId, ['main.tex'])).message, 'Shorten the opening sentence');
     f.codex.ready = false;
-    await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex']), /Sign in to an agent, such as Codex/);
+    await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex']), /Connect an agent that supports read-only tasks, such as Codex/);
   } finally { f.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('read-only helpers fall back to a capable agent while write helpers keep the selected agent', async () => {
+  const claude = new FakeCodex(); claude.ready = true; claude.supportsReadOnlyTasks = false;
+  const f = fixture(undefined, { claude });
+  try {
+    f.codex.ready = true;
+    f.workspace.runtimes.claude.authenticated = true;
+    f.store.updateTask(f.task.id, { agent: 'claude', titleSource: 'prompt' });
+    for (const [id, agent] of [['codex', f.codex], ['claude', claude]] as const) agent.handler = async method => {
+      if (method === 'thread/start') return { thread: { id: `${id}-helper` } };
+      if (method !== 'turn/start') return {};
+      setImmediate(() => {
+        agent.emit('notification', { method: 'item/completed', params: { threadId: `${id}-helper`, item: { type: 'agentMessage', text: 'Clarify the introduction' } } });
+        agent.emit('notification', { method: 'turn/completed', params: { threadId: `${id}-helper`, turn: { id: 'helper-turn', status: 'completed' } } });
+      });
+      return { turn: { id: 'helper-turn' } };
+    };
+    const named = await f.workspace.generateTaskTitle(f.task.id);
+    assert.equal(named?.title, 'Clarify the introduction');
+    assert.equal(named?.titleGeneration, null);
+    assert.equal(claude.calls.length, 0);
+    (f.workspace as any).taskCommitChanges = async () => ({ files: [{ path: 'main.tex', status: 'M' }], patch: '-Old opening\n+Clear opening', recent: [] });
+    assert.deepEqual(await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'claude', taskId: f.task.id }), { message: 'Clarify the introduction', agent: 'codex' });
+    assert.equal(claude.calls.length, 0, 'A signed-in agent without read-only support is not selected for either helper');
+    const starts = f.codex.calls.filter(call => call.method === 'thread/start');
+    assert.equal(starts.length, 2);
+    for (const { params } of starts) {
+      assert.equal(params.sandbox, 'read-only');
+      assert.notEqual(params.cwd, '/unused');
+      assert.equal(fs.existsSync(params.cwd), false);
+    }
+    assert.equal(await f.workspace.repairImport('/unused', 'Missing command', { agent: 'claude' }), 'Clarify the introduction');
+    const repair = claude.calls.find(call => call.method === 'thread/start')!.params;
+    assert.deepEqual([repair.cwd, repair.sandbox], ['/unused', 'workspace-write']);
+  } finally { f.close(); }
+});
+
+test('missing read-only helpers leave titles unchanged and do not prevent editing', async () => {
+  const claude = new FakeCodex(); claude.ready = true; claude.supportsReadOnlyTasks = false;
+  const f = fixture(undefined, { claude });
+  try {
+    f.workspace.runtimes.claude.authenticated = true;
+    f.store.updateTask(f.task.id, { agent: 'claude', titleSource: 'prompt' });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      assert.throws(() => f.workspace.requestTaskTitle(f.task.id), /Connect an agent that supports read-only tasks, such as Codex\./);
+      assert.equal(f.store.task(f.task.id).titleGeneration, undefined);
+      assert.equal(f.store.task(f.task.id).title, f.task.title);
+    }
+    await assert.rejects(f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'claude' }), /Connect an agent that supports read-only tasks, such as Codex\./);
+    assert.equal(claude.calls.length, 0);
+    await f.workspace.enqueue(f.task.id, 'Edit the introduction.', 'unsupported-title-helper', false);
+    await tick(); await tick();
+    assert.equal(f.store.task(f.task.id).status, 'running');
+    assert.equal(f.store.task(f.task.id).titleGeneration, undefined);
+    assert.ok(claude.calls.some(call => call.method === 'turn/start'));
+    assert.equal(claude.calls.some(call => call.params.ephemeral), false, 'Automatic naming does not launch a helper that is guaranteed to fail');
+  } finally { f.close(); }
+});
+
+test('compilation diagnosis rejects unsupported selected agents without switching providers', async () => {
+  const claude = new FakeCodex(); claude.ready = true; claude.supportsReadOnlyTasks = false;
+  const f = fixture(undefined, { claude });
+  try {
+    f.codex.ready = true;
+    f.workspace.runtimes.claude.authenticated = true;
+    const diagnose = () => f.workspace.diagnoseLatexBuild('/unused', 'Compiler output', { agent: 'claude' });
+    await assert.rejects(diagnose(), /The selected agent does not support read-only compilation diagnosis\. Select another agent\./);
+    claude.ready = false;
+    await assert.rejects(diagnose(), /Connect the selected agent before diagnosing compilation problems/);
+    claude.ready = true; f.workspace.runtimes.claude.authenticated = false;
+    await assert.rejects(diagnose(), /Connect the selected agent before diagnosing compilation problems/);
+    assert.equal(claude.calls.length, 0);
+    assert.equal(f.codex.calls.length, 0);
+  } finally { f.close(); }
 });
 
 test('a helper turn lets go of its Codex thread and removes its folder once Codex has closed the thread', async () => {

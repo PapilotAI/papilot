@@ -1655,16 +1655,20 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // The agent that writes a commit message or resolves a merge: the one the
   // author chose, or else the first that is signed in, with the chosen model
   // or the default one; light asks for the agent's small model when it has one.
-  private helper(choice: { agent?: AgentId; model?: string }, task: string, light = false) {
-    const usable = (id: AgentId) => this.agents[id].ready && this.runtimes[id].authenticated;
+  private helper(choice: { agent?: AgentId; model?: string }, task: string, options: { light?: boolean; readOnly?: boolean } = {}) {
+    const usable = (id: AgentId) => this.agents[id].ready && this.runtimes[id].authenticated && (!options.readOnly || this.agents[id].supportsReadOnlyTasks !== false);
     const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(usable);
-    if (!id) throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
+    if (!id) {
+      if (options.readOnly) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
+      throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
+    }
     const models = this.runtimes[id].models;
-    return { id, model: (light ? lightModel(models) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
+    return { id, model: (options.light ? lightModel(models) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
   }
   async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string }) {
     const id = choice.agent, runtime = this.runtimes[id];
     if (!this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
+    if (this.agents[id].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only compilation diagnosis. Select another agent.');
     const model = runtime.models.find(item => item.id === choice.model) || runtime.models.find(item => item.isDefault);
     return this.oneOff(id, { cwd: root, sandbox: 'read-only', model, timeout: 120000, what: 'diagnose the LaTeX build', instructions: latexRepairInstructions, prompt });
   }
@@ -1735,7 +1739,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const pending = this.titles.get(taskId);
     if (pending) return pending;
-    const { id, model } = this.helper({ agent: this.agentOf(task), model: task.model || undefined }, 'generate a task title', true);
+    const { id, model } = this.helper({ agent: this.agentOf(task), model: task.model || undefined }, 'generate a task title', { light: true, readOnly: true });
     const items = this.store.items(taskId), first = items.find(item => item.type === 'user');
     const outcome = items.findLast(item => item.type === 'assistant' && item.text);
     const prompt = JSON.stringify({ request: first?.text || '', taskContext: task.instructions, existingOutcome: outcome?.text || '' });
@@ -1761,7 +1765,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // lightest reasoning it offers. The same changes get the message already
   // written, or being written, for them unless the author asks for a fresh one.
   async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; fresh?: boolean; staged?: boolean; taskId?: string } = {}) {
-    const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', true);
+    const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', { light: true, readOnly: true });
     const task = choice.taskId ? this.store.task(choice.taskId) : undefined;
     if (task && task.projectId !== projectId) throw new Error('Invalid task ID.');
     const { files, patch, recent } = task ? await this.taskCommitChanges(task) : await commitChanges(project.path, paths, choice.staged);
