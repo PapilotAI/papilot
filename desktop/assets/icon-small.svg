@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>Papilot macOS app icon for 16 and 32 px</title>
+  <desc>Small-size cut for 16 and 32 px: one navy capsule, the coral line and one blue capsule, without shadows. Transparent outside the tile.</desc>
+  <defs>
+    <path id="tile-shape" d="M358 100H666C753 100 797 100 832 118C864 134 890 160 906 192C924 227 924 271 924 358V666C924 753 924 797 906 832C890 864 864 890 832 906C797 924 753 924 666 924H358C271 924 227 924 192 906C160 890 134 864 118 832C100 797 100 753 100 666V358C100 271 100 227 118 192C134 160 160 134 192 118C227 100 271 100 358 100Z"/>
+    <clipPath id="tile-clip"><use href="#tile-shape"/></clipPath>
+    <linearGradient id="tile" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop stop-color="#F2F8FF"/>
+      <stop offset="0.5" stop-color="#E1EEFD"/>
+      <stop offset="1" stop-color="#C9DEF8"/>
+    </linearGradient>
+    <linearGradient id="navy" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#1B2A5E"/>
+      <stop offset="1" stop-color="#28408C"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#60A5FA"/>
+    </linearGradient>
+    <linearGradient id="coral" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#FF4D5E"/>
+      <stop offset="0.65" stop-color="#FF6A64"/>
+      <stop offset="1" stop-color="#FF8A70"/>
+    </linearGradient>
+    <filter id="tile-shadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="11" flood-color="#152B43" flood-opacity="0.16"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#152B43" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <g filter="url(#tile-shadow)">
+    <use href="#tile-shape" fill="url(#tile)"/>
+  </g>
+  <use href="#tile-shape" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="4" clip-path="url(#tile-clip)"/>
+  <g transform="translate(512 512) rotate(-45)">
+    <rect x="-180" y="-172" width="380" height="104" rx="52" fill="url(#navy)"/>
+    <rect x="-310" y="-34" width="620" height="68" rx="34" fill="url(#coral)"/>
+    <rect x="-180" y="68" width="380" height="104" rx="52" fill="url(#blue)"/>
+  </g>
+</svg>

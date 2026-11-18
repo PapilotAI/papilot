@@ -4,7 +4,7 @@ import { ChipSelect } from './chip-select.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { t } from './i18n.ts';
 import { desktopWindow } from './desktop-chrome.tsx';
-import logo from './logo.svg';
+import { PapilotMark } from './papilot-mark.tsx';
 import type { UpdateStatus } from '../shared.ts';
 import './update-notice.css';
 
@@ -129,7 +129,7 @@ export function UpdateSettings({ api }: { api: UpdateApi }) {
     <section className="settings-card update-summary" aria-label={t('Update Papilot')}>
       <div className="update-product-row">
         <div className="update-product">
-          <span className="update-product-mark"><img src={logo} width="34" height="34" alt=""/></span>
+          <span className="update-product-mark"><PapilotMark size={32}/></span>
           <div><h3>Papilot</h3><p className="update-current-version"><span>{t('Current version')}</span><code title={status.currentVersion}>{versionLabel(status.currentVersion)}</code></p></div>
         </div>
         {!managed && <button className="button secondary update-check" disabled={sending || busy || checking} onClick={() => void send('/updates/check')}><Icon name="refresh" size={14}/>{t('Check for updates')}</button>}

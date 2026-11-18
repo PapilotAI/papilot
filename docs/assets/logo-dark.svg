@@ -1,9 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <rect x="18" y="48" width="14" height="10" fill="#F0F4F8" stroke="#E6EDF3" stroke-width="2"/>
-  <rect x="32" y="48" width="14" height="10" fill="#C6D5E5" stroke="#E6EDF3" stroke-width="2"/>
-  <path d="M32 6L12 34L18 48H32V6Z" fill="#FFFFFF"/>
-  <path d="M32 6L52 34L46 48H32V6Z" fill="#356AA0"/>
-  <path d="M32 6L52 34L46 48H18L12 34L32 6Z" stroke="#E6EDF3" stroke-width="2" stroke-linejoin="miter" stroke-miterlimit="2"/>
-  <path d="M32 6V20" stroke="#E6EDF3" stroke-width="2"/>
-  <path d="M32 20Q35 31 46 34Q35 37 32 48Q29 37 18 34Q29 31 32 20Z" fill="#FFFFFF" stroke="#E6EDF3" stroke-width="2" stroke-linejoin="round"/>
+  <title>Papilot</title>
+  <g transform="translate(34.4715 29.5285) scale(0.1125) rotate(-45)">
+    <rect x="-174" y="-229" width="236" height="68" rx="34" fill="#D8E2F9"/>
+    <rect x="-124" y="-127" width="336" height="68" rx="34" fill="#D8E2F9"/>
+    <rect x="-323" y="-24" width="634" height="48" rx="24" fill="#FF6A64"/>
+    <rect x="-124" y="59" width="336" height="68" rx="34" fill="#4D93F8"/>
+    <rect x="-174" y="161" width="236" height="68" rx="34" fill="#4D93F8"/>
+  </g>
 </svg>

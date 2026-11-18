@@ -1,0 +1,5 @@
+/* The app icon's colours, flat; the navy capsules turn light on dark panels. */
+.papilot-mark .mark-top{fill:#223575}
+.papilot-mark .mark-line{fill:#ff6a64}
+.papilot-mark .mark-bottom{fill:#4d93f8}
+:root[data-theme="dark"] .papilot-mark .mark-top{fill:#d8e2f9}

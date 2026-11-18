@@ -692,7 +692,7 @@ body.resizing iframe{pointer-events:none}
 .new-task-panel{flex:1;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
 .new-task-start{display:flex;flex-direction:column;gap:8px;flex-shrink:0;margin:auto 0;padding:20px 0 60px}
 .new-task-welcome{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:14px;text-align:center}
-.new-task-welcome img{display:block;width:32px;height:32px}
+.new-task-welcome svg{display:block;width:32px;height:32px}
 .new-task-welcome h2{margin:0;font:500 15px/1.3 var(--sans);letter-spacing:0;text-wrap:balance}
 .new-task-panel .composer{width:100%;margin:0;flex:none}
 .new-task-panel .composer textarea{min-height:110px;max-height:min(240px,32dvh);font-size:13px}
@@ -1094,7 +1094,7 @@ body.resizing iframe{pointer-events:none}
   .new-task-panel .composer{background:var(--bg);border-radius:var(--r-lg);box-shadow:0 2px 12px rgb(0 0 0/.05)}
   .new-task-start{padding-bottom:28px}
   .new-task-welcome{gap:12px;margin-bottom:16px}
-  .new-task-welcome img{width:44px;height:44px}
+  .new-task-welcome svg{width:44px;height:44px}
   .new-task-welcome h2{font-size:23px}
   .new-task-panel .composer textarea{font-size:16px;min-height:120px}
   .usage summary{min-height:40px}

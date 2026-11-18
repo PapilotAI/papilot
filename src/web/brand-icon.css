@@ -1,5 +1,5 @@
 .brand-icon{display:inline-block;flex:none;vertical-align:middle;background:currentColor;mask:var(--brand-image) center/contain no-repeat;color:var(--brand-color,currentColor)}
-.brand-icon[data-brand=papilot]{--brand-color:#356aa0}
+.brand-icon[data-brand=papilot]{--brand-color:#4d93f8}
 .brand-icon[data-brand=claude]{--brand-color:#d97757}
 .brand-icon[data-brand=antigravity]{--brand-color:#4285f4}
 .brand-icon[data-brand=kimi]{--brand-color:#6366f1}

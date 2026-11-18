@@ -3,7 +3,7 @@ import info from 'virtual:papilot-info';
 import type { LicenseNotice } from '../license-info.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
-import logo from './logo.svg';
+import { PapilotMark } from './papilot-mark.tsx';
 import { versionLabel } from './update-notice.tsx';
 import './settings.css';
 
@@ -17,7 +17,7 @@ export function AboutSettings({ onLicenses, experiments }: { onLicenses: () => v
   return <div className="about-settings settings-page">
     <section className="settings-card settings-card-body">
     <div className="settings-product">
-      <img src={logo} width="52" height="52" alt=""/>
+      <PapilotMark size={52}/>
       <div><div className="settings-product-name">Papilot <span className="settings-version" title={info.version}>v{versionLabel(info.version)}</span></div><p>{t('A workspace for your papers.')}</p></div>
     </div>
     <p className="settings-intro">{t('Read, annotate, and revise your papers with AI, all in one place.')}</p>

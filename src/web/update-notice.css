@@ -19,7 +19,7 @@
 .update-product-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:12px 0}
 .update-product{display:flex;align-items:center;gap:12px;min-width:0}
 .update-product-mark{display:grid;place-items:center;flex:none;width:40px;height:40px}
-.update-product-mark>img{width:32px;height:32px}
+.update-product-mark>svg{width:32px;height:32px}
 .update-product>div{min-width:0}
 .update-product h3{margin:0;font-size:14px;line-height:1.4;font-weight:500}
 .update-current-version{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;margin:2px 0 0;font-size:11px;line-height:1.45;color:var(--text-2)}

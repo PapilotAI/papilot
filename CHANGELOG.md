@@ -23,6 +23,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- **A new Papilot icon.** Navy and blue capsules split by a coral line replace the pen nib in the desktop app, browser tabs, the home-screen icon, the workspace, Settings, the Mac installer and the website. In the dark theme the workspace and Settings draw the navy capsules light, and at 16 to 32 px a three-stripe cut keeps the mark legible.
 - Continue compiling after recoverable LaTeX errors and show the resulting PDF with its diagnostics in task reviews, full and retained PDFs, accepted PDFs, Git comparisons and agent reviews. Diagnostics follow the PDF actually displayed, including errors found only during a full-document build after a clean chapter comparison. Fatal errors still fail the build, including when XeLaTeX leaves a truncated PDF. Set `"halt_on_error": true` in the document's `.git/papilot/settings.json` to stop at the first error. Stale generated list and navigation files still trigger an automatic clean rebuild in either mode.
 - Refresh the Mac installer with a minimal PDF diff and annotation: a blue connector guides the Papilot icon from the selected paper region into Applications inside its note. Use the current “Next-Generation AI LaTeX Editor” tagline.
 

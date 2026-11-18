@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
-import logo from './logo.svg';
+import { PapilotMark } from './papilot-mark.tsx';
 import { ChipSelect } from './chip-select.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { LANGUAGES, browserLanguage, setLanguage, t, useLanguage, type LanguageChoice } from './i18n.ts';
@@ -111,7 +111,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
           {visibleGroups.map(group => <section className="settings-category-group" key={group.label}>
             <h3>{group.label}</h3>
             {group.entries.map(entry => <button type="button" key={entry.label} className="settings-category" data-settings-page={entry.page} aria-current={entry.page === page || (page === 'licenses' && entry.page === 'about') ? 'page' : undefined} onClick={() => goTo(entry.page)}>
-              {entry.page === 'about' ? <img src={logo} width="18" height="18" alt=""/> : (entry.page === 'latex' || entry.page === 'git' || entry.page === 'overleaf') ? <BrandIcon name={entry.page} size={18}/> : <Icon name={entry.icon} size={18}/>}<span>{entry.label}</span>
+              {entry.page === 'about' ? <PapilotMark size={18}/> : (entry.page === 'latex' || entry.page === 'git' || entry.page === 'overleaf') ? <BrandIcon name={entry.page} size={18}/> : <Icon name={entry.icon} size={18}/>}<span>{entry.label}</span>
             </button>)}
           </section>)}
           {!visibleGroups.length && <p className="settings-search-empty">{t('No matching settings')}</p>}

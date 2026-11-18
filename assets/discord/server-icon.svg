@@ -1,36 +1,44 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="100 100 824 824" fill="none">
   <title>Papilot Discord server icon</title>
-  <desc>The Papilot pen nib on a full-bleed blue-white background, without app-icon padding or baked-in rounded corners.</desc>
+  <desc>The Papilot mark on a full-bleed ice-blue background, without app-icon padding or baked-in rounded corners.</desc>
   <defs>
-    <linearGradient id="background" x1="300" y1="100" x2="710" y2="924" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="0.38" stop-color="#ECF3FB"/>
-      <stop offset="0.72" stop-color="#D2E1F2"/>
-      <stop offset="1" stop-color="#ABC5E3"/>
+    <linearGradient id="tile" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop stop-color="#F2F8FF"/>
+      <stop offset="0.5" stop-color="#E1EEFD"/>
+      <stop offset="1" stop-color="#C9DEF8"/>
     </linearGradient>
-    <linearGradient id="blue" x1="32" y1="6" x2="46" y2="48" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#568CC0"/>
-      <stop offset="0.55" stop-color="#356AA0"/>
-      <stop offset="1" stop-color="#285784"/>
+    <linearGradient id="navy" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#1B2A5E"/>
+      <stop offset="1" stop-color="#28408C"/>
     </linearGradient>
-    <linearGradient id="paper" x1="25" y1="6" x2="25" y2="48" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#EFF4FA"/>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#60A5FA"/>
     </linearGradient>
-    <filter id="nib-shadow" x="0" y="0" width="64" height="68" filterUnits="userSpaceOnUse">
-      <feDropShadow dx="0" dy="0.8" stdDeviation="0.9" flood-color="#1D426B" flood-opacity="0.14"/>
+    <linearGradient id="coral" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#FF4D5E"/>
+      <stop offset="0.65" stop-color="#FF6A64"/>
+      <stop offset="1" stop-color="#FF8A70"/>
+    </linearGradient>
+    <filter id="depth" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="37" stdDeviation="43" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+    <filter id="glow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#FF5C6C" flood-opacity="0.28"/>
     </filter>
   </defs>
-  <rect x="100" y="100" width="824" height="824" fill="url(#background)"/>
-  <g transform="translate(134.4 134.4) scale(11.8)" stroke="#193A59" stroke-width="1.8" stroke-linejoin="round">
-    <g filter="url(#nib-shadow)">
-      <path d="M18 48H32V58H18Z" fill="#F0F4F8"/>
-      <path d="M32 48H46V58H32Z" fill="#BDCEE1"/>
-      <path d="M32 6L12 34L18 48H32V6Z" fill="url(#paper)" stroke="none"/>
-      <path d="M32 6L52 34L46 48H32V6Z" fill="url(#blue)" stroke="none"/>
-      <path d="M32 6L52 34L46 48H18L12 34L32 6Z"/>
-      <path d="M32 6V20"/>
-      <path d="M32 20Q35 31 46 34Q35 37 32 48Q29 37 18 34Q29 31 32 20Z" fill="#FFFFFF"/>
+  <rect x="100" y="100" width="824" height="824" fill="url(#tile)"/>
+  <g filter="url(#depth)">
+    <g transform="translate(524 500) scale(1.08) rotate(-45)">
+      <rect x="-174" y="-229" width="236" height="68" rx="34" fill="url(#navy)"/>
+      <rect x="-124" y="-127" width="336" height="68" rx="34" fill="url(#navy)"/>
+    </g>
+    <g filter="url(#glow)">
+      <rect transform="translate(524 500) scale(1.08) rotate(-45)" x="-323" y="-24" width="634" height="48" rx="24" fill="url(#coral)"/>
+    </g>
+    <g transform="translate(524 500) scale(1.08) rotate(-45)">
+      <rect x="-124" y="59" width="336" height="68" rx="34" fill="url(#blue)"/>
+      <rect x="-174" y="161" width="236" height="68" rx="34" fill="url(#blue)"/>
     </g>
   </g>
 </svg>

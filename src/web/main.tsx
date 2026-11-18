@@ -78,7 +78,7 @@ import { errorText, locale, t, tn, useLanguage } from './i18n.ts';
 import { notificationState, notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
 import { Markdown } from './markdown.tsx';
 import { ComparisonProgress } from './comparison-progress.tsx';
-import logo from './logo.svg';
+import { PapilotMark } from './papilot-mark.tsx';
 import { AgentConnectionNotice, AgentPicker, NoAgentNotice, WriterSuggestion } from './agent-picker.tsx';
 import { taskEffort } from './task-effort.ts';
 import { PermissionOptions, TaskPermissionOptions } from './task-permissions.tsx';
@@ -2122,7 +2122,7 @@ function App() {
   const overleafEntry = !isPlayground && gitAvailable && <button type="button" className="button secondary" onClick={syncOverleaf}><BrandIcon name="overleaf" size={16}/>{overleafSync ? t('Overleaf sync…') : t('Sync with Overleaf')}</button>;
   const newTaskPanel = (attachments: React.ReactNode) => <section className={'new-task-panel' + (noteSelection.selected.length ? ' has-notes' : '')} aria-label={t('New task')}>
     <div className="new-task-start">
-    {!noteSelection.selected.length && <div className="new-task-welcome"><img src={logo} alt=""/><h2>{t('What are we revising next?')}</h2></div>}
+    {!noteSelection.selected.length && <div className="new-task-welcome"><PapilotMark size={44}/><h2>{t('What are we revising next?')}</h2></div>}
     {newSkill?.output !== 'annotations' && attachments}
     {missingAgent && <NoAgentNotice reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onAdd={() => setSettings('agents')}/>}
     {suggestWriter && <WriterSuggestion ready={writerReady} onUse={() => { chooseModel('papilot', runtimes.papilot?.models.find(model => model.isDefault)?.id || ''); dismissWriter(); }} onSetUp={() => setSettings('agents')} onDismiss={dismissWriter}/>}
@@ -2200,7 +2200,7 @@ function App() {
           </div>}
         </div>
         <div className="brand">
-          <a href="/" className="brand-home" aria-label="Papilot" onClick={e => { e.preventDefault(); setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><img className="brand-mark" src={logo} alt=""/><span>Papilot</span></a>
+          <a href="/" className="brand-home" aria-label="Papilot" onClick={e => { e.preventDefault(); setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><PapilotMark size={16} className="brand-mark"/><span>Papilot</span></a>
           {state && (!isPlayground ? <UpdateNotice api={api} version={state.version}/> : <span className="brand-version" title={t('Papilot {version}', { version: state.version })}>v{versionLabel(state.version)}</span>)}
         </div>
         <button type="button" className="icon-button settings-link" aria-label={t('Settings')} title={t('Settings')} aria-haspopup="dialog" onClick={() => setSettings('general')}><Icon name="settings" size={18}/></button>
@@ -2235,7 +2235,7 @@ function App() {
           <ReferencesPanel key={project.id} place={'references:' + project.id} data={bibliography} onInvestigate={draftInvestigation}/>
         </section>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>{t('Opening your workspace')}</h1><p className="home-copy" role="status">{connectionError || t('Connecting to your papers and tasks…')}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>{t('Retry connection')}</button>}</div></div>
-      : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button></div>{overleafEntry && <div className="home-integrations">{overleafEntry}</div>}</div></div>}
+      : <div className="home"><div className="home-inner"><PapilotMark size={52} className="home-logo"/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button></div>{overleafEntry && <div className="home-integrations">{overleafEntry}</div>}</div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
     {settings && <SettingsDialog workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: agentChoice, model: chosenModel, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body) } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}

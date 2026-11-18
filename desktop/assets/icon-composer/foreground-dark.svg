@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>Papilot mark foreground layer (dark)</title>
+  <desc>Unmasked flat artwork without baked-in lighting or shadows, for system-applied effects.</desc>
+  <g transform="translate(526.913 497.087) scale(1.3421) rotate(-45)">
+    <rect x="-174" y="-229" width="236" height="68" rx="34" fill="#D8E2F9"/>
+    <rect x="-124" y="-127" width="336" height="68" rx="34" fill="#D8E2F9"/>
+    <rect x="-323" y="-24" width="634" height="48" rx="24" fill="#FF6A64"/>
+    <rect x="-124" y="59" width="336" height="68" rx="34" fill="#4D93F8"/>
+    <rect x="-174" y="161" width="236" height="68" rx="34" fill="#4D93F8"/>
+  </g>
+</svg>
