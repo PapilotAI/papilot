@@ -57,6 +57,7 @@ it.skipIf(!tex)("chapter reviews recover persistent auxiliary errors after a cle
   const f = new Fixture(), problem = String.raw`\makeatletter
 \protected@write\@auxout{}{\string\undefinedchaptercommand}
 \makeatother`;
+  const seeds = vi.spyOn(Builder.prototype, "buildSeed");
   try {
     f.write("paper/main.tex", "\\documentclass{book}\n\\begin{document}\n\\include{chapters/a}\n\\include{chapters/b}\n\\end{document}\n");
     for (const name of ["a", "b"])
@@ -87,13 +88,31 @@ it.skipIf(!tex)("chapter reviews recover persistent auxiliary errors after a cle
     expect(clean.summary.revisedErrors).toBeUndefined();
     f.edit(task, "paper/chapters/a.tex", "Updated", "Original");
     f.edit(task, "paper/chapters/a.tex", "Original chapter a.", `Revised chapter a.\n${problem}`);
+    seeds.mockClear();
     const checked = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
     expect(checked.error).toBeUndefined();
     expect(checked.targets).toEqual(["chapters/a"]);
     expect(checked.errors?.join("\n")).toContain("Undefined control sequence");
+    expect(seeds.mock.calls.filter(([, options]) => options?.force)).toHaveLength(1);
+    for (const restart of [false, true]) {
+      if (restart) {
+        await app.close(); f.apps.splice(f.apps.indexOf(app), 1);
+        app = f.app(); await app.ready;
+      }
+      const again = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
+      expect(again.errors).toEqual(checked.errors);
+      expect(again.compiled?.pdf).toBe(checked.compiled?.pdf);
+      expect(seeds.mock.calls.filter(([, options]) => options?.force)).toHaveLength(1);
+    }
+    f.edit(task, "paper/chapters/a.tex", "Revised chapter a.", "Revised chapter a. Another edit.");
+    const changed = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
+    expect(changed.errors?.join("\n")).toContain("Undefined control sequence");
+    expect(changed.compiled?.pdf).not.toBe(checked.compiled?.pdf);
+    expect(seeds.mock.calls.filter(([, options]) => options?.force)).toHaveLength(2);
     const first = await publish();
     expect(first.summary.revisedErrors?.join("\n")).toContain("Undefined control sequence");
     expect(first.summary.baselineErrors).toBeUndefined();
+    expect((await new Builder(app.project, app.repo).completed(first.summary.builds.at(-1)!))?.seedRetried).toBe(true);
     await app.review.decide(task.name, { action: "accept", round: first.number, changes: first.units.map(unit => unit.id) });
     await app.applied.join();
     expect((await app.applied.state(task.name)).shown?.errors?.join("\n")).toContain("Undefined control sequence");
@@ -111,8 +130,9 @@ it.skipIf(!tex)("chapter reviews recover persistent auxiliary errors after a cle
     expect(repaired.summary.revisedErrors).toBeUndefined();
     const builder = new Builder(app.project, app.repo), before = await builder.completed(repaired.summary.builds.at(-2)!);
     expect(before?.errors?.join("\n")).toContain("Undefined control sequence");
+    expect(before?.seedRetried).toBe(true);
     expect(text(before!.pdf)).toContain("Revised chapter a.");
-  } finally { await f.close(); }
+  } finally { seeds.mockRestore(); await f.close(); }
 }, 180000);
 
 it.skipIf(!tex).each(["seed", "accepted"])("chapter reviews retain errors outside the new edit from the %s text", async (origin) => {

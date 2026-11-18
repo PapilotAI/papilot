@@ -819,8 +819,8 @@ export class Publisher {
         this.compile(job, "revised", builder, after, targets, seed, { date }),
       ]);
     };
-    let builds: PromiseSettledResult<BuildInfo>[] = await versions();
-    if (!this.stopping && seed && builds.some((built) => built.status === "rejected" ? auxiliaryBuildError(built.reason) : auxiliaryDiagnostics(built.value.errors))) {
+    let builds: PromiseSettledResult<BuildInfo>[] = await versions(), retriedSeed = false;
+    if (!this.stopping && seed && builds.some((built) => built.status === "rejected" ? auxiliaryBuildError(built.reason) : !built.value.seedRetried && auxiliaryDiagnostics(built.value.errors))) {
       // An external package can invalidate readable aux files without
       // changing the source tree or engine version. Rebuild the seed once,
       // after both attempts finish, then use it for both comparison sides.
@@ -828,6 +828,7 @@ export class Publisher {
       seed = await this.compile(job, "baseline", builder, base, ["full"], null, { asSeed: true, force: true }).catch(failed("The comparison baseline could not be compiled."));
       if (seed.errors?.length) { targets = ["full"]; seed = null; this.revisions.delete(job.id); }
       builds = await versions();
+      retriedSeed = true;
     }
     // A task that fixes a compilation error starts from text that does not
     // compile. Its side of the comparison is what TeX typesets past the
@@ -836,6 +837,8 @@ export class Publisher {
       const past = await this.compile(job, "baseline", builder, before, targets, seed, { date, pastErrors: true }).catch(compileFailure);
       if (past) builds = [{ status: "fulfilled", value: past }, builds[1]];
     }
+    if (retriedSeed) builds = await Promise.all(builds.map(async built => built.status === "fulfilled"
+      ? { ...built, value: await builder.markSeedRetried(built.value) } : built));
     const [baseline, revised] = builds,
       baselineErrors = !this.stopping && baseline.status === "rejected" && baseline.reason instanceof BuildError && revised.status === "fulfilled"
         ? [baseline.reason.message, ...baseline.reason.details] : undefined,

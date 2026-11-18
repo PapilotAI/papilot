@@ -207,6 +207,8 @@ export interface BuildInfo {
   tikzDirectories?: string[];
   /** The errors TeX typeset past, in a build that went on after them. */
   errors?: string[];
+  /** Persistent auxiliary errors remained after refreshing this build's seed. */
+  seedRetried?: boolean;
 }
 // A running compilation: latexmk's current step, the TeX pass, and the
 // pages typeset in it against the last known page count.

@@ -136,11 +136,11 @@ export async function view(
       build = await compile();
       // A clean chapter retry still needs the omitted chapters' seed files.
       // Refresh those once before accepting persistent recovered diagnostics.
-      if (seed && auxiliaryDiagnostics(build.errors)) throw new BuildError("LaTeX auxiliary errors.", build.errors!);
+      if (seed && !build.seedRetried && auxiliaryDiagnostics(build.errors)) throw new BuildError("LaTeX auxiliary errors.", build.errors!);
     } catch (error) {
       if (!seed || !auxiliaryBuildError(error)) throw error;
       seed = await builder.buildSeed(task.base, { force: true });
-      build = await compile();
+      build = await builder.markSeedRetried(await compile());
     }
   } catch (error) {
     if (!(error instanceof BuildError)) throw error;

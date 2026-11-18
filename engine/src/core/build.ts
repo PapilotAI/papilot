@@ -712,6 +712,18 @@ export class Builder {
   async completed(key: string) {
     return /^[a-f0-9]{32}$/.test(key) ? this.finished(path.join(this.cache, key)) : null;
   }
+  /** Remember a completed seed retry so later readers keep the recovered
+   *  chapter PDF instead of refreshing the same full baseline again. */
+  async markSeedRetried(info: BuildInfo): Promise<BuildInfo> {
+    if (info.seedRetried || info.targets[0] === "full" || !auxiliaryDiagnostics(info.errors)) return info;
+    return withLock(path.join(this.cache, info.key + ".lock"), async () => {
+      const folder = path.join(this.cache, info.key), saved = await this.finished(folder);
+      if (!saved) return info;
+      const result = { ...saved, seedRetried: true };
+      await writeJsonAsync(path.join(folder, "result.json"), result);
+      return result;
+    });
+  }
   // A completed build in this folder, whose PDF is still there.
   private async finished(folder: string) {
     try {
