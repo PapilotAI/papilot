@@ -198,6 +198,9 @@ jobs:
       - name: imports
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-imports.mjs
+      - name: overleaf
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-overleaf.mjs
       - name: locales
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-locales.mjs
@@ -334,6 +337,7 @@ jobs:
           path: |
             test-results/create-paper-*.png
             test-results/import-*.png
+            test-results/overleaf-*.png
             test-results/task-restart-*.png
             test-results/section-comments-*.png
             test-results/anchors-*.png

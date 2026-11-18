@@ -12,7 +12,8 @@ export async function requestApi<T = any>(route: string, token: string, body?: u
     signal,
   });
   const value = await response.json();
-  if (!response.ok) throw new Error(value.error ? errorText(value.error) : t('Request failed. Please try again.'));
+  // An Overleaf request that needs a sign-in names the server to sign in to.
+  if (!response.ok) throw Object.assign(new Error(value.error ? errorText(value.error) : t('Request failed. Please try again.')), typeof value.signIn === 'string' ? { signIn: value.signIn } : {});
   return value;
 }
 

@@ -99,16 +99,16 @@ export async function inspectPaper(root: string) {
     const found = new Set(roots);
     candidates = [...roots, ...files.filter(file => !found.has(file))];
   }
-  try { if (main) engine = engineFor(root, main, settings); } catch (failure) { error = (failure as Error).message; }
+  try { if (main) engine = await engineFor(root, main, settings); } catch (failure) { error = (failure as Error).message; }
   return { candidates, main, engine: engine || 'pdflatex', error };
 }
 // Engine detection also works before Git initialization by reading the source hints.
-function engineFor(root: string, main: string, settings: Record<string, unknown>) {
+async function engineFor(root: string, main: string, settings: Record<string, unknown>) {
   if (typeof settings.engine === 'string' && settings.engine) return settings.engine;
   const text = sourceHead(path.join(root, main));
   const rc = [path.join(path.dirname(main), '.latexmkrc'), path.join(path.dirname(main), 'latexmkrc'), '.latexmkrc', 'latexmkrc'].find(file => fs.existsSync(path.join(root, file)));
   const mode = rc ? fs.readFileSync(path.join(root, rc), 'utf8').match(/^\s*\$pdf_mode\s*=\s*(\d)/m)?.[1] : undefined;
-  return text.match(/^%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex|lualatex)/im)?.[1].toLowerCase() || ({ '1': 'pdflatex', '4': 'lualatex', '5': 'xelatex' } as Record<string, string>)[mode || ''] || (/\\(?:usepackage(?:\[[^\]]*\])?\{[^}]*\b(?:fontspec|xeCJK|unicode-math|polyglossia)\b|documentclass(?:\[[^\]]*\])?\{ctex)/.test(text) ? 'xelatex' : 'pdflatex');
+  return text.match(/^%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex|lualatex)/im)?.[1].toLowerCase() || ({ '1': 'pdflatex', '4': 'lualatex', '5': 'xelatex' } as Record<string, string>)[mode || ''] || ((await configModule()).hasUnicodeEngineHint(text) ? 'xelatex' : 'pdflatex');
 }
 // Keep the author's settings, including a source folder that still contains
 // the main file; without one, the whole folder compiles.
@@ -154,7 +154,7 @@ export async function openFolder(input: { path?: unknown; main?: unknown }, know
   const main = input.main ?? detected.main;
   if (!existingTex(root, main)) throw new Error('Choose an existing TeX main file.');
   await prepareRepository(root);
-  await rememberMain(root, main, engineFor(root, main, (await configModule()).readSettings(root)));
+  await rememberMain(root, main, await engineFor(root, main, (await configModule()).readSettings(root)));
   return { project: await register(root, path.basename(root)) };
 }
 // Uploaded ZIPs and Universe templates share path and file-type validation.
@@ -244,6 +244,9 @@ export class PaperImports {
   private sessions = new Map<string, PaperImport>();
   private active = new Set<string>();
   get busy() { return this.active.size > 0; }
+  /** Downloads an Overleaf project the paper keeps syncing with, and links
+   *  the paper once added. */
+  overleaf?: { download(url: unknown, root: string): Promise<{ linkId: string; name: string; main?: string; compiler?: string }>; finish(linkId: string, register: () => Promise<Project>): Promise<Project>; discard(linkId: string): void };
   constructor(private manuscripts: Manuscripts, private directory = DATA, private registered: (root: string) => boolean = () => false, private source = downloadPaperSource) {
     // Staged ZIPs belong to requests that ended with a previous server process.
     if (fs.existsSync(directory)) for (const name of fs.readdirSync(directory)) if (name.startsWith('upload-')) fs.rmSync(path.join(directory, name), { recursive: true, force: true });
@@ -266,6 +269,8 @@ export class PaperImports {
     fs.writeFileSync(file + '.tmp', JSON.stringify(stored), { mode: 0o600 }); fs.renameSync(file + '.tmp', file);
     this.sessions.set(value.id, value); return { ...value };
   }
+  /** Whether an import not yet added as a paper holds this Overleaf link. */
+  holdsLink(linkId: string) { return [...this.sessions.values()].some(value => value.overleaf === linkId && !this.registered(value.path)); }
   get(id: string) {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('Import not found.');
     let value = this.sessions.get(id);
@@ -302,8 +307,8 @@ export class PaperImports {
       if (!count) throw new Error('No files found in this folder.');
     }, signal);
   }
-  async create(input: { path?: unknown; name?: unknown; zip?: unknown; files?: unknown; url?: unknown }, upload?: (root: string) => Promise<void>, signal?: AbortSignal) {
-    const id = randomUUID(); let root = '', copied = false, sourceName = '';
+  async create(input: { path?: unknown; name?: unknown; zip?: unknown; files?: unknown; url?: unknown; sync?: unknown }, upload?: (root: string) => Promise<void>, signal?: AbortSignal) {
+    const id = randomUUID(); let root = '', copied = false, sourceName = '', overleaf: string | undefined, preset: { main?: string; compiler?: string } = {};
     if ([input.path, input.zip, input.files, input.url, upload].filter(value => value !== undefined).length !== 1) throw new Error('Choose one folder, ZIP or paper link.');
     if (input.name !== undefined && (typeof input.name !== 'string' || input.name.length > 120)) throw new Error('Paper name is too long.');
     this.active.add(id);
@@ -315,7 +320,11 @@ export class PaperImports {
       } else {
         root = path.join(this.directory, 'papers', id); copied = true; fs.mkdirSync(root, { recursive: true, mode: 0o700 });
         if (upload) await upload(root);
-        else if (input.url !== undefined) {
+        else if (input.url !== undefined && input.sync === true) {
+          // Synced files keep their Overleaf paths, so the folder stays as it is.
+          if (!this.overleaf) throw new Error('Overleaf sync is not available.');
+          const result = await this.overleaf.download(input.url, root); sourceName = result.name; overleaf = result.linkId; preset = result;
+        } else if (input.url !== undefined) {
           const source = await this.source(input.url); sourceName = source.name;
           await extractSource(source.data, root, source.zip);
         } else if (input.zip !== undefined) await extractZip(bytes(input.zip), root);
@@ -330,17 +339,25 @@ export class PaperImports {
         }
         // Unwrap export folders (Overleaf and GitHub ZIPs commonly have one).
         let children = fs.readdirSync(root).filter(name => !skip(name));
-        while (children.length === 1 && fs.statSync(path.join(root, children[0])).isDirectory()) { root = path.join(root, children[0]); children = fs.readdirSync(root).filter(name => !skip(name)); }
+        while (!overleaf && children.length === 1 && fs.statSync(path.join(root, children[0])).isDirectory()) { root = path.join(root, children[0]); children = fs.readdirSync(root).filter(name => !skip(name)); }
       }
       if (this.registered(root)) throw new Error('This paper is already added. Open it from the paper list.');
       if (!copied && [...this.sessions.values()].some(item => item.path === root)) return this.get([...this.sessions.values()].find(item => item.path === root)!.id);
       const detected = await inspectPaper(root);
+      // The main document and compiler chosen on Overleaf come first.
+      if (preset.main && existingTex(root, preset.main)) { detected.main = preset.main; detected.candidates = [preset.main, ...detected.candidates.filter(file => file !== preset.main)]; }
+      const engine = ({ pdflatex: 'pdflatex', latex: 'pdflatex', xelatex: 'xelatex', lualatex: 'lualatex' } as Record<string, string>)[preset.compiler || ''];
+      if (engine) detected.engine = engine;
       signal?.throwIfAborted();
       if (input.url !== undefined && !detected.candidates.length) throw new Error('The download contains no TeX source files. This paper may only provide a PDF.');
       const existing = !copied && [...this.sessions.values()].find(item => item.path === root);
       if (existing) return this.get(existing.id);
-      return this.save({ id, path: root, copied, name: (input.name as string)?.trim() || sourceName || path.basename(root), ...detected, phase: 'choose' });
-    } catch (error) { if (copied) fs.rmSync(path.join(this.directory, 'papers', id), { recursive: true, force: true }); throw error; }
+      return this.save({ id, path: root, copied, name: (input.name as string)?.trim() || sourceName || path.basename(root), ...detected, phase: 'choose', ...(overleaf ? { overleaf } : {}) });
+    } catch (error) {
+      if (copied) fs.rmSync(path.join(this.directory, 'papers', id), { recursive: true, force: true });
+      if (overleaf) this.overleaf?.discard(overleaf);
+      throw error;
+    }
     finally { this.active.delete(id); }
   }
   async build(id: string, input: { main?: unknown; engine?: unknown; name?: unknown }, repair?: (root: string, error: string) => Promise<string>) {
@@ -379,7 +396,8 @@ export class PaperImports {
   async finish(id: string, register: (root: string, name: string) => Promise<Project>) {
     const value = this.get(id);
     if (this.active.has(id) || !value.versioned) throw new Error('Wait for repository preparation to finish.');
-    const project = await register(value.path, value.name);
+    const add = () => register(value.path, value.name);
+    const project = value.overleaf && this.overleaf ? await this.overleaf.finish(value.overleaf, add) : await add();
     // Keep the receipt so a lost HTTP response can safely retry finalization.
     this.manuscripts.forgetProject('import-' + id); return project;
   }

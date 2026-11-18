@@ -6,6 +6,7 @@ import { backendEnvironment, refreshWindowsPath, startBackend, startServer, swit
 import { desktopNotifications } from './notifications.js';
 import { chooseEnvironment } from './environment-window.js';
 import { readEnvironment, saveEnvironment, startWsl, linuxPath, type Environment } from './wsl.js';
+import { overleafSignIn } from './overleaf-sign-in.js';
 
 const nix = process.env.PAPILOT_INSTALL_METHOD === 'nix';
 const releases = 'https://github.com/PapilotAI/papilot/releases';
@@ -121,6 +122,11 @@ else {
       const selected = result.canceled ? null : result.filePaths[0] || null;
       return selected && environment.kind === 'wsl' ? linuxPath(environment.distribution, selected) : selected;
     };
+    ipcMain.handle('papilot:overleaf-sign-in', async (event, server: unknown) => {
+      if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return null;
+      if (!event.senderFrame || new URL(event.senderFrame.url).origin !== origin || typeof server !== 'string') return null;
+      try { return await overleafSignIn(new URL(server).origin, window); } catch { return null; }
+    });
     ipcMain.handle('papilot:choose-directory', async event => {
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return null;
       if (!event.senderFrame || new URL(event.senderFrame.url).origin !== origin) return null;

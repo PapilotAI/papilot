@@ -7,6 +7,7 @@ declare global {
     papilotDesktop?: {
       platform: string; minimize(): void; maximize(): void; close(): void;
       chooseDirectory?(): Promise<string | null>;
+      overleafSignIn?(origin: string): Promise<string | null>;
       openEnvironment?(): Promise<void>;
       environment?(): Promise<string>;
       onOpenFolder?(listener: (folder: string) => void): () => void;

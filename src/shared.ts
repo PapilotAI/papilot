@@ -192,7 +192,38 @@ export interface DiagnosticReport {
   version: string; checkedAt: number; platform: string; arch: string; node: string;
   ok: boolean; checks: DiagnosticCheck[];
 }
-export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; gitAvailable?: boolean }
+export interface Snapshot { projects: Project[]; tasks: Task[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; gitAvailable?: boolean; overleaf?: OverleafState }
+// Live synchronization of a paper folder with an Overleaf project. A conflict
+// is a passage (or whole file) both sides changed while Papilot was away:
+// Overleaf's version stayed, and the author's can be put back.
+export interface OverleafConflict { id: string; path: string; kind: 'text' | 'file'; at: number; ours?: string; theirs?: string }
+// An Overleaf account, by its id; a name left empty is someone not signed in.
+export interface OverleafPerson { id: string; name: string; you?: boolean; file?: string }
+// Where someone's cursor is on Overleaf: a file and a 0-based line and column.
+export interface OverleafCursor extends OverleafPerson { client: string; file: string; line: number; column: number }
+// Text a person wrote on Overleaf, [from, to) in a file's text, and when.
+export interface SourceAuthor { from: number; to: number; id: string; name: string; you?: boolean; at: number }
+export type OverleafSyncState = 'connecting' | 'syncing' | 'synced' | 'offline' | 'paused' | 'signed-out' | 'no-access';
+export interface OverleafSync {
+  projectId: string; origin: string; overleafId: string; name: string; url: string;
+  state: OverleafSyncState; message?: string; readOnly: boolean;
+  // Whether Overleaf records this author's edits as tracked changes.
+  tracking: boolean;
+  pending: number; syncedAt: number | null;
+  /** Who has the project open on Overleaf, by account: the file they are
+   *  in, and whether it is this account in a browser. */
+  collaborators: OverleafPerson[];
+  // Where their cursors are, by connection.
+  cursors: OverleafCursor[];
+  conflicts: OverleafConflict[];
+  skipped: string[];
+}
+export interface OverleafAccount { origin: string; email: string }
+/** A browser on the computer Papilot runs on, already signed in to Overleaf. */
+export interface OverleafBrowserSession { id: string; browser: string; profile?: string }
+export interface OverleafState { accounts: OverleafAccount[]; syncs: OverleafSync[] }
+export interface OverleafProjectSummary { id: string; name: string; updatedAt: number | null; owner: string; access: string }
+export interface OverleafComparison { name: string; same: number; overleaf: string[]; local: string[]; different: string[] }
 // staged: the index has changes to this file; unstaged: the working tree has more.
 // index is the staged status where it differs from status, which is the working tree's when it has changes.
 export interface GitFile { path: string; status: string; staged: boolean; unstaged: boolean; lines?: [number, number]; from?: string; index?: string; incoming?: string }
@@ -271,7 +302,7 @@ export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotation
 // review round that shows it, which a save continues; `reviewed` says that
 // round shows this very text, but for the rejected changes in `reverted`
 // whose text came back; its changes replaced parts of `before`.
-export interface SourceFile { file: string; revision: string; text: string; base: string | null; passage: [number, number]; focus: [number, number]; drifted: boolean; round?: number; before?: string | null; reviewed?: boolean; reverted?: string[] }
+export interface SourceFile { file: string; revision: string; text: string; base: string | null; passage: [number, number]; focus: [number, number]; drifted: boolean; round?: number; before?: string | null; reviewed?: boolean; reverted?: string[]; authors?: SourceAuthor[] }
 // A task's saved file, and the review after the save.
 export interface TaskSourceSave { source: SourceFile; state: unknown }
 // A saved file, the lines that changed, the working tree whose build shows
@@ -289,6 +320,8 @@ export interface PaperImport {
   error?: string; summary?: string; versioned?: boolean;
   // While building: when it started, and the compilation's progress.
   startedAt?: number; progress?: BuildProgress;
+  // The Overleaf project the paper keeps syncing with once added.
+  overleaf?: string;
 }
 // The paper's bibliography as the References panel reads it: the review
 // engine's report of every entry, with online checks and the entries the

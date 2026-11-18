@@ -94,6 +94,67 @@ test('ambiguous mains need a choice; engine hints and existing configuration are
   } finally { t.after(f.close); }
 });
 
+test('commented Unicode engine hints do not change the engine selected for import', async t => {
+  const f = fixture();
+  try {
+    for (const hint of ['\\usepackage{fontspec}', '\\usepackage{xeCJK}', '\\usepackage{unicode-math}', '\\usepackage{polyglossia}', '\\documentclass{ctexart}']) {
+      for (const comment of [`% ${hint}\n`, `\\newcommand{\\example}{example} % ${hint}\n`]) {
+        fs.writeFileSync(path.join(f.root, 'main.tex'), comment + source);
+        assert.equal((await inspectPaper(f.root)).engine, 'pdflatex', comment);
+      }
+    }
+    fs.writeFileSync(path.join(f.root, 'main.tex'), '% \\usepackage{fontspec}\n' + source);
+    const value = await f.imports.create({ path: f.root });
+    f.ready(); await f.imports.build(value.id, {});
+    assert.equal((await settled(f.imports, value.id)).phase, 'ready');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(f.root, '.git/papilot/settings.json'), 'utf8')).engine, 'pdflatex');
+  } finally { t.after(f.close); }
+});
+
+test('active Unicode engine hints and magic comments still select XeLaTeX on import', async t => {
+  const f = fixture();
+  try {
+    for (const hint of ['\\usepackage{fontspec}', '\\usepackage[UTF8]{xeCJK}', '\\usepackage{amsmath,unicode-math}', '\\usepackage{polyglossia}', '% !TEX program = xelatex']) {
+      fs.writeFileSync(path.join(f.root, 'main.tex'), hint + '\n' + source);
+      assert.equal((await inspectPaper(f.root)).engine, 'xelatex', hint);
+    }
+    fs.writeFileSync(path.join(f.root, 'main.tex'), source.replace('{article}', '{ctexart}'));
+    assert.equal((await inspectPaper(f.root)).engine, 'xelatex');
+  } finally { t.after(f.close); }
+});
+
+test('engine hints respect escaped percent signs and comments within package lists', async t => {
+  const f = fixture();
+  try {
+    for (const [hint, engine] of [
+      ['\\newcommand{\\percent}{\\%}\\usepackage{fontspec}', 'xelatex'],
+      ['\\newcommand{\\percent}{\\%}\\documentclass{ctexart}', 'xelatex'],
+      ['\\newcommand{\\percent}{\\%} % \\usepackage{fontspec}', 'pdflatex'],
+      ['\\newcommand{\\linebreak}{\\\\% \\usepackage{fontspec}\n}', 'pdflatex'],
+      ['\\usepackage{amsmath% fontspec\n}', 'pdflatex'],
+      ['\\usepackage{amsmath,% an active package follows\nfontspec}', 'xelatex'],
+      ['\\usepackage[% \\usepackage{fontspec}\n]{amsmath}', 'pdflatex'],
+      ['\\usepackage[\n]{fontspec}', 'xelatex'],
+    ]) {
+      fs.writeFileSync(path.join(f.root, 'main.tex'), hint + '\n' + source);
+      assert.equal((await inspectPaper(f.root)).engine, engine, hint);
+    }
+  } finally { t.after(f.close); }
+});
+
+test('explicit engine settings, magic comments and latexmk modes precede package hints', async t => {
+  const f = fixture();
+  try {
+    fs.writeFileSync(path.join(f.root, 'main.tex'), '\\usepackage{fontspec}\n' + source);
+    fs.writeFileSync(path.join(f.root, '.latexmkrc'), '$pdf_mode = 4;\n');
+    assert.equal((await inspectPaper(f.root)).engine, 'lualatex');
+    fs.writeFileSync(path.join(f.root, 'main.tex'), '% !TEX program = pdflatex\n\\usepackage{fontspec}\n' + source);
+    assert.equal((await inspectPaper(f.root)).engine, 'pdflatex');
+    fs.writeFileSync(path.join(f.root, '.latex-review.json'), JSON.stringify({ engine: 'xelatex' }));
+    assert.equal((await inspectPaper(f.root)).engine, 'xelatex');
+  } finally { t.after(f.close); }
+});
+
 test('local folders can exceed upload limits and inspection leaves their files untouched', async t => {
   const f = fixture();
   try {
@@ -292,7 +353,10 @@ test('a real imported paper compiles with the manuscript builder', { timeout: 60
   const f = fixture();
   try {
     const imports = f.track(new PaperImports(f.trackManuscripts(new Manuscripts()), path.join(f.directory, 'real')));
-    const value = await imports.create({ zip: archive('main.tex').toString('base64') });
+    // A commented package example must not switch this pdfTeX document to XeLaTeX.
+    const pdftex = '% \\usepackage{fontspec}\n' + source.replace('\\begin{document}', '\\usepackage{amsmath% fontspec\n}\n\\pdfoutput=1\n\\begin{document}');
+    const value = await imports.create({ zip: archive('main.tex', pdftex).toString('base64') });
+    assert.equal(value.engine, 'pdflatex');
     // A real TeX build needs extra time on busy CI or during desktop packaging.
     await imports.build(value.id, {}); const ready = await settled(imports, value.id, 45000); assert.equal(ready.phase, 'ready', ready.error);
     // Opening the paper reuses the import's PDF instead of compiling it again.
@@ -301,5 +365,20 @@ test('a real imported paper compiles with the manuscript builder', { timeout: 60
     let state = await opened.state('paper', ready.path);
     for (let attempt = 0; state.build.status === 'building' && attempt < 400; attempt++) { await new Promise(resolve => setTimeout(resolve, 25)); state = await opened.state('paper', ready.path); }
     assert.equal(state.build.status, 'ready', state.build.error); assert.equal(count(), before);
+  } finally { t.after(f.close); }
+});
+
+test('a real Unicode paper imports and compiles after an escaped percent sign', { timeout: 60000 }, async t => {
+  try { execFileSync('latexmk', ['--version']); execFileSync('xelatex', ['--version']); } catch { t.skip('needs XeLaTeX'); return; }
+  const f = fixture();
+  try {
+    const imports = f.track(new PaperImports(f.trackManuscripts(new Manuscripts()), path.join(f.directory, 'unicode')));
+    const unicode = source.replace('\\begin{document}', '\\newcommand{\\percent}{\\%}\\usepackage{fontspec}\n\\begin{document}');
+    const value = await imports.create({ zip: archive('main.tex', unicode).toString('base64') });
+    assert.equal(value.engine, 'xelatex');
+    await imports.build(value.id, {});
+    const ready = await settled(imports, value.id, 45000);
+    assert.equal(ready.phase, 'ready', ready.error);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(ready.path, '.git/papilot/settings.json'), 'utf8')).engine, 'xelatex');
   } finally { t.after(f.close); }
 });

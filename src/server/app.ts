@@ -46,8 +46,11 @@ import { registerAiReviewRoutes } from './ai-review-routes.ts';
 import { detectLatex } from './latex-installation.ts';
 import { systemRequirements } from './system-requirements.ts';
 import { findExecutable } from '../../bin/agent-paths.mjs';
+import { OverleafService } from './overleaf/service.ts';
+import { registerOverleafRoutes } from './overleaf/routes.ts';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
+const overleafByWorkspace = new WeakMap<Workspace, OverleafService>();
 const creationsByWorkspace = new WeakMap<Workspace, PaperCreations>();
 // A review write's reply does not wait for the task's summary to be read
 // again: that runs right after it, once at a time per task, and once more
@@ -132,6 +135,7 @@ export interface AppOptions {
   diagnostics?: Diagnostics;
   latexInstallation?: typeof detectLatex;
   systemRequirements?: typeof systemRequirements;
+  overleaf?: OverleafService;
 }
 
 // Serve the local workspace, including authenticated personal Tailscale access.
@@ -141,6 +145,17 @@ export async function buildApp(options: AppOptions) {
   const diagnostics = options.diagnostics || new Diagnostics();
   let imports = importsByWorkspace.get(workspace);
   if (!imports) { imports = new PaperImports(manuscripts, DATA, root => Boolean(workspace.projectByPath(root))); importsByWorkspace.set(workspace, imports); }
+  // Papers linked to Overleaf projects sync while the server runs. Files
+  // Overleaf changes reach an open manuscript view at once.
+  let overleaf = options.overleaf ?? overleafByWorkspace.get(workspace), ownsOverleaf = false;
+  if (!overleaf) {
+    const service = overleaf = new OverleafService(path.join(DATA, 'overleaf'), store, () => manuscripts.emit('change'));
+    overleafByWorkspace.set(workspace, service);
+    const paperImports = imports;
+    imports.overleaf = { download: (url, root) => service.download(url, root), finish: (link, register) => service.finishImport(link, register), discard: link => service.discard(link) };
+    service.start(link => paperImports.holdsLink(link));
+    ownsOverleaf = true;
+  }
   let creations = creationsByWorkspace.get(workspace);
   let universe = options.universe;
   if (!universe) try { universe = new Universe(); } catch { /* An invalid PAPILOT_UNIVERSE_URL leaves only the blank paper. */ }
@@ -160,6 +175,7 @@ export async function buildApp(options: AppOptions) {
   workspace.sourcePages = (task, file, lines) => manuscripts.sourcePages(task.projectId, file, lines, taskDocument(task));
   workspace.paperBuild = task => manuscripts.paperBuild(task.projectId, taskDocument(task));
   const app = Fastify({ logger: false, bodyLimit: Number.MAX_SAFE_INTEGER });
+  if (ownsOverleaf) app.addHook('onClose', async () => { await overleaf.stop(); });
   const buildSettingsChanged = (projectId: string) => changes.buildSettingsChanged(projectId);
   manuscripts.on('build-settings', buildSettingsChanged);
   app.addHook('onClose', async () => { manuscripts.off('build-settings', buildSettingsChanged); });
@@ -203,6 +219,7 @@ export async function buildApp(options: AppOptions) {
   registerSkillRoutes(app, store);
   registerAiReviewRoutes(app, store, manuscripts);
   const project = (param = 'id') => ({ config: { resource: { project: param } } }), task = { config: { resource: { task: 'id' } } };
+  registerOverleafRoutes(app, overleaf, () => project(), request => isLocalRequest(request.headers, listener.port));
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
   app.post<{ Params: { id: string } }>('/api/projects/:id/attachments', { ...project(), bodyLimit: MAX_ATTACHMENT_BYTES }, async request => {
     if (!Buffer.isBuffer(request.body)) throw new Error('Upload a file as binary data.');
@@ -283,7 +300,7 @@ export async function buildApp(options: AppOptions) {
     await options.prepareDemo?.();
     // Check the backend environment (Linux when using WSL), again on each poll
     // so installing Git unlocks version management without a page reload.
-    const body = JSON.stringify({ ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), csrf: options.csrf });
+    const body = JSON.stringify({ ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), overleaf: overleaf.state(), csrf: options.csrf });
     // The app polls every second or two and most polls find nothing new: those
     // get an empty 304 instead of every task again to download and parse.
     const tag = `"${createHash('sha1').update(body).digest('base64url')}"`;
@@ -339,11 +356,18 @@ export async function buildApp(options: AppOptions) {
     // instead of at its next poll. The event names no paper.
     let paperTimer: NodeJS.Timeout | undefined;
     const paper = () => { paperTimer ??= setTimeout(() => { paperTimer = undefined; reply.raw.write('event: manuscript\ndata: {}\n\n'); }, 100); };
+    // Coauthors' cursors on Overleaf come with the event, as they move.
+    let presenceTimer: NodeJS.Timeout | undefined;
+    const sendPresence = () => { presenceTimer = undefined; reply.raw.write(`event: presence\ndata: ${JSON.stringify(overleaf.cursors())}\n\n`); };
+    const presence = () => { presenceTimer ??= setTimeout(sendPresence, 100); };
+    sendPresence();
     workspace.on('change', change);
+    overleaf.on('change', change);
+    overleaf.on('presence', presence);
     manuscripts.on('change', paper);
     const heartbeat = setInterval(() => reply.raw.write(': heartbeat\n\n'), 15000);
     reply.raw.on('close', () => {
-      clearInterval(heartbeat); if (timer) clearTimeout(timer); if (paperTimer) clearTimeout(paperTimer); workspace.off('change', change); manuscripts.off('change', paper);
+      clearInterval(heartbeat); if (timer) clearTimeout(timer); if (paperTimer) clearTimeout(paperTimer); if (presenceTimer) clearTimeout(presenceTimer); workspace.off('change', change); overleaf.off('change', change); overleaf.off('presence', presence); manuscripts.off('change', paper);
     });
   });
   app.post('/api/reconnect', async request => { await workspace.connect(); return workspace.snapshot().runtime; });
@@ -402,11 +426,11 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/projects/:id/path', async request => {
     const id = request.params.id, body = request.body as any;
     const result = await workspace.changeProjectPath(id, string(body?.path, 'Repository path', 4000), () => paperIdle(id), body?.name === undefined ? undefined : string(body.name, 'Paper name', 120));
-    forgetPaper(id); return result;
+    forgetPaper(id); overleaf.moved(id); return result;
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/remove', request => {
     const id = request.params.id, result = workspace.removeProject(id, () => paperIdle(id));
-    forgetPaper(id); return result;
+    forgetPaper(id); overleaf.removed(id); return result;
   });
   // A skill's name: what the author typed after "/".
   const skillName = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,47}$/.test(value) ? value : undefined;
@@ -806,20 +830,26 @@ export async function buildApp(options: AppOptions) {
   // Manual LaTeX edits from the PDF, without an agent: the passage under a
   // click as it is on disk now, any lines of a file, a save of those lines
   // (which compiles the manuscript), and where saved lines were printed.
-  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript/source/locate', project(), request => {
+  // A paper synced with Overleaf also says who wrote what there.
+  const authored = <T extends SourceFile>(projectId: string, source: T): T => {
+    const authors = overleaf.authors(projectId, source.file, source.text);
+    return authors.length ? { ...source, authors } : source;
+  };
+  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript/source/locate', project(), async request => {
     const project = store.project(request.params.id), b = (request.body || {}) as any;
     if (!isRect(b.rect)) throw new Error('Click the text whose source you want to edit.');
     const rects = Array.isArray(b.rects) ? b.rects.filter(isRect).slice(0, 200) : [];
-    return locateSource(manuscripts, project.id, project.path, string(b.key, 'Preview key', 64), Number(b.page), b.rect, rects, typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '');
+    const found = await locateSource(manuscripts, project.id, project.path, string(b.key, 'Preview key', 64), Number(b.page), b.rect, rects, typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '');
+    return { ...found, source: found.source ? authored(project.id, found.source) : null };
   });
-  app.get<{ Params: { id: string }; Querystring: { file?: string } }>('/api/projects/:id/manuscript/source', project(), request =>
-    readFile(store.project(request.params.id).path, request.query.file));
+  app.get<{ Params: { id: string }; Querystring: { file?: string } }>('/api/projects/:id/manuscript/source', project(), async request =>
+    authored(request.params.id, await readFile(store.project(request.params.id).path, request.query.file)));
   app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript/source', { ...project(), bodyLimit: 8 * 1024 * 1024 }, request => {
     const project = store.project(request.params.id);
     // Like reverting a change: one Git write at a time, never during a commit.
     return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
       const saved = await saveSource(project.id, project.path, request.body), at = Date.now();
-      return { ...saved, tree: await manuscripts.written(project.id, project.path), at };
+      return { ...saved, source: authored(project.id, saved.source), tree: await manuscripts.written(project.id, project.path), at };
     }));
   });
   app.get<{ Params: { id: string }; Querystring: { key?: string; file?: string; start?: string; end?: string; near?: string } }>('/api/projects/:id/manuscript/source/place', project(), request => {

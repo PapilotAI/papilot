@@ -1,0 +1,105 @@
+/* Overleaf sync: sign-in, linking, the sidebar row and the details panel. */
+.overleaf-dialog h2 { display: flex; align-items: center; gap: 10px; }
+.overleaf-dialog h2 .brand-icon { flex: none; }
+.overleaf-dialog label, .modal.overleaf-dialog form > label, .modal .overleaf-sign-in form > label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+.overleaf-row { display: flex; align-items: stretch; gap: 8px; }
+.overleaf-row input, .modal .overleaf-row input, .settings-dialog .overleaf-row input { flex: 1; min-width: 0; margin: 0; height: 34px; font-size: 13.5px; }
+.overleaf-row .button, .overleaf-row .button.compact { flex: none; height: 34px; }
+.overleaf-sign-in { margin-top: 14px; display: grid; gap: 8px; justify-items: start; }
+.import-copy .overleaf-sign-in { margin: -8px 0 22px; }
+.overleaf-sign-in form { width: 100%; }
+.overleaf-help { margin-top: 8px; font-size: 12.5px; color: var(--text-2); }
+.overleaf-browsers { display: flex; flex-wrap: wrap; gap: 8px; }
+.overleaf-paste { width: 100%; margin-top: 2px; }
+.overleaf-paste > form { margin-top: 12px; }
+.overleaf-help summary { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; list-style: none; }
+.overleaf-help summary::-webkit-details-marker { display: none; }
+.overleaf-help summary:hover, .overleaf-help[open] summary { color: var(--text); }
+.overleaf-help summary svg { transition: transform .15s ease; }
+.overleaf-help[open] summary svg { transform: rotate(90deg); }
+.overleaf-help ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 5px; line-height: 1.5; }
+.overleaf-help code { font-size: 11.5px; overflow-wrap: anywhere; }
+.overleaf-help kbd { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; background: var(--bg-subtle); color: var(--text-2); font: 500 11px/16px var(--sans); text-align: center; }
+@media (prefers-reduced-motion: reduce) { .overleaf-help summary svg { transition: none; } }
+.overleaf-link { margin-top: 18px; }
+.overleaf-server { display: block; width: 100%; font-size: 13px; font-weight: 500; }
+.modal .overleaf-server input { height: 34px; font-size: 13.5px; }
+.overleaf-other { padding: 0; font-size: 12.5px; color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
+.overleaf-other:hover { color: var(--text); }
+.overleaf-quiet { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+
+.overleaf-projects { margin-top: 18px; }
+.overleaf-projects-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 12px; font-weight: 500; color: var(--text-3); }
+.overleaf-projects-head input { width: 180px; height: 28px; margin: 0; font-size: 12.5px; }
+.overleaf-projects ul { overscroll-behavior: contain; list-style: none; margin: 0; padding: 4px; max-height: 280px; overflow: auto; border-radius: var(--r-lg); background: var(--bg-subtle); box-shadow: inset 0 0 0 1px var(--line); }
+.overleaf-projects li > button { display: flex; align-items: baseline; gap: 12px; width: 100%; padding: 8px 10px; border-radius: var(--r); text-align: left; font-size: 13.5px; color: var(--text); }
+.overleaf-projects li > button:hover:not(:disabled), .overleaf-projects li > button:focus-visible { background: var(--bg-hover); }
+.overleaf-project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overleaf-project-meta { flex: none; font-size: 12px; color: var(--text-3); }
+.overleaf-projects .overleaf-quiet { padding: 8px 10px; margin: 0; }
+
+.overleaf-compare { margin-top: 16px; }
+.overleaf-compare-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 14px; }
+.overleaf-counts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; color: var(--text-2); }
+.overleaf-counts li { display: flex; align-items: center; gap: 8px; }
+.overleaf-counts svg { flex: none; color: var(--text-3); }
+.overleaf-counts .overleaf-differ { color: var(--text); font-weight: 500; }
+.overleaf-counts .overleaf-differ svg { color: var(--amber-text); }
+.overleaf-files { list-style: none; margin: 10px 0 0; padding: 0 0 0 22px; display: grid; gap: 3px; font-size: 12.5px; }
+.overleaf-files code { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
+.overleaf-more { color: var(--text-3); }
+.overleaf-choice { margin-top: 14px; }
+
+/* Sidebar row */
+.overleaf-link { min-height: 36px; gap: 8px; font-weight: 400; }
+.overleaf-link .brand-icon { flex: none; }
+.overleaf-link .nav-meta { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.overleaf-link.attention .nav-label { color: var(--amber-text); }
+.overleaf-dot { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.overleaf-dot.synced { background: var(--green); }
+.overleaf-dot.syncing, .overleaf-dot.connecting { background: var(--accent); animation: overleaf-pulse 1.2s ease-in-out infinite; }
+.overleaf-dot.offline, .overleaf-dot.paused, .overleaf-dot.signed-out, .overleaf-dot.no-access { background: var(--amber-text); }
+@keyframes overleaf-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .overleaf-dot.syncing, .overleaf-dot.connecting { animation: none; } }
+.overleaf-faces { display: inline-flex; }
+.overleaf-faces i, .overleaf-people i { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: hsl(var(--face, 220) 62% 48%); color: #fff; font: 600 9px/1 var(--sans, inherit); font-style: normal; box-shadow: 0 0 0 2px var(--bg-sidebar, var(--bg)); }
+.overleaf-faces i + i { margin-left: -5px; }
+
+/* Details panel */
+.overleaf-state { display: flex; align-items: center; gap: 9px; margin-top: 10px; font-size: 14px; color: var(--text); }
+.overleaf-state .button { margin-left: auto; }
+.overleaf-project { margin-top: 14px; }
+.overleaf-project .paper-location-name { font-weight: 500; }
+.overleaf-project-host { flex: none; font-size: 12.5px; color: var(--text-3); }
+.overleaf-section { display: block; margin: 18px 0 8px; font-size: 12px; font-weight: 500; color: var(--text-3); }
+.overleaf-people ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; }
+.overleaf-people li { display: flex; align-items: center; gap: 8px; min-height: 28px; min-width: 0; }
+.overleaf-people i { flex: none; box-shadow: none; }
+.overleaf-person { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+/* The file someone is in, which opens there. */
+.overleaf-person-file { margin-left: auto; min-width: 0; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 7px; border: 0; border-radius: 6px; background: none; font: 12px/1.3 var(--mono); color: var(--text-2); }
+button.overleaf-person-file { cursor: pointer; }
+button.overleaf-person-file:hover { background: var(--bg-hover); color: var(--text); }
+button.overleaf-person-file:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.overleaf-conflicts ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.overleaf-conflicts li { padding: 12px; border-radius: var(--r-lg); background: var(--bg-subtle); box-shadow: inset 0 0 0 1px var(--line); }
+.overleaf-conflict-file { display: block; font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
+.overleaf-versions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.overleaf-versions span { display: block; margin-bottom: 4px; font-size: 11.5px; font-weight: 500; color: var(--text-3); }
+.overleaf-versions mark { background: var(--amber-soft); color: inherit; border-radius: 3px; box-shadow: 0 0 0 1px var(--amber-line); }
+.overleaf-versions p { margin: 0; max-height: 120px; overflow: auto; font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.overleaf-conflict-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+.overleaf-skipped { margin-top: 16px; font-size: 12.5px; color: var(--text-2); }
+.overleaf-skipped summary { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; list-style: none; }
+.overleaf-skipped summary::-webkit-details-marker { display: none; }
+.overleaf-skipped[open] summary svg { transform: rotate(90deg); }
+.overleaf-footer { align-items: center; flex-wrap: wrap; }
+.overleaf-footer .overleaf-stop, .overleaf-footer .danger { margin-right: auto; }
+.overleaf-footer .overleaf-stop { padding-inline: 0; color: var(--text-2); }
+.overleaf-footer .overleaf-stop:hover { color: var(--red); }
+.overleaf-add input { margin-top: 6px; height: 32px; max-width: 260px; }
+
+@media (max-width: 520px) {
+  .overleaf-versions { grid-template-columns: 1fr; }
+  .overleaf-projects-head input { width: 140px; }
+}

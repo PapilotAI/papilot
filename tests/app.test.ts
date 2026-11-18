@@ -13,6 +13,7 @@ import { Manuscripts } from '../src/server/manuscript.ts';
 import { buildApp, gitQueue, type AppOptions } from '../src/server/app.ts';
 import { Updates } from '../src/server/updates.ts';
 import { Diagnostics } from '../src/server/diagnostics.ts';
+import { OverleafService } from '../src/server/overleaf/service.ts';
 import type { SystemRequirements } from '../src/shared.ts';
 import { PassThrough } from 'node:stream';
 import type { Codex } from '../src/server/codex.ts';
@@ -1707,9 +1708,12 @@ test('single-user routes expose the workspace without accounts and removed colla
   } finally { await f.close(); }
 });
 
-test('manual source edits need CSRF, refuse stale saves and wait for review writes', async () => {
+test('manual source edits need CSRF, retain authors, refuse stale saves and wait for review writes', async t => {
   const f = await fixture(), root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-api-source-'));
   const snapshot = path.join(root, '.compiled-main.tex');
+  const authors = [{ from: 0, to: 5, id: 'ada', name: 'Ada Lovelace', at: 1 }];
+  const attributed: [string, string, string][] = [];
+  t.mock.method(OverleafService.prototype, 'authors', (projectId: string, file: string, text: string) => { attributed.push([projectId, file, text]); return authors; });
   try {
     fs.writeFileSync(path.join(root, 'main.tex'), 'Intro.\n\nThe pelican paragraph.\nIt continues.\n\nEnd.\n');
     execFileSync('git', ['init', '-q'], { cwd: root });
@@ -1728,9 +1732,12 @@ test('manual source edits need CSRF, refuse stale saves and wait for review writ
     assert.equal(found.statusCode, 200, found.body);
     const source = found.json().source;
     assert.deepEqual([source.file, source.passage, source.focus, source.base], ['main.tex', [2, 4], [2, 3], source.text]);
+    assert.deepEqual(source.authors, authors, 'opening a PDF passage retains its coauthors');
+    assert.deepEqual(attributed, [['thesis', 'main.tex', source.text]]);
     const read = await f.local.inject({ url: '/api/projects/thesis/manuscript/source?file=main.tex', headers: LOCAL });
     assert.equal(read.statusCode, 200, read.body);
     assert.equal(read.json().text, source.text);
+    assert.deepEqual(read.json().authors, authors);
     const save = (headers: Record<string, string>, payload: object) => f.local.inject({ method: 'POST', url: '/api/projects/thesis/manuscript/source', headers, payload });
     const text = 'Intro.\n\nThe heron paragraph.\n\nEnd.\n', edit = { id: 'save-1', file: 'main.tex', revision: source.revision, text };
     assert.equal((await save(LOCAL, edit)).statusCode, 403);
@@ -1744,15 +1751,18 @@ test('manual source edits need CSRF, refuse stale saves and wait for review writ
     assert.equal(saved.json().tree, 'tree-after-save');
     assert.deepEqual(saved.json().changed, [2, 3]);
     assert.equal(saved.json().source.base, source.text, 'the base stays the last commit');
+    assert.deepEqual(saved.json().source.authors, authors);
     assert.equal(fs.readFileSync(path.join(root, 'main.tex'), 'utf8'), text);
     assert.deepEqual(writes, ['thesis']);
     const stale = await save(f.as, { ...edit, id: 'save-2', text: 'Another.\n' });
     assert.equal(stale.statusCode, 409); assert.match(stale.json().error, /changed while you were editing/);
     // A class or package file outside the compiled paper has nothing to edit.
     f.manuscripts.locate = async () => ({ quote: 'Title', source: null, compiled: { file: 'article.cls', input: '/usr/share/texmf/article.cls', lines: [1, 1] } });
+    const beforeOutside = attributed.length;
     const outside = await locate(f.as, { key: 'pdf', page: 0, rect: [0.1, 0.1, 0.2, 0.2] });
     assert.equal(outside.statusCode, 200, outside.body);
     assert.equal(outside.json().source, null);
+    assert.equal(attributed.length, beforeOutside, 'an uneditable PDF passage has no authors lookup');
     delete (f.manuscripts as { compiled?: unknown }).compiled;
     const place = await f.local.inject({ url: '/api/projects/thesis/manuscript/source/place?key=gone&file=main.tex&start=2&end=3', headers: LOCAL });
     assert.equal(place.statusCode, 404, 'a PDF that is no longer shown cannot place lines');

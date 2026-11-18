@@ -6,12 +6,15 @@ import { stex } from '@codemirror/legacy-modes/mode/stex';
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
 import { Chunk } from '@codemirror/merge';
 import { tags } from '@lezer/highlight';
+import { personHue } from './overleaf-presence.ts';
 
 // The LaTeX editor of the manuscript's source tab, loaded when a source is
 // first opened. It shows the whole file, with bars beside the lines that
 // changed since the last commit and their places along the scrollbar. In a
 // task, it also shows the review's changes in the text, each with Accept and
-// Reject, as an editor shows an agent's edits.
+// Reject, as an editor shows an agent's edits. In a paper synced with
+// Overleaf, the words coauthors wrote there since the last commit carry
+// their colour, and their cursors show where they are.
 
 export type ChangeKind = 'added' | 'modified' | 'deleted';
 export interface SourceEditorOptions {
@@ -99,6 +102,66 @@ const theme = EditorView.theme({
   '.cm-change-modified': { backgroundColor: 'var(--accent)' },
   // A deletion has no lines left: a short mark where they were.
   '.cm-change-deleted': { top: '-1.5px', bottom: 'auto', height: '3px', backgroundColor: 'var(--danger)' },
+  // Words a coauthor wrote, in their colour, and their cursor with their name.
+  '.cm-author': { backgroundColor: 'hsl(var(--author) 80% 55% / 0.13)', boxShadow: 'inset 0 -1.5px 0 hsl(var(--author) 65% 50% / 0.7)', borderRadius: '1px' },
+  '.cm-remote-cursor': { position: 'relative', display: 'inline-block', width: '0', height: '1.25em', verticalAlign: 'text-top', borderLeft: '2px solid hsl(var(--author) 70% 48%)', marginLeft: '-1px', marginRight: '-1px', pointerEvents: 'auto' },
+  // A wider place to point at than the caret's two pixels.
+  '.cm-remote-cursor::before': { content: '""', position: 'absolute', top: '0', bottom: '0', left: '-5px', width: '9px' },
+  '.cm-remote-flag': { position: 'absolute', bottom: '100%', left: '-2px', zIndex: '4', padding: '1px 6px', borderRadius: '4px 4px 4px 0', backgroundColor: 'hsl(var(--author) 70% 42%)', color: '#fff', font: '500 11px/1.45 var(--sans)', whiteSpace: 'nowrap', pointerEvents: 'none', opacity: '0', transition: 'opacity .15s' },
+  '.cm-remote-flag::after': { content: 'attr(data-name)' },
+  '.cm-remote-cursor[data-first] .cm-remote-flag': { bottom: 'auto', top: '100%', borderRadius: '0 4px 4px 4px' },
+  // The name shows when the cursor arrives or moves, and under the pointer.
+  '.cm-remote-cursor[data-fresh] .cm-remote-flag': { animation: 'cm-remote-flag 2.4s ease-out' },
+  '.cm-remote-cursor:hover .cm-remote-flag': { opacity: '1', animation: 'none' },
+  '@keyframes cm-remote-flag': { '0%, 70%': { opacity: '1' }, '100%': { opacity: '0' } },
+  '@media (prefers-reduced-motion: reduce)': { '.cm-remote-cursor[data-fresh] .cm-remote-flag': { animation: 'none' } },
+});
+
+// Words coauthors wrote on Overleaf: marks that follow the author's edits
+// until the file is shown again.
+export interface AuthorSpan { from: number; to: number; id: string; label: string }
+const setAuthors = StateEffect.define<AuthorSpan[]>();
+const authorsField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, tr) {
+    for (const effect of tr.effects) if (effect.is(setAuthors)) {
+      const length = tr.state.doc.length;
+      return Decoration.set(effect.value.filter(span => span.from < span.to && span.to <= length)
+        .map(span => Decoration.mark({ class: 'cm-author', attributes: { style: `--author: ${personHue(span.id)}`, title: span.label } }).range(span.from, span.to)), true);
+    }
+    return value.map(tr.changes);
+  },
+  provide: field => EditorView.decorations.from(field),
+});
+
+// Coauthors' cursors, at the line and column Overleaf reports.
+export interface RemoteCursor { client: string; id: string; name: string; line: number; column: number }
+const setCursors = StateEffect.define<RemoteCursor[]>();
+const cursorsField = StateField.define<RemoteCursor[]>({
+  create: () => [],
+  update: (value, tr) => { for (const effect of tr.effects) if (effect.is(setCursors)) return effect.value; return value; },
+});
+class CursorWidget extends WidgetType {
+  constructor(readonly cursor: RemoteCursor, readonly first: boolean) { super(); }
+  eq(other: CursorWidget) { return other.cursor.client === this.cursor.client && other.cursor.name === this.cursor.name && other.cursor.line === this.cursor.line && other.cursor.column === this.cursor.column && other.first === this.first; }
+  toDOM() {
+    const caret = document.createElement('span'), flag = document.createElement('span');
+    caret.className = 'cm-remote-cursor'; caret.style.setProperty('--author', String(personHue(this.cursor.id)));
+    caret.setAttribute('aria-hidden', 'true'); caret.dataset.fresh = '';
+    if (this.first) caret.dataset.first = '';
+    // The name is drawn, so it is never part of the text read or copied.
+    flag.className = 'cm-remote-flag'; flag.dataset.name = this.cursor.name;
+    caret.append(flag);
+    return caret;
+  }
+  ignoreEvent() { return true; }
+}
+const cursorsView = EditorView.decorations.compute([cursorsField, 'doc'], state => {
+  const doc = state.doc;
+  return Decoration.set(state.field(cursorsField).map(cursor => {
+    const line = doc.line(Math.min(Math.max(cursor.line, 0), doc.lines - 1) + 1), at = line.from + Math.min(Math.max(cursor.column, 0), line.length);
+    return Decoration.widget({ widget: new CursorWidget(cursor, line.number === 1), side: 1 }).range(at);
+  }), true);
 });
 
 // The focus: lines named by a click on the PDF or a change in the Changes
@@ -352,7 +415,7 @@ export class SourceCodeEditor {
     return EditorState.create({ doc: text, extensions: [
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(), bracketMatching(),
       search({ top: false }), highlightSelectionMatches(), latex, syntaxHighlighting(highlight), EditorView.lineWrapping, theme,
-      this.editable.of(EditorState.readOnly.of(false)), this.bars.of(changeBars(this.base, options.onChangeBar)), focusField, flashField, this.review,
+      this.editable.of(EditorState.readOnly.of(false)), this.bars.of(changeBars(this.base, options.onChangeBar)), focusField, flashField, this.review, authorsField, cursorsField, cursorsView,
       EditorView.contentAttributes.of({ 'aria-label': options.label, spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off' }),
       keymap.of([
         { key: 'Mod-s', preventDefault: true, run: () => { options.onSave(); return true; } },
@@ -396,6 +459,22 @@ export class SourceCodeEditor {
     if (this.view.state.doc.toString() !== text) return;
     this.reviewKey = key;
     this.view.dispatch({ effects: setReview.of(state) });
+  }
+
+  /** Marks the words coauthors wrote, where they changed the file since
+   *  its last commit; `text` is the file they were found in. */
+  showAuthors(spans: AuthorSpan[], text: string) {
+    const doc = this.view.state.doc;
+    if (doc.toString() !== text) return;
+    const changed = Chunk.build(this.base, doc).map(chunk => [chunk.fromB, chunk.toB]);
+    const shown = spans.flatMap(span => changed.flatMap(([from, to]) => { const start = Math.max(from, span.from), end = Math.min(to, span.to); return end > start ? [{ ...span, from: start, to: end }] : []; }));
+    this.view.dispatch({ effects: setAuthors.of(shown) });
+  }
+
+  /** Shows coauthors' cursors in this file. */
+  showCursors(cursors: RemoteCursor[]) {
+    const now = this.view.state.field(cursorsField);
+    if (JSON.stringify(now) !== JSON.stringify(cursors)) this.view.dispatch({ effects: setCursors.of(cursors) });
   }
 
   /** The last commit changed, such as after a commit. */

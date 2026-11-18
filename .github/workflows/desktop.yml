@@ -130,6 +130,10 @@ jobs:
       - name: Build the update layer
         if: ${{ !inputs.quick }}
         run: node scripts/desktop.mjs layer
+      - name: Check the Overleaf sign-in window
+        timeout-minutes: 5
+        shell: bash
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}node scripts/check-desktop-overleaf.mjs
       - name: Launch the packaged app and check its backend
         if: runner.os == 'macOS'
         timeout-minutes: 10
