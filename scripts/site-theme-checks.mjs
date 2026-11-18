@@ -12,11 +12,13 @@ export async function checkSiteTheme(browser, origin, watch = () => {}) {
     const scheme = dark ? 'dark' : 'light';
     const surfaces = [
       ['body', dark ? 'rgb(17, 18, 20)' : 'rgb(255, 255, 255)'],
-      ['.app-window, .mini, .app-chat, .app-git, .demo-note, .mini-comment', dark ? 'rgb(38, 39, 43)' : 'rgb(255, 255, 255)'],
+      ['.app-window, .mini, .app-chat, .app-git, .demo-note, .mini-comment', dark ? 'rgb(44, 44, 44)' : 'rgb(255, 255, 255)'],
       ['.review-page, .mini-page', dark ? 'rgb(41, 41, 41)' : 'rgb(255, 255, 255)'],
-      ['.app-pdf', dark ? 'rgb(30, 31, 34)' : 'rgb(236, 238, 241)'],
-      ['.review-head, .mini-head, .draft-note', dark ? 'rgb(42, 43, 47)' : 'rgb(250, 250, 250)'],
-      ['.chat-bubble', dark ? 'rgb(48, 49, 53)' : 'rgb(244, 244, 244)'],
+      ['.app-pdf', dark ? 'rgb(30, 30, 30)' : 'rgb(245, 245, 245)'],
+      // Each drawn change is the current one, its header in the selection colour.
+      ['.review-head', dark ? 'rgb(28, 58, 87)' : 'rgb(229, 243, 255)'],
+      ['.mini-head, .draft-note', dark ? 'rgb(48, 48, 48)' : 'rgb(250, 250, 250)'],
+      ['.chat-bubble', dark ? 'rgb(56, 56, 56)' : 'rgb(245, 245, 245)'],
     ];
     for (const [selector, background] of surfaces) {
       const styles = await page.locator(selector).evaluateAll(nodes => nodes.map(el => {
@@ -53,7 +55,7 @@ export async function checkSiteTheme(browser, origin, watch = () => {}) {
   // Review controls keep dark surfaces after opening source or deciding.
   await nightPage.locator(`${change} .review-latex`).click();
   assert.equal(await nightPage.locator(`${change} .review-source`).isVisible(), true);
-  for (const [selector, background] of [['.before', 'rgb(67, 44, 48)'], ['.after', 'rgb(40, 57, 45)'], ['.review-source del', 'rgb(70, 41, 46)'], ['.review-source ins', 'rgb(36, 58, 47)']]) {
+  for (const [selector, background] of [['.before', 'rgb(71, 39, 31)'], ['.after', 'rgb(30, 58, 42)'], ['.review-source del', 'rgb(71, 39, 31)'], ['.review-source ins', 'rgb(30, 58, 42)']]) {
     const backgrounds = await nightPage.locator(`${change} ${selector}`).evaluateAll(nodes => nodes.map(el => getComputedStyle(el).backgroundColor));
     assert.ok(backgrounds.length);
     for (const value of backgrounds) assert.equal(value, background, `dark ${selector}`);

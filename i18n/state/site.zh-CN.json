@@ -4,6 +4,11 @@
     "textHash": "22e961bddc85581a5f7c189807cfb8799c6f7f7bf1f15f4f2baab24ac7479cf5",
     "model": "manual"
   },
+  "Default model": {
+    "revision": "03178e78fbc4508a7ae7937f1729d64a0951f8c2e195d51936e3bb6dc723066f",
+    "textHash": "1e2933c6b813322a9bee618bc0799720c34cb038052f78c122045a812fc26283",
+    "model": "gemini-4-argon-medium"
+  },
   "Download for Windows": {
     "revision": "941ba606f0f47df1cfe0a8a65a0609f6e4c86523a61236e0dc9330f2b499d8c5",
     "textHash": "fdf8d22d152cb52dafd0ff60b4b85e1494d7f706c4b9c405092a84058c101c70",
@@ -23,5 +28,10 @@
     "revision": "505f70543225c569b5b8910357157cf01057d28c519b28daa56d9019439a339c",
     "textHash": "0be681b2a5832cf4f0ff5777104150685449e0612f8d4ac364d9315f95da71ff",
     "model": "manual"
+  },
+  "Viewed the PDF, edited main.tex": {
+    "revision": "afe8ba3218fb7842e33cd18ecd8ba383e65bc1ea22063337fd3e55647e7cce2b",
+    "textHash": "1b74d8bbc370c9f47fe1af14f536a440004c42d6346f5d480083e2850b8ba340",
+    "model": "gemini-4-argon-medium"
   }
 }

@@ -138,7 +138,8 @@
           <i class="tb-icon tb-sidebar"><svg class="ic"><use href="#i-sidebar"/></svg></i>
           <span class="tb-seg"><b class="tb-pdf"><svg class="ic"><use href="#i-paper"/></svg><span class="tb-label">PDF</span></b><b class="tb-changes"><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b></span>
           <span class="tb-space"></span>
-          <span class="tb-decide"><span class="tb-count">0 / 1</span><span class="tb-action tb-accept"><svg class="ic"><use href="#i-check"/></svg><span class="tb-label"><span lang="en">Accept all</span><span lang="zh-CN">全部接受</span></span><b>1</b></span><span class="tb-action tb-reject"><svg class="ic"><use href="#i-close"/></svg><span class="tb-label"><span lang="en">Reject all</span><span lang="zh-CN">全部拒绝</span></span><b>1</b></span></span>
+          <span class="tb-decide"><span class="tb-count">0 <small>/ 1</small></span></span>
+          <i class="tb-icon"><svg class="ic"><use href="#i-restore"/></svg></i><i class="tb-icon"><svg class="ic"><use href="#i-pdf"/></svg></i>
           <i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i>
         </div>
         <div class="app-tb side"><span class="tb-seg icons"><b><svg class="ic"><use href="#i-paper"/></svg></b><b class="on"><svg class="ic"><use href="#i-split"/></svg></b><b><svg class="ic"><use href="#i-chat"/></svg></b></span><span class="tb-space"></span><i class="tb-icon"><svg class="ic"><use href="#i-external"/></svg></i></div>
@@ -154,6 +155,7 @@
                 <button class="review-accept" type="button"><svg class="ic"><use href="#i-check"/></svg><span class="sr"><span lang="en">Accept</span><span lang="zh-CN">接受</span></span></button>
                 <button class="review-reject" type="button"><svg class="ic"><use href="#i-close"/></svg><span class="sr"><span lang="en">Reject</span><span lang="zh-CN">拒绝</span></span></button>
                 <a class="review-comment" href="https://github.com/PapilotAI/papilot/discussions" title="Discuss Papilot on GitHub" data-zh-title="在 GitHub 上讨论 Papilot"><svg class="ic"><use href="#i-chat"/></svg><span class="sr"><span lang="en">Comment</span><span lang="zh-CN">评论</span></span></a>
+                <i class="review-copy" aria-hidden="true"><svg class="ic"><use href="#i-copy"/></svg></i>
                 <button class="review-latex" type="button" aria-expanded="false" aria-controls="review-source-1" title="Show LaTeX source" data-zh-title="显示 LaTeX 源码"><svg class="ic"><use href="#i-code"/></svg><span class="sr">LaTeX</span></button>
               </div>
               <div class="review-side before" aria-hidden="true">
@@ -182,13 +184,13 @@
               <span class="chat-region"><span lang="en">Marked region</span><span lang="zh-CN">标记的区域</span></span>
               <p class="chat-comment"><span lang="en">Make it more modern</span><span lang="zh-CN">改得现代一点</span></p>
             </div>
-            <p class="chat-tool"><svg class="ic"><use href="#i-diff"/></svg><span lang="en">Edited main.tex</span><span lang="zh-CN">编辑了 main.tex</span></p>
+            <p class="chat-tool"><svg class="ic"><use href="#i-pdf"/></svg><span lang="en">Viewed the PDF, edited main.tex</span><span lang="zh-CN">查看了 PDF，编辑了 main.tex</span><svg class="ic tool-more"><use href="#i-chevron-down"/></svg></p>
             <div class="chat-reply"><span class="chat-dots"><i></i><i></i><i></i></span><span class="chat-lines"><i style="width:100%"></i><i style="width:94%"></i><i style="width:46%"></i></span></div>
           </div>
           <div class="chat-picked"><span class="picked"><b>1</b><em><span lang="en">Page 1</span><span lang="zh-CN">第 1 页</span></em><span></span></span></div>
           <div class="chat-composer">
             <span class="chat-input"><i></i></span>
-            <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent codex"><i></i><b>Codex</b><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
+            <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent codex"><i></i><b>Codex</b><small><span lang="en">Default model</span><span lang="zh-CN">默认模型</span></small><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
           </div>
         </div>
       </div>
@@ -398,7 +400,7 @@ progress and preservation.</pre></div>
               <div class="chat-picked"><span class="picked"><b>1</b><em><span lang="en">Page 2</span><span lang="zh-CN">第 2 页</span></em><span></span></span><span class="picked"><b>2</b><em><span lang="en">Page 2</span><span lang="zh-CN">第 2 页</span></em><span></span></span></div>
               <div class="chat-composer">
                 <span class="chat-input"><i></i></span>
-                <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent claude"><i></i><b>Claude</b><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
+                <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent claude"><i></i><b>Claude</b><small><span lang="en">Default model</span><span lang="zh-CN">默认模型</span></small><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
               </div>
             </div>
           </div>
@@ -420,7 +422,7 @@ progress and preservation.</pre></div>
           <div class="app-bar"><span class="lights"><i></i><i></i><i></i></span></div>
           <div class="app-top">
             <div class="m-nav"><i class="tb-icon"><svg class="ic"><use href="#i-menu"/></svg></i><span class="tb-seg"><b class="seg-pdf"><svg class="ic"><use href="#i-paper"/></svg><span lang="en">Review</span><span lang="zh-CN">审阅</span><em class="tb-badge">1</em></b><b class="seg-side"><svg class="ic"><use href="#i-chat"/></svg><span lang="en">Chat</span><span lang="zh-CN">对话</span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
-            <div class="app-tb"><i class="tb-icon tb-sidebar"><svg class="ic"><use href="#i-sidebar"/></svg></i><span class="tb-seg"><b><svg class="ic"><use href="#i-paper"/></svg><span class="tb-label">PDF</span></b><b class="on"><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b></span><span class="tb-space"></span><span class="tb-count">0 / 1</span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+            <div class="app-tb"><i class="tb-icon tb-sidebar"><svg class="ic"><use href="#i-sidebar"/></svg></i><span class="tb-seg"><b><svg class="ic"><use href="#i-paper"/></svg><span class="tb-label">PDF</span></b><b class="on"><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b></span><span class="tb-space"></span><span class="tb-count">0 <small>/ 1</small></span><i class="tb-icon"><svg class="ic"><use href="#i-restore"/></svg></i><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
             <div class="app-tb side"><span class="tb-seg icons"><b><svg class="ic"><use href="#i-paper"/></svg></b><b class="on"><svg class="ic"><use href="#i-split"/></svg></b><b><svg class="ic"><use href="#i-chat"/></svg></b></span><span class="tb-space"></span><i class="tb-icon"><svg class="ic"><use href="#i-external"/></svg></i></div>
           </div>
           <div class="app-body">
@@ -432,7 +434,7 @@ progress and preservation.</pre></div>
                 <article class="review-change current" data-state="pending">
                   <div class="review-head">
                     <i class="review-step"><svg class="ic"><use href="#i-chevron-left"/></svg></i><span class="review-number"><span lang="en">Change 1</span><span lang="zh-CN">修改 1</span></span><i class="review-step"><svg class="ic"><use href="#i-chevron-right"/></svg></i><code class="review-where">main.tex:42</code>
-                    <i class="review-accept"><svg class="ic"><use href="#i-check"/></svg></i><i class="review-reject"><svg class="ic"><use href="#i-close"/></svg></i><i class="review-comment"><svg class="ic"><use href="#i-chat"/></svg></i><i class="review-latex"><svg class="ic"><use href="#i-code"/></svg></i>
+                    <i class="review-accept"><svg class="ic"><use href="#i-check"/></svg></i><i class="review-reject"><svg class="ic"><use href="#i-close"/></svg></i><i class="review-comment"><svg class="ic"><use href="#i-chat"/></svg></i><i class="review-copy"><svg class="ic"><use href="#i-copy"/></svg></i><i class="review-latex"><svg class="ic"><use href="#i-code"/></svg></i>
                   </div>
                   <div class="review-side before">
                     <span class="review-label"><span lang="en">Before</span><span lang="zh-CN">修改前</span></span>
@@ -461,7 +463,7 @@ progress and preservation.</pre></div>
               <div class="chat-composer">
                 <div class="chat-draft"><p class="draft-head"><svg class="ic"><use href="#i-chat"/></svg><b><span lang="en">Review feedback</span><span lang="zh-CN">审阅反馈</span></b><span><span lang="en">1 comment</span><span lang="zh-CN">1 条评论</span></span></p><p class="draft-note"><span class="draft-where"><b>1</b><em><span lang="en">Whole change</span><span lang="zh-CN">整处修改</span></em></span><span class="draft-text"></span></p></div>
                 <span class="chat-input"><i></i></span>
-                <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent codex"><i></i><b>Codex</b><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
+                <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent codex"><i></i><b>Codex</b><small><span lang="en">Default model</span><span lang="zh-CN">默认模型</span></small><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
               </div>
             </div>
           </div>

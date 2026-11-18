@@ -114,6 +114,11 @@
     "textHash": "edd937663dfab952b0f710bd567aea9e58bbed308454cc96210e8661087dac48",
     "model": "gemini-4-argon-high"
   },
+  "Default model": {
+    "revision": "5ac39def76c339ab25556372a223f7d803fa7ca4f201d0a71daff1c64d44ecf5",
+    "textHash": "5758d1577e505772f65ac06bf7eb79bbb2cec216e89da127b8f6bd6c6533df3d",
+    "model": "gemini-4-argon-medium"
+  },
   "Discuss Papilot on GitHub": {
     "revision": "366a22c8345aa01383515326fa1911a127bfc9d4e26db497f3c8c31951f9ed3a",
     "textHash": "4ce4ecab9706f7fa4412a468b89fe531dae2ed551151e9433cf2ea93ecb0dbec",
@@ -338,6 +343,11 @@
     "revision": "e552b5a71a6a945db56ba93d6ab189200cea042d362547a43dc249a0ed68335e",
     "textHash": "b93ff0d4d586922ff675fd94f301dc0c1887b20b4ecfdaa511372e9f7e143e87",
     "model": "gemini-4-argon-high"
+  },
+  "Viewed the PDF, edited main.tex": {
+    "revision": "aa952ca67fdc11d9bdb646310db838ffdfbade68ee7f178933e17a4bcd99a3a8",
+    "textHash": "74ca9f0fd3e11bc336963cf8e4756b26c22d014e2610621f5eceeb4b413711d3",
+    "model": "gemini-4-argon-medium"
   },
   "What Matters in a Paper Is the Idea and the Story": {
     "revision": "58f448df618835f10ca52b99a44a29bf2c3e8593149174206777086f330f6365",
