@@ -23,6 +23,7 @@ import { ToolRequirement, type RequirementsState } from './system-requirements.t
 import { LatexSettings } from './latex-settings.tsx';
 import { UpdateSettings, versionLabel, type UpdateApi } from './update-notice.tsx';
 import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions } from './skill-library.tsx';
+import { CollaborationSettings, type CollaborationSettingsProps } from './collaboration-settings.tsx';
 import { ModelDefaultSettings, type ModelDefaultSettingsProps } from './model-default-settings.tsx';
 
 type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'quickNotes' | 'shortcuts' | 'about' | 'licenses' | 'agents' | 'git' | 'latex' | 'skills' | 'updates';
@@ -32,7 +33,7 @@ type SettingsEntry = { page: SettingsPage; label: string; icon: string; keywords
 // Shared with the review page's bibliography checks.
 const REFERENCE_CHECKS = 'papilot:review:references';
 
-export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, updates, modelDefaults, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; initialPage?: SettingsInitialPage }) {
+export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, updates, modelDefaults, workflow, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; workflow?: CollaborationSettingsProps; initialPage?: SettingsInitialPage }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const skillControls = useRef<SkillLibraryControls>(null);
   const { choice } = useLanguage();
@@ -159,7 +160,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         {page === 'notifications' && <NotificationSettings/>}
         {page === 'shortcuts' && <ShortcutSettings/>}
         {page === 'quickNotes' && <QuickNoteSettings/>}
-        {page === 'about' && <AboutSettings onLicenses={() => goTo('licenses')}/>}
+        {page === 'about' && <AboutSettings onLicenses={() => goTo('licenses')} experiments={workflow && <CollaborationSettings {...workflow}/>}/>}
         {page === 'licenses' && <LicenseSettings/>}
         {page === 'agents' && diagnostics && <DiagnosticsSettings {...diagnostics}/>}
         {page === 'git' && <div className="settings-page">

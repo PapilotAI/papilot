@@ -9,7 +9,9 @@ import { AGENT_IDS, AGENT_NAMES } from '../src/shared.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = path.join(root, 'docs/assets/readme-agents');
 const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
-const names = AGENT_IDS.map(id => AGENT_NAMES[id]).join(', ');
+// Collaboration reuses Codex; it is not a separate installed runtime or brand.
+const agents = AGENT_IDS.filter(id => id !== 'collaboration');
+const names = agents.map(id => AGENT_NAMES[id]).join(', ');
 fs.mkdirSync(output, { recursive: true });
 
 for (const compact of [false, true]) {
@@ -17,16 +19,16 @@ for (const compact of [false, true]) {
   const cellWidth = 136;
   const rowHeight = 60;
   const width = columns * cellWidth;
-  const height = Math.ceil(AGENT_IDS.length / columns) * rowHeight;
+  const height = Math.ceil(agents.length / columns) * rowHeight;
   for (const dark of [false, true]) {
     const ink = dark ? '#cbd5e1' : '#334155';
-    const marks = AGENT_IDS.map((id, index) => {
+    const marks = agents.map((id, index) => {
       const source = fs.readFileSync(path.join(root, `src/web/brand-icons/${id}.svg`), 'utf8');
       const viewBox = source.match(/viewBox="([^"]+)"/)?.[1];
       if (!viewBox) throw new Error(`Missing viewBox: ${id}`);
       const artwork = source.replace(/^<svg\b[^>]*>/, '').replace(/<\/svg>\s*$/, '').replace(/<title>.*?<\/title>/, '');
       const row = Math.floor(index / columns);
-      const count = Math.min(columns, AGENT_IDS.length - row * columns);
+      const count = Math.min(columns, agents.length - row * columns);
       const x = (width - count * cellWidth) / 2 + (index % columns) * cellWidth + (compact ? 2 : 10);
       const y = row * rowHeight;
       return `  <g transform="translate(${x} ${y})">

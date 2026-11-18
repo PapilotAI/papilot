@@ -8,7 +8,7 @@ const runtime = (installed?: boolean): RuntimeStatus => ({ connected: false, aut
 test('a desktop host without Codex offers and picks the agents it has', () => {
   assert.deepEqual(offeredAgents({}), [], 'agents are offered only after the host reports on them');
   assert.deepEqual(offeredAgents({ codex: runtime() }), ['codex'], 'older servers report only the Codex runtime');
-  for (const id of AGENT_IDS) assert.deepEqual(offeredAgents({ [id]: runtime() }), [id]);
+  for (const id of AGENT_IDS) assert.deepEqual(offeredAgents({ [id]: { ...runtime(), hidden: false } }), [id]);
   assert.deepEqual(offeredAgents({ codex: runtime(), claude: runtime(false) }), ['codex']);
   const runtimes = { codex: runtime(false), claude: runtime(true), kimi: runtime(false) };
   const noCodex = offeredAgents(runtimes);

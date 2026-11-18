@@ -1245,14 +1245,14 @@
     "model": "gemini-4-argon-medium"
   },
   "Default": {
-    "revision": "53467ddd348437a67e269f614a594f584fdacf1037c73b3dac41c6bca73bc10a",
+    "revision": "59d4998ae0de14b2f2b81e572a32eb7bd506515c23783b0c6fd7484817ca9758",
     "textHash": "ef6691545d2c5523efed00424407cb261aeb0037d165ca5792f7f8bac3381362",
-    "model": "manual-review"
+    "model": "gemini-4-argon-medium"
   },
   "Default model": {
-    "revision": "cef7efc4f0f4bb8bcc29efeebc0d8a0db053d32639493bfa4954f6f37f22d69a",
+    "revision": "71cf335f44df57af584a1ea1e857c25fd6b1c10817a9a1b3cf97a454af66f147",
     "textHash": "be0d52b29512aea8645047f2b4ffa469b339fb816f9e05cd6286485ba979dd0d",
-    "model": "gemini-4-argon-high"
+    "model": "gemini-4-argon-medium"
   },
   "Default reasoning effort": {
     "revision": "eacddfe1ebc6a2d602993ec74186fc9d99ab4f4052057caad3066864b6730b97",
@@ -5929,6 +5929,21 @@
     "textHash": "e9a5c6c79487822236ae01d153818aabb18469743c552a9471bb559864c96848",
     "model": "codex"
   },
+  "Collaboration mode": {
+    "revision": "1f112eaafe6563679675474456ebf16713fb9e0a789b9c458dfa46ae654a9fd6",
+    "textHash": "1824fb32bb673fa159db0ef5b14e0546831612fef248e7be1b78e6c6359b8cbd",
+    "model": "codex"
+  },
+  "Experiments": {
+    "revision": "0c67e1a2b90b3dd0eb8f1a45edd032c6f038baf00ad8716961943bef536b4ee9",
+    "textHash": "0302043f944fe20bdc8e756adf4876bc7117aa4a4ee1f744fdc05f7b47ea5f09",
+    "model": "codex"
+  },
+  "Enable collaboration mode": {
+    "revision": "c37dc7c3497dc8aabcb0c63172776b548ebd4c44e3281fa66d92ab747134c6d7",
+    "textHash": "389d411a4c14bfa70d18797f4dece5cb18ed45873df795c82578c15d1867bdb1",
+    "model": "codex"
+  },
   "Add anchor": {
     "revision": "1959c1db74f1d47b1f1219364cf675f1b482c68d2142afde2ac4c9600e9abbc9",
     "textHash": "53c2a39548329531a3aa41281fd7af0a7cec04350eac9639331dea134ddc87f5",
@@ -6064,24 +6079,64 @@
     "textHash": "d6711d3e6aaebf33c71d09f14a3ebc68b1fac0367870571e18bd226b5464f50b",
     "model": "manual"
   },
-  "Uses Qoder CLI and its saved login through ACP.": {
-    "revision": "262e758fd2f6af8b05f9f4b748186fedc623c10de960a85b78975ea29ac695f6",
-    "textHash": "2a39bd639f6d74012482cb08dbdb1985b3f4c629197711220c7369d9e7f2d3bb",
-    "model": "manual"
+  "Checks and reasoning": {
+    "revision": "7d413c15b0d525d4e3acd0f04be2f78c72591e0619eb89b92a9aa805f4f549a0",
+    "textHash": "dacde29d9de548bdfd1aa9e059ffd1d38ddf154c0f70ba718a8617ceab590f87",
+    "model": "gemini-4-argon-medium"
   },
-  "Uses CodeBuddy CLI and its saved login through ACP.": {
-    "revision": "b8cb98146e0392c716c5333a28a4b573bbfe7ee712749c075f48aa5b44e27af7",
-    "textHash": "c8e8758b55ee7eaa56d8dce7d7687184e8ba1f9373a28047323ca061c4c32f5e",
-    "model": "manual"
+  "Clarity and flow of passages": {
+    "revision": "44ab46170bac22b719135edf1d87192bac5054de8655f60f008936b197827d75",
+    "textHash": "c24887e54d756e5394c35af54316faa03304ff756d72d883303a7a48750da367",
+    "model": "gemini-4-argon-medium"
   },
-  "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": {
-    "revision": "14f4502d807c96dfd15a291c448a668d1ca4a895ff413672ef13462784e64ad8",
-    "textHash": "a128e488a2efb834bbcbd480e2f9f9316ed1fc00945e0c1fc4ab4b209564a80a",
-    "model": "manual"
+  "Codex assigns annotations to the workers below and checks every one before publishing.": {
+    "revision": "713bb388c752ef3c6a66608a42cd19a8214498030d77b70eaffb422e265389d5",
+    "textHash": "c84ba33de18bc4dd85e9ab6c0e641f1c63716337b0fb4475707279f306cdb974",
+    "model": "gemini-4-argon-medium"
+  },
+  "Math, facts, references and formatting": {
+    "revision": "1e15faa1c06c6133cb79151f315af228eaff94a11bb9bc5fed5cc1b1c881cae3",
+    "textHash": "b2d3f8ee0fe99080ad148440073f4b85c9eb781f596a16e19a0d3a41c7d362e0",
+    "model": "gemini-4-argon-medium"
+  },
+  "Polishing": {
+    "revision": "a8a117889aba7a14ccf2885a477cbe2275306b626502e269d73c87acf353cdb8",
+    "textHash": "a62dc5b0accfe44487a9a78299e7e3d8de4e2ae56ff81f68750c7d6bef3ce591",
+    "model": "gemini-4-argon-medium"
+  },
+  "Quick edits": {
+    "revision": "27336c0c6ea9a496c7567bfd2f9d6c6250c996ed8d2eaa998a483172d1e51e51",
+    "textHash": "7953aae3cb9211fcbaceedbc4bd964a477afac6956b665964249337c3fe80f48",
+    "model": "gemini-4-argon-medium"
+  },
+  "Same as coordinator": {
+    "revision": "7a850734b3d64f52436b4257cc54466a1b3f49efea166aefaf3c305d050d2541",
+    "textHash": "8eccf958b36598cf1f61001fd817961f419e11423a6c25ab9f2adaec3f446deb",
+    "model": "gemini-4-argon-medium"
+  },
+  "Typos, word choice and small LaTeX fixes": {
+    "revision": "c5f856b41d26fc5d8976c34412cba637304408ffa4b4e2b5c405cf36a998d095",
+    "textHash": "3da332fa3a1b0eac572fff800be2f688fd9e0a2ca2102c35b368970c67adb492",
+    "model": "gemini-4-argon-medium"
+  },
+  "Stop worker": {
+    "revision": "0b94a4d53d44da9916dcc4d84d7b9730626ff76f365c13c86a1f64f6b4a76cea",
+    "textHash": "85b04402b0afc6bf2c1fbbab2546788c8d9e1d17dc8a8bf9337dded3c85c292c",
+    "model": "gemini-4-argon-medium"
+  },
+  "Stopped": {
+    "revision": "6a2275acd0d4e1099057ca0b1f6026c573bb8467901ad4e38ea6804b1ab2b4ff",
+    "textHash": "0203b740ceaefcf5fe497e34d2e9aa1caed77bebc3275a5f58844bb3ec2f2557",
+    "model": "gemini-4-argon-medium"
   },
   "No WorkBuddy ACP launcher is configured.": {
     "revision": "26e128c417a210a62dbcd282e6e0ba3202154c4f90571db31ab2b608b33005f0",
     "textHash": "e4e5100d70e90480c85e51be76be1b00e9a786ddd5d64ac5ac8bd28dfae5df69",
+    "model": "manual"
+  },
+  "Plan changes; may write planning files": {
+    "revision": "49663f63f0133fc5aa68c45138aaf71c2f3ecf6f91ed90eb3237e8540d85b2b1",
+    "textHash": "281bd398666c871b2dbf87e80f5bc66fa32ddfd7196c8192a16bbc42b718bfaf",
     "model": "manual"
   },
   "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": {
@@ -6094,9 +6149,19 @@
     "textHash": "25e8df4de7377d3bead413909bea577c24f7c472748b599de9b97ee0d4eb25a3",
     "model": "manual"
   },
-  "Plan changes; may write planning files": {
-    "revision": "49663f63f0133fc5aa68c45138aaf71c2f3ecf6f91ed90eb3237e8540d85b2b1",
-    "textHash": "281bd398666c871b2dbf87e80f5bc66fa32ddfd7196c8192a16bbc42b718bfaf",
+  "Uses CodeBuddy CLI and its saved login through ACP.": {
+    "revision": "b8cb98146e0392c716c5333a28a4b573bbfe7ee712749c075f48aa5b44e27af7",
+    "textHash": "c8e8758b55ee7eaa56d8dce7d7687184e8ba1f9373a28047323ca061c4c32f5e",
+    "model": "manual"
+  },
+  "Uses Qoder CLI and its saved login through ACP.": {
+    "revision": "262e758fd2f6af8b05f9f4b748186fedc623c10de960a85b78975ea29ac695f6",
+    "textHash": "2a39bd639f6d74012482cb08dbdb1985b3f4c629197711220c7369d9e7f2d3bb",
+    "model": "manual"
+  },
+  "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": {
+    "revision": "14f4502d807c96dfd15a291c448a668d1ca4a895ff413672ef13462784e64ad8",
+    "textHash": "a128e488a2efb834bbcbd480e2f9f9316ed1fc00945e0c1fc4ab4b209564a80a",
     "model": "manual"
   }
 }

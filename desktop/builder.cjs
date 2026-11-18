@@ -24,7 +24,7 @@ module.exports = {
   dmg: {
     title: 'Papilot ${version}', background: 'desktop/assets/dmg-background.png',
     iconSize: 80, iconTextSize: 13,
-    contents: [{ x: 180, y: 218, type: 'file' }, { x: 460, y: 218, type: 'link', path: '/Applications' }],
+    contents: [{ x: 234, y: 323, type: 'file' }, { x: 620, y: 277, type: 'link', path: '/Applications' }],
   },
   linux: { target: ['AppImage', 'deb'], executableName: 'papilot', category: 'Office',
     icon: 'desktop/assets/icon.png', maintainer: 'Cui Chen <i@cuichen.cc>', syncDesktopName: true,

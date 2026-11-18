@@ -179,6 +179,21 @@
     "textHash": "a7c3b914e8d8a4d2617ce50af939fd69cfb481ded559cf20537ce4b5e4e2aa9a",
     "model": "codex"
   },
+  "Enable collaboration mode": {
+    "revision": "e724ccf63e40ca2fc7dc529be5bed1cd6b55ffcd76717aef6471fe639fd3f229",
+    "textHash": "ae4c7e5d55b129fc7f30677ee24dddbbd925ed9c4bddbd0839c1e30dcca8a0e9",
+    "model": "codex"
+  },
+  "Collaboration mode": {
+    "revision": "f7ba05fafacbd447e8b99f4053047de5c478e1daa90e7b618199151aa5d23637",
+    "textHash": "4321cd73905d3e2602ea16d7a0121f3c69918c3ba082306eee0ad28612bbcc34",
+    "model": "codex"
+  },
+  "Experiments": {
+    "revision": "0d8b23d979310759df274eabbefce5e70276c7664576a953f707ca63501031af",
+    "textHash": "001a51a407db9f9a06e80c066482a107a6c1bbfb7027859805bb39564b80ae6a",
+    "model": "codex"
+  },
   "Add anchor": {
     "revision": "411b429e85e09c2c954f42cfa74916f23f1f770eb6263594a76523f9c3f70d49",
     "textHash": "775ec01bf44e8e4077e55dc26eeaef64ca6e43e7f72823c31402a58e88127b45",
