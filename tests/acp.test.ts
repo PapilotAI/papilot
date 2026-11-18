@@ -11,6 +11,7 @@ import { ACP_PROFILES, AcpAgent, KimiAgent, opencodeConfig, type AcpProfile } fr
 import { workflowOpenCodeProfile } from '../src/server/collaboration.ts';
 import { findExecutable } from '../src/server/agents.ts';
 import { GrokAgent } from '../src/server/grok.ts';
+import { CodeBuddyAgent } from '../src/server/codebuddy.ts';
 import { RpcResponseError } from '../src/server/codex.ts';
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -128,6 +129,21 @@ test('Kimi resumes persisted IDs after restart and ignores replayed history', { 
     f.agent.close(); await f.agent.start(); await run(f.agent, id);
     assert.equal(f.calls.filter(call => call.method === 'session/load').length, 2);
     assert.equal(f.notifications.some(n => n.params.delta === 'Historical reply'), false);
+  } finally { f.agent.close(); }
+});
+
+test('ACP retains initial instructions when a known unprompted session reconnects', { timeout: 5000 }, async () => {
+  const f = fixture();
+  try {
+    await f.agent.start(); const id = await thread(f.agent);
+    assert.equal((await run(f.agent, id, { effort: 'unsupported' })).status, 'failed');
+    assert.equal(f.calls.some(call => call.method === 'session/prompt'), false);
+    f.agent.close(); await f.agent.start();
+    await f.agent.request('thread/resume', { threadId: id, cwd: '/paper', developerInstructions: 'Only edit this paper.' });
+    await run(f.agent, id);
+    assert.equal(f.calls.find(call => call.method === 'session/prompt').params.prompt[0].text, 'Only edit this paper.\n\n---\n\nFix it.');
+    await run(f.agent, id);
+    assert.equal(f.calls.filter(call => call.method === 'session/prompt').at(-1).params.prompt[0].text, 'Fix it.');
   } finally { f.agent.close(); }
 });
 
@@ -1068,6 +1084,84 @@ test('ACP shutdown after a natural close does not wait for another close or sign
   } finally { f.agent.close(); }
 });
 
+for (const ending of ['shutdown', 'parent exit', 'cancel timeout', 'forced shutdown'] as const) {
+  test(`ACP ${ending} waits for tools with independent stdio before releasing their worktree`, { skip: process.platform === 'win32', timeout: 15000 }, async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-acp-tool-tree-'));
+    const ready = path.join(cwd, 'tool-ready'), writes = path.join(cwd, 'tool-writes'), stopped = path.join(cwd, 'tool-stopped');
+    const tool = `
+      const fs = require('node:fs');
+      setInterval(() => fs.appendFileSync(${JSON.stringify(writes)}, 'write\\n'), 10);
+      process.on('SIGTERM', () => {
+        if (${JSON.stringify(ending)} === 'forced shutdown') return;
+        setTimeout(() => { fs.writeFileSync(${JSON.stringify(stopped)}, 'stopped'); process.exit(0); }, 300);
+      });
+      fs.writeFileSync(${JSON.stringify(ready)}, String(process.pid));
+    `;
+    const script = `
+      const { spawn } = require('node:child_process');
+      const { createInterface } = require('node:readline');
+      let serial = 0;
+      createInterface({ input: process.stdin }).on('line', line => {
+        const message = JSON.parse(line);
+        if (message.method === 'session/prompt') {
+          spawn(process.execPath, ['-e', ${JSON.stringify(tool)}], { stdio: 'ignore' }).unref();
+          return;
+        }
+        if (message.method === 'test/exit') { process.exit(0); return; }
+        if (message.method === 'session/cancel') return;
+        const result = message.method === 'initialize' ? { protocolVersion: 1, agentCapabilities: {} }
+          : message.method === 'session/new' ? { sessionId: 'session-' + ++serial, modes: { availableModes: [{ id: 'default' }] } } : {};
+        if (message.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
+      });
+    `;
+    const children: ChildProcess[] = [];
+    const agent = new CodeBuddyAgent('fake-codebuddy', (_binary, _args, options) => {
+      const child = spawn(process.execPath, ['-e', script], options || {});
+      children.push(child); return child;
+    });
+    const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    const unrelatedClosed = once(unrelated, 'close');
+    const untilFile = async (file: string) => {
+      const deadline = Date.now() + 5000;
+      while (!fs.existsSync(file)) {
+        if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path.basename(file)}`);
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    };
+    let toolPid: number | undefined;
+    try {
+      await agent.start();
+      const { thread } = await agent.request('thread/start', { cwd });
+      const { turn } = await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Run the tool.' }] });
+      await untilFile(ready); await untilFile(writes);
+      toolPid = Number(fs.readFileSync(ready, 'utf8'));
+      const worker = children.at(-1)!, closed = once(worker, 'close');
+      if (ending === 'parent exit') worker.stdin!.write(JSON.stringify({ method: 'test/exit' }) + '\n');
+      if (ending === 'cancel timeout') await agent.request('turn/interrupt', { turnId: turn.id });
+      let released = false;
+      const releasing = ending === 'shutdown' || ending === 'forced shutdown' ? agent.closeWorktree(cwd).then(() => { released = true; }) : undefined;
+      await closed;
+      assert.equal(fs.existsSync(stopped), false, 'the ACP parent closes before its independently piped tool finishes');
+      assert.equal(released, false, 'parent close must not release a worktree still being written by its tool');
+      await (releasing || agent.closeWorktree(cwd));
+      assert.equal(fs.existsSync(stopped), ending !== 'forced shutdown', 'cooperative tools must finish their shutdown before releasing the worktree');
+      const completedWrites = fs.readFileSync(writes, 'utf8');
+      await new Promise(resolve => setTimeout(resolve, 50));
+      assert.equal(fs.readFileSync(writes, 'utf8'), completedWrites);
+      assert.doesNotThrow(() => process.kill(unrelated.pid!, 0), 'cleanup must not signal an unrelated process');
+    } finally {
+      agent.close();
+      for (const child of children) if (child.pid) {
+        try { process.kill(-child.pid, 'SIGKILL'); } catch { /* no owned group */ }
+        if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL');
+      }
+      if (toolPid) try { process.kill(toolPid, 'SIGKILL'); } catch { /* already gone */ }
+      unrelated.kill('SIGKILL'); await unrelatedClosed;
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+}
+
 test('ACP shutdown and reconnect wait for a real descendant to release inherited streams', { skip: process.platform === 'win32', timeout: 5000 }, async () => {
   const script = `
     const { spawn } = require('node:child_process');
@@ -1075,8 +1169,8 @@ test('ACP shutdown and reconnect wait for a real descendant to release inherited
     createInterface({ input: process.stdin }).on('line', line => {
       const message = JSON.parse(line);
       if (message.method === 'test/exit') {
-        const descendant = spawn(process.execPath, ['-e', 'process.stdin.resume(); process.stdin.once("end", () => process.exit(0));'], { stdio: [3, 'inherit', 'inherit'] });
-        descendant.once('spawn', () => process.exit(0));
+        const descendant = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); process.stdin.resume(); process.stdin.once("end", () => process.exit(0)); process.send("ready");'], { stdio: [3, 'inherit', 'inherit', 'ipc'] });
+        descendant.once('message', () => process.exit(0));
         return;
       }
       const result = message.method === 'initialize' ? { protocolVersion: 1, agentCapabilities: {} }

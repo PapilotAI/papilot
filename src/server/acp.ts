@@ -1,5 +1,5 @@
 import { agentPath, killTree, spawnCommand } from '../../bin/agent-paths.mjs';
-import { type ChildProcess } from 'node:child_process';
+import { execFile, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import fs from 'node:fs';
@@ -28,6 +28,20 @@ function toolKind(tool: any): string {
 }
 const choices = (option?: ConfigOption): Choice[] => (option?.options || []).flatMap(value => 'options' in value ? value.options : [value]);
 const sessionModel = (session: Session) => session.configOptions?.find(option => option.category === 'model' || option.id === 'model')?.currentValue || session.models?.currentModelId || null;
+
+async function liveProcessGroup(pid: number): Promise<boolean> {
+  try { process.kill(-pid, 0); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; return true; }
+  // Linux can retain orphan zombies until PID 1 reaps them. They cannot hold
+  // files or execute tools, so only live members keep the worktree occupied.
+  const states = await new Promise<string>((resolve, reject) => {
+    execFile('ps', ['-eo', 'pgid=,stat='], { timeout: 1000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => error ? reject(error) : resolve(stdout));
+  });
+  return states.split('\n').some(line => {
+    const [group, state] = line.trim().split(/\s+/);
+    return Number(group) === pid && !state?.startsWith('Z');
+  });
+}
 
 // The default mode is pinned instead of inheriting the user's global choice.
 // Additional permissions are offered only when advertised by the ACP session.
@@ -202,7 +216,7 @@ export class AcpAgent extends Adapter {
       const invocation = this.profile.id === 'deepseek'
         ? deepseekLaunch(this.binary, this.profile.args, launchEnv)
         : { command: findExecutable(this.binary) || this.binary, args: this.profile.args, env: launchEnv };
-      const child = this.launch(invocation.command, invocation.args, { cwd: this.launchCwd || os.homedir(), env: invocation.env, stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = this.launch(invocation.command, invocation.args, { cwd: this.launchCwd || os.homedir(), env: invocation.env, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
       this.child = child;
       const failed = (error: Error, closed = false) => { if (this.child === child) this.disconnect(error, true, closed); };
       createInterface({ input: child.stdout! }).on('line', line => {
@@ -252,6 +266,13 @@ export class AcpAgent extends Adapter {
   protected account() { return { account: this.ready ? { type: `Local ${this.name} configuration` } : null, requiresOpenaiAuth: !this.ready }; }
   protected models() { return { data: this.catalog }; }
 
+  // A replacement process resumes native history, but a locally known session
+  // may never have received its first prompt or Papilot's initial instructions.
+  inheritThread(threadId: string, previous: AcpAgent) {
+    const thread = previous.threads.get(threadId);
+    if (thread) this.threads.set(threadId, { ...thread });
+  }
+
   async request(method: string, params: any = {}): Promise<any> {
     if (method === 'thread/start' || method === 'thread/resume') {
       const resumed = method === 'thread/resume';
@@ -260,10 +281,11 @@ export class AcpAgent extends Adapter {
       const permissions = readOnly ? (this.profile.id === 'deepseek' ? 'read-only' : 'workspace') : params.taskPermissions || 'workspace';
       // Local model metadata is authoritative only for a still-cached session.
       // After reconnecting, the CLI may restore a different model from disk.
-      const known = resumed && this.sessions.has(String(params.threadId)) ? this.threads.get(String(params.threadId)) : undefined;
+      const retained = resumed ? this.threads.get(String(params.threadId)) : undefined;
+      const known = resumed && this.sessions.has(String(params.threadId)) ? retained : undefined;
       const session = await this.session(resumed ? String(params.threadId) : null, params.cwd, params.model, permissions);
       const model = params.model || known?.model || sessionModel(session) || null;
-      this.threads.set(session.sessionId, { cwd: params.cwd, instructions: params.developerInstructions || '', model, started: resumed, permissions, readOnly });
+      this.threads.set(session.sessionId, { cwd: params.cwd, instructions: params.developerInstructions || '', model, started: retained?.started ?? resumed, permissions, readOnly });
       return { thread: { id: session.sessionId }, model };
     }
     return super.request(method, params);
@@ -436,11 +458,16 @@ export class AcpAgent extends Adapter {
         prompt.push({ type: 'image', data: bytes.toString('base64'), mimeType });
       }
       if (stopped) return this.finish(turn, 'interrupted');
+      // Image loading may outlive the transport. Keep this session unstarted
+      // if there is no process to receive its initial instructions.
+      if (!this.child) throw new Error(`${this.name} is not connected.`);
       this.live.set(turn.threadId, live);
       prompting = true;
+      // Submission, not completion, puts the instructions in native history.
+      // A cancellation or disconnect after this point must not repeat them.
+      this.threads.set(turn.threadId, { ...thread, started: true });
       // The response arrives at the end of the turn; user approvals can take any amount of time.
       const result = await this.rpc('session/prompt', { sessionId: turn.threadId, prompt }, 0);
-      this.threads.set(turn.threadId, { ...thread, started: true });
       this.flush(live);
       if (stopped || result.stopReason === 'cancelled') this.finish(turn, 'interrupted');
       else if (result.stopReason === 'end_turn' && live.received) this.finish(turn, 'completed');
@@ -561,27 +588,50 @@ export class AcpAgent extends Adapter {
     this.child = null; this.ready = false; this.sessions.clear();
     for (const wait of this.pending.values()) { if (wait.timer) clearTimeout(wait.timer); wait.reject(error); }
     this.pending.clear(); this.approvals.clear();
-    if (child && !closed) {
+    const group = process.platform !== 'win32' ? child?.pid : undefined;
+    const signalGroup = (signal: NodeJS.Signals) => {
+      // POSIX launches own a separate process group. Never fall back to a PID:
+      // the group leader can already be gone while its tools still run.
+      if (group) try { process.kill(-group, signal); } catch { /* gone, or cleanup will time out */ }
+    };
+    if (child && (!closed || group)) {
       // close() is synchronous, but callers deleting a worktree or restoring
       // the same session must still be able to await this process later.
-      // Parent exit is insufficient: descendants can retain inherited streams
-      // and keep the worktree in use until the child's close event arrives.
+      // Parent close is insufficient: tools may have independent stdio and
+      // continue writing after every ACP stream has already closed.
       const closing: Promise<void> = new Promise<void>((resolve, reject) => {
-        const onClose = () => {
+        let didClose = closed, groupGone = !group, finished = false;
+        let poll: NodeJS.Timeout | undefined;
+        const complete = () => {
+          if (!didClose || !groupGone || finished) return;
+          finished = true;
+          if (poll) clearTimeout(poll);
           clearTimeout(force); clearTimeout(deadline);
           // A timed-out shutdown rejects its current waiter, but a later real
           // exit (including manual cleanup) must allow a subsequent reconnect.
           if (this.closing === closing) this.closing = Promise.resolve();
           resolve();
         };
-        child.once('close', onClose);
+        const checkGroup = async () => {
+          if (finished || !group) return;
+          try { groupGone = !await liveProcessGroup(group); }
+          catch { /* Keep ownership if the OS cannot confirm termination. */ }
+          complete();
+          if (!finished && !groupGone) {
+            poll = setTimeout(() => { void checkGroup(); }, 50);
+            poll.unref();
+          }
+        };
+        if (!closed) child.once('close', () => { didClose = true; complete(); });
         const force = setTimeout(() => {
-          if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL');
+          if (group && !groupGone) signalGroup('SIGKILL');
+          else if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL');
         }, 5000);
         const deadline = setTimeout(() => {
           reject(new Error(`${this.name} did not exit. Close its process before resuming the task.`));
         }, 10000);
         force.unref(); deadline.unref();
+        if (group) void checkGroup();
       });
       this.closing = closing;
       // Most disconnect callers only need to stop the transport. shutdown()
@@ -589,7 +639,8 @@ export class AcpAgent extends Adapter {
       void this.closing.catch(() => {});
     }
     child?.stdin?.end();
-    if (child && !closed && child.exitCode == null && child.signalCode == null) {
+    if (group) signalGroup('SIGTERM');
+    else if (child && !closed && child.exitCode == null && child.signalCode == null) {
       if (child.pid && process.platform === 'win32') killTree(child.pid);
       else child.kill('SIGTERM');
     }

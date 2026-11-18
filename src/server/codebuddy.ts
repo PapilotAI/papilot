@@ -151,6 +151,7 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
       }
       const client = this.client(cwd);
       try {
+        if (id && known) client.inheritThread(id, known.client);
         await client.start();
         connected();
         const result = await client.request(method, params);

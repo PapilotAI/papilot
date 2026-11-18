@@ -154,7 +154,7 @@ test('CodeBuddy retains a timed-out discovery worker across close and reconnect 
   }
 });
 
-test('CodeBuddy discovery retains a real descendant and removes its workspace before reconnecting', { skip: process.platform === 'win32', timeout: 5000 }, async t => {
+test('CodeBuddy discovery retains inherited streams after its owned group exits and removes its workspace before reconnecting', { skip: process.platform === 'win32', timeout: 5000 }, async t => {
   const script = `
     const { spawn } = require('node:child_process');
     const { createInterface } = require('node:readline');
@@ -164,7 +164,9 @@ test('CodeBuddy discovery retains a real descendant and removes its workspace be
         : message.method === 'session/new' ? { sessionId: 'probe', modes: { availableModes: [{ id: 'default' }] }, models: { currentModelId: 'auto', availableModels: [{ modelId: 'auto', name: 'Auto' }] } } : {};
       const reply = () => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
       if (message.method === 'session/new' && process.argv[1] === 'hold') {
-        const descendant = spawn(process.execPath, ['-e', 'process.stdin.resume(); process.stdin.once("end", () => process.exit(0));'], { stdio: [3, 'inherit', 'inherit'] });
+        // Deliberately escape the owned group while retaining its streams, so
+        // group termination cannot release this fixture and shutdown times out.
+        const descendant = spawn(process.execPath, ['-e', 'process.stdin.resume(); process.stdin.once("end", () => process.exit(0));'], { detached: true, stdio: [3, 'inherit', 'inherit'] });
         descendant.once('spawn', reply);
       } else if (message.id !== undefined) reply();
     });
@@ -354,6 +356,71 @@ test('CodeBuddy rejects a failed restore before submitting a prompt and can retr
     await until(() => f.requests.length === 1);
     f.agent.respond(f.requests[0].id, { decision: 'decline' });
     await until(() => f.notifications.some(event => event.method === 'turn/completed'));
+  } finally { f.agent.close(); fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+for (const interrupted of [false, true]) {
+  test(`CodeBuddy keeps initial instructions after ${interrupted ? 'an immediate pause' : 'a pre-prompt failure and failed restore'}`, { timeout: 5000 }, async () => {
+    const f = fixture(), cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codebuddy-instructions-'));
+    const instructions = 'Edit only main.tex. Papilot publishes the review after the turn.';
+    const prompts = () => f.processes.flatMap(process => process.calls).filter(call => call.method === 'session/prompt');
+    try {
+      await f.agent.start();
+      const { thread } = await f.agent.request('thread/start', { cwd, model: 'auto', developerInstructions: instructions });
+      f.behavior.rejectModel = !interrupted;
+      const first = await f.agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Edit the title.' }] });
+      if (interrupted) await f.agent.request('turn/interrupt', { turnId: first.turn.id });
+      await until(() => f.notifications.some(event => event.method === 'turn/completed' && event.params.turn.id === first.turn.id));
+      assert.equal(prompts().length, 0, 'the native history has not received the instructions');
+      f.behavior.rejectModel = false;
+      if (!interrupted) {
+        f.behavior.rejectResume = true;
+        await assert.rejects(f.agent.request('turn/start', { threadId: thread.id, input: [] }), /Resume unavailable/);
+        f.behavior.rejectResume = false;
+      }
+      const retry = await f.agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Retry the title edit.' }] });
+      await until(() => f.requests.length === 1);
+      assert.equal(prompts()[0].params.prompt[0].text, `${instructions}\n\n---\n\nRetry the title edit.`);
+      f.agent.respond(f.requests[0].id, { decision: 'decline' });
+      await until(() => f.notifications.some(event => event.method === 'turn/completed' && event.params.turn.id === retry.turn.id));
+
+      const next = await f.agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Continue.' }] });
+      await until(() => f.requests.length === 2);
+      assert.equal(prompts()[1].params.prompt[0].text, 'Continue.', 'established sessions must not repeat the instructions');
+      f.agent.respond(f.requests[1].id, { decision: 'decline' });
+      await until(() => f.notifications.some(event => event.method === 'turn/completed' && event.params.turn.id === next.turn.id));
+    } finally { f.agent.close(); fs.rmSync(cwd, { recursive: true, force: true }); }
+  });
+}
+
+test('CodeBuddy does not repeat submitted initial instructions after a worker disconnects mid-turn', { timeout: 5000 }, async () => {
+  const f = fixture(), cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codebuddy-submitted-'));
+  try {
+    await f.agent.start();
+    const { thread } = await f.agent.request('thread/start', { cwd, developerInstructions: 'Papilot owns the review workflow.' });
+    const first = await f.agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Edit.' }] });
+    await until(() => f.requests.length === 1);
+    f.processes.at(-1)!.finishExit();
+    await until(() => f.notifications.some(event => event.method === 'turn/completed' && event.params.turn.id === first.turn.id));
+    const next = await f.agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Continue.' }] });
+    await until(() => f.requests.length === 2);
+    assert.equal(f.processes.at(-1)!.calls.find(call => call.method === 'session/prompt').params.prompt[0].text, 'Continue.');
+    f.agent.respond(f.requests[1].id, { decision: 'decline' });
+    await until(() => f.notifications.some(event => event.method === 'turn/completed' && event.params.turn.id === next.turn.id));
+  } finally { f.agent.close(); fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CodeBuddy resumes an uncached native session without repeating initial instructions', { timeout: 5000 }, async () => {
+  const f = fixture(), cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codebuddy-persisted-'));
+  try {
+    f.stored.set('persisted-session', cwd);
+    await f.agent.start();
+    await f.agent.request('thread/resume', { cwd, threadId: 'persisted-session', developerInstructions: 'Already in native history.' });
+    const { turn } = await f.agent.request('turn/start', { threadId: 'persisted-session', input: [{ type: 'text', text: 'Continue.' }] });
+    await until(() => f.requests.length === 1);
+    assert.equal(f.processes.at(-1)!.calls.find(call => call.method === 'session/prompt').params.prompt[0].text, 'Continue.');
+    f.agent.respond(f.requests[0].id, { decision: 'decline' });
+    await until(() => f.notifications.some(event => event.method === 'turn/completed' && event.params.turn.id === turn.id));
   } finally { f.agent.close(); fs.rmSync(cwd, { recursive: true, force: true }); }
 });
 
