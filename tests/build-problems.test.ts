@@ -234,6 +234,11 @@ test('a usable PDF keeps compiler errors visible by default and stop-on-error re
     const pdf = new PdfDocument(manuscripts.pdf('paper', built.key!));
     try { assert.match(pdf.page(0).text(), /Before\.[\s\S]*After\./); } finally { pdf.close(); }
 
+    const review = await manuscripts.captureReview(root, root, 'recovered-review');
+    assert.match(review.errors?.join('\n') ?? '', /Highlighting unavailable/);
+    assert.ok(review.lines.length && review.pdf && fs.existsSync(review.pdf));
+    assert.deepEqual((await manuscripts.captureReview(root, root, 'cached-review')).errors, review.errors, 'Cached PDF text must retain the build diagnostics');
+
     writeSettings(root, { halt_on_error: true });
     await manuscripts.state('paper', root, true);
     const failed = await settled();

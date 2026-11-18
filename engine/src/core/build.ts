@@ -12,6 +12,7 @@ import { signature, type Project } from "./config.ts";
 import { Cancelled, ProcessError, capture, commandVersion, runAsync } from "./process.ts";
 import { Lease } from "./pool.ts";
 import { progressReader, writtenPages } from "./progress.ts";
+import { unwrapLog } from "./tex-log.ts";
 import type { BuildInfo, BuildProgress } from "../types.ts";
 export class BuildError extends Error {
   constructor(
@@ -1013,11 +1014,17 @@ export class Builder {
       freshPdf = writtenPdf && (!previousPdf || writtenPdf.ino !== previousPdf.ino || writtenPdf.mtimeNs !== previousPdf.mtimeNs || writtenPdf.ctimeNs !== previousPdf.ctimeNs);
     if (reused && !failure)
       await Promise.all([path.join(out, job + ".synctex.gz"), texLog].map((file) => relocate(file, path.dirname(base!.root), folder)));
-    const logText = await fs.promises.readFile(texLog, "utf8").catch(() => ""),
+    const logBytes = await fs.promises.readFile(texLog).catch(() => Buffer.alloc(0)),
+      logText = logBytes.toString("utf8"),
+      // XeLaTeX can leave a partial XDV after stopping; latexmk -f then
+      // converts it to a fresh but truncated PDF. Read the full log because
+      // the diagnostic summary can stop before this terminal error. TeX's
+      // hard wrapping can split the terminal message inside a word.
+      fatal = /^(?:!\s*|[^\r\n]+:\d+:\s*)?(?:Emergency stop\.|TeX capacity exceeded)|^\s*\*\*\* \(job aborted|^\s*!?\s*==> Fatal error occurred|^\(That makes 100 errors; please try again\.\)/m.test(unwrapLog(logBytes).join("\n")),
       // latexmk reports the errors TeX went past with its exit status. A
       // latexmk that a timeout or a shutdown killed has none, and may have
       // left the PDF unfinished.
-      past = !haltOnError && failure instanceof ProcessError && / failed \(\d+\)$/.test(failure.message) && freshPdf;
+      past = !haltOnError && !fatal && failure instanceof ProcessError && / failed \(\d+\)$/.test(failure.message) && freshPdf;
     let errors: string[] | undefined;
     if (past) {
       const transcriptText = await fs.promises.readFile(transcript, "utf8");

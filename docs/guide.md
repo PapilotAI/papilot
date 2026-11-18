@@ -237,9 +237,9 @@ Switching documents saves pending note edits first, including when using the key
 
 ### Fix a LaTeX build
 
-Papilot continues past recoverable LaTeX errors by default and shows the generated PDF with the errors in **Compilation Problems**. For example, `minted` can display code without syntax highlighting when its helper is unavailable. If compilation cannot produce a new PDF, the build still fails and the previous preview stays visible.
+Papilot continues past recoverable LaTeX errors by default and shows the generated PDF with the errors in **Compilation Problems**. For example, `minted` can display code without syntax highlighting when its helper is unavailable. Fatal errors, such as a missing chapter that stops XeLaTeX, still fail the build even if the compiler leaves a partial PDF. The previous preview stays visible when a build fails.
 
-Task reviews and **Uncommitted changes** show compilation errors from both versions alongside the recovered PDF. When a combination of accepted changes has errors, its PDF also shows the diagnostics. Agents receive these diagnostics when they use `view_pdf` to inspect their work.
+Task reviews and Git comparisons show compiler errors for both the original and revised text. When accepting only some changes produces errors, the accepted PDF shows its own diagnostics; expand the message above its pages to read them. Agents receive these diagnostics when they use `view_pdf`, and AI reviewers receive the errors associated with their saved PDF.
 
 To stop at the first error instead, add `"halt_on_error": true` to the existing object in `.git/papilot/settings.json`, then recompile. Set it to `false` or remove it to restore the default. This setting belongs to the selected root document and is restored when you switch back to it.
 

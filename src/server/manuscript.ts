@@ -894,7 +894,7 @@ export class Manuscripts extends EventEmitter {
     catch (error) { throw error instanceof BuildError ? new Error('The manuscript could not be compiled for AI review. Fix the errors shown in the manuscript preview, then try again.') : error; }
     const snapshot = await this.reviewSnapshot(project.state, result);
     // The task does not exist yet, so a PDF kept by an earlier failed attempt is replaced.
-    return { ...snapshot, pdf: await this.preserveReviewPdf(root, taskId, result.pdf, true) };
+    return { ...snapshot, ...(result.errors?.length ? { errors: result.errors } : {}), pdf: await this.preserveReviewPdf(root, taskId, result.pdf, true) };
   }
 
   private async reviewPdfPath(root: string, taskId: string) {

@@ -71,6 +71,23 @@ it.skipIf(!tex)("a fatal build cannot return a PDF retained from an earlier buil
   } finally { await f.close(); }
 });
 
+it.skipIf(!tex || !which("xelatex")).each([
+  { reason: "a missing input", source: "\\input{missing-fixture-chapter}", diagnostic: "Emergency stop" },
+  { reason: "a hard-wrapped emergency stop", source: `\\input{${"a".repeat(62)}}`, diagnostic: "Emergency stop" },
+  { reason: "100 errors", source: "\\undefinedcommand\n".repeat(110), diagnostic: "Undefined control sequence" },
+])("rejects a truncated XeLaTeX PDF after $reason", async ({ source, diagnostic }) => {
+  const f = new Fixture();
+  try {
+    f.write("paper/main.tex", paper(`Before fatal errors.\\newpage\n${source}\nAfter fatal errors.`));
+    f.write(`paper/${"a".repeat(62)}.tex`, "\\input{missing-fixture-chapter}\n");
+    f.repo.run(["add", "."]); f.repo.run(["commit", "-qm", "fatal errors"]);
+    writeSettings(f.root, { engine: "xelatex" });
+    const builder = new Builder(loadProject(f.root), f.repo);
+    await expect(builder.build("HEAD")).rejects.toMatchObject({ details: expect.arrayContaining([expect.stringContaining(diagnostic)]) });
+    expect(await builder.cached("HEAD", ["full"], null)).toBeNull();
+  } finally { await f.close(); }
+});
+
 it.skipIf(!tex)("published reviews retain revised compiler errors and clear them after a repair", async () => {
   const f = new Fixture();
   try {
