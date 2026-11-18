@@ -1,5 +1,6 @@
+import { agentLabel } from './agent-choice.ts';
 import { useSyncExternalStore } from 'react';
-import { AGENT_NAMES, type Snapshot, type Task } from '../shared.ts';
+import { type Snapshot, type Task } from '../shared.ts';
 import { browserStorage } from './storage.ts';
 import { t, tn } from './i18n.ts';
 
@@ -70,7 +71,7 @@ export function taskAlerts(previous: Snapshot, next: Snapshot, events: Notificat
   for (const task of next.tasks) {
     const before = previous.tasks.find(t => t.id === task.id);
     if (!before) continue;
-    const agent = AGENT_NAMES[task.agent || 'codex'] || 'Codex';
+    const agent = agentLabel(task.agent || 'codex') || 'Codex';
     const asked = next.requests.filter(r => r.taskId === task.id && !previous.requests.some(p => p.id === r.id) && events[r.method.endsWith('requestUserInput') ? 'input' : 'approval']);
     if (asked.length) {
       const question = asked.some(r => r.method.endsWith('requestUserInput'));

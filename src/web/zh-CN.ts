@@ -712,4 +712,15 @@ export const zhCN: Record<string, string> = {
   'Task panels': '任务面板',
   "{selected} of {total} selected": "已选择 {selected} / {total} 条",
   'Add to task': '加入任务', 'Includes subsections': '包含子章节',
+  // Collaboration mode settings.
+  "Quick edits": "简单修改",
+  "Typos, word choice and small LaTeX fixes": "错别字、用词和小的 LaTeX 修正",
+  "Polishing": "润色",
+  "Clarity and flow of passages": "段落的清晰度和流畅度",
+  "Checks and reasoning": "核查与推理",
+  "Math, facts, references and formatting": "数学、事实、引用和格式",
+  "Same as coordinator": "与协调者相同",
+  "Codex assigns annotations to the workers below and checks every one before publishing.": "Codex 把批注分给下面各角色的模型修改，发布前逐条检查。",
+  "Stop worker": "停止这次委派",
+  "Stopped": "已停止",
 };

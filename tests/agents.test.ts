@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { AntigravityAgent, ClaudeAgent, GlmAgent, findExecutable, glmEndpoint, groupModels } from '../src/server/agents.ts';
+import { runWorkflowHelper } from '../src/server/collaboration.ts';
 import { CursorAgent, helpersBesideSdk, type CursorSdk } from '../src/server/cursor.ts';
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -37,6 +38,42 @@ function fakeAgy(lines: string[][]) {
   };
   return { launches, launch };
 }
+
+test('Antigravity default-model workers launch the requested effort variant', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agy-default-worker-'));
+  try {
+    for (const effort of ['high', null]) {
+      const fake = fakeAgy([[
+        JSON.stringify({ event: 'step_update', step_update: { step_index: 0, state: 'DONE', step_type: 'agent_response', text_delta: 'Checked.' } }),
+        JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }),
+      ]]);
+      const agent = new AntigravityAgent('fake-agy', path.join(dir, 'conversations.json'), fake.launch as any, 'read-only');
+      agent.ready = true; agent.detect = () => true;
+      (agent as any).catalog = groupModels('gemini-4-argon-low\tGemini 4 Argon (Low)\ngemini-4-argon-high\tGemini 4 Argon (High)\n', 'gemini-4-argon-low');
+      assert.equal(await runWorkflowHelper({ agent: 'antigravity', model: null, effort }, 'Check the passage.', new AbortController().signal, undefined, undefined, () => agent), 'Checked.');
+      const args = fake.launches[0].args;
+      assert.ok(args.includes('--model'), 'resolve the default so its effort is applied');
+      assert.equal(args[args.indexOf('--model') + 1], `gemini-4-argon-${effort || 'low'}`);
+      assert.equal(fs.existsSync(fake.launches[0].cwd), false);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('isolated Gemini editors allow snapshot files, deny commands and do not persist conversations', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agy-editor-')), file = path.join(dir, 'main.tex'), conversations = path.join(dir, 'conversations.json');
+  const fake = fakeAgy([[JSON.stringify({ event: 'init', conversation_id: 'ephemeral-edit' }), JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Edited.' } })]]);
+  const agent = new AntigravityAgent('agy', conversations, fake.launch as any, { files: [file] }); agent.ready = true;
+  try {
+    const seen = events(agent), { thread } = await agent.request('thread/start', { cwd: dir, sandbox: 'workspace-write' });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Edit main.tex.' }], cwd: dir });
+    assert.equal((await completed(seen)).status, 'completed');
+    const args = fake.launches[0].args, settings = JSON.parse(args[args.indexOf('--settings') + 1]);
+    assert.equal(args[args.indexOf('--mode') + 1], 'accept-edits'); assert.equal(settings.allowNonWorkspaceAccess, false);
+    assert.deepEqual(settings.permissions.allow, [`write_file(${file})`]);
+    for (const action of ['command(*)', 'read_url(*)', 'execute_url(*)', 'mcp(*)']) assert.ok(settings.permissions.deny.includes(action));
+    assert.equal(settings.permissions.deny.includes('write_file(*)'), false); assert.equal(fs.existsSync(conversations), false);
+  } finally { agent.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('Antigravity turns run agy in accept-edits mode, stream into items, and resume their conversation', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agy-'));

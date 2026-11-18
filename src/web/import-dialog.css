@@ -24,6 +24,7 @@
 .import-link { margin:0 0 22px; }
 .import-link-hint { display:flex;flex-wrap:wrap;gap:8px 14px;margin:10px 0 0;color:var(--text-3);font-size:12px;line-height:1.5 }
 .import-source { display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--text-2) }
+.import-sync { display: flex; align-items: center; gap: 9px; margin: 12px 0 0; font-size: 13px; font-weight: 400; color: var(--text); cursor: pointer; }
 .import-reading { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13px; color: var(--text-2); }
 
 /* Phase 2: Stepper */

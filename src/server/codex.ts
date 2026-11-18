@@ -1,4 +1,4 @@
-import { agentPath, spawnCommand } from '../../bin/agent-paths.mjs';
+import { agentPath, killTree, spawnCommand } from '../../bin/agent-paths.mjs';
 import { type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
@@ -139,6 +139,11 @@ export class Codex extends EventEmitter {
     this.generation++; this.launchAbort?.abort(); this.launchAbort = null; this.starting = null; this.ready = false;
     for (const wait of this.pending.values()) { clearTimeout(wait.timer); wait.reject(new Error('Codex is not connected.')); }
     this.pending.clear();
-    this.child?.stdin?.end(); this.child?.kill('SIGTERM'); this.child = null;
+    const child = this.child; this.child = null;
+    child?.stdin?.end();
+    // Windows terminates npm's Node wrapper without forwarding SIGTERM to the
+    // native app-server. Stop its descendants too before removing helper files.
+    if (process.platform === 'win32' && child?.pid) killTree(child.pid);
+    else child?.kill('SIGTERM');
   }
 }

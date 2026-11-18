@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('papilotDesktop', {
   maximize: () => ipcRenderer.send('papilot:window', 'maximize'),
   close: () => ipcRenderer.send('papilot:window', 'close'),
   chooseDirectory: (): Promise<string | null> => ipcRenderer.invoke('papilot:choose-directory'),
+  // Overleaf's sign-in page in its own window; resolves with the session's
+  // cookies, or null when the author closes it.
+  overleafSignIn: (origin: string): Promise<string | null> => ipcRenderer.invoke('papilot:overleaf-sign-in', origin),
   openEnvironment: () => ipcRenderer.invoke('papilot:open-environment'),
   environment: (): Promise<string> => ipcRenderer.invoke('papilot:current-environment'),
   notify: (alert: { taskId: string | null; title: string; body: string; sound: boolean }): Promise<boolean> => ipcRenderer.invoke('papilot:notify', alert),

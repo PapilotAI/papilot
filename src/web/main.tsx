@@ -1,7 +1,7 @@
 import '../../engine/src/web/legacy-storage.ts';
 import { TaskDocument } from './task-document.tsx';
 import { requestApi, requestState } from './api.ts';
-import { agentsSettled, chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
+import { agentLabel, agentsSettled, chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { GroupCard, GroupInstruction } from './note-groups.tsx';
@@ -16,7 +16,7 @@ import { flushSync } from 'react-dom';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { aiReviewSummary, isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
-import { AGENT_IDS, AGENT_NAMES, isAgentId, taskFinished } from '../shared.ts';
+import { AGENT_IDS, isAgentId, taskFinished } from '../shared.ts';
 import type { TaskCommitReview, LatexInstallation, AgentId, Annotation, NoteSection, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { reviewDraft, useReviewDraft, reviewNoteSummary, reviewSubmission } from './review-draft.ts';
@@ -24,7 +24,7 @@ import { ReviewDraftCards } from './review-draft-cards.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, pendingReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
 import { AttachmentDraft, attachmentDrafts, type UploadAttachment } from './attachment-draft.ts';
-import type { Attachment } from '../shared.ts';
+import type { Attachment, CollaborationSettings as CollaborationSettingsState } from '../shared.ts';
 import { noteLocation } from './note-location.ts';
 import { ReadRequest, canStreamUpdates, mergeTimeline, visibleTimeline } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -90,6 +90,8 @@ import { useNoteUndo } from './use-note-undo.ts';
 import { NoteResultsProvider, useNoteResults } from './note-results.tsx';
 import { usePanelWidth } from './panel-width.tsx';
 import { RepositoryFilesMenu } from './repository-files.tsx';
+import { OverleafLinkDialog, OverleafPanel, OverleafRow } from './overleaf.tsx';
+import { setPresence } from './overleaf-presence.ts';
 import type { OutlineItem, PdfHandle, PdfHistoryActions, Rect } from './pdf-view.tsx';
 // pdf.js is large, so the PDF view loads the first time it opens.
 const PlaygroundNotice = import.meta.env.MODE === 'playground' ? lazy(() => import('./playground/notice.tsx').then(module => ({ default: module.PlaygroundNotice }))) : null;
@@ -113,8 +115,7 @@ const uploadAttachment = (projectId: string, file: File, signal: AbortSignal) =>
 const detectLatexInstallation = (signal: AbortSignal) => api<LatexInstallation | null>('/runtime/latex', undefined, signal);
 const loadRequirements = (signal: AbortSignal) => api<SystemRequirements>('/runtime/requirements', undefined, signal);
 const checkDiagnostics = (projectId: string | undefined, signal: AbortSignal) => api<DiagnosticReport>('/diagnostics', { projectId }, signal);
-const AGENT_LABELS = AGENT_NAMES;
-const agentName = (task: Task) => AGENT_LABELS[task.agent || 'codex'] || 'Codex';
+const agentName = (task: Task) => agentLabel(task.agent || 'codex') || 'Codex';
 // A finished publication with no round is a valid answer-only result. Keep
 // earlier comparisons available when a follow-up answer makes no new edits.
 const noManuscriptChanges = (task: Task) => task.status === 'reviewing' && task.review?.round === null && task.review.state !== 'build_failed' && !task.review.counts.pending;
@@ -228,7 +229,7 @@ const taskPath = (file: string, root: string) => root && file.startsWith(root + 
 // Items are named task:turn:item; a user message starts the next turn.
 const turnOf = (item: TimelineItem) => item.type === 'user' ? null : item.id.split(':')[1] || null;
 const editedFiles = (item: TimelineItem, root: string) => item.text.split('\n').filter(Boolean).map(file => taskPath(file, root));
-const toolState = (item: TimelineItem) => item.status === 'inProgress' ? 'running' : item.status && item.status !== 'completed' ? 'failed' : '';
+const toolState = (item: TimelineItem) => item.status === 'inProgress' ? 'running' : item.status === 'interrupted' ? 'stopped' : item.status && item.status !== 'completed' ? 'failed' : '';
 
 // Preserve names on historical messages from formerly shared workspaces.
 const senderOf = (author: Author | undefined) => ({ mine: !author, name: author?.name || '' });
@@ -302,29 +303,51 @@ function PageStrip({ items }: { items: TimelineItem[] }) {
   })}</div>;
 }
 
-const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = true }: { item: TimelineItem; agent: string; root: string; pages?: boolean }) {
+function toolLabel(item: TimelineItem, root: string) {
+  const files = item.type === 'files' ? editedFiles(item, root) : [];
+  return item.type === 'command' ? shellCommand(item.text) || t('Run command') : item.type === 'files' ? (files.length === 1 ? t('Edited {file}', { file: files[0] }) : t('Edited {n} files', { n: files.length })) : item.type === 'pdf' ? (item.text ? t('Viewed the PDF: {places}', { places: item.text }) : t('Viewed the PDF')) : toolSentence(item) || item.text || t('Run tool');
+}
+
+// One worker in Collaboration mode can be stopped; the coordinator does its work instead.
+function StopWorker({ item }: { item: TimelineItem }) {
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  async function stop() { setBusy(true); setError(''); try { await api(`/tasks/${encodeURIComponent(item.taskId)}/workers/stop`, { item: item.id }); } catch (e) { setError((e as Error).message); setBusy(false); } }
+  return <div className="worker-stop"><button type="button" className="button secondary compact" disabled={busy} onClick={() => void stop()}>{t('Stop worker')}</button>{error && <p className="inline-error" role="alert">{error}</p>}</div>;
+}
+
+const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = true, steps }: { item: TimelineItem; agent: string; root: string; pages?: boolean; steps?: TimelineItem[] }) {
   // Memoized, so it follows a language change itself rather than through App.
   useLanguage();
   if (PlaygroundProgress && item.type === 'demo-progress') return <Suspense fallback={null}><PlaygroundProgress item={item}/></Suspense>;
   if (item.type === 'user') return <UserMessage item={item} agent={agent}/>;
   if (item.type === 'assistant') return <article className="message assistant" aria-label={`${agent}, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
   const files = item.type === 'files' ? editedFiles(item, root) : [];
-  const label = item.type === 'command' ? shellCommand(item.text) || t('Run command') : item.type === 'files' ? (files.length === 1 ? t('Edited {file}', { file: files[0] }) : t('Edited {n} files', { n: files.length })) : item.type === 'pdf' ? (item.text ? t('Viewed the PDF: {places}', { places: item.text }) : t('Viewed the PDF')) : toolSentence(item) || item.text || t('Run tool');
+  const label = toolLabel(item, root);
   const detail = item.type === 'files' ? null : item.detail;
-  const note = toolNote(item);
   const state = toolState(item);
-  const row = <details className={'tool-item ' + state} data-kind={item.type === 'tool' ? item.tool?.kind || 'tool' : item.type}><summary><Icon name={toolIcon(item)} size={14}/><span className="tool-label">{label}{note && <span className="tool-note">{note}</span>}</span>{state === 'running' ? <span className="spinner" aria-label={t('Running')}/> : state && <span className="tool-status">{item.status === 'declined' ? t('Declined') : t('Failed')}</span>}</summary>{item.type === 'files' ? <FileDiffs changes={item.changes} files={files}/> : detail && <pre>{detail}</pre>}</details>;
+  // A running worker's latest step shows on its delegation line, as with a subagent.
+  const latest = state === 'running' ? steps?.findLast(step => step.type !== 'assistant') : undefined;
+  const note = latest ? toolLabel(latest, root) : toolNote(item);
+  const delegation = item.type === 'tool' && item.text.startsWith('workflow_delegate');
+  const row = <details className={'tool-item ' + state} data-kind={item.type === 'tool' ? item.tool?.kind || 'tool' : item.type}><summary><Icon name={toolIcon(item)} size={14}/><span className="tool-label">{label}{note && <span className="tool-note">{note}</span>}</span>{state === 'running' ? <span className="spinner" aria-label={t('Running')}/> : state && <span className="tool-status">{item.status === 'declined' ? t('Declined') : state === 'stopped' ? t('Stopped') : t('Failed')}</span>}</summary>
+    {item.type === 'files' ? <FileDiffs changes={item.changes} files={files}/> : detail && <pre>{detail}</pre>}
+    {steps?.length ? <div className="tool-group-items worker-steps">{steps.map(step => step.type === 'assistant'
+      ? <div key={step.id} className="worker-message markdown"><Markdown text={step.text}/></div>
+      : <TimelineEntry key={step.id} item={step} agent={agent} root={root} pages={false}/>)}</div> : null}
+    {delegation && item.changes?.length ? <FileDiffs changes={item.changes} files={item.changes.map(change => change.path)}/> : null}
+    {delegation && state === 'running' && <StopWorker item={item}/>}
+  </details>;
   return pages && item.pages?.length ? <>{row}<PageStrip items={[item]}/></> : row;
 });
 
 // Consecutive commands, edits and tool calls fold into one line that opens to the list.
-function ToolGroup({ items, agent, root }: { items: TimelineItem[]; agent: string; root: string }) {
+function ToolGroup({ items, agent, root, steps }: { items: TimelineItem[]; agent: string; root: string; steps: Map<string, TimelineItem[]> }) {
   // The thread reuses its elements, so the summary follows a language change itself.
   useLanguage();
   const summary = toolSummary(items, item => editedFiles(item, root));
   const running = items.some(item => toolState(item) === 'running'), failed = items.filter(item => toolState(item) === 'failed').length;
   return <><details className="tool-group"><summary><Icon name={summary.icon} size={14}/><span className="tool-group-label">{summary.text}</span>{running ? <span className="spinner" aria-label={t('Running')}/> : failed ? <span className="tool-status">{t('{n} failed', { n: failed })}</span> : null}<Icon name="chevronDown" size={13}/></summary>
-    <div className="tool-group-items">{items.map(item => <TimelineEntry key={item.id} item={item} agent={agent} root={root} pages={false}/>)}</div>
+    <div className="tool-group-items">{items.map(item => <TimelineEntry key={item.id} item={item} agent={agent} root={root} pages={false} steps={steps.get(item.id)}/>)}</div>
   </details><PageStrip items={items}/></>;
 }
 
@@ -400,15 +423,21 @@ function Activity({ runtimes, relatedTasks, onOpenTask, onRestarted, source, onR
   // The draft re-renders this panel on every keystroke; the same elements let
   // React skip the conversation until its items change.
   const agent = agentName(task), review = task.mode === 'review', root = task.worktree;
-  const thread = useMemo(() => timelineEntries(visibleTimeline(items).filter(item => item.type !== 'reviewOutput').map(item => review && item.type === 'assistant' ? { ...item, text: aiReviewSummary(item.text) } : item))
+  const thread = useMemo(() => {
+    // Collaboration workers' steps belong under their delegation, not in the thread.
+    const steps = new Map<string, TimelineItem[]>(), lines = new Set(items.map(item => item.id));
+    const nested = (item: TimelineItem) => Boolean(item.parent && lines.has(item.parent));
+    for (const item of items) if (nested(item)) { const list = steps.get(item.parent!); if (list) list.push(item); else steps.set(item.parent!, [item]); }
+    return timelineEntries(visibleTimeline(items).filter(item => item.type !== 'reviewOutput' && !nested(item)).map(item => review && item.type === 'assistant' ? { ...item, text: aiReviewSummary(item.text) } : item))
     .flatMap((entry, index, all) => {
-      const shown = entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root}/>;
+      const shown = entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root} steps={steps}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root} steps={steps.get(entry[0].id)}/>;
       // A finished turn that changed files ends with where it changed the paper.
       const turn = turnOf(entry[0]), next = all[index + 1];
       if (!turn || (next && (next[0].type !== 'user' && turnOf(next[0]) === turn)) || (!next && active)) return [shown];
       const edits = all.filter(other => turnOf(other[0]) === turn).flat().filter(item => item.type === 'files' && item.changes?.length);
       return edits.length ? [shown, <ChangeSummary key={turn + ':changes'} items={edits}/>] : [shown];
-    }), [items, review, agent, root, active]);
+    });
+  }, [items, review, agent, root, active]);
   const hint = task.status === 'deleting' ? t('This task is being deleted') : task.status === 'uncertain' ? t('Check task status before sending') : task.preparation ? t('Send more instructions once the task has started.') : sending ? t('Sending…')
     : emptyNotes ? canSend ? tn(emptyNotes, '{n} empty comment will stay in drafts', '{n} empty comments will stay in drafts') : t('Write a comment or message to send.') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : '';
   // A source tab beside the chat hides the chat while it is selected; both stay as they were.
@@ -611,7 +640,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
   // go to an agent, then the author reads the diffs and commits the merge.
   const diverged = Boolean(git.upstream && git.ahead > 0 && git.behind > 0 && !merging);
   const resolve = () => void run('resolve', () => api<{ git: GitStatus; summary: string; remaining: string[]; agent: AgentId }>(`/projects/${projectId}/git/resolve`, { agent: writer.agent, model: writer.model || undefined }),
-    result => { setResolution({ agent: AGENT_LABELS[result.agent], summary: result.summary }); return result.remaining.length ? tn(result.remaining.length, '{n} file still has conflicts.', '{n} files still have conflicts.') : t('Conflicts resolved. Read the diffs, then commit the merge.'); });
+    result => { setResolution({ agent: agentLabel(result.agent), summary: result.summary }); return result.remaining.length ? tn(result.remaining.length, '{n} file still has conflicts.', '{n} files still have conflicts.') : t('Conflicts resolved. Read the diffs, then commit the merge.'); });
   const finish = () => void run('finish', () => api<{ git: GitStatus; commit: string }>(`/projects/${projectId}/git/finish`, {}), result => { setResolution(null); return t('Committed {hash}.', { hash: result.commit }); });
   const abort = () => void run('abort', () => api<{ git: GitStatus }>(`/projects/${projectId}/git/abort`, {}), () => { setResolution(null); return t('The merge was abandoned.'); });
   const commitTitle = staged.length ? tn(staged.length, 'Commit staged changes in 1 file', 'Commit staged changes in {n} files') : chosen.length === files.length ? tn(files.length, 'Commit 1 file', 'Commit all {n} files') : t('Commit {chosen} of {n} files', { chosen: chosen.length, n: files.length });
@@ -623,7 +652,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
   const syncTitle = !git.remote ? t('This repository has no remote.') : !git.branch ? t('Check out a branch before syncing.') : t('Sync committed changes with the remote. Uncommitted changes are kept.');
   const primaryDisabled = syncPrimary ? Boolean(busy) || !needsSync : commitDisabled;
   const submitPrimary = () => { if (!primaryDisabled) { if (syncPrimary) syncRemote(); else commit(); } };
-  const placeholder = busy === 'message' ? t('{agent} is writing a commit message…', { agent: AGENT_LABELS[writer.agent] })
+  const placeholder = busy === 'message' ? t('{agent} is writing a commit message…', { agent: agentLabel(writer.agent) })
     : git.branch && !touch() ? t('Message ({key} to commit on “{branch}”)', { key: '↵', branch: git.branch }) : t('Commit message');
   // One row per file and list. The staged list shows the index's status.
   const row = (file: GitFile, list: 'staged' | 'changes') => {
@@ -692,7 +721,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
         <div className="button-row">
           <button type="button" className="button secondary compact" disabled={Boolean(busy)} onClick={abort}>{busy === 'abort' ? t('Aborting…') : t('Abort merge')}</button>
           {merging.conflicts.length
-            ? <button type="button" className="button primary compact" disabled={Boolean(busy)} onClick={resolve}>{busy === 'resolve' ? <><span className="spinner"/>{t('{agent} is resolving…', { agent: AGENT_LABELS[writer.agent] })}</> : <><Icon name="spark" size={14}/>{t('Resolve with {agent}', { agent: AGENT_LABELS[writer.agent] })}</>}</button>
+            ? <button type="button" className="button primary compact" disabled={Boolean(busy)} onClick={resolve}>{busy === 'resolve' ? <><span className="spinner"/>{t('{agent} is resolving…', { agent: agentLabel(writer.agent) })}</> : <><Icon name="spark" size={14}/>{t('Resolve with {agent}', { agent: agentLabel(writer.agent) })}</>}</button>
             : <button type="button" className="button primary compact" disabled={Boolean(busy)} onClick={finish}>{busy === 'finish' ? t('Committing…') : t('Commit merge')}</button>}
         </div>
       </div>}
@@ -700,7 +729,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, tasks, onO
         <div className="git-message-box">
           <textarea aria-label={t('Commit message')} placeholder={placeholder} rows={1} value={message} readOnly={busy === 'commit' || busy === 'message'} onChange={event => saveMessage(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, touch())) { event.preventDefault(); commit(); } }}/>
           <div className="git-compose-bar">
-            <button type="button" className="icon-button git-generate" aria-label={t('Generate commit message')} title={t('Write a commit message for the chosen files with {agent}', { agent: AGENT_LABELS[writer.agent] })} disabled={Boolean(busy) || !chosen.length} onClick={() => void generate()}>{busy === 'message' ? <span className="spinner"/> : <Icon name="spark" size={15}/>}</button>
+            <button type="button" className="icon-button git-generate" aria-label={t('Generate commit message')} title={t('Write a commit message for the chosen files with {agent}', { agent: agentLabel(writer.agent) })} disabled={Boolean(busy) || !chosen.length} onClick={() => void generate()}>{busy === 'message' ? <span className="spinner"/> : <Icon name="spark" size={15}/>}</button>
             <div className={'git-commit-split has-menu' + (busy === 'commit' || syncing ? ' is-busy' : '')}>
               <button className="button primary git-commit-button" aria-label={primaryLabel} title={syncPrimary ? needsSync ? syncTitle : t('Up to date with the remote.') : commitTitle} disabled={primaryDisabled}>{busy === 'commit' || syncing ? <span className="spinner light"/> : <Icon name={syncPrimary && needsSync ? 'refresh' : 'check'} size={14}/>}<span>{primaryLabel}</span>{syncPrimary && needsSync && sync}</button>
               <ActionMenu label={t('More commit actions')} className="button primary git-commit-more" disabled={Boolean(busy)} actions={[
@@ -841,7 +870,7 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
   const card = (note: Annotation, index: number, { currentKey, active, inTask, onShow, onToggle }: { currentKey?: string; active?: string; inTask?: boolean; onShow: (note: Annotation) => void; onToggle: () => void }) => <li key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} className={(note.aiReview ? 'review-suggestion ' : '') + (active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
     <PdfNoteCard inline inTask={inTask} note={note} number={index + 1} index={0} total={1} selected={actions.selection.has(note.id)} busy={actions.sending || busyNotes.some(item => item.id === note.id)} error={errors[note.id] || ''}
       draft={drafts[note.id]?.value ?? null} onDraftChange={value => { draft(note.id, value); if (value !== null && drafts[note.id] === undefined) clearError(note.id); }}
-      header={<div className="note-card-context"><div className="note-head"><button type="button" className="note-number" aria-label={note.aiReview ? t('Show suggestion {n} on the page', { n: index + 1 }) : t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.aiReview ? ' · ' + AGENT_LABELS[note.aiReview.agent] : note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span></div><NoteQuote text={note.quote} kind={note.kind}/></div>}
+      header={<div className="note-card-context"><div className="note-head"><button type="button" className="note-number" aria-label={note.aiReview ? t('Show suggestion {n} on the page', { n: index + 1 }) : t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.aiReview ? ' · ' + agentLabel(note.aiReview.agent) : note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span></div><NoteQuote text={note.quote} kind={note.kind}/></div>}
       onToggle={onToggle} onDismiss={() => void remove(note)}
       onSave={(comment, action) => save(note, comment, action === 'quote' ? onToggle : undefined)}>
       {note.key !== currentKey && <NotePlacementWarning/>}
@@ -992,7 +1021,7 @@ function PreparingTask({ task }: { task: Task }) {
 }
 
 type ManuscriptPanel = 'pdf' | 'task' | 'source';
-function ManuscriptView({ notesRequest, taskCards, navigationGuard, collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, share, navigation, onGit, writer, reportError, onFixProblems, diagnoseBuild, openFile, onOpened, onEditing }: { notesRequest?: number; openFile?: string | null; onOpened?: () => void; onEditing?: (file: string | null) => void; navigationGuard: React.Ref<NotesHandle>; collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; taskCards: ReturnType<typeof useNoteCards>; onFixProblems?: (request: string) => void; diagnoseBuild?: (failureId: string) => Promise<BuildRepairResult>; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
+function ManuscriptView({ notesRequest, taskCards, navigationGuard, collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, share, navigation, onGit, writer, reportError, onFixProblems, diagnoseBuild, openFile, onOpened, onEditing }: { notesRequest?: number; openFile?: { file: string; line?: number } | null; onOpened?: () => void; onEditing?: (file: string | null) => void; navigationGuard: React.Ref<NotesHandle>; collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; taskCards: ReturnType<typeof useNoteCards>; onFixProblems?: (request: string) => void; diagnoseBuild?: (failureId: string) => Promise<BuildRepairResult>; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions }) {
   const build = data?.build, notes = data?.annotations || [], git = data?.git;
   const pdf = useRef<PdfHandle>(null);
   // Each root document keeps its reading place, named with the build it
@@ -1049,7 +1078,7 @@ function ManuscriptView({ notesRequest, taskCards, navigationGuard, collapsed, s
   // A file picked in the Manuscript row's file menu opens in the source tab.
   useEffect(() => {
     if (!openFile) return;
-    setView('source'); setCollapsed(false); source.openFile(openFile); onOpened?.();
+    setView('source'); setCollapsed(false); source.openFile(openFile.file, openFile.line); onOpened?.();
   }, [openFile]);
   useEffect(() => { onEditing?.(source.tab?.file || null); }, [source.tab?.file]);
   useEffect(() => () => onEditing?.(null), []);
@@ -1119,7 +1148,7 @@ function ManuscriptView({ notesRequest, taskCards, navigationGuard, collapsed, s
       <div className="side-pane" hidden={side !== 'task'}>{newTask(<TaskNotes cards={taskCards} controller={taskNotes} notes={notes} currentKey={build?.key} actions={actions} onShow={show}/>)}</div>
       {source.panel && <div className="side-pane" hidden={side !== 'source'}>{source.panel}</div>}
     </aside>
-    {committing && <CommitDialog branch={git?.branch ?? null} files={staged} staged remote={Boolean(git?.remote)} agent={AGENT_LABELS[writer.agent]} onClose={() => setCommitting(false)}
+    {committing && <CommitDialog branch={git?.branch ?? null} files={staged} staged remote={Boolean(git?.remote)} agent={agentLabel(writer.agent)} onClose={() => setCommitting(false)}
       generate={fresh => api<{ message: string }>(`/projects/${project.id}/git/message`, { paths: staged, staged: true, agent: writer.agent, fresh }).then(result => result.message)}
       commit={async (message, push) => {
         const result = await api<{ commit: string; git: GitStatus; pushError?: string }>(`/projects/${project.id}/git/commit`, { message, staged: true, push });
@@ -1205,6 +1234,8 @@ function App() {
     refocus.current = '';
   }, [renaming]);
   const [editingPaper, setEditingPaper] = useState<Project | null>(null);
+  // The open paper's Overleaf dialog: linking it, or its sync's details.
+  const [overleafOpen, setOverleafOpen] = useState(false);
   const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'task');
   const manuscriptNavigationGuard = useRef<NotesHandle>(null);
   const [playgroundNotes, setPlaygroundNotes] = useState(0);
@@ -1361,6 +1392,8 @@ function App() {
         events.addEventListener('change', () => { if (cycle === generation) void refresh(); });
         // A manuscript build started or ended: the open PDF view reloads now.
         events.addEventListener('manuscript', () => { if (cycle === generation) window.dispatchEvent(new Event('papilot:manuscript')); });
+        // Coauthors' cursors on Overleaf, as they move.
+        events.addEventListener('presence', event => { if (cycle === generation) { try { setPresence(JSON.parse((event as MessageEvent).data)); } catch { /* The next report replaces it. */ } } });
       }
       async function poll() {
         await refresh();
@@ -1476,7 +1509,7 @@ function App() {
   }), []);
   // Fallbacks keep saved preferences intact in case they become available again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
-  const offered = offeredAgents(runtimes), agentChoice = chosenAgent(savedAgent, offered, runtimes), missingAgent = noAgent(runtimes);
+  const offered = offeredAgents(runtimes).filter(id => id !== 'collaboration' || newSkill?.output !== 'annotations'), agentChoice = chosenAgent(savedAgent, offered, runtimes), missingAgent = noAgent(runtimes);
   const settled = agentsSettled(runtimes);
   useEffect(() => {
     // A later disconnect must keep the chosen agent and show its notice.
@@ -1505,7 +1538,7 @@ function App() {
     setAgentPrefs(current => ({ ...current, [id]: { ...current[id], model } })); browserStorage.setItem(`papilot:model:${id}`, model);
   };
   const agentOptions = (disabled: boolean) => <AgentPicker disabled={disabled} noAgent={missingAgent} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
-    agents={offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] }))}
+    agents={offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))}
     permissionMode={newSkill?.output !== 'annotations' ? effectivePermissions : undefined}
     permissions={newSkill?.output !== 'annotations' && <PermissionOptions runtime={runtimes[agentChoice]} value={effectivePermissions} disabled={disabled} onChange={setNewPermissions}/>}
     reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onSelect={chooseModel} onChange={remember}/>;
@@ -1749,6 +1782,10 @@ function App() {
     return () => { live = false; window.removeEventListener('focus', load); };
   }, [project?.id, project?.path, skillsRevision]);
   const projectGit = git.projectId === project?.id ? git.status : null;
+  const overleafSync = state?.overleaf?.syncs.find(sync => sync.projectId === project?.id);
+  // Coauthors' cursors come with each state read, and between reads with
+  // the event stream when there is one.
+  useEffect(() => { if (state?.overleaf) setPresence(Object.fromEntries(state.overleaf.syncs.map(sync => [sync.projectId, sync.cursors ?? []]))); }, [state?.overleaf]);
   const projectSkills = skills.projectId === project?.id ? skills.list : [];
   // "Fix with an agent…" fills the new-task composer; nothing starts until it is sent.
   function fixProblems(request: string) {
@@ -1759,9 +1796,9 @@ function App() {
   }
   const updateGit = (projectId: string, status: GitStatus) => { setGit({ projectId, status }); setManuscript(current => current.projectId === projectId && current.data ? { ...current, data: { ...current.data, git: status } } : current); };
   const manuscriptData = manuscript.projectId === project?.id ? manuscript : { data: null, error: '' };
-  const [openFile, setOpenFile] = useState<string | null>(null), [editingFile, setEditingFile] = useState<string | null>(null);
-  function openRepositoryFile(file: string) {
-    setSelected(''); setPage('manuscript'); setSidebar(false); setOpenFile(file);
+  const [openFile, setOpenFile] = useState<{ file: string; line?: number } | null>(null), [editingFile, setEditingFile] = useState<string | null>(null);
+  function openRepositoryFile(file: string, line?: number) {
+    setSelected(''); setPage('manuscript'); setSidebar(false); setOpenFile({ file, line });
   }
   async function compileDocument(file: string) {
     if (!project) return;
@@ -2091,7 +2128,7 @@ function App() {
       action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={missingAgent || creating || reviewNoteBusy || noteEditing || history.busy || (newSkill?.output !== 'annotations' && (newFiles.blocked || marking > 0 || missingGroupDirections)) || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(actionable) && !Object.keys(groupDirections).length)} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {PlaygroundPresets && <Suspense fallback={null}><PlaygroundPresets selected={noteSelection.selected} open={id => openPreparedTask(id)} disabled={creating}/></Suspense>}
-    {runtimes[agentChoice]?.usage && <UsageSummary agent={AGENT_LABELS[agentChoice]} usage={runtimes[agentChoice]!.usage!}/>}
+    {runtimes[agentChoice]?.usage && <UsageSummary agent={agentLabel(agentChoice)} usage={runtimes[agentChoice]!.usage!}/>}
     </div>
   </section>;
 
@@ -2106,6 +2143,7 @@ function App() {
           ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), title: p.path, checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); }, edit: { label: t('Edit {name}', { name: p.name }), select: () => setEditingPaper(p) } })),
           { label: t('New paper…'), icon: 'plus', divider: true, select: createProject },
           { label: t('Import or open'), icon: 'download', select: importProject },
+          ...(!isPlayground && gitAvailable ? [{ label: overleafSync ? t('Overleaf sync…') : t('Sync with Overleaf…'), icon: 'refresh', divider: true, select: () => setOverleafOpen(true) }] : []),
         ]}><span className="project-switcher-name">{project.name}</span><Icon name="chevronDown" size={13}/></ActionMenu>
           : <button className="add-project" disabled={!state} onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button>}
         <button className="icon-button" aria-label={t('Hide task list')} title={t('Hide task list')} onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button>
@@ -2114,6 +2152,7 @@ function App() {
         {project && <>
           <div className="manuscript-row"><button className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} title={t('Switch tasks and manuscript') + ' (' + workspaceShortcutLabel + ')'} aria-keyshortcuts={workspaceModifier + '+`'} onClick={() => { setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><Icon name="pdf" size={16}/><span className="nav-label">{t('Manuscript')}</span></button>{!isPlayground && gitAvailable && <RepositoryFilesMenu key={project.id} api={api} projectId={project.id} version={`${manuscriptData.data?.build?.tree}:${manuscriptData.data?.build?.document}`} shownDocument={manuscriptData.data?.build?.document} editing={manuscriptOpen ? editingFile : null} onOpen={openRepositoryFile} onCompile={compileDocument}/>}</div>
           <button className={'nav-link git-link' + (gitOpen ? ' active' : '')} disabled={!gitAvailable} aria-describedby={!gitAvailable ? 'git-install-hint' : undefined} aria-label={gitAvailable && projectGit?.files?.length ? t('Version Management, {n} changed', { n: projectGit.files.length }) : t('Version Management')} aria-current={gitOpen ? 'page' : undefined} title={gitAvailable ? t('Version management of the manuscript') + '\n' + gitSummary(projectGit) : t('Install Git in this environment to use version management.')} onClick={openGit}><Icon name="restore" size={16}/><span className="nav-label">{t('Version Management')}</span><span className="nav-meta">{gitAvailable && projectGit?.files?.length ? <span className="count">{projectGit.files.length}</span> : null}</span></button>
+          {overleafSync && <OverleafRow sync={overleafSync} onOpen={() => { setOverleafOpen(true); setSidebar(false); }}/>}
           {!gitAvailable && <p className="git-install-hint" id="git-install-hint"><a href="https://git-scm.com/install/" target="_blank" rel="noreferrer">{t('Install Git in this environment to use version management.')}</a></p>}
           <ActionMenu label={t('Research Tools')} className="nav-link paper-tools" menuClassName="paper-tools-menu" align="side" actions={[
             { id: 'references', label: t('Reference check'), icon: 'checklist', detail: t('Citations, entries and their records'), hint: problems ? String(problems) : undefined, checked: referencesOpen || undefined, select: () => { if (isPlayground) { requestPlaygroundDownload(); return; } setSelected(''); setPage('references'); setSidebar(false); } },
@@ -2191,11 +2230,14 @@ function App() {
       : <div className="home"><div className="home-inner"><img className="home-logo" src={logo} alt=""/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button></div></div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
-    {settings && <SettingsDialog requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: offered.map(id => ({ value: id, label: AGENT_LABELS[id], runtime: runtimes[id] })), agent: agentChoice, model: chosenModel, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }) }} updates={!isPlayground ? api : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body) } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
+    {settings && <SettingsDialog workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: agentChoice, model: chosenModel, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body) } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
     {bulkTarget && <BulkTaskDialog target={bulkTarget}
       submit={target => api('/tasks/' + target.id + '/' + bulkTarget.action, bulkTarget.action === 'archive' ? { archived: true } : { confirm: true })}
       onSuccess={bulkTaskSucceeded} refresh={() => void refresh(true)} onClose={() => { setShowArchived(bulkTarget.archived); setBulkTarget(null); }}/>}
+    {overleafOpen && project && (overleafSync
+      ? <OverleafPanel key={project.id} api={api} sync={overleafSync} overleaf={state?.overleaf} onClose={() => setOverleafOpen(false)} onOpenFile={openRepositoryFile}/>
+      : <OverleafLinkDialog key={project.id} api={api} projectId={project.id} overleaf={state?.overleaf} onClose={() => setOverleafOpen(false)}/>)}
     {editingPaper && <PaperDialog key={editingPaper.id} paper={editingPaper} onClose={() => setEditingPaper(null)} save={async form => {
       const paper = editingPaper, pathChanged = form.path !== paper.path;
       await api(`/projects/${paper.id}/${pathChanged ? 'path' : 'rename'}`, pathChanged ? form : { name: form.name });

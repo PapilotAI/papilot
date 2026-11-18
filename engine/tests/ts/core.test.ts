@@ -111,6 +111,32 @@ describe("configuration", () => {
     expect(loadProject(f.root).engine).toBe("xelatex");
   });
   it.each([
+    ["% \\usepackage{fontspec}", "pdflatex"],
+    ["\\newcommand{\\percent}{\\%}\\usepackage{fontspec}", "xelatex"],
+    ["\\newcommand{\\percent}{\\%} % \\usepackage{fontspec}", "pdflatex"],
+    ["\\newcommand{\\linebreak}{\\\\% \\usepackage{fontspec}\n}", "pdflatex"],
+    ["\\usepackage{amsmath% fontspec\n}", "pdflatex"],
+    ["\\usepackage{amsmath,% comment\nfontspec}", "xelatex"],
+    ["\\usepackage[% \\usepackage{fontspec}\n]{amsmath}", "pdflatex"],
+    ["\\usepackage{xeCJK}", "xelatex"],
+    ["\\usepackage{unicode-math}", "xelatex"],
+    ["\\usepackage{polyglossia}", "xelatex"],
+    ["% \\documentclass{ctexart}", "pdflatex"],
+    ["\\newcommand{\\percent}{\\%}\\documentclass{ctexart}", "xelatex"],
+  ])("detects engine hints outside comments: %s", (hint, engine) => {
+    f.write("paper/main.tex", hint + "\n" + MAIN);
+    expect(loadProject(f.root).engine).toBe(engine);
+  });
+  it("keeps explicit engine, magic comment and latexmk precedence over package hints", () => {
+    f.write("paper/main.tex", "\\usepackage{fontspec}\n" + MAIN);
+    f.write("paper/latexmkrc", "$pdf_mode = 4;\n");
+    expect(loadProject(f.root).engine).toBe("lualatex");
+    f.write("paper/main.tex", "% !TEX program = pdflatex\n\\usepackage{fontspec}\n" + MAIN);
+    expect(loadProject(f.root).engine).toBe("pdflatex");
+    f.write(".git/papilot/settings.json", JSON.stringify({ engine: "xelatex" }));
+    expect(loadProject(f.root).engine).toBe("xelatex");
+  });
+  it.each([
     { mian: "x" },
     { engine: "tex" },
     { main: "missing.tex" },

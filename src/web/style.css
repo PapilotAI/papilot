@@ -359,6 +359,7 @@ body.resizing iframe{pointer-events:none}
 .tool-item[data-kind="command"] .tool-label{font-family:var(--mono);font-size:12.5px}
 .tool-item .spinner{width:12px;height:12px;border-width:1.5px}
 .tool-status{font-size:12px;font-weight:500;color:var(--red)}
+.tool-item.stopped .tool-status{color:var(--text-3)}
 .tool-item pre{margin:4px 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg-subtle);white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;font:13px/1.55 var(--mono);color:var(--text-2)}
 .tool-item+.message,.tool-group+.message{margin-top:10px}
 .tool-group{margin:0 0 4px;color:var(--text-2);align-self:stretch;max-width:100%}
@@ -412,6 +413,12 @@ body.resizing iframe{pointer-events:none}
 .tool-pages a:hover img{border-color:var(--line-hover)}
 .tool-pages a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
 .tool-group-items{margin:4px 0 8px 6px;padding-left:12px;border-left:1px solid var(--line)}
+/* A collaboration worker's steps under its delegation, like a subagent's. */
+.worker-message{margin:2px 0 6px;font-size:13px;line-height:1.55;color:var(--text-2)}
+.worker-message>:first-child{margin-top:0}
+.worker-message>:last-child{margin-bottom:0}
+.worker-stop{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 8px}
+.worker-stop .inline-error{margin:0}
 .notes-message .message-body{white-space:normal;padding:10px 14px 12px}
 .sent-notes-head{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12.5px;font-weight:500;color:var(--text-2)}
 .sent-notes-head>svg{color:var(--text-3)}
@@ -952,12 +959,12 @@ body.resizing iframe{pointer-events:none}
 .settings-text p{margin-top:4px;font-size:13px;line-height:1.55;color:var(--text-3)}
 .message-author{align-self:flex-end;margin:0 6px 3px;font-size:12px;font-weight:500;color:var(--text-3)}
 .message.user:has(>.message-author){display:flex;flex-direction:column;align-items:flex-end}
-.settings-dialog input.switch{appearance:none;flex:none;position:relative;width:38px;height:22px;margin:0;padding:0;border:0;border-radius:999px;background:var(--line-strong);box-shadow:none;cursor:pointer;transition:background-color .15s}
-.settings-dialog input.switch::before{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.2);transition:transform .15s var(--ease)}
-.settings-dialog input.switch:checked{background:var(--primary)}
-.settings-dialog input.switch:checked::before{transform:translateX(16px)}
-.settings-dialog input.switch:focus-visible{box-shadow:var(--ring)}
-.settings-dialog input.switch:disabled{opacity:.45;cursor:not-allowed}
+.settings-dialog input.switch,.import-sync input.switch{appearance:none;flex:none;position:relative;width:38px;height:22px;margin:0;padding:0;border:0;border-radius:999px;background:var(--line-strong);box-shadow:none;cursor:pointer;transition:background-color .15s}
+.settings-dialog input.switch::before,.import-sync input.switch::before{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.2);transition:transform .15s var(--ease)}
+.settings-dialog input.switch:checked,.import-sync input.switch:checked{background:var(--primary)}
+.settings-dialog input.switch:checked::before,.import-sync input.switch:checked::before{transform:translateX(16px)}
+.settings-dialog input.switch:focus-visible,.import-sync input.switch:focus-visible{box-shadow:var(--ring)}
+.settings-dialog input.switch:disabled,.import-sync input.switch:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:680px){
   .settings-dialog input.switch{width:44px;height:26px}
   .settings-dialog input.switch::before{width:22px;height:22px;box-shadow:0 1px 3px rgb(0 0 0/.24)}

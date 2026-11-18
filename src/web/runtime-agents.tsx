@@ -1,5 +1,6 @@
+import { agentLabel } from './agent-choice.ts';
 import { useEffect, useRef, useState } from 'react';
-import { AGENT_IDS, AGENT_NAMES, type AgentId, type DiagnosticReport, type RuntimeStatus } from '../shared.ts';
+import { AGENT_IDS, type AgentId, type DiagnosticReport, type RuntimeStatus } from '../shared.ts';
 import info from 'virtual:papilot-info';
 import { BrandIcon } from './brand-icon.tsx';
 import { Icon } from './icons.tsx';
@@ -16,6 +17,7 @@ function connectionInfo(id: AgentId) {
   const descriptions = {
     papilot: t('Built into Papilot and based on Pi. Signs in with ChatGPT or GitHub Copilot, or uses an API key.'),
     pi: t('Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.'),
+    collaboration: t('Uses the local Codex CLI and its saved login.'),
     codex: t('Uses the local Codex CLI and its saved login.'),
     claude: t('Uses Claude Code when installed, or the Claude Agent SDK with API credentials.'),
     cursor: t('Uses the Cursor SDK with CURSOR_API_KEY. Papilot installs the SDK on first use.'),
@@ -28,7 +30,7 @@ function connectionInfo(id: AgentId) {
     qwen: t('Uses Qwen Code and its saved login through ACP.'),
     opencode: t('Uses OpenCode with the providers and models you have connected.'),
   };
-  const commands = { papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login' };
+  const commands = { collaboration: window.papilotDesktop ? 'codex login' : 'papilot codex login', papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login' };
   return { description: descriptions[id], command: commands[id], key: id === 'cursor' || id === 'glm' };
 }
 
@@ -60,15 +62,15 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
     setReconnecting(true); setReconnectError(false);
     try { await reconnect(); } catch { setReconnectError(true); } finally { setReconnecting(false); }
   }
-  const agents = AGENT_IDS.map(id => {
+  const agents = AGENT_IDS.filter(id => id !== 'collaboration' || runtimes.collaboration?.hidden === false).map(id => {
     const availability = agentAvailability(online, runtimes[id]);
     return { id, availability, active: availability === 'ready' || availability === 'limited' } as const;
   }).sort((a, b) => Number(b.active) - Number(a.active));
   const tiles = [
     ...agents.map(({ id, availability }) => {
         return <li key={id} className="diagnostic-agent-card" data-agent={id} data-availability={availability}>
-          <button type="button" className="diagnostic-agent-button" ref={element => { cards.current[id] = element; }} aria-label={t('{agent} details', { agent: AGENT_NAMES[id] })} aria-expanded={selected === id} aria-controls={selected === id ? 'runtime-agent-detail' : undefined} title={availability === 'missing' ? agentSetup(id).reason : t('View installation, account, and usage')} onClick={() => selected === id ? close() : setSelected(id)} onKeyDown={event => { if (event.key === 'Escape' && selected === id) { event.preventDefault(); event.stopPropagation(); close(); } }}>
-            <div className="diagnostic-agent-heading"><BrandIcon name={id} size={28}/><h4>{AGENT_NAMES[id]}{id === 'papilot' && <small className="diagnostic-agent-subtitle">{t('Based on Pi')}</small>}</h4></div>
+          <button type="button" className="diagnostic-agent-button" ref={element => { cards.current[id] = element; }} aria-label={t('{agent} details', { agent: agentLabel(id) })} aria-expanded={selected === id} aria-controls={selected === id ? 'runtime-agent-detail' : undefined} title={availability === 'missing' ? agentSetup(id).reason : t('View installation, account, and usage')} onClick={() => selected === id ? close() : setSelected(id)} onKeyDown={event => { if (event.key === 'Escape' && selected === id) { event.preventDefault(); event.stopPropagation(); close(); } }}>
+            <div className="diagnostic-agent-heading"><BrandIcon name={id} size={28}/><h4>{agentLabel(id)}{id === 'papilot' && <small className="diagnostic-agent-subtitle">{t('Based on Pi')}</small>}</h4></div>
             <div className="diagnostic-agent-footer"><span className={'diagnostic-availability ' + availability}><Icon name={icons[availability]} size={13}/>{labels[availability]}</span><span className="diagnostic-agent-chevron"><Icon name={selected === id ? 'chevronUp' : 'chevronDown'} size={14}/></span></div>
           </button>
         </li>;
@@ -87,7 +89,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
   const drawer = selected && setup && <section className={'runtime-agent-detail runtime-agent-compact settings-card settings-card-body' + (selected === 'papilot' ? ' runtime-agent-writer' : '')} id="runtime-agent-detail" aria-labelledby="runtime-agent-title" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
       <header className="runtime-agent-header">
         {selected === 'papilot' && <BrandIcon name="papilot" size={22}/>}
-        <h4 id="runtime-agent-title" tabIndex={-1}>{AGENT_NAMES[selected]}</h4>
+        <h4 id="runtime-agent-title" tabIndex={-1}>{agentLabel(selected)}</h4>
         {current && selected !== 'papilot' && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
         <button type="button" className="icon-button" aria-label={t('Close agent details')} onClick={close}><Icon name="close" size={16}/></button>
       </header>
@@ -99,14 +101,14 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
         <p className="runtime-agent-reason" title={runtime?.error || undefined}>{state === 'missing' ? checked?.ok ? t('The latest configuration check found this agent. Reconnect to refresh its live status.') : guidance.summary : state === 'signin' ? t('Sign in on the Papilot host to continue.') : runtime?.error || t('The agent could not connect. Check its setup and try again.')}</p>
         {state === 'missing' && !checked?.ok && <p>{guidance.steps[0]}</p>}
         {!(state === 'missing' && checked?.ok) && <code className="runtime-agent-command">{setup.command}</code>}
-        <div className="runtime-setup-actions"><button type="button" className="button secondary compact" disabled={!online || reconnecting} title={state === 'signin' ? t('Use the current {agent} sign-in on the Papilot host', { agent: AGENT_NAMES[selected] }) : undefined} onClick={() => void retry()}><Icon name="refresh" size={13}/>{reconnecting ? state === 'signin' ? t('Refreshing…') : t('Connecting…') : state === 'signin' ? t('Refresh') : t('Reconnect')}</button>{setupGuide}</div>
+        <div className="runtime-setup-actions"><button type="button" className="button secondary compact" disabled={!online || reconnecting} title={state === 'signin' ? t('Use the current {agent} sign-in on the Papilot host', { agent: agentLabel(selected) }) : undefined} onClick={() => void retry()}><Icon name="refresh" size={13}/>{reconnecting ? state === 'signin' ? t('Refreshing…') : t('Connecting…') : state === 'signin' ? t('Refresh') : t('Reconnect')}</button>{setupGuide}</div>
         {reconnectError && <p role="alert">{t('Could not reconnect. Check the server connection and try again.')}</p>}
       </section>}
       {current ? <div className="runtime-agent-overview">
         <RuntimeModels key={selected} models={runtime.models} connected/>
         <section className="runtime-agent-usage">
           <h5>{t('Usage & limits')}</h5>
-          {runtime.usage ? <UsageSummary usage={runtime.usage} agent={AGENT_NAMES[selected]} expanded/> : <p className="runtime-agent-note">{t('Usage not reported')}</p>}
+          {runtime.usage ? <UsageSummary usage={runtime.usage} agent={agentLabel(selected)} expanded/> : <p className="runtime-agent-note">{t('Usage not reported')}</p>}
         </section>
       </div> : !blocked && <p className="runtime-agent-note">{t('Connect to view account, models, and usage.')}</p>}
       <details key={selected + String(blocked)} className="runtime-agent-detection">

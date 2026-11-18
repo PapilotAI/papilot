@@ -7,6 +7,7 @@ import { FolderField } from './folder-browser.tsx';
 import { t } from './i18n.ts';
 import { browserStorage } from './storage.ts';
 import { droppedFolder, ignoredImportPath, type ImportFile } from './import-files.ts';
+import { OverleafSignIn, overleafOrigin } from './overleaf.tsx';
 import './import-dialog.css';
 
 type Api = <T = any>(route: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
@@ -42,6 +43,13 @@ export function ImportPanel({ api, agent, canRepair, onChooseFolder, onDone, onC
   const dialog = useRef<HTMLDivElement>(null), folder = useRef<HTMLInputElement>(null), zip = useRef<HTMLInputElement>(null), pending = useRef(false);
   const linkInput = useRef<HTMLInputElement>(null), linkId = useId();
   const [link, setLink] = useState(''), [fromLink, setFromLink] = useState(false);
+  // An Overleaf project keeps syncing once imported, unless the author
+  // wants only a copy; syncing needs the author's Overleaf sign-in.
+  // A project or invitation link syncs by default; a read-only view link
+  // makes a copy, which needs no sign-in.
+  const [keepSynced, setKeepSynced] = useState<boolean | null>(null), [signIn, setSignIn] = useState<string | null>(null);
+  const syncs = (url: string) => Boolean(overleafOrigin(url)) && (keepSynced ?? /\/project\/[a-f0-9]{24}/i.test(url));
+  const overleafLink = Boolean(overleafOrigin(link));
   const [draft, setDraft] = useState<PaperImport | null>(null), [form, setForm] = useState({ name: '', path: '', main: '', engine: 'pdflatex' });
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [dragging, setDragging] = useState(false);
   const working = draft?.phase === 'building' || draft?.phase === 'repairing', locked = busy || working;
@@ -85,7 +93,12 @@ export function ImportPanel({ api, agent, canRepair, onChooseFolder, onDone, onC
   }
   const upload = (list: File[], archive: boolean) => run(() => uploadFiles(list.map(file => ({ file, path: file.webkitRelativePath || file.name })), archive));
   const openFolder = async (path: string) => start(await api<PaperImport>('/imports', { path }));
-  const importLink = (url: string) => run(async () => start(await api<PaperImport>('/imports', { url: url.trim() })), true);
+  const importLink = (url: string) => run(async () => {
+    const sync = syncs(url);
+    setSignIn(null);
+    try { await start(await api<PaperImport>('/imports', { url: url.trim(), ...(sync ? { sync: true } : {}) })); }
+    catch (failure) { const server = (failure as { signIn?: string }).signIn; if (server) { setSignIn(server); return; } throw failure; }
+  }, true);
   const focusChooser = () => requestAnimationFrame(() => dialog.current?.querySelector<HTMLButtonElement>('[data-choose-folder]')?.focus());
   // The desktop app opens the folder chosen in its system picker at once.
   async function chooseFolder() {
@@ -132,7 +145,9 @@ export function ImportPanel({ api, agent, canRepair, onChooseFolder, onDone, onC
               <button type="submit" className="button primary compact" aria-label={t('Import link')} disabled={locked}><Icon name="arrowRight" size={15}/>{t('Import')}</button>
             </div>
             <div className="import-link-hint" id={linkId + '-hint'}><span className="import-source"><BrandIcon name="arxiv" size={16}/><span>arXiv</span></span><span className="import-source"><BrandIcon name="overleaf" size={16}/><span>Overleaf</span></span><span className="import-source"><BrandIcon name="github" size={16}/><span>GitHub</span></span></div>
+            {overleafLink && <label className="import-sync"><input type="checkbox" role="switch" className="switch" checked={syncs(link)} disabled={locked} onChange={event => setKeepSynced(event.target.checked)}/><span>{t('Keep in sync with Overleaf')}</span></label>}
           </form>
+          {signIn && syncs(link) && <OverleafSignIn api={api} origin={signIn} onSignedIn={() => { setSignIn(null); void importLink(link); }}/>}
           <div className={'import-drop' + (dragging ? ' dragging' : '')} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={event => { event.preventDefault(); setDragging(false); if (!locked) drop(event.dataTransfer); }}>
             <span className="import-drop-hint"><Icon name="folder" size={15}/>{t('Drop a source ZIP or folder')}</span>
             <div className="import-options">

@@ -4,10 +4,11 @@ import type { PdfHandle, PdfPassage, Rect, Target } from './pdf-view.tsx';
 import type { CurrentChange, ReviewChanges } from '../../engine/src/web/review-events.ts';
 import type { SourceCodeEditor } from './source-codemirror.ts';
 import { Icon } from './icons.tsx';
-import { t, tn } from './i18n.ts';
+import { locale, t, tn } from './i18n.ts';
 import { browserStorage } from './storage.ts';
 import { isPlayground } from './playground-mode.ts';
 import { findPicked, lineSpan } from './source-match.ts';
+import { personName, usePresence } from './overleaf-presence.ts';
 import './source-panel.css';
 
 // Editing the manuscript's LaTeX by hand. A click on the PDF, or a change
@@ -87,6 +88,9 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   // text, so its passages are not highlighted as well.
   const scope = taskId ? `task:${taskId}` : projectId, marking = !taskId;
   const reviewing = useRef(review); reviewing.current = review;
+  // Coauthors on Overleaf, in a paper synced with it.
+  const cursors = usePresence(taskId ? undefined : projectId), present = useRef(cursors); present.current = cursors;
+  const authorsShown = useRef<SourceFile | null>(null);
   const read = async (file: string) => normalize(await api<SourceFile>(taskId ? `/tasks/${taskId}/source?file=${encodeURIComponent(file)}` : `/projects/${projectId}/manuscript/source?file=${encodeURIComponent(file)}`));
   const [edit, setEdit] = useState<Edit | null>(null);
   const latest = useRef(edit); latest.current = edit;
@@ -172,7 +176,22 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
       if (flash) setTimeout(() => { if (request.current === owner) editor.current?.flash(flash); }, loaded ? 0 : 260);
     }
     showReview();
+    showPeople(loaded);
   }
+
+  // Who wrote what on Overleaf, once per version of the file shown, and
+  // where coauthors' cursors are in it.
+  function showPeople(loaded = false) {
+    const view = editor.current, file = latest.current?.file;
+    if (!view || !file) return;
+    if (loaded || authorsShown.current !== file) {
+      authorsShown.current = file;
+      const when = (at: number) => new Date(at).toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      view.showAuthors((file.authors ?? []).map(span => ({ from: span.from, to: span.to, id: span.id, label: `${personName(span)} · ${when(span.at)}` })), file.text);
+    }
+    view.showCursors(present.current.filter(cursor => cursor.file === file.file && !cursor.you).map(cursor => ({ client: cursor.client, id: cursor.id, name: personName(cursor), line: cursor.line, column: cursor.column })));
+  }
+  useEffect(() => showPeople(), [cursors]);
 
   // The review's changes in the open file, placed by where the round has
   // them, when it shows this very file.
@@ -434,8 +453,12 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
     open, follow, close, editing: Boolean(edit),
     /** Opens a file at lines, with `marks` within them standing out and flashing. */
     reveal: (file: string, lines: Lines, marks: Lines[]) => void openAt(file, { lines, mark: marking, caret: true, marks, flash: marks }),
-    /** Opens a file at its start, or keeps the one open where it is. */
-    openFile: (file: string) => { if (latest.current?.file?.file !== file || latest.current.state !== 'ready') void openAt(file, { lines: [0, 1], mark: false, caret: true }); },
+    /** Opens a file at its start, or keeps the one open where it is; at a
+     *  line (0-based), shows that line. */
+    openFile: (file: string, line?: number) => {
+      if (line !== undefined) void openAt(file, { lines: [line, line + 1], mark: false, caret: true, flash: [[line, line + 1]] });
+      else if (latest.current?.file?.file !== file || latest.current.state !== 'ready') void openAt(file, { lines: [0, 1], mark: false, caret: true });
+    },
     passage: edit?.anchor ? { page: edit.anchor.page, marks: edit.anchor.marks } as PdfPassage : undefined,
     // The tab names the file, with a dot while there are unsaved changes.
     tab: edit ? { file: edit.file?.file || '', name, dirty, saving: Boolean(edit.saving) } : null,

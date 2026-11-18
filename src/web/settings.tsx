@@ -23,16 +23,19 @@ import { ToolRequirement, type RequirementsState } from './system-requirements.t
 import { LatexSettings } from './latex-settings.tsx';
 import { UpdateSettings, versionLabel, type UpdateApi } from './update-notice.tsx';
 import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions } from './skill-library.tsx';
+import { CollaborationSettings, type CollaborationSettingsProps } from './collaboration-settings.tsx';
 import { ModelDefaultSettings, type ModelDefaultSettingsProps } from './model-default-settings.tsx';
+import { OverleafAccounts } from './overleaf.tsx';
+import type { OverleafState } from '../shared.ts';
 
-type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'quickNotes' | 'shortcuts' | 'about' | 'licenses' | 'agents' | 'git' | 'latex' | 'skills' | 'updates';
+type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'quickNotes' | 'shortcuts' | 'about' | 'licenses' | 'agents' | 'git' | 'latex' | 'skills' | 'updates' | 'overleaf';
 export type SettingsInitialPage = 'general' | 'shortcuts' | 'quickNotes' | 'git' | 'latex' | 'agents';
 type SettingsEntry = { page: SettingsPage; label: string; icon: string; keywords?: string };
 
 // Shared with the review page's bibliography checks.
 const REFERENCE_CHECKS = 'papilot:review:references';
 
-export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, updates, modelDefaults, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; initialPage?: SettingsInitialPage }) {
+export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, updates, modelDefaults, workflow, overleaf, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; workflow?: CollaborationSettingsProps; overleaf?: { api: UpdateApi; state: OverleafState | undefined }; initialPage?: SettingsInitialPage }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const skillControls = useRef<SkillLibraryControls>(null);
   const { choice } = useLanguage();
@@ -81,6 +84,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
     ] },
     { label: t('Workspace'), entries: [
       ...(skills ? [{ page: 'skills' as const, label: t('Skills'), icon: 'spark' }] : []),
+      ...(overleaf ? [{ page: 'overleaf' as const, label: 'Overleaf', icon: 'overleaf', keywords: `${t('Sync with Overleaf…')} ${t('Sign in')} ${t('Sign out')}` }] : []),
     ] },
     { label: t('Runtime'), entries: [
       { page: 'git', label: 'Git', icon: 'git', keywords: `${t('Version history')} ${t('Show advanced Git features')}` },
@@ -107,7 +111,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
           {visibleGroups.map(group => <section className="settings-category-group" key={group.label}>
             <h3>{group.label}</h3>
             {group.entries.map(entry => <button type="button" key={entry.label} className="settings-category" data-settings-page={entry.page} aria-current={entry.page === page || (page === 'licenses' && entry.page === 'about') ? 'page' : undefined} onClick={() => goTo(entry.page)}>
-              {entry.page === 'about' ? <img src={logo} width="18" height="18" alt=""/> : (entry.page === 'latex' || entry.page === 'git') ? <BrandIcon name={entry.page} size={18}/> : <Icon name={entry.icon} size={18}/>}<span>{entry.label}</span>
+              {entry.page === 'about' ? <img src={logo} width="18" height="18" alt=""/> : (entry.page === 'latex' || entry.page === 'git' || entry.page === 'overleaf') ? <BrandIcon name={entry.page} size={18}/> : <Icon name={entry.icon} size={18}/>}<span>{entry.label}</span>
             </button>)}
           </section>)}
           {!visibleGroups.length && <p className="settings-search-empty">{t('No matching settings')}</p>}
@@ -120,7 +124,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         <header className="settings-content-header">
           <button type="button" className="settings-back settings-mobile-back" onClick={browseCategories}><Icon name="chevronLeft" size={14}/>{t('Settings')}</button>
           {page === 'licenses' && <button type="button" className="settings-back" onClick={() => goTo('about')}><Icon name="chevronLeft" size={14}/>{t('About Papilot')}</button>}
-          <h2 id="settings-title" tabIndex={-1}>{(page === 'latex' || page === 'git') && <BrandIcon name={page} size={30}/>}{title}</h2>
+          <h2 id="settings-title" tabIndex={-1}>{(page === 'latex' || page === 'git' || page === 'overleaf') && <BrandIcon name={page} size={30}/>}{title}</h2>
         </header>
         {page === 'general' && <section className="settings-card">
           <div className="settings-row settings-choice">
@@ -159,7 +163,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         {page === 'notifications' && <NotificationSettings/>}
         {page === 'shortcuts' && <ShortcutSettings/>}
         {page === 'quickNotes' && <QuickNoteSettings/>}
-        {page === 'about' && <AboutSettings onLicenses={() => goTo('licenses')}/>}
+        {page === 'about' && <AboutSettings onLicenses={() => goTo('licenses')} experiments={workflow && <CollaborationSettings {...workflow}/>}/>}
         {page === 'licenses' && <LicenseSettings/>}
         {page === 'agents' && diagnostics && <DiagnosticsSettings {...diagnostics}/>}
         {page === 'git' && <div className="settings-page">
@@ -176,6 +180,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         </div>}
         {page === 'latex' && diagnostics && <LatexSettings online={diagnostics.online} load={diagnostics.latex} requirements={requirements}/>}
         {page === 'updates' && updates && <UpdateSettings api={updates}/>}
+        {page === 'overleaf' && overleaf && <div className="settings-page"><OverleafAccounts api={overleaf.api} overleaf={overleaf.state}/></div>}
         {page === 'skills' && skills && <SkillLibraryPanel {...skills} controls={skillControls} onClose={onClose}/>}
       </div>
     </section>
