@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -981,6 +982,131 @@ test('ACP can reconnect after a shutdown deadline once the old process actually 
     assert.equal(f.agent.ready, true);
     assert.equal(f.launches.length, 2);
   } finally { f.agent.close(); }
+});
+
+for (const endedBy of ['exitCode', 'signalCode'] as const) for (const error of [false, true]) {
+  test(`ACP waits for close after parent ${endedBy} before ${error ? 'a transport error' : 'shutdown'}`, { timeout: 5000 }, async t => {
+    const f = profileFixture(ACP_PROFILES.qoder, { modes: { availableModes: [{ id: 'default' }] } }, () => assert.fail('No prompt expected'));
+    try {
+      await f.agent.start();
+      const child = f.rpc().child, signals: string[] = [];
+      child.kill = (signal: string) => { signals.push(signal); return true; };
+      child[endedBy] = endedBy === 'exitCode' ? 0 : 'SIGTERM';
+      child.emit('exit', child.exitCode ?? null, child.signalCode ?? null);
+      t.mock.timers.enable({ apis: ['setTimeout'] });
+      if (error) child.emit('error', new Error('Transport closed after parent exit'));
+      let finished = false;
+      const stopped = f.agent.shutdown().finally(() => { finished = true; });
+      const failure = assert.rejects(stopped, /did not exit/);
+      await tick();
+      assert.equal(finished, false, 'parent exit must not release inherited streams');
+      t.mock.timers.tick(10000);
+      await failure;
+      assert.deepEqual(signals, [], 'never signal a parent that has already exited');
+      await assert.rejects(f.agent.start(), /did not exit/);
+      assert.equal(f.launches.length, 1);
+      child.emit('close', child.exitCode ?? null, child.signalCode ?? null);
+      await f.agent.start();
+      assert.equal(f.agent.ready, true);
+      assert.equal(f.launches.length, 2);
+    } finally { f.agent.close(); }
+  });
+}
+
+test('ACP keeps waiting after a transport error and stops signalling once its parent exits', { timeout: 5000 }, async t => {
+  const f = profileFixture(ACP_PROFILES.qoder, { modes: { availableModes: [{ id: 'default' }] } }, () => assert.fail('No prompt expected'));
+  try {
+    await f.agent.start();
+    const child = f.rpc().child, signals: string[] = [];
+    child.kill = (signal: string) => { signals.push(signal); return true; };
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    child.emit('error', new Error('Transport failed'));
+    assert.deepEqual(signals, ['SIGTERM']);
+    child.exitCode = 0;
+    child.emit('exit', 0);
+    let finished = false;
+    const stopped = f.agent.shutdown().then(() => { finished = true; });
+    t.mock.timers.tick(5000);
+    await tick();
+    assert.equal(finished, false);
+    assert.deepEqual(signals, ['SIGTERM'], 'force shutdown must not signal the exited parent');
+    child.emit('close', 0);
+    await stopped;
+    await f.agent.start();
+    assert.equal(f.agent.ready, true);
+  } finally { f.agent.close(); }
+});
+
+test('ACP shutdown after a natural close does not wait for another close or signal the parent', { timeout: 5000 }, async () => {
+  const f = profileFixture(ACP_PROFILES.qoder, { modes: { availableModes: [{ id: 'default' }] } }, () => assert.fail('No prompt expected'));
+  try {
+    await f.agent.start();
+    const child = f.rpc().child;
+    child.kill = () => assert.fail('A closed process must not be signalled');
+    child.exitCode = 0;
+    child.emit('close', 0);
+    await f.agent.shutdown();
+    await f.agent.start();
+    assert.equal(f.launches.length, 2);
+  } finally { f.agent.close(); }
+});
+
+test('ACP shutdown and reconnect wait for a real descendant to release inherited streams', { skip: process.platform === 'win32', timeout: 5000 }, async () => {
+  const script = `
+    const { spawn } = require('node:child_process');
+    const { createInterface } = require('node:readline');
+    createInterface({ input: process.stdin }).on('line', line => {
+      const message = JSON.parse(line);
+      if (message.method === 'test/exit') {
+        const descendant = spawn(process.execPath, ['-e', 'process.stdin.resume(); process.stdin.once("end", () => process.exit(0));'], { stdio: [3, 'inherit', 'inherit'] });
+        descendant.once('spawn', () => process.exit(0));
+        return;
+      }
+      const result = message.method === 'initialize' ? { protocolVersion: 1, agentCapabilities: {} }
+        : message.method === 'session/new' ? { sessionId: 'probe', modes: { availableModes: [{ id: 'default' }] } } : {};
+      if (message.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
+    });
+  `;
+  const processes: { child: ChildProcess; closed: Promise<unknown>; didClose: boolean }[] = [];
+  const agent = new AcpAgent(ACP_PROFILES.qoder, 'fake-qoder', (_binary, _args, options) => {
+    const child = spawn(process.execPath, ['-e', script], { ...options, stdio: ['pipe', 'pipe', 'pipe', 'pipe'] });
+    const entry = { child, closed: Promise.resolve() as Promise<unknown>, didClose: false };
+    entry.closed = once(child, 'close').then(() => { entry.didClose = true; });
+    processes.push(entry);
+    return child;
+  });
+  const release = (child: ChildProcess) => (child.stdio[3] as NodeJS.WritableStream).end();
+  let stopping: Promise<void> | undefined, starting: Promise<void> | undefined;
+  try {
+    await agent.start();
+    const entry = processes[0], exited = once(entry.child, 'exit');
+    entry.child.stdin!.write(JSON.stringify({ method: 'test/exit' }) + '\n');
+    await exited;
+    assert.equal(entry.child.exitCode, 0);
+    assert.equal(entry.didClose, false);
+    let stopped = false;
+    stopping = agent.shutdown().then(() => { stopped = true; });
+    starting = agent.start();
+    void stopping.catch(() => {}); void starting.catch(() => {});
+    await tick();
+    assert.equal(stopped, false, 'the descendant still owns inherited streams');
+    assert.equal(processes.length, 1, 'reconnect must not overlap the descendant');
+    release(entry.child);
+    await entry.closed;
+    await stopping;
+    await starting;
+    assert.equal(processes.length, 2);
+    assert.equal(agent.ready, true);
+  } finally {
+    agent.close();
+    for (const { child } of processes) {
+      release(child);
+      if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL');
+    }
+    await Promise.all(processes.map(entry => entry.closed));
+    await Promise.allSettled([stopping, starting]);
+    await agent.shutdown();
+  }
 });
 
 test('ACP close cancels startup before the process is launched', { timeout: 5000 }, async () => {

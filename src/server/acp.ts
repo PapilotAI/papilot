@@ -201,7 +201,7 @@ export class AcpAgent extends Adapter {
         : { command: findExecutable(this.binary) || this.binary, args: this.profile.args, env: launchEnv };
       const child = this.launch(invocation.command, invocation.args, { cwd: this.launchCwd || os.homedir(), env: invocation.env, stdio: ['pipe', 'pipe', 'pipe'] });
       this.child = child;
-      const failed = (error: Error, exited = false) => { if (this.child === child) this.disconnect(error, true, exited); };
+      const failed = (error: Error, closed = false) => { if (this.child === child) this.disconnect(error, true, closed); };
       createInterface({ input: child.stdout! }).on('line', line => {
         let message: any;
         try { message = JSON.parse(line); } catch { return; }
@@ -552,15 +552,17 @@ export class AcpAgent extends Adapter {
       this.send({ id, method, params });
     });
   }
-  private disconnect(error: Error, notify = true, exited = false) {
+  private disconnect(error: Error, notify = true, closed = false) {
     this.generation++;
     const child = this.child;
     this.child = null; this.ready = false; this.sessions.clear();
     for (const wait of this.pending.values()) { if (wait.timer) clearTimeout(wait.timer); wait.reject(error); }
     this.pending.clear(); this.approvals.clear();
-    if (child && !exited && child.exitCode == null && child.signalCode == null) {
+    if (child && !closed) {
       // close() is synchronous, but callers deleting a worktree or restoring
       // the same session must still be able to await this process later.
+      // Parent exit is insufficient: descendants can retain inherited streams
+      // and keep the worktree in use until the child's close event arrives.
       const closing: Promise<void> = new Promise<void>((resolve, reject) => {
         const onClose = () => {
           clearTimeout(force); clearTimeout(deadline);
@@ -570,7 +572,9 @@ export class AcpAgent extends Adapter {
           resolve();
         };
         child.once('close', onClose);
-        const force = setTimeout(() => { child.kill('SIGKILL'); }, 5000);
+        const force = setTimeout(() => {
+          if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL');
+        }, 5000);
         const deadline = setTimeout(() => {
           reject(new Error(`${this.name} did not exit. Close its process before resuming the task.`));
         }, 10000);
@@ -582,7 +586,7 @@ export class AcpAgent extends Adapter {
       void this.closing.catch(() => {});
     }
     child?.stdin?.end();
-    if (child && !exited && child.exitCode == null && child.signalCode == null) {
+    if (child && !closed && child.exitCode == null && child.signalCode == null) {
       if (child.pid && process.platform === 'win32') killTree(child.pid);
       else child.kill('SIGTERM');
     }
