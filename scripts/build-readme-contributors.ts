@@ -1,15 +1,16 @@
-// Regenerate with: node --import tsx scripts/build-readme-contributors.ts
 // The README's contributor wall: everyone with a merged pull request or a
-// commit on main, as round GitHub avatars. Only the images
-// change when someone new contributes, so the README's text, and with it its
-// translations, stays the same. Set GITHUB_TOKEN to avoid the API's rate limit.
+// commit on main, as round GitHub avatars. The site's deploy (site.yml) runs
+// this after every push to main, so papilot.ai/readme-contributors/ always has
+// the current images and the README, with its translations, never changes for
+// a new contributor. Set GITHUB_TOKEN to avoid the API's rate limit.
+// Try it with: node scripts/build-readme-contributors.ts (writes to _site).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repository = 'PapilotAI/papilot';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const output = path.join(root, 'docs/assets/readme-contributors');
+const output = path.join(root, '_site/readme-contributors');
 const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'papilot-readme' };
 if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
 

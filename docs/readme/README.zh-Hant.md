@@ -148,8 +148,8 @@ npm 版本使用瀏覽器介面，需要 Node.js 22.22+。Nix 需要啟用 flake
 <p>
   <a href="https://github.com/PapilotAI/papilot/graphs/contributors">
     <picture>
-      <source media="(max-width: 600px)" srcset="../assets/readme-contributors/compact.svg">
-      <img src="../assets/readme-contributors/desktop.svg" alt="Papilot 的貢獻者">
+      <source media="(max-width: 600px)" srcset="https://papilot.ai/readme-contributors/compact.svg">
+      <img src="https://papilot.ai/readme-contributors/desktop.svg" alt="Papilot 的貢獻者">
     </picture>
   </a>
 </p>
@@ -158,7 +158,7 @@ npm 版本使用瀏覽器介面，需要 Node.js 22.22+。Nix 需要啟用 flake
 
 ## Star 歷史
 
-<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&logscale=&legend=bottom-right">
+<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&legend=bottom-right">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&theme=dark&legend=bottom-right" />
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />

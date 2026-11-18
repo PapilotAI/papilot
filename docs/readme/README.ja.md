@@ -148,8 +148,8 @@ npm 版はブラウザーで動作し、Node.js 22.22+ が必要です。Nix で
 <p>
   <a href="https://github.com/PapilotAI/papilot/graphs/contributors">
     <picture>
-      <source media="(max-width: 600px)" srcset="../assets/readme-contributors/compact.svg">
-      <img src="../assets/readme-contributors/desktop.svg" alt="Papilot の貢献者">
+      <source media="(max-width: 600px)" srcset="https://papilot.ai/readme-contributors/compact.svg">
+      <img src="https://papilot.ai/readme-contributors/desktop.svg" alt="Papilot の貢献者">
     </picture>
   </a>
 </p>
@@ -158,7 +158,7 @@ npm 版はブラウザーで動作し、Node.js 22.22+ が必要です。Nix で
 
 ## スター数の推移
 
-<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&logscale=&legend=bottom-right">
+<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&legend=bottom-right">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&theme=dark&legend=bottom-right" />
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />

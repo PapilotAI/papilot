@@ -148,8 +148,8 @@ El paquete npm abre la interfaz en el navegador y requiere Node.js 22.22+. Nix r
 <p>
   <a href="https://github.com/PapilotAI/papilot/graphs/contributors">
     <picture>
-      <source media="(max-width: 600px)" srcset="../assets/readme-contributors/compact.svg">
-      <img src="../assets/readme-contributors/desktop.svg" alt="Colaboradores de Papilot">
+      <source media="(max-width: 600px)" srcset="https://papilot.ai/readme-contributors/compact.svg">
+      <img src="https://papilot.ai/readme-contributors/desktop.svg" alt="Colaboradores de Papilot">
     </picture>
   </a>
 </p>
@@ -158,7 +158,7 @@ El paquete npm abre la interfaz en el navegador y requiere Node.js 22.22+. Nix r
 
 ## Historial de estrellas
 
-<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&logscale=&legend=bottom-right">
+<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&legend=bottom-right">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&theme=dark&legend=bottom-right" />
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />

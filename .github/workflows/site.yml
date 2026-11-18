@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: site
@@ -49,6 +50,12 @@ jobs:
           PAPILOT_UMAMI_SCRIPT_URL: ${{ vars.PAPILOT_UMAMI_SCRIPT_URL }}
           PAPILOT_UMAMI_WEBSITE_ID: ${{ vars.PAPILOT_UMAMI_WEBSITE_ID }}
           PAPILOT_ANALYTICS_PRIVACY_URL: ${{ vars.PAPILOT_ANALYTICS_PRIVACY_URL }}
+      # The README shows these images from papilot.ai, so a new contributor
+      # appears with the next push to main.
+      - name: Draw the README's contributor wall
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/build-readme-contributors.ts
       # papilot.ai/universe* is served by the PapilotAI/universe Worker, whose more specific route wins.
       - name: Deploy to Cloudflare
         env:

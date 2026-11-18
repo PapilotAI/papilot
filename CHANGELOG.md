@@ -44,6 +44,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 - **One dialog for new papers.** **Blank**, **Import** and **Templates** share a single panel with preserved drafts, compact inline actions, and a built-in example project. **Templates** directly opens the full Universe gallery with type filters and search. Desktop save locations use a folder summary and **Change…** system picker. Word and Markdown conversion are not included.
 
 - **New paper and Import.** The paper menu and empty screen offer **New paper** and **Import**, and the desktop File menu says **Open Paper…**, replacing the easily confused *Create a new paper* and *Add paper…*. The new-paper dialog shows the folder it will create in place of explanatory text. **Choose folder** in the desktop import dialog opens the system picker and uses the original folder in place. ([#182](https://github.com/PapilotAI/papilot/pull/182))
+- The README's contributor avatars now update by themselves: every deploy of papilot.ai redraws them from merged pull requests and commits, so new contributors appear without a README change. The Star History link opens the linear chart, matching the image.
 
 ### Fixed
 
