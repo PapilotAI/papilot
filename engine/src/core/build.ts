@@ -432,21 +432,29 @@ export class Builder {
    *  app upgrades, with the same compatibility checks as incremental builds. */
   async buildSeed(rev: string, options: { force?: boolean; progress?: (progress: BuildProgress) => void; priority?: WantedPriority } = {}): Promise<BuildInfo> {
     if (options.force) return this.build(rev, ["full"], null, options);
-    let version: string;
-    try { version = await commandVersion(this.project.engine); }
-    catch { return this.build(rev, ["full"], null, options); }
-    const tree = await this.repo.treeIdAsync(rev, this.project.source_dir),
-      fixedDate = process.env.SOURCE_DATE_EPOCH ? buildDate() : null,
-      context = hash(JSON.stringify([signature(this.project), version, ...(fixedDate ? [fixedDate] : [])]));
+    const { tree, context, cacheKey } = await this.resolve(rev, ["full"], null),
+      entries = this.recent(["full"]), preferred = this.preferred(cacheKey);
+    // Older caches did not record recovered refreshes in history. Establish
+    // fresh evidence instead of resurrecting their superseded clean seed.
+    if (preferred && (!entries.some(entry => entry.key === preferred) || !await this.finished(path.join(this.cache, preferred))))
+      return this.build(rev, ["full"], null, { ...options, force: true });
     let incomplete = false;
-    for (const entry of this.recent(["full"])) {
+    for (const entry of entries) {
       if (entry.context !== context || (entry.tree && entry.tree !== tree)
         || (process.env.SOURCE_DATE_EPOCH && entry.date !== process.env.SOURCE_DATE_EPOCH)) continue;
       let matched = false;
       try {
-        const folder = path.join(this.cache, entry.key), info = await this.finished(folder);
+        const replacement = this.preferred(entry.key),
+          folder = path.join(this.cache, replacement ?? entry.key), info = await this.finished(folder);
+        if (replacement && !info) return this.build(rev, ["full"], null, { ...options, force: true });
         if (!info || info.tree !== tree || JSON.stringify(info.targets) !== '["full"]') continue;
         matched = true;
+        // The latest full result governs scope even when its auxiliaries
+        // cannot be reused: callers compare whole to retain its diagnostics.
+        if (info.errors?.length) {
+          await this.remember(["full"], { ...entry, key: info.key, tree });
+          return info;
+        }
         const main = path.posix.basename(this.project.main), out = path.dirname(info.pdf),
           auxiliary = new Set([path.basename(main, ".tex") + ".aux"]);
         await fs.promises.access(path.join(info.cwd, main));
@@ -456,7 +464,7 @@ export class Builder {
           const text = await fs.promises.readFile(path.join(out, file), "utf8");
           for (const match of text.matchAll(/\\@input\{([^}]+\.aux)\}/g)) auxiliary.add(match[1]);
         }
-        await this.remember(["full"], { ...entry, tree });
+        await this.remember(["full"], { ...entry, key: info.key, tree });
         return info;
       } catch { incomplete ||= matched; }
     }
@@ -693,8 +701,9 @@ export class Builder {
       active.delete(run);
       schedule();
     }
-    // What TeX left after errors is no state for another build to continue.
-    if (!pastErrors && !result.errors?.length) await this.remember(targets, { key, context, date: date.SOURCE_DATE_EPOCH, tree, dated });
+    // Full results govern seed selection, including recovered diagnostics.
+    // closest() separately excludes their auxiliary state from continuation.
+    if (!pastErrors && (!result.errors?.length || !partial)) await this.remember(targets, { key, context, date: date.SOURCE_DATE_EPOCH, tree, dated });
     if (options.force) {
       const preferred = this.preferredFile(cacheKey);
       await withLock(preferred, () => writeJsonAsync(preferred, { key }));
@@ -767,6 +776,7 @@ export class Builder {
     const candidates = (await Promise.all(this.recent(targets).filter((r) => r.context === context).map(async (r) => {
       try {
         const info = JSON.parse(await fs.promises.readFile(path.join(this.cache, r.key, "result.json"), "utf8")) as BuildInfo;
+        if (info.errors?.length) return null;
         if (JSON.stringify(info.targets) !== JSON.stringify(targets)) return null;
         await Promise.all([fs.promises.access(info.pdf), fs.promises.access(info.root)]);
         const changed = info.tree === tree ? 0 : (await this.repo.runAsync(["diff-tree", "-r", "--name-only", "-z", info.tree, tree])).toString().split("\0").filter(Boolean).length;

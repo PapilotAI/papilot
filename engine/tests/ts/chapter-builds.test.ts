@@ -53,6 +53,64 @@ const chapter = (name: string, other: string, cite: string, opening: string) => 
 ${opening} See Section~\ref{sec:${other}} on page~\pageref{sec:${other}} and \cite{${cite}}.
 ${Array.from({ length: 40 }, (_, i) => `Body ${name} sentence ${i}.`).join(" ")}
 `;
+it.skipIf(!tex)("a recovered full refresh supersedes clean chapter seeds without becoming continuation state", async () => {
+  const f = new Fixture(), external = path.join(f.base, "package.tex");
+  try {
+    fs.writeFileSync(external, "Package text.\n");
+    f.write("paper/main.tex", "\\documentclass{book}\n\\begin{document}\n\\include{chapters/a}\n\\include{chapters/b}\n\\end{document}\n");
+    f.write("paper/chapters/a.tex", "\\chapter{A}\nOriginal chapter a.\n");
+    f.write("paper/chapters/b.tex", `\\chapter{B}\nOriginal chapter b.\\input{${external.replaceAll("\\", "/")}}\n`);
+    f.repo.run(["rm", "-q", "paper/sections/method.tex"]);
+    f.repo.run(["add", "-A"]); f.repo.run(["commit", "-qm", "Book"]);
+    const app = f.app(), task = app.tasks.create("refresh", "Refresh", [], ["paper"], true), builder = new Builder(app.project, app.repo);
+    const clean = await builder.buildSeed(task.base);
+    expect(clean.errors).toBeUndefined();
+    const history = ["recent.json", "latest.json"].map(name => ({ file: path.join(builder.cache, name), bytes: fs.readFileSync(path.join(builder.cache, name)) }));
+    // A package update changes compilation without changing the Git tree or
+    // TeX engine version, just as a manual recompile can discover in practice.
+    fs.writeFileSync(external, "Package text. \\PackageError{fixture}{Updated package diagnostic}{}\n");
+    const recovered = await builder.build(task.base, ["full"], null, { force: true });
+    expect(recovered.errors?.join("\n")).toContain("Updated package diagnostic");
+    expect((await builder.build(task.base)).key).toBe(recovered.key);
+    expect((await builder.buildSeed(task.base)).key).toBe(recovered.key);
+    // Older caches recorded only the clean build. Their preferred refresh
+    // still must prevent it from being selected again, including after loss.
+    for (const { file, bytes } of history) fs.writeFileSync(file, bytes);
+    let authoritative = await builder.buildSeed(task.base);
+    expect(authoritative.errors?.join("\n")).toContain("Updated package diagnostic");
+    fs.rmSync(path.join(path.dirname(authoritative.pdf), "main.aux"));
+    expect((await builder.buildSeed(task.base)).key).toBe(authoritative.key);
+    fs.rmSync(authoritative.pdf);
+    authoritative = await builder.buildSeed(task.base);
+    expect(authoritative.errors?.join("\n")).toContain("Updated package diagnostic");
+    // Recovered output must not be copied into the next incremental build.
+    fs.writeFileSync(path.join(path.dirname(authoritative.pdf), "recovered-only.cache"), "Do not continue this output.");
+    f.edit(task, "paper/chapters/a.tex", "Original", "Revised");
+    const checked = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
+    expect(checked.error).toBeUndefined();
+    expect(checked.targets).toEqual(["full"]);
+    expect(checked.errors?.join("\n")).toContain("Updated package diagnostic");
+    expect(text(checked.compiled!.pdf)).toContain("Original chapter b.");
+    expect(fs.existsSync(path.join(path.dirname(checked.compiled!.pdf), "recovered-only.cache"))).toBe(false);
+    const job = app.publisher.submit(task.name, undefined, false);
+    await app.publisher.join();
+    expect(app.publisher.job(job.id).status).toBe("done");
+    const round = app.review.latestRound(task.name)!;
+    expect(round.summary.targets).toEqual(["full"]);
+    expect(round.summary.baselineErrors?.join("\n")).toContain("Updated package diagnostic");
+    expect(round.summary.revisedErrors?.join("\n")).toContain("Updated package diagnostic");
+    fs.writeFileSync(external, "Package text, repaired.\n");
+    // A newer successful dated comparison takes precedence even while the
+    // ordinary-preview preferred pointer still names the recovered refresh.
+    const repaired = await builder.build(task.base, ["full"], null, { date: { SOURCE_DATE_EPOCH: "1700000000", FORCE_SOURCE_DATE: "1" } });
+    expect(repaired.errors).toBeUndefined();
+    expect((await builder.buildSeed(task.base)).key).toBe(repaired.key);
+    const again = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
+    expect(again.targets).toEqual(["chapters/a"]);
+    expect(again.errors).toEqual([]);
+  } finally { await f.close(); }
+}, 180000);
+
 it.skipIf(!tex)("chapter reviews recover persistent auxiliary errors after a clean retry", async () => {
   const f = new Fixture(), problem = String.raw`\makeatletter
 \protected@write\@auxout{}{\string\undefinedchaptercommand}

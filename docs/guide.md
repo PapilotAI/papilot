@@ -241,7 +241,7 @@ Papilot continues past recoverable LaTeX errors by default and shows the generat
 
 Task reviews and Git comparisons show compiler errors for both the original and revised text. When accepting only some changes produces errors, the accepted PDF shows its own diagnostics; expand the message above its pages to read them. Agents receive these diagnostics when they use `view_pdf`, and AI reviewers receive the errors associated with their saved PDF.
 
-Chapter comparisons also include chapters changed by earlier accepted edits. If the initial full build has errors, Papilot compares the whole document so errors in other chapters remain visible. Papilot retries errors from generated auxiliary files with fresh state; recoverable errors that persist after the retry stay alongside the PDF.
+Chapter comparisons also include chapters changed by earlier accepted edits. If the latest full build has errors, Papilot compares the whole document so errors in other chapters remain visible. Papilot retries errors from generated auxiliary files with fresh state; recoverable errors that persist after the retry stay alongside the PDF.
 
 To stop at the first error instead, add `"halt_on_error": true` to the existing object in `.git/papilot/settings.json`, then recompile. Set it to `false` or remove it to restore the default. This setting belongs to the selected root document and is restored when you switch back to it.
 
