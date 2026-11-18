@@ -78,7 +78,10 @@ const AUXILIARY = new Set([
 // Only generated-state diagnostics justify rebuilding a cached seed. Source
 // errors and interrupted compilers must keep their original failure.
 export function auxiliaryBuildError(error: unknown): error is BuildError {
-  return error instanceof BuildError && error.details.some((line) => {
+  return error instanceof BuildError && auxiliaryDiagnostics(error.details);
+}
+export function auxiliaryDiagnostics(details: readonly string[] = []) {
+  return details.some((line) => {
     const file = /(?:^|[/\\\s(])(?:\.\/)?build[/\\]([^:\r\n]+):\d+:/.exec(line)?.[1];
     return file !== undefined && AUXILIARY.has(path.extname(file));
   });
@@ -1036,8 +1039,10 @@ export class Builder {
       errors = compilerDiagnostics(logText, transcriptText);
       if (!errors.length) errors = transcriptText.split("\n").slice(-25);
     }
-    // Stale auxiliary files still need a clean retry, even if TeX wrote a PDF.
-    const auxiliaryFailure = errors?.length && (start || (partial && seed)) && auxiliaryBuildError(new BuildError("LaTeX failed to compile.", errors));
+    // Retry stale continuation state once, even if TeX wrote a PDF. After
+    // that clean attempt, current source may still generate auxiliary errors;
+    // retain its recovered PDF and diagnostics, including for chapter builds.
+    const auxiliaryFailure = start && auxiliaryDiagnostics(errors);
     if ((!past && failure) || !writtenPdf || auxiliaryFailure) {
       const transcriptText = await fs.promises.readFile(transcript, "utf8"),
         details = compilerDiagnostics(logText, transcriptText),

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { ROOT, codeVersion } from "../runtime.ts";
-import { Builder, BuildError, auxiliaryBuildError, buildDate, reprioritize, type BuildPriority } from "./build.ts";
+import { Builder, BuildError, auxiliaryBuildError, auxiliaryDiagnostics, buildDate, reprioritize, type BuildPriority } from "./build.ts";
 import { diffUnitsAsync, scopeViolationsAsync, withHashesAsync, withUnits } from "./changes.ts";
 import { provisional, roundFolder, writeProvisional } from "./carry.ts";
 import { acceptNoteOption, noteOptionUnits } from "./note-options.ts";
@@ -820,10 +820,11 @@ export class Publisher {
       ]);
     };
     let builds: PromiseSettledResult<BuildInfo>[] = await versions();
-    if (!this.stopping && seed && builds.some((built) => built.status === "rejected" && auxiliaryBuildError(built.reason))) {
+    if (!this.stopping && seed && builds.some((built) => built.status === "rejected" ? auxiliaryBuildError(built.reason) : auxiliaryDiagnostics(built.value.errors))) {
       // An external package can invalidate readable aux files without
       // changing the source tree or engine version. Rebuild the seed once,
       // after both attempts finish, then use it for both comparison sides.
+      // Persistent recoverable errors in that second attempt remain visible.
       seed = await this.compile(job, "baseline", builder, base, ["full"], null, { asSeed: true, force: true }).catch(failed("The comparison baseline could not be compiled."));
       if (seed.errors?.length) { targets = ["full"]; seed = null; this.revisions.delete(job.id); }
       builds = await versions();

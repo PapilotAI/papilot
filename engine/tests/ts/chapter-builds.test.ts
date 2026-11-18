@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { it, expect, vi } from "vitest";
 import { Builder } from "../../src/core/build.ts";
-import { loadProject } from "../../src/core/config.ts";
+import { loadProject, writeSettings } from "../../src/core/config.ts";
 import { which } from "../../src/core/process.ts";
 import { mupdf } from "../../src/render/pdf.ts";
 import { Fixture } from "./helpers.ts";
@@ -53,6 +53,68 @@ const chapter = (name: string, other: string, cite: string, opening: string) => 
 ${opening} See Section~\ref{sec:${other}} on page~\pageref{sec:${other}} and \cite{${cite}}.
 ${Array.from({ length: 40 }, (_, i) => `Body ${name} sentence ${i}.`).join(" ")}
 `;
+it.skipIf(!tex)("chapter reviews recover persistent auxiliary errors after a clean retry", async () => {
+  const f = new Fixture(), problem = String.raw`\makeatletter
+\protected@write\@auxout{}{\string\undefinedchaptercommand}
+\makeatother`;
+  try {
+    f.write("paper/main.tex", "\\documentclass{book}\n\\begin{document}\n\\include{chapters/a}\n\\include{chapters/b}\n\\end{document}\n");
+    for (const name of ["a", "b"])
+      f.write(`paper/chapters/${name}.tex`, `\\chapter{${name.toUpperCase()}}\nOriginal chapter ${name}.\n`);
+    f.repo.run(["rm", "-q", "paper/sections/method.tex"]);
+    f.repo.run(["add", "-A"]); f.repo.run(["commit", "-qm", "Book"]);
+    let app = f.app();
+    await app.ready;
+    const task = app.tasks.create("auxiliary", "Auxiliary", [], ["paper"], true);
+    const publish = async () => {
+      const job = app.publisher.submit(task.name, undefined, false);
+      await app.publisher.join();
+      const done = app.publisher.job(job.id);
+      expect(done.status, JSON.stringify(done.result)).toBe("done");
+      return app.review.latestRound(task.name)!;
+    };
+    // A stale omitted chapter must still refresh its seed in both entry paths.
+    const seed = await new Builder(app.project, app.repo).buildSeed(task.base);
+    fs.appendFileSync(path.join(path.dirname(seed.pdf), "chapters/b.aux"), "\\staleseedcommand\n");
+    f.edit(task, "paper/chapters/a.tex", "Original", "Updated");
+    const refreshed = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
+    expect(refreshed.error).toBeUndefined();
+    expect(refreshed.errors).toEqual([]);
+    const freshSeed = await new Builder(app.project, app.repo).buildSeed(task.base);
+    fs.appendFileSync(path.join(path.dirname(freshSeed.pdf), "chapters/b.aux"), "\\staleseedcommand\n");
+    const clean = await publish();
+    expect(clean.summary.baselineErrors).toBeUndefined();
+    expect(clean.summary.revisedErrors).toBeUndefined();
+    f.edit(task, "paper/chapters/a.tex", "Updated", "Original");
+    f.edit(task, "paper/chapters/a.tex", "Original chapter a.", `Revised chapter a.\n${problem}`);
+    const checked = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
+    expect(checked.error).toBeUndefined();
+    expect(checked.targets).toEqual(["chapters/a"]);
+    expect(checked.errors?.join("\n")).toContain("Undefined control sequence");
+    const first = await publish();
+    expect(first.summary.revisedErrors?.join("\n")).toContain("Undefined control sequence");
+    expect(first.summary.baselineErrors).toBeUndefined();
+    await app.review.decide(task.name, { action: "accept", round: first.number, changes: first.units.map(unit => unit.id) });
+    await app.applied.join();
+    expect((await app.applied.state(task.name)).shown?.errors?.join("\n")).toContain("Undefined control sequence");
+
+    // Strict mode still recovers the broken accepted baseline while showing
+    // a repair, even though the task's original full seed compiles cleanly.
+    await app.close(); f.apps.splice(f.apps.indexOf(app), 1);
+    writeSettings(f.root, { halt_on_error: true });
+    app = f.app(); await app.ready;
+    f.edit(task, "paper/chapters/a.tex", problem, "");
+    const repaired = await publish();
+    expect(repaired.summary.targets).toEqual(["chapters/a"]);
+    expect(repaired.summary.sourceOnly).toBeUndefined();
+    expect(repaired.summary.baselineErrors?.join("\n")).toContain("Undefined control sequence");
+    expect(repaired.summary.revisedErrors).toBeUndefined();
+    const builder = new Builder(app.project, app.repo), before = await builder.completed(repaired.summary.builds.at(-2)!);
+    expect(before?.errors?.join("\n")).toContain("Undefined control sequence");
+    expect(text(before!.pdf)).toContain("Revised chapter a.");
+  } finally { await f.close(); }
+}, 180000);
+
 it.skipIf(!tex).each(["seed", "accepted"])("chapter reviews retain errors outside the new edit from the %s text", async (origin) => {
   const f = new Fixture(), problem = "\\PackageError{fixture}{Other chapter diagnostic}{}";
   try {
