@@ -46,7 +46,10 @@ try {
       const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
       if (url.pathname.startsWith('/review/')) return route.fallback();
       if (url.pathname.endsWith('/manuscript')) return route.fulfill({ json: { annotations: [], build: { status: 'idle' }, git: { files: [] } } });
-      if (/\/api\/tasks\/[^/]+\/pdf$/.test(url.pathname)) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
+      if (/\/api\/tasks\/[^/]+\/pdf$/.test(url.pathname)) {
+        if (url.searchParams.get('metadata') === '1') return route.fulfill({ json: { url: `${url.pathname}?round=${url.searchParams.get('round')}&build=fixture` } });
+        return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
+      }
       if (url.pathname === '/api/state') return json({ version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/fixture/paper' }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } });
       if (url.pathname === '/api/runtime/requirements') return json(readyRequirements);
       if (url.pathname === '/api/updates') return json({ currentVersion: 'test', phase: 'idle' });

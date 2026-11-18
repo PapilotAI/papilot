@@ -17,6 +17,15 @@ const task = { id: 'task', projectId: 'paper', agent: 'codex', name: 'task', tit
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
 const manuscript = { annotations: [], git: { branch: 'main', files: [] }, build: { status: 'ready', key: 'baseline', current: true } };
 let brokenReview = false;
+const gate = () => { let release; const promise = new Promise(resolve => { release = resolve; }); return { promise, release }; };
+const firstProblems = ['main.tex:8: Undefined control sequence.\nl.8 \\undefinedmacro\n' + 'Additional compiler context for the retained PDF.\n'.repeat(18)];
+const retained = new Map([
+  [1, { errors: firstProblems, download: gate() }],
+  [3, { errors: ['chapters/results.tex:14: Missing $ inserted.'], metadata: gate(), download: gate() }],
+  [4, { errors: ['These problems belong to a PDF that failed to download.'], failPdf: true }],
+  [5, { failMetadata: true }],
+  [6, { download: gate() }],
+]);
 await page.addInitScript(() => { localStorage.setItem('papilot:task', 'task'); localStorage.setItem('papilot:language', 'en'); });
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
@@ -36,6 +45,16 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/manuscript')) return json(manuscript);
   if (url.pathname.endsWith('/manuscript.pdf') || url.pathname.endsWith('/pdf')) {
     requests.push(url.pathname + url.search);
+    const round = Number(url.searchParams.get('round')), source = retained.get(round);
+    if (url.searchParams.get('metadata') === '1') {
+      await source?.metadata?.promise;
+      if (source?.failMetadata) return route.fulfill({ status: 503, json: { error: 'PDF metadata unavailable' } });
+      return json({ url: `${url.pathname}?round=${round}&build=round-${round}`, ...(source?.errors ? { errors: source.errors } : {}) });
+    }
+    if (url.searchParams.has('build')) {
+      await source?.download?.promise;
+      if (source?.failPdf) return route.fulfill({ status: 404, json: { error: 'PDF unavailable' } });
+    }
     if (url.searchParams.get('key') === 'broken') return route.fulfill({ status: 500, json: { error: 'PDF unavailable' } });
     return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   }
@@ -114,6 +133,37 @@ try {
   await expect(frame.locator('html')).toHaveAttribute('data-view', 'paper');
   await frame.locator('#paper').evaluate(el => { el.innerHTML = '<div class="paper-status" role="status">Preparing the full PDF…</div>'; });
   await readable();
+  const problems = preview.locator('.pdf-compilation-problems');
+  await expect.poll(() => requests.some(url => url.endsWith('round=1&build=round-1'))).toBe(true);
+  assert.ok(await original.evaluate(el => el.isConnected), 'Metadata must not replace the current pages');
+  await expect(problems).toHaveCount(0);
+  retained.get(1).download.release();
+  await expect(problems).toBeVisible();
+  await expect(problems.locator('pre')).toHaveText(firstProblems.join('\n\n'));
+  await readable();
+  // Native disclosure controls remain operable by keyboard, with a separate
+  // focusable scroll area that leaves the PDF usable even for a long log.
+  await problems.locator('summary').focus(); await page.keyboard.press('Enter');
+  await expect(problems).toHaveAttribute('open', '');
+  await page.keyboard.press('Tab'); await expect(problems.locator('pre')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(() => problems.locator('pre').evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  fs.mkdirSync('test-results', { recursive: true });
+  for (const [size, viewport] of [['desktop', { width: 1440, height: 900 }], ['mobile', { width: 390, height: 844 }]]) {
+    await page.setViewportSize(viewport);
+    for (const theme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: theme });
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await readable();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      assert.ok((await problems.locator('pre').boundingBox()).height <= 160);
+      await problems.locator('pre').evaluate(el => { el.scrollTop = 0; });
+      await page.screenshot({ path: `test-results/persistent-pdf-problems-${size}-${theme}.png`, animations: 'disabled' });
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 900 }); await page.emulateMedia({ colorScheme: 'light' });
+  await problems.locator('summary').focus(); await page.keyboard.press(' ');
+  await expect(problems).not.toHaveAttribute('open');
   await expect(preview.locator('.pdf-toolbar').getByRole('button', { name: 'Changes', exact: true })).toBeVisible();
   await preview.locator('.pdf-toolbar').getByRole('button', { name: 'Changes', exact: true }).click();
   await expect(frame.locator('html')).toHaveAttribute('data-view', 'changes');
@@ -141,6 +191,48 @@ try {
   await expect(page.locator('.task-document-actions').getByRole('button', { name: 'Apply to workspace', exact: true })).toBeVisible();
   task.status = 'failed'; task.deferred = false; task.review = { state: 'build_failed', round: 2, counts: {}, job: { status: 'failed' } }; await sync();
   await expect(page.locator('.task-document-actions').getByRole('button', { name: 'Apply to workspace', exact: true })).toHaveCount(0);
+  // The retained reader must keep both pages and their diagnostics until the
+  // replacement metadata and immutable PDF have each loaded successfully.
+  async function publish(round) {
+    task.status = 'reviewing'; task.review = { state: 'reviewing', round, counts: { pending: 1 } }; await sync();
+    await frame.locator('#paper').evaluate((el, round) => {
+      document.documentElement.dataset.papilotRound = String(round);
+      el.innerHTML = '<p>Changes are ready</p>';
+    }, round);
+    await expect.poll(() => requests.some(url => url.includes(`round=${round}&retained=1&metadata=1`))).toBe(true);
+    await frame.locator('#paper').evaluate(el => { el.innerHTML = '<p class="comparison-waiting" data-state="failed">Comparison unavailable</p>'; });
+    await readable();
+  }
+  const firstRetained = await canvas.elementHandle();
+  await publish(3);
+  await expect(problems.locator('pre')).toHaveText(firstProblems.join('\n\n'));
+  assert.ok(await firstRetained.evaluate(el => el.isConnected));
+  retained.get(3).metadata.release();
+  await expect.poll(() => requests.some(url => url.endsWith('round=3&build=round-3'))).toBe(true);
+  await expect(problems.locator('pre')).toHaveText(firstProblems.join('\n\n'));
+  assert.ok(await firstRetained.evaluate(el => el.isConnected));
+  retained.get(3).download.release();
+  await expect(problems.locator('pre')).toHaveText(retained.get(3).errors[0]);
+  await readable();
+  assert.equal(await firstRetained.evaluate(el => el.isConnected), false);
+  const replacement = await canvas.elementHandle();
+  const failedPdf = page.waitForResponse(response => response.url().endsWith('round=4&build=round-4'));
+  await publish(4); assert.equal((await failedPdf).status(), 404);
+  await expect(problems.locator('pre')).toHaveText(retained.get(3).errors[0]);
+  assert.ok(await replacement.evaluate(el => el.isConnected), 'A failed PDF download keeps the previous document and errors');
+  const failedMetadata = page.waitForResponse(response => response.url().endsWith('round=5&retained=1&metadata=1'));
+  await publish(5); assert.equal((await failedMetadata).status(), 503);
+  await expect(problems.locator('pre')).toHaveText(retained.get(3).errors[0]);
+  assert.ok(await replacement.evaluate(el => el.isConnected), 'A failed metadata request keeps the previous document and errors');
+  assert.ok(!requests.some(url => url.endsWith('round=5&build=round-5')));
+  await publish(6);
+  await expect.poll(() => requests.some(url => url.endsWith('round=6&build=round-6'))).toBe(true);
+  await expect(problems.locator('pre')).toHaveText(retained.get(3).errors[0]);
+  assert.ok(await replacement.evaluate(el => el.isConnected), 'Clean metadata alone must not clear the displayed diagnostics');
+  retained.get(6).download.release();
+  await expect(problems).toHaveCount(0); await readable();
+  assert.equal(await replacement.evaluate(el => el.isConnected), false, 'The repaired PDF replaces the pages and clears their old diagnostics together');
+  task.status = 'failed'; task.review = { state: 'build_failed', round: 7, counts: {}, job: { status: 'failed' } }; await sync();
   fs.mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/persistent-pdf-desktop.png' });
   // Reloading a failed review still has the manuscript as a fallback.
@@ -183,5 +275,12 @@ try {
   await expect(page.locator('.task-grid')).toHaveClass(/layout-split/);
   assert.equal(await page.evaluate(() => localStorage.getItem('papilot:layout')), null, 'An earlier saved view is cleared');
   assert.deepEqual(errors, []);
-  console.log('PASS: Persistent PDF across task states, no changes, failed replacement, review readiness/failure, PDF-mode escape, hidden Chat shortcuts/place retention, reload, and mobile');
-} finally { await browser.close(); await server.close(); }
+  console.log('PASS: Persistent PDF across task states, build-bound diagnostics, delayed/failed/repaired replacements, keyboard disclosure, desktop/mobile themes, PDF-mode escape, hidden Chat shortcuts/place retention, and reload');
+} catch (error) {
+  console.error(error);
+  await page.screenshot({ path: 'test-results/persistent-pdf-failure.png' }).catch(() => {});
+  throw error;
+} finally {
+  for (const source of retained.values()) { source.metadata?.release(); source.download?.release(); }
+  await browser.close(); await server.close();
+}

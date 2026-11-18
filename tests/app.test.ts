@@ -1622,25 +1622,64 @@ test('the review page shows each TeX pass of a round\'s new version in the full 
   } finally { engine.close(); await f.close(); fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-test('retained task PDF previews reuse compiled chapter PDFs without forcing a foreground full-paper build', async () => {
+test('retained task PDFs bind compilation problems to immutable builds and reject mismatched builds', async () => {
   const f = await fixture(), base = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-retained-')), root = path.join(base, 'paper');
   try {
     fs.mkdirSync(root);
-    execFileSync('git', ['-C', root, 'init', '-q']);
+    const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@localhost', ...args], { encoding: 'utf8' }).trim();
+    git('init', '-q');
     fs.mkdirSync(path.join(root, '.git/papilot'), { recursive: true }); fs.writeFileSync(path.join(root, '.git/papilot/settings.json'), JSON.stringify({ main: 'main.tex', engine: 'pdflatex' }));
+    fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\\begin{document}Before.\\end{document}\n');
+    git('add', 'main.tex'); git('commit', '-qm', 'Before');
+    const before = git('rev-parse', 'HEAD'), beforeTree = git('rev-parse', 'HEAD^{tree}');
     fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\\begin{document}\\undefinedmacro\\end{document}\n');
+    git('add', 'main.tex'); git('commit', '-qm', 'After');
+    const after = git('rev-parse', 'HEAD'), tree = git('rev-parse', 'HEAD^{tree}');
     const buildKey = '0123456789abcdef0123456789abcdef';
-    const cacheDir = path.join(root, '.git/papilot/cache/builds', buildKey);
-    const chaptersPdfPath = path.join(cacheDir, 'chapters.pdf');
-    fs.mkdirSync(cacheDir, { recursive: true });
-    fs.writeFileSync(chaptersPdfPath, '%PDF-1.4\nchapters\n');
-    fs.writeFileSync(path.join(cacheDir, 'result.json'), JSON.stringify({ pdf: chaptersPdfPath }));
+    const problems = ['main.tex:1: Undefined control sequence.\n' + 'Long diagnostic context. '.repeat(3000)];
+    const saveBuild = (key: string, label: string, tree: string, targets: string[], errors?: string[]) => {
+      const cacheDir = path.join(root, '.git/papilot/cache/builds', key), pdf = path.join(cacheDir, 'paper.pdf');
+      fs.mkdirSync(cacheDir, { recursive: true }); fs.writeFileSync(pdf, `%PDF-1.4\n${label}\n`);
+      fs.writeFileSync(path.join(cacheDir, 'result.json'), JSON.stringify({ key, pdf, tree, targets, errors }));
+      return pdf;
+    };
+    const chaptersPdfPath = saveBuild(buildKey, 'chapters', tree, ['chapters/intro'], problems);
     f.store.saveProject({ id: 'paper', name: 'Paper', path: root, createdAt: 1 });
     f.store.saveTask({ id: 'chapter-task', projectId: 'paper', agent: 'codex', name: 'chapter-task', title: 'Edit chapter', instructions: '', worktree: root, threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 1 } } } as any);
-    f.review.get = async (route: string) => (route.endsWith('/rounds/1') ? { before: 'before-rev', after: 'after-rev', build: { key: buildKey, targets: ['chapters/intro'] } } : {}) as any;
+    const completeKey = '11111111111111111111111111111111';
+    f.review.get = async (route: string) => (route.endsWith('/rounds/1') ? { before, after, build: { key: buildKey, targets: ['chapters/intro'] } }
+      : route.endsWith('/rounds/2') ? { before, after, build: { key: completeKey, targets: ['full'] } } : {}) as any;
     const reply = await f.local.inject({ url: '/api/tasks/chapter-task/pdf?round=1&retained=1', headers: LOCAL });
     assert.equal(reply.statusCode, 200, reply.body);
     assert.equal(reply.body, '%PDF-1.4\nchapters\n');
+    const metadata = await f.local.inject({ url: '/api/tasks/chapter-task/pdf?round=1&retained=1&metadata=1', headers: LOCAL });
+    assert.equal(metadata.statusCode, 200, metadata.body);
+    assert.deepEqual(metadata.json(), { url: `/api/tasks/chapter-task/pdf?round=1&build=${buildKey}`, errors: problems });
+    assert.equal(metadata.headers['cache-control'], 'no-store');
+    // Completing a full build does not change the PDF named by earlier metadata.
+    saveBuild(completeKey, 'complete', tree, ['full']);
+    const clean = await f.local.inject({ url: '/api/tasks/chapter-task/pdf?round=2&retained=1&metadata=1', headers: LOCAL });
+    assert.deepEqual(clean.json(), { url: `/api/tasks/chapter-task/pdf?round=2&build=${completeKey}` });
+    const pinned = await f.local.inject({ url: metadata.json().url, headers: LOCAL });
+    assert.equal(pinned.statusCode, 200, pinned.body);
+    assert.equal(pinned.body, reply.body);
+    const reviewPdf = `/review/paper/pdf/chapter-task/1?build=${buildKey}`;
+    assert.equal((await f.local.inject({ url: reviewPdf, headers: LOCAL })).body, reply.body);
+    const wrongTree = '22222222222222222222222222222222', otherChapters = '33333333333333333333333333333333';
+    saveBuild(wrongTree, 'earlier paper', beforeTree, ['full']);
+    saveBuild(otherChapters, 'other chapters', tree, ['chapters/other']);
+    for (const key of [wrongTree, otherChapters, 'invalid', '44444444444444444444444444444444']) {
+      for (const url of [`/api/tasks/chapter-task/pdf?round=1&build=${key}`, `/review/paper/pdf/chapter-task/1?build=${key}`]) {
+        assert.equal((await f.local.inject({ url, headers: LOCAL })).statusCode, 404, url);
+      }
+    }
+    assert.equal((await f.local.inject({ url: `${metadata.json().url}&version=before`, headers: LOCAL })).statusCode, 404);
+    assert.equal((await f.local.inject({ url: `${reviewPdf}&pass=1`, headers: LOCAL })).statusCode, 404);
+    for (const query of ['metadata=1', 'retained=1&metadata=1&version=before', `retained=1&metadata=1&build=${buildKey}`]) {
+      assert.equal((await f.local.inject({ url: `/api/tasks/chapter-task/pdf?round=1&${query}`, headers: LOCAL })).statusCode, 400);
+    }
+    fs.rmSync(chaptersPdfPath);
+    assert.equal((await f.local.inject({ url: metadata.json().url, headers: LOCAL })).statusCode, 404, 'a missing immutable PDF must not silently compile a different build');
   } finally { await f.close(); fs.rmSync(base, { recursive: true, force: true }); }
 });
 

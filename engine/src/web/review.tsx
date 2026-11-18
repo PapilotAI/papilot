@@ -2031,7 +2031,7 @@ export function ReviewApp({
               </details>
             </div>
           ) : null}
-          {detail?.revisedErrors?.length ? (
+          {detail?.revisedErrors?.length && (!paperView || appliedPaper) ? (
             <CompilationErrors title={t("The revised text has compilation errors.")} errors={detail.revisedErrors} />
           ) : null}
           {detail?.baselineErrors?.length ? (
@@ -2076,6 +2076,7 @@ export function ReviewApp({
                   key={`${placeKey}:pdf:${detail.round}:${detail.pdf}`}
                   url={detail.pdf!}
                   passes={detail.passes}
+                  errors={detail.revisedErrors}
                   changes={placed}
                   render={(block, at) => change(block, at, true)}
                   scrollRoot={paper}

@@ -21,7 +21,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
-- Continue compiling after recoverable LaTeX errors and show the resulting PDF with its diagnostics in task reviews, accepted PDFs, Git comparisons and agent reviews. Fatal errors still fail the build, including when XeLaTeX leaves a truncated PDF. Set `"halt_on_error": true` in the document's `.git/papilot/settings.json` to stop at the first error. Stale Beamer navigation files still trigger an automatic clean rebuild.
+- Continue compiling after recoverable LaTeX errors and show the resulting PDF with its diagnostics in task reviews, full and retained PDFs, accepted PDFs, Git comparisons and agent reviews. Diagnostics follow the PDF actually displayed, including errors found only during a full-document build after a clean chapter comparison. Fatal errors still fail the build, including when XeLaTeX leaves a truncated PDF. Set `"halt_on_error": true` in the document's `.git/papilot/settings.json` to stop at the first error. Stale Beamer navigation files still trigger an automatic clean rebuild.
 - Refresh the Mac installer with a minimal PDF diff and annotation: a blue connector guides the Papilot icon from the selected paper region into Applications inside its note. Use the current “Next-Generation AI LaTeX Editor” tagline.
 
 - Add a folder button (**Browse…**) inside folder path fields in the browser, for opening an existing paper or choosing where to save a new one. On the computer running Papilot it opens the system folder picker; on other devices, such as a phone over Tailscale, it lists that computer's folders. When several TeX files are found, choose the main file from a themed list showing each file's folder.

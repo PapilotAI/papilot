@@ -83,6 +83,7 @@ try {
     if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
     if (url.pathname.endsWith('/manuscript.pdf') || url.pathname.endsWith('/pdf')) {
       report.pdfRequests.push(url.pathname + url.search);
+      if (url.searchParams.get('metadata') === '1') return json({ url: `${url.pathname}?round=${url.searchParams.get('round')}&build=fixture` });
       return route.fulfill({ contentType: 'application/pdf', body: pdf });
     }
     throw Error(`Unexpected app request: ${url.pathname}`);
@@ -245,12 +246,33 @@ try {
   // The same PDF through FullPaper has its bookmarks and page count. This
   // isolates the failure to AppliedPaper, independently of PDF contents.
   task.deferred = false;
+  detail.revisedErrors = ['main.tex:12: Undefined control sequence.'];
   await page.locator('.manuscript-link').click();
   await sync();
   await page.locator('.task-link').filter({ hasText: task.title }).click();
   await expect(frame.locator('.paper-page')).toHaveCount(2);
   await healthy(reviewBar, 'Non-deferred FullPaper control with the same PDF');
   await page.screenshot({ path: path.join(output, '04-full-paper-working.png') });
+  await expect(summary).toBeVisible();
+  await summary.focus(); await page.keyboard.press('Enter');
+  await expect(diagnostics).toHaveText(detail.revisedErrors[0]);
+  for (const width of [1600, 390]) for (const colorScheme of ['light', 'dark']) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ colorScheme });
+    if (width === 390) await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
+    await expect(frame.locator('html')).toHaveAttribute('data-theme', colorScheme);
+    await diagnostics.scrollIntoViewIfNeeded();
+    const bounds = await diagnostics.boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width);
+    await page.screenshot({ path: path.join(output, `05-full-reader-errors-${width}-${colorScheme}.png`) });
+  }
+  detail.revisedErrors = undefined;
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.reload();
+  await page.locator('.task-link').filter({ hasText: task.title }).click();
+  await expect(frame.locator('.paper-page')).toHaveCount(2);
+  await expect(summary).toHaveCount(0);
+  report.checks.push({ label: 'FullPaper static diagnostics support keyboard disclosure, desktop/mobile themes, and clear after repair' });
   assert.deepEqual(report.errors, []);
   report.passed = true;
   console.log('PASS: Applied PDF contents, page count, navigation, zoom, search, replacement and reopening; manuscript and FullPaper controls.');

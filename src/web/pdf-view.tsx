@@ -194,6 +194,8 @@ export const PdfView = forwardRef<PdfHandle, {
   readOnly?: boolean;
   group?: NoteGroup | null; onGroupChange?: (group: NoteGroup | null) => void; markingDisabled?: boolean;
   url: string; words?: string; notes: { note: Annotation; number: number }[]; active: string; region: boolean; setRegion: (on: boolean) => void;
+  /** Describes an immutable PDF URL and the compilation problems belonging to it. */
+  sourceInfo?: string;
   /** The build `url` shows; new marks name the build whose pages they were made on. */
   pdfKey?: string;
   /** Source binding is available for a live manuscript; task PDFs are immutable snapshots. */
@@ -251,7 +253,7 @@ export const PdfView = forwardRef<PdfHandle, {
   // A recompiled manuscript waits while a note is being written: replacing the
   // pages would close the card and lose its place. The pages on screen, their
   // notes and their key stay together until the card closes.
-  const [shown, setShown] = useState({ url: props.url, words: props.words, key: props.pdfKey }), shownRef = useRef(shown); shownRef.current = shown;
+  const [shown, setShown] = useState<{ url: string; words?: string; key?: string; errors?: string[] }>({ url: props.url, words: props.words, key: props.pdfKey }), shownRef = useRef(shown); shownRef.current = shown;
   const heldNotes = useRef(props.notes), held = shown.url !== props.url;
   if (!held) heldNotes.current = props.notes;
   const notes = held ? heldNotes.current : props.notes, notesRef = useRef(notes); notesRef.current = notes;
@@ -718,13 +720,24 @@ export const PdfView = forwardRef<PdfHandle, {
   // during its download cancels that replacement until the card closes.
   useEffect(() => {
     if (editing || cropping || (loaded.current && shownRef.current.url === props.url)) return;
-    const next = { url: props.url, words: props.words, key: props.pdfKey };
+    const next: typeof shown = { url: props.url, words: props.words, key: props.pdfKey };
     const current = tools.current!, box = container.current!;
+    const controller = new AbortController();
+    let task: PDFDocumentLoadingTask | undefined;
     let cancelled = false, attached = false;
     if (loaded.current && box.clientHeight > 0) restore.current = { scale: current.viewer.currentScaleValue, top: box.scrollTop, left: box.scrollLeft };
     setLoading(!loaded.current); setError('');
-    const task = pdfjs.getDocument({ url: next.url, enableXfa: false, BinaryDataFactory: CMapData });
-    void task.promise.then(async document => {
+    void (async () => {
+      let url = next.url;
+      if (props.sourceInfo) {
+        const response = await fetch(props.sourceInfo, { signal: controller.signal, cache: 'no-store' });
+        const source = await response.json() as { url: string; errors?: string[]; error?: string };
+        if (!response.ok) throw new Error(source.error || t('Request failed. Please try again.'));
+        url = source.url; next.errors = source.errors;
+      }
+      if (cancelled) return;
+      task = pdfjs.getDocument({ url, enableXfa: false, BinaryDataFactory: CMapData });
+      const document = await task.promise;
       if (cancelled) return;
       // PDFViewer's first-page rejection handler can outlive setDocument(null)
       // and reject its replacement state. Keep that request in our cancellable
@@ -746,14 +759,14 @@ export const PdfView = forwardRef<PdfHandle, {
       closeDocument(previous?.loadingTask);
       const items = await readOutline(document).catch(() => []);
       if (loaded.current === document) latest.current.onOutline(items);
-    }).catch(failure => {
+    })().catch(failure => {
       if (cancelled) return;
       if (!attached) { restore.current = null; closeDocument(task); }
       if (!loaded.current) setError(failure instanceof Error ? failure.message : String(failure));
       setLoading(false);
     });
-    return () => { cancelled = true; if (!attached) { restore.current = null; closeDocument(task); } };
-  }, [props.url, props.words, props.pdfKey, editing, cropping]);
+    return () => { cancelled = true; controller.abort(); if (!attached) { restore.current = null; closeDocument(task); } };
+  }, [props.url, props.sourceInfo, props.words, props.pdfKey, editing, cropping]);
 
   // Opening a suggestion from the task or navigation reveals its passage.
   // Page views exist after pagesinit even when their canvases have not rendered.
@@ -967,6 +980,10 @@ export const PdfView = forwardRef<PdfHandle, {
       {props.tools}
     </div>
     {findOpen && <PdfFind inputRef={findInput} query={query} matches={matches} notFound={notFound} onQuery={text => { setQuery(text); search(false, false, text); }} onNext={previous => search(true, previous)} onClose={closeFind}/>}
+    {!!shown.errors?.length && <details className="pdf-compilation-problems">
+      <summary>{t('Compilation problems')}</summary>
+      <pre tabIndex={0} role="region" aria-label={t('Compilation problems')}>{shown.errors.join('\n\n')}</pre>
+    </details>}
     <div className="pdf-body">
     {markable && <PdfToolRail controller={railControls} tool={tool} onTool={pickTool} group={props.group || null} onGroup={props.onGroupChange} disabled={props.markingDisabled} suspended={props.suspended} editing={Boolean(editing)} stamps={stamps} locked={locked} onLock={slot => slot === null ? setLocked(null) : lock(slot)} history={props.history} sourceTool={Boolean(props.onSource)} anchors={anchorTools} readingTools={findTool('rail-tool')} endTools={cropTool('rail-tool')}/>}
     {!markable && anchorTools && <div className="pdf-rail" data-anchors role="group" aria-label={t('PDF controls')}><div className="rail-items"><div className="rail-anchors">{anchorTools}</div></div></div>}
