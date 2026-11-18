@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { Builder, BuildError, auxiliaryBuildError } from "./build.ts";
+import { Builder, BuildError, auxiliaryBuildError, auxiliaryDiagnostics } from "./build.ts";
 import { cleanPath, within } from "./git.ts";
 import { capture } from "./process.ts";
 import { mupdf } from "../render/pdf.ts";
@@ -118,22 +118,29 @@ export async function view(
     throw new Error("Ask for at least one source location or page number.");
   const after = await app.tasks.snapshotAsync(task),
     before = task.accepted,
-    builder = new Builder(project, app.repo),
-    targets = request.full ? ["full"] : await builder.planAsync(before, after, [
+    builder = new Builder(project, app.repo);
+  let targets = request.full ? ["full"] : await builder.planAsync(before, after, [
       ...new Set([
         ...(await app.repo.changedFilesAsync(before, after)),
         ...locations.map((l) => l.file),
       ]),
-    ]);
+    ], task.base);
   let build: BuildInfo;
   try {
     let seed = targets[0] !== "full" ? await builder.buildSeed(task.base) : null;
+    const compile = () => {
+      if (seed?.errors?.length) { targets = ["full"]; seed = null; }
+      return builder.build(request.accepted ? before : after, targets, seed);
+    };
     try {
-      build = await builder.build(request.accepted ? before : after, targets, seed);
+      build = await compile();
+      // A clean chapter retry still needs the omitted chapters' seed files.
+      // Refresh those once before accepting persistent recovered diagnostics.
+      if (seed && !build.seedRetried && auxiliaryDiagnostics(build.errors)) throw new BuildError("LaTeX auxiliary errors.", build.errors!);
     } catch (error) {
       if (!seed || !auxiliaryBuildError(error)) throw error;
       seed = await builder.buildSeed(task.base, { force: true });
-      build = await builder.build(request.accepted ? before : after, targets, seed);
+      build = await builder.markSeedRetried(await compile());
     }
   } catch (error) {
     if (!(error instanceof BuildError)) throw error;
@@ -215,7 +222,7 @@ export async function view(
       page.destroy();
       return { index, label, shows: wanted.get(index)!, file };
     });
-    return { pages, missing, targets };
+    return { pages, missing, targets, ...(build.errors?.length ? { errors: build.errors } : {}) };
   } finally {
     document.destroy();
   }

@@ -97,15 +97,16 @@ Literal symbols: \% and \$; \verb|% $ { }|.
   await expect(field()).toHaveValue('External edit.\n');
 
   // Compilation failure inserts a failed round and keeps its source editable.
-  await field().fill('\\unknownSourceEditCommand'); await save().click();
+  const broken = '\\input{missing-source-edit-fixture}';
+  await field().fill(broken); await save().click();
   await expect.poll(() => app.publisher.current(task.name)?.status, { timeout: 90000 }).toBe('failed');
   assert.equal(app.review.latestRound(task.name)?.number, 3);
   assert.equal(app.review.latestRound(task.name)?.visuals, 'failed');
   // The publisher can fail before the browser has loaded its new round.
   // Wait for that round's source before opening its editor.
-  await expect(page.locator('.source-code')).toContainText('\\unknownSourceEditCommand', { timeout: 15000 });
+  await expect(page.locator('.source-code')).toContainText(broken, { timeout: 15000 });
   await expect(edit()).toBeEnabled({ timeout: 15000 }); await edit().click();
-  await expect(field()).toHaveValue('\\unknownSourceEditCommand\n');
+  await expect(field()).toHaveValue(broken + '\n');
   await field().fill('Repaired by hand.');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/source-edit-mobile.png' });

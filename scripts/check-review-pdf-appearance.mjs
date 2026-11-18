@@ -21,12 +21,16 @@ const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', n
 const image = name => ({ src: name + '.svg', clean: name + '.svg', width: 600, height: 110, page: 1, label: '1' });
 const block = (...units) => ({ kind: 'change', units, identical: false, before: [image('before')], after: [image('after')] });
 const detail = { task: 'colors', round: 1, before: 'before', after: 'after', warnings: [], files: prefix + '/files/',
+  revisedErrors: ['main.tex:12: Undefined control sequence.'],
   sections: [{ node: 'results', title: 'Results', number: '4', blocks: [block('first', 'second')] }], loose: [block('third')],
   units: ['first', 'second', 'third'].map((id, i) => ({ id, file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: i + 1, old_end: i + 1, new_start: i + 1, new_end: i + 1, old_text: 'Results improve.', new_text: 'The results improve across all evaluated settings.', truncated: false })) };
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = data => route.fulfill({ json: data });
   if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
-  if (/\/api\/tasks\/[^/]+\/pdf$/.test(url.pathname)) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
+  if (/\/api\/tasks\/[^/]+\/pdf$/.test(url.pathname)) {
+    if (url.searchParams.get('metadata') === '1') return route.fulfill({ json: { url: `${url.pathname}?round=${url.searchParams.get('round')}&build=fixture` } });
+    return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
+  }
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true, noteAlternativeRange: 'few' } });
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
@@ -52,6 +56,8 @@ try {
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
   const frame = page.frameLocator('.review-frame');
   await expect(frame.getByText('Other changes', { exact: true })).toBeVisible();
+  await frame.locator('summary').filter({ hasText: 'The revised text has compilation errors.' }).click();
+  const diagnostics = frame.getByRole('region', { name: 'The revised text has compilation errors.' });
   for (const theme of ['Dark', 'Light']) for (const pdf of ['light', 'theme']) for (const review of ['pdf', 'theme', 'light']) {
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     const dialog = page.locator('.settings-dialog');
@@ -68,6 +74,8 @@ try {
     assert.equal(await page.locator('html').evaluate(el => getComputedStyle(el).getPropertyValue('--pdf-filter').trim()), darkPaper ? 'invert(.84) hue-rotate(180deg)' : 'none');
     await expect(frame.locator('html')).toHaveAttribute('data-review-theme', darkReview ? 'dark' : 'light');
     await expect(frame.locator('.sheet')).toHaveCSS('background-color', darkReview ? 'rgb(41, 41, 41)' : 'rgb(255, 255, 255)');
+    await expect(diagnostics).toHaveText(detail.revisedErrors[0]);
+    if (pdf === 'theme' && review === 'theme') await diagnostics.locator('..').screenshot({ path: `test-results/revised-errors-${theme.toLowerCase()}.png` });
     for (const kind of ['inline', 'standalone']) {
       const change = frame.locator('.change.' + kind).first();
       await expect(change.locator('.side.before')).toHaveCSS('background-color', darkReview ? 'rgb(67, 44, 48)' : 'rgb(251, 238, 238)');

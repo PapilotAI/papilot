@@ -62,7 +62,10 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
   if (url.pathname === '/api/quick-notes') return route.fulfill({ json: { quickNotes: null } });
   if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
-  if (/\/api\/tasks\/[^/]+\/pdf$/.test(url.pathname)) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
+  if (/\/api\/tasks\/[^/]+\/pdf$/.test(url.pathname)) {
+    if (url.searchParams.get('metadata') === '1') return route.fulfill({ json: { url: `${url.pathname}?round=${url.searchParams.get('round')}&build=fixture` } });
+    return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
+  }
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
   if (url.pathname.endsWith('/predict')) return route.fulfill({ json: { ok: true } });
   if (url.pathname.endsWith('/files')) return route.fulfill({ json: { document: null, files: [] } });

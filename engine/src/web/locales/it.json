@@ -195,6 +195,7 @@
   "There are no accepted changes to save.": "Non ci sono modifiche accettate da salvare.",
   "There are no new changes to review. Previous decisions are available in History.": "Non ci sono nuove modifiche da revisionare. Le decisioni precedenti sono disponibili nella Cronologia.",
   "These previews show one verified combination of edits. Other or smaller combinations may produce the same result. Accepting or rejecting applies only to the selected edit.": "Queste anteprime mostrano una combinazione verificata di modifiche. Combinazioni diverse o più piccole possono produrre lo stesso risultato. Accettare o rifiutare si applica solo alla modifica selezionata.",
+  "This PDF has compilation errors.": "Questo PDF contiene errori di compilazione.",
   "This change was rejected. Undo that decision before editing it.": "Questa modifica è stata rifiutata. Annulla quella decisione prima di modificarla.",
   "This change's own PDF comparison is still rendering. This comparison was rendered for the same change in the changes published at {time}.": "Il confronto PDF di questa modifica è ancora in fase di generazione. Questo confronto è stato generato per la stessa modifica nelle modifiche pubblicate alle {time}.",
   "This page updates by itself.": "Questa pagina si aggiorna automaticamente.",
@@ -261,5 +262,6 @@
   "{sources} could not be reached.": "Impossibile raggiungere {sources}.",
   "{source} has this work with other details. Compare them below.": "{source} riporta questo lavoro con altri dettagli. Confrontali di seguito.",
   "{staged} of {total} staged": "{staged} di {total} preparate",
-  "↵ send · Esc cancel": "↵ invia · Esc annulla"
+  "↵ send · Esc cancel": "↵ invia · Esc annulla",
+  "The revised text has compilation errors.": "Il testo rivisto contiene errori di compilazione."
 }

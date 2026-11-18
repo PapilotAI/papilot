@@ -276,14 +276,14 @@ test('the whole paper of a version compiles ahead, and the review shows each of 
     const builds = path.join(f.root, '.git/papilot/cache/builds');
     assert.equal(fs.readdirSync(builds).filter(name => fs.existsSync(path.join(builds, name, 'result.json'))).length, 1, 'the reviewer waited for the build started ahead');
     // Once it is complete, the paper is answered at once and its passes stay.
-    assert.deepEqual(await nextPass(f.root, rev, 0, 0), { pass: null });
+    assert.deepEqual(await nextPass(f.root, rev, 0, 0), { pass: null, key: path.relative(fs.realpathSync(builds), fs.realpathSync(pdf)).split(path.sep)[0] });
     assert.ok(fs.existsSync(passPdf(f.root, rev, shown[0])));
     assert.throws(() => passPdf(f.root, rev, 99), /Review resource not found/);
   } finally { teX.restore(); f.close(); }
 });
 
 test('the review full paper shows the round\'s changed chapters at once, then each pass of the whole paper, then the complete PDF', { skip: !tex && 'needs latexmk and pdflatex', timeout: 180000 }, async () => {
-  const { nextPaperPass, paperPassPdf, fullPaperPdf } = await import('../src/server/pdf.ts');
+  const { nextPaperPass, paperPassPdf, fullPaperPdf, retainedPaperBuild, paperBuildPdf } = await import('../src/server/pdf.ts');
   const f = paper({ 'main.tex': document('\\section{One}\\label{one}See page~\\pageref{two}.\n\\section{Two}\\label{two}Text.\n') });
   const teX = slowTeX(f.base);
   try {
@@ -292,13 +292,17 @@ test('the review full paper shows the round\'s changed chapters at once, then ea
     const key = 'c'.repeat(32), folder = path.join(f.root, '.git/papilot/cache/builds', key), chapters = path.join(folder, 'chapters.pdf');
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(chapters, '%PDF-1.4 chapters');
-    fs.writeFileSync(path.join(folder, 'result.json'), JSON.stringify({ pdf: chapters }));
+    const errors = ['main.tex:3: Undefined control sequence.'];
+    fs.writeFileSync(path.join(folder, 'result.json'), JSON.stringify({ key, tree: tree(f.repo, rev), targets: ['one'], pdf: chapters, errors }));
     const connect = async () => ({ get: async () => ({ before: rev, after: rev, build: { key, targets: ['one'] } }) as any });
+    assert.deepEqual(await retainedPaperBuild(connect, f.root, 'p-task', 1), { key, pdf: chapters, errors });
+    assert.equal(await paperBuildPdf(connect, f.root, 'p-task', 1, key), chapters);
     const versions: number[] = [], files: string[] = [];
     for (let after = 0; ;) {
       const next = await nextPaperPass(connect, f.root, 'p-task', 1, after, 60000);
       if (next.pass === null) break;
       if (typeof next.pass !== 'number') continue;
+      assert.deepEqual(next, next.pass === 1 ? { pass: 1, key, errors } : { pass: next.pass }, 'raw TeX previews carry no saved diagnostics or build key');
       versions.push(next.pass);
       files.push(await paperPassPdf(connect, f.root, 'p-task', 1, next.pass));
       after = next.pass;
@@ -306,10 +310,97 @@ test('the review full paper shows the round\'s changed chapters at once, then ea
     assert.deepEqual([versions[0], files[0]], [1, chapters], 'the changed chapters come first');
     assert.ok(versions.length >= 2, `then a pass of the whole paper: ${versions}`);
     assert.ok(files.slice(1).every(file => file !== chapters && fs.existsSync(file)));
-    assert.ok(fs.existsSync(await fullPaperPdf(connect, f.root, 'p-task', 1, 'after')));
+    const full = await fullPaperPdf(connect, f.root, 'p-task', 1, 'after');
+    assert.ok(fs.existsSync(full));
     // Once the whole paper is there, it is shown right away.
-    assert.deepEqual(await nextPaperPass(connect, f.root, 'p-task', 1, 0, 0), { pass: null });
+    const fullKey = path.relative(fs.realpathSync(path.join(f.root, '.git/papilot/cache/builds')), fs.realpathSync(full)).split(path.sep)[0];
+    assert.deepEqual(await nextPaperPass(connect, f.root, 'p-task', 1, 0, 0), { pass: null, key: fullKey });
+    assert.deepEqual(await retainedPaperBuild(connect, f.root, 'p-task', 1), { key: fullKey, pdf: full }, 'the completed full PDF replaces the chapter PDF and its errors together');
+    fs.rmSync(full);
+    await assert.rejects(paperBuildPdf(connect, f.root, 'p-task', 1, fullKey), { statusCode: 404 });
+    assert.deepEqual(await nextPaperPass(connect, f.root, 'p-task', 1, 0, 0), { pass: 1, key, errors }, 'the fast-final path falls back to chapters while rebuilding a missing full PDF');
+    assert.equal(await fullPaperPdf(connect, f.root, 'p-task', 1, 'after'), full);
+    assert.ok(fs.existsSync(full));
+    assert.deepEqual(await nextPaperPass(connect, f.root, 'p-task', 1, 0, 0), { pass: null, key: fullKey });
   } finally { teX.restore(); f.close(); }
+});
+
+test('the full paper retains recovered errors absent from clean chapter comparisons, including adopted PDFs and repair', { skip: !tex && 'needs latexmk and pdflatex', timeout: 180000 }, async () => {
+  const { preparePaper, nextPass, nextPaperPass, fullPaperPdf, retainedPaperBuild, retainedPaperPdf, paperBuildPdf } = await import('../src/server/pdf.ts');
+  const { PdfDocument } = await import('../engine/src/render/pdf.ts');
+  const f = paper({
+    'main.tex': '\\documentclass{book}\n\\begin{document}\n\\include{a}\n\\include{b}\n\\end{document}\n',
+    'a.tex': '\\chapter{A}\nOriginal chapter A.\n',
+    'b.tex': '\\newcommand{\\shared}{B}\n\\chapter{B}\nOriginal chapter B.\n',
+  });
+  const text = (file: string) => {
+    const pdf = new PdfDocument(file);
+    try { return Array.from({ length: pdf.length }, (_, page) => pdf.page(page).text()).join(' ').replace(/\s+/g, ' '); }
+    finally { pdf.close(); }
+  };
+  try {
+    const builder = new Builder(loadProject(f.root), f.repo), before = f.repo.rev('HEAD'), seed = await builder.buildSeed(before);
+    assert.equal(seed.errors, undefined);
+    const after = f.commit({ 'a.tex': '\\newcommand{\\shared}{A}\n\\chapter{A}\nRevised chapter A.\n' });
+    const targets = await builder.planAsync(before, after, ['a.tex']);
+    assert.deepEqual(targets, ['a']);
+    const [old, revised] = await Promise.all([before, after].map(rev => builder.build(rev, targets, seed)));
+    assert.equal(old.errors, undefined);
+    assert.equal(revised.errors, undefined, 'the conflict exists only when both chapters are compiled');
+    const connect = async () => ({ get: async () => ({ before, after, builds: [seed.key, old.key, revised.key], build: { key: revised.key, targets } }) as any });
+    assert.deepEqual(await retainedPaperBuild(connect, f.root, 'chapter-errors', 1), { key: revised.key, pdf: revised.pdf });
+    assert.equal(await paperBuildPdf(connect, f.root, 'chapter-errors', 1, revised.key), revised.pdf);
+    const pending = preparePaper(f.root, after, 'foreground', true, revised.key);
+    await pending.done;
+    assert.equal(pending.failure, null);
+    assert.match(pending.errors?.join('\n') ?? '', /already defined/);
+    const completed = { pass: null, key: pending.key, errors: pending.errors };
+    assert.deepEqual(await nextPass(f.root, after, 0, 0, revised.key), completed);
+    assert.deepEqual(await nextPaperPass(connect, f.root, 'chapter-errors', 1, 0, 0), completed, 'the fast-final path keeps the diagnostics');
+    assert.deepEqual(await nextPaperPass(connect, f.root, 'chapter-errors', 1, 1, 0), completed, 'the normal completion path keeps the diagnostics');
+    const full = await fullPaperPdf(connect, f.root, 'chapter-errors', 1, 'after');
+    assert.equal(full, pending.pdf);
+    assert.match(text(full), /Revised chapter A\.[\s\S]*Original chapter B\./);
+    assert.deepEqual(await retainedPaperBuild(connect, f.root, 'chapter-errors', 1), { key: pending.key, pdf: full, errors: pending.errors });
+    assert.equal(await retainedPaperPdf(connect, f.root, 'chapter-errors', 1), full);
+    assert.equal(await paperBuildPdf(connect, f.root, 'chapter-errors', 1, pending.key!), full);
+
+    const otherChapters = await builder.build(after, ['b'], seed);
+    const missing = (error: unknown) => (error as { statusCode?: number }).statusCode === 404;
+    for (const key of ['../result.json', '0'.repeat(32), seed.key, old.key, otherChapters.key]) {
+      await assert.rejects(paperBuildPdf(connect, f.root, 'chapter-errors', 1, key), missing, 'only a full build of this revision or the round\'s exact chapter build is readable');
+    }
+    assert.equal(await paperBuildPdf(connect, f.root, 'chapter-errors', 1, old.key, 'before'), old.pdf);
+    await assert.rejects(paperBuildPdf(connect, f.root, 'chapter-errors', 1, revised.key, 'before'), missing);
+
+    fs.rmSync(full);
+    await assert.rejects(paperBuildPdf(connect, f.root, 'chapter-errors', 1, pending.key!), missing, 'an immutable read cannot substitute a replacement PDF');
+    for (let afterPass = 0; ;) {
+      const next = await nextPass(f.root, after, afterPass, 60000, revised.key);
+      if (next.pass === null) { assert.deepEqual(next, completed); break; }
+      if (typeof next.pass === 'number') afterPass = next.pass;
+    }
+    assert.ok(fs.existsSync(full), 'completion rebuilds a PDF removed from the cache');
+
+    // A whole-paper round adopts its published PDF without another compile.
+    const published = await builder.build(after, ['full'], null, { date: { SOURCE_DATE_EPOCH: '1700000000', FORCE_SOURCE_DATE: '1' } });
+    const adopted = async () => ({ get: async () => ({ before, after, build: { key: published.key, targets: ['full'] } }) as any });
+    assert.deepEqual(await nextPaperPass(adopted, f.root, 'adopted-errors', 1, 0, 0), { pass: null, key: published.key, errors: published.errors });
+    assert.equal(await fullPaperPdf(adopted, f.root, 'adopted-errors', 1, 'after'), published.pdf);
+    assert.deepEqual(await retainedPaperBuild(adopted, f.root, 'adopted-errors', 1), { key: published.key, pdf: published.pdf, errors: published.errors });
+
+    const fixed = f.commit({ 'a.tex': '\\chapter{A}\nRepaired chapter A.\n' });
+    const repaired = await builder.build(fixed, ['full'], null, { date: { SOURCE_DATE_EPOCH: '1700000000', FORCE_SOURCE_DATE: '1' } });
+    assert.equal(repaired.errors, undefined);
+    const repair = async () => ({ get: async () => ({ before: after, after: fixed, builds: [published.key, repaired.key], build: { key: repaired.key, targets: ['full'] } }) as any });
+    assert.deepEqual(await nextPaperPass(repair, f.root, 'repaired-errors', 2, 0, 0), { pass: null, key: repaired.key });
+    assert.equal(await fullPaperPdf(repair, f.root, 'repaired-errors', 2, 'before'), published.pdf);
+    assert.deepEqual(await nextPass(f.root, after, 0, 0, published.key), { pass: null, key: published.key, errors: published.errors }, 'the retained baseline keeps its own errors');
+    assert.match(text(await fullPaperPdf(repair, f.root, 'repaired-errors', 2, 'after')), /Repaired chapter A\.[\s\S]*Original chapter B\./);
+    assert.deepEqual(await retainedPaperBuild(repair, f.root, 'repaired-errors', 2), { key: repaired.key, pdf: repaired.pdf });
+    assert.equal(await paperBuildPdf(repair, f.root, 'repaired-errors', 2, published.key, 'before'), published.pdf);
+    await assert.rejects(paperBuildPdf(repair, f.root, 'repaired-errors', 2, published.key), missing);
+  } finally { f.close(); }
 });
 
 test('a task\'s full paper compiles the root document the task was started on', { skip: !tex && 'needs latexmk and pdflatex', timeout: 180000 }, async () => {
@@ -347,7 +438,7 @@ test('the full paper of a round that compiled the whole paper is that round\'s o
     };
     const round = (after: string, key: string) => async () => ({ get: async () => ({ before: after, after, build: { key, targets: ['full'] } }) as any });
     const published = await publish('d'.repeat(32), rev), whole = round(rev, 'd'.repeat(32));
-    assert.deepEqual(await nextPaperPass(whole, f.root, 'p-task', 1, 0, 0), { pass: null }, 'the complete PDF is there at once');
+    assert.deepEqual(await nextPaperPass(whole, f.root, 'p-task', 1, 0, 0), { pass: null, key: 'd'.repeat(32) }, 'the complete PDF is there at once');
     assert.equal(await fullPaperPdf(whole, f.root, 'p-task', 1, 'after'), published);
     const baseline = await publish('b'.repeat(32), other);
     const both = async () => ({ get: async () => ({ before: other, after: rev, builds: ['b'.repeat(32), 'd'.repeat(32)], build: { key: 'd'.repeat(32), targets: ['full'] } }) as any });
@@ -388,7 +479,7 @@ test('round PDFs keep their own builds when repaired settings change without cha
     const second = [await publish(keys[2], before), await publish(keys[3], after)];
     assert.equal(await fullPaperPdf(connect, f.root, 'p-task', 2, 'before'), second[0], 'the unchanged baseline uses the repaired build');
     assert.equal(await retainedPaperPdf(connect, f.root, 'p-task', 2), second[1], 'the retained reader uses the repaired build');
-    assert.deepEqual(await nextPaperPass(connect, f.root, 'p-task', 2, 0, 0), { pass: null });
+    assert.deepEqual(await nextPaperPass(connect, f.root, 'p-task', 2, 0, 0), { pass: null, key: keys[3] });
     assert.deepEqual(await Promise.all([1, 2, 1, 2].map(async round => [
       await fullPaperPdf(connect, f.root, 'p-task', round, 'before'),
       await fullPaperPdf(connect, f.root, 'p-task', round, 'after'),

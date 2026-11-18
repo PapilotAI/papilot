@@ -23,16 +23,13 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- Continue compiling after recoverable LaTeX errors and show the resulting PDF with its diagnostics in task reviews, full and retained PDFs, accepted PDFs, Git comparisons and agent reviews. Diagnostics follow the PDF actually displayed, including errors found only during a full-document build after a clean chapter comparison. Fatal errors still fail the build, including when XeLaTeX leaves a truncated PDF. Set `"halt_on_error": true` in the document's `.git/papilot/settings.json` to stop at the first error. Stale generated list and navigation files still trigger an automatic clean rebuild in either mode.
 - Refresh the Mac installer with a minimal PDF diff and annotation: a blue connector guides the Papilot icon from the selected paper region into Applications inside its note. Use the current “Next-Generation AI LaTeX Editor” tagline.
 
 - Add a folder button (**Browse…**) inside folder path fields in the browser, for opening an existing paper or choosing where to save a new one. On the computer running Papilot it opens the system folder picker; on other devices, such as a phone over Tailscale, it lists that computer's folders. When several TeX files are found, choose the main file from a themed list showing each file's folder.
-
 - Clarify **Import or open**: opening an existing folder edits its original files, while **Import a copy** keeps originals unchanged. The original-folder option is visible immediately. Folder and ZIP uploads stream to disk without the former 64 MiB / 5,000-file caps.
-
 - Simplify PDF reading controls: remove back/forward history buttons and their separator, align the outline bookmark, anchor numbers and **+** in one compact column, and show a corner delete button on hover or keyboard focus. Phones also show **+** for direct anchor creation. Deletion keeps the current reading position and moves keyboard focus to the next anchor or **+**. Contents, page controls and internal links remain available.
-
 - Show common AI conference templates before theses, with conference cards, compact search and a GitHub **Contribute** link. Retry catalog failures without losing a draft; **Blank** stays available, and late template links respect an explicit choice.
-
 - Simplify the PDF toolbars with one separator before Undo and Redo, keeping the other tools together.
 - Add a [Universe](https://papilot.ai/universe/) template-library link with a blue planet icon beside the homepage logo, visible on desktop and phones. Simplify the left navigation to Universe and Blog, and add translated template links below the downloads and in the footer. The orbit turns once on hover or keyboard focus and respects reduced motion; the online demo uses a play icon in narrow headers.
 - Choose any agent’s model from the existing model menu below the chat. A restart icon marks models that start a new task. Models from the current agent keep the conversation; choosing another agent automatically stops the current task and reruns its original request in a linked replacement task, preserving unsent drafts.

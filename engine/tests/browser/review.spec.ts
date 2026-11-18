@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import type { Feedback } from "../../src/types.ts";
 test.beforeEach(async ({ page }) => {
   await page.goto("/?task=tighten-design");
@@ -9,6 +10,129 @@ async function totalUnits(page: Page) {
   await expect(progress).toHaveAttribute("aria-valuenow", "0");
   return Number(await progress.getAttribute("aria-valuemax"));
 }
+test("full-paper diagnostics follow the pinned PDF through chapter, raw pass and completed builds", async ({ page }) => {
+  const pdf = readFileSync(new URL('../../../tests/fixtures/outline.pdf', import.meta.url));
+  const chapter = 'chapter.tex:4: Missing number.', full = 'other.tex:8: Command already defined.';
+  let repaired = false, releaseRaw!: () => void, releaseFinal!: () => void, releasePdf!: () => void;
+  const rawReady = new Promise<void>(resolve => { releaseRaw = resolve; });
+  const finalReady = new Promise<void>(resolve => { releaseFinal = resolve; });
+  const pdfReady = new Promise<void>(resolve => { releasePdf = resolve; });
+  const requests: string[] = [];
+  await page.route('**/rounds/1', async route => {
+    const response = await route.fetch(), detail = await response.json();
+    await route.fulfill({ response, json: { ...detail, pdf: '/reader.pdf', passes: '/reader-passes', revisedErrors: [chapter] } });
+  });
+  await page.route('**/reader-passes?*', async route => {
+    const after = Number(new URL(route.request().url()).searchParams.get('after'));
+    if (repaired) return route.fulfill({ json: { pass: null, key: 'repaired' } });
+    if (!after) return route.fulfill({ json: { pass: 1, key: 'chapter', errors: [chapter] } });
+    if (after === 1) {
+      await rawReady;
+      return route.fulfill({ json: { pass: 2 } });
+    }
+    await finalReady;
+    return route.fulfill({ json: { pass: null, key: 'full', errors: [full] } });
+  });
+  await page.route('**/reader.pdf?*', async route => {
+    const query = new URL(route.request().url()).search;
+    requests.push(query);
+    if (query === '?build=full') await pdfReady;
+    await route.fulfill({ contentType: 'application/pdf', body: pdf });
+  });
+  const summary = page.locator('summary').filter({ hasText: 'This PDF has compilation errors.' });
+  const diagnostics = page.getByRole('region', { name: 'This PDF has compilation errors.' });
+  await page.reload();
+  await page.getByRole('group', { name: 'Review view' }).getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(summary).toBeVisible();
+  await summary.focus(); await page.keyboard.press('Enter');
+  await expect(diagnostics).toHaveText(chapter);
+  await expect(page.locator('.paper-updating')).toBeVisible();
+  expect(requests).toContain('?build=chapter');
+  // A raw TeX pass has no completed build diagnostics of its own.
+  releaseRaw();
+  await expect.poll(() => requests.includes('?pass=2')).toBe(true);
+  await expect(summary).toHaveCount(0);
+  releaseFinal();
+  await expect.poll(() => requests.includes('?build=full')).toBe(true);
+  await expect(summary).toHaveCount(0); // Metadata cannot label the old pages.
+  await expect(page.locator('.paper-updating')).toBeVisible();
+  releasePdf();
+  await expect(summary).toBeVisible();
+  await expect(page.locator('.paper-updating')).toHaveCount(0);
+  await summary.focus(); await page.keyboard.press('Enter');
+  await expect(diagnostics).toHaveText(full);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await diagnostics.scrollIntoViewIfNeeded();
+    const bounds = await diagnostics.boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: `.cache/full-reader-errors-${width}.png` });
+  }
+  repaired = true;
+  await page.reload();
+  await page.getByRole('group', { name: 'Review view' }).getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(page.locator('.paper-page')).toHaveCount(2);
+  await expect(page.locator('.paper-updating')).toHaveCount(0);
+  await expect(summary).toHaveCount(0);
+  expect(requests).toContain('?build=repaired');
+});
+test("full-paper load failure does not attach completed diagnostics to a partial PDF", async ({ page }) => {
+  const pdf = readFileSync(new URL('../../../tests/fixtures/outline.pdf', import.meta.url));
+  let release!: () => void;
+  const ready = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/rounds/1', async route => {
+    const response = await route.fetch(), detail = await response.json();
+    await route.fulfill({ response, json: { ...detail, pdf: '/reader.pdf', passes: '/reader-passes' } });
+  });
+  await page.route('**/reader-passes?*', async route => {
+    const after = Number(new URL(route.request().url()).searchParams.get('after'));
+    if (!after) return route.fulfill({ json: { pass: 1, key: 'chapter', errors: ['Chapter diagnostic'] } });
+    await ready;
+    return route.fulfill({ json: { pass: null, key: 'removed', errors: ['Full diagnostic'] } });
+  });
+  await page.route('**/reader.pdf?*', route => new URL(route.request().url()).searchParams.get('build') === 'chapter'
+    ? route.fulfill({ contentType: 'application/pdf', body: pdf })
+    : route.fulfill({ status: 404, json: { error: 'Build no longer exists' } }));
+  await page.reload();
+  await page.getByRole('group', { name: 'Review view' }).getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(page.locator('.paper-page')).toHaveCount(2);
+  release();
+  await expect(page.getByRole('alert')).toContainText('The full PDF could not be loaded.');
+  await expect(page.getByText('Full diagnostic', { exact: true })).toHaveCount(0);
+  await page.getByRole('alert').getByRole('button', { name: 'Changes', exact: true }).click();
+  await expect(page.locator('.change').first()).toBeVisible();
+});
+test("recovered revised errors stay separate from baseline errors and clear after repair", async ({ page }) => {
+  const revised = 'main.tex:12: Undefined control sequence.', baseline = 'main.tex:5: Missing number.';
+  let repaired = false;
+  await page.route('**/rounds/1', async route => {
+    const response = await route.fetch(), detail = await response.json();
+    await route.fulfill({ response, json: { ...detail, baselineErrors: [baseline], revisedErrors: repaired ? undefined : [revised] } });
+  });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.reload();
+    const summary = page.locator('summary').filter({ hasText: 'The revised text has compilation errors.' });
+    const errors = page.getByRole('region', { name: 'The revised text has compilation errors.' });
+    await expect(summary).toBeVisible();
+    await expect(errors).toBeHidden();
+    await summary.focus();
+    await page.keyboard.press('Enter');
+    await expect(errors).toHaveText(revised);
+    await expect(errors).not.toContainText(baseline);
+    await expect(page.locator('.change').first()).toBeVisible();
+    const bounds = await errors.boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: `.cache/revised-errors-${width}.png` });
+  }
+  repaired = true;
+  await page.reload();
+  await expect(page.locator('.change').first()).toBeVisible();
+  await expect(page.locator('summary').filter({ hasText: 'The revised text has compilation errors.' })).toHaveCount(0);
+  await expect(page.locator('summary').filter({ hasText: 'The text before these changes has compilation errors.' })).toBeVisible();
+});
 test("focusing a note and switching options preserves unrelated resolved groups", async ({ page }) => {
   const groups = await page.locator('.change[data-units]').evaluateAll(elements => elements.map(element => element.getAttribute('data-units')!.split(' ')));
   expect(groups.length).toBeGreaterThan(1);

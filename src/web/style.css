@@ -724,6 +724,11 @@ body.resizing iframe{pointer-events:none}
 .skills-picker-menu>button>svg{flex-shrink:0}
 /* pdf.js viewer: toolbar, find bar, pages and the note layer above each page */
 .pdf-view{flex:1;min-height:0;display:flex;flex-direction:column;container-type:inline-size}
+.pdf-compilation-problems{flex-shrink:0;min-width:0;border-bottom:1px solid var(--line);background:var(--amber-soft);color:var(--amber-text)}
+.pdf-compilation-problems>summary{padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer}
+.pdf-compilation-problems>summary:focus-visible{outline-offset:-3px}
+.pdf-compilation-problems>pre{max-height:min(160px,25vh);overflow:auto;margin:0;padding:0 14px 10px;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 var(--mono);color:var(--text)}
+.pdf-compilation-problems>pre:focus-visible{outline-offset:-3px}
 .pdf-toolbar{display:flex;align-items:center;gap:6px;height:var(--toolbar-height);padding:0 8px;border-bottom:1px solid var(--line);background:var(--bg);flex-shrink:0}
 .pdf-toolbar:has(.pdf-contents-trigger){height:auto;min-height:var(--toolbar-height);flex-wrap:wrap;padding-block:4px}
 .pdf-toolbar-spacer{flex:1;min-width:0}

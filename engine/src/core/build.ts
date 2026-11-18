@@ -12,6 +12,7 @@ import { signature, type Project } from "./config.ts";
 import { Cancelled, ProcessError, capture, commandVersion, runAsync } from "./process.ts";
 import { Lease } from "./pool.ts";
 import { progressReader, writtenPages } from "./progress.ts";
+import { unwrapLog } from "./tex-log.ts";
 import type { BuildInfo, BuildProgress } from "../types.ts";
 export class BuildError extends Error {
   constructor(
@@ -71,13 +72,25 @@ const AUXILIARY = new Set([
   ".loe",
   ".out",
   ".thm",
+  ".nav",
+  ".snm",
 ]);
-// Only generated-state diagnostics justify rebuilding a cached seed. Source
-// errors and interrupted compilers must keep their original failure.
+// Recovery follows the output directory, not AUXILIARY's seed-copy list:
+// packages write their own list/cache extensions there. Source errors and
+// interrupted compilers must keep their original failure.
 export function auxiliaryBuildError(error: unknown): error is BuildError {
-  return error instanceof BuildError && error.details.some((line) => {
-    const file = /(?:^|[/\\\s(])(?:\.\/)?build[/\\]([^:\r\n]+):\d+:/.exec(line)?.[1];
-    return file !== undefined && AUXILIARY.has(path.extname(file));
+  return error instanceof BuildError && auxiliaryDiagnostics(error.details);
+}
+export function auxiliaryDiagnostics(details: readonly string[] = []) {
+  return details.some((line) => {
+    // Read only the diagnostic's filename, never a path quoted in its message.
+    const file = /^([^\r\n]+?):\d+:/.exec(line)?.[1];
+    if (!file) return false;
+    const normalized = path.posix.normalize(file.replaceAll("\\", "/")),
+      absolute = path.posix.isAbsolute(normalized) || /^[a-z]:\//i.test(normalized);
+    // latexmk always uses -outdir=build. Relative source paths such as
+    // chapters/build/example.tex and build/../main.tex are not its output.
+    return normalized.startsWith("build/") || (absolute && normalized.includes("/build/"));
   });
 }
 // Output that TeX writes for this folder: SyncTeX data and the log name its
@@ -298,7 +311,12 @@ export function errors(text: string) {
   return result;
 }
 export function compilerDiagnostics(log: string, transcript: string) {
-  const details = errors(log);
+  // The final TeX log can omit an error from an earlier pass.
+  const details = [...errors(log), ...errors(transcript)];
+  // BibTeX and Biber report outside the TeX log. Later TeX passes can push
+  // their diagnostics out of latexmk's final error summary.
+  for (const line of transcript.split(/\r?\n/))
+    if (/---line \d+ of file |\b(?:ERROR|FATAL) - /.test(line)) details.push(line.trim());
   // Errors from shell-escape helpers go to latexmk's stderr, not the TeX log.
   for (const traceback of transcript
     .split("Traceback (most recent call last):")
@@ -384,9 +402,14 @@ export class Builder {
     return this.choose(this.documentTexts(before), this.documentTexts(after), changed);
   }
   /** `plan` for servers, which keep answering requests meanwhile. */
-  async planAsync(before: string, after: string, changed: string[]) {
-    const [old, next] = await Promise.all([this.documentTextsAsync(before), this.documentTextsAsync(after)]);
-    return this.choose(old, next, changed);
+  async planAsync(before: string, after: string, changed: string[], seedRevision?: string) {
+    const [old, next, accepted] = await Promise.all([
+      this.documentTextsAsync(before), this.documentTextsAsync(after),
+      seedRevision ? this.repo.changedFilesAsync(seedRevision, before) : [],
+    ]);
+    // Omitted chapters must still match the fixed seed. Otherwise an error
+    // accepted in an earlier round disappears when the next edit is elsewhere.
+    return this.choose(old, next, [...new Set([...changed, ...accepted])]);
   }
   private choose(old: Record<string, string>, next: Record<string, string>, changed: string[]) {
     const p = this.project,
@@ -416,21 +439,29 @@ export class Builder {
    *  app upgrades, with the same compatibility checks as incremental builds. */
   async buildSeed(rev: string, options: { force?: boolean; progress?: (progress: BuildProgress) => void; priority?: WantedPriority } = {}): Promise<BuildInfo> {
     if (options.force) return this.build(rev, ["full"], null, options);
-    let version: string;
-    try { version = await commandVersion(this.project.engine); }
-    catch { return this.build(rev, ["full"], null, options); }
-    const tree = await this.repo.treeIdAsync(rev, this.project.source_dir),
-      fixedDate = process.env.SOURCE_DATE_EPOCH ? buildDate() : null,
-      context = hash(JSON.stringify([signature(this.project), version, ...(fixedDate ? [fixedDate] : [])]));
-    let incomplete = false;
-    for (const entry of this.recent(["full"])) {
+    const { tree, context, cacheKey } = await this.resolve(rev, ["full"], null),
+      entries = this.recent(["full"]), preferred = this.preferred(cacheKey);
+    // Older caches did not record recovered refreshes in history. Establish
+    // fresh evidence instead of resurrecting their superseded clean seed.
+    if (preferred && (!entries.some(entry => entry.key === preferred) || !await this.finished(path.join(this.cache, preferred))))
+      return this.build(rev, ["full"], null, { ...options, force: true });
+    for (const entry of entries) {
       if (entry.context !== context || (entry.tree && entry.tree !== tree)
         || (process.env.SOURCE_DATE_EPOCH && entry.date !== process.env.SOURCE_DATE_EPOCH)) continue;
       let matched = false;
       try {
-        const folder = path.join(this.cache, entry.key), info = await this.finished(folder);
+        const replacement = this.preferred(entry.key),
+          folder = path.join(this.cache, replacement ?? entry.key), info = await this.finished(folder);
+        if (!info && (replacement || entry.tree === tree))
+          return this.build(rev, ["full"], null, { ...options, force: true });
         if (!info || info.tree !== tree || JSON.stringify(info.targets) !== '["full"]') continue;
         matched = true;
+        // The latest full result governs scope even when its auxiliaries
+        // cannot be reused: callers compare whole to retain its diagnostics.
+        if (info.errors?.length) {
+          await this.remember(["full"], { ...entry, key: info.key, tree });
+          return info;
+        }
         const main = path.posix.basename(this.project.main), out = path.dirname(info.pdf),
           auxiliary = new Set([path.basename(main, ".tex") + ".aux"]);
         await fs.promises.access(path.join(info.cwd, main));
@@ -440,13 +471,15 @@ export class Builder {
           const text = await fs.promises.readFile(path.join(out, file), "utf8");
           for (const match of text.matchAll(/\\@input\{([^}]+\.aux)\}/g)) auxiliary.add(match[1]);
         }
-        await this.remember(["full"], { ...entry, tree });
+        await this.remember(["full"], { ...entry, key: info.key, tree });
         return info;
-      } catch { incomplete ||= matched; }
+      } catch {
+        // The newest matching result stays authoritative even if its seed
+        // files were removed. Rebuild instead of reviving older diagnostics.
+        if (matched) return this.build(rev, ["full"], null, { ...options, force: true });
+      }
     }
-    // A cached PDF with missing auxiliary state must not be returned again
-    // by the normal build cache, even if it was made earlier today.
-    return this.build(rev, ["full"], null, { ...options, ...(incomplete ? { force: true } : {}) });
+    return this.build(rev, ["full"], null, options);
   }
   /** What identifies the build of `rev`: its cache key, and the tree and
    *  date that it compiles. */
@@ -512,9 +545,9 @@ export class Builder {
        *  request it replaces can be cancelled without stopping a
        *  compilation both need. */
       onKey?: (key: string) => void;
-      /** TeX typesets past errors it can recover from, as LaTeX does without
-       *  -halt-on-error, and the PDF it writes is the result, with those
-       *  errors in `errors`. For a version shown only for comparison, such
+      /** Continue past recoverable errors even when halt_on_error is enabled,
+       *  returning the PDF with those errors in `errors`.
+       *  For a version shown only for comparison, such
        *  as the text a task fixing a compilation error starts from. */
       pastErrors?: boolean;
     } = {},
@@ -669,7 +702,7 @@ export class Builder {
             continue;
           }
           // As before, retry from clean auxiliary state if it broke the build.
-          if (!continuation || (error instanceof BuildError && !error.details.some(line => /(?:^|\s|\()(?:\.\/)?build\//.test(line)))) throw error;
+          if (!continuation || !auxiliaryBuildError(error)) throw error;
           continuation = null;
         }
       }
@@ -677,8 +710,9 @@ export class Builder {
       active.delete(run);
       schedule();
     }
-    // What TeX left after errors is no state for another build to continue.
-    if (!pastErrors) await this.remember(targets, { key, context, date: date.SOURCE_DATE_EPOCH, tree, dated });
+    // Full results govern seed selection, including recovered diagnostics.
+    // closest() separately excludes their auxiliary state from continuation.
+    if (!pastErrors && (!result.errors?.length || !partial)) await this.remember(targets, { key, context, date: date.SOURCE_DATE_EPOCH, tree, dated });
     if (options.force) {
       const preferred = this.preferredFile(cacheKey);
       await withLock(preferred, () => writeJsonAsync(preferred, { key }));
@@ -695,6 +729,18 @@ export class Builder {
   /** Reuse an immutable published build while its cached PDF is available. */
   async completed(key: string) {
     return /^[a-f0-9]{32}$/.test(key) ? this.finished(path.join(this.cache, key)) : null;
+  }
+  /** Remember a completed seed retry so later readers keep the recovered
+   *  chapter PDF instead of refreshing the same full baseline again. */
+  async markSeedRetried(info: BuildInfo): Promise<BuildInfo> {
+    if (info.seedRetried || info.targets[0] === "full" || !auxiliaryDiagnostics(info.errors)) return info;
+    return withLock(path.join(this.cache, info.key + ".lock"), async () => {
+      const folder = path.join(this.cache, info.key), saved = await this.finished(folder);
+      if (!saved) return info;
+      const result = { ...saved, seedRetried: true };
+      await writeJsonAsync(path.join(folder, "result.json"), result);
+      return result;
+    });
   }
   // A completed build in this folder, whose PDF is still there.
   private async finished(folder: string) {
@@ -739,6 +785,7 @@ export class Builder {
     const candidates = (await Promise.all(this.recent(targets).filter((r) => r.context === context).map(async (r) => {
       try {
         const info = JSON.parse(await fs.promises.readFile(path.join(this.cache, r.key, "result.json"), "utf8")) as BuildInfo;
+        if (info.errors?.length) return null;
         if (JSON.stringify(info.targets) !== JSON.stringify(targets)) return null;
         await Promise.all([fs.promises.access(info.pdf), fs.promises.access(info.root)]);
         const changed = info.tree === tree ? 0 : (await this.repo.runAsync(["diff-tree", "-r", "--name-only", "-z", info.tree, tree])).toString().split("\0").filter(Boolean).length;
@@ -769,6 +816,7 @@ export class Builder {
     pastErrors = false,
   ): Promise<BuildInfo> {
     const p = this.project,
+      haltOnError = p.halt_on_error && !pastErrors,
       partial = JSON.stringify(targets) !== '["full"]',
       folder = path.join(this.cache, key);
     // A cancelled build leaves nothing behind: no result, log or folder, so
@@ -837,8 +885,10 @@ export class Builder {
         }));
     }
     if (signal?.aborted) return abandon();
-    // A clean build must generate its own PDF, even if the paper tracks one.
-    if (!start || pastErrors) await Promise.all(["pdf", "xdv"].map((ext) => fs.promises.rm(path.join(out, `${job}.${ext}`), { force: true })));
+    // Only a matching completed build can supply an existing PDF.
+    if (!reused) await Promise.all(["pdf", "xdv"].map((ext) => fs.promises.rm(path.join(out, `${job}.${ext}`), { force: true })));
+    const pdf = path.join(out, job + ".pdf"),
+      previousPdf = await fs.promises.stat(pdf, { bigint: true }).catch(() => null);
     const args = [
       "-norc",
       ...(p.latexmkrc
@@ -852,7 +902,7 @@ export class Builder {
       "-synctex=1",
       "-interaction=nonstopmode",
       // latexmk -f runs the remaining passes and the PDF driver after errors.
-      ...(pastErrors ? ["-f"] : ["-halt-on-error"]),
+      ...(haltOnError ? ["-halt-on-error"] : ["-f"]),
       "-file-line-error",
     ];
     // The outline trace comes first; a chapter build adds its \includeonly.
@@ -998,21 +1048,33 @@ export class Builder {
     // Passes that were not shown are not needed.
     if (scheduled) scheduled.followed = undefined;
     if (keeping) for (let number = 1; number <= saved; number++) if (!kept.has(number)) await fs.promises.rm(path.join(passes, String(number)), { recursive: true, force: true });
-    const pdf = path.join(out, job + ".pdf"),
-      texLog = path.join(out, job + ".log");
+    const texLog = path.join(out, job + ".log"),
+      writtenPdf = await fs.promises.stat(pdf, { bigint: true }).catch(() => null),
+      freshPdf = writtenPdf && (!previousPdf || writtenPdf.ino !== previousPdf.ino || writtenPdf.mtimeNs !== previousPdf.mtimeNs || writtenPdf.ctimeNs !== previousPdf.ctimeNs);
     if (reused && !failure)
       await Promise.all([path.join(out, job + ".synctex.gz"), texLog].map((file) => relocate(file, path.dirname(base!.root), folder)));
-    const logText = await fs.promises.readFile(texLog, "utf8").catch(() => ""),
+    const logBytes = await fs.promises.readFile(texLog).catch(() => Buffer.alloc(0)),
+      logText = logBytes.toString("utf8"),
+      // XeLaTeX can leave a partial XDV after stopping; latexmk -f then
+      // converts it to a fresh but truncated PDF. Read the full log because
+      // the diagnostic summary can stop before this terminal error. TeX's
+      // hard wrapping can split the terminal message inside a word.
+      fatal = /^(?:!\s*|[^\r\n]+:\d+:\s*)?(?:Emergency stop\.|TeX capacity exceeded)|^\s*\*\*\* \(job aborted|^\s*!?\s*==> Fatal error occurred|^\(That makes 100 errors; please try again\.\)/m.test(unwrapLog(logBytes).join("\n")),
       // latexmk reports the errors TeX went past with its exit status. A
       // latexmk that a timeout or a shutdown killed has none, and may have
       // left the PDF unfinished.
-      past = pastErrors && failure instanceof ProcessError && / failed \(\d+\)$/.test(failure.message) && fs.existsSync(pdf);
+      past = !haltOnError && !fatal && failure instanceof ProcessError && / failed \(\d+\)$/.test(failure.message) && freshPdf;
     let errors: string[] | undefined;
     if (past) {
       const transcriptText = await fs.promises.readFile(transcript, "utf8");
       errors = compilerDiagnostics(logText, transcriptText);
       if (!errors.length) errors = transcriptText.split("\n").slice(-25);
-    } else if (failure || !fs.existsSync(pdf)) {
+    }
+    // Retry stale continuation state once, even if TeX wrote a PDF. After
+    // that clean attempt, current source may still generate auxiliary errors;
+    // retain its recovered PDF and diagnostics, including for chapter builds.
+    const auxiliaryFailure = start && auxiliaryDiagnostics(errors);
+    if ((!past && failure) || !writtenPdf || auxiliaryFailure) {
       const transcriptText = await fs.promises.readFile(transcript, "utf8"),
         details = compilerDiagnostics(logText, transcriptText),
         kept = path.join(p.state, "logs", key + ".log");

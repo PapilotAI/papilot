@@ -924,6 +924,11 @@
     "textHash": "dda4c9131c2319a22c685cb957ba2bb4696d7240b9b951cf7b73e6356c494f28",
     "model": "gemini-4-argon-medium"
   },
+  "This PDF has compilation errors.": {
+    "revision": "3231691383fffa15ff368ff17dbc61418d1a3429fb047a950b413b6356d4f51a",
+    "textHash": "0af1666cdfb4f117b106b060de14727a6c5533c472c093bb44b1ab715e88090c",
+    "model": "manual"
+  },
   "This change's own PDF comparison is still rendering. This comparison was rendered for the same change in the changes published at {time}.": {
     "revision": "050f5d8d3239bc2e011534e7fdc68c698a8b18468862798fed16ad9b9539ccc9",
     "textHash": "4ba91a890c2f7fe1db8686804abacec8beb69e3df5ef7d02487b6a2e9c3efbb1",
@@ -1233,5 +1238,10 @@
     "revision": "87f17ee4e0385e137cc0a487f5bbc7a91c21a1d046eec649f1bffb40819aad20",
     "textHash": "b5b91f26d3e7f9528f5edeca7c4dc81d0cec155f075f58b1ba165059c09306e0",
     "model": "gemini-4-argon-medium"
+  },
+  "The revised text has compilation errors.": {
+    "revision": "e4c8c509bb079b5cf1c1cac327c0e9ec72460aa8a11bec8ddef311d12e854c68",
+    "textHash": "d2daadc8fb98c5ec3c69c5d53200c5589977b83e1990fd21c7fa11dce93e06a4",
+    "model": "manual"
   }
 }

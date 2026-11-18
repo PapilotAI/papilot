@@ -16,6 +16,7 @@ import { t } from "./i18n.ts";
 import { paperPlan, type Cut, type PlacedChange } from "./paper.ts";
 import { cMapData } from "./pdf-cmaps.ts";
 import { fullPaperReader } from './full-paper-reader.ts';
+import { CompilationErrors } from './CompilationErrors.tsx';
 
 // Built assets share one folder, and a host such as Papilot serves the viewer
 // under its own prefix: find the worker and CMaps next to this chunk, not at /assets.
@@ -55,11 +56,13 @@ interface Loaded {
   labels: string[] | null;
   // An earlier version, shown while the complete PDF compiles.
   partial: boolean;
+  errors?: string[];
 }
 
 export function FullPaper({
   url,
   passes,
+  errors,
   changes,
   render,
   scrollRoot,
@@ -70,6 +73,7 @@ export function FullPaper({
 }: {
   url: string;
   passes?: string;
+  errors?: string[];
   changes: PlacedChange[];
   render: (block: ChangeBlock, index: number) => ReactNode;
   scrollRoot: RefObject<HTMLElement | null>;
@@ -95,7 +99,7 @@ export function FullPaper({
     setError("");
     setStarted(Date.now());
     announced.current = false;
-    const open = async (source: string, partial: boolean) => {
+    const open = async (source: string, partial: boolean, errors?: string[]) => {
       const task = pdfjs.getDocument({ url: source, enableXfa: false, BinaryDataFactory: CMapData });
       tasks.push(task);
       const pdf = await task.promise,
@@ -107,24 +111,30 @@ export function FullPaper({
       anchor.current = root && current?.dataset.stop
         ? { stop: current.dataset.stop, offset: current.getBoundingClientRect().top - root.getBoundingClientRect().top }
         : null;
-      setLoaded({ pdf, width: first.width, height: first.height, labels, partial });
+      setLoaded({ pdf, width: first.width, height: first.height, labels, partial, errors });
     };
     void (async () => {
+      let complete = url, diagnostics = errors;
       // Earlier versions while the complete PDF compiles, such as the
       // chapters the round compiled and each TeX pass of the whole paper, so
       // the changes show long before every page number has settled.
       for (let after = 0; passes && live; ) {
         const response = await fetch(`${passes}?after=${after}`, { signal: stop.signal }),
-          next = (await response.json()) as { pass?: number | null; error?: string };
+          next = (await response.json()) as { pass?: number | null; key?: string; errors?: string[]; error?: string };
         if (!response.ok) throw new Error(next.error || `HTTP ${response.status}`);
-        if (next.pass === null) break;
+        if (next.pass === null) {
+          diagnostics = next.errors;
+          if (next.key) complete += `${url.includes("?") ? "&" : "?"}build=${encodeURIComponent(next.key)}`;
+          break;
+        }
         if (typeof next.pass === "number" && next.pass > after) {
           after = next.pass;
           // A version that cannot be shown is skipped for the next one.
-          await open(`${url}${url.includes("?") ? "&" : "?"}pass=${after}`, true).catch(() => undefined);
+          const version = next.key ? `build=${encodeURIComponent(next.key)}` : `pass=${after}`;
+          await open(`${url}${url.includes("?") ? "&" : "?"}${version}`, true, next.errors).catch(() => undefined);
         }
       }
-      if (live) await open(url, false);
+      if (live) await open(complete, false, diagnostics);
     })().catch((failure: Error) => {
       if (live) setError(failure.message);
     });
@@ -184,6 +194,7 @@ export function FullPaper({
     );
   return (
     <>
+      {loaded?.errors?.length ? <CompilationErrors title={t("This PDF has compilation errors.")} errors={loaded.errors} /> : null}
       {loaded?.partial && (
         <div className="paper-updating" role="status">
           <span className="pulse" />

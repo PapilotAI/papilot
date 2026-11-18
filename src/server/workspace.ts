@@ -1196,13 +1196,14 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     try {
       const client = await this.connectReview(this.store.project(task.projectId).path);
       if (!current()) return;
-      const shown = await client.post<{ pages: { index: number; label: string | null; shows: string[]; file: string }[]; missing: string[]; targets: string[]; error?: string; details?: string[] }>(
+      const shown = await client.post<{ pages: { index: number; label: string | null; shows: string[]; file: string }[]; missing: string[]; targets: string[]; errors?: string[]; error?: string; details?: string[] }>(
         `${taskRoute(task.name)}/view`, { locations: strings(args?.locations), pages: strings(args?.pages), ...(args?.accepted === true ? { accepted: true } : {}) }, 30 * 60000);
       if (shown.error) { reply(false, [shown.error, ...(shown.details || [])].join('\n')); return; }
       this.keepPages(task, message.params, shown.pages);
       const compiled = shown.targets[0] === 'full' ? 'the whole paper' : `only ${shown.targets.join(', ')}, so page positions differ from the full PDF while printed page numbers match`;
       reply(true, [
         `${args?.accepted === true ? 'The accepted text' : 'Your worktree'} was compiled (${compiled}).`,
+        ...(shown.errors?.length ? ['Errors:', ...shown.errors.map(error => `- ${error}`)] : []),
         ...shown.pages.map(page => `${page.label ? `Page ${page.label}` : `PDF page ${page.index} (printed page number unavailable)`} shows ${page.shows.join(', ')}: ${page.file}`),
         ...shown.missing,
         ...(shown.pages.length ? ['Open the page files you need with your image viewer (view_image).'] : []),

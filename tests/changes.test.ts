@@ -7,9 +7,51 @@ import path from 'node:path';
 import { Changes, stageLines, stagedLines, unstageLines } from '../src/server/changes.ts';
 import { gitCommit, gitDiscard, gitStage, gitStatus } from '../src/server/manuscript.ts';
 import { opcodes } from '../engine/src/core/diff.ts';
+import { PdfDocument } from '../engine/src/render/pdf.ts';
 
 const lines = (...items: string[]) => items.map(item => item + '\n');
 const hasTeX = (() => { try { execFileSync('latexmk', ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } })();
+
+test('uncommitted comparisons retain both compiler diagnostics and clear repaired or empty rounds', { skip: !hasTeX && 'needs latexmk' }, async () => {
+  const { root, git, commit } = repository();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-changes-state-')), changes = new Changes(state);
+  const main = path.join(root, 'main.tex');
+  const paper = (body: string) => `\\documentclass{article}\n\\begin{document}\n${body}\n\\end{document}\n`;
+  const baseline = paper('Original text. \\PackageError{fixture}{Baseline diagnostic}{}');
+  const nextRound = async (after: number) => {
+    for (let tries = 0; tries < 240; tries++) {
+      const page = await changes.state('p', root, 'token');
+      assert.notEqual(page.state, 'build_failed', JSON.stringify(page.job));
+      if (page.latest! > after && page.state !== 'building') return changes.detail('p', page.latest!);
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    throw new Error('Comparison did not finish');
+  };
+  try {
+    fs.writeFileSync(main, baseline); git('add', '.'); commit('Baseline');
+    fs.writeFileSync(main, baseline.replace('Original', 'Revised \\undefinedcommand'));
+    const first = await nextRound(0);
+    assert.match(first.baselineErrors!.join('\n'), /Baseline diagnostic/);
+    assert.match(first.revisedErrors!.join('\n'), /Undefined control sequence/);
+    assert.match(first.revisedErrors!.join('\n'), /Baseline diagnostic/, 'Shared errors remain on both sides');
+    const pdf = new PdfDocument(changes.pdf('p', first.round)!);
+    try { assert.match(pdf.page(0).text(), /Revised\s+text/); } finally { pdf.close(); }
+
+    fs.writeFileSync(main, paper('Repaired text.'));
+    const repaired = await nextRound(first.round);
+    assert.equal(repaired.revisedErrors, undefined);
+    assert.deepEqual(repaired.baselineErrors, first.baselineErrors);
+    assert.deepEqual(changes.detail('p', first.round).revisedErrors, first.revisedErrors);
+    fs.writeFileSync(main, baseline);
+    const empty = await nextRound(repaired.round);
+    assert.equal(empty.units.length, 0);
+    assert.equal(empty.baselineErrors, undefined);
+    assert.equal(empty.revisedErrors, undefined);
+  } finally {
+    for (let tries = 0; changes.busyForUpdate && tries < 240; tries++) await new Promise(resolve => setTimeout(resolve, 500));
+    fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(state, { recursive: true, force: true });
+  }
+});
 
 function repository() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-changes-'));

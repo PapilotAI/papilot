@@ -195,6 +195,7 @@
   "There are no accepted changes to save.": "沒有可儲存的已接受變更。",
   "There are no new changes to review. Previous decisions are available in History.": "沒有需要審閱的新變更。先前的決定可在歷史記錄中檢視。",
   "These previews show one verified combination of edits. Other or smaller combinations may produce the same result. Accepting or rejecting applies only to the selected edit.": "這些預覽顯示一組已驗證的修改組合。其他組合或更少的修改也可能產生相同結果。接受或拒絕只作用於選取的修改。",
+  "This PDF has compilation errors.": "此 PDF 有編譯錯誤。",
   "This change was rejected. Undo that decision before editing it.": "這項變更已被拒絕，請先復原該決定再編輯。",
   "This change's own PDF comparison is still rendering. This comparison was rendered for the same change in the changes published at {time}.": "此變更本身的 PDF 比對仍在產生中。此比對結果是針對 {time} 發布的變更中相同的變更所產生。",
   "This page updates by itself.": "此頁面會自動更新。",
@@ -261,5 +262,6 @@
   "{sources} could not be reached.": "無法連線至 {sources}。",
   "{source} has this work with other details. Compare them below.": "{source} 中收錄的此著作具有其他詳細資訊。請在下方進行比對。",
   "{staged} of {total} staged": "已暫存 {staged} / {total}",
-  "↵ send · Esc cancel": "↵ 傳送 · Esc 取消"
+  "↵ send · Esc cancel": "↵ 傳送 · Esc 取消",
+  "The revised text has compilation errors.": "修改後的文本有編譯錯誤。"
 }

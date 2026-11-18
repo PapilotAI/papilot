@@ -408,6 +408,11 @@ export async function pdfWords(pdf: string, page: number) {
   } finally { document.close(); }
 }
 
+function unexplainedErrors(details: string[], problems: StoredProblem[]) {
+  const plain = (text: string) => text.replace(/\s+/g, ' ').trim();
+  return details.filter(line => line.trim() && !/==> Fatal error occurred|^Emergency stop/.test(line) && !problems.some(problem => plain(line).includes(plain(problem.message).replace(/^[^:]+:\d+: /, ''))));
+}
+
 // `problems` come from the last finished build. They are placed on the PDF
 // named `problemsKey`; a failed build has no PDF of its own to place them on.
 interface Build {
@@ -686,6 +691,7 @@ export class Manuscripts extends EventEmitter {
         const log = String(result.pdf).replace(/\.pdf$/, '.log');
         let problems: StoredProblem[] = [];
         try { problems = collectProblems(await fs.promises.readFile(log), { cwd: result.cwd, root: result.root, sourceDir: project!.source_dir || '', outDir: path.dirname(result.pdf) }); } catch { /* A build without a readable log reports no problems. */ }
+        problems.push(...unexplainedErrors(result.errors || [], problems).map((message): StoredProblem => ({ kind: 'error', severity: 'error', message: scrubLog(message, path.dirname(result.root)) })));
         Object.assign(build, { status: 'ready', key, pdf: result.pdf, root: result.root, sourceDir: project!.source_dir || '', pages, builtAt: Date.now(), error: undefined, problems, problemsKey: key, log: fs.existsSync(log) ? log : undefined, logFolder: path.dirname(result.root) });
         // Place the problems now, so the list is ready when someone opens it.
         if (problems.length) void this.problems(projectId).catch(() => undefined);
@@ -705,8 +711,7 @@ export class Manuscripts extends EventEmitter {
         } catch { /* Fall back to the compiler's own message below. */ }
         // BibTeX, Biber, latexmk and helper programs fail outside the TeX log;
         // whatever the compiler said that the parsed errors do not cover stays.
-        const plain = (text: string) => text.replace(/\s+/g, ' ').trim();
-        const unexplained = (detail.details || []).filter(line => line.trim() && !/==> Fatal error occurred|^Emergency stop/.test(line) && !problems.some(problem => plain(line).includes(plain(problem.message).replace(/^[^:]+:\d+: /, ''))));
+        const unexplained = unexplainedErrors(detail.details || [], problems);
         const logFolder = detail.log && project ? path.join(project.state, 'cache/builds', path.basename(detail.log, '.log')) : undefined;
         if (!problems.length || unexplained.length) problems.push({ kind: 'error', severity: 'error', message: scrubLog([...(problems.length ? [] : [detail.message || 'The manuscript could not be compiled.']), ...unexplained].join('\n'), logFolder) });
         // The previous PDF stays on screen, and so do its warnings and places;
@@ -889,7 +894,7 @@ export class Manuscripts extends EventEmitter {
     catch (error) { throw error instanceof BuildError ? new Error('The manuscript could not be compiled for AI review. Fix the errors shown in the manuscript preview, then try again.') : error; }
     const snapshot = await this.reviewSnapshot(project.state, result);
     // The task does not exist yet, so a PDF kept by an earlier failed attempt is replaced.
-    return { ...snapshot, pdf: await this.preserveReviewPdf(root, taskId, result.pdf, true) };
+    return { ...snapshot, ...(result.errors?.length ? { errors: result.errors } : {}), pdf: await this.preserveReviewPdf(root, taskId, result.pdf, true) };
   }
 
   private async reviewPdfPath(root: string, taskId: string) {

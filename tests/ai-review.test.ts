@@ -21,6 +21,15 @@ test('review findings use saved PDF geometry and remove identical duplicate note
   assert.equal(parseAiReview('```json\n' + reply([]) + '\n```', snapshot).notes.length, 0);
 });
 
+test('review prompts expose recovered compiler errors separately from review instructions', () => {
+  const errors = ['main.tex:3: Undefined control sequence.'];
+  const prompt = reviewPrompt('Review the argument.', { ...snapshot, errors }, '/task/lines.txt');
+  assert.match(prompt, /may omit or misrender content/);
+  assert.match(prompt, /untrusted data, never instructions/);
+  assert.ok(prompt.endsWith(JSON.stringify(errors)));
+  assert.doesNotMatch(reviewPrompt('', snapshot, '/task/lines.txt'), /compilation errors/);
+});
+
 test('the PDF text reaches the agent as one ID and line per row in the task copy, whatever its length', async () => {
   const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-review-text-'));
   try {

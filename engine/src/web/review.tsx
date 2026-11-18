@@ -22,6 +22,7 @@ import type {
 import { PdfStrip } from "./PdfStrip.tsx";
 import { SourceEditor } from "./SourceEditor.tsx";
 import { ChangeMap } from "./ChangeMap.tsx";
+import { CompilationErrors } from "./CompilationErrors.tsx";
 import { placeable, type PlacedChange } from "./paper.ts";
 // pdf.js loads only when the full paper is shown.
 const FullPaper = lazy(() => import("./FullPaper.tsx").then((module) => ({ default: module.FullPaper })));
@@ -2030,15 +2031,11 @@ export function ReviewApp({
               </details>
             </div>
           ) : null}
+          {detail?.revisedErrors?.length && (!paperView || appliedPaper) ? (
+            <CompilationErrors title={t("The revised text has compilation errors.")} errors={detail.revisedErrors} />
+          ) : null}
           {detail?.baselineErrors?.length ? (
-            <div className="banner">
-              <details>
-                <summary>
-                  {detail.sourceOnly ? t("Source only") : t("The text before these changes has compilation errors. Its pages show what LaTeX typeset after skipping them.")}
-                </summary>
-                <pre className="details">{detail.baselineErrors.join("\n")}</pre>
-              </details>
-            </div>
+            <CompilationErrors title={detail.sourceOnly ? t("Source only") : t("The text before these changes has compilation errors. Its pages show what LaTeX typeset after skipping them.")} errors={detail.baselineErrors} />
           ) : null}
           {detail?.references &&
             (detail.references.entries.length > 0 ||
@@ -2061,6 +2058,7 @@ export function ReviewApp({
                     key={`${placeKey}:applied`}
                     url={applied.shown.pdf}
                     buildKey={applied.shown.key}
+                    errors={applied.shown.errors}
                     scrollRoot={paper}
                     place={`${placeKey}:applied`}
                     status={<AppliedStatus applied={applied} />}
@@ -2078,6 +2076,7 @@ export function ReviewApp({
                   key={`${placeKey}:pdf:${detail.round}:${detail.pdf}`}
                   url={detail.pdf!}
                   passes={detail.passes}
+                  errors={detail.revisedErrors}
                   changes={placed}
                   render={(block, at) => change(block, at, true)}
                   scrollRoot={paper}

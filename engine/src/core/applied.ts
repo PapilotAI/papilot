@@ -24,7 +24,7 @@ export interface AppliedState {
   accepted: string;
   /** What to show: the build of the accepted text, or until it is ready the
    *  latest earlier one. `current` says which. */
-  shown: (AppliedBuild & { current: boolean }) | null;
+  shown: (AppliedBuild & { current: boolean; errors?: string[] }) | null;
   /** A compilation of the accepted text is under way. */
   building: boolean;
   /** The accepted text did not compile; `shown` is the latest that did. */
@@ -63,6 +63,7 @@ export class Applied {
     // The round's own seed once it rendered; before that the one it builds.
     const seed = (keys.length > 2 ? await builder.completed(keys[0]) : null)
       ?? await builder.buildSeed(this.app.tasks.get(name).base, { priority: () => this.priority(name) });
+    if (seed.errors?.length) return { targets: ["full"], date, seed: null };
     return { targets, date, seed };
   }
   /** The task's accepted text may have changed: compiles it now, at once. A
@@ -115,13 +116,19 @@ export class Applied {
     const task = this.app.tasks.get(name, false), accepted = task.accepted,
       round = this.app.review.latestRound(name), latest = this.latest(name),
       builder = new Builder(this.app.projectOf(task), this.app.repo);
-    const usable = async (build: AppliedBuild | null) => (build && (await builder.completed(build.key)) ? build : null);
+    const usable = async (build: AppliedBuild | null) => {
+      if (!build) return null;
+      const info = await builder.completed(build.key);
+      // Diagnostics already live with the immutable build, including builds
+      // saved before applied previews exposed recoverable errors.
+      return info ? { ...build, ...(info.errors?.length ? { errors: info.errors } : {}) } : null;
+    };
     // Before a round's first decision, its own baseline is the accepted text.
-    const baseline = async (): Promise<AppliedBuild | null> => {
+    const baseline = async () => {
       const keys = round?.summary.builds ?? [];
       if (!round || keys.length < 2 || (round.visuals ?? "ready") !== "ready") return null;
       const info = await builder.completed(keys.at(-2)!);
-      return info ? { accepted: round.before, key: info.key, targets: info.targets, round: round.number, at: round.created } : null;
+      return info ? { accepted: round.before, key: info.key, targets: info.targets, round: round.number, at: round.created, ...(info.errors?.length ? { errors: info.errors } : {}) } : null;
     };
     let shown: AppliedState["shown"] = null;
     const own = await usable(latest), base = await baseline();

@@ -5,7 +5,7 @@ import { reviewDraft, useReviewDraft } from './review-draft.ts';
 import { ModeSwitch } from './mode-switch.tsx';
 import { ReviewFrame } from './review-frame.tsx';
 import { useTaskReviewView } from './review-view.ts';
-import { pdfAsset } from './playground-mode.ts';
+import { isPlayground, pdfAsset } from './playground-mode.ts';
 import { t } from './i18n.ts';
 
 const PdfView = lazy(() => import('./pdf-view.tsx').then(module => ({ default: module.PdfView })));
@@ -58,7 +58,7 @@ export function TaskDocument({ task, projectId, manuscript, placeholder, ...revi
     <div className={'task-document' + (visibleReview ? ' has-review' : '')}>
     <div className="task-document-preview" aria-hidden={visibleReview} inert={visibleReview}>
       {url ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}>
-        <PdfView ref={reader} readOnly onComment={review.onComment ? comment : undefined} comments={comments} pdfKey={lastRound ? undefined : key} suspended={visibleReview} place={'task-pdf:' + task.id} url={url} notes={[]} active="" region={false} setRegion={nothing} onCreate={async () => {}} onSelect={nothing}
+        <PdfView ref={reader} readOnly onComment={review.onComment ? comment : undefined} comments={comments} pdfKey={lastRound ? undefined : key} suspended={visibleReview} place={'task-pdf:' + task.id} url={url} sourceInfo={lastRound && !isPlayground ? `${url}&metadata=1` : undefined} notes={[]} active="" region={false} setRegion={nothing} onCreate={async () => {}} onSelect={nothing}
           outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={visibleReview ? undefined : (review.lead || modes) ? <>{review.lead}{modes}</> : undefined} tools={visibleReview ? undefined : review.tools}/>
       </Suspense> : !hasReview && <>{(review.lead || review.tools) && <div className="review-placeholder-toolbar">{review.lead}<div className="panel-tools">{review.tools}</div></div>}{placeholder}</>}
     </div>

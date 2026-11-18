@@ -57,6 +57,8 @@ try {
     sections: [{ node: 'intro', title: 'Introduction', number: '1', blocks: [{ kind: 'change', units: ['edit'], identical: false, before: [strip('Original')], after: [strip('Revised')] }] }],
     units: [{ id: 'edit', file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: 1, old_end: 1, new_start: 1, new_end: 1, old_text: 'Original paragraph', new_text: 'Revised paragraph', truncated: false }] };
   let appliedKey = 'applied-v1';
+  let appliedErrors, appliedFailure, delayedPdf, releasePdf;
+  let appliedBuilding = false, appliedCurrent = true;
   await page.addInitScript(() => {
     localStorage.setItem('papilot:task', '');
     localStorage.setItem('papilot:project', 'paper');
@@ -81,6 +83,7 @@ try {
     if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
     if (url.pathname.endsWith('/manuscript.pdf') || url.pathname.endsWith('/pdf')) {
       report.pdfRequests.push(url.pathname + url.search);
+      if (url.searchParams.get('metadata') === '1') return json({ url: `${url.pathname}?round=${url.searchParams.get('round')}&build=fixture` });
       return route.fulfill({ contentType: 'application/pdf', body: pdf });
     }
     throw Error(`Unexpected app request: ${url.pathname}`);
@@ -91,11 +94,12 @@ try {
     if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('engine/dist/web' + relative), contentType: /\.m?js$/.test(relative) ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'application/octet-stream' });
     if (relative.endsWith('.pdf')) {
       report.pdfRequests.push(url.pathname + url.search);
+      if (delayedPdf && relative.endsWith(`/${delayedPdf}.pdf`)) await new Promise(resolve => { releasePdf = resolve; });
       return route.fulfill({ contentType: 'application/pdf', body: relative.includes('applied-tall') ? tallerPdf : relative.includes('applied-v2') ? revisedPdf : pdf });
     }
     if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 612 35"><rect width="612" height="35" fill="white"/><text x="60" y="24" font-size="12">Revised paragraph.</text></svg>' });
     if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail });
-    if (relative.endsWith('/applied')) return route.fulfill({ json: { accepted: 'accepted', building: false, shown: { accepted: 'accepted', key: appliedKey, targets: ['main'], round: 1, at: 1, current: true, pdf: `${prefix}/applied/${task.name}/${appliedKey}.pdf` } } });
+    if (relative.endsWith('/applied')) return route.fulfill({ json: { accepted: 'accepted', building: appliedBuilding, error: appliedFailure, shown: { accepted: 'accepted', key: appliedKey, targets: ['main'], round: 1, at: 1, current: appliedCurrent, errors: appliedErrors, pdf: `${prefix}/applied/${task.name}/${appliedKey}.pdf` } } });
     if (relative.endsWith('/look')) return route.fulfill({ json: { ok: true } });
     if (relative.endsWith('/state')) return route.fulfill({ json: annotateReviewState({ task: task.name, title: task.title, csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, history: [{ number: 1, created: 1 }], round: 1, revision: 'after', deferred: task.deferred, decisions: { edit: 'pending' }, comments: {}, undo: null, job: null }, [task]) });
     throw Error(`Unexpected review request: ${relative}`);
@@ -198,15 +202,77 @@ try {
   await page.screenshot({ path: path.join(output, '02-applied-pdf-working.png') });
   await page.keyboard.press('Escape');
 
+  // A partial decision can compile with errors even when the full proposal
+  // is valid. Diagnostics belong to the PDF, including while its replacement loads.
+  appliedErrors = ['main.tex:12: Undefined control sequence.'];
+  appliedKey = 'applied-errors';
+  await readable();
+  const summary = frame.locator('summary').filter({ hasText: 'This PDF has compilation errors.' });
+  const diagnostics = frame.getByRole('region', { name: 'This PDF has compilation errors.' });
+  await expect(summary).toBeVisible();
+  await expect(diagnostics).toBeHidden();
+  await summary.focus(); await page.keyboard.press('Enter');
+  await expect(diagnostics).toHaveText(appliedErrors[0]);
+  for (const width of [1600, 390]) for (const colorScheme of ['light', 'dark']) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ colorScheme });
+    if (width === 390) await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme);
+    await expect(frame.locator('html')).toHaveAttribute('data-theme', colorScheme);
+    await diagnostics.scrollIntoViewIfNeeded();
+    const bounds = await diagnostics.boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width);
+    await expect(frame.locator('.applied-page canvas').first()).toBeVisible();
+    await page.screenshot({ path: path.join(output, `03-errors-${width}-${colorScheme}.png`) });
+  }
+  appliedCurrent = false; appliedBuilding = true;
+  await expect(frame.getByText('Updating with your latest decisions…')).toBeVisible();
+  await expect(diagnostics).toHaveText(appliedErrors[0]);
+  appliedBuilding = false; appliedFailure = { message: 'LaTeX failed to compile.', details: ['Fatal error'] };
+  await expect(frame.getByText('Your accepted changes do not compile together.')).toBeVisible();
+  await expect(diagnostics).toHaveText(appliedErrors[0]);
+  appliedFailure = undefined; appliedCurrent = true;
+  delayedPdf = 'applied-repaired'; appliedErrors = undefined; appliedKey = delayedPdf;
+  await expect.poll(() => Boolean(releasePdf)).toBe(true);
+  await expect(frame.locator('.applied-paper')).toHaveAttribute('data-build', 'applied-errors');
+  await expect(diagnostics).toContainText('Undefined control sequence');
+  releasePdf();
+  await readable();
+  await expect(summary).toHaveCount(0);
+  report.checks.push({ label: 'Recovered diagnostics stay with the displayed PDF, coexist with update/failure status, and clear after repair' });
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.emulateMedia({ colorScheme: 'light' });
+
   // The same PDF through FullPaper has its bookmarks and page count. This
   // isolates the failure to AppliedPaper, independently of PDF contents.
   task.deferred = false;
+  detail.revisedErrors = ['main.tex:12: Undefined control sequence.'];
   await page.locator('.manuscript-link').click();
   await sync();
   await page.locator('.task-link').filter({ hasText: task.title }).click();
   await expect(frame.locator('.paper-page')).toHaveCount(2);
   await healthy(reviewBar, 'Non-deferred FullPaper control with the same PDF');
   await page.screenshot({ path: path.join(output, '04-full-paper-working.png') });
+  await expect(summary).toBeVisible();
+  await summary.focus(); await page.keyboard.press('Enter');
+  await expect(diagnostics).toHaveText(detail.revisedErrors[0]);
+  for (const width of [1600, 390]) for (const colorScheme of ['light', 'dark']) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ colorScheme });
+    if (width === 390) await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
+    await expect(frame.locator('html')).toHaveAttribute('data-theme', colorScheme);
+    await diagnostics.scrollIntoViewIfNeeded();
+    const bounds = await diagnostics.boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width);
+    await page.screenshot({ path: path.join(output, `05-full-reader-errors-${width}-${colorScheme}.png`) });
+  }
+  detail.revisedErrors = undefined;
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.reload();
+  await page.locator('.task-link').filter({ hasText: task.title }).click();
+  await expect(frame.locator('.paper-page')).toHaveCount(2);
+  await expect(summary).toHaveCount(0);
+  report.checks.push({ label: 'FullPaper static diagnostics support keyboard disclosure, desktop/mobile themes, and clear after repair' });
   assert.deepEqual(report.errors, []);
   report.passed = true;
   console.log('PASS: Applied PDF contents, page count, navigation, zoom, search, replacement and reopening; manuscript and FullPaper controls.');

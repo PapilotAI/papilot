@@ -16,7 +16,7 @@ import type { Store } from './store.ts';
 import type { TaskNoteContext, Workspace } from './workspace.ts';
 import { WriterAgent } from './writer/agent.ts';
 import { AGENT_TURN, reviewClient, retryReviewRead, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
-import { fullPaperPdf, nextPaperPass, paperPassPdf, retainedPaperPdf } from './pdf.ts';
+import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaperBuild, retainedPaperPdf } from './pdf.ts';
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { bibliography, confirmEntry } from './references.ts';
@@ -610,12 +610,19 @@ export async function buildApp(options: AppOptions) {
     const located = await manuscripts.locateBuild(project.path, string(b.key, 'PDF key', 32), page, b.rect, rects, typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '', current.worktree, current.document);
     return { source: located?.source ? { file: located.source.file, lines: located.source.lines } : null };
   });
-  app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string; retained?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string; retained?: string; metadata?: string; build?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
     const task = store.task(request.params.id), project = store.project(task.projectId);
     const round = request.query.round === undefined ? task.review?.round : Number(request.query.round);
     const side = request.query.version || 'after';
     if (!round || !Number.isSafeInteger(round) || round < 1 || (side !== 'before' && side !== 'after')) return reply.code(400).send({ error: 'Select an existing review round and either the before or after PDF.' });
-    const pdf = request.query.retained === '1' && side === 'after'
+    if (request.query.metadata === '1') {
+      if (request.query.retained !== '1' || side !== 'after' || request.query.build !== undefined) return reply.code(400).send({ error: 'Select an existing review round and either the before or after PDF.' });
+      const { key, errors } = await retainedPaperBuild(connectReview, project.path, task.name, round);
+      return reply.header('Cache-Control', 'no-store').send({ url: `/api/tasks/${encodeURIComponent(task.id)}/pdf?round=${round}&build=${key}`, ...(errors?.length ? { errors } : {}) });
+    }
+    const pdf = request.query.build !== undefined
+      ? await paperBuildPdf(connectReview, project.path, task.name, round, request.query.build, side)
+      : request.query.retained === '1' && side === 'after'
       ? await retainedPaperPdf(connectReview, project.path, task.name, round)
       : await fullPaperPdf(connectReview, project.path, task.name, round, side);
     const filename = `papilot-${task.name}-r${round}-${side}.pdf`;
@@ -999,11 +1006,12 @@ export async function buildApp(options: AppOptions) {
   // A round may compile only the changed chapters; this compiles them all once.
   // While it compiles, `passes` names each earlier version that `?pass=`
   // serves: the chapters the round compiled, then each TeX pass of the whole.
-  app.get<{ Params: { projectId: string; name: string; round: string }; Querystring: { pass?: string } }>('/review/:projectId/pdf/:name/:round', { config: { resource: { project: 'projectId' } } }, async (request, reply) => {
+  app.get<{ Params: { projectId: string; name: string; round: string }; Querystring: { pass?: string; build?: string } }>('/review/:projectId/pdf/:name/:round', { config: { resource: { project: 'projectId' } } }, async (request, reply) => {
     const project = store.project(request.params.projectId), name = request.params.name, round = Number(request.params.round);
     const pass = request.query.pass === undefined ? null : Number(request.query.pass);
-    if (!/^[a-z0-9-]+$/.test(name) || !Number.isSafeInteger(round) || round < 1 || (pass !== null && (!Number.isSafeInteger(pass) || pass < 1))) return reply.code(404).send({ error: 'Review resource not found.' });
-    const pdf = pass === null ? await fullPaperPdf(connectReview, project.path, name, round, 'after') : await paperPassPdf(connectReview, project.path, name, round, pass);
+    if (!/^[a-z0-9-]+$/.test(name) || !Number.isSafeInteger(round) || round < 1 || (pass !== null && (!Number.isSafeInteger(pass) || pass < 1 || request.query.build !== undefined))) return reply.code(404).send({ error: 'Review resource not found.' });
+    const pdf = request.query.build !== undefined ? await paperBuildPdf(connectReview, project.path, name, round, request.query.build)
+      : pass === null ? await fullPaperPdf(connectReview, project.path, name, round, 'after') : await paperPassPdf(connectReview, project.path, name, round, pass);
     return reply.type('application/pdf').sendFile(path.basename(pdf), path.dirname(pdf), { cacheControl: false });
   });
   app.get<{ Params: { projectId: string; name: string; round: string }; Querystring: { after?: string } }>('/review/:projectId/pdf/:name/:round/passes', { config: { resource: { project: 'projectId' } } }, async (request, reply) => {

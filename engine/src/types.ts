@@ -106,6 +106,8 @@ export interface Round {
     job?: string;
     /** Compilation errors in the accepted text. */
     baselineErrors?: string[];
+    /** Compilation errors in the revised text, which still produced a PDF. */
+    revisedErrors?: string[];
     /** The accepted text produced no PDF, so the review shows source diffs. */
     sourceOnly?: true;
   };
@@ -205,6 +207,8 @@ export interface BuildInfo {
   tikzDirectories?: string[];
   /** The errors TeX typeset past, in a build that went on after them. */
   errors?: string[];
+  /** Persistent auxiliary errors remained after refreshing this build's seed. */
+  seedRetried?: boolean;
 }
 // A running compilation: latexmk's current step, the TeX pass, and the
 // pages typeset in it against the last known page count.
@@ -497,6 +501,8 @@ export interface RoundDetail extends Omit<RenderedRound, "units"> {
   warnings: string[];
   /** Compilation errors in the accepted text. */
   baselineErrors?: string[];
+  /** Compilation errors in the revised text, which still produced a PDF. */
+  revisedErrors?: string[];
   sourceOnly?: true;
   /** The round's own comparison is still rendering, or failed. */
   rendering?: "pending" | "failed";
@@ -654,7 +660,7 @@ export interface TaskInfo extends Summary {
 /** The paper as decided so far (engine core/applied.ts), as the review page reads it. */
 export interface AppliedView {
   accepted: string;
-  shown: { accepted: string; key: string; targets: string[]; round: number; at: number; current: boolean; pdf: string } | null;
+  shown: { accepted: string; key: string; targets: string[]; round: number; at: number; current: boolean; pdf: string; errors?: string[] } | null;
   building: boolean;
   error?: { message: string; details: string[]; log?: string };
 }

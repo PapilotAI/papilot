@@ -195,6 +195,7 @@
   "There are no accepted changes to save.": "保存する承認済みの変更はありません。",
   "There are no new changes to review. Previous decisions are available in History.": "レビューする新しい変更はありません。以前の判断内容は履歴で確認できます。",
   "These previews show one verified combination of edits. Other or smaller combinations may produce the same result. Accepting or rejecting applies only to the selected edit.": "このプレビューは、検証済みの変更の組み合わせを示します。別の組み合わせや、より少ない変更でも同じ結果になる場合があります。承認または却下は、選択した変更にのみ適用されます。",
+  "This PDF has compilation errors.": "この PDF にはコンパイルエラーがあります。",
   "This change was rejected. Undo that decision before editing it.": "この変更は却下されています。編集するには先にその判断を取り消してください。",
   "This change's own PDF comparison is still rendering. This comparison was rendered for the same change in the changes published at {time}.": "この変更自体のPDF比較はまだレンダリング中です。この比較は、{time}に公開された変更内の同じ変更に対してレンダリングされたものです。",
   "This page updates by itself.": "このページは自動的に更新されます。",
@@ -261,5 +262,6 @@
   "{sources} could not be reached.": "{sources} に接続できませんでした。",
   "{source} has this work with other details. Compare them below.": "{source} にはこの文献の異なる詳細情報が登録されています。以下で比較してください。",
   "{staged} of {total} staged": "{total} 件中 {staged} 件ステージ済み",
-  "↵ send · Esc cancel": "↵ 送信 · Esc キャンセル"
+  "↵ send · Esc cancel": "↵ 送信 · Esc キャンセル",
+  "The revised text has compilation errors.": "変更後のテキストにコンパイルエラーがあります。"
 }

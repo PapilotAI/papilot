@@ -60,12 +60,18 @@ it.skipIf(!tex)(
     }
   },
 );
-it.skipIf(!tex)("reports a worktree that does not compile", async () => {
+it.skipIf(!tex)("shows a recoverable worktree error with its PDF unless stop-on-error is enabled", async () => {
   const f = new Fixture(),
     app = f.app();
   try {
     const task = app.tasks.create("broken");
     fs.appendFileSync(path.join(task.worktree, METHOD), "\\undefinedcommand\n");
+    const preview = await view(app, task.name, { locations: [`${METHOD}:3`] });
+    expect(preview.pages.length).toBeGreaterThan(0);
+    expect(preview.errors?.join("\n")).toMatch(/Undefined control sequence/);
+    const checked = await view(app, task.name, { check: true, full: true });
+    expect(checked.errors?.join("\n")).toMatch(/Undefined control sequence/);
+    f.write(".git/papilot/settings.json", JSON.stringify({ halt_on_error: true }));
     const shown = await view(app, task.name, { locations: [`${METHOD}:3`] });
     expect(shown.pages).toEqual([]);
     expect(shown.error).toBe("The paper in the task worktree could not be compiled.");

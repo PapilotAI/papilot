@@ -90,14 +90,14 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
   // A saved round is immutable. Opening it tomorrow or after an app restart
   // must not invalidate its comparisons (or change \today in the document).
   const date = round.summary.date ?? buildDate(new Date(round.created * 1000), {});
-  const targets = round.summary.targets.length ? round.summary.targets : ["full"];
+  let targets = round.summary.targets.length ? round.summary.targets : ["full"];
   const rejected = round.units.filter(unit => decisions[unit.id] === "rejected").map(unit => unit.id).sort();
   // The host's comparison key describes the state it read before this request.
   // Check that state again here, before any await or cache lookup, so a racing
   // rejection/undo cannot put a different comparison under the browser's key.
   if (input.rejected !== undefined && JSON.stringify(input.rejected) !== JSON.stringify(rejected))
     throw new Error("The review changed. Reload the options.");
-  const key = createHash("sha256").update(JSON.stringify([3, round.before, round.after, input.edits, rejected, project, targets, date, ...(round.summary.sourceOnly ? [true] : [])])).digest("hex");
+  const key = createHash("sha256").update(JSON.stringify([5, round.before, round.after, input.edits, rejected, project, targets, date, ...(round.summary.sourceOnly ? [true] : [])])).digest("hex");
   const output = path.join(app.state, "cache/option-previews", name, String(round.number), key);
   const cached = readJson<RoundDetail | null>(path.join(output, "preview.json"), null);
   if (cached) return cached;
@@ -114,9 +114,11 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
     // Reuse precisely the baseline and chapter scope the author is reviewing.
     // Rebuilding the whole thesis here was both slow and a different comparison.
     const keys = round.summary.builds;
-    const seed = targets.includes("full") ? null
+    let seed = targets.includes("full") ? null
       : (keys.length > 2 ? await builder.completed(keys[0]) : null) ?? await builder.buildSeed(task.base);
-    const baseline = keys.length >= 2 ? await builder.completed(keys.at(-2)!) : null;
+    const expanded = Boolean(seed?.errors?.length);
+    if (expanded) { targets = ["full"]; seed = null; }
+    const baseline = !expanded && keys.length >= 2 ? await builder.completed(keys.at(-2)!) : null;
     const [old, next] = await Promise.all([
       round.summary.sourceOnly ? null : baseline ?? builder.build(round.before, targets, seed, { date }),
       builder.build(after, targets, seed, { date }),
@@ -135,6 +137,8 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
     const detail: RoundDetail = groupFormattingChanges({ ...rendered, task: name, round: round.number, before: round.before, after,
       units: visible.map(unit => ({ ...unit, ...rendered.units[unit.id] })),
       warnings: [...(old?.warnings ?? []), ...next.warnings], files, pdf: files + "preview.pdf", build: { key: next.key, targets },
+      ...(next.errors?.length ? { revisedErrors: next.errors } : {}),
+      ...(old?.errors?.length ? { baselineErrors: old.errors } : {}),
       ...(round.summary.sourceOnly ? { sourceOnly: true, baselineErrors: round.summary.baselineErrors } : {}),
     }, file => app.repo.blob(round.before, file)?.toString("utf8") ?? null);
     writeJson(path.join(output, "preview.json"), detail);

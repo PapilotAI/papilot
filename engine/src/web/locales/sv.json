@@ -195,6 +195,7 @@
   "There are no accepted changes to save.": "Det finns inga godkända ändringar att spara.",
   "There are no new changes to review. Previous decisions are available in History.": "Det finns inga nya ändringar att granska. Tidigare beslut finns i Historik.",
   "These previews show one verified combination of edits. Other or smaller combinations may produce the same result. Accepting or rejecting applies only to the selected edit.": "Dessa förhandsvisningar visar en verifierad kombination av ändringar. Andra eller mindre kombinationer kan ge samma resultat. Godkännande eller avvisning gäller endast den valda ändringen.",
+  "This PDF has compilation errors.": "Den här PDF-filen har kompileringsfel.",
   "This change was rejected. Undo that decision before editing it.": "Den här ändringen avvisades. Ångra det beslutet innan du redigerar den.",
   "This change's own PDF comparison is still rendering. This comparison was rendered for the same change in the changes published at {time}.": "Den här ändringens egen PDF-jämförelse renderas fortfarande. Den här jämförelsen renderades för samma ändring i de ändringar som publicerades {time}.",
   "This page updates by itself.": "Den här sidan uppdateras automatiskt.",
@@ -261,5 +262,6 @@
   "{sources} could not be reached.": "{sources} kunde inte nås.",
   "{source} has this work with other details. Compare them below.": "{source} har detta verk med andra uppgifter. Jämför dem nedan.",
   "{staged} of {total} staged": "{staged} av {total} köade",
-  "↵ send · Esc cancel": "↵ skicka · Esc avbryt"
+  "↵ send · Esc cancel": "↵ skicka · Esc avbryt",
+  "The revised text has compilation errors.": "Den reviderade texten har kompileringsfel."
 }

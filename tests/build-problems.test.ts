@@ -7,6 +7,7 @@ import path from 'node:path';
 import { collectProblems, countProblems, locateProblems, parseLatexLog, parseSynctexView, placementOrder, scrubLog, unwrapLog } from '../src/server/build-problems.ts';
 import { Manuscripts } from '../src/server/manuscript.ts';
 import { PdfDocument } from '../engine/src/render/pdf.ts';
+import { writeSettings } from '../engine/src/core/config.ts';
 
 const fixture = fs.readFileSync(new URL('./fixtures/problems.log', import.meta.url), 'utf8');
 const methods = './chapters/a-rather-long-directory-name-for-wrapping/methods-and-a-long-file-name.tex';
@@ -210,6 +211,51 @@ const latexmk = (() => {
   try { execFileSync('pdflatex', ['--version'], { stdio: 'ignore' }); execFileSync('synctex', ['help'], { stdio: 'ignore' }); return execFileSync('which', ['latexmk'], { encoding: 'utf8' }).trim(); } catch { return ''; }
 })();
 
+test('a usable PDF keeps compiler errors visible by default and stop-on-error remains available', { skip: !latexmk && 'needs TeX and SyncTeX', timeout: 60000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-continue-errors-')), manuscripts = new Manuscripts();
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+  async function settled() {
+    for (let attempt = 0; attempt < 600; attempt++) {
+      const { build } = await manuscripts.state('paper', root);
+      if (build.status !== 'building') return build;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Compilation did not finish');
+  }
+  try {
+    fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nBefore. \\PackageError{fixture}{Highlighting unavailable}{} After.\n\\end{document}\n');
+    git('init', '-q'); git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Paper');
+    const built = await settled();
+    assert.equal(built.status, 'ready', built.error);
+    assert.equal(built.current, true);
+    assert.equal(built.problems?.errors, 1);
+    const problems = await manuscripts.problems('paper');
+    assert.match(problems.problems.find(p => p.severity === 'error')!.message, /Highlighting unavailable/);
+    const pdf = new PdfDocument(manuscripts.pdf('paper', built.key!));
+    try { assert.match(pdf.page(0).text(), /Before\.[\s\S]*After\./); } finally { pdf.close(); }
+
+    const review = await manuscripts.captureReview(root, root, 'recovered-review');
+    assert.match(review.errors?.join('\n') ?? '', /Highlighting unavailable/);
+    assert.ok(review.lines.length && review.pdf && fs.existsSync(review.pdf));
+    assert.deepEqual((await manuscripts.captureReview(root, root, 'cached-review')).errors, review.errors, 'Cached PDF text must retain the build diagnostics');
+
+    writeSettings(root, { halt_on_error: true });
+    await manuscripts.state('paper', root, true);
+    const failed = await settled();
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.key, built.key, 'A failed strict build preserves the earlier preview');
+
+    // Errors from a helper can accompany a PDF without appearing in the TeX log.
+    writeSettings(root, { halt_on_error: false });
+    fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nHello \\cite{knuth}.\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n');
+    fs.writeFileSync(path.join(root, 'refs.bib'), '@book{knuth, author={Donald Knuth}, title={The TeXbook}, year={1984}, publisher={AW}}\n@article{broken, author = {A, title = {unterminated\n');
+    const bibliography = await settled();
+    assert.equal(bibliography.status, 'ready', bibliography.error);
+    assert.notEqual(bibliography.key, built.key);
+    assert.match((await manuscripts.problems('paper')).problems.filter(p => p.severity === 'error').map(p => p.message).join('\n'), /Illegal end of database file/);
+  } finally { manuscripts.forgetProject('paper'); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('duplicate references on one source line do not shift the next problem to an earlier mark', { skip: !latexmk && 'needs TeX and SyncTeX' }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-repeat-reference-'));
   try {
@@ -251,6 +297,7 @@ test('a compiled paper lists its problems on the pages where they appear', { ski
     fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\n\\section{One}\\label{s:one}\nSee \\ref{s:missing} and \\cite{nobody}.\n\\input{chapters/two}\n\\end{document}\n');
     fs.writeFileSync(path.join(root, 'chapters/two.tex'), '\\section{Two}\\label{s:one}\n\\newpage\nLater \\ref{s:gone} here.\n\n\\noindent\\hbox{\\rule{1.2\\textwidth}{1pt}}\n\nThe end.\n');
     git('init', '-q'); git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Paper');
+    writeSettings(root, { halt_on_error: true });
     const build = await settled();
     assert.equal(build.status, 'ready', build.error);
     // The label defined twice is listed at both places but counts once.
@@ -302,6 +349,7 @@ test('a failure outside TeX, or in a file TeX generated, still says what went wr
     fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nHello \\cite{knuth}.\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n');
     fs.writeFileSync(path.join(root, 'refs.bib'), '@book{knuth, author={Donald Knuth}, title={The TeXbook}, year={1984}, publisher={AW}}\n@article{broken, author = {A, title = {unterminated\n');
     git('init', '-q'); git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Paper');
+    writeSettings(root, { halt_on_error: true });
     // BibTeX fails; the TeX log has no error at all.
     assert.equal((await settled()).status, 'failed');
     const bibtex = (await manuscripts.problems('paper')).problems.filter(p => p.severity === 'error');

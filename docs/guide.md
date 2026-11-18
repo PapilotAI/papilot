@@ -247,6 +247,14 @@ Switching documents saves pending note edits first, including when using the key
 
 ### Fix a LaTeX build
 
+Papilot continues past recoverable LaTeX errors by default and shows the generated PDF with the errors in **Compilation Problems**. For example, `minted` can display code without syntax highlighting when its helper is unavailable. Fatal errors, such as a missing chapter that stops XeLaTeX, still fail the build even if the compiler leaves a partial PDF. The previous preview stays visible when a build fails.
+
+Task reviews and Git comparisons show compiler errors for both the original and revised text. The full PDF, accepted PDF and retained task preview show the diagnostics for the PDF currently displayed; expand the message above its pages to read them. Errors found only when compiling the whole document also appear there, even when the chapter comparison compiled cleanly. The message updates when the replacement PDF finishes loading and clears after a clean build. Agents receive these diagnostics when they use `view_pdf`, and AI reviewers receive the errors associated with their saved PDF.
+
+Chapter comparisons also include chapters changed by earlier accepted edits. If the latest full build has errors, Papilot compares the whole document so errors in other chapters remain visible. Papilot retries errors from generated auxiliary files, including lists of listings or algorithms and Beamer navigation files, with fresh state in either compilation mode; recoverable errors that persist after the retry stay alongside the PDF.
+
+To stop at the first error instead, add `"halt_on_error": true` to the existing object in `.git/papilot/settings.json`, then recompile. Set it to `false` or remove it to restore the default. This setting belongs to the selected root document and is restored when you switch back to it.
+
 Papilot preserves an explicit engine setting. Otherwise, an engine directive such as `% !TEX program = lualatex` takes precedence over `latexmkrc`'s `$pdf_mode`, followed by active Unicode package or class hints such as `fontspec` or `ctexart`; without a hint, it uses pdfLaTeX. Commented examples do not select an engine, including comments inside multiline package lists. A literal `\%` does not hide commands later on the same line.
 
 In the manuscript's **Compilation Problems** panel, select **Fix with an agent…** to have the selected agent diagnose the failed build. Papilot gives it the compiler diagnostics and relevant source excerpts in a read-only turn. If the agent proposes changes to the engine, source directory, or use of the current `latexmkrc`, Papilot tests them and saves a successful configuration in its data directory for this paper and compiler host. Later builds use those settings after a restart. A subsequent change to the paper's explicit build settings takes precedence. If the agent thinks a different main document should be used, it asks you to check the selection.

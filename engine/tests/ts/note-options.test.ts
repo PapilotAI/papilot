@@ -237,7 +237,9 @@ it('compiles an isolated preview and caches it without publishing, writing sourc
   const round = app.review.latestRound(task.name)!, decisions = app.review.decisions(task.name, round);
   const original = f.read(METHOD, task.worktree), head = app.repo.rev('HEAD');
   const pdf = path.join(app.state, 'preview-test.pdf'); fs.writeFileSync(pdf, 'test PDF');
-  const built = vi.spyOn(Builder.prototype, 'build').mockImplementation(async rev => ({ key: rev, tree: rev, targets: ['full'], root: task.worktree, cwd: task.worktree, pdf, seconds: 0, warnings: [] }));
+  const errors = ['sections/method.tex:3: Undefined control sequence.'];
+  const baselineErrors = ['sections/method.tex:1: Missing number.'];
+  const built = vi.spyOn(Builder.prototype, 'build').mockImplementation(async rev => ({ key: rev, tree: rev, targets: ['full'], root: task.worktree, cwd: task.worktree, pdf, seconds: 0, warnings: [], errors: rev === round.before ? baselineErrors : errors }));
   vi.spyOn(publisher, 'render').mockImplementation(async (out, request) => {
     expect(app.repo.blob(request.new.tree, METHOD)?.toString()).toContain('Procedure sentence two.');
     fs.writeFileSync(path.join(out, 'round.json'), JSON.stringify({ units: {}, sections: [], loose: [] }));
@@ -245,8 +247,11 @@ it('compiles an isolated preview and caches it without publishing, writing sourc
   const input = { id: 'preview-only', round: 1, edits: [{ unit: selected.id, text: 'Procedure' }] };
   const [first, second] = await Promise.all([previewNoteOption(app, task.name, input), previewNoteOption(app, task.name, input)]);
   expect(first.after).toBe(second.after);
+  expect(first.revisedErrors).toEqual(errors);
+  expect(first.baselineErrors).toEqual(baselineErrors);
   expect(first.units.find(unit => unit.id === selected.id)?.new_text).toBe('Procedure');
-  await previewNoteOption(app, task.name, input);
+  expect((await previewNoteOption(app, task.name, input)).revisedErrors).toEqual(errors);
+  expect((await previewNoteOption(app, task.name, input)).baselineErrors).toEqual(baselineErrors);
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2030-01-02T13:00:00Z'));
   expect((await previewNoteOption(app, task.name, input)).files).toBe(first.files);

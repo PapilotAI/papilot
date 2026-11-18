@@ -12,6 +12,7 @@ interface Settings {
   latexmkrc?: string;
   source_dir?: string;
   partial_builds?: boolean;
+  halt_on_error?: boolean;
   preload?: Record<string, string>;
   dependencies?: Record<string, string[]>;
   figures?: string[];
@@ -70,6 +71,7 @@ export interface Project {
   latexmkrc: string | null;
   source_dir: string;
   partial_builds: boolean;
+  halt_on_error: boolean;
   preload: Record<string, string>;
   dependencies: Record<string, string[]>;
   figures: string[];
@@ -156,7 +158,7 @@ export function writeSettings(root: string, settings: Record<string, unknown>) {
 // A repository may hold several root documents, such as a thesis, its slides
 // and a response letter. The paper compiles one at a time; these settings
 // belong to it, and the others keep theirs, by main file, in documents.json.
-const DOCUMENT_SETTINGS = ["main", "engine", "latexmkrc", "source_dir", "preload", "dependencies", "figures"];
+const DOCUMENT_SETTINGS = ["main", "engine", "latexmkrc", "source_dir", "halt_on_error", "preload", "dependencies", "figures"];
 export const documentsFile = (root: string) => path.join(stateOf(root), "documents.json");
 // The settings of the root documents the paper compiled before; nothing
 // usable from a file edited or written by something else.
@@ -315,6 +317,7 @@ export function loadProject(root: string, overrides?: BuildOverrides, document?:
     "latexmkrc",
     "source_dir",
     "partial_builds",
+    "halt_on_error",
     "preload",
     "dependencies",
     "figures",
@@ -331,11 +334,9 @@ export function loadProject(root: string, overrides?: BuildOverrides, document?:
   ] as const)
     if (settings[key] !== undefined && typeof settings[key] !== "string")
       throw new Error(`"${key}" must be a string.`);
-  if (
-    settings.partial_builds !== undefined &&
-    typeof settings.partial_builds !== "boolean"
-  )
-    throw new Error('"partial_builds" must be a boolean.');
+  for (const key of ["partial_builds", "halt_on_error"] as const)
+    if (settings[key] !== undefined && typeof settings[key] !== "boolean")
+      throw new Error(`"${key}" must be a boolean.`);
   if (
     settings.figures !== undefined &&
     (!Array.isArray(settings.figures) ||
@@ -429,6 +430,7 @@ export function loadProject(root: string, overrides?: BuildOverrides, document?:
     latexmkrc,
     source_dir,
     partial_builds: settings.partial_builds !== false,
+    halt_on_error: settings.halt_on_error ?? false,
     preload,
     dependencies,
     figures,
@@ -444,5 +446,6 @@ export const signature = (p: Project) =>
     p.source_dir,
     p.preload,
     p.dependencies,
+    p.halt_on_error,
   ]);
 export const isFigure = (p: Project, file: string) => within(file, p.figures);

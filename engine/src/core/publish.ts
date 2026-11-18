@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { ROOT, codeVersion } from "../runtime.ts";
-import { Builder, BuildError, auxiliaryBuildError, buildDate, reprioritize, type BuildPriority } from "./build.ts";
+import { Builder, BuildError, auxiliaryBuildError, auxiliaryDiagnostics, buildDate, reprioritize, type BuildPriority } from "./build.ts";
 import { diffUnitsAsync, scopeViolationsAsync, withHashesAsync, withUnits } from "./changes.ts";
 import { provisional, roundFolder, writeProvisional } from "./carry.ts";
 import { acceptNoteOption, noteOptionUnits } from "./note-options.ts";
@@ -344,13 +344,13 @@ export class Publisher {
     const builder = new Builder(project, app.repo),
       priority = () => this.followPriority(name);
     const date = buildDate(), options = { date, signal, priority };
-    let targets = await builder.planAsync(before, after, files), seed: BuildInfo | null = null;
+    let targets = await builder.planAsync(before, after, files, task.base), seed: BuildInfo | null = null;
     // A starting text that does not compile is compiled as the round's
     // publication will compile it (see renderComparison).
     if (targets[0] !== "full") {
       if (!(await knownBroken(builder, task.base, ["full"], null, date).catch(compileFailure)))
         seed = await builder.buildSeed(task.base, { priority }).catch(compileFailure);
-      if (!seed) targets = ["full"];
+      if (!seed || seed.errors?.length) { targets = ["full"]; seed = null; }
     }
     if (signal.aborted || this.stopping) return replace();
     const [baseline, revised] = await Promise.allSettled([
@@ -735,7 +735,7 @@ export class Publisher {
     const units = await withHashesAsync(app.repo, before, after, optionUnits ?? await diffUnitsAsync(app.repo, before, after, (f) =>
       isFigure(project, f),
     ));
-    const targets = await new Builder(project, app.repo).planAsync(before, after, files),
+    const targets = await new Builder(project, app.repo).planAsync(before, after, files, task.base),
       shown = await provisional(app, name, latest, { before, after, units }),
       pending = final + ".pending-" + randomBytes(4).toString("hex");
     try {
@@ -805,8 +805,9 @@ export class Publisher {
       // both versions compile whole instead (see below).
       if (!(await knownBroken(builder, base, ["full"], null, date).catch(compileFailure)))
         seed = await this.compile(job, "baseline", builder, base, ["full"], null, { asSeed: true }).catch(compileFailure);
-      if (!seed) {
+      if (!seed || seed.errors?.length) {
         targets = ["full"];
+        seed = null;
         this.revisions.delete(job.id);
       }
     }
@@ -818,13 +819,16 @@ export class Publisher {
         this.compile(job, "revised", builder, after, targets, seed, { date }),
       ]);
     };
-    let builds: PromiseSettledResult<BuildInfo>[] = await versions();
-    if (!this.stopping && seed && builds.some((built) => built.status === "rejected" && auxiliaryBuildError(built.reason))) {
+    let builds: PromiseSettledResult<BuildInfo>[] = await versions(), retriedSeed = false;
+    if (!this.stopping && seed && builds.some((built) => built.status === "rejected" ? auxiliaryBuildError(built.reason) : !built.value.seedRetried && auxiliaryDiagnostics(built.value.errors))) {
       // An external package can invalidate readable aux files without
       // changing the source tree or engine version. Rebuild the seed once,
       // after both attempts finish, then use it for both comparison sides.
+      // Persistent recoverable errors in that second attempt remain visible.
       seed = await this.compile(job, "baseline", builder, base, ["full"], null, { asSeed: true, force: true }).catch(failed("The comparison baseline could not be compiled."));
+      if (seed.errors?.length) { targets = ["full"]; seed = null; this.revisions.delete(job.id); }
       builds = await versions();
+      retriedSeed = true;
     }
     // A task that fixes a compilation error starts from text that does not
     // compile. Its side of the comparison is what TeX typesets past the
@@ -833,6 +837,8 @@ export class Publisher {
       const past = await this.compile(job, "baseline", builder, before, targets, seed, { date, pastErrors: true }).catch(compileFailure);
       if (past) builds = [{ status: "fulfilled", value: past }, builds[1]];
     }
+    if (retriedSeed) builds = await Promise.all(builds.map(async built => built.status === "fulfilled"
+      ? { ...built, value: await builder.markSeedRetried(built.value) } : built));
     const [baseline, revised] = builds,
       baselineErrors = !this.stopping && baseline.status === "rejected" && baseline.reason instanceof BuildError && revised.status === "fulfilled"
         ? [baseline.reason.message, ...baseline.reason.details] : undefined,
@@ -852,6 +858,7 @@ export class Publisher {
       date,
       builds: old ? [seed, old, next].filter((b) => b !== null).map((b) => b.key) : [next.key],
       baselineErrors: old?.errors ?? baselineErrors,
+      revisedErrors: next.errors,
       sourceOnly: old ? undefined : true,
     };
     try {

@@ -250,7 +250,7 @@ export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?
   tree?: string; problems?: BuildProblemCounts; progress?: BuildProgress;
   /** The root document whose PDF `key` is. */
   document?: string }
-// What the last finished build reported. Errors stop the build; warnings are
+// What the last finished build reported. Errors can accompany a usable PDF; warnings are
 // mistakes in the PDF (?? and missing citations); minor problems are
 // typesetting (overfull lines) and package remarks, listed but never counted.
 export type BuildProblemKind = 'error' | 'missing-file' | 'reference' | 'citation' | 'label' | 'glyph' | 'overfull' | 'other';
