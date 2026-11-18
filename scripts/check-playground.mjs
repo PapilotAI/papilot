@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { checkPdfLifecycle } from './check-pdf-lifecycle.mjs';
 
 // A plain file server, with no Papilot server, route mocking or API handlers.
@@ -33,6 +33,15 @@ const showSidebar = async () => { const home = page.locator('.manuscript-link');
 const openTask = async id => { await showSidebar(); await page.locator(`[data-task="${id}"] .task-link`).click(); };
 const openManuscript = async () => { await showSidebar(); await page.getByRole('button', { name: 'Manuscript', exact: true }).click(); };
 const marks = () => page.locator('.page[data-page-number="1"] .note-tag[data-kind="point"]');
+// Toolbars side by side share one bottom line, in the desktop title row.
+const toolbarLines = () => page.evaluate(() => {
+  const top = document.querySelector('.main').getBoundingClientRect().top, lines = new Set();
+  const add = (element, offset = 0) => { const box = element?.getBoundingClientRect(); if (box?.height) lines.add(Math.round(box.bottom + offset - top)); };
+  document.querySelectorAll('.main :is(.pdf-toolbar,.panel-heading,.manuscript-side-header,.workspace-navigation,.review-placeholder-toolbar,.git-toolbar,.git-details-toolbar,.git-diff-toolbar)').forEach(element => add(element));
+  const frame = document.querySelector('.review-frame'), viewer = frame?.contentDocument;
+  if (viewer && !viewer.documentElement.hasAttribute('data-papilot-reader')) add(viewer.querySelector('.bar'), frame.getBoundingClientRect().top);
+  return [...lines].join(' ');
+});
 const markersFit = () => page.locator('.note-tag').evaluateAll(elements => {
   const boxes = elements.map(element => element.getBoundingClientRect());
   return boxes.every((box, index) => box.width > 0 && box.left >= 0 && box.right <= innerWidth &&
@@ -60,11 +69,17 @@ try {
   const modelMenu = page.getByRole('dialog', { name: 'Agent settings', exact: true });
   const modelTrigger = page.getByRole('button', { name: 'Agent settings', exact: true });
   await expect(modelTrigger).toContainText('GPT-6 Astra');
-  await expect(modelTrigger).toHaveAttribute('title', /GPT-6 Astra.*Xhigh/);
+  await expect(modelTrigger).toHaveAttribute('title', /Papilot Writer.*GPT-6 Astra.*High/);
   await modelTrigger.click();
-  for (const name of ['Codex', 'Claude', 'Cursor', 'Copilot', 'Grok', 'Antigravity', 'Kimi', 'GLM', 'DeepSeek', 'Qwen', 'OpenCode']) await expect(modelMenu.getByRole('group', { name, exact: true })).toHaveCount(1);
+  for (const name of ['Papilot Writer', 'Pi', 'Codex', 'Claude', 'Cursor', 'Copilot', 'Grok', 'Antigravity', 'Kimi', 'GLM', 'DeepSeek', 'Qwen', 'OpenCode']) await expect(modelMenu.getByRole('group', { name, exact: true })).toHaveCount(1);
   const effort = modelMenu.getByRole('slider', { name: 'Reasoning effort', exact: true });
   const fast = modelMenu.getByRole('switch', { name: 'Fast mode', exact: true });
+  await expect(effort).toHaveAttribute('aria-valuetext', 'High');
+  await expect(modelMenu.getByRole('radio', { name: 'Paper edits', exact: true })).toBeChecked();
+  await expect(fast).toHaveCount(0);
+  await expect(modelMenu.getByRole('option', { name: 'GPT-6 Astra · ChatGPT Plus or Pro · Papilot Writer', exact: true })).toHaveAttribute('aria-selected', 'true');
+  // Existing agents retain their own model, permission and fast-mode controls.
+  await modelMenu.getByRole('option', { name: 'GPT-6 Astra · Codex', exact: true }).click();
   await expect(effort).toHaveAttribute('aria-valuetext', 'Xhigh');
   await expect(modelMenu.getByRole('radio', { name: 'Workspace access', exact: true })).toBeChecked();
   await fast.check();
@@ -170,6 +185,7 @@ try {
   await expect(download).toHaveCount(0);
   await openManuscript();
   await expect(input).toHaveValue('Make the design philosophy more concrete.');
+  await expect.poll(toolbarLines).toBe('46');
   await presets.getByRole('button', { name: 'More prepared tasks', exact: true }).click();
   await expect(presets.locator('.demo-preset')).toHaveCount(6);
   await presets.getByRole('button', { name: 'Open prepared task: Fix the cropped-page coordinates', exact: true }).click();
@@ -221,9 +237,11 @@ try {
   await review.locator('.change.current').getByRole('button', { name: 'LaTeX', exact: true }).click();
   await expect(review.locator('.change.current .source-code')).toBeVisible();
   await review.locator('.change.current').getByRole('button', { name: 'LaTeX', exact: true }).click();
+  await expect.poll(toolbarLines).toBe('46');
   await page.getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(review.locator('.paper-page')).toHaveCount(2);
   await expect(review.locator('.paper-slice canvas').first()).toBeVisible();
+  await expect.poll(toolbarLines).toBe('46');
   await page.getByRole('button', { name: 'Changes', exact: true }).click();
   await review.locator('.change.current button.accept').click();
   await expect(page.locator('[data-task="example-clarity"] .task-badge')).toHaveText('1');
@@ -309,6 +327,7 @@ try {
   await page.locator('.sidebar').getByRole('button', { name: /^Version Management/ }).click();
   const git = page.locator('.git-workspace');
   await expect(git.locator('.git-file')).toHaveCount(3);
+  await expect.poll(toolbarLines).toBe('46');
   await expect(download).not.toBeVisible();
   await git.getByRole('button', { name: 'Stage main.tex', exact: true }).click();
   await expect(git.getByRole('group', { name: 'Staged changes', exact: true }).locator('.git-file')).toHaveCount(2);

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Repo } from '../engine/src/core/git.ts';
 import { Builder } from '../engine/src/core/build.ts';
-import { loadProject } from '../engine/src/core/config.ts';
+import { loadProject, saveBuildOverrides } from '../engine/src/core/config.ts';
 import { findCommand } from '../engine/src/core/platform.mjs';
 
 const { Fixture, METHOD, fakeRound } = await import(new URL('../engine/tests/ts/helpers.ts', import.meta.url).href);
@@ -29,7 +29,7 @@ function paper(files: Record<string, string>) {
     repo.run(['add', '-A']); repo.run([...identity, 'commit', '-qm', message]);
     return repo.rev('HEAD');
   };
-  commit({ '.latex-review.json': JSON.stringify({ main: 'main.tex', engine: 'pdflatex' }), ...files }, 'Fixture');
+  commit({ '.git/papilot/settings.json': JSON.stringify({ main: 'main.tex', engine: 'pdflatex' }), ...files }, 'Fixture');
   return { base, root, repo, write, commit, close: () => fs.rmSync(base, { recursive: true, force: true }) };
 }
 const tree = (repo: Repo, commit: string) => repo.text(['rev-parse', `${commit}^{tree}`]);
@@ -39,7 +39,7 @@ test('engine snapshots continue from their saved index, in the main checkout and
   try {
     const index = fs.readFileSync(path.join(f.root, '.git/index'));
     const first = f.repo.snapshot(['']);
-    assert.ok(fs.existsSync(path.join(f.root, '.git/latex-review/snapshot-index')));
+    assert.ok(fs.existsSync(path.join(f.root, '.git/papilot/snapshot-index')));
     f.write({ 'main.tex': 'Two.\n', 'added.tex': 'New.\n', 'build/main.aux': 'Generated.\n' });
     fs.rmSync(path.join(f.root, 'old.tex'));
     const second = f.repo.snapshot([''], ['.aux']);
@@ -49,9 +49,9 @@ test('engine snapshots continue from their saved index, in the main checkout and
     assert.equal(f.repo.blob(second, 'old.tex'), null);
     assert.equal(f.repo.blob(second, 'build/main.aux'), null, 'excluded suffixes stay out');
     assert.equal(tree(f.repo, await f.repo.snapshotAsync([''], ['.aux'])), tree(f.repo, second), 'the asynchronous snapshot is the same');
-    fs.rmSync(path.join(f.root, '.git/latex-review/snapshot-index'));
+    fs.rmSync(path.join(f.root, '.git/papilot/snapshot-index'));
     assert.equal(tree(f.repo, f.repo.snapshot([''], ['.aux'])), tree(f.repo, second), 'a snapshot from scratch is the same');
-    fs.writeFileSync(path.join(f.root, '.git/latex-review/snapshot-index'), 'corrupt');
+    fs.writeFileSync(path.join(f.root, '.git/papilot/snapshot-index'), 'corrupt');
     assert.equal(tree(f.repo, await f.repo.snapshotAsync([''], ['.aux'])), tree(f.repo, second), 'an unreadable saved index falls back to a fresh one');
     // A new commit moves HEAD; the saved index still describes the old one.
     f.commit({ 'main.tex': 'Three.\n' });
@@ -66,7 +66,7 @@ test('engine snapshots continue from their saved index, in the main checkout and
     fs.writeFileSync(path.join(worktree, 'main.tex'), 'In the task.\n');
     const task = new Repo(worktree), snapshot = await task.snapshotAsync(['']);
     assert.equal(task.blob(snapshot, 'main.tex')?.toString(), 'In the task.\n');
-    assert.ok(fs.existsSync(path.join(f.root, '.git/worktrees/task/latex-review/snapshot-index')));
+    assert.ok(fs.existsSync(path.join(f.root, '.git/worktrees/task/papilot/snapshot-index')));
     assert.equal(f.repo.blob(f.repo.snapshot(['']), 'main.tex')?.toString(), 'Three.\n', 'the main checkout is unaffected');
   } finally { f.close(); }
 });
@@ -273,7 +273,7 @@ test('the whole paper of a version compiles ahead, and the review shows each of 
     assert.ok(shown.length >= 1 && shown[0] === 1, `the pass before the reviewer came is shown first: ${shown}`);
     const pdf = await paperPdf(f.root, rev);
     assert.ok(fs.existsSync(pdf));
-    const builds = path.join(f.root, '.git/latex-review/cache/builds');
+    const builds = path.join(f.root, '.git/papilot/cache/builds');
     assert.equal(fs.readdirSync(builds).filter(name => fs.existsSync(path.join(builds, name, 'result.json'))).length, 1, 'the reviewer waited for the build started ahead');
     // Once it is complete, the paper is answered at once and its passes stay.
     assert.deepEqual(await nextPass(f.root, rev, 0, 0), { pass: null });
@@ -289,7 +289,7 @@ test('the review full paper shows the round\'s changed chapters at once, then ea
   try {
     const rev = f.repo.rev('HEAD');
     // The round compiled only its changed chapters; that PDF is in the build cache.
-    const key = 'c'.repeat(32), folder = path.join(f.root, '.git/latex-review/cache/builds', key), chapters = path.join(folder, 'chapters.pdf');
+    const key = 'c'.repeat(32), folder = path.join(f.root, '.git/papilot/cache/builds', key), chapters = path.join(folder, 'chapters.pdf');
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(chapters, '%PDF-1.4 chapters');
     fs.writeFileSync(path.join(folder, 'result.json'), JSON.stringify({ pdf: chapters }));
@@ -310,6 +310,21 @@ test('the review full paper shows the round\'s changed chapters at once, then ea
     // Once the whole paper is there, it is shown right away.
     assert.deepEqual(await nextPaperPass(connect, f.root, 'p-task', 1, 0, 0), { pass: null });
   } finally { teX.restore(); f.close(); }
+});
+
+test('a task\'s full paper compiles the root document the task was started on', { skip: !tex && 'needs latexmk and pdflatex', timeout: 180000 }, async () => {
+  const { fullPaperPdf } = await import('../src/server/pdf.ts');
+  // The paper compiles its thesis now; the task was started on the letter.
+  const f = paper({ 'main.tex': document('Thesis.\n'), 'letter/response.tex': document('Letter.\n') });
+  try {
+    const rev = f.repo.rev('HEAD');
+    const connect = async () => ({ get: async () => ({ before: rev, after: rev, document: 'letter/response.tex' }) as any });
+    const pdf = await fullPaperPdf(connect, f.root, 'letter-task', 1, 'after');
+    assert.equal(path.basename(pdf), 'response.pdf');
+    // A round of a main file renamed since compiles as the current document, as the engine does.
+    const renamed = async () => ({ get: async () => ({ before: rev, after: rev, document: 'letter/old.tex' }) as any });
+    assert.equal(path.basename(await fullPaperPdf(renamed, f.root, 'renamed-task', 1, 'after')), 'main.pdf');
+  } finally { f.close(); }
 });
 
 test('the full paper of a round that compiled the whole paper is that round\'s own PDF', { skip: process.platform === 'win32' && 'uses a POSIX shell script', timeout: 60000 }, async () => {
@@ -348,23 +363,80 @@ test('the full paper of a round that compiled the whole paper is that round\'s o
   } finally { process.env.PATH = previousPath; f.close(); }
 });
 
-test('the full paper remembers only the versions and builds of a round, not its whole detail', async () => {
-  const { paperPassPdf } = await import('../src/server/pdf.ts');
-  const { setFlagsFromString } = await import('node:v8');
-  const { runInNewContext } = await import('node:vm');
-  setFlagsFromString('--expose-gc');
-  const gc = runInNewContext('gc') as () => void;
-  let units: WeakRef<object> | undefined;
-  const connect = async () => ({ get: async () => {
-    // A round's detail carries every change; only a few of its fields matter here.
-    const detail = { before: 'a'.repeat(40), after: 'b'.repeat(40), builds: ['c'.repeat(32)], build: { key: 'c'.repeat(32), targets: ['full'] }, units: Array.from({ length: 1000 }, (_, i) => ({ id: 'c' + i, old_text: 'old', new_text: 'new' })) };
-    units = new WeakRef(detail.units);
-    return detail;
-  } }) as any;
-  await assert.rejects(paperPassPdf(connect, '/unused-round-info', 'p-task', 1, 1));
-  await new Promise(resolve => setImmediate(resolve));
-  gc();
-  assert.equal(units?.deref(), undefined, 'the round\'s changes are not kept');
+test('round PDFs keep their own builds when repaired settings change without changing either revision', async () => {
+  const { fullPaperPdf, retainedPaperPdf, nextPaperPass } = await import('../src/server/pdf.ts');
+  const f = paper({ 'main.tex': document('Before.\n') }), previousData = process.env.PAPILOT_DATA;
+  process.env.PAPILOT_DATA = path.join(f.base, 'data');
+  try {
+    const before = f.repo.rev('HEAD'), after = f.commit({ 'main.tex': document('After.\n') }), project = loadProject(f.root);
+    const publish = async (key: string, revision: string) => {
+      const folder = path.join(project.state, 'cache/builds', key), pdf = path.join(folder, 'src/build/main.pdf');
+      fs.mkdirSync(path.dirname(pdf), { recursive: true });
+      fs.writeFileSync(pdf, `%PDF-1.4 ${key}`);
+      fs.writeFileSync(path.join(folder, 'result.json'), JSON.stringify({ key, tree: await f.repo.treeIdAsync(revision, project.source_dir), targets: ['full'], root: path.join(folder, 'src'), cwd: path.join(folder, 'src'), pdf, seconds: 1, warnings: [] }));
+      return pdf;
+    };
+    const keys = ['1', '2', '3', '4'].map(value => value.repeat(32));
+    const first = [await publish(keys[0], before), await publish(keys[1], after)];
+    const connect = async () => ({ get: async (route: string) => {
+      const builds = route.endsWith('/1') ? keys.slice(0, 2) : keys.slice(2);
+      return { before, after, builds, build: { key: builds[1], targets: ['full'] } } as any;
+    } });
+    assert.equal(await fullPaperPdf(connect, f.root, 'p-task', 1, 'before'), first[0]);
+    assert.equal(await fullPaperPdf(connect, f.root, 'p-task', 1, 'after'), first[1]);
+    saveBuildOverrides(f.root, { engine: 'xelatex' });
+    const second = [await publish(keys[2], before), await publish(keys[3], after)];
+    assert.equal(await fullPaperPdf(connect, f.root, 'p-task', 2, 'before'), second[0], 'the unchanged baseline uses the repaired build');
+    assert.equal(await retainedPaperPdf(connect, f.root, 'p-task', 2), second[1], 'the retained reader uses the repaired build');
+    assert.deepEqual(await nextPaperPass(connect, f.root, 'p-task', 2, 0, 0), { pass: null });
+    assert.deepEqual(await Promise.all([1, 2, 1, 2].map(async round => [
+      await fullPaperPdf(connect, f.root, 'p-task', round, 'before'),
+      await fullPaperPdf(connect, f.root, 'p-task', round, 'after'),
+    ])), [first, second, first, second], 'concurrent readers of old and new rounds retain their exact PDFs');
+  } finally {
+    if (previousData === undefined) delete process.env.PAPILOT_DATA; else process.env.PAPILOT_DATA = previousData;
+    f.close();
+  }
+});
+
+test('a repaired chapter round does not reuse the prior round\'s full paper or passes', { skip: !tex && 'needs latexmk and pdflatex', timeout: 180000 }, async () => {
+  const { fullPaperPdf, retainedPaperPdf, nextPaperPass, paperPassPdf } = await import('../src/server/pdf.ts');
+  const f = paper({ 'main.tex': document('Unused.\n'), 'src/main.tex': document('\\section{One}\\label{one}See page~\\pageref{two}.\n\\section{Two}\\label{two}Text.\n') });
+  const previousData = process.env.PAPILOT_DATA, teX = slowTeX(f.base);
+  process.env.PAPILOT_DATA = path.join(f.base, 'data');
+  try {
+    f.write({ '.git/papilot/settings.json': JSON.stringify({ main: 'src/main.tex', engine: 'pdflatex' }) });
+    const rev = f.repo.rev('HEAD'), keys = ['5', '6'].map(value => value.repeat(32));
+    const chapters = keys.map(key => {
+      const folder = path.join(loadProject(f.root).state, 'cache/builds', key), pdf = path.join(folder, 'chapters.pdf');
+      fs.mkdirSync(folder, { recursive: true });
+      fs.writeFileSync(pdf, `%PDF-1.4 ${key}`);
+      fs.writeFileSync(path.join(folder, 'result.json'), JSON.stringify({ pdf }));
+      return pdf;
+    });
+    const connect = async () => ({ get: async (route: string) => ({ before: rev, after: rev, build: { key: keys[route.endsWith('/1') ? 0 : 1], targets: ['one'] } }) as any });
+    const original = await fullPaperPdf(connect, f.root, 'p-task', 1, 'after');
+    saveBuildOverrides(f.root, { source_dir: '' });
+    assert.equal(await retainedPaperPdf(connect, f.root, 'p-task', 2), chapters[1], 'the new chapter PDF precedes the newly requested full build');
+    const shown: string[] = [];
+    for (let after = 0; ;) {
+      const next = await nextPaperPass(connect, f.root, 'p-task', 2, after, 60000);
+      if (next.pass === null) break;
+      if (typeof next.pass !== 'number') continue;
+      shown.push(await paperPassPdf(connect, f.root, 'p-task', 2, next.pass));
+      after = next.pass;
+    }
+    assert.equal(shown[0], chapters[1]);
+    assert.ok(shown.length > 1, 'the repaired full build exposes its own intermediate passes');
+    const repaired = await fullPaperPdf(connect, f.root, 'p-task', 2, 'after');
+    assert.notEqual(repaired, original);
+    assert.equal(await fullPaperPdf(connect, f.root, 'p-task', 1, 'after'), original);
+    assert.ok(shown.every(pdf => fs.existsSync(pdf)));
+  } finally {
+    teX.restore();
+    if (previousData === undefined) delete process.env.PAPILOT_DATA; else process.env.PAPILOT_DATA = previousData;
+    f.close();
+  }
 });
 
 test('a delivery preview is exactly what applying the task writes, with pending changes accepted', async () => {

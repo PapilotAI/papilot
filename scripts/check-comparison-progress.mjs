@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
@@ -29,6 +29,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/indirect-changes')) return json({ indirectChanges: false });
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true, noteAlternativeRange: 'few' } });
   if (url.pathname.endsWith('/quick-notes')) return json({ quickNotes: null });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/items')) return json({ items: [{ id: 'answer', taskId: task.id, type: 'assistant', text: '已根据 5 条批注完成修改。', createdAt: 2 }] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });

@@ -28,6 +28,23 @@ const notifications = desktopNotifications({
     if (taskId) window?.webContents.send('papilot:open-task', taskId);
   },
 });
+// papilot://new?template=<id>&version=<version> starts a paper from a Universe template.
+let pendingTemplate: { id: string; version: string } | null = null;
+function templateLink(url: string) {
+  try {
+    const link = new URL(url), id = link.searchParams.get('template') || '', version = link.searchParams.get('version') || '';
+    if (link.protocol !== 'papilot:' || link.hostname !== 'new') return null;
+    return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) && id.length <= 80 && /^\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.]+)?$/.test(version) && version.length <= 40 ? { id, version } : null;
+  } catch { return null; }
+}
+function openLink(url: string | undefined) {
+  const choice = url ? templateLink(url) : null;
+  if (!choice) return false;
+  pendingTemplate = choice;
+  showWindow();
+  window?.webContents.send('papilot:new-paper');
+  return true;
+}
 function external(url: string) {
   try { if (['https:', 'http:'].includes(new URL(url).protocol)) void shell.openExternal(url); } catch { /* invalid link */ }
 }
@@ -58,7 +75,11 @@ function showWindow() {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', showWindow);
+  // macOS delivers links as events; Windows and Linux pass them as arguments.
+  app.on('open-url', (event, url) => { event.preventDefault(); openLink(url); });
+  app.on('second-instance', (_event, argv) => { if (!openLink(argv.find(arg => arg.startsWith('papilot://')))) showWindow(); });
+  openLink(process.argv.find(arg => arg.startsWith('papilot://')));
+  if (app.isPackaged && !nix) app.setAsDefaultProtocolClient('papilot');
   app.on('activate', showWindow);
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
   app.on('before-quit', event => {
@@ -82,6 +103,7 @@ else {
     });
     const appPage = (event: Electron.IpcMainInvokeEvent) => window && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && event.senderFrame && new URL(event.senderFrame.url).origin === origin;
     ipcMain.handle('papilot:open-environment', event => { if (process.platform === 'win32' && appPage(event)) openEnvironment(); });
+    ipcMain.handle('papilot:take-new-paper', event => { if (!appPage(event)) return null; const choice = pendingTemplate; pendingTemplate = null; return choice; });
     ipcMain.handle('papilot:current-environment', event => appPage(event) ? environment.kind === 'wsl' ? `WSL · ${environment.distribution}` : 'Windows' : '');
     if (process.platform === 'win32') {
       const saved = readEnvironment(data);
@@ -104,7 +126,7 @@ else {
       if (!event.senderFrame || new URL(event.senderFrame.url).origin !== origin) return null;
       return chooseDirectory(window);
     });
-    // Like an editor's File › Open Folder…: the chosen folder opens as a paper.
+    // Like an editor's File › Open Paper…: the chosen folder opens as a paper.
     const openFolder = async () => {
       showWindow();
       const target = window;
@@ -156,7 +178,7 @@ else {
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: 'Papilot', submenu: [{ role: 'about' }, { label: nix ? 'Updates managed by Nix' : 'Download Updates…', enabled: !nix, click: () => external(releases) }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
-      { label: 'File', submenu: [{ id: 'open-folder', label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: () => void openFolder() }, { type: 'separator' }, process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' }] },
+      { label: 'File', submenu: [{ id: 'open-folder', label: 'Open Paper…', accelerator: 'CmdOrCtrl+O', click: () => void openFolder() }, { type: 'separator' }, process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' }] },
       ...(process.platform === 'win32' ? [{ label: 'Environment', submenu: [{ label: environment.kind === 'wsl' ? `WSL · ${environment.distribution}…` : 'Windows…', click: () => openEnvironment() }] }] : []),
       { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
       { role: 'help', submenu: [{ label: 'Papilot Guide', click: () => external('https://github.com/PapilotAI/papilot#readme') }, { label: 'Show Logs', click: () => shell.showItemInFolder(log) }] },

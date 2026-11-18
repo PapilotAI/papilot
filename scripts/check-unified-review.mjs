@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { annotateReviewState, rewriteReviewHtml } from '../src/server/review.ts';
 
 fs.mkdirSync('test-results', { recursive: true });
@@ -27,7 +27,7 @@ let effectFixture = false, effectRequests = 0;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
 const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [], archiveRequests = [], deleteRequests = [];
 let gitFiles = [];
-let pushError, conflictOnApply = false, combinedOnCommit = false;
+let conflictOnApply = false, combinedOnCommit = false;
 let timeline = [];
 let noteResults = [];
 const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, history: Object.keys(rounds).map(number => ({ number: Number(number), created: 1793322000 + Number(number) * 120 })), round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: null });
@@ -65,6 +65,7 @@ await page.route('**/api/**', async route => {
   if (/\/api\/tasks\/[^/]+\/pdf$/.test(url.pathname)) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
   if (url.pathname.endsWith('/predict')) return route.fulfill({ json: { ok: true } });
+  if (url.pathname.endsWith('/files')) return route.fulfill({ json: { document: null, files: [] } });
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: timeline } });
@@ -100,13 +101,6 @@ await page.route('**/api/**', async route => {
     if (body.mode === 'commit') commitRequests.push(body);
     return route.fulfill({ json: { delivery: task.delivery } });
   }
-  if (url.pathname.endsWith('/commit')) {
-    const body = route.request().postDataJSON();
-    commitRequests.push(body); gitFiles = []; task.review.files = [];
-    if (task.deferred) task.delivery = { mode: 'branch', branch: 'papilot/flow', commit: 'abc1234', accepted: 'accepted' };
-    else task.committed = { hash: 'abc1234', accepted: `accepted-${commitRequests.length}`, at: Date.now(), pushed: body.push && !pushError };
-    return route.fulfill({ json: { commit: 'abc1234', pushError, git: { branch: 'main', upstream: 'origin/main', remote: true, ahead: 0, behind: 0, head: { hash: 'abc1234', subject: 'Explain the method', date: 2 }, files: [] } } });
-  }
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/messages')) { const message = route.request().postDataJSON(); sent.push(message); if (failSend) return route.fulfill({ status: 503, json: { error: 'Try again.' } }); task.review.unsent = 0; task.review.comments = 0; return route.fulfill({ json: { ok: true } }); }
   throw Error(`Unexpected app request ${url.pathname}`);
@@ -141,13 +135,16 @@ const sync = async () => page.evaluate(() => window.dispatchEvent(new Event('onl
 
 const send = () => page.getByRole('button', { name: 'Send instructions', exact: true });
 const input = () => page.getByRole('textbox', { name: 'Instructions for Codex', exact: true });
-async function quote(side, offset = 8) {
+async function quote(side, offset = 8, comment) {
   await viewer().locator(`.change[data-stop="0"] .${side} .pdf-glyph`).first().evaluate((el, offset) => {
     const range = document.createRange(); range.setStart(el.firstChild, 0); range.setEnd(el.firstChild, offset);
     const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     document.dispatchEvent(new Event('selectionchange'));
   }, offset);
   await viewer().locator('.review-select-menu button').click();
+  const input = viewer().getByRole('textbox', { name: 'Comment', exact: true });
+  await expect(input).toBeFocused();
+  if (comment !== undefined) { await input.fill(comment); await input.press('Enter'); }
 }
 try {
   console.log('Opening fixture'); await page.goto(origin);
@@ -156,7 +153,14 @@ try {
   if (!process.env.PAPILOT_REVIEW_TOOLS_ONLY) {
   await input().fill('Keep the examples.');
   console.log('Selecting before'); await quote('before');
-  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toBeFocused();
+  await expect(page.locator('.review-draft-note')).toHaveCount(0);
+  await viewer().getByRole('textbox', { name: 'Comment', exact: true }).press('Escape');
+  await expect(viewer().locator('.review-comment')).toHaveCount(0);
+  await expect(page.locator('.review-draft-note')).toHaveCount(0);
+  await quote('before', 8, 'Keep this original term.');
+  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveValue('Keep this original term.');
+  // Clearing a saved draft still keeps its quotation without sending it.
+  await page.getByRole('textbox', { name: 'Comment 1', exact: true }).fill('');
   await expect(page.locator('.review-draft-note')).toContainText('Before revision');
   await expect(page.locator('.review-draft-note blockquote')).toHaveText('Original');
   await expect(send()).toBeEnabled();
@@ -165,8 +169,8 @@ try {
   await expect(send()).toBeDisabled();
   await input().fill('Keep the examples.');
   await page.getByRole('textbox', { name: 'Comment 1', exact: true }).fill('Keep this original term.');
-  await quote('after', 7);
-  await page.getByRole('textbox', { name: 'Comment 2', exact: true }).fill('Make this more precise.');
+  await quote('after', 7, 'Make this more precise.');
+  await expect(page.getByRole('textbox', { name: 'Comment 2', exact: true })).toHaveValue('Make this more precise.');
   await expect(page.locator('.review-draft-note').nth(1)).toContainText('After revision');
   await expect(input()).toHaveValue('Keep the examples.');
   await expect(viewer().locator('.composer')).toHaveCount(0);
@@ -241,8 +245,8 @@ try {
   await expect(page.locator('.review-draft')).toHaveCount(0);
   // A comment can outlive a review round and navigate back to its exact source.
   rounds[1] = { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' }; update();
-  await page.reload(); await quote('before');
-  await page.getByRole('textbox', { name: 'Comment 1', exact: true }).fill('Compare this with the next round.');
+  await page.reload(); await quote('before', 8, 'Compare this with the next round.');
+  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveValue('Compare this with the next round.');
   latest = 2; rounds[2] = { new: 'pending' }; task.review.round = 2; update(); await sync();
   await expect(page.locator('.review-draft-note small')).toContainText('round 1');
   await page.getByRole('button', { name: /Before revision.*Page 1/ }).click();

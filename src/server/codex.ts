@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import type { TaskPermissions, TaskPermissionOption } from '../shared.ts';
 import { DATA, ROOT, VERSION } from './paths.ts';
 import { codexBinary } from './codex-binary.ts';
-import { codexCandidates } from '../../bin/codex-lookup.mjs';
+import { codexInstallations, codexWorkingDirectory } from '../../bin/codex-lookup.mjs';
 import { taskAccessInstructions } from './task-permissions.ts';
 
 export class RpcResponseError extends Error {}
@@ -22,12 +22,14 @@ export class Codex extends EventEmitter {
     // Resuming even a cold thread retains its original developer instructions.
     // Application context supplies a later developer message on every turn,
     // including after restart, without discarding the conversation's history.
-    const additionalContext = { 'papilot-task-access': { kind: 'application', value: `These are Papilot's current task access instructions. They replace earlier Papilot instructions about access outside the task worktree; manuscript review scope and protected-path rules still apply.\n${taskAccessInstructions}` } };
+    const additionalContext = { 'papilot-task-access': { kind: 'application', value: `These are Papilot's current task access instructions. They replace earlier Papilot instructions about access outside the task worktree, including blanket prohibitions on explicitly authorized manuscript writes, commits, and pushes. Manuscript review scope still applies; other task worktrees and Papilot's own source/state remain protected.\n${taskAccessInstructions}` } };
     if (value === 'full') return { thread, turn: { approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' }, additionalContext } };
     // A loaded thread/resume can keep the previous policy (including full access).
     // Resolve a fresh native policy to retain configured roots and tmp exclusions,
     // then apply it atomically to the next turn, even on an already-loaded thread.
-    const resolved = await this.request('thread/start', { ...thread, cwd, ephemeral: true, config: { 'sandbox_workspace_write.network_access': true } });
+    // Unload the probe once unsubscribed, not a minute later: a loaded thread
+    // keeps MCP servers and folder watches in the task worktree (see closeThread).
+    const resolved = await this.request('thread/start', { ...thread, cwd, ephemeral: true, config: { 'sandbox_workspace_write.network_access': true, thread_unload_delay_secs: 0 } });
     try {
       if (resolved.sandbox?.type !== 'workspaceWrite' || resolved.approvalPolicy !== 'on-request') {
         throw new RpcResponseError('Codex could not apply workspace permissions.');
@@ -37,6 +39,15 @@ export class Codex extends EventEmitter {
       if (resolved.thread?.id) await this.request('thread/unsubscribe', { threadId: resolved.thread.id }).catch(() => {});
     }
   }
+  // While a thread is loaded, Codex runs its stdio MCP servers in the thread's
+  // working directory and watches folders there; Windows cannot delete a
+  // folder that is another program's working directory. Archiving shuts the
+  // thread (and any subagent threads) down first. When it cannot (the thread
+  // was archived elsewhere, say), an unsubscribed thread still unloads soon.
+  async closeThread(threadId: string) {
+    try { await this.request('thread/archive', { threadId }, 20000); }
+    catch (error) { await this.request('thread/unsubscribe', { threadId }).catch(() => {}); throw error; }
+  }
   child: ChildProcess | null = null;
   private sequence = 0;
   private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
@@ -45,8 +56,17 @@ export class Codex extends EventEmitter {
   ready = false;
   stderr = '';
   // Without a binary of its own, this host's Codex is used (see codex-binary.ts).
-  constructor(private binary?: string, private args = ['app-server', '--listen', 'stdio://'], private env: NodeJS.ProcessEnv = process.env) { super(); }
-  detect() { return Boolean(this.binary || codexCandidates(this.env, DATA, ROOT).length); }
+  constructor(private binary?: string, private args = ['app-server', '--listen', 'stdio://'], private env: NodeJS.ProcessEnv = process.env, private platform = process.platform) { super(); }
+  // Codex sandboxes commands on Windows only with a Windows sandbox set up.
+  // Without one configured, workspace access resolves to read-only and its
+  // sandbox cannot start; Papilot's threads then use the sandbox that needs no
+  // administrator setup. A sandbox the user configured is kept.
+  private threadConfig: Record<string, unknown> = {};
+  async detect() {
+    if (this.binary) return true;
+    for await (const _file of codexInstallations(this.env, DATA, ROOT)) return true;
+    return false;
+  }
   start(): Promise<void> {
     if (this.ready) return Promise.resolve();
     if (this.starting) return this.starting;
@@ -63,7 +83,7 @@ export class Codex extends EventEmitter {
     const generation = this.generation;
     const binary = this.binary || await codexBinary(this.env, DATA, controller.signal);
     if (generation !== this.generation) throw new Error('Codex is not connected.');
-    const child = spawnCommand(binary, this.args, { cwd: ROOT, env: { ...this.env, PATH: agentPath(this.env) }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawnCommand(binary, this.args, { cwd: codexWorkingDirectory(this.env) ?? ROOT, env: { ...this.env, PATH: agentPath(this.env) }, stdio: ['pipe', 'pipe', 'pipe'] });
     this.child = child;
     const lines = createInterface({ input: child.stdout! });
     // A closed launch's child may still print before it exits; only the current one speaks for Codex.
@@ -80,7 +100,16 @@ export class Codex extends EventEmitter {
     // The experimental API carries the tools Papilot gives its threads (see VIEW_PDF_TOOL).
     await this.request('initialize', { clientInfo: { name: 'papilot', title: 'Papilot', version: VERSION }, capabilities: { experimentalApi: true } });
     if (generation !== this.generation) throw new Error('Codex is not connected.');
-    this.notify('initialized', {}); this.ready = true;
+    this.notify('initialized', {});
+    this.threadConfig = {};
+    if (this.platform === 'win32') {
+      // An older Codex without config/read answers with an error: keep its
+      // defaults. A Codex that exits meanwhile fails this launch.
+      const effective = await this.request('config/read', {}).catch(error => { if (error instanceof RpcResponseError) return null; throw error; });
+      if (generation !== this.generation || this.child !== child) throw new Error('Codex is not connected.');
+      if (effective && !effective.config?.windows?.sandbox) this.threadConfig = { 'windows.sandbox': 'unelevated' };
+    }
+    this.ready = true;
   }
   private receive(message: any) {
     if (message.method) { this.emit(message.id === undefined ? 'notification' : 'request', message); return; }
@@ -92,6 +121,8 @@ export class Codex extends EventEmitter {
   }
   request(method: string, params: unknown, timeout = 60000): Promise<any> {
     if (!this.child) return Promise.reject(new Error('Codex is not connected.'));
+    if ((method === 'thread/start' || method === 'thread/resume') && Object.keys(this.threadConfig).length && params && typeof params === 'object')
+      params = { ...params, config: { ...this.threadConfig, ...(params as { config?: Record<string, unknown> }).config } };
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`Codex request timed out: ${method}. Check the task status before retrying.`)); }, timeout);

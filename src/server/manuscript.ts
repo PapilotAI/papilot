@@ -1,4 +1,8 @@
+import type { NoteSections } from './note-sections.ts';
 import type { ReviewSnapshot } from './ai-review.ts';
+import { markedPage } from './note-pages.ts';
+import type { Project as BuildProject } from '../../engine/src/core/config.ts';
+import type { BuildInfo } from '../../engine/src/types.ts';
 import { ReviewSnapshots } from './review-snapshot.ts';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -9,12 +13,13 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { ENGINE, ROOT } from './paths.ts';
-import type { Annotation, BuildProblem, BuildProgress, GitDiffScope, GitFile, GitStatus, ManuscriptBuild, ManuscriptProblems } from '../shared.ts';
-import { notesInstructions } from '../notes.ts';
+import { stateDir } from './state.ts';
+import type { Annotation, BuildProblem, BuildProgress, BuildRepairResult, GitDiffScope, GitFile, GitStatus, ManuscriptBuild, ManuscriptProblems } from '../shared.ts';
 import { ignorePattern } from '../commit.ts';
 import { PdfReader } from './pdf-reader.ts';
 import { annotatePdf, type ExportNote } from './annotated-pdf.ts';
-import { collectProblems, countProblems, locateProblems, scrubLog, sortProblems, type StoredProblem } from './build-problems.ts';
+import { collectProblems, countProblems, locateProblems, scrubLog, sortProblems, syncView, type StoredProblem } from './build-problems.ts';
+import { parseLatexRepair } from './latex-repair.ts';
 // Where a note comes from in the source, worked out in the PDF reader's worker.
 export { anchor, followLines, parseSynctex, settleLines, sourceExcerpt, type Anchor } from './note-location.ts';
 
@@ -315,7 +320,7 @@ async function gitAction(root: string, args: string[], timeout = 60_000) {
 // previous snapshot's index, or the repository's, so Git rehashes only files
 // whose size or modification time changed.
 export async function workingTree(root: string) {
-  const dir = gitDir(root), saved = dir && path.join(dir, 'latex-review', 'working-index');
+  const dir = gitDir(root), saved = dir && path.join(await stateDir(dir), 'working-index');
   const folder = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'papilot-index-')), index = path.join(folder, 'index'), env = { GIT_INDEX_FILE: index };
   const snapshot = async (seed: string | null | undefined) => {
     if (!seed || !await copyIndex(seed, index)) { await fs.promises.rm(index, { force: true }); await git(root, ['read-tree', 'HEAD'], env).catch(() => git(root, ['read-tree', '--empty'], env)); }
@@ -365,21 +370,13 @@ async function pageSizes(mupdf: any, pdf: string) {
 }
 
 async function engine() {
-  const [{ Builder, BuildError, reprioritize }, { Repo, gitBinary }, { loadProject }, { mupdf, PdfDocument, containsCenter, walkText }] = await Promise.all([
-    import(pathToFileURL(path.join(ENGINE, 'src/core/build.ts')).href),
-    import(pathToFileURL(path.join(ENGINE, 'src/core/git.ts')).href),
-    import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href),
+  const [{ Builder, BuildError, reprioritize }, { Repo, gitBinary }, config, { mupdf, PdfDocument, containsCenter, walkText }] = await Promise.all([
+    import(pathToFileURL(path.join(ENGINE, 'src/core/build.ts')).href) as Promise<typeof import('../../engine/src/core/build.ts')>,
+    import(pathToFileURL(path.join(ENGINE, 'src/core/git.ts')).href) as Promise<typeof import('../../engine/src/core/git.ts')>,
+    import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href) as Promise<typeof import('../../engine/src/core/config.ts')>,
     import(pathToFileURL(path.join(ENGINE, 'src/render/pdf.ts')).href),
   ]);
-  return { Builder, BuildError, reprioritize, Repo, gitBinary, loadProject, mupdf, PdfDocument, containsCenter, walkText };
-}
-
-// One task for every pending note, quoting the marked text and its source so
-// the agent can find each place without guessing.
-export function annotationTask(notes: Annotation[]) {
-  const lead = notes[0], first = lead.kind === 'delete' ? lead.comment.trim() ? 'Replace marked text' : 'Delete marked text' : lead.comment.split('\n').find(line => line.trim())?.trim() || 'Address a PDF note';
-  const title = notes.length === 1 ? (first.length > 80 ? first.slice(0, 79).replace(/\s+\S*$/, '') + '…' : first) : `Address ${notes.length} PDF notes`;
-  return { title, instructions: notesInstructions(notes) };
+  return { config, loadProject: config.loadProject, Builder, BuildError, reprioritize, Repo, gitBinary, mupdf, PdfDocument, containsCenter, walkText };
 }
 
 // Every word on a page with its exact place, for the PDF view's selection
@@ -416,6 +413,9 @@ export async function pdfWords(pdf: string, page: number) {
 interface Build {
   tree: string; status: ManuscriptBuild['status']; key?: string; pdf?: string; root?: string; sourceDir?: string; pages?: [number, number][]; builtAt?: number; error?: string; progress?: BuildProgress;
   problems?: StoredProblem[]; problemsKey?: string; log?: string; logFolder?: string; previewOnly?: () => boolean;
+  failureId?: string; failedProject?: BuildProject;
+  // Stops the compilation when the paper compiles another document instead.
+  stop?: AbortController;
 }
 
 
@@ -425,6 +425,7 @@ export class Manuscripts extends EventEmitter {
   // Notes are located and placed on PDFs off the event loop.
   private pdfReader = new PdfReader();
   private builds = new Map<string, Build>();
+  private repairs = new WeakMap<Build, Promise<BuildRepairResult>>();
   // When each paper's view last asked for its manuscript: the build of a
   // manuscript on screen compiles in the foreground, others behind it.
   private viewed = new Map<string, number>();
@@ -434,7 +435,9 @@ export class Manuscripts extends EventEmitter {
   // pass may already have replaced; reading words, locating and exporting on
   // those pages must still work. Builds keep their folders (and SyncTeX) until
   // the cache is pruned days later.
-  private shown = new Map<string, { pdf: string; root?: string; sourceDir?: string }>();
+  private shown = new Map<string, { pdf: string; root?: string; sourceDir?: string; document?: string }>();
+  // The root document each paper compiles, as its latest build found it.
+  private documents = new Map<string, string>();
   // Each paper's working tree, where located lines are followed to.
   private roots = new Map<string, string>();
   private placements = new Map<string, (Pick<Annotation, 'key' | 'page' | 'rect' | 'rects' | 'source'>) | null>();
@@ -475,7 +478,7 @@ export class Manuscripts extends EventEmitter {
   }
   get busyForUpdate() { return this.reviewSnapshots.busy || [...this.builds.values()].some(build => build.status === 'building'); }
   busyForProject(id: string) { return this.builds.get(id)?.status === 'building'; }
-  forgetProject(id: string) { this.builds.delete(id); this.stale.delete(id); this.speculation.get(id)?.abort(); this.speculation.delete(id); }
+  forgetProject(id: string) { this.builds.get(id)?.stop?.abort(); this.builds.delete(id); this.documents.delete(id); this.stale.delete(id); this.speculation.get(id)?.abort(); this.speculation.delete(id); }
 
   // The caller verifies the example's source tree. An edit or explicit rebuild
   // uses Builder; the original PDF can be read before TeX is installed.
@@ -488,10 +491,10 @@ export class Manuscripts extends EventEmitter {
     this.roots.set(projectId, root);
   }
 
-  private remember(projectId: string, key: string, pdf: string, root?: string, sourceDir?: string) {
+  private remember(projectId: string, key: string, pdf: string, root?: string, sourceDir?: string, document?: string) {
     const id = `${projectId}:${key}`;
     this.shown.delete(id);
-    this.shown.set(id, { pdf, root, sourceDir });
+    this.shown.set(id, { pdf, root, sourceDir, document });
     if (this.shown.size > 200) this.shown.delete(this.shown.keys().next().value!);
   }
 
@@ -571,8 +574,8 @@ export class Manuscripts extends EventEmitter {
     const tree = building ? current.tree : await this.snapshot(root), status = await this.gitStatus(root, building, building ? undefined : tree);
     let build = this.builds.get(projectId);
     if (!build || (build.status !== 'building' && (build.tree !== tree || rebuild))) build = this.start(projectId, root, tree, build, rebuild);
-    const { status: state, key, pages, builtAt, error } = build;
-    return { git: status, build: { status: state, key, pages, builtAt, error, current: build.tree === tree && state === 'ready', problems: build.problems && countProblems(build.problems), ...(state === 'building' && build.progress ? { progress: build.progress } : {}) } };
+    const { status: state, key, pages, builtAt, error, failureId } = build, document = key ? this.documentOf(projectId, key) : undefined;
+    return { git: status, build: { status: state, key, ...(document ? { document } : {}), pages, builtAt, error, failureId, tree: build.tree, current: build.tree === tree && state === 'ready', problems: build.problems && countProblems(build.problems), ...(state === 'building' && build.progress ? { progress: build.progress } : {}) } };
   }
 
   /** Compiles the working tree if it changed, without waiting for anyone to
@@ -584,6 +587,17 @@ export class Manuscripts extends EventEmitter {
     const tree = await this.snapshot(root), build = this.builds.get(projectId);
     if (build?.status === 'building') { if (build.tree !== tree) this.stale.add(projectId); return; }
     if (!build || build.tree !== tree) this.start(projectId, root, tree, build);
+  }
+
+  /** After Papilot itself wrote into the working tree: the tree it is now,
+   *  compiling at once or as soon as the build in progress ends. The caller
+   *  recognizes the build of its write by this tree. */
+  async written(projectId: string, root: string) {
+    this.statuses.delete(root);
+    const tree = await this.snapshot(root), build = this.builds.get(projectId);
+    if (build?.status === 'building') { if (build.tree !== tree) this.stale.add(projectId); }
+    else if (!build || build.tree !== tree) this.start(projectId, root, tree, build);
+    return tree;
   }
 
   /** Compiles in the background what the manuscript will be once the given
@@ -610,19 +624,47 @@ export class Manuscripts extends EventEmitter {
     }
   }
 
-  // Keep the previous pages visible while a newer working tree compiles.
-  private start(projectId: string, root: string, tree: string, previous?: Build, force = false) {
+  /** The root document the paper compiles, or undefined when it has none
+   *  that compiles, such as a folder with several and none chosen. */
+  async document(projectId: string, root: string) {
+    const known = this.documents.get(projectId);
+    if (known) return known;
+    try { return (await engine()).loadProject(root).main as string; } catch { return undefined; }
+  }
+  /** The root document whose PDF `key` is, when this process knows it: a
+   *  note can only be made on such a PDF, which is never guessed. */
+  documentOf(projectId: string, key: string) {
+    return this.shown.get(`${projectId}:${key}`)?.document;
+  }
+  /** The paper compiles another of its root documents now. The PDF on screen
+   *  is not an earlier version of that one, so it does not stay while the
+   *  new document compiles. */
+  async documentChanged(projectId: string, root: string, document: string) {
+    const tree = await this.snapshot(root), previous = this.builds.get(projectId);
     if (previous?.key && previous.pdf) this.oldPdfs.set(`${root}:${previous.key}`, previous.pdf);
-    const build: Build = { tree, status: 'building', key: previous?.key, pdf: previous?.pdf, root: previous?.root, sourceDir: previous?.sourceDir, pages: previous?.pages, builtAt: previous?.builtAt, problems: previous?.problems, problemsKey: previous?.problemsKey, log: previous?.log, logFolder: previous?.logFolder };
+    previous?.stop?.abort();
+    // A speculative build of the document no longer compiled is not wanted either.
+    this.speculation.get(projectId)?.abort(); this.speculation.delete(projectId);
+    this.builds.delete(projectId);
+    this.documents.set(projectId, document);
+    this.emit('build-settings', projectId);
+    this.start(projectId, root, tree);
+  }
+
+  // Keep the previous pages visible while a newer working tree compiles.
+  private start(projectId: string, root: string, tree: string, previous?: Build, force = false, tested?: { project: BuildProject; result: BuildInfo; pages: [number, number][] }) {
+    if (previous?.key && previous.pdf) this.oldPdfs.set(`${root}:${previous.key}`, previous.pdf);
+    const build: Build = { tree, status: 'building', stop: new AbortController(), key: previous?.key, pdf: previous?.pdf, root: previous?.root, sourceDir: previous?.sourceDir, pages: previous?.pages, builtAt: previous?.builtAt, problems: previous?.problems, problemsKey: previous?.problemsKey, log: previous?.log, logFolder: previous?.logFolder };
     this.builds.set(projectId, build);
     this.roots.set(projectId, root);
     this.stale.delete(projectId);
     this.emit('change', projectId);
     void (async () => {
-      let project: { source_dir?: string; doc_dir?: string; state: string } | undefined;
+      let project: BuildProject | undefined;
       try {
         const { Builder, Repo, loadProject, mupdf } = await engine();
-        project = loadProject(root);
+        project = tested?.project ?? loadProject(root);
+        if (this.builds.get(projectId) === build) this.documents.set(projectId, project.main);
         const startedAt = Date.now();
         const sizes = (pdf: string) => pageSizes(mupdf, pdf);
         // A pass that latexmk follows with more work already shows the edit;
@@ -632,14 +674,14 @@ export class Manuscripts extends EventEmitter {
           const pages = await sizes(preview.pdf), key = createHash('sha256').update(preview.pdf).digest('hex').slice(0, 16);
           if (this.builds.get(projectId) !== build || build.status !== 'building') return;
           this.oldPdfs.set(`${root}:${key}`, preview.pdf);
-          this.remember(projectId, key, preview.pdf, preview.root, project!.source_dir || '');
+          this.remember(projectId, key, preview.pdf, preview.root, project!.source_dir || '', project!.main);
           Object.assign(build, { key, pdf: preview.pdf, root: preview.root, sourceDir: project!.source_dir || '', pages, builtAt: Date.now() });
           this.emit('change', projectId);
         };
-        const result = await new Builder(project, new Repo(root)).build(tree, ['full'], null, { force, priority: () => Date.now() - (this.viewed.get(projectId) ?? 0) < 15000 ? 'foreground' : 'normal', pass: (preview: { pdf: string; root: string }) => void pass(preview).catch(() => undefined), progress: (progress: Omit<BuildProgress, 'startedAt'>) => { if (this.builds.get(projectId) === build) build.progress = { ...progress, startedAt }; } });
-        const pages = await sizes(result.pdf);
+        const result = tested?.result ?? await new Builder(project, new Repo(root)).build(tree, ['full'], null, { force, signal: build.stop!.signal, priority: () => Date.now() - (this.viewed.get(projectId) ?? 0) < 15000 ? 'foreground' : 'normal', pass: (preview: { pdf: string; root: string }) => void pass(preview).catch(() => undefined), progress: (progress: Omit<BuildProgress, 'startedAt'>) => { if (this.builds.get(projectId) === build) build.progress = { ...progress, startedAt }; } });
+        const pages = tested?.pages ?? await sizes(result.pdf);
         const key = createHash('sha256').update(result.key + result.pdf).digest('hex').slice(0, 16);
-        this.remember(projectId, key, result.pdf, result.root, project!.source_dir || '');
+        this.remember(projectId, key, result.pdf, result.root, project!.source_dir || '', project!.main);
         if (this.builds.get(projectId) !== build) return;
         const log = String(result.pdf).replace(/\.pdf$/, '.log');
         let problems: StoredProblem[] = [];
@@ -671,7 +713,7 @@ export class Manuscripts extends EventEmitter {
         // a pass of this build that was shown went with its folder.
         Object.assign(build, { key: previous?.key, pdf: previous?.pdf, root: previous?.root, sourceDir: previous?.sourceDir, pages: previous?.pages, builtAt: previous?.builtAt });
         const shown = build.problemsKey && build.problemsKey === build.key ? (build.problems || []).filter(problem => problem.severity !== 'error') : [];
-        Object.assign(build, { status: 'failed', error: message, problems: [...problems, ...shown], problemsKey: shown.length ? build.problemsKey : undefined, log: detail.log && fs.existsSync(detail.log) ? detail.log : undefined, logFolder });
+        Object.assign(build, { status: 'failed', failureId: randomUUID(), failedProject: project, error: message, problems: [...problems, ...shown], problemsKey: shown.length ? build.problemsKey : undefined, log: detail.log && fs.existsSync(detail.log) ? detail.log : undefined, logFolder });
       }
       this.emit('change', projectId);
       // Edits made while this build ran are compiled next, right away.
@@ -735,8 +777,8 @@ export class Manuscripts extends EventEmitter {
   async problems(projectId: string): Promise<ManuscriptProblems> {
     const build = this.builds.get(projectId);
     if (!build?.problems) return { status: build?.status || 'building', problems: [], log: Boolean(build?.log) };
-    const { problems, problemsKey: key, pdf } = build;
-    if (!key || key !== build.key || !pdf) return { status: build.status, problems: sortProblems(problems.map(({ source: _source, occurrence: _occurrence, ...problem }) => problem)), log: Boolean(build.log) };
+    const { problems, problemsKey: key, pdf, failureId } = build;
+    if (!key || key !== build.key || !pdf) return { status: build.status, failureId, problems: sortProblems(problems.map(({ source: _source, occurrence: _occurrence, ...problem }) => problem)), log: Boolean(build.log) };
     let placed = this.located.get(problems);
     if (!placed) {
       placed = (async () => {
@@ -760,7 +802,7 @@ export class Manuscripts extends EventEmitter {
       placed.catch(() => this.located.delete(problems));
       this.located.set(problems, placed);
     }
-    return { status: build.status, key, problems: await placed, log: Boolean(build.log) };
+    return { status: build.status, key, failureId, problems: await placed, log: Boolean(build.log) };
   }
 
   log(projectId: string) {
@@ -769,15 +811,83 @@ export class Manuscripts extends EventEmitter {
     return scrubLog(fs.readFileSync(build.log, 'utf8'), build.logFolder);
   }
 
+  repair(projectId: string, root: string, failureId: string, diagnose: (prompt: string) => Promise<string>): Promise<BuildRepairResult> {
+    const failed = this.builds.get(projectId);
+    const stale = () => Object.assign(new Error('The manuscript build changed. Check the latest compilation problems.'), { statusCode: 409 });
+    if (failed?.status !== 'failed' || failed.failureId !== failureId) throw stale();
+    const { tree, failedProject: project } = failed;
+    const pending = this.repairs.get(failed);
+    if (pending) return pending;
+    const checkCurrent = async () => {
+      if (this.builds.get(projectId) !== failed || await this.snapshot(root) !== tree || this.builds.get(projectId) !== failed) throw stale();
+    };
+    const repair = (async (): Promise<BuildRepairResult> => {
+      const { Builder, BuildError, Repo, config, mupdf } = await engine();
+      const { ENGINES, loadBuildDocuments, loadProject, readBuildOverrides, readSettings, saveBuildOverrides, signature } = config;
+      const { which } = await import(pathToFileURL(path.join(ENGINE, 'src/core/process.ts')).href) as typeof import('../../engine/src/core/process.ts');
+      const repo = new Repo(root), defaults = readSettings(root), saved = readBuildOverrides(root, defaults);
+      let documents: ReturnType<typeof loadBuildDocuments> | undefined = project;
+      if (!documents) try { documents = loadBuildDocuments(root, defaults, saved.ignoreLatexmkrc); }
+      catch { /* An unresolved main document still permits diagnosis and advice. */ }
+      const checkSettings = () => {
+        if (JSON.stringify(readSettings(root)) !== JSON.stringify(defaults) || JSON.stringify(readBuildOverrides(root)) !== JSON.stringify(saved)) throw stale();
+      };
+      const entries = (await repo.entriesAsync(tree)).filter(entry => entry.mode.startsWith('100'));
+      const candidates = entries.filter(entry => /\.tex$/i.test(entry.file)).map(entry => entry.file).slice(0, 80);
+      const errors = (failed.problems || []).filter(problem => problem.severity === 'error');
+      const focus = new Set([documents?.main, ...errors.map(problem => problem.file)]);
+      const small = new Set(entries.filter(entry => entry.size <= 100_000 && /\.(tex|sty|cls|bib)$/i.test(entry.file)).map(entry => entry.file));
+      const files = [...focus].filter((file): file is string => Boolean(file && small.has(file))).slice(0, 6);
+      const blobs = await repo.blobsAsync(tree, files);
+      const excerpts = files.map(file => {
+        const lines = blobs[file]?.toString('utf8').split('\n') || [];
+        const line = errors.find(problem => problem.file === file && problem.line)?.line ?? 1;
+        const start = Math.max(0, line - 5);
+        return { file, line: start + 1, text: lines.slice(start, start + 14).join('\n').slice(0, 1600) };
+      });
+      const { main, latexmkrc } = documents || {}, { engine: compiler, source_dir } = project || {};
+      const prompt = JSON.stringify({ platform: process.platform, installedEngines: ENGINES.filter(name => which(name)), latexmkInstalled: Boolean(which('latexmk')),
+        settings: { main, engine: compiler, source_dir, latexmkrc, ...saved }, candidates, excerpts, error: scrubLog(failed.error || '', failed.logFolder).slice(0, 12000) });
+      await checkCurrent();
+      const { kind, summary, settings } = parseLatexRepair(await diagnose(prompt));
+      await checkCurrent();
+      if (!settings) return { kind, summary };
+      checkSettings();
+      const next = { ...saved, ...settings }, candidate = loadProject(root, next);
+      if (!entries.some(entry => entry.file === candidate.main)) throw new Error('Choose an existing TeX main file.');
+      if (candidate.latexmkrc && (!documents || candidate.latexmkrc !== documents.latexmkrc || candidate.doc_dir !== documents.doc_dir))
+        throw new Error('The proposed settings would enable a different latexmkrc.');
+      if (project && signature(project) === signature(candidate)) return { kind: 'advice', summary };
+      let result: BuildInfo;
+      try { result = await new Builder(candidate, repo).build(tree, ['full'], null, { force: true, priority: 'foreground' }); }
+      catch (error) {
+        if (!(error instanceof BuildError)) throw error;
+        return { kind: 'advice', summary: `${summary}\n\n${scrubLog([error.message, ...error.details].join('\n'))}` };
+      }
+      const pages = await pageSizes(mupdf, result.pdf);
+      if (!pages.length) throw new Error('The manuscript could not be compiled.');
+      await checkCurrent();
+      checkSettings();
+      if (signature(loadProject(root, next)) !== signature(candidate)) throw stale();
+      saveBuildOverrides(root, next);
+      this.emit('build-settings', projectId);
+      this.start(projectId, root, tree, failed, false, { project: candidate, result, pages });
+      return { kind, summary };
+    })().finally(() => this.repairs.delete(failed));
+    this.repairs.set(failed, repair);
+    return repair;
+  }
+
   // Compile the task's frozen source tree, then retain its PDF outside the build cache.
   // A preview build of the same tree is shared, not repeated.
-  async captureReview(root: string, worktree: string, taskId: string): Promise<ReviewSnapshot> {
-    const { Builder, BuildError, Repo, loadProject } = await engine();
-    const tree = await workingTree(worktree);
+  async captureReview(root: string, worktree: string, taskId: string, document?: string): Promise<ReviewSnapshot> {
+    const { Builder, BuildError, Repo, config } = await engine();
+    // The task's root document, as the engine compiles it.
+    const tree = await workingTree(worktree), project = config.projectFor(root, document);
     let result;
-    try { result = await new Builder(loadProject(root), new Repo(root)).build(tree, ['full']); }
+    try { result = await new Builder(project, new Repo(root)).build(tree, ['full']); }
     catch (error) { throw error instanceof BuildError ? new Error('The manuscript could not be compiled for AI review. Fix the errors shown in the manuscript preview, then try again.') : error; }
-    const snapshot = await this.reviewSnapshot(loadProject(root).state, result);
+    const snapshot = await this.reviewSnapshot(project.state, result);
     // The task does not exist yet, so a PDF kept by an earlier failed attempt is replaced.
     return { ...snapshot, pdf: await this.preserveReviewPdf(root, taskId, result.pdf, true) };
   }
@@ -823,8 +933,12 @@ export class Manuscripts extends EventEmitter {
         if (!entry.isDirectory() || entry.name.endsWith('.lock')) return;
         try {
           const folder = path.join(cache, entry.name), saved = JSON.parse(await fs.promises.readFile(path.join(folder, 'result.json'), 'utf8'));
-          if (typeof saved.pdf !== 'string' || !path.resolve(saved.pdf).startsWith(path.resolve(folder) + path.sep)) return;
-          if (createHash('sha256').update(saved.key + saved.pdf).digest('hex').slice(0, 16) === key && fs.existsSync(saved.pdf)) found = saved.pdf;
+          if (typeof saved.pdf !== 'string' || createHash('sha256').update(saved.key + saved.pdf).digest('hex').slice(0, 16) !== key) return;
+          // A build from before the state folder moved names its PDF by the
+          // former path, which the link left there keeps valid.
+          const inside = (file: string, base: string) => path.resolve(file).startsWith(path.resolve(base) + path.sep);
+          if (!inside(saved.pdf, folder) && !inside(await fs.promises.realpath(saved.pdf).catch(() => ''), await fs.promises.realpath(folder))) return;
+          if (fs.existsSync(saved.pdf)) found = saved.pdf;
         } catch { /* Incomplete builds have no usable PDF. */ }
       }));
     this.oldPdfs.set(lookup, found); return found;
@@ -878,12 +992,63 @@ export class Manuscripts extends EventEmitter {
     return pending;
   }
 
+  /** The PDF pages, counted from 1, where lines of a paper file printed in the
+   *  manuscript's latest build, or null without one. A task's text differs
+   *  from it only where the task edited, so this places most of what it reads. */
+  /** The paper's latest compiled build, which Papilot Writer maps the paper from. */
+  // A task's agent reads the manuscript's PDF only while it is of the task's document.
+  paperBuild(projectId: string, document?: string) {
+    const build = this.builds.get(projectId);
+    if (!build?.pdf || !build.root || !fs.existsSync(build.pdf) || (document && this.documentOf(projectId, build.key!) !== document)) return null;
+    return { pdf: build.pdf, root: build.root, sourceDir: build.sourceDir || '', builtAt: build.builtAt, pages: build.pages?.length };
+  }
+  async sourcePages(projectId: string, file: string, lines: number[], document?: string): Promise<number[] | null> {
+    const build = this.builds.get(projectId);
+    if (!build?.pdf || !fs.existsSync(build.pdf) || (document && this.documentOf(projectId, build.key!) !== document)) return null;
+    const relative = path.posix.relative(build.sourceDir || '', file.split(path.sep).join('/'));
+    if (relative.startsWith('..')) return [];
+    const input = path.join(build.root || path.dirname(build.pdf), relative), pages = new Set<number>();
+    // A blank or preamble line prints nothing; the next few lines stand in for it.
+    await Promise.all(lines.slice(0, 12).map(async line => {
+      for (let next = line; next < line + 4; next++) {
+        const boxes = await syncView(build.pdf!, input, next);
+        if (boxes.length) { for (const box of boxes) pages.add(box.page + 1); return; }
+      }
+    }));
+    return [...pages].sort((a, b) => a - b);
+  }
   pdf(projectId: string, key: string) {
     const shown = this.shownBuild(projectId, key);
     if (!shown) throw Object.assign(new Error('This manuscript preview is out of date. Refresh it and try again.'), { statusCode: 404 });
     return shown.pdf;
   }
 
+  /** The PDF named `key` and the folder its sources were compiled in, which
+   *  holds `sourceDir` of the repository: the PDF shown now, or one shown
+   *  shortly before whose files are still there. */
+  compiled(projectId: string, key: string) {
+    const pdf = this.pdf(projectId, key), shown = this.shownBuild(projectId, key)!;
+    return { pdf, root: shown.root || path.dirname(pdf), sourceDir: shown.sourceDir || '' };
+  }
+
+  private sectionNotes = new Map<string, Promise<NoteSections>>();
+  async noteSections(projectId: string, key: string, notes: Annotation[]): Promise<NoteSections> {
+    const cacheKey = JSON.stringify([projectId, key, notes.map(note => [note.id, note.key, note.page, note.rect, note.rects, note.source?.file, note.source?.lines])]);
+    let pending = this.sectionNotes.get(cacheKey);
+    if (!pending) {
+      pending = this.pdfReader.sections(this.compiled(projectId, key), key, notes);
+      this.sectionNotes.set(cacheKey, pending);
+      pending.catch(() => this.sectionNotes.delete(cacheKey));
+      if (this.sectionNotes.size > 20) this.sectionNotes.delete(this.sectionNotes.keys().next().value!);
+    }
+    return pending;
+  }
+
+  /** A page of a PDF as a PNG, with a commented passage marked on it. */
+  async notePage(pdf: string, page: number, rects: Rect[]) {
+    const { mupdf } = await engine();
+    return markedPage(mupdf, pdf, page, rects);
+  }
   // The PDF with the paper's notes drawn on it, to share with people outside Papilot.
   async annotatedPdf(projectId: string, key: string, notes: ExportNote[]) {
     const pdf = this.pdf(projectId, key), { mupdf } = await engine();
@@ -908,16 +1073,29 @@ export class Manuscripts extends EventEmitter {
   // The pages may be those of an earlier pass or build than the latest: the
   // place is found in the PDF that was marked, then followed to the file as it
   // is now.
+  /** The PDF of a build in the paper's build cache, or null once it is gone. */
+  async buildPdf(root: string, key: string) {
+    const { loadProject } = await engine(), project = loadProject(root);
+    try {
+      const info = JSON.parse(await fs.promises.readFile(path.join(project.state, 'cache/builds', key, 'result.json'), 'utf8'));
+      return typeof info.pdf === 'string' && fs.existsSync(info.pdf) ? info.pdf as string : null;
+    } catch { return null; }
+  }
   /** Where a mark on a page of any build of the paper is in the source, in
    *  `working`'s files: a task's PDF of its decisions, located in its worktree. */
-  async locateBuild(root: string, key: string, page: number, rect: Rect, rects: Rect[], selected: string, working: string) {
+  async locateBuild(root: string, key: string, page: number, rect: Rect, rects: Rect[], selected: string, working: string, document?: string) {
     if (!/^[0-9a-f]{32}$/.test(key)) throw Object.assign(new Error('Unknown PDF.'), { statusCode: 404 });
-    const { loadProject } = await engine(), project = loadProject(root);
+    const project = (await engine()).config.projectFor(root, document);
     let info: { pdf?: unknown; root?: unknown };
     try { info = JSON.parse(await fs.promises.readFile(path.join(project.state, 'cache/builds', key, 'result.json'), 'utf8')); }
     catch { throw Object.assign(new Error('This PDF is no longer available.'), { statusCode: 404 }); }
     if (typeof info.pdf !== 'string' || typeof info.root !== 'string') throw Object.assign(new Error('This PDF is no longer available.'), { statusCode: 404 });
     return this.pdfReader.locate({ pdf: info.pdf, page, rect, rects, selected, root: info.root, sourceDir: project.source_dir || '', working });
+  }
+  /** Where a mark on a manuscript preview PDF is, followed into `working`'s files. */
+  async locateShown(projectId: string, key: string, page: number, rect: Rect, rects: Rect[], selected: string, working: string) {
+    const { pdf, root, sourceDir } = this.compiled(projectId, key);
+    return this.pdfReader.locate({ pdf, page, rect, rects, selected, root, sourceDir, working });
   }
   async locate(projectId: string, key: string, page: number, rect: Rect, rects: Rect[] = [], selected = '') {
     const pdf = this.pdf(projectId, key), build = this.shownBuild(projectId, key)!;

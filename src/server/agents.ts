@@ -26,10 +26,13 @@ export interface AgentRuntime extends EventEmitter {
   taskPermissionConfig?(value: TaskPermissions, cwd: string): Promise<{ thread: Record<string, unknown>; turn: Record<string, unknown> }>;
   // Whether the agent is present on this host (its CLI, SDK credentials or
   // key), checked without starting it. Agents that are not found are hidden.
-  detect?(): boolean;
+  detect?(): boolean | Promise<boolean>;
   /** Loads an SDK this host already has, without starting the agent. */
   preload?(): Promise<void>;
   start(): Promise<void>;
+  /** Ends the conversation of a task being deleted, so the agent lets go of
+   *  what it keeps open in the task worktree before Papilot removes it. */
+  closeThread?(threadId: string): Promise<void>;
   request(method: string, params: any, timeout?: number): Promise<any>;
   respond(id: string | number, result: unknown): void;
   reject(id: string | number, message: string): void;
@@ -40,9 +43,10 @@ export { AGENT_NAMES };
 
 import { agentDirs, execCommand, findExecutable, agentPath, spawnCommand } from '../../bin/agent-paths.mjs';
 import { npmCli } from '../../bin/npm-cli.mjs';
+import { agentSdkFolder, managedInstall } from '../../bin/installation.mjs';
 export { agentDirs, findExecutable };
 
-export interface Thread { permissions?: TaskPermissions; readOnly?: boolean; webSearch?: boolean; cwd: string; instructions: string; model: string | null; started: boolean }
+export interface Thread { permissions?: TaskPermissions; readOnly?: boolean; ephemeral?: boolean; webSearch?: boolean; cwd: string; instructions: string; model: string | null; started: boolean }
 export interface Turn { id: string; threadId: string; clientId?: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; stop: () => void }
 export interface Item { id: string; type: string; [key: string]: unknown }
 
@@ -69,7 +73,7 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
       const id = method === 'thread/start' ? randomUUID() : String(params.threadId);
       const known = this.threads.get(id);
       const model = params.model || known?.model || null;
-      this.threads.set(id, { permissions: params.taskPermissions, readOnly: params.sandbox === 'read-only', webSearch: params.sandbox !== 'read-only' && params.config?.web_search === 'live', cwd: params.cwd, instructions: params.developerInstructions || '', model, started: method === 'thread/resume' || Boolean(known?.started) });
+      this.threads.set(id, { permissions: params.taskPermissions, readOnly: params.sandbox === 'read-only', ephemeral: Boolean(params.ephemeral || known?.ephemeral), webSearch: params.sandbox !== 'read-only' && params.config?.web_search === 'live', cwd: params.cwd, instructions: params.developerInstructions || '', model, started: method === 'thread/resume' || Boolean(known?.started) });
       return { thread: { id }, model };
     }
     if (method === 'turn/start') {
@@ -114,7 +118,7 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
 // Tool calls shown in the conversation: commands, file edits, and the rest by name.
 export function toolItem(id: string, name: string, input: Record<string, any>): Item {
   const file = input.file_path || input.notebook_path || input.Path || input.TargetFile || input.AbsolutePath;
-  if (name === 'Bash' || name === 'run_command') return { id, type: 'commandExecution', command: String(input.command || input.CommandLine || ''), status: 'inProgress' };
+  if (name === 'Bash' || name === 'PowerShell' || name === 'run_command') return { id, type: 'commandExecution', command: String(input.command || input.CommandLine || ''), status: 'inProgress' };
   if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'write_to_file', 'write_file', 'edit_file', 'create_file', 'replace_file_content', 'multi_replace_file_content', 'sed_file', 'notebook_edit'].includes(name) && file) return { id, type: 'fileChange', changes: [{ path: String(file) }], status: 'inProgress' };
   const target = file || input.pattern || input.Query || input.query || input.url || input.SearchPath || input.DirectoryPath || input.description || '';
   return { id, type: 'toolCall', text: `${name}${target ? ` ${String(target).slice(0, 200)}` : ''}`, status: 'inProgress' };
@@ -126,18 +130,18 @@ export function claudeConfigured(env: NodeJS.ProcessEnv = process.env) {
 }
 // Agent SDKs carry large native parts, so an installed Papilot fetches one
 // into the data folder the first time its agent can be used. ready() runs
-// before the download and throws when the agent is not configured.
-const PACKAGES = path.join(DATA, 'agents');
+// before the download and throws when the agent is not configured. Managed
+// installations never download one: Nix ships a locked runtime, and other
+// managed installations use only Papilot's own dependencies.
 export async function loadPackage(name: string, version: string, label: string, ready: () => void = () => {}): Promise<any> {
   try { return await import(name); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw error; }
-  if (process.env.PAPILOT_INSTALL_METHOD === 'nix') {
-    const entry = createRequire(path.join(ROOT, 'nix-agent-runtime/package.json')).resolve(name);
-    return import(pathToFileURL(entry).href);
-  }
-  const prefix = PACKAGES, resolve = () => createRequire(path.join(prefix, 'package.json')).resolve(name);
+  const prefix = agentSdkFolder(ROOT, DATA);
+  if (!prefix) { ready(); throw new Error(`This installation does not include ${label}. Install ${name}@${version} into Papilot's node_modules, then restart Papilot.`); }
+  const resolve = () => createRequire(path.join(prefix, 'package.json')).resolve(name);
   let entry: string;
-  try { entry = resolve(); } catch {
+  try { entry = resolve(); } catch (error) {
+    if (managedInstall()) throw error;
     ready();
     console.log(`Installing ${label} (first use only)...`);
     await promisify(execFile)(process.execPath, [npmCli(), 'install', '--prefix', prefix, `${name}@${version}`, '--no-audit', '--no-fund', '--loglevel=error'], { maxBuffer: 16 * 1024 * 1024 });
@@ -145,10 +149,11 @@ export async function loadPackage(name: string, version: string, label: string, 
   }
   return import(pathToFileURL(entry).href);
 }
-// The file a package loaded from: Papilot's own dependencies, or the copy
-// fetched on first use.
+// The file a package loaded from: Papilot's own dependencies, or the SDK
+// folder above.
 export function packageFile(name: string) {
-  for (const from of [import.meta.url, ...(process.env.PAPILOT_INSTALL_METHOD === 'nix' ? [path.join(ROOT, 'nix-agent-runtime/package.json')] : [path.join(PACKAGES, 'package.json')])]) {
+  const folder = agentSdkFolder(ROOT, DATA);
+  for (const from of [import.meta.url, ...(folder ? [path.join(folder, 'package.json')] : [])]) {
     try { return createRequire(from).resolve(name); } catch { /* Not installed there. */ }
   }
   return null;
@@ -188,7 +193,11 @@ type Launch = (command: string, args: string[], options: { cwd: string; env: Nod
 export class ClaudeAgent extends Adapter {
   permissionOptions(): TaskPermissionOption[] {
     return [
-      { value: 'workspace', label: 'Sandboxed edits', detail: this.cli
+      { value: 'workspace', label: this.platform === 'win32' ? 'Accept edits' : 'Sandboxed edits', detail: this.platform === 'win32'
+        ? this.cli
+          ? 'Automatically approve edits without a command sandbox. Other permission requests are denied in print mode.'
+          : 'Automatically approve edits without a command sandbox. Ask before other actions.'
+        : this.cli
         ? 'Automatically approve edits and sandboxed commands. Other permission requests are denied in print mode.'
         : 'Automatically approve edits and sandboxed commands. Ask before other actions.' },
       { value: 'full', label: 'Bypass permissions', detail: 'Disable the command sandbox and bypass tool approvals, subject to managed settings.' },
@@ -199,9 +208,12 @@ export class ClaudeAgent extends Adapter {
   }
   private nativePermissions(thread: Thread) {
     const full = !thread.readOnly && thread.permissions === 'full';
+    // Native Windows has no Claude command sandbox. Keep acceptEdits and its
+    // approval rules; requiring an unavailable sandbox prevents even startup.
+    // WSL runs the Linux backend and retains the strict sandbox configuration.
     return { permissionMode: full ? 'bypassPermissions' as const : 'acceptEdits' as const,
       ...(full ? { allowDangerouslySkipPermissions: true } : {}),
-      sandbox: full ? { enabled: false } : { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
+      sandbox: full || this.platform === 'win32' ? { enabled: false } : { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
         ...(thread.webSearch ? { network: { allowedDomains: ['*'] } } : {}) } };
   }
   protected name = 'Claude';
@@ -213,7 +225,8 @@ export class ClaudeAgent extends Adapter {
   private login: ClaudeLogin | null = null;
   constructor(private load: () => Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> = () => loadClaude(),
     private findCli: () => string | null = () => findExecutable(process.env.PAPILOT_CLAUDE_BIN || 'claude'),
-    private launch: Launch = (command, args, options) => spawnCommand(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'] })) { super(); }
+    private launch: Launch = (command, args, options) => spawnCommand(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'] }),
+    private platform: NodeJS.Platform = process.platform) { super(); }
   detect() { return Boolean(this.findCli()) || claudeConfigured(); }
   async preload() { if (packageFile('@anthropic-ai/claude-agent-sdk')) await this.load(); }
   // The environment Claude Code runs with; undefined keeps Papilot's own.
@@ -482,7 +495,8 @@ export function glmEndpoint(env: NodeJS.ProcessEnv = process.env) {
 const GLM_KEY = 'GLM needs a GLM Coding Plan or API key: start Papilot with ZHIPU_API_KEY (open.bigmodel.cn) or ZAI_API_KEY (api.z.ai) set.';
 export class GlmAgent extends ClaudeAgent {
   protected name = 'GLM';
-  constructor(load: () => Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> = () => loadClaude(true), private env: NodeJS.ProcessEnv = process.env) { super(load, () => null); }
+  constructor(load: () => Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> = () => loadClaude(true), private env: NodeJS.ProcessEnv = process.env,
+    platform: NodeJS.Platform = process.platform) { super(load, () => null, undefined, platform); }
   detect() { return Boolean(glmEndpoint(this.env)); }
   protected environment() {
     const endpoint = glmEndpoint(this.env);
@@ -570,17 +584,25 @@ export class AntigravityAgent extends Adapter {
     let stopped = false, result: { status?: string; error?: string; denied_actions?: { display_name?: string; action?: string }[] } | null = null, stderr = '';
     turn.stop = () => { stopped = true; child.kill('SIGINT'); setTimeout(() => child.kill('SIGKILL'), 5000).unref(); };
     const texts = new Map<number, string>();
+    // Step indices of the latest step, failed model request and finished reply.
+    let lastStep = -1, lastError = -1, lastReply = -1;
+    let lastTool: { index: number; name: string; item: Item } | undefined;
     createInterface({ input: child.stdout! }).on('line', line => {
       let event: any;
       try { event = JSON.parse(line); } catch { if (line.trim()) stderr = (stderr + '\n' + line).slice(-4000); return; }
       if (event.event === 'init' && event.conversation_id && !conversation) { this.conversations[turn.threadId] = event.conversation_id; this.save(); }
       const step = event.step_update;
+      if (Number.isInteger(step?.step_index)) {
+        lastStep = Math.max(lastStep, step.step_index);
+        if (step.step_type === 'error_message') lastError = Math.max(lastError, step.step_index);
+      }
       if (step?.step_type === 'agent_response') {
         const id = `${turn.id}:${step.step_index}`;
         if (step.text_delta) { texts.set(step.step_index, (texts.get(step.step_index) || '') + step.text_delta); this.notify('item/agentMessage/delta', { threadId: turn.threadId, turnId: turn.id, itemId: id, delta: step.text_delta }); }
-        if (step.state === 'DONE' && texts.get(step.step_index)?.trim()) this.item(turn, { id, type: 'agentMessage', text: texts.get(step.step_index)!.trim() });
+        if (step.state === 'DONE' && texts.get(step.step_index)?.trim()) { this.item(turn, { id, type: 'agentMessage', text: texts.get(step.step_index)!.trim() }); lastReply = Math.max(lastReply, step.step_index); }
       } else if (step?.step_type === 'tool' && step.tool_name) {
         const item = toolItem(`${turn.id}:${step.step_index}`, step.tool_name, step.tool_info?.parameters || {});
+        if (Number.isInteger(step.step_index) && step.step_index >= (lastTool?.index ?? -1)) lastTool = { index: step.step_index, name: step.tool_name, item };
         if (step.state === 'ACTIVE') this.item(turn, item, false);
         else this.item(turn, { ...item, status: step.state === 'ERROR' ? 'failed' : 'completed', ...(item.type === 'commandExecution' && step.tool_info?.error?.message ? { aggregatedOutput: step.tool_info.error.message } : {}) });
       }
@@ -591,9 +613,31 @@ export class AntigravityAgent extends Adapter {
     child.stdin!.on('error', error => { child.kill(); this.finish(turn, 'failed', error.message); });
     child.on('close', () => {
       if (stopped) return this.finish(turn, 'interrupted');
-      const denied = (result?.denied_actions || []).map(action => action.display_name || action.action).filter(Boolean);
+      const actions = result?.denied_actions || [];
+      const denied = actions.map(action => action.display_name || action.action || 'an operation');
       if (denied.length) this.item(turn, { id: `${turn.id}:denied`, type: 'toolCall', status: 'declined', text: `Antigravity could not run ${[...new Set(denied)].join(', ')}: the operation needs permission, and its headless CLI cannot ask for approval.` });
-      if (result?.status === 'SUCCESS') this.finish(turn, 'completed');
+      // A soft-denied tool can be streamed as DONE and end with SUCCESS and
+      // an empty response. Only a finished final reply shows the agent went on
+      // to complete its turn after a denial; progress text is not that reply.
+      // The timeline keeps the denied operation and its target; the error is a
+      // fixed sentence so the app can translate it. A read-only helper cannot
+      // change its permissions and Always proceed is already broadest, so
+      // neither gets advice about them.
+      if (result?.status === 'SUCCESS' && denied.length && !(lastReply >= 0 && lastReply === lastStep)) {
+        const tool = lastTool;
+        if (tool?.index === lastStep && actions.some(action => action.action === tool.name)) this.item(turn, { ...tool.item, status: 'declined' });
+        return this.finish(turn, 'failed', thread.readOnly || full ? 'Antigravity stopped because an operation needed permission.' : 'Antigravity stopped because an operation needed permission. Ask it to continue without that operation, or select Always proceed (approves all tools) and ask it to continue.');
+      }
+      // agy retries a failed model request itself and records each failed
+      // attempt as an error step. It still reports the turn as an error when a
+      // retry succeeded and the agent went on to finish. Resuming a conversation
+      // can return an earlier turn's API error too, without streaming its old
+      // error step. In either case require a finished reply as the final step;
+      // a new error, unfinished work, or an unrelated result-only failure stays
+      // failed. Do not resend the prompt: its edits have already happened.
+      const historicalApiError = conversation && lastError < 0 && /^API error \(attempt \d+\):/.test(result?.error || '');
+      const recovered = result?.status === 'ERROR' && (lastError >= 0 || historicalApiError) && lastReply > lastError && lastReply === lastStep;
+      if (result?.status === 'SUCCESS' || recovered) this.finish(turn, 'completed');
       else this.finish(turn, 'failed', result?.error || stderr.trim().split('\n').filter(line => !line.startsWith('{')).slice(-3).join(' ') || 'Antigravity stopped without a result.');
     });
     // One NDJSON user message followed by EOF runs one turn without argv limits.

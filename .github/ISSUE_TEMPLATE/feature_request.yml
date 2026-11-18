@@ -1,6 +1,6 @@
 name: Feature request
 description: Suggest something Papilot should do.
-labels: [enhancement]
+labels: [enhancement, needs-triage]
 body:
   - type: textarea
     id: problem
@@ -14,6 +14,11 @@ body:
     attributes:
       label: What would help?
       description: How you imagine it working.
+  - type: textarea
+    id: discord
+    attributes:
+      label: Related Discord post
+      description: If this started in Discord, paste the original post link so we can follow up there.
   - type: textarea
     id: alternatives
     attributes:

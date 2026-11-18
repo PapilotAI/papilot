@@ -55,7 +55,6 @@ try {
   const dialog = f.page.locator('dialog[open]');
   await f.page.getByRole('dialog', { name: 'Git', exact: true }).waitFor();
   await status(dialog, 'Not installed or unavailable');
-  assert.equal(await dialog.getByRole('button', { name: 'Required tools', exact: true }).count(), 0);
   assert.equal(await dialog.getByRole('link', { name: 'Install Git' }).getAttribute('href'), 'https://git-scm.com/install/mac');
   assert.equal(await dialog.getByRole('link', { name: 'Install MacTeX' }).count(), 0);
   await dialog.getByRole('switch', { name: 'Show advanced Git features' }).check();
@@ -71,8 +70,10 @@ try {
   const banner = f.page.locator('.requirements-banner');
   await banner.getByRole('button', { name: 'LaTeX', exact: true }).waitFor();
   assert.equal(await dialog.count(), 0, 'returning users without a paper are not prompted again');
-  await f.page.getByRole('button', { name: 'Open a folder', exact: true }).first().click();
+  await f.page.getByRole('button', { name: 'Import or open', exact: true }).first().click();
+  await f.page.getByRole('dialog', { name: 'New paper', exact: true }).getByRole('button', { name: 'Choose folder…', exact: true }).click();
   assert.equal(await f.page.evaluate(() => window.fixtureFolderRequests), 1, 'setup guidance does not block the folder picker');
+  await f.page.getByRole('dialog', { name: 'New paper', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
   const bannerBox = await banner.boundingBox();
   assert.ok(bannerBox.y > 46, 'the desktop notice stays clear of the window controls');
   await banner.getByRole('button', { name: 'LaTeX', exact: true }).click();
@@ -140,7 +141,6 @@ try {
   await goTo(ready.page.getByRole('dialog'), 'git');
   await status(ready.page.getByRole('dialog'), 'Ready');
   assert.equal(await ready.page.locator('.requirements-banner').count(), 0);
-  assert.equal(await ready.page.locator('.requirements-dialog').count(), 0);
   await ready.context.close();
 
   const windows = await fixture({ platform: 'win32' });

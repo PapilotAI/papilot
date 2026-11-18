@@ -1,10 +1,8 @@
 import { it, expect, vi } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
-import { zhCN } from "../../src/web/zh-CN.ts";
 import { messages } from "../../src/web/locales/index.ts";
 import { LANGUAGES } from "../../src/locales.ts";
-import { STATUS } from "../../src/web/overview.tsx";
-import { STATE } from "../../src/web/model.ts";
+import { STATE, STATUS } from "../../src/web/model.ts";
 import { pageLanguage, t, language } from "../../src/web/i18n.ts";
 
 const web = new URL("../../src/web/", import.meta.url);
@@ -33,14 +31,6 @@ function keys() {
 }
 const placeholders = (text: string) =>
   [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
-
-it("translates every viewer string into Simplified Chinese", () => {
-  const all = keys();
-  expect(all.length).toBeGreaterThan(80);
-  expect(all.filter((key) => !(key in zhCN))).toEqual([]);
-  for (const key of all)
-    expect(placeholders(zhCN[key]), key).toEqual(placeholders(key));
-});
 
 it("reads the language from the page address only", () => {
   expect(pageLanguage("?task=a&lang=zh-CN")).toBe("zh-Hans");

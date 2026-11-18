@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
+import { dragPdfText } from './pdf-selection-fixture.mjs';
 import { summarizeNotes } from '../src/notes.ts';
 
 const server = Fastify();
@@ -26,6 +27,7 @@ const routeApi = async route => {
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true, noteAlternativeRange: 'few' } });
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git')) return json(git);
   if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'pdf', pages: [[612, 792], [612, 792]] }, annotations: notes });
@@ -68,12 +70,13 @@ async function chooseGroup(name) {
 }
 async function selectText(index, automatic = true) {
   const word = page.locator('.page[data-page-number="1"] .textLayer span').filter({ hasText: /\S/ }).nth(index);
-  await word.evaluate((el, automatic) => {
+  if (automatic) return dragPdfText(page, word);
+  // Leave a selection pending so the explicit Add to group button is tested.
+  await word.evaluate(el => {
     const range = document.createRange(); range.selectNodeContents(el);
     const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     document.dispatchEvent(new Event('selectionchange'));
-    if (automatic) el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }));
-  }, automatic);
+  });
 }
 async function markPoint(note, target = page) {
   const mark = target.locator(`.note-layer [data-note="${note.id}"]`).first();
@@ -109,9 +112,15 @@ try {
   await selectText(2); await expect.poll(() => notes.length).toBe(2);
   // Color belongs to the note tool and carries over to the region tool in the rail.
   await page.getByRole('toolbar', { name: 'Marking tools' }).getByRole('button', { name: 'Region', exact: true }).click();
-  const regionBox = await page.locator('.region-capture').first().boundingBox();
-  await page.mouse.move(regionBox.x + 60, regionBox.y + 90); await page.mouse.down();
-  await page.mouse.move(regionBox.x + 180, regionBox.y + 150, { steps: 5 }); await page.mouse.up();
+  const region = page.locator('.region-capture').first();
+  // Wait for the drawing surface to settle and receive the pointer before
+  // reading coordinates; the PDF can still move after switching tools.
+  await region.hover({ position: { x: 60, y: 90 } });
+  const regionBox = await region.boundingBox();
+  await page.mouse.down();
+  await page.mouse.move(regionBox.x + 180, regionBox.y + 150, { steps: 5 });
+  await expect(page.locator('.note-box.draft')).toBeVisible();
+  await page.mouse.up();
   await expect.poll(() => notes.length).toBe(3);
   assert.equal(notes.at(-1).group, 'yellow');
   assert.equal(notes.at(-1).rects, undefined);

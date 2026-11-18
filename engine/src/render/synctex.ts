@@ -28,23 +28,29 @@ function windowsEncoding() {
   return (ansiEncoding = names[code || ""] || `windows-${code}`);
 }
 
-// TeX Live on Windows can write Input paths in the system ANSI code page.
-// The WASI parser receives UTF-8 queries; normalize its in-memory input only,
-// preserving the compiler's files and accepting newer UTF-8 TeX output too.
-export function utf8Synctex(
+// Windows TeX can write Input paths in the system ANSI code page (TeX Live)
+// or with backslashes (MiKTeX). The WASI parser receives UTF-8, forward-slash
+// queries; normalize its in-memory input only, preserving compiler files.
+export function windowsSynctex(
   data: Uint8Array,
   encoding = windowsEncoding,
 ): Uint8Array {
   const compressed = data[0] === 0x1f && data[1] === 0x8b;
   const plain = compressed ? gunzipSync(data) : data;
+  let text: string, legacy = false;
   try {
-    new TextDecoder("utf-8", { fatal: true }).decode(plain);
-    return data;
+    text = new TextDecoder("utf-8", { fatal: true }).decode(plain);
   } catch {
-    /* Legacy Windows TeX paths. */
+    text = new TextDecoder(encoding(), { fatal: true }).decode(plain);
+    legacy = true;
   }
-  const text = new TextDecoder(encoding(), { fatal: true }).decode(plain);
-  const utf8 = Buffer.from(text, "utf8");
+  // Decode first: a legacy multibyte character may itself contain byte 0x5c.
+  const normalized = text.replace(
+    /^(Input:\d+:)([^\r\n]*)/gm,
+    (_, head: string, input: string) => head + input.replaceAll("\\", "/"),
+  );
+  if (!legacy && normalized === text) return data;
+  const utf8 = Buffer.from(normalized, "utf8");
   return compressed ? gzipSync(utf8) : utf8;
 }
 
@@ -178,7 +184,7 @@ function system(memory: () => WebAssembly.Memory, directory: string) {
       try {
         if (!fs.statSync(name).isFile()) return ERRNO.NOENT;
         data = fs.readFileSync(name);
-        if (process.platform === "win32") data = utf8Synctex(data);
+        if (process.platform === "win32") data = windowsSynctex(data);
       } catch {
         return ERRNO.NOENT;
       }

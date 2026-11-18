@@ -496,7 +496,7 @@ function citationsOf(doc: Document) {
 }
 // BibTeX reads databases in declaration order, retaining @string definitions
 // for subsequent files. Keep the defining file with every dependency.
-function bibliographyEntries(read: (file: string) => string | null, bibs: string[]) {
+export function bibliographyEntries(read: (file: string) => string | null, bibs: string[]) {
   const macros = defaultMacros();
   return new Map(bibs.map((file) => [file, parseBib(read(file) ?? "", file, macros)]));
 }

@@ -2,6 +2,10 @@ import { isNoteGroup } from '../note-groups.ts';
 import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES } from '../shared.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
+import { registerImportUpload } from './import-upload.ts';
+import { listFolders, nearestFolder } from './folders.ts';
+import { isLocalRequest } from './security.ts';
+import { chooseFolder, closeFolderPicker } from './folder-picker.ts';
 import rateLimit from '@fastify/rate-limit';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,33 +13,42 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { registerFrontend } from './frontend.ts';
 import type { Store } from './store.ts';
-import type { Workspace } from './workspace.ts';
+import type { TaskNoteContext, Workspace } from './workspace.ts';
+import { WriterAgent } from './writer/agent.ts';
 import { AGENT_TURN, reviewClient, retryReviewRead, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
 import { fullPaperPdf, nextPaperPass, paperPassPdf, retainedPaperPdf } from './pdf.ts';
+import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { bibliography, confirmEntry } from './references.ts';
-import { type Manuscripts, annotationTask, gitAbortMerge, gitCommit, gitDiff, gitDiscard, gitFinishMerge, gitIgnore, gitRemote, gitStage, gitStatus, gitSync } from './manuscript.ts';
+import { type Manuscripts, gitAbortMerge, gitCommit, gitDiff, gitDiscard, gitFinishMerge, gitIgnore, gitRemote, gitStage, gitStatus, gitSync } from './manuscript.ts';
 import { gitHistory, gitVersion, gitVersionDiff, gitRestoreVersion } from './git-history.ts';
+import { locateSource, placeSource, readFile, saveSource } from './manuscript-source.ts';
+import { captureAnchor, resolveAnchors, isSourceAnchor } from './manuscript-anchors.ts';
 import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
-import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type NoteSummary, type QuickNote, type Task } from '../shared.ts';
+import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
+import type { SourceFileRead } from '../../engine/src/types.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
 import { noteOptionContext, noteOptionsKey } from './note-options.ts';
 import { taskNoteResults } from './note-results.ts';
 import type { Updates } from './updates.ts';
 import { Diagnostics } from './diagnostics.ts';
 import { attachmentIds } from './attachments.ts';
-import { MAX_ATTACHMENT_BYTES } from '../shared.ts';
-import { PaperImports, openFolder } from './imports.ts';
-import { DATA } from './paths.ts';
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '../shared.ts';
+import { PaperImports, existingTex, openFolder } from './imports.ts';
+import { checkDocument, chooseDocument, compiledBefore, repositoryFiles, rootDocument } from './repository-files.ts';
+import { PaperCreations } from './create-paper.ts';
+import { Universe } from './universe.ts';
+import { DATA, pageViewDir } from './paths.ts';
 import { registerAiReviewRoutes } from './ai-review-routes.ts';
 import { detectLatex } from './latex-installation.ts';
 import { systemRequirements } from './system-requirements.ts';
 import { findExecutable } from '../../bin/agent-paths.mjs';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
+const creationsByWorkspace = new WeakMap<Workspace, PaperCreations>();
 // A review write's reply does not wait for the task's summary to be read
 // again: that runs right after it, once at a time per task, and once more
 // for writes that arrive meanwhile. The review page's reads of the task wait
@@ -73,6 +86,20 @@ export function gitQueue() {
 // Quick notes as one person saved them: up to eight, each with a unique id.
 // A preset may keep only its id; one added in settings needs a name for the
 // wheel and an instruction for the agent.
+// Where a comment on the task's PDF reader was: a page, its lines, and the
+// review round's, manuscript preview's or build's PDF it was made on.
+function notePaper(value: unknown, rounds: number): NonNullable<NoteSummary['paper']> {
+  const paper = value as Record<string, unknown> | null, invalid = () => new Error('Invalid note location.');
+  if (!paper || typeof paper !== 'object' || !Number.isSafeInteger(paper.page) || (paper.page as number) < 0 || !Array.isArray(paper.rects) || !paper.rects.length || paper.rects.length > 200) throw invalid();
+  const rects = paper.rects.map(rect => {
+    if (!Array.isArray(rect) || rect.length !== 4 || !rect.every(v => typeof v === 'number' && v >= 0 && v <= 1) || rect[2] < rect[0] || rect[3] < rect[1]) throw invalid();
+    return rect as [number, number, number, number];
+  });
+  if (paper.round !== undefined && (!Number.isSafeInteger(paper.round) || (paper.round as number) < 1 || (paper.round as number) > rounds)) throw invalid();
+  if (paper.key !== undefined && (typeof paper.key !== 'string' || !/^[0-9a-f]{16,64}$/.test(paper.key))) throw invalid();
+  if (paper.build !== undefined && (typeof paper.build !== 'string' || !/^[0-9a-f]{32}$/.test(paper.build))) throw invalid();
+  return { page: paper.page as number, rects, ...(paper.round ? { round: paper.round as number } : paper.key ? { key: paper.key as string } : paper.build ? { build: paper.build as string } : {}) };
+}
 function readQuickNotes(value: unknown): QuickNote[] {
   const invalid = () => new Error('Invalid quick notes.');
   if (!Array.isArray(value) || !value.length || value.length > QUICK_NOTE_LIMIT) throw invalid();
@@ -95,6 +122,7 @@ function readQuickNotes(value: unknown): QuickNote[] {
 }
 
 export interface AppOptions {
+  universe?: Universe;
   listener: Listener; store: Store; workspace: Workspace; manuscripts: Manuscripts; changes?: Changes;
   csrf: string; serialGit: ReturnType<typeof gitQueue>; dist: string | null; version: string;
   connectReview?: typeof reviewClient;
@@ -113,7 +141,11 @@ export async function buildApp(options: AppOptions) {
   const diagnostics = options.diagnostics || new Diagnostics();
   let imports = importsByWorkspace.get(workspace);
   if (!imports) { imports = new PaperImports(manuscripts, DATA, root => Boolean(workspace.projectByPath(root))); importsByWorkspace.set(workspace, imports); }
-  workspace.importsBusy = () => imports!.busy;
+  let creations = creationsByWorkspace.get(workspace);
+  let universe = options.universe;
+  if (!universe) try { universe = new Universe(); } catch { /* An invalid PAPILOT_UNIVERSE_URL leaves only the blank paper. */ }
+  if (!creations) { creations = new PaperCreations(DATA, universe); creationsByWorkspace.set(workspace, creations); }
+  workspace.importsBusy = () => imports!.busy || creations!.busy;
   // Whether rounds list what each edit changes elsewhere, such as the uses of
   // a macro: the choice in Settings, off by default, since finding
   // which combination reproduces a change needs additional compilations.
@@ -121,8 +153,16 @@ export async function buildApp(options: AppOptions) {
   const indirectChanges = () => store.preference<boolean>('indirect-changes') === true;
   workspace.indirectChanges = changes.indirectChanges = indirectChanges;
   // An AI review resumed after a restart compiles its copy here too.
-  workspace.prepareReview = (task, worktree) => manuscripts.captureReview(store.project(task.projectId).path, worktree, task.id);
+  // A task's document as the store has it now: a running turn may have
+  // started before the paper first switched documents and stamped it.
+  const taskDocument = (task: Task) => store.findTask(task.id)?.document ?? task.document;
+  workspace.prepareReview = (task, worktree) => manuscripts.captureReview(store.project(task.projectId).path, worktree, task.id, task.document);
+  workspace.sourcePages = (task, file, lines) => manuscripts.sourcePages(task.projectId, file, lines, taskDocument(task));
+  workspace.paperBuild = task => manuscripts.paperBuild(task.projectId, taskDocument(task));
   const app = Fastify({ logger: false, bodyLimit: Number.MAX_SAFE_INTEGER });
+  const buildSettingsChanged = (projectId: string) => changes.buildSettingsChanged(projectId);
+  manuscripts.on('build-settings', buildSettingsChanged);
+  app.addHook('onClose', async () => { manuscripts.off('build-settings', buildSettingsChanged); });
   guard(app, { listener, csrf: options.csrf });
   const updateRequests = new WeakMap<object, () => void>();
   app.addHook('onRequest', async (request, reply) => {
@@ -182,10 +222,23 @@ export async function buildApp(options: AppOptions) {
     workspace.attachments.discard(request.params.id, request.params.attachment);
     return { ok: true };
   });
+  // The manuscript's own notes: on the PDF of the root document it compiles,
+  // not sent to a task, and not an AI review's suggestions.
+  // A note on another document waits for it while the paper can compile it
+  // again, as the file menu offers it: a root document, or one compiled
+  // before, even while it lacks \documentclass of its own. One on a main file
+  // since renamed or removed moves to the current document.
+  async function paperNoteFilter(id: string) {
+    const root = store.project(id).path, document = await manuscripts.document(id, root), elsewhere = new Map<string, boolean>();
+    const before = await compiledBefore(root);
+    const away = (file: string) => elsewhere.get(file) ?? elsewhere.set(file, before.has(file) ? existingTex(root, file) : rootDocument(root, file)).get(file)!;
+    return (note: Annotation) => !note.taskId && !isTaskReviewNote(note) && (!note.document || note.document === document || !away(note.document));
+  }
+  async function paperNotes(id: string) { return store.annotations(id).filter(await paperNoteFilter(id)); }
   async function manuscript(id: string, rebuild = false) {
     await options.prepareDemo?.();
     const root = store.project(id).path, state = await manuscripts.state(id, root, rebuild);
-    const notes = store.annotations(id).filter(note => !note.taskId && !isTaskReviewNote(note));
+    const paperNote = await paperNoteFilter(id), notes = store.annotations(id).filter(paperNote);
     const placed = await manuscripts.reanchor(id, root, notes).catch(() => notes);
     for (let index = 0; index < notes.length; index++) {
       const next = placed[index], previous = notes[index];
@@ -194,9 +247,12 @@ export async function buildApp(options: AppOptions) {
       // A comment edit, deletion, or task submission may have happened while
       // PDF positions were being checked. Never restore or overwrite that work.
       if (current.deletedAt !== undefined || current.taskId || workspace.annotationSending(current.id) || current.key !== previous.key) continue;
-      store.saveAnnotation({ ...current, key: next.key, page: next.page, rect: next.rect, rects: next.rects, source: next.source });
+      const document = manuscripts.documentOf(id, next.key);
+      store.saveAnnotation({ ...current, ...(document ? { document } : {}), key: next.key, page: next.page, rect: next.rect, rects: next.rects, source: next.source });
     }
-    return { ...state, annotations: store.annotations(id).filter(note => !note.taskId && !isTaskReviewNote(note)) };
+    const annotations = store.annotations(id).filter(paperNote);
+    const scope = state.build.key ? await manuscripts.noteSections(id, state.build.key, annotations).catch(() => null) : null;
+    return { ...state, annotations, ...(scope ? { noteSections: scope.sections, unplacedSectionNotes: scope.unplaced } : {}) };
   }
 
   app.get('/api/health', () => ({ ok: true, name: 'Papilot', version: options.version, ...(options.desktopInstance ? { desktopInstance: options.desktopInstance } : {}), ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) }));
@@ -281,12 +337,50 @@ export async function buildApp(options: AppOptions) {
     });
   });
   app.post('/api/reconnect', async request => { await workspace.connect(); return workspace.snapshot().runtime; });
+  // Papilot Writer's model providers: subscription sign-ins and API keys.
+  const writer = async () => {
+    const runtime = workspace.agents.papilot as WriterAgent;
+    if (!(runtime instanceof WriterAgent)) throw Object.assign(new Error('Papilot Writer is not available.'), { statusCode: 404 });
+    await runtime.preload();
+    return runtime.credentials!;
+  };
+  app.get('/api/writer/auth', async () => (await writer()).status());
+  app.post('/api/writer/keys', async request => { const body = (request.body || {}) as any, credentials = await writer(); credentials.setKey(string(body.provider, 'Provider', 64), string(body.key, 'API key', 4096)); return credentials.status(); });
+  app.post<{ Params: { provider: string } }>('/api/writer/providers/:provider/remove', async request => { const credentials = await writer(); credentials.remove(request.params.provider); return credentials.status(); });
+  app.post('/api/writer/logins', async request => {
+    const body = (request.body || {}) as any, credentials = await writer();
+    const enterprise = typeof body.enterprise === 'string' ? body.enterprise.trim().slice(0, 200) : '';
+    return { id: credentials.login(string(body.provider, 'Provider', 64), enterprise), ...credentials.status() };
+  });
+  app.post<{ Params: { id: string } }>('/api/writer/logins/:id/code', async request => { const credentials = await writer(); credentials.input(request.params.id, string((request.body as any)?.code, 'Code', 4096)); return credentials.status(); });
+  app.post<{ Params: { id: string } }>('/api/writer/logins/:id/cancel', async request => { const credentials = await writer(); credentials.cancel(request.params.id); return credentials.status(); });
   // Codex names reasoning efforts with short lowercase words (low, medium, xhigh).
   const agent = (value: unknown): AgentId => isAgentId(value) ? value : 'codex';
   const effort = (value: unknown) => typeof value === 'string' && /^[a-z]{1,16}$/.test(value) ? value : undefined;
   const string = (value: unknown, name: string, max?: number) => { if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} is required.`); if (max !== undefined && value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
-  app.post('/api/projects', async request => { const b = request.body as any; return workspace.addProject(string(b.path, 'Repository path', 4000), b.name ? string(b.name, 'Paper name', 120) : undefined); });
+  app.get('/api/projects/create-defaults', () => creations!.defaults());
+  app.get('/api/universe', async () => {
+    if (!universe) return { templates: [], error: 'Templates are not available here.' };
+    try { return { templates: await universe.templates() }; }
+    catch (error) { return { templates: [], error: (error as Error).message }; }
+  });
+  app.post('/api/projects/create', request => creations!.create((request.body || {}) as any, (root, name) => workspace.addProject(root, name)));
   app.post('/api/projects/open', request => openFolder((request.body || {}) as any, root => workspace.projectByPath(root), (root, name) => workspace.addProject(root, name)));
+  registerImportUpload(app, imports);
+  app.post('/api/folders', request => listFolders((request.body || {}) as any));
+  // The system picker appears on this computer's screen, so only a browser here may open it.
+  app.post<{ Body: { path?: unknown; title?: unknown } }>('/api/folders/choose', async (request, reply) => {
+    if (!isLocalRequest(request.headers, listener.port)) return { unavailable: true };
+    const body = request.body || {}, title = typeof body.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 200) : 'Choose a folder';
+    const start = await nearestFolder(body.path), controller = new AbortController();
+    const closed = () => { if (!reply.raw.writableFinished) controller.abort(); };
+    reply.raw.on('close', closed);
+    try { return await chooseFolder(title, start, controller.signal); }
+    finally { reply.raw.off('close', closed); }
+  });
+  // A waiting picker request would otherwise hold shutdown open.
+  app.addHook('preClose', async () => closeFolderPicker());
+  // Legacy base64 clients still buffer JSON; browser file uploads use the streaming route above.
   app.post('/api/imports', { bodyLimit: 90 * 1024 * 1024 }, request => imports!.create((request.body || {}) as any));
   app.get<{ Params: { id: string } }>('/api/imports/:id', request => imports!.get(request.params.id));
   app.post<{ Params: { id: string } }>('/api/imports/:id/build', request => imports!.build(request.params.id, (request.body || {}) as any));
@@ -324,14 +418,60 @@ export async function buildApp(options: AppOptions) {
     if (existing) { if (existing.projectId !== projectId) throw new Error('Invalid task ID.'); return workspace.retryTask(existing.id); }
     // AI review compiles the task's own copy of the manuscript, so it does not wait for the preview.
     const reviewing = Boolean(skill && findSkill(store.project(projectId).path, skill).output === 'annotations');
-    return workspace.createTask({ id, projectId, ...(reviewing ? { prepareReview: (worktree: string) => manuscripts.captureReview(store.project(projectId).path, worktree, id) } : {}), title: string(b.title, 'Task title', 120), permissions: b.permissions, instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64) });
+    // Derive context on the host from the PDF/source snapshot; clients only
+    // submit note IDs. Preserve each mark's own build, including older marks.
+    const selectedNotes = store.annotations(projectId).filter(note => annotations?.includes(note.id));
+    const noteContexts: Record<string, TaskNoteContext> = {};
+    for (const key of new Set(selectedNotes.map(note => note.key))) {
+      const scope = await manuscripts.noteSections(projectId, key, selectedNotes.filter(note => note.key === key)).catch(() => null);
+      if (scope) for (const note of selectedNotes.filter(note => note.key === key)) {
+        const context = scope.contexts[note.id];
+        if (context) noteContexts[note.id] = { note, context };
+      }
+    }
+    return workspace.createTask({ id, projectId, noteContexts, ...(reviewing ? { prepareReview: (worktree: string, document?: string) => manuscripts.captureReview(store.project(projectId).path, worktree, id, document) } : {}), title: string(b.title, 'Task title', 120), permissions: b.permissions, instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64) });
   });
   // Retry for a task whose preparation failed; it answers at once as well.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/prepare', task, request => workspace.retryTask(request.params.id));
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/restart', task, request => {
+    const body = (request.body || {}) as any;
+    if (!isAgentId(body.agent)) throw new Error('Choose a valid destination agent.');
+    for (const key of ['model', 'effort', 'serviceTier']) if (body[key] !== undefined && typeof body[key] !== 'string') throw new Error('Choose valid destination model settings.');
+    return workspace.restartTask(request.params.id, { id: string(body.id, 'Task ID', 64), agent: body.agent,
+      model: typeof body.model === 'string' ? body.model : undefined, effort: typeof body.effort === 'string' ? body.effort : undefined,
+      serviceTier: typeof body.serviceTier === 'string' ? body.serviceTier : undefined, stop: body.stop === true, draftAttachments: attachmentIds(body.draftAttachments) });
+  });
   app.get<{ Params: { id: string }; Querystring: { since?: string } }>('/api/tasks/:id/items', task, request => { store.task(request.params.id); return store.itemsSince(request.params.id, typeof request.query.since === 'string' ? request.query.since : undefined); });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {
     const task = store.task(request.params.id), client = await connectReview(store.project(task.projectId).path);
     return { notes: await taskNoteResults(task, store.items(task.id), store.runs().filter(run => run.taskId === task.id), client) };
+  });
+  // A task's file in the editor beside its review. The review engine reads
+  // it from the task's worktree and reviews a save in a new round; a save
+  // waits like any review action that writes the task's files. The editor
+  // works on \n line breaks, so a CRLF file shows no changes in its text.
+  const taskSource = (read: SourceFileRead): SourceFile => ({ file: read.file, revision: read.revision, text: read.text, base: read.base, round: read.round, before: read.before, reviewed: read.reviewed && !read.text.includes('\r'), reverted: read.reverted, passage: [0, 0], focus: [0, 0], drifted: false });
+  app.get<{ Params: { id: string }; Querystring: { file?: string } }>('/api/tasks/:id/source', task, async request => {
+    const current = store.task(request.params.id), file = string(request.query.file, 'Source file', 1024);
+    return retryReviewRead(connectReview, store.project(current.projectId).path, async client =>
+      taskSource(await client.get<SourceFileRead>(`${taskRoute(current.name)}/source/file?file=${encodeURIComponent(file)}`)));
+  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/source', { ...task, bodyLimit: 8 * 1024 * 1024 }, async request => {
+    const current = store.task(request.params.id), project = store.project(current.projectId), b = (request.body || {}) as any;
+    const client = await connectReview(project.path), route = `${taskRoute(current.name)}/source/file`;
+    const input = { id: string(b.id, 'Source edit ID', 80), round: b.round, file: string(b.file, 'Source file', 1024), revision: b.revision, text: b.text };
+    const value = await workspace.reviewWrite(current.id, true, async () => {
+      const response = await fetch(client.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': client.token }, body: JSON.stringify(input), signal: AbortSignal.timeout(120000) });
+      const value = await response.json() as { error?: string; source?: SourceFileRead };
+      if (!confirmedReviewResponse(response.status, value, current.name)) throw new Error('The source edit could not be confirmed. Check task status before retrying.');
+      return value;
+    }, { route, body: input });
+    if (value.error || !value.source) throw Object.assign(new Error(value.error || 'The source edit could not be confirmed. Check task status before retrying.'), { statusCode: 409 });
+    store.updateTask(current.id, { error: null });
+    settle(workspace, current.id);
+    // The review continues from this state, as after an edit made in it.
+    const { source, ...state } = value;
+    return { source: taskSource(source), state: annotateReviewState(rewriteReviewJson(state, `/review/${project.id}`), store.tasks().filter(item => item.projectId === project.id)) };
   });
   app.get<{ Params: { id: string }; Querystring: { key: string } }>('/api/tasks/:id/note-options', task, async request => {
     const project = store.project(store.task(request.params.id).projectId);
@@ -418,13 +558,8 @@ export async function buildApp(options: AppOptions) {
       if (preview.files) await manuscripts.predict(project.id, project.path, Object.fromEntries(Object.entries(preview.files).map(([file, data]) => [file, data === null ? null : Buffer.from(data, 'base64')])));
     })().catch(() => undefined);
   };
-  // A task's final selection: predict what applying it writes, or compile
-  // the manuscript that a task writing accepted changes directly has changed.
-  const decided = (taskId: string) => {
-    const current = store.findTask(taskId);
-    if (current?.deferred) predict(taskId);
-    else if (current) refreshManuscript(current.projectId);
-  };
+  // A task's final selection: predict what applying it writes.
+  const decided = (taskId: string) => { if (store.findTask(taskId)) predict(taskId); };
   workspace.on('decided', decided);
   app.addHook('onClose', async () => { workspace.off('decided', decided); });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/predict', task, request => {
@@ -438,7 +573,7 @@ export async function buildApp(options: AppOptions) {
     const page = Number(b?.page);
     if (!isRect(b?.rect) || !Number.isSafeInteger(page) || page < 0 || !current.worktree) throw new Error('Mark text on a page first.');
     const rects = Array.isArray(b.rects) ? b.rects.filter(isRect).slice(0, 200) : [];
-    const located = await manuscripts.locateBuild(project.path, string(b.key, 'PDF key', 32), page, b.rect, rects, typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '', current.worktree);
+    const located = await manuscripts.locateBuild(project.path, string(b.key, 'PDF key', 32), page, b.rect, rects, typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '', current.worktree, current.document);
     return { source: located?.source ? { file: located.source.file, lines: located.source.lines } : null };
   });
   app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string; retained?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
@@ -473,22 +608,32 @@ export async function buildApp(options: AppOptions) {
           if (!source || !Array.isArray(source.lines) || source.lines.length !== 2 || !source.lines.every((line: unknown) => Number.isSafeInteger(line) && Number(line) >= 1) || source.lines[1] < source.lines[0]) throw new Error('Invalid note location.');
           return { file: string(source.file, 'Source file', 4096), lines: source.lines as [number, number] };
         });
-        return { ...(note.id ? { id: string(note.id, 'Note ID', 100) } : {}), where: string(note.where, 'Note location'), quote: optional(note.quote, 'PDF text'), comment, ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(stamp ? { stamp } : {}), ...(anchor ? { anchor: { sources, ...(anchor.round ? { round: anchor.round } : {}) } } : {}) };
+        const paper = note.paper === undefined ? undefined : notePaper(note.paper, task.review?.round || 0);
+        return { ...(paper ? { paper } : {}), ...(note.id ? { id: string(note.id, 'Note ID', 100) } : {}), where: string(note.where, 'Note location'), quote: optional(note.quote, 'PDF text'), comment, ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(stamp ? { stamp } : {}), ...(anchor ? { anchor: { sources, ...(anchor.round ? { round: anchor.round } : {}) } } : {}) };
       });
     }
     const text = feedback || skill || reviewNotes || attachments.length ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
+    // A comment on the task's PDF brings its page as an image, and its source lines.
+    if (reviewNotes?.some(note => note.paper)) {
+      const project = store.project(task.projectId);
+      const pages = await withNotePages(reviewNotes, {
+        pdf: async paper => paper.round ? retainedPaperPdf(connectReview, project.path, task.name, paper.round) : paper.key ? manuscripts.compiled(task.projectId, paper.key).pdf : paper.build ? manuscripts.buildPdf(project.path, paper.build) : null,
+        locate: async (paper, quote) => {
+          if (!paper.key || !task.worktree) return null;
+          const rect: [number, number, number, number] = [Math.min(...paper.rects.map(r => r[0])), Math.min(...paper.rects.map(r => r[1])), Math.max(...paper.rects.map(r => r[2])), Math.max(...paper.rects.map(r => r[3]))];
+          const located = await manuscripts.locateShown(task.projectId, paper.key, paper.page, rect, paper.rects, quote, task.worktree);
+          return located?.source ? { file: located.source.file, lines: located.source.lines } : null;
+        },
+        render: (pdf, page, rects) => manuscripts.notePage(pdf, page, rects),
+        attach: async (name, png) => (await workspace.attachments.upload(task.projectId, name, png)).id,
+      }, MAX_ATTACHMENTS - attachments.length);
+      reviewNotes = pages.notes; attachments.push(...pages.attachments);
+    }
     return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, reviewNotes, attachments });
   });
-  // Commits what the author accepted from this task, with the message they confirmed.
   // Applying writes the manuscript only once its delivery is complete: not
   // for a confirmation, a merge suggestion, a pending delivery or a branch.
   const delivered = (delivery: Task['delivery']) => Boolean(delivery && !delivery.pending && delivery.mode !== 'branch');
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/commit', task, async request => {
-    const task = store.task(request.params.id), b = request.body as any;
-    const result = await serialGit(task.projectId, () => workspace.commitTask(task.id, string(b.message, 'Commit message', 5000), b.push === true));
-    if ('delivery' in result ? delivered(result.delivery) : result.commit) refreshManuscript(task.projectId);
-    return result;
-  });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/apply', task, async request => {
     const task = store.task(request.params.id), b = (request.body || {}) as any;
     if (b.mode !== undefined && b.mode !== 'workspace' && b.mode !== 'commit') throw new Error('Invalid save action.');
@@ -513,6 +658,12 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/archive', task, request => workspace.archiveTask(request.params.id, (request.body as any)?.archived, (request.body as any)?.finished === true));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/interrupt', task, request => workspace.interrupt(request.params.id).then(() => ({ ok: true })));
   // Deleting a task that is already gone succeeds, so a lost response can be retried; a hidden one answers the same.
+  // A page an agent looked at, as the chat shows it with that tool call.
+  app.get<{ Params: { id: string; file: string } }>('/api/tasks/:id/pages/:file', task, (request, reply) => {
+    const dir = pageViewDir(store.task(request.params.id).id), file = request.params.file;
+    if (!/^[\w-]{1,100}-\d\.png$/.test(file) || !fs.existsSync(path.join(dir, file))) return reply.code(404).send({ error: 'This page is no longer available.' });
+    return reply.type('image/png').header('Cache-Control', 'private, max-age=31536000, immutable').sendFile(file, dir, { cacheControl: false });
+  });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/delete', { config: { resource: { task: 'id' } } }, request => {
     if ((request.body as any)?.confirm !== true) throw new Error('Confirm permanent task deletion before continuing.');
     return workspace.deleteTask(request.params.id);
@@ -602,10 +753,71 @@ export async function buildApp(options: AppOptions) {
     return action === 'fetch' ? work() : serialGit(project.id, work);
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), request => manuscript(request.params.id, true));
+  // The file browser: the repository's files, and the root document the
+  // paper compiles, which can be any of its root documents.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/files', project(), async request => {
+    const project = store.project(request.params.id);
+    const document = await manuscripts.document(project.id, project.path);
+    return { document: document ?? null, files: await repositoryFiles(project.path, document) };
+  });
+  // One switch at a time per paper, and not during its other Git work: each
+  // reads and writes the settings and the documents compiled before.
+  app.post<{ Params: { id: string } }>('/api/projects/:id/document', project(), request => serialGit(request.params.id, async () => {
+    const project = store.project(request.params.id), previous = await manuscripts.document(project.id, project.path);
+    const main = await checkDocument(project.path, (request.body as { main?: unknown } | null)?.main);
+    if (previous && main !== previous) {
+      // Notes and tasks from before a paper could compile several documents
+      // are on the one it compiled until now; the review engine marks its
+      // tasks as it starts. A task prepared later takes the engine's record.
+      store.transaction(() => {
+        for (const note of store.annotations(project.id, true)) if (!note.document) store.saveAnnotation({ ...note, document: previous });
+        for (const task of store.tasks()) if (task.projectId === project.id && !task.document) store.updateTask(task.id, { document: previous });
+      });
+      if (store.tasks().some(task => task.projectId === project.id)) await connectReview(project.path);
+    }
+    // The settings may name another document than the PDF shown, or already
+    // name this one, edited by hand: either way the PDF shown is not its own.
+    if (await chooseDocument(project.path, main) || main !== previous) await manuscripts.documentChanged(project.id, project.path, main);
+    return { document: main };
+  }));
+  const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] > value[0] && value[3] > value[1];
+  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript/anchors', project(), request => {
+    const b = (request.body || {}) as any;
+    if (!isRect(b.rect) || !Number.isInteger(b.page) || b.page < 0) throw new Error('Select text or mark a region on the page first.');
+    return captureAnchor(manuscripts, store, request.params.id, string(b.key, 'Preview key', 64), b.page, b.rect,
+      Array.isArray(b.rects) ? b.rects.filter(isRect).slice(0, 200) : [], typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '');
+  });
+  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript/anchors/resolve', project(), request => {
+    const b = (request.body || {}) as any;
+    if (!Array.isArray(b.anchors) || !b.anchors.every((anchor: any) => anchor && typeof anchor.id === 'string' && isSourceAnchor(anchor.source) && Number.isInteger(anchor.near) && anchor.near >= 0)) throw new Error('Invalid line range.');
+    return resolveAnchors(manuscripts, store, request.params.id, string(b.key, 'Preview key', 64), b.anchors);
+  });
+  // Manual LaTeX edits from the PDF, without an agent: the passage under a
+  // click as it is on disk now, any lines of a file, a save of those lines
+  // (which compiles the manuscript), and where saved lines were printed.
+  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript/source/locate', project(), request => {
+    const project = store.project(request.params.id), b = (request.body || {}) as any;
+    if (!isRect(b.rect)) throw new Error('Click the text whose source you want to edit.');
+    const rects = Array.isArray(b.rects) ? b.rects.filter(isRect).slice(0, 200) : [];
+    return locateSource(manuscripts, project.id, project.path, string(b.key, 'Preview key', 64), Number(b.page), b.rect, rects, typeof b.quote === 'string' ? b.quote.slice(0, 20000) : '');
+  });
+  app.get<{ Params: { id: string }; Querystring: { file?: string } }>('/api/projects/:id/manuscript/source', project(), request =>
+    readFile(store.project(request.params.id).path, request.query.file));
+  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript/source', { ...project(), bodyLimit: 8 * 1024 * 1024 }, request => {
+    const project = store.project(request.params.id);
+    // Like reverting a change: one Git write at a time, never during a commit.
+    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
+      const saved = await saveSource(project.id, project.path, request.body), at = Date.now();
+      return { ...saved, tree: await manuscripts.written(project.id, project.path), at };
+    }));
+  });
+  app.get<{ Params: { id: string }; Querystring: { key?: string; file?: string; start?: string; end?: string; near?: string } }>('/api/projects/:id/manuscript/source/place', project(), request => {
+    const project = store.project(request.params.id), q = request.query;
+    return placeSource(manuscripts, project.id, String(q.key || ''), q.file, q.start, q.end, q.near);
+  });
   // Notes are saved for reading; only explicitly attached IDs reach an agent task.
   app.post<{ Params: { id: string } }>('/api/projects/:id/annotations', project(), async request => {
     const project = store.project(request.params.id), b = request.body as any;
-    const isRect = (value: unknown): value is [number, number, number, number] => Array.isArray(value) && value.length === 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 1) && value[2] > value[0] && value[3] > value[1];
     if (!isRect(b.rect)) throw new Error('Select text or mark a region on the page first.');
     const rects = Array.isArray(b.rects) ? b.rects.filter(isRect) : [];
     if (b.group !== undefined && !isNoteGroup(b.group)) throw new Error('Invalid annotation group.');
@@ -622,7 +834,8 @@ export async function buildApp(options: AppOptions) {
     // takes time is not waited for.
     const settled = await Promise.race([located.then(value => ({ value }), (error: unknown) => ({ error })), new Promise<null>(resolve => setImmediate(() => resolve(null)))]);
     if (settled && 'error' in settled) throw settled.error;
-    const note = store.saveAnnotation({ id: randomUUID(), projectId: project.id, key, page, rect: b.rect, ...(b.group ? { group: b.group } : {}), ...(b.kind ? { kind: b.kind } : {}), ...(stamp ? { stamp } : {}), ...(rects.length ? { rects } : {}), comment, quote: settled?.value.quote || selected, source: settled?.value.source ?? null, createdAt: Date.now() });
+    const document = manuscripts.documentOf(project.id, key);
+    const note = store.saveAnnotation({ id: randomUUID(), projectId: project.id, ...(document ? { document } : {}), key, page, rect: b.rect, ...(b.group ? { group: b.group } : {}), ...(b.kind ? { kind: b.kind } : {}), ...(stamp ? { stamp } : {}), ...(rects.length ? { rects } : {}), comment, quote: settled?.value.quote || selected, source: settled?.value.source ?? null, createdAt: Date.now() });
     if (!settled) {
       const lookup = located.then(({ quote, source }) => {
         // Keep what the author changed meanwhile; a note moved to a newer PDF
@@ -649,7 +862,7 @@ export async function buildApp(options: AppOptions) {
     if (workspace.annotationSending(note.id)) throw new Error('This note is being sent. Wait for the task to finish creating.');
     store.deleteAnnotation(request.params.id, request.params.note); return { ok: true };
   });
-  app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/restore', project(), request => {
+  app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note/restore', project(), async request => {
     const note = store.annotation(request.params.id, request.params.note);
     if (isTaskReviewNote(note)) throw new Error('Manage this suggestion in its AI review task, or copy it to the manuscript first.');
     if (workspace.annotationSending(note.id)) throw new Error('This note is being sent. Wait for the task to finish creating.');
@@ -657,24 +870,19 @@ export async function buildApp(options: AppOptions) {
     const { deletedAt: _, ...restored } = note;
     store.saveAnnotation(restored);
     // Return the original order, including any notes added since the deletion.
-    return { annotations: store.annotations(request.params.id).filter(note => !note.taskId && !isTaskReviewNote(note)) };
-  });
-  app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/send', project(), async request => {
-    const project = store.project(request.params.id), b = request.body as any, id = string(b.id, 'Task ID', 64);
-    // A retried send returns its task; an ID from another paper is refused.
-    const existing = store.findTask(id);
-    if (existing) { if (existing.projectId !== project.id) throw new Error('Invalid task ID.'); return workspace.retryTask(existing.id); }
-    if (!Array.isArray(b.annotations) || !b.annotations.length || b.annotations.some((id: unknown) => typeof id !== 'string' || !id || id.length > 64)) throw new Error('Select valid PDF notes for this task.');
-    // The note-only send path needs the same source lookup as task creation.
-    await Promise.all(b.annotations.map((note: string) => locating.get(note)));
-    const notes = [...new Set<string>(b.annotations)].map(id => store.annotation(project.id, id));
-    if (notes.some(note => note.taskId || isTaskReviewNote(note) || note.deletedAt !== undefined)) throw new Error('Select unsent PDF notes for this task.');
-    const { title } = annotationTask(notes);
-    return workspace.createTask({ id, projectId: project.id, title, instructions: '', permissions: b.permissions, annotations: notes.map(note => note.id), agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64) });
+    return { annotations: await paperNotes(request.params.id) };
   });
   // What the last build reported, placed on its PDF, and the TeX log itself.
   app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript/problems', project(), request => manuscripts.problems(store.project(request.params.id).id));
   app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript/log', project(), (request, reply) => reply.type('text/plain; charset=utf-8').header('Cache-Control', 'no-store').send(manuscripts.log(store.project(request.params.id).id)));
+  app.post<{ Params: { id: string }; Body: { failureId?: unknown; agent?: unknown; model?: unknown } }>('/api/projects/:id/manuscript/repair', project(), request => {
+    const paper = store.project(request.params.id), body = request.body;
+    const selected = body?.agent;
+    if (!isAgentId(selected)) throw new Error('Connect the selected agent before diagnosing compilation problems.');
+    return manuscripts.repair(paper.id, paper.path, string(body.failureId, 'Compilation failure ID', 64), prompt => workspace.diagnoseLatexBuild(paper.path, prompt, {
+      agent: selected, model: typeof body.model === 'string' ? body.model : undefined,
+    }));
+  });
   // Exact word places for the PDF view's selection layer; immutable per build key.
   app.get<{ Params: { id: string }; Querystring: { key?: string; page?: string } }>('/api/projects/:id/manuscript/words', project(), async (request, reply) => {
     const project = store.project(request.params.id);

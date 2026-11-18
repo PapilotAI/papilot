@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 
 fs.mkdirSync('test-results', { recursive: true });
 const server = Fastify();
@@ -34,6 +34,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true, noteAlternativeRange: 'few' } });
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [{ id: 'ai-review', name: 'AI review', description: 'Read the paper and leave PDF comments without editing the manuscript', hint: 'Review focus', source: 'builtin', output: 'annotations' }] });
   if (url.pathname.endsWith('/git')) return json({ branch: 'main', files: [] });
   if (url.pathname.endsWith('/manuscript')) return json({ git: { branch: 'main', files: [] }, build: { current: true, status: 'ready', key: 'pdf', pages: [[612, 792], [612, 792]] }, annotations: notes });
@@ -108,6 +109,16 @@ try {
   await page.getByRole('button', { name: 'Contents', exact: true }).click();
   await contents.first().click();
   await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('1');
+  // Read-only copies keep anchors in a rail without marking or history buttons.
+  const readingRail = page.locator('.ai-review-view .pdf-rail');
+  await expect(readingRail.getByRole('button')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: /^(Back|Forward) in PDF$/ })).toHaveCount(0);
+  await readingRail.getByRole('button', { name: 'Anchors', exact: true }).click();
+  const anchors = page.getByRole('dialog', { name: 'Anchors', exact: true });
+  await anchors.getByRole('button', { name: 'Add anchor', exact: true }).click();
+  await anchors.getByRole('button', { name: /^Edit anchor:/ }).click();
+  await anchors.getByRole('textbox').fill('Review introduction');
+  await anchors.getByRole('textbox').press('Enter'); await anchors.press('Escape');
   await expect(page.getByRole('button', { name: 'Mark region', exact: true })).toHaveCount(0);
   assert.equal(attempts[0].instructions, instructions);
   assert.equal(attempts[1].instructions, instructions);
@@ -223,6 +234,23 @@ try {
   await expect(suggestions).toBeVisible(); await fits();
   await page.screenshot({ path: 'test-results/ai-review-task-mobile.png', fullPage: true, animations: 'disabled' });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await readingRail.getByRole('button', { name: 'Anchors', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Review introduction', exact: true })).toBeVisible();
+  const anchorBounds = await anchors.boundingBox();
+  assert.ok(anchorBounds.x >= 0 && anchorBounds.x + anchorBounds.width <= 390);
+  await page.screenshot({ path: 'test-results/anchors-readonly-mobile.png', animations: 'disabled' });
+  await page.getByRole('dialog', { name: 'Anchors', exact: true }).press('Escape');
+  // Without the top layer, the phone rail's transform must not contain the sheet.
+  await page.addInitScript(() => { delete HTMLElement.prototype.popover; });
+  await page.setViewportSize({ width: 320, height: 844 }); await page.reload();
+  await page.locator('.ai-review-view .pdfViewer canvas').first().waitFor();
+  await readingRail.getByRole('button', { name: 'Anchors', exact: true }).click();
+  await expect(anchors).not.toHaveAttribute('popover');
+  const fallbackBounds = await anchors.boundingBox();
+  assert.ok(fallbackBounds.x >= 0 && fallbackBounds.x + fallbackBounds.width <= 320 && fallbackBounds.y + fallbackBounds.height <= 844);
+  await expect(anchors.getByRole('button', { name: 'Review introduction', exact: true })).toBeVisible();
+  await page.screenshot({ path: 'test-results/anchors-readonly-fallback-mobile.png', animations: 'disabled' });
+  await anchors.press('Escape');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator('.manuscript-link').click();
   await expect(page.getByRole('button', { name: /^Suggestion 2:/ })).toBeVisible();

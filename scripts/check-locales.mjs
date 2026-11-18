@@ -37,6 +37,9 @@ try {
     if (pathname === '/api/updates') return route.fulfill({ json: { currentVersion: 'test', phase: 'idle', error: null } });
     if (pathname === '/api/skills') return route.fulfill({ json: { skills: [] } });
     if (pathname === '/api/imports') return route.fulfill({ status: 400, json: { error: 'Paper name is too long.' } });
+    // A browser on another device browses folders in the page.
+    if (pathname === '/api/folders/choose') return route.fulfill({ json: { unavailable: true } });
+    if (pathname === '/api/folders') return route.fulfill({ json: { path: '/tmp/example', parent: '/tmp', folders: [{ name: 'paper', path: '/tmp/example/paper' }] } });
     return route.fulfill({ json: {} });
   });
   await page.goto(origin);
@@ -62,9 +65,20 @@ try {
     await page.reload();
     await page.getByRole('button', { name: label(id, 'Settings'), exact: true }).waitFor();
     assert.equal(await page.locator('html').getAttribute('lang'), id, 'preference survives reload');
-    await page.locator('.home').getByRole('button', { name: label(id, 'Add paper'), exact: true }).click();
+    await page.locator('.home').getByRole('button', { name: label(id, 'Import or open'), exact: true }).click();
+    const importDialog = page.getByRole('dialog', { name: label(id, 'New paper'), exact: true });
+    await importDialog.getByRole('button', { name: label(id, 'Browse…'), exact: true }).click();
+    await importDialog.getByRole('button', { name: 'paper', exact: true }).waitFor();
+    for (const width of [1440, 390, 320]) {
+      await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
+      assert.equal(await importDialog.getByRole('heading', { name: label(id, 'Open existing folder'), exact: true }).isVisible(), true);
+      assert.ok(await importDialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1), `${id} import content overflows at ${width}px`);
+      await importDialog.screenshot({ path: `test-results/locales/import-${id}-${width}.png`, animations: 'disabled' });
+    }
+    // Later steps use the desktop sidebar controls.
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.getByRole('textbox', { name: label(id, 'Folder path'), exact: true }).fill('/tmp/example');
-    await page.getByRole('button', { name: label(id, 'Read folder'), exact: true }).click();
+    await page.getByRole('button', { name: label(id, 'Open'), exact: true }).click();
     const error = id === 'en' ? 'Paper name is too long.' : errorMessages[id]['Paper name is too long.'];
     await page.getByRole('alert').filter({ hasText: error }).waitFor();
     await page.keyboard.press('Escape');
@@ -83,14 +97,20 @@ try {
     const viewerContext = await browser.newContext({ colorScheme: 'light', viewport: { width: 1280, height: 900 } });
     const viewer = await viewerContext.newPage();
     viewer.on('pageerror', error => failures.push(`${id}: ${error.message}`));
-    await viewer.route('**/api/**', route => route.fulfill({ json: { tasks: [] } }));
-    await viewer.goto(`${reviewOrigin}/?lang=${id}`);
-    const heading = id === 'en' ? 'All reviews' : reviewMessages[id]['All reviews'];
-    await viewer.getByRole('heading', { name: heading, exact: true }).waitFor();
+    // A task whose latest round has no changes: the viewer's own empty state.
+    await viewer.route('**/api/**', route => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname.endsWith('/state')) return route.fulfill({ json: { task: 'locale', title: 'Locale', csrf: 'fixture', closed: false, state: 'done', latest: 1, history: [{ number: 1, created: 1793322000 }], round: 1, revision: 'after-1', decisions: {}, comments: {}, undo: null, job: null } });
+      if (pathname.endsWith('/rounds/1')) return route.fulfill({ json: { task: 'locale', round: 1, before: 'before-1', after: 'after-1', warnings: [], files: '/files/locale/1/', sections: [], units: [], loose: [] } });
+      return route.fulfill({ json: {} });
+    });
+    await viewer.goto(`${reviewOrigin}/?task=locale&lang=${id}`);
+    const empty = id === 'en' ? 'No changes to review.' : reviewMessages[id]['No changes to review.'];
+    await viewer.getByText(empty, { exact: true }).first().waitFor();
     assert.equal(await viewer.locator('html').getAttribute('lang'), id);
     await viewer.screenshot({ path: `test-results/locales/reviews-${id}.png`, animations: 'disabled' });
     await viewer.setViewportSize({ width: 390, height: 844 });
-    assert.ok(await viewer.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${id} review overview overflows on mobile`);
+    assert.ok(await viewer.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${id} review viewer overflows on mobile`);
     await viewer.screenshot({ path: `test-results/locales/reviews-${id}-390.png`, animations: 'disabled' });
     await viewerContext.close();
   }

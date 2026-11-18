@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { rewriteReviewHtml } from '../src/server/review.ts';
 import { readyRequirements } from './required-tools-fixture.mjs';
 
@@ -71,6 +71,7 @@ try {
         if (body.accept && body.option !== selected[unit]) { pendingBuild = { unit, option: body.option }; task.status = 'building'; changed(); return json({ building: true }); }
         decisions[unit] = body.accept ? 'accepted' : 'rejected'; changed(); return json(options(body.key));
       }
+      if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
       if (url.pathname.endsWith('/skills')) return json({ skills: [] });
       if (url.pathname.endsWith('/git')) return json({ files: [], branch: 'main' });
       if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
@@ -90,7 +91,7 @@ try {
       const current = document.querySelector('.review-frame');
       const doc = current?.contentDocument, view = current?.contentWindow;
       if (!view || !doc?.querySelector('#paper') || !doc.querySelector('#papilot-embed-style')) return false;
-      view.dispatchEvent(new view.Event('latex-review:decided'));
+      view.dispatchEvent(new view.Event('papilot:review:decided'));
       return true;
     }), { timeout: 15000 }).toBe(true);
     const tab = name => drawer.getByRole('tab', { name, exact: true });

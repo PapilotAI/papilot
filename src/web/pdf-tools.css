@@ -17,6 +17,7 @@
 .rail-tool{position:relative;display:flex;align-items:center;justify-content:center;width:34px;height:34px;flex:none;border-radius:9px;color:var(--text-2);transition:background .12s,color .12s}
 .rail-tool:hover:not(:disabled){background:var(--bg-hover);color:var(--text)}
 .rail-tool[aria-pressed=true]{background:var(--accent-soft);color:var(--accent)}
+.rail-tool.pdf-crop-toggle.active{background:var(--accent-soft);color:var(--accent)}
 .rail-tool:disabled{opacity:.4;cursor:default}
 .rail-tool:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .rail-separator{flex:none;width:20px;height:1px;margin:5px 0;background:var(--line)}
@@ -31,10 +32,10 @@
 .group-picker:has(>.rail-tool){display:flex;flex:none}
 .rail-tool[data-group] .tool-note-line{fill:var(--note-color)}
 .rail-tool.has-menu::after{content:"";position:absolute;right:4px;bottom:4px;border-left:4px solid transparent;border-bottom:4px solid currentColor;border-radius:0 0 1px 0;opacity:.4}
-/* Narrow desktop panes hide the rail and expose compact toolbar actions;
+/* Narrow desktop panes keep anchors in the rail; other viewers use compact actions.
    phones show a collapsible frosted capsule at the bottom edge by default. */
 .pdf-compact-tools{display:none;align-items:center;gap:2px}
-@media (min-width:681px){@container (max-width:560px){.pdf-rail{display:none}.pdf-compact-tools{display:inline-flex}}}
+@media (min-width:681px){@container (max-width:560px){.pdf-rail:not([data-anchors]){display:none}.pdf-compact-tools{display:inline-flex}}}
 @keyframes markup-dock-in{from{opacity:0;transform:translate(-50%,8px) scale(.96)}}
 @keyframes markup-pill-in{from{opacity:0;transform:translate(-50%,-6px) scale(.95)}}
 @media (max-width:680px){
@@ -45,12 +46,16 @@
   .rail-tools{flex-direction:row;flex:none;width:auto;min-width:0;padding:0;gap:1px;overflow:visible}
   .rail-history{flex-direction:row;margin-top:0;padding-top:0;gap:1px}
   .rail-separator{width:1px;height:18px;margin:0 2px}
-  .rail-collapse-separator{order:1}
   .rail-tool{width:35px;height:36px;border-radius:999px}
   .rail-toggle{order:2;color:var(--text-3)}
   .rail-tool.has-menu::after{right:5px;bottom:5px}
   .pdf-rail[data-collapsed=true]{bottom:max(6px,env(safe-area-inset-bottom));height:30px;padding:0;box-shadow:0 2px 8px rgb(0 0 0/.08),0 6px 18px rgb(0 0 0/.12);animation:markup-pill-in .16s var(--ease)}
   .pdf-rail[data-collapsed=true] .rail-toggle{width:auto;height:30px;padding:0 13px;gap:4px;color:var(--text-2)}
+}
+/* Smaller phones show more tools before the capsule needs to scroll. */
+@media (max-width:430px){
+  .rail-tool{width:32px}
+  .rail-separator{margin:0 1px}
 }
 
 /* Tools that do not select text let clicks reach the page instead. */
@@ -146,3 +151,6 @@ blockquote[data-kind=delete]{text-decoration:line-through;text-decoration-color:
   .stamp-wheel:not(.stamp-preview) .stamp-segment-lit{--lit:color-mix(in srgb,var(--accent) 14%,var(--bg))}
 }
 @media (prefers-reduced-motion:reduce){.pdf-rail,.pdf-rail[data-collapsed=true]{transition:none;animation:none}.stamp-menu:popover-open{animation:none}}
+/* A passage quoted in the chat's unsent message. */
+.pdf-comment-mark{position:absolute;z-index:2;border-radius:2px;background:color-mix(in srgb,var(--accent) 22%,transparent);box-shadow:inset 0 -1.5px color-mix(in srgb,var(--accent) 70%,transparent);mix-blend-mode:multiply;pointer-events:none}
+.pdf-comment-tag{position:absolute;z-index:3;transform:translate(-110%,-10%);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--accent);color:#fff;font:600 10px/16px var(--sans,system-ui);text-align:center;pointer-events:none}

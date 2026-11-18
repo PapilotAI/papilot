@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { readyRequirements } from './required-tools-fixture.mjs';
 
 const server = Fastify();
@@ -30,6 +30,7 @@ try {
       if (url.pathname.endsWith('/updates')) return json({ currentVersion: 'test', phase: 'idle' });
       if (url.pathname.endsWith('/indirect-changes')) return json({ indirectChanges: false });
       if (url.pathname.endsWith('/note-alternatives')) return json({ noteAlternatives: true, noteAlternativeRange: 'few' });
+      if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
       if (url.pathname.endsWith('/skills')) return json({ skills: [] });
       if (url.pathname.endsWith('/items')) return json({ items: [] });
       if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
@@ -43,7 +44,10 @@ try {
     task.mode = 'review'; await page.reload();
     await expect(page.locator('.status.preparing').first()).toHaveText('Preparing the review PDF…');
     task.status = 'failed'; task.error = 'The review PDF could not be prepared.'; await page.reload();
-    await page.getByRole('button', { name: 'View details', exact: true }).click();
+    // Desktop shows the chat beside the review; a phone shows one panel, and
+    // View details opens the chat that holds the error.
+    const details = page.getByRole('button', { name: 'View details', exact: true });
+    if (width < 680) await details.click(); else await expect(details).toHaveCount(0);
     const actions = page.locator('.task-error-actions');
     await expect(actions.getByRole('button', { name: 'Delete task…', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Send instructions', exact: true })).toBeDisabled();

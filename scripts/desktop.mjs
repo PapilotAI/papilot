@@ -95,6 +95,8 @@ if (process.argv[2] === 'layer') {
     fs.writeFileSync('.desktop/wsl/package.json', '{"type":"module"}\n');
     fs.writeFileSync('.desktop/wsl/manifest.json', JSON.stringify({ nodeMajor: process.versions.node.split('.')[0] }) + '\n');
   }
-  run(process.execPath, [require.resolve('electron-builder/cli.js'), '--config', 'desktop/builder.cjs',
+  run(process.execPath, [
+    ...(process.platform === 'darwin' ? ['--require', path.join(root, 'scripts/desktop-signing.cjs')] : []),
+    require.resolve('electron-builder/cli.js'), '--config', 'desktop/builder.cjs',
     process.platform === 'darwin' ? '--mac' : process.platform === 'win32' ? '--win' : '--linux', `--${process.arch}`, '--publish', 'never', ...process.argv.slice(3)]);
 } else throw new Error('Expected dev, package or layer.');

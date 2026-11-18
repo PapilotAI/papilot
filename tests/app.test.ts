@@ -169,7 +169,7 @@ test('skill management is available locally and writes require CSRF', async () =
 test('paper imports require CSRF before receiving files or starting repairs', async () => {
   const f = await fixture();
   try {
-    for (const route of ['/api/imports', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/build', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/repair', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/finish']) {
+    for (const route of ['/api/projects/create', '/api/imports', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/build', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/repair', '/api/imports/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/finish']) {
       const request = { method: 'POST' as const, url: route, payload: {} };
       assert.equal((await f.local.inject({ ...request, headers: { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'wrong' } })).statusCode, 403);
     }
@@ -359,20 +359,17 @@ test('archive API persists and restores tasks and rejects malformed requests', a
   } finally { await f.close(); }
 });
 
-test('task and PDF note submissions both carry the chosen service tier', async () => {
+test('task submissions carry the chosen service tier', async () => {
   const f = await fixture();
   try {
     const inputs: Parameters<Workspace['createTask']>[0][] = [];
     f.workspace.createTask = async input => { inputs.push(input); return { ...task(input.id, input.projectId), serviceTier: input.serviceTier }; };
-    f.store.saveAnnotation({ id: 'note', projectId: 'thesis', key: 'pdf', page: 0, rect: [0, 0, 1, 1], quote: 'Text', comment: 'Shorten.', source: null, createdAt: 1 });
     const created = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'tier-task-test-01', projectId: 'thesis', title: 'Revise', instructions: 'Revise.', serviceTier: 'priority' } });
-    const notes = await f.local.inject({ method: 'POST', url: '/api/projects/thesis/annotations/send', headers: f.as, payload: { id: 'tier-task-test-02', annotations: ['note'], serviceTier: 'default' } });
     assert.equal(created.statusCode, 200);
-    assert.equal(notes.statusCode, 200);
-    assert.deepEqual(inputs.map(input => input.serviceTier), ['priority', 'default']);
+    assert.deepEqual(inputs.map(input => input.serviceTier), ['priority']);
     const invalid = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'tier-task-test-03', projectId: 'thesis', title: 'Revise', instructions: 'Revise.', serviceTier: true } });
     assert.equal(invalid.statusCode, 400);
-    assert.equal(inputs.length, 2);
+    assert.equal(inputs.length, 1);
   } finally { await f.close(); }
 });
 
@@ -427,24 +424,6 @@ test('a failed preparation shows its error and is retried by its route', async (
   } finally { await f.close(); }
 });
 
-test('the note-send route requires explicit IDs and leaves reading notes alone', async () => {
-  const f = await fixture();
-  try {
-    const inputs: Parameters<Workspace['createTask']>[0][] = [];
-    f.workspace.createTask = async input => { inputs.push(input); return task(input.id, input.projectId); };
-    const note = { projectId: 'thesis', key: 'pdf', page: 0, rect: [0, 0, 1, 1] as [number, number, number, number], quote: 'Text', comment: 'A reading note.', source: null, createdAt: 1 };
-    f.store.saveAnnotation({ ...note, id: 'personal' });
-    f.store.saveAnnotation({ ...note, id: 'selected', comment: 'Clarify this.' });
-    f.store.saveAnnotation({ ...note, id: 'ignored', deletedAt: 1 });
-    const send = (annotations?: unknown) => f.local.inject({ method: 'POST', url: '/api/projects/thesis/annotations/send', headers: f.as, payload: { id: 'explicit-notes-01', ...(annotations === undefined ? {} : { annotations }) } });
-    for (const ids of [undefined, [], ['ignored'], ['missing'], [42]]) assert.equal((await send(ids)).statusCode, 400);
-    assert.equal(inputs.length, 0);
-    assert.equal((await send(['selected'])).statusCode, 200);
-    assert.deepEqual(inputs[0].annotations, ['selected']);
-    assert.equal(f.store.annotation('thesis', 'personal').taskId, undefined);
-  } finally { await f.close(); }
-});
-
 test('one task carries PDF notes, a skill and the overall request; retries leave newer notes pending', async () => {
   const f = await fixture();
   try {
@@ -492,6 +471,79 @@ test('annotation subsets go to separate agents while unselected notes keep their
     assert.equal(f.store.annotation('thesis', 'second').taskId, 'subset-note-task-1');
     assert.equal(f.store.annotation('thesis', 'kimi-note').taskId, 'subset-note-task-2');
     assert.deepEqual(f.store.annotation('thesis', 'later'), notes[3]);
+  } finally { await f.close(); }
+});
+
+test('selected comments carry host-derived section context into any agent request', async () => {
+  const f = await fixture();
+  try {
+    const note: Annotation = { id: 'section-note', projectId: 'thesis', key: 'pdf', page: 2, rect: [0.1, 0.2, 0.4, 0.3], quote: 'Original text', comment: 'Clarify.', source: { file: 'main.tex', lines: [12, 14] }, createdAt: 1 };
+    f.store.saveAnnotation(note);
+    const lookups: string[] = [];
+    f.manuscripts.noteSections = async (projectId, key, notes) => {
+      assert.equal(projectId, 'thesis'); assert.equal(key, 'pdf');
+      lookups.push(...notes.map(note => note.id));
+      return { sections: [], contexts: { 'section-note': ['Section: 2 Methods > 2.1 Model'] }, unplaced: 0 };
+    };
+    const id = 'section-context-task-01';
+    const response = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id, projectId: 'thesis', title: 'Revise comments', instructions: 'Keep the notation.', agent: 'papilot', annotations: [note.id, note.id], noteContexts: { 'section-note': ['Untrusted context'] } } });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().agent, 'papilot');
+    assert.deepEqual(lookups, [note.id]);
+    const sent = f.store.items(id)[0].meta!.notes!;
+    assert.equal(sent.length, 1);
+    assert.deepEqual(sent[0].context, ['Section: 2 Methods > 2.1 Model']);
+    assert.deepEqual(sent[0].anchor?.sources, [{ file: 'main.tex', lines: [12, 14] }]);
+    const prompt = f.store.runByKey('initial-' + id)!.prompt;
+    assert.match(prompt, /Section: 2 Methods > 2\.1 Model/);
+    assert.match(prompt, /Page 3 · main\.tex lines 12–14/);
+    assert.doesNotMatch(prompt, /Untrusted context/);
+  } finally { await f.close(); }
+});
+
+test('a comment reanchored during section lookup cannot send stale ancestry and can retry', async () => {
+  const f = await fixture();
+  try {
+    const note: Annotation = { id: 'moving-note', projectId: 'thesis', key: 'old-pdf', page: 1, rect: [0.1, 0.2, 0.4, 0.3], quote: 'A claim.', comment: 'Clarify.', source: { file: 'main.tex', lines: [12, 14] }, createdAt: 1 };
+    const moved: Annotation = { ...note, key: 'new-pdf', page: 5, source: { file: 'results.tex', lines: [70, 72] } };
+    f.store.saveAnnotation(note);
+    let reanchor = true;
+    f.manuscripts.noteSections = async () => {
+      if (reanchor) {
+        reanchor = false;
+        f.store.saveAnnotation(moved);
+        return { sections: [], contexts: { [note.id]: ['Section: 1 Introduction'] }, unplaced: 0 };
+      }
+      return { sections: [], contexts: { [note.id]: ['Section: 3 Results'] }, unplaced: 0 };
+    };
+    const id = 'section-race-task-001', payload = { id, projectId: 'thesis', title: 'Revise comments', instructions: 'Clarify.', annotations: [note.id] };
+    const refused = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
+    assert.equal(refused.statusCode, 400);
+    assert.match(refused.json().error, /Refresh the manuscript/);
+    assert.equal(f.store.findTask(id), undefined);
+    assert.deepEqual(f.store.annotation('thesis', note.id), moved, 'the unsent note keeps its updated location');
+    const retried = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload });
+    assert.equal(retried.statusCode, 200, retried.body);
+    const sent = f.store.items(id)[0].meta!.notes![0];
+    assert.deepEqual(sent.context, ['Section: 3 Results']);
+    assert.match(sent.where, /Page 6 · results.tex lines 70–72/);
+    assert.doesNotMatch(f.store.runByKey('initial-' + id)!.prompt, /Introduction/);
+  } finally { await f.close(); }
+});
+
+test('a released note cannot reuse old section context when its current scope is unavailable', async () => {
+  const f = await fixture();
+  try {
+    const note: Annotation = { id: 'released-note', projectId: 'thesis', key: 'new-pdf', page: 5, rect: [0.1, 0.2, 0.4, 0.3], quote: 'A result.', comment: 'Clarify.', source: { file: 'results.tex', lines: [70, 72] }, context: ['Section: 1 Introduction'], createdAt: 1 };
+    f.store.saveAnnotation(note);
+    f.manuscripts.noteSections = async () => ({ sections: [], contexts: {}, unplaced: 1 });
+    const id = 'released-note-task-01';
+    const response = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id, projectId: 'thesis', title: 'Revise', instructions: 'Clarify.', annotations: [note.id] } });
+    assert.equal(response.statusCode, 200, response.body);
+    const sent = f.store.items(id)[0].meta!.notes![0];
+    assert.equal(sent.context, undefined);
+    assert.match(sent.where, /Page 6 · results.tex lines 70–72/);
+    assert.doesNotMatch(f.store.runByKey('initial-' + id)!.prompt, /Introduction/);
   } finally { await f.close(); }
 });
 
@@ -682,7 +734,7 @@ test('a note is saved at once while SyncTeX finds its source', async () => {
   } finally { await f.close(); }
 });
 
-for (const endpoint of ['task', 'notes']) test(`sending a new PDF note through ${endpoint} waits for its source`, async () => {
+test('sending a new PDF note with a task waits for its source', async () => {
   const f = await fixture();
   let release!: () => void;
   const lookup = new Promise<void>(resolve => { release = resolve; });
@@ -691,10 +743,10 @@ for (const endpoint of ['task', 'notes']) test(`sending a new PDF note through $
   try {
     const created = await f.local.inject({ method: 'POST', url: '/api/projects/thesis/annotations', headers: f.as, payload: { key: 'pdf', page: 0, rect: [0.1, 0.1, 0.4, 0.2], quote: 'Selected text', comment: 'Tighten this.' } });
     assert.equal(created.statusCode, 200, created.body);
-    const id = `source-lookup-${endpoint}-01`, annotations = [created.json().id];
+    const id = 'source-lookup-task-01', annotations = [created.json().id];
     let answered = false;
-    const sending = f.local.inject({ method: 'POST', url: endpoint === 'task' ? '/api/tasks' : '/api/projects/thesis/annotations/send', headers: f.as,
-      payload: { id, annotations, ...(endpoint === 'task' ? { projectId: 'thesis', title: 'Tighten this', instructions: '' } : {}) } }).then(response => { answered = true; return response; });
+    const sending = f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as,
+      payload: { id, annotations, projectId: 'thesis', title: 'Tighten this', instructions: '' } }).then(response => { answered = true; return response; });
     await new Promise(resolve => setTimeout(resolve, 20));
     const answeredBeforeSource = answered;
     release();
@@ -1062,6 +1114,47 @@ test('inline source writes use the review token and track rebuilding without a r
   } finally { finish({ status: 'done' }); engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); await f.close(); }
 });
 
+test('a task file in the workspace editor is read and saved through the review engine, with its write lock', async () => {
+  const f = await fixture(), calls: { route: string; token: string; body: any }[] = [];
+  const engine = http.createServer(async (request, response) => {
+    let text = '';
+    for await (const chunk of request) text += chunk;
+    calls.push({ route: request.url!, token: String(request.headers['x-review-token']), body: JSON.parse(text) });
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ task: 'p-thesis-task', csrf: 'review-token', closed: false, decisions: {}, job: { id: 'source-job', status: 'running' },
+      source: { round: 2, file: 'sections/intro.tex', revision: 'b'.repeat(64), text: 'Typed.\n', base: 'Before.\n' } }));
+  });
+  await new Promise<void>(resolve => engine.listen(0, '127.0.0.1', resolve));
+  f.review.url = `http://127.0.0.1:${(engine.address() as { port: number }).port}`;
+  const reads: string[] = [];
+  let finish!: (value: any) => void;
+  const job = new Promise(resolve => { finish = resolve; });
+  f.review.get = async route => { reads.push(route); return (route.includes('/source/file') ? { round: 1, file: 'sections/intro.tex', revision: 'a'.repeat(64), text: 'Agent.\n', base: 'Before.\n', before: 'Before.\n', reviewed: true, reverted: [] } : route.includes('/jobs/') ? await job : {}) as any; };
+  const url = '/api/tasks/thesis-task/source', edit = { id: 'tab-edit', round: 1, file: 'sections/intro.tex', revision: 'a'.repeat(64), text: 'Typed.\n' };
+  try {
+    const read = await f.local.inject({ url: `${url}?file=sections%2Fintro.tex`, headers: f.as });
+    assert.equal(read.statusCode, 200, read.body);
+    assert.deepEqual(read.json(), { file: 'sections/intro.tex', revision: 'a'.repeat(64), text: 'Agent.\n', base: 'Before.\n', round: 1, before: 'Before.\n', reviewed: true, reverted: [], passage: [0, 0], focus: [0, 0], drifted: false });
+    assert.equal(reads[0], '/api/tasks/p-thesis-task/source/file?file=sections%2Fintro.tex');
+    assert.equal((await f.local.inject({ method: 'POST', url, headers: LOCAL, payload: edit })).statusCode, 403);
+    f.store.updateTask('thesis-task', { status: 'running' });
+    assert.equal((await f.local.inject({ method: 'POST', url, headers: f.as, payload: edit })).statusCode, 400, 'the agent is editing the task');
+    assert.equal(calls.length, 0);
+    f.store.updateTask('thesis-task', { status: 'reviewing' });
+    const saved = await f.local.inject({ method: 'POST', url, headers: f.as, payload: edit });
+    assert.equal(saved.statusCode, 200, saved.body);
+    assert.deepEqual(calls, [{ route: '/api/tasks/p-thesis-task/source/file', token: 'review-token', body: edit }]);
+    assert.equal(saved.json().source.round, 2, 'the next save continues the new round');
+    assert.equal(saved.json().source.text, 'Typed.\n');
+    assert.equal(saved.json().state.task, 'p-thesis-task');
+    assert.equal(saved.json().state.source, undefined, 'the review state is the page state alone');
+    assert.equal(f.store.task('thesis-task').status, 'building', 'the save is reviewed in a new round');
+    assert.equal(f.store.task('thesis-task').pendingBuild?.job, 'source-job');
+    finish({ status: 'done' });
+    for (let i = 0; i < 20 && f.store.task('thesis-task').status === 'building'; i++) await new Promise(resolve => setImmediate(resolve));
+  } finally { finish({ status: 'done' }); engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); await f.close(); }
+});
+
 // A review engine that answers decisions with a page state, and records them.
 async function decisionEngine(state: (route: string, body: any) => Record<string, unknown> = () => ({})) {
   const calls: { method: string; route: string; body: any }[] = [];
@@ -1080,19 +1173,21 @@ async function decisionEngine(state: (route: string, body: any) => Record<string
 // A task that writes accepted changes directly to the manuscript, behind the
 // real review proxy. Its summary is the engine's: `summaries` answers each
 // read, and a test can hold one until it releases it.
-async function legacyBatchFixture(pending = 1) {
+// A task's final selection is announced once a summary read confirms it;
+// the app then predicts what applying the task writes.
+async function selectionFixture(pending = 1) {
   const f = await fixture(), engine = await decisionEngine();
   f.review.url = engine.url;
-  const refreshes: string[] = [];
-  f.manuscripts.refresh = async id => { refreshes.push(id); };
+  const announced: string[] = [];
+  f.workspace.on('decided', (id: string) => { announced.push(id); });
   const summary = (pending: number) => ({ state: pending ? 'reviewing' : 'done', round: 1, counts: { pending, accepted: 1 } });
-  f.store.updateTask('thesis-task', { deferred: false, review: { ...summary(pending), unsent: 0, files: [] } });
+  f.store.updateTask('thesis-task', { deferred: true, review: { ...summary(pending), unsent: 0, files: [] } });
   let summaries: () => Promise<object> = async () => summary(pending);
-  f.review.get = async (route: string) => (route.includes('/feedback') ? { feedback: [] } : route.startsWith('/api/jobs/') ? { status: 'done', round: 1 } : await summaries()) as any;
+  f.review.get = async (route: string) => (route.includes('/feedback') ? { feedback: [] } : route.endsWith('/preview') ? { files: null } : route.startsWith('/api/jobs/') ? { status: 'done', round: 1 } : await summaries()) as any;
   const base = '/review/thesis/api/tasks/p-thesis-task';
   const post = (route = 'decide', action = 'accept') => f.local.inject({ method: 'POST', url: `${base}/${route}`, headers: { ...LOCAL, 'x-review-token': 'review-token' }, payload: { id: crypto.randomUUID(), action, round: 1, changes: ['c001'], body: 'Shorter.' } });
   const poll = () => f.local.inject({ url: `${base}/state`, headers: LOCAL });
-  return { ...f, engine, refreshes, summary, post, poll, answer(next: () => Promise<object>) { summaries = next; }, async close() { await engine.close(); await f.close(); } };
+  return { ...f, engine, announced, summary, post, poll, answer(next: () => Promise<object>) { summaries = next; }, async close() { await engine.close(); await f.close(); } };
 }
 async function eventually(check: () => boolean) {
   const end = Date.now() + 2000;
@@ -1104,26 +1199,26 @@ function gate() {
   return { opened, release };
 }
 
-test('a final legacy accept, reject or comment replies first and refreshes the manuscript once its summary is read', { timeout: 10000 }, async () => {
+test('a final accept, reject or comment replies first and announces the selection once its summary is read', { timeout: 10000 }, async () => {
   for (const action of ['accept', 'reject', 'comment']) {
-    const f = await legacyBatchFixture(), held = gate();
+    const f = await selectionFixture(), held = gate();
     f.answer(async () => { await held.opened; return f.summary(0); });
     try {
       const response = await f.post('decide', action);
       assert.equal(response.statusCode, 200, response.body);
-      assert.deepEqual(f.refreshes, [], `${action} has not confirmed the final counts`);
+      assert.deepEqual(f.announced, [], `${action} has not confirmed the final counts`);
       let polled = false;
       const poll = f.poll().then(response => { polled = true; return response; });
       assert.equal((await f.local.inject({ url: '/api/state', headers: LOCAL })).statusCode, 200);
       assert.equal(polled, false, 'only the review poll waits for its summary');
       held.release(); assert.equal((await poll).statusCode, 200);
-      assert.deepEqual(f.refreshes, ['thesis']);
+      assert.deepEqual(f.announced, ['thesis-task']);
     } finally { held.release(); await f.close(); }
   }
 });
 
-test('rapid legacy decisions share one manuscript refresh, and an undo reopens the batch without one', { timeout: 10000 }, async () => {
-  const f = await legacyBatchFixture(2), reads: ReturnType<typeof gate>[] = [];
+test('rapid decisions share one announcement, and an undo reopens the selection without one', { timeout: 10000 }, async () => {
+  const f = await selectionFixture(2), reads: ReturnType<typeof gate>[] = [];
   let remaining = 2;
   f.answer(async () => { const held = gate(); reads.push(held); await held.opened; return f.summary(remaining); });
   try {
@@ -1132,45 +1227,45 @@ test('rapid legacy decisions share one manuscript refresh, and an undo reopens t
     assert.equal(reads.length, 1, 'one summary read at a time');
     reads[0].release(); await eventually(() => reads.length === 2);
     reads[1].release(); await f.poll();
-    assert.deepEqual(f.refreshes, ['thesis'], 'both decisions are in one final selection');
+    assert.deepEqual(f.announced, ['thesis-task'], 'both decisions are in one final selection');
     remaining = 1; assert.equal((await f.post('undo')).statusCode, 200);
     reads[2].release(); await f.poll();
     assert.equal(f.store.task('thesis-task').review?.counts.pending, 1);
-    assert.deepEqual(f.refreshes, ['thesis'], 'an undo leaves a pending change, so nothing compiles');
+    assert.deepEqual(f.announced, ['thesis-task'], 'an undo leaves a pending change, so nothing compiles');
     remaining = 0; assert.equal((await f.post()).statusCode, 200);
     reads[3].release(); await f.poll();
-    assert.deepEqual(f.refreshes, ['thesis', 'thesis'], 'deciding it again completes a new batch');
+    assert.deepEqual(f.announced, ['thesis-task', 'thesis-task'], 'deciding it again completes a new batch');
   } finally { reads.forEach(read => read.release()); await f.close(); }
 });
 
-test('a failed summary read cannot complete a legacy batch from the counts it last stored', { timeout: 10000 }, async () => {
-  const f = await legacyBatchFixture(1);
+test('a failed summary read cannot complete a selection from the counts it last stored', { timeout: 10000 }, async () => {
+  const f = await selectionFixture(1);
   let fail = true;
   f.answer(async () => { if (fail) throw new Error('Summary unavailable'); return f.summary(0); });
   try {
     assert.equal((await f.post()).statusCode, 200); await f.poll();
-    assert.deepEqual(f.refreshes, [], 'the read failed');
+    assert.deepEqual(f.announced, [], 'the read failed');
     assert.equal(f.store.task('thesis-task').review?.counts.pending, 1, 'the stored summary stays as it was');
     fail = false;
     assert.equal((await f.post('decide', 'comment')).statusCode, 200); await f.poll();
-    assert.deepEqual(f.refreshes, ['thesis'], 'the next successful read completes the batch');
+    assert.deepEqual(f.announced, ['thesis-task'], 'the next successful read completes the batch');
   } finally { await f.close(); }
 });
 
-test('a task deleted while its summary is read cannot refresh its manuscript', { timeout: 10000 }, async () => {
-  const f = await legacyBatchFixture(1), held = gate();
+test('a task deleted while its summary is read announces nothing', { timeout: 10000 }, async () => {
+  const f = await selectionFixture(1), held = gate();
   let read = false;
   f.answer(async () => { await held.opened; read = true; return f.summary(0); });
   try {
     assert.equal((await f.post()).statusCode, 200);
     f.store.deleteTask('thesis-task'); held.release(); await eventually(() => read);
     await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(f.refreshes, []); assert.ok(f.store.findTask('grant-task'));
+    assert.deepEqual(f.announced, []); assert.ok(f.store.findTask('grant-task'));
   } finally { held.release(); await f.close(); }
 });
 
-test('a replayed legacy decision completes its batch once a summary confirms it, keeping an earlier build error', { timeout: 10000 }, async () => {
-  const f = await legacyBatchFixture(1);
+test('a replayed decision completes its selection once a summary confirms it, keeping an earlier build error', { timeout: 10000 }, async () => {
+  const f = await selectionFixture(1);
   let available = false;
   f.answer(async () => { if (!available) throw new Error('Summary unavailable'); return f.summary(0); });
   const check = () => f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/reconcile', headers: f.as, payload: {} });
@@ -1181,16 +1276,16 @@ test('a replayed legacy decision completes its batch once a summary confirms it,
     assert.equal(response.statusCode, 200, response.body);
     assert.equal(response.json().pendingReview, null, 'the engine confirmed the replay');
     assert.equal(response.json().status, 'failed'); assert.equal(response.json().error, 'PDF build failed.');
-    assert.deepEqual(f.refreshes, [], 'no summary confirms the final counts yet');
+    assert.deepEqual(f.announced, [], 'no summary confirms the final counts yet');
     available = true; await f.workspace.refresh('thesis-task');
-    assert.deepEqual(f.refreshes, ['thesis'], 'the old error does not negate the confirmed final decision');
+    assert.deepEqual(f.announced, ['thesis-task'], 'the old error does not negate the confirmed final decision');
     assert.deepEqual(f.engine.calls.map(call => call.body.id), ['final-accept']);
   } finally { await f.close(); }
 });
 
-test('a legacy batch completed while an alternative builds refreshes once that build finishes', { timeout: 10000 }, async () => {
+test('a selection completed while an alternative builds is announced once that build finishes', { timeout: 10000 }, async () => {
   for (const confirmed of [true, false]) {
-    const f = await legacyBatchFixture(1), build = gate();
+    const f = await selectionFixture(1), build = gate();
     // After the job, the build reads the round it published; the summary
     // read that follows it is the one that can fail.
     let afterJob = -1;
@@ -1207,10 +1302,10 @@ test('a legacy batch completed while an alternative builds refreshes once that b
       // The last pending change is decided while the alternative still builds.
       assert.equal((await f.post()).statusCode, 200); await f.poll();
       assert.equal(f.store.task('thesis-task').review?.counts.pending, 0);
-      assert.deepEqual(f.refreshes, [], 'a result still being built is not the final selection');
+      assert.deepEqual(f.announced, [], 'a result still being built is not the final selection');
       build.release(); await building;
       assert.equal(f.store.task('thesis-task').status, 'reviewing', 'a missing summary does not fail a completed build');
-      assert.deepEqual(f.refreshes, confirmed ? ['thesis'] : [], 'only a confirmed summary after the build completes the batch');
+      assert.deepEqual(f.announced, confirmed ? ['thesis-task'] : [], 'only a confirmed summary after the build completes the batch');
     } finally { build.release(); await building; await f.close(); }
   }
 });
@@ -1218,14 +1313,14 @@ test('a legacy batch completed while an alternative builds refreshes once that b
 test('after a restart, a build resumed for a decided task announces its selection', { timeout: 10000 }, async () => {
   // The previous process stored the final counts while the build ran, and
   // held their announcement back for its result.
-  const f = await legacyBatchFixture(0);
+  const f = await selectionFixture(0);
   try {
     f.store.updateTask('thesis-task', { status: 'building', pendingBuild: { requestId: 'saved-option', job: 'option-job', runs: [], sendBack: false, restarts: 0 } });
     await f.workspace.resumeBuild('thesis-task');
     assert.equal(f.store.task('thesis-task').status, 'reviewing');
-    assert.deepEqual(f.refreshes, ['thesis']);
+    assert.deepEqual(f.announced, ['thesis-task']);
     await f.workspace.refresh('thesis-task');
-    assert.deepEqual(f.refreshes, ['thesis'], 'announced once');
+    assert.deepEqual(f.announced, ['thesis-task'], 'announced once');
   } finally { await f.close(); }
 });
 
@@ -1338,11 +1433,10 @@ test('save previews and status checks do not compile an unapplied manuscript', a
       { delivery: { mode: 'branch' } },
     ]) {
       f.workspace.applyTask = async () => result as any;
-      f.workspace.commitTask = async () => result as any;
-      for (const route of ['apply', 'commit']) {
-        const response = await f.local.inject({ method: 'POST', url: `/api/tasks/thesis-task/${route}`, headers, payload: { mode: 'commit', message: 'Save changes' } });
+      for (const mode of ['workspace', 'commit']) {
+        const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers, payload: { mode, message: 'Save changes' } });
         assert.equal(response.statusCode, 200, response.body);
-        assert.equal(refreshes, 0, `${route} must wait for confirmed manuscript delivery`);
+        assert.equal(refreshes, 0, `${mode} must wait for confirmed manuscript delivery`);
       }
     }
     // A successful status check can merely confirm a decision or agent run.
@@ -1354,24 +1448,24 @@ test('save previews and status checks do not compile an unapplied manuscript', a
     // Exercise the real replay adapter: only it knows whether the recovered
     // action succeeded, independently of a previous build error.
     f.workspace.reconcile = Workspace.prototype.reconcile.bind(f.workspace);
-    for (const [deferred, pending, expected] of [[true, 0, 0], [false, 1, 0], [false, 0, 1]] as const) {
-      f.store.updateTask('thesis-task', { deferred, status: 'uncertain', pendingReview: { route: '/api/tasks/p-thesis-task/decide', body: { id: 'lost', action: 'accept' }, previousStatus: 'reviewing' } });
+    for (const pending of [0, 1]) {
+      f.store.updateTask('thesis-task', { deferred: true, status: 'uncertain', pendingReview: { route: '/api/tasks/p-thesis-task/decide', body: { id: 'lost', action: 'accept' }, previousStatus: 'reviewing' } });
       f.review.get = async (route: string) => (route.includes('/feedback') ? { feedback: [] } : { state: pending ? 'reviewing' : 'done', round: 1, counts: { pending, accepted: 1 } }) as any;
       const recovered = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/reconcile', headers, payload: {} });
       assert.equal(recovered.statusCode, 200, recovered.body);
-      assert.equal(refreshes, expected);
+      assert.equal(refreshes, 0);
     }
   } finally { await engine.close(); await f.close(); }
 });
 
-test('deferred commits refresh only after a completed manuscript delivery, even without a commit hash', async () => {
+test('task commits refresh only after a completed manuscript delivery, even without a commit hash', async () => {
   const f = await fixture();
   let refreshes = 0;
   f.manuscripts.refresh = async () => { refreshes++; };
   f.store.updateTask('thesis-task', { deferred: true });
   try {
-    // Use the real commitTask adapter: current-branch engine deliveries can
-    // omit the commit hash, while branch-only deliveries can include one.
+    // Current-branch engine deliveries can omit the commit hash, while
+    // branch-only deliveries can include one.
     for (const [result, expected] of [
       [{ commitReview: { token: 'confirm', diff: 'Confirm earlier edits.' } }, 0],
       [{ reconciliation: { id: 'merge', ready: true } }, 0],
@@ -1380,33 +1474,28 @@ test('deferred commits refresh only after a completed manuscript delivery, even 
       [{ delivery: { mode: 'commit', accepted: 'accepted' } }, 1],
     ] as const) {
       f.workspace.applyTask = async () => result as any;
-      const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/commit', headers: { ...LOCAL, 'x-papilot-token': 'local-csrf' }, payload: { message: 'Save reviewed changes' } });
+      const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers: { ...LOCAL, 'x-papilot-token': 'local-csrf' }, payload: { mode: 'commit', message: 'Save reviewed changes' } });
       assert.equal(response.statusCode, 200, response.body);
       assert.equal(refreshes, expected, JSON.stringify(result));
     }
   } finally { await f.close(); }
 });
 
-test('intermediate decisions avoid manuscript refreshes and completed legacy batches refresh once', async () => {
+test('review decisions avoid manuscript refreshes until the task is applied', async () => {
   const f = await fixture();
   try {
     const refreshed: string[][] = [];
     f.manuscripts.refresh = async (id: string, root: string) => { refreshed.push([id, root]); };
-    f.workspace.commitTask = async () => ({ commit: 'abc', git: { branch: 'main', upstream: null, ahead: 0, behind: 0, files: [], head: null } }) as any;
     const headers = { ...LOCAL, 'x-papilot-token': 'local-csrf' };
-    const committed = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/commit', headers, payload: { message: 'Apply the task' } });
-    assert.equal(committed.statusCode, 200, committed.body);
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(refreshed, [['thesis', '/unused/thesis']], 'the commit started the manuscript build');
     const failed = await f.local.inject({ method: 'POST', url: '/api/projects/thesis/git/stage', headers, payload: { paths: [] } });
     assert.equal(failed.statusCode, 400);
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(refreshed.length, 1, 'a request that changed nothing compiles nothing');
+    assert.equal(refreshed.length, 0, 'a request that changed nothing compiles nothing');
     // Exercise the real review proxy and the summary read after each write.
-    let pending = 2, commented = false;
+    let pending = 2;
     f.store.updateTask('thesis-task', { deferred: true });
     f.review.get = async (route: string) => (route.includes('/feedback') ? { feedback: [] }
-      : { state: pending ? 'reviewing' : commented ? 'revise' : 'done', round: 1, counts: { pending, accepted: 1 } }) as any;
+      : { state: pending ? 'reviewing' : 'done', round: 1, counts: { pending, accepted: 1 } }) as any;
     const engine = http.createServer((_request, response) => {
       response.setHeader('Content-Type', 'application/json');
       response.end(JSON.stringify({ task: 'p-thesis-task', csrf: 'review-token', closed: false, decisions: {}, job: null }));
@@ -1420,33 +1509,16 @@ test('intermediate decisions avoid manuscript refreshes and completed legacy bat
         // The review page's poll waits for the summary read after the write.
         await f.local.inject({ url: '/review/thesis/api/tasks/p-thesis-task/state', headers: LOCAL });
       };
-      for (const [route, action, remaining] of [['decide', 'accept', 1], ['decide', 'reject', 0], ['undo', undefined, 1], ['decide', 'accept', 0], ['note', undefined, 0]] as const) {
+      for (const [route, action, remaining] of [['decide', 'accept', 1], ['decide', 'reject', 0], ['undo', undefined, 1], ['decide', 'accept', 0]] as const) {
         pending = remaining;
         await review(route, action);
-        assert.equal(refreshed.length, 1, `${route} does not refresh the manuscript`);
+        assert.equal(refreshed.length, 0, `${route} does not refresh the manuscript`);
       }
       f.workspace.applyTask = async () => ({ delivery: { mode: 'workspace', accepted: 'accepted' } }) as any;
       const applied = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers, payload: { mode: 'workspace' } });
       assert.equal(applied.statusCode, 200, applied.body);
       await new Promise(resolve => setImmediate(resolve));
-      assert.equal(refreshed.length, 2, 'application starts one manuscript refresh');
-
-      // Legacy tasks write to the manuscript while reviewing. They refresh
-      // only once the selection is complete, and never for a note or undo.
-      f.store.updateTask('thesis-task', { deferred: false });
-      pending = 1; await review('decide', 'accept');
-      assert.equal(refreshed.length, 2);
-      pending = 0; await review('decide', 'reject');
-      assert.equal(refreshed.length, 3);
-      pending = 1; await review('undo');
-      await review('note');
-      assert.equal(refreshed.length, 3);
-      // A final comment resolves the last pending choice without writing a
-      // file, but must flush changes accepted earlier in this legacy batch.
-      await review('decide', 'accept');
-      assert.equal(refreshed.length, 3);
-      pending = 0; commented = true; await review('decide', 'comment');
-      assert.equal(refreshed.length, 4);
+      assert.deepEqual(refreshed, [['thesis', '/unused/thesis']], 'application starts one manuscript refresh');
     } finally { engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); }
   } finally { await f.close(); }
 });
@@ -1470,15 +1542,6 @@ test('deferred decisions wait until application before refreshing the manuscript
     await new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(refreshed, []);
     assert.deepEqual(predicted, []);
-    // A task that writes accepted changes directly compiles them once its
-    // summary confirms the last pending change was decided.
-    f.store.updateTask('thesis-task', { deferred: false, review: { state: 'reviewing', round: 1, counts: { pending: 1 }, unsent: 0 } });
-    f.workspace.refresh = Workspace.prototype.refresh.bind(f.workspace);
-    f.review.get = async (route: string) => (route.includes('/feedback') ? { feedback: [] } : { state: 'done', round: 1, counts: { pending: 0, accepted: 1 } }) as any;
-    const legacy = await f.local.inject({ method: 'POST', url: '/review/thesis/api/tasks/p-thesis-task/decide', headers, payload: { id: 'legacy', round: 1, action: 'accept', changes: ['c001'] } });
-    assert.equal(legacy.statusCode, 200, legacy.body);
-    await f.local.inject({ url: '/review/thesis/api/tasks/p-thesis-task/state', headers: LOCAL });
-    assert.deepEqual(refreshed, ['thesis']);
   } finally { await engine.close(); await f.close(); }
 });
 
@@ -1524,7 +1587,7 @@ test('the review page shows each TeX pass of a round\'s new version in the full 
     fs.mkdirSync(root);
     const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@localhost', ...args], { encoding: 'utf8' }).trim();
     git('init', '-q');
-    fs.writeFileSync(path.join(root, '.latex-review.json'), JSON.stringify({ main: 'main.tex', engine: 'pdflatex' }));
+    fs.mkdirSync(path.join(root, '.git/papilot'), { recursive: true }); fs.writeFileSync(path.join(root, '.git/papilot/settings.json'), JSON.stringify({ main: 'main.tex', engine: 'pdflatex' }));
     fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\n\\tableofcontents\n\\section{One}\\label{one}See page~\\pageref{two}.\n\\section{Two}\\label{two}Text.\n\\end{document}\n');
     git('add', '-A'); git('commit', '-qm', 'Paper');
     revision = git('rev-parse', 'HEAD');
@@ -1563,10 +1626,10 @@ test('retained task PDF previews reuse compiled chapter PDFs without forcing a f
   try {
     fs.mkdirSync(root);
     execFileSync('git', ['-C', root, 'init', '-q']);
-    fs.writeFileSync(path.join(root, '.latex-review.json'), JSON.stringify({ main: 'main.tex', engine: 'pdflatex' }));
+    fs.mkdirSync(path.join(root, '.git/papilot'), { recursive: true }); fs.writeFileSync(path.join(root, '.git/papilot/settings.json'), JSON.stringify({ main: 'main.tex', engine: 'pdflatex' }));
     fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\\begin{document}\\undefinedmacro\\end{document}\n');
     const buildKey = '0123456789abcdef0123456789abcdef';
-    const cacheDir = path.join(root, '.git/latex-review/cache/builds', buildKey);
+    const cacheDir = path.join(root, '.git/papilot/cache/builds', buildKey);
     const chaptersPdfPath = path.join(cacheDir, 'chapters.pdf');
     fs.mkdirSync(cacheDir, { recursive: true });
     fs.writeFileSync(chaptersPdfPath, '%PDF-1.4\nchapters\n');
@@ -1642,4 +1705,56 @@ test('single-user routes expose the workspace without accounts and removed colla
     assert.equal((await f.local.inject({ url: '/api/state', headers: { host: 'mini.example.ts.net:8443', 'tailscale-user-login': 'someone-else@example' } })).statusCode, 403);
     assert.equal((await f.local.inject({ url: '/api/state', headers: { ...LOCAL, origin: 'https://untrusted.example' } })).statusCode, 403);
   } finally { await f.close(); }
+});
+
+test('manual source edits need CSRF, refuse stale saves and wait for review writes', async () => {
+  const f = await fixture(), root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-api-source-'));
+  const snapshot = path.join(root, '.compiled-main.tex');
+  try {
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Intro.\n\nThe pelican paragraph.\nIt continues.\n\nEnd.\n');
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    execFileSync('git', ['add', 'main.tex'], { cwd: root });
+    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Paper'], { cwd: root });
+    fs.writeFileSync(snapshot, fs.readFileSync(path.join(root, 'main.tex')));
+    f.store.saveProject({ ...f.store.project('thesis'), path: root });
+    f.manuscripts.locate = async () => ({ quote: 'pelican', source: { file: 'main.tex', lines: [3, 3] }, compiled: { file: 'main.tex', input: snapshot, lines: [3, 3] } });
+    f.manuscripts.compiled = () => ({ pdf: path.join(root, 'main.pdf'), root, sourceDir: '' });
+    const writes: string[] = [];
+    f.manuscripts.written = async projectId => { writes.push(projectId); return 'tree-after-save'; };
+    const locate = (headers: Record<string, string>, payload: object) => f.local.inject({ method: 'POST', url: '/api/projects/thesis/manuscript/source/locate', headers, payload });
+    assert.equal((await locate(LOCAL, { key: 'pdf', page: 0, rect: [0.1, 0.1, 0.2, 0.2] })).statusCode, 403);
+    assert.equal((await locate(f.as, { key: 'pdf', page: 0, rect: [0.3, 0.1, 0.2, 0.2] })).statusCode, 400);
+    const found = await locate(f.as, { key: 'pdf', page: 0, rect: [0.1, 0.1, 0.2, 0.2], quote: 'pelican' });
+    assert.equal(found.statusCode, 200, found.body);
+    const source = found.json().source;
+    assert.deepEqual([source.file, source.passage, source.focus, source.base], ['main.tex', [2, 4], [2, 3], source.text]);
+    const read = await f.local.inject({ url: '/api/projects/thesis/manuscript/source?file=main.tex', headers: LOCAL });
+    assert.equal(read.statusCode, 200, read.body);
+    assert.equal(read.json().text, source.text);
+    const save = (headers: Record<string, string>, payload: object) => f.local.inject({ method: 'POST', url: '/api/projects/thesis/manuscript/source', headers, payload });
+    const text = 'Intro.\n\nThe heron paragraph.\n\nEnd.\n', edit = { id: 'save-1', file: 'main.tex', revision: source.revision, text };
+    assert.equal((await save(LOCAL, edit)).statusCode, 403);
+    await f.workspace.reviewWrite('thesis-task', true, async () => {
+      const locked = await save(f.as, edit);
+      assert.equal(locked.statusCode, 400); assert.match(locked.json().error, /review action/);
+    });
+    assert.deepEqual(writes, [], 'a refused save starts no build');
+    const saved = await save(f.as, edit);
+    assert.equal(saved.statusCode, 200, saved.body);
+    assert.equal(saved.json().tree, 'tree-after-save');
+    assert.deepEqual(saved.json().changed, [2, 3]);
+    assert.equal(saved.json().source.base, source.text, 'the base stays the last commit');
+    assert.equal(fs.readFileSync(path.join(root, 'main.tex'), 'utf8'), text);
+    assert.deepEqual(writes, ['thesis']);
+    const stale = await save(f.as, { ...edit, id: 'save-2', text: 'Another.\n' });
+    assert.equal(stale.statusCode, 409); assert.match(stale.json().error, /changed while you were editing/);
+    // A class or package file outside the compiled paper has nothing to edit.
+    f.manuscripts.locate = async () => ({ quote: 'Title', source: null, compiled: { file: 'article.cls', input: '/usr/share/texmf/article.cls', lines: [1, 1] } });
+    const outside = await locate(f.as, { key: 'pdf', page: 0, rect: [0.1, 0.1, 0.2, 0.2] });
+    assert.equal(outside.statusCode, 200, outside.body);
+    assert.equal(outside.json().source, null);
+    delete (f.manuscripts as { compiled?: unknown }).compiled;
+    const place = await f.local.inject({ url: '/api/projects/thesis/manuscript/source/place?key=gone&file=main.tex&start=2&end=3', headers: LOCAL });
+    assert.equal(place.statusCode, 404, 'a PDF that is no longer shown cannot place lines');
+  } finally { await f.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });

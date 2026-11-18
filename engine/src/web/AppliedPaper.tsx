@@ -5,6 +5,7 @@ import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { t } from "./i18n.ts";
 import { cMapData } from "./pdf-cmaps.ts";
 import { paintAppliedPages } from "./applied-pages.ts";
+import { fullPaperReader } from "./full-paper-reader.ts";
 
 const besideChunk = (url: string) =>
   import.meta.env.DEV ? url : new URL(url.split("/").pop()!, import.meta.url).href;
@@ -88,18 +89,18 @@ function PageText({ shown, index }: { shown: Shown; index: number }) {
   );
 }
 
-export function AppliedPaper({ url, buildKey, scrollRoot, status }: {
+export function AppliedPaper({ url, buildKey, scrollRoot, place, status }: {
   url: string;
   /** The build `url` shows; notes on its pages name it. */
   buildKey: string;
   scrollRoot: RefObject<HTMLElement | null>;
+  /** Reading position shared across builds of this task's decided paper. */
+  place: string;
   /** Shown beside the pages while they are not the current decisions. */
   status?: React.ReactNode;
 }) {
   const [shown, setShown] = useState<Shown | null>(null), [error, setError] = useState(""),
-    box = useRef<HTMLDivElement>(null), current = useRef<Shown | null>(null),
-    // The page being read and how far into it, kept across versions.
-    anchor = useRef<{ page: number; offset: number } | null>(null);
+    box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let live = true, adopted = false, task: ReturnType<typeof pdfjs.getDocument> | null = null, waiting: (() => void) | null = null;
     void (async () => {
@@ -120,16 +121,9 @@ export function AppliedPaper({ url, buildKey, scrollRoot, status }: {
         document.addEventListener("selectionchange", waiting);
       });
       if (!live) return;
-      const root = scrollRoot.current, list = box.current ? Array.from(box.current.querySelectorAll<HTMLElement>(".applied-page")) : [];
-      const top = root?.getBoundingClientRect().top ?? 0,
-        reading = list.find((element) => element.getBoundingClientRect().bottom > top + 1);
-      anchor.current = reading ? { page: Number(reading.dataset.index), offset: (top - reading.getBoundingClientRect().top) / reading.getBoundingClientRect().height } : null;
       setError("");
       adopted = true;
-      const previous = current.current;
-      current.current = { url, key: buildKey, pdf, pages };
-      setShown(current.current);
-      if (previous) void previous.pdf.loadingTask.destroy().catch(() => undefined);
+      setShown({ url, key: buildKey, pdf, pages });
     })().catch((failure: Error) => { if (live) setError(failure.message); });
     return () => {
       live = false;
@@ -139,15 +133,14 @@ export function AppliedPaper({ url, buildKey, scrollRoot, status }: {
       if (task && !adopted) void task.destroy().catch(() => undefined);
     };
   }, [url]);
-  useEffect(() => () => { void current.current?.pdf.loadingTask.destroy().catch(() => undefined); }, []);
-  // The place being read stays on screen when a newer version comes in.
+  // Disconnect the old reader before releasing its PDF. Each build supplies
+  // fresh bookmarks/search while keeping the task's reading place and zoom.
+  useEffect(() => () => { void shown?.pdf.loadingTask.destroy().catch(() => undefined); }, [shown]);
   useLayoutEffect(() => {
-    const kept = anchor.current, root = scrollRoot.current;
-    if (!kept || !root || !box.current) return;
-    const element = box.current.querySelector<HTMLElement>(`.applied-page[data-index="${Math.min(kept.page, (shown?.pages.length ?? 1) - 1)}"]`);
-    if (element) root.scrollTop += element.getBoundingClientRect().top - root.getBoundingClientRect().top + kept.offset * element.getBoundingClientRect().height;
-    anchor.current = null;
-  }, [shown]);
+    if (!shown || !box.current || !scrollRoot.current) return;
+    const reader = fullPaperReader(box.current, scrollRoot.current, shown.pdf, place, true);
+    return () => reader.dispose();
+  }, [shown, scrollRoot, place]);
   useEffect(() => (shown && box.current ? paintAppliedPages(box.current, shown.pdf, scrollRoot.current) : undefined), [shown]);
   if (!shown)
     return error
@@ -160,13 +153,24 @@ export function AppliedPaper({ url, buildKey, scrollRoot, status }: {
         {shown.pages.map((page, index) => (
           <section
             key={`${shown.key}:${index}`}
-            className="pdf-strip applied-page"
-            data-index={index}
-            data-page={page.label}
-            data-note-key={`applied:${shown.key}:${index}`}
-            style={{ aspectRatio: `${page.width}/${page.height}` }}
+            className="paper-page"
+            data-page={index}
+            data-pdf-width={page.width}
+            data-pdf-height={page.height}
           >
-            <PageText shown={shown} index={index} />
+            <div
+              className="pdf-strip applied-page"
+              data-index={index}
+              data-page={page.label}
+              data-note-key={`applied:${shown.key}:${index}`}
+              data-reading-anchor={`${index}:0`}
+              data-pdf-top={0}
+              data-pdf-bottom={page.height}
+              style={{ aspectRatio: `${page.width}/${page.height}` }}
+            >
+              <div className="paper-slice" data-left={0} data-right={page.width} data-top={0} data-bottom={page.height} style={{ inset: 0 }} />
+              <PageText shown={shown} index={index} />
+            </div>
           </section>
         ))}
       </div>

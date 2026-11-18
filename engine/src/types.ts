@@ -48,6 +48,8 @@ export interface Task {
   scope: Scope;
   created: number;
   closed: number | null;
+  /** The root document the task was started on; null before tasks kept it. */
+  document?: string | null;
 }
 export interface Delivery {
   mode: "workspace" | "commit" | "branch";
@@ -96,14 +98,16 @@ export interface Round {
     builds: string[];
     date?: { SOURCE_DATE_EPOCH: string; FORCE_SOURCE_DATE?: string };
     renderer?: string;
+    buildSettings?: string;
     /** Whether the round lists indirect changes; absent in older rounds,
      * which did. */
     indirect?: boolean;
     /** The build job that inserted the round. */
     job?: string;
-    /** The accepted text does not compile: the errors that its side of the
-     *  comparison was typeset past. */
+    /** Compilation errors in the accepted text. */
     baselineErrors?: string[];
+    /** The accepted text produced no PDF, so the review shows source diffs. */
+    sourceOnly?: true;
   };
   created: number;
   /** Whether its PDF comparison is rendered. A round is inserted first and
@@ -197,6 +201,8 @@ export interface BuildInfo {
   pdf: string;
   seconds: number;
   warnings: string[];
+  /** Relative directories needed by TikZ externalization. */
+  tikzDirectories?: string[];
   /** The errors TeX typeset past, in a build that went on after them. */
   errors?: string[];
 }
@@ -489,9 +495,9 @@ export interface RoundDetail extends Omit<RenderedRound, "units"> {
   after: string;
   units: (Unit & Partial<VisualUnit> & { history?: History[]; formattingFor?: string; waiting?: boolean; carried?: number })[];
   warnings: string[];
-  /** The errors of the accepted text, when its side of the comparison was
-   *  typeset past them. */
+  /** Compilation errors in the accepted text. */
   baselineErrors?: string[];
+  sourceOnly?: true;
   /** The round's own comparison is still rendering, or failed. */
   rendering?: "pending" | "failed";
   files: string;
@@ -592,6 +598,32 @@ export interface SourceEditRequest {
   id: string;
   round: number;
   change: string;
+  revision: string;
+  text: string;
+}
+/** A whole text file of a task, for an editor beside the review: as it is in
+ *  the task's worktree, and as it was when the task started (`base`, null
+ *  for a file the task added). `reviewed` says the text is the latest
+ *  round's, apart from the rejected changes listed in `reverted`, whose text
+ *  came back; its other changes' `text_ops` then place them in it, once the
+ *  reverted ones are put back, and `before` is the text they changed (the
+ *  round's before version of the file). */
+export interface SourceFileRead {
+  round: number;
+  file: string;
+  revision: string;
+  text: string;
+  base: string | null;
+  before: string | null;
+  reviewed: boolean;
+  reverted: string[];
+}
+/** Replaces a whole file of a task, which must still be at `revision`, and
+ *  reviews the result in a new round. `round` is the one the file was read in. */
+export interface SourceFileSave {
+  id: string;
+  round: number;
+  file: string;
   revision: string;
   text: string;
 }

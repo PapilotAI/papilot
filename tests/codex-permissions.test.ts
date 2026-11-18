@@ -11,10 +11,12 @@ import { Workspace } from '../src/server/workspace.ts';
 import { taskAccessInstructions } from '../src/server/task-permissions.ts';
 import type { Task } from '../src/shared.ts';
 
-// Opt in with a real app-server binary. The model endpoint is local and canned:
-// no credentials, external API requests or model charges are needed.
+// The real app-server from the @openai/codex dev dependency. The model
+// endpoint is local and canned: no credentials, external API requests or
+// model charges are needed.
+const CODEX = path.join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'codex.cmd' : 'codex');
 for (const history of ['new', 'legacy-loaded', 'legacy-restarted'] as const)
-for (const initial of ['workspace', 'full'] as const) test(`real Codex switches permissions with ${history} history starting with ${initial}`, { skip: !process.env.PAPILOT_CODEX_TEST_BIN, timeout: 60000 }, async () => {
+for (const initial of ['workspace', 'full'] as const) test(`real Codex switches permissions with ${history} history starting with ${initial}`, { timeout: 60000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-native-permissions-'));
   const cwd = path.join(dir, 'paper'), extra = path.join(dir, 'extra'), home = path.join(dir, 'home');
   for (const item of [cwd, extra, home]) fs.mkdirSync(item);
@@ -39,7 +41,7 @@ for (const initial of ['workspace', 'full'] as const) test(`real Codex switches 
   const port = (server.address() as { port: number }).port;
   const args = ['app-server', '--listen', 'stdio://'];
   for (const setting of ['model="fixture"', 'model_provider="fixture"', 'model_providers.fixture.name="Fixture"', `model_providers.fixture.base_url="http://127.0.0.1:${port}/v1"`, 'model_providers.fixture.wire_api="responses"', 'model_providers.fixture.requires_openai_auth=false', `sandbox_workspace_write.writable_roots=[${JSON.stringify(extra)}]`, 'sandbox_workspace_write.exclude_tmpdir_env_var=true', 'sandbox_workspace_write.exclude_slash_tmp=true']) args.push('-c', setting);
-  const codex = new Codex(process.env.PAPILOT_CODEX_TEST_BIN!, args, { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: os.tmpdir() });
+  const codex = new Codex(CODEX, args, { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: os.tmpdir() });
   const store = new Store(':memory:');
   const workspace = new Workspace(store, codex);
   const task: Task = { id: 'permission-task', projectId: 'paper', agent: 'codex', name: 'p-task', title: 'Edit', instructions: 'Edit the manuscript and an external experiment script when authorized.', worktree: cwd, threadId: null, turnId: null, model: null, status: 'idle', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
@@ -61,7 +63,7 @@ for (const initial of ['workspace', 'full'] as const) test(`real Codex switches 
     const legacyAccess = initial === 'workspace' ? 'Only edit this isolated task worktree.'
       : 'The user selected full access. You may run authorized commands including SSH and access files outside this worktree. Keep manuscript edits in this isolated task worktree.';
     const { thread } = await codex.request('thread/start', { cwd, ...first.thread,
-      developerInstructions: history === 'new' ? developerInstructions : developerInstructions.replace(taskAccessInstructions, legacyAccess) });
+      developerInstructions: history === 'new' ? developerInstructions : developerInstructions.replace(taskAccessInstructions, legacyAccess + " Never edit the manuscript checkout. Never commit, push, stash, or accept/reject/undo review decisions.") });
     if (history !== 'new') {
       // Seed a pre-upgrade turn without the new application context.
       const { additionalContext: _, ...policy } = first.turn;
@@ -90,14 +92,16 @@ for (const initial of ['workspace', 'full'] as const) test(`real Codex switches 
         assert.ok(effective.sandbox.writableRoots.includes(extra));
       }
       const sent = JSON.stringify(modelRequests.at(-1));
-      assert.match(sent, /Keep manuscript edits in this isolated task worktree/);
+      assert.match(sent, /By default, keep manuscript edits in this isolated task worktree/);
       assert.match(sent, /runtime's current sandbox and approval requirements/);
-      assert.match(sent, /Never edit the manuscript checkout, other task worktrees, or Papilot's own source\/state/);
+      assert.match(sent, /Never edit other task worktrees or Papilot's own source\/state/);
       const input: any[] = modelRequests.at(-1).input;
       const update = input.findLastIndex(item => item.role === 'developer' && JSON.stringify(item).includes('<papilot-task-access>'));
       assert.ok(update >= 0, 'current access instructions must have developer authority');
       assert.match(JSON.stringify(input[update]), /replace earlier Papilot instructions about access outside the task worktree/);
-      assert.match(JSON.stringify(input[update]), /manuscript review scope and protected-path rules still apply/);
+      assert.match(JSON.stringify(input[update]), /blanket prohibitions on explicitly authorized manuscript writes, commits, and pushes/);
+      assert.match(JSON.stringify(input[update]), /Manuscript review scope still applies/);
+      assert.match(JSON.stringify(input[update]), /necessary Git fetch\/pull, staging, commit, and push/);
       if (history === 'new') assert.doesNotMatch(sent, /Only edit this isolated task worktree|The user selected full access/);
       else {
         const legacy = input.findIndex(item => item.role === 'developer' && JSON.stringify(item).includes(legacyAccess));
@@ -110,7 +114,8 @@ for (const initial of ['workspace', 'full'] as const) test(`real Codex switches 
     const closed = codex.child ? once(codex.child, 'close') : Promise.resolve();
     workspace.close(); await closed; store.close();
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
-    fs.rmSync(dir, { recursive: true, force: true });
+    // Codex's Windows sandbox can hold the folder for a moment after it closes.
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -123,4 +128,40 @@ test('Codex refuses a workspace policy resolver that retains full access and cle
   };
   await assert.rejects(codex.taskPermissionConfig('workspace', '/work'), /could not apply workspace permissions/);
   assert.deepEqual(calls, ['thread/start', 'thread/unsubscribe']);
+});
+
+test('on Windows, Codex threads get the sandbox that needs no setup unless the user configured one', { timeout: 60000 }, async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-windows-'));
+  const start = async (platform: NodeJS.Platform) => {
+    const codex = new Codex(CODEX, ['app-server', '--listen', 'stdio://'], { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: os.tmpdir() }, platform);
+    await codex.start();
+    const sent: any[] = [], write = codex.child!.stdin!.write.bind(codex.child!.stdin!);
+    codex.child!.stdin!.write = ((line: string, ...rest: any[]) => { sent.push(JSON.parse(line)); return (write as any)(line, ...rest); }) as any;
+    const resolved = await codex.request('thread/start', { cwd: home, ephemeral: true, approvalPolicy: 'on-request', sandbox: 'workspace-write', config: { 'sandbox_workspace_write.network_access': true } });
+    await codex.request('thread/unsubscribe', { threadId: resolved.thread.id }).catch(() => {});
+    const closed = once(codex.child!, 'close'); codex.close(); await closed;
+    return sent.find(message => message.method === 'thread/start').params.config;
+  };
+  try {
+    assert.deepEqual(await start('win32'), { 'windows.sandbox': 'unelevated', 'sandbox_workspace_write.network_access': true });
+    assert.deepEqual(await start('linux'), { 'sandbox_workspace_write.network_access': true }, 'other systems are unchanged');
+    fs.writeFileSync(path.join(home, 'config.toml'), '[windows]\nsandbox = "elevated"\n');
+    assert.deepEqual(await start('win32'), { 'sandbox_workspace_write.network_access': true }, "the user's own sandbox is kept");
+  } finally { fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
+});
+
+test('a Codex that exits while its config is read does not count as connected', { timeout: 30000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-exit-')), server = path.join(dir, 'app-server.mjs');
+  // Answers initialize, then exits when asked for its config.
+  fs.writeFileSync(server, `import { createInterface } from 'node:readline';
+createInterface({ input: process.stdin }).on('line', line => {
+  const message = JSON.parse(line);
+  if (message.method === 'initialize') process.stdout.write(JSON.stringify({ id: message.id, result: {} }) + '\\n');
+  if (message.method === 'config/read') process.exit(1);
+});`);
+  const codex = new Codex(process.execPath, [server], process.env, 'win32');
+  try {
+    await assert.rejects(codex.start(), /Codex exited|not connected/);
+    assert.equal(codex.ready, false);
+  } finally { codex.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

@@ -83,7 +83,7 @@ export class Applied {
       try {
         await fs.promises.mkdir(path.dirname(this.wantedFile(name)), { recursive: true });
         await fs.promises.writeFile(this.wantedFile(name), accepted);
-        const builder = new Builder(this.app.project, this.app.repo),
+        const builder = new Builder(this.app.projectOf(task), this.app.repo),
           { targets, date, seed } = await this.scope(name, round, builder);
         if (stop.signal.aborted) return replace();
         const info = await builder.build(accepted, targets, seed, { date, signal: stop.signal, priority: () => this.priority(name), onKey: replace });
@@ -114,7 +114,7 @@ export class Applied {
   async state(name: string): Promise<AppliedState> {
     const task = this.app.tasks.get(name, false), accepted = task.accepted,
       round = this.app.review.latestRound(name), latest = this.latest(name),
-      builder = new Builder(this.app.project, this.app.repo);
+      builder = new Builder(this.app.projectOf(task), this.app.repo);
     const usable = async (build: AppliedBuild | null) => (build && (await builder.completed(build.key)) ? build : null);
     // Before a round's first decision, its own baseline is the accepted text.
     const baseline = async (): Promise<AppliedBuild | null> => {
@@ -147,7 +147,7 @@ export class Applied {
       const latest = this.latest(name);
       if (latest?.key !== key) return null;
     }
-    return (await new Builder(this.app.project, this.app.repo).completed(key))?.pdf ?? null;
+    return (await new Builder(this.app.projectOf(name), this.app.repo).completed(key))?.pdf ?? null;
   }
   /** At start: the compilations a decision asked for that did not end. A
    *  repository's other tasks wait until the author opens them. */

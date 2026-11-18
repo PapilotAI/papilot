@@ -47,11 +47,19 @@ node bin/papilot.mjs doctor
 node bin/papilot.mjs --data "$env:USERPROFILE\Papilot data"
 ```
 
-Desktop data is under `%APPDATA%\Papilot`; CLI data defaults to `%USERPROFILE%\.papilot`. Use the desktop folder picker for local drive paths and UNC shares. Chinese characters and spaces in paths are supported. Paths inside `.latex-review.json` are relative to the repository; either separator is accepted and stored paths use `/`. Do not put an absolute drive path in its `main` field.
+Desktop data is under `%APPDATA%\Papilot`; CLI data defaults to `%USERPROFILE%\.papilot`. Use the desktop folder picker for local drive paths and UNC shares. Chinese characters and spaces in paths are supported. Paths in a paper's `.git/papilot/settings.json` are relative to the repository; either separator is accepted and stored paths use `/`. Do not put an absolute drive path in its `main` field.
 
 Papilot discovers the usual npm, Git for Windows, TeX Live and MiKTeX locations in addition to PATH. Restart Papilot after installing host tools. Commands installed by npm are launched through their Node entry points so multiline prompts and shell characters remain literal arguments. Stopping a build terminates its process tree. Windows runs background builds without the Unix-only pause/resume optimization.
 
+In the native Windows environment, Codex can also come from the installed Codex/ChatGPT desktop app. Papilot tries CLI installations first, then queries the current user's registered `OpenAI.Codex` package and runs its bundled `app/resources/codex.exe`. It does not launch the GUI or require an extra CLI installation. Select **Reconnect** after installing or updating that app; its versioned installation path is discovered again. `PAPILOT_CODEX_BIN` remains an explicit override. In WSL, install and sign in to the Linux Codex in the selected distribution; the Windows desktop backend is not used there.
+
 Dependency links for downloaded app updates use Windows directory junctions and need no Developer Mode. Repositories containing actual symbolic links still require Windows symlink permissions when the engine exports those links (enable Developer Mode or use a repository without symbolic links).
+
+## Claude permissions
+
+Native Windows does not support Claude Code's command sandbox. Claude and GLM therefore offer **Accept edits**, with **No sandbox** shown in the permission details. This accepts file edits using Claude's native permission rules. Commands still follow those rules: with Claude Code (`claude -p`), requests that need approval are declined and reported in the conversation; through the Claude Agent SDK, they ask for approval in Papilot. **Bypass permissions** remains a separate, explicit choice. Existing tasks using the default permissions use **Accept edits** when resumed on native Windows. Read-only reviews still have tools disabled.
+
+For sandboxed commands, select a WSL 2 backend and install Claude there. WSL, Linux and macOS retain **Sandboxed edits**, including refusal to run when their sandbox is unavailable.
 
 ## Codex approvals
 
@@ -79,17 +87,12 @@ The proxy must listen on a LAN interface if it runs on another computer. Agent s
 ```powershell
 npm.cmd run typecheck
 node --import tsx --test tests/windows.test.ts tests/wsl.test.ts
-# With TeX installed, also verify real compilation and source mapping:
-node --import tsx scripts/check-windows-compile.mjs
 $env:PAPILOT_DESKTOP_EXECUTABLE = "$PWD\release\desktop\win-unpacked\Papilot.exe"
 npm.cmd run test:desktop
 node scripts/check-desktop-environments.mjs
-# With a prepared WSL distribution:
-$env:PAPILOT_WSL_TEST_DISTRIBUTION = 'Ubuntu'
-node scripts/check-desktop-wsl.mjs
 ```
 
-The focused tests check Unicode/spaces, drive and UNC path rejection where a relative path is required, npm `.cmd` launchers with multiline arguments, SyncTeX source lookup, dependency junctions, descendant process cleanup and a real SQLite backend startup/shutdown. The desktop smoke test checks the window, demo PDF, imports, persistence and app updates. Run the desktop smoke test in an interactive Windows desktop session; a background SSH session alone is not a substitute for GUI verification.
+The focused tests check Unicode/spaces, drive and UNC path rejection where a relative path is required, npm `.cmd` launchers with multiline arguments, SyncTeX source lookup, dependency junctions, descendant process cleanup and a real SQLite backend startup/shutdown. The desktop smoke test checks the window, demo PDF, imports, persistence and app updates. On Windows it also uses `WM_NCHITTEST` to verify that all three window buttons receive client clicks in normal, maximized and compact layouts, including Version Management. Browser-simulated clicks alone bypass native drag regions and cannot catch buttons that Windows treats as title-bar drag handles (issue #152). Run the desktop smoke test in an interactive Windows desktop session; a background SSH session alone is not a substitute for GUI verification.
 
 Initial validation used the 0.9.0 source base (`64afda0`) with these Windows changes on a native Chinese Windows 11 Home x64 machine (build 26200), using Node 24.22.2, Git 2.56.0 and TeX Live 2026 on 2026-11-06:
 
@@ -103,5 +106,7 @@ Initial validation used the 0.9.0 source base (`64afda0`) with these Windows cha
 The integration based on PR #72 (`4896713`), including the changes from main (`5ae19cb`), also built the NSIS installer, portable executable and update layer on Windows. Its packaged app passed native launch, environment selection, WSL compilation, update activation and rollback checks.
 
 After independent WSL device sign-in, the integrated app completed two real Codex editing turns in an isolated Linux paper with Chinese characters, spaces and `&` in its path. Restarting the Windows app resumed the same task and thread. Both rounds produced readable PDFs with the expected text, and the original manuscript stayed unchanged. Both turns inherited `auto_review` with `on-request` and the workspace-write sandbox; there were no manual approval requests. A separate harmless elevated print command also passed automatic review. These live checks used a real Codex, not a mock agent.
+
+On 2026-11-14, the desktop-backend discovery change passed native Windows 11 build 26200 checks with the registered `OpenAI.Codex_26.1106.6628.0` app (`codex-cli 0.167.0-alpha.4.1`). Independent CLI paths and development Codex dependencies were excluded from the test environment. Papilot discovered the bundled backend, reused its existing sign-in, listed eight models, and completed three real editing turns with workspace permissions in an isolated paper whose path contained Chinese characters, spaces and `&`. Each round produced a PDF with the expected text and applied successfully; the manuscript stayed unchanged until application. The same task and thread resumed after both a Codex process restart and a complete Papilot backend restart. Restoring an independent CLI verified its priority over the desktop backend. These checks exercised the real backend HTTP API over SSH; they did not repeat interactive desktop-window verification.
 
 Agent authentication and provider API calls require the user's account and a working connection to the provider; these are separate from the offline launch and compilation checks. ARM64 and UNC network-share compilation have not been validated on hardware.

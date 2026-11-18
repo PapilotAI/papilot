@@ -4,13 +4,16 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 // time, and frees them further away.
 export function paintAppliedPages(container: HTMLElement, pdf: PDFDocumentProxy, root: HTMLElement | null) {
   const alive = new Map<number, { canvas?: HTMLCanvasElement; task?: RenderTask }>(), wanted = new Set<number>();
-  let running = 0, stopped = false;
+  let running = 0, stopped = false, width = container.clientWidth;
   const pages = () => Array.from(container.querySelectorAll<HTMLElement>(".applied-page"));
   const release = (index: number) => {
     const entry = alive.get(index);
     alive.delete(index);
     entry?.task?.cancel();
     if (entry?.canvas) { entry.canvas.remove(); entry.canvas.width = entry.canvas.height = 0; }
+    // Resize keeps the old pixels on screen until the new render finishes;
+    // that canvas may no longer belong to the active render entry.
+    pages()[index]?.querySelectorAll("canvas").forEach((canvas) => { canvas.remove(); canvas.width = canvas.height = 0; });
   };
   const pump = () => {
     while (!stopped && running < 2) {
@@ -59,9 +62,20 @@ export function paintAppliedPages(container: HTMLElement, pdf: PDFDocumentProxy,
     pump();
   }, { root, rootMargin: "1200px 0px" });
   pages().forEach((page) => observer.observe(page));
+  // Reader zoom and pane resizing need new pixels, not stretched canvases.
+  const resized = new ResizeObserver(() => {
+    if (Math.abs(container.clientWidth - width) < 1) return;
+    width = container.clientWidth;
+    for (const [index, entry] of alive) {
+      entry.task?.cancel();
+      alive.delete(index);
+    }
+    pump();
+  });
+  resized.observe(container);
   return () => {
     stopped = true;
-    observer.disconnect();
+    observer.disconnect(); resized.disconnect();
     for (const entry of alive.values()) entry.task?.cancel();
   };
 }

@@ -45,7 +45,8 @@ export async function diffUnitsAsync(
     ]);
   return unitsOf(files, old, next, isFigure);
 }
-function unitsOf(
+// The changes between two versions of these files; diffUnits reads them from Git.
+export function unitsOf(
   files: string[],
   oldBlobs: Record<string, Buffer | null>,
   newBlobs: Record<string, Buffer | null>,
@@ -275,23 +276,6 @@ export function revertUnits(
     b = b.slice(0, x) + a.slice(i, j) + b.slice(y);
   return Buffer.from(b);
 }
-export function scopeViolations(
-  repo: Repo,
-  base: string,
-  revision: string,
-  scope: Scope,
-) {
-  const files = repo.changedFiles(base, revision);
-  if (scope.ranges === null)
-    return files.filter((f) => !within(f, scope.paths));
-  return violationsOf(
-    files,
-    repo.blobs(base, files),
-    repo.blobs(revision, files),
-    scope,
-  );
-}
-/** `scopeViolations` for servers, which keep answering requests meanwhile. */
 export async function scopeViolationsAsync(
   repo: Repo,
   base: string,

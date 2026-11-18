@@ -121,6 +121,8 @@ export function collectErrorCatalog(root: string) {
       if (node.type === 'NewExpression' && node.callee.type === 'Identifier' && /Error$/.test(node.callee.name)) value = node.arguments[0];
       if (node.type === 'ObjectProperty' && ((node.key.type === 'Identifier' && node.key.name === 'error') || (node.key.type === 'StringLiteral' && node.key.value === 'error'))) value = node.value;
       if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'deny') value = node.arguments[2];
+      // An agent adapter ends a failed turn with this.finish(turn, 'failed', error).
+      if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression' && node.callee.object.type === 'ThisExpression' && node.callee.property.type === 'Identifier' && node.callee.property.name === 'finish') value = node.arguments[2] as Node | undefined;
       for (const source of literals(value) || []) {
         const entry = all.get(source) || { source, occurrences: [] };
         entry.occurrences.push({ file: path.relative(root, file), line: node.loc!.start.line, context: 'Product error or validation message shown to the author.' });

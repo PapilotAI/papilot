@@ -9,9 +9,13 @@ import { agentSetup } from './agent-setup.ts';
 import { RuntimeModels } from './runtime-models.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { RuntimeCardGrid } from './runtime-card-grid.tsx';
+import { WriterSetup } from './writer-setup.tsx';
+import type { WriterAuth } from '../shared.ts';
 
 function connectionInfo(id: AgentId) {
   const descriptions = {
+    papilot: t('Built into Papilot and based on Pi. Signs in with ChatGPT or GitHub Copilot, or uses an API key.'),
+    pi: t('Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.'),
     codex: t('Uses the local Codex CLI and its saved login.'),
     claude: t('Uses Claude Code when installed, or the Claude Agent SDK with API credentials.'),
     cursor: t('Uses the Cursor SDK with CURSOR_API_KEY. Papilot installs the SDK on first use.'),
@@ -24,7 +28,7 @@ function connectionInfo(id: AgentId) {
     qwen: t('Uses Qwen Code and its saved login through ACP.'),
     opencode: t('Uses OpenCode with the providers and models you have connected.'),
   };
-  const commands = { codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login' };
+  const commands = { papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login' };
   return { description: descriptions[id], command: commands[id], key: id === 'cursor' || id === 'glm' };
 }
 
@@ -36,7 +40,7 @@ function agentAvailability(online: boolean, runtime?: RuntimeStatus) {
   return runtime.error ? 'unavailable' : 'connecting';
 }
 
-export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, checkAgain, reconnect }: { online: boolean; runtimes: Partial<Record<AgentId, RuntimeStatus>>; report: DiagnosticReport | null; busy: boolean; checkFailed: boolean; checkAgain: () => void; reconnect: () => Promise<void> }) {
+export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, checkAgain, reconnect, writer }: { online: boolean; runtimes: Partial<Record<AgentId, RuntimeStatus>>; report: DiagnosticReport | null; busy: boolean; checkFailed: boolean; checkAgain: () => void; reconnect: () => Promise<void>; writer?: (route: string, body?: unknown) => Promise<WriterAuth> }) {
   const [selected, setSelected] = useState<AgentId | null>(null);
   const cards = useRef<Partial<Record<AgentId, HTMLButtonElement | null>>>({});
   const [reconnecting, setReconnecting] = useState(false), [reconnectError, setReconnectError] = useState(false);
@@ -64,7 +68,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
     ...agents.map(({ id, availability }) => {
         return <li key={id} className="diagnostic-agent-card" data-agent={id} data-availability={availability}>
           <button type="button" className="diagnostic-agent-button" ref={element => { cards.current[id] = element; }} aria-label={t('{agent} details', { agent: AGENT_NAMES[id] })} aria-expanded={selected === id} aria-controls={selected === id ? 'runtime-agent-detail' : undefined} title={availability === 'missing' ? agentSetup(id).reason : t('View installation, account, and usage')} onClick={() => selected === id ? close() : setSelected(id)} onKeyDown={event => { if (event.key === 'Escape' && selected === id) { event.preventDefault(); event.stopPropagation(); close(); } }}>
-            <div className="diagnostic-agent-heading"><BrandIcon name={id} size={28}/><h4>{AGENT_NAMES[id]}</h4></div>
+            <div className="diagnostic-agent-heading"><BrandIcon name={id} size={28}/><h4>{AGENT_NAMES[id]}{id === 'papilot' && <small className="diagnostic-agent-subtitle">{t('Based on Pi')}</small>}</h4></div>
             <div className="diagnostic-agent-footer"><span className={'diagnostic-availability ' + availability}><Icon name={icons[availability]} size={13}/>{labels[availability]}</span><span className="diagnostic-agent-chevron"><Icon name={selected === id ? 'chevronUp' : 'chevronDown'} size={14}/></span></div>
           </button>
         </li>;
@@ -80,17 +84,22 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
       </li>,
   ];
   const setupGuide = <a className="runtime-agent-guide" href={`${info.repository}/blob/main/docs/guide.md#agents`} target="_blank" rel="noopener noreferrer">{t('Setup guide')}<Icon name="external" size={12}/><span className="sr-only">{t('Opens in a new tab')}</span></a>;
-  const drawer = selected && setup && <section className="runtime-agent-detail runtime-agent-compact settings-card settings-card-body" id="runtime-agent-detail" aria-labelledby="runtime-agent-title" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
+  const drawer = selected && setup && <section className={'runtime-agent-detail runtime-agent-compact settings-card settings-card-body' + (selected === 'papilot' ? ' runtime-agent-writer' : '')} id="runtime-agent-detail" aria-labelledby="runtime-agent-title" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
       <header className="runtime-agent-header">
+        {selected === 'papilot' && <BrandIcon name="papilot" size={22}/>}
         <h4 id="runtime-agent-title" tabIndex={-1}>{AGENT_NAMES[selected]}</h4>
-        {current && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
+        {current && selected !== 'papilot' && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
         <button type="button" className="icon-button" aria-label={t('Close agent details')} onClick={close}><Icon name="close" size={16}/></button>
       </header>
+      {selected === 'papilot' ? <>
+        {writer ? <WriterSetup writer={writer} online={online}/> : <p className="runtime-agent-note">{t('Connect to view account, models, and usage.')}</p>}
+        {current && <details className="writer-models"><summary>{t('Available models')}<span>{runtime.models.length}</span></summary><RuntimeModels key={selected} models={runtime.models} connected/></details>}
+      </> : <>
       {blocked && guidance && <section className="runtime-agent-help" aria-label={t('Set up this agent')}>
         <p className="runtime-agent-reason" title={runtime?.error || undefined}>{state === 'missing' ? checked?.ok ? t('The latest configuration check found this agent. Reconnect to refresh its live status.') : guidance.summary : state === 'signin' ? t('Sign in on the Papilot host to continue.') : runtime?.error || t('The agent could not connect. Check its setup and try again.')}</p>
         {state === 'missing' && !checked?.ok && <p>{guidance.steps[0]}</p>}
         {!(state === 'missing' && checked?.ok) && <code className="runtime-agent-command">{setup.command}</code>}
-        <div className="runtime-setup-actions"><button type="button" className="button secondary compact" disabled={!online || reconnecting} onClick={() => void retry()}><Icon name="refresh" size={13}/>{reconnecting ? t('Connecting…') : t('Reconnect')}</button>{setupGuide}</div>
+        <div className="runtime-setup-actions"><button type="button" className="button secondary compact" disabled={!online || reconnecting} title={state === 'signin' ? t('Use the current {agent} sign-in on the Papilot host', { agent: AGENT_NAMES[selected] }) : undefined} onClick={() => void retry()}><Icon name="refresh" size={13}/>{reconnecting ? state === 'signin' ? t('Refreshing…') : t('Connecting…') : state === 'signin' ? t('Refresh') : t('Reconnect')}</button>{setupGuide}</div>
         {reconnectError && <p role="alert">{t('Could not reconnect. Check the server connection and try again.')}</p>}
       </section>}
       {current ? <div className="runtime-agent-overview">
@@ -107,7 +116,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
           {blocked && guidance ? <>
             <p>{state === 'missing' ? guidance.reason : state === 'signin' ? t('Papilot reached this agent, but could not confirm a signed-in account on this host.') : t('Papilot could not establish a working connection to this agent. The latest connection error is shown below.')}</p>
             {runtime?.error && <p className="runtime-agent-error">{errorText(runtime.error)}</p>}
-            {state === 'missing' && checked?.ok ? <p>{t('If the live status still disagrees with the check, restart Papilot under the same user and environment where you configured the agent.')}</p> : state === 'signin' ? <p>{t('Sign in as the user running Papilot, then restart Papilot.')}</p> : state === 'unavailable' ? <p>{t('Check the connection error above and the agent’s login, provider, and network settings on this host. Restart Papilot after changing credentials or executable paths.')}</p> : <ol>{guidance.steps.map(step => <li key={step}>{step}</li>)}</ol>}
+            {state === 'missing' && checked?.ok ? <p>{t('If the live status still disagrees with the check, restart Papilot under the same user and environment where you configured the agent.')}</p> : state === 'signin' ? <p>{selected === 'codex' ? t('Sign in as the user running Papilot, then select Refresh.') : t('Sign in as the user running Papilot, then restart Papilot.')}</p> : state === 'unavailable' ? <p>{t('Check the connection error above and the agent’s login, provider, and network settings on this host. Restart Papilot after changing credentials or executable paths.')}</p> : <ol>{guidance.steps.map(step => <li key={step}>{step}</li>)}</ol>}
             <p><strong>{t('Already set up?')}</strong> {guidance.existing}</p>
           </> : <><span className="runtime-agent-caption">{setup.key ? t('Environment variable') : t('Set up on the host')}</span><code className="runtime-agent-command">{setup.command}</code></>}
           <div className="runtime-agent-check-heading"><h5>{t('Installation check')}</h5>{!busy && checked && <span className={`diagnostic-state ${checked.ok ? 'ok' : checked.severity === 'error' ? 'error' : checked.severity === 'warn' ? 'warn' : 'info'}`}>{checked.ok ? t('Passed') : checked.severity === 'error' ? t('Needs attention') : checked.severity === 'warn' ? t('Warning') : t('Not found')}</span>}</div>
@@ -115,6 +124,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
           <div className="runtime-setup-actions"><button type="button" className="button secondary compact" disabled={busy || !online} onClick={checkAgain}><Icon name="refresh" size={13}/>{busy ? t('Checking…') : t('Check again')}</button>{!blocked && setupGuide}</div>
         </div>
       </details>
+      </>}
     </section>;
   const selectedIndex = agents.findIndex(agent => agent.id === selected);
   return <section aria-label={t('Agents')}>

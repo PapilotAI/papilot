@@ -1,6 +1,6 @@
 name: Bug report
 description: Something in Papilot doesn't work as it should.
-labels: [bug]
+labels: [bug, needs-triage]
 body:
   - type: markdown
     attributes:
@@ -42,6 +42,11 @@ body:
     attributes:
       label: Environment
       placeholder: macOS 15.5, Node.js 22.22.0, MacTeX 2026, Chrome 141
+  - type: textarea
+    id: discord
+    attributes:
+      label: Related Discord post
+      description: If this started in Discord, paste the original post link so we can follow up there.
   - type: textarea
     id: logs
     attributes:

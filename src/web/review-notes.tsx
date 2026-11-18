@@ -1,7 +1,7 @@
 import { type NoteGroup } from '../note-groups.ts';
 import { GroupPicker, GroupAction, groupStyle, groupName } from './note-groups.tsx';
 import groupStyles from './note-groups.css?inline';
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Task } from '../shared.ts';
 import { Icon } from './icons.tsx';
@@ -58,7 +58,7 @@ function pointMark(layer: Layer, clientX: number, clientY: number): Mark {
 
 // The menu floats outside the PDF strips' stacking and clipping boundaries,
 // or below it near the top, and follows it as the paper scrolls.
-function SelectionMenu({ doc, layer, selection, group, onAdd }: { doc: Document; layer: Layer; selection: Selected; group: NoteGroup | null; onAdd: () => void }) {
+function SelectionMenu({ doc, layer, selection, group, onAdd, children }: { doc: Document; layer: Layer; selection: Selected; group: NoteGroup | null; onAdd?: () => void; children?: ReactNode }) {
   const menu = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const place = () => {
@@ -77,8 +77,29 @@ function SelectionMenu({ doc, layer, selection, group, onAdd }: { doc: Document;
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(place); };
     doc.addEventListener('scroll', schedule, true); doc.defaultView?.addEventListener('resize', schedule);
     return () => { cancelAnimationFrame(frame); doc.removeEventListener('scroll', schedule, true); doc.defaultView?.removeEventListener('resize', schedule); };
-  }, [doc, layer, selection, group]);
+  }, [doc, layer, selection, group, children]);
+  if (children) return <div ref={menu} className="review-select-menu composing">{children}</div>;
   return <div ref={menu} className="review-select-menu" onPointerDown={event => event.preventDefault()}><button type="button" aria-label={group ? t('Add to {group}', { group: groupName(group) }) : t('Comment')} onClick={onAdd}>{group ? <GroupAction group={group}/> : t('Comment')}</button></div>;
+}
+
+// A comment written beside the passage it is about; Enter adds both to the
+// chat's unsent message, Escape or a click elsewhere keeps what was written.
+function CommentPopover({ doc, onDone }: { doc: Document; onDone: (comment: string) => void }) {
+  const [text, setText] = useState(''), box = useRef<HTMLFormElement>(null), latest = useRef(text); latest.current = text;
+  useEffect(() => {
+    const outside = (event: PointerEvent) => { if (!event.composedPath().includes(box.current!)) onDone(latest.current); };
+    const timer = setTimeout(() => { doc.addEventListener('pointerdown', outside, true); document.addEventListener('pointerdown', outside, true); });
+    return () => { clearTimeout(timer); doc.removeEventListener('pointerdown', outside, true); document.removeEventListener('pointerdown', outside, true); };
+  }, [doc, onDone]);
+  return <form ref={box} className="review-comment" onSubmit={event => { event.preventDefault(); onDone(text); }}>
+    <textarea autoFocus rows={1} aria-label={t('Comment')} placeholder={t('What should change here?')} value={text} onChange={event => setText(event.target.value)}
+      onKeyDown={event => {
+        event.stopPropagation();
+        if (event.key === 'Escape') { event.preventDefault(); onDone(text); }
+        else if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); onDone(text); }
+      }}/>
+    <button type="submit" aria-label={t('Add to chat')} disabled={!text.trim()}><Icon name="arrowUp" size={15}/></button>
+  </form>;
 }
 
 // Notes belong to the task and the exact displayed round/strip. They do not
@@ -87,6 +108,14 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
   const store = reviewDraft(task.id), draft = useReviewDraft(task.id);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selection, setSelection] = useState<Selected | null>(null);
+  // A selection whose comment is being written beside it.
+  const [composing, setComposing] = useState<Selected | null>(null);
+  const finishComment = useCallback((text: string) => {
+    setComposing(current => {
+      if (current && text.trim()) { const { handles: _, ...mark } = current; addRef.current(mark, text.trim(), false); onComment(); }
+      return null;
+    });
+  }, [onComment]);
   const [group, setGroup] = useState<NoteGroup | null>(null);
   const activeGroup = useRef(group); activeGroup.current = group;
   const [tool, setTool] = useState<PdfTool>('select');
@@ -163,11 +192,12 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
     const selectionChanged = () => { clearTimeout(timer); timer = setTimeout(select, 100); };
     doc.addEventListener('selectionchange', selectionChanged);
     let disposed = false;
-    let pressed: { layer: Layer; x: number; y: number; at: number } | null = null;
+    let pressed: { layer: Layer; x: number; y: number; at: number } | null = null, penTap = false;
     const press = (event: PointerEvent) => {
       const target = event.target as Element, strip = target.closest<HTMLElement>('.pdf-strip');
       const layer = strip && mounted.get(strip);
       pressed = event.button === 0 && layer && !target.closest('button,a,input,textarea') ? { layer, x: event.clientX, y: event.clientY, at: performance.now() } : null;
+      penTap = false;
     };
     const marked = (event: PointerEvent) => {
       const start = pressed; pressed = null;
@@ -176,6 +206,11 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
       if (event.pointerType === 'touch' && (current.current.tool !== 'magic' || touch.current?.active() || !start || performance.now() - start.at >= 450)) return;
       if (!start && !(event.target as Element).closest('.pdf-strip')) return;
       if (!['note', 'delete', 'magic'].includes(current.current.tool)) return;
+      // The pen takes a tap whole. Its touchend is cancelled, so no mousedown
+      // and click follow: they could arrive after the wheel opens, and either
+      // press its middle, writing a plain note, or focus the paper behind it,
+      // where Escape and the number keys no longer reach the wheel.
+      penTap = event.pointerType === 'touch';
       // A native selection can end in the blank margin, outside the text layer.
       // A click with the magic pen marks a point, whether on text or whitespace.
       setTimeout(() => {
@@ -188,9 +223,11 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
       }, 0);
     };
     const cancelPress = () => { pressed = null; };
+    const tapEnd = (event: TouchEvent) => { if (penTap && event.cancelable) event.preventDefault(); penTap = false; };
     doc.addEventListener('pointercancel', cancelPress);
     doc.addEventListener('pointerdown', press);
     doc.addEventListener('pointerup', marked);
+    doc.addEventListener('touchend', tapEnd, { passive: false });
     // Touch screens select glyphs with Papilot's own handles and menu
     // (review-notes.css turns native selection off there).
     touch.current = touchSelection<Layer>(doc, {
@@ -209,7 +246,7 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
     });
     return () => {
       disposed = true; clearTimeout(timer); observer.disconnect(); touch.current?.stop(); touch.current = null;
-      doc.removeEventListener('selectionchange', selectionChanged); doc.removeEventListener('pointercancel', cancelPress); doc.removeEventListener('pointerdown', press); doc.removeEventListener('pointerup', marked);
+      doc.removeEventListener('selectionchange', selectionChanged); doc.removeEventListener('pointercancel', cancelPress); doc.removeEventListener('pointerdown', press); doc.removeEventListener('pointerup', marked); doc.removeEventListener('touchend', tapEnd);
       for (const layer of mounted.values()) layer.element.remove();
     };
   }, [doc, task.review?.round]);
@@ -222,10 +259,14 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
     doc?.addEventListener('keydown', finish); document.addEventListener('keydown', finish);
     return () => { doc?.removeEventListener('keydown', finish); document.removeEventListener('keydown', finish); };
   }, [doc]);
+  const addRef = useRef(addGrouped); addRef.current = addGrouped;
   function addGrouped(mark: Mark, comment = '', focus = true) {
     if (current.current.busy) return;
     const grouped = !mark.kind && !mark.stamp && ['note', 'region'].includes(current.current.tool) && activeGroup.current;
-    const id = store.add({ ...mark, ...(grouped ? { group: grouped } : {}) }, focus && !grouped, comment);
+    // A page of the paper as decided is a whole page of a build, so the agent can be shown it.
+    const [, build, page] = /^applied:([0-9a-f]{32}):(\d+)$/.exec(mark.strip) ?? [];
+    const paper = build && mark.rects.length ? { paper: { page: Number(page), rects: mark.rects, build } } : {};
+    const id = store.add({ ...mark, ...paper, ...(grouped ? { group: grouped } : {}) }, focus && !grouped, comment);
     touch.current?.reset(); setSelection(null); doc?.getSelection()?.removeAllRanges();
     if (id) locate(id, mark);
   }
@@ -276,8 +317,8 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
       store.add(reviewCommentMark(base, detail, Array.from(change.querySelectorAll('.after .pdf-text')).map(el => el.textContent).join(' ').trim()));
       onComment();
     };
-    view.addEventListener('latex-review:comment', comment);
-    return () => view.removeEventListener('latex-review:comment', comment);
+    view.addEventListener('papilot:review:comment', comment);
+    return () => view.removeEventListener('papilot:review:comment', comment);
   }, [doc, layers, store, onComment]);
   const jumped = useRef<unknown>(null);
   useEffect(() => {
@@ -326,6 +367,7 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
         markSelection(pointMark(layer, event.clientX, event.clientY), event.clientX, event.clientY);
       }}/>}
       {drag?.key === layer.key && <div className="review-note-box" style={percent(drag.rect)}/>}
+      {composing?.strip === layer.key && composing.rects.map((rect, i) => <div key={i} className="review-note-mark" style={percent(rect)}/>)}
       {selection?.handles && selection.strip === layer.key && <>
         {selection.rects.map((rect, i) => <div key={i} className="review-note-mark" style={percent(rect)}/>)}
         {(['from', 'to'] as const).map(end => { const [x, top, bottom] = selection.handles![end]; return <span key={end} className="select-handle" data-end={end} style={{ left: `${x * 100}%`, top: `${top * 100}%`, height: `${(bottom - top) * 100}%` }}/>; })}
@@ -333,7 +375,14 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
     </Fragment>, layer.element, layer.key))}
     {doc && selection && !busy && (() => {
       const layer = layers.find(layer => layer.key === selection.strip);
-      return layer ? createPortal(<SelectionMenu doc={doc} layer={layer} selection={selection} group={group} onAdd={() => edit(selection)}/>, doc.body) : null;
+      return layer ? createPortal(<SelectionMenu doc={doc} layer={layer} selection={selection} group={group} onAdd={() => {
+        if (group || tool !== 'select') { edit(selection); return; }
+        setComposing(selection); touch.current?.reset(); setSelection(null); doc.getSelection()?.removeAllRanges();
+      }}/>, doc.body) : null;
+    })()}
+    {doc && composing && !busy && (() => {
+      const layer = layers.find(layer => layer.key === composing.strip);
+      return layer ? createPortal(<SelectionMenu doc={doc} layer={layer} selection={composing} group={null}><CommentPopover doc={doc} onDone={finishComment}/></SelectionMenu>, doc.body) : null;
     })()}
   </>;
 }

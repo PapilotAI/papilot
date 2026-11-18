@@ -39,11 +39,6 @@
     "textHash": "9e0cfe67437302629f2fc2fd1b169bfe9d513031e2fc98f0e32707d1af6ce386",
     "model": "gemini-4-argon-high"
   },
-  "AI review has no manuscript changes to deliver.": {
-    "revision": "c935c66fe67aa54eb3baf5cde47a6fa0ad18ffd1a8634e95d9b2b207ee173413",
-    "textHash": "38de28c803a7161fb9c5768a3ec7747e7bca7665658959184525ff212b952b6a",
-    "model": "gemini-4-argon-medium"
-  },
   "AI review uses manuscript PDF notes, not change decisions.": {
     "revision": "6d066d01f51072a53934132280f6540b5b625404995056416f3d5d738b27208e",
     "textHash": "1680e3577f60eec7152b19941cd724821567126dc0e36537fd1b535656e9c164",
@@ -89,6 +84,16 @@
     "textHash": "f250300eeb5a25f7c1ad862eb696e638df4e2e219f4655d17067ad4be59ee4a6",
     "model": "gemini-4-argon-medium"
   },
+  "Antigravity stopped because an operation needed permission.": {
+    "revision": "31cc2a533f59f82c932791dcac1d4ac9e21cc6482bd8a13c9177141b6ceb3bf7",
+    "textHash": "6d954ac471afa4b0a8a59700e684351e5e622d463113c321799a5aba79ecc4f8",
+    "model": "gemini-4-argon-medium"
+  },
+  "Antigravity stopped because an operation needed permission. Ask it to continue without that operation, or select Always proceed (approves all tools) and ask it to continue.": {
+    "revision": "6106b237a53b5df009d5549b84d18c74dd946817c46667e07b7fd07a14356f00",
+    "textHash": "efe13f48b06bf1863121ed8e39d5527177f0a80d4623afc2c7bf69412d6dc579",
+    "model": "gemini-4-argon-medium"
+  },
   "Attachment not found.": {
     "revision": "4fb66e9c6222242084700841ec0cd26794ffdceaacaf59d6f6d3f43230d2696b",
     "textHash": "36dcc165026af7c47ddc213c2ff9826cf2233a1febcddb225d2f3fcb7dcba790",
@@ -129,14 +134,19 @@
     "textHash": "a78f67ea3289b0e202184644c177ab2b3ede8e5f40c490c50d4252e7b165cb1a",
     "model": "gemini-4-argon-medium"
   },
-  "Choose a folder smaller than 64 MB.": {
-    "revision": "862dc356bfbc2a9b54e9c19fb254f6a2c1d5bfa444e9fd6d8c2a1e95fe8e7377",
-    "textHash": "af61620ac29d25a95e937b4dc3d148b64992609a0e7f7334da7a33e627881052",
+  "Choose a source file.": {
+    "revision": "cf6c9221d3196242caaea6bf6430eb3acfdb9420bc085d61001b6db549fd5d31",
+    "textHash": "4e39a9c645b6ecff2b7ba6e4bc88194524b7d98b179fb5cab7b88615fb167412",
     "model": "gemini-4-argon-medium"
   },
   "Choose a supported LaTeX engine.": {
     "revision": "a80f32b96859d98e07ec5102afe417f5bb926d66a711927d3984831c344f7432",
     "textHash": "b3835fa1c8c13acb80262fe0a7aff5370b2b3b4db007fe1e34cb29a2ea7a9846",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose a template from the list.": {
+    "revision": "ca8993e45f0c388211fcd148ebb6781ccad9c279fb23ed7726aa9b226d870abe",
+    "textHash": "adb03edc7e8e3679454b5b95f8db2e24cede9c99ddf92aa91015ae865ec75c2b",
     "model": "gemini-4-argon-medium"
   },
   "Choose a valid update channel.": {
@@ -157,16 +167,6 @@
   "Choose an existing TeX main file.": {
     "revision": "c3c9025016589a3ec400cd59d45a3601f9a9255e9ab30487f073edef14b3b090",
     "textHash": "272f0d8a7edf616fe691b1fafe3a47e604810a19fd8bcabee85928cc04119d68",
-    "model": "gemini-4-argon-medium"
-  },
-  "Choose between 1 and 5,000 files.": {
-    "revision": "fc8a91d61f7044160c307e3023fd45b0ac221e76399ed8e26d70ef1b567af8ae",
-    "textHash": "d8df885aa19199a4094a1babaedd66d2c906375b0dd278e91b293414497f715d",
-    "model": "gemini-4-argon-medium"
-  },
-  "Choose one folder or ZIP.": {
-    "revision": "b2b9d4055e9b245a7e49c002a0cb2737b5836e5e3f981d9e1ede9a2ad8e029a9",
-    "textHash": "de3ade55945c0b170db3c96f061a0adbe29775c0bd42a80dd0dee9255f4f05be",
     "model": "gemini-4-argon-medium"
   },
   "Choose one of the offered answers.": {
@@ -199,6 +199,11 @@
     "textHash": "bb2036ce017679a6c796511253a2196496b7db4e889c8a9f25966d76ef3fa32d",
     "model": "gemini-4-argon-medium"
   },
+  "Click the text whose source you want to edit.": {
+    "revision": "27137c2f605ab329998f5e98e2b397b093da435d1a0bd5fe9617bc20ecad59ea",
+    "textHash": "6d5e2ad4b5c284f04e69f22de2c9516cd4869b4d783d01aaa9b719037fe66457",
+    "model": "gemini-4-argon-medium"
+  },
   "Codex disconnected. Resume the task before retrying.": {
     "revision": "808bf632460afb11fa86d2810f48b9b83e338fe352a4abee1b736d61affbcfc3",
     "textHash": "3a1da99f57b9eee1f8ad34ca7392ba91c7f2fa1c4e949ddb2b76cfe36ea00435",
@@ -209,10 +214,15 @@
     "textHash": "15541133ccfa98a5973c365aa0d34396147163fb44f5c1d58a122e70f3e9f03d",
     "model": "gemini-4-argon-medium"
   },
-  "Commit the task first, then push from Git.": {
-    "revision": "71c8e7f3fe29fb81300c06fa87cbbe9241e8ce55a208426dd2d2b9be027f9b8f",
-    "textHash": "c8100aa537de3a53eab73917248e3893608daae275f6df823e1199cc300814cd",
-    "model": "gemini-4-argon-high"
+  "Codex restarted to load the current sign-in.": {
+    "revision": "b3fbd18f797eb2c83881a6c8969894d7c16830d3dda12d4b8f00f2a4aad20a9c",
+    "textHash": "b1487cda55dd873bad8a70987ffb43627453c06a780d97561a1628179b425294",
+    "model": "gemini-4-argon-medium"
+  },
+  "Codex sign-in expired. Select Refresh to load the current sign-in on the Papilot host. If it is still signed out, run papilot codex login there first.": {
+    "revision": "e0ededaf3120a90013e0528bd6ae78c51a1802638c2b25b677e21e800f0dd87d",
+    "textHash": "1333299ad6984ff7c634f5f0df864d818c98ded589a1809319734d8d6eb6238f",
+    "model": "gemini-4-argon-medium"
   },
   "Confirm permanent task deletion before continuing.": {
     "revision": "43acb97f50e6d1d9921677c10b96154459b59cdc7a263898cde9d21aa7738e6c",
@@ -232,6 +242,16 @@
   "Could not complete the environment checks. Please try again.": {
     "revision": "786870c7fc0d4265e6957c0ff7e7e1b7d32440be17512774ccebee7c241592bf",
     "textHash": "022433d65190e9ae0c9f5952f9033a25554be6ad9534d3618967a6716242ceb9",
+    "model": "gemini-4-argon-medium"
+  },
+  "Could not download the template. Check the internet connection and try again.": {
+    "revision": "99e1928eb790d00feda32286c26d994f5d23f20f5aa83a5dd9c960e344797657",
+    "textHash": "97c4c0669d8389c8cdae02c2e9f38ff5d28d68cf351ff2c2e75a866828e7a2d6",
+    "model": "gemini-4-argon-medium"
+  },
+  "Could not load templates. Check the internet connection and try again.": {
+    "revision": "9c501d037855cd871210133878f37a894d91ffd5a6019f17bdd9fba61849bf9d",
+    "textHash": "899f82aa64d1058171945e2af9ea01151d99abb81b51b539daff2791c4ef7d25",
     "model": "gemini-4-argon-medium"
   },
   "Could not read the LaTeX installation.": {
@@ -369,6 +389,11 @@
     "textHash": "2f80ec42a80183f41209ce7bee2000c2a0b7389762ee0067d2ed8e4fbb1786ef",
     "model": "gemini-4-argon-medium"
   },
+  "Invalid line range.": {
+    "revision": "c68792b671689baf7b4adaaa3861597da749ab33773e7ecc91044813dd712591",
+    "textHash": "0b4fec16d14c187ed526f41c709448b19dca0ee575207ff3c82ee49cf972827e",
+    "model": "gemini-4-argon-medium"
+  },
   "Invalid model.": {
     "revision": "f81cbe6a0371f19901822451494a7a8500d15e482e3318d141420fd6aa90e462",
     "textHash": "692663879c42c6ac9e67661301ae8ce63cec626340bf2596dfd11361915d8422",
@@ -403,6 +428,11 @@
     "revision": "ee665e630195edb567ee0389d6e89f327d8c1995056e46be1251c0b540751377",
     "textHash": "2c8bde171fcdf64aee4e6933f63161e0144f54057b7659bf30b519e70be27fb8",
     "model": "gemini-4-argon-high"
+  },
+  "Invalid source edit.": {
+    "revision": "7d4f46304b5181cf3673c41a7b413a9c8c6ba22e5488fdd38e861fd1594cdae5",
+    "textHash": "4fe039da91d92b91d5d368537ae5adfc2c4e77caf96bd0d5b8b98686449c9520",
+    "model": "gemini-4-argon-medium"
   },
   "Invalid task ID.": {
     "revision": "d0fc3608157be72334ec1be109ecd390ffde3d342ebaacf444abce0b00dac430",
@@ -468,6 +498,11 @@
     "revision": "d27b792aa759e26600dc5bbf35fff262a8c48f944f3e62dbc08269a1991bf1d2",
     "textHash": "1254b96476210e24d39f650531356d0c0690c01766557a9e6c3cb006e723c128",
     "model": "gemini-4-argon-high"
+  },
+  "PAPILOT_UNIVERSE_URL must be an https URL.": {
+    "revision": "94dd58b36ed135b2eb4410217257b0cf550f105cf1fc01bf33fd9ec95e660ec2",
+    "textHash": "6fa8f9ddc9e39c56fdc11b979213d3ce8a1bdb600d3e136df86d3e1c95796fa1",
+    "model": "gemini-4-argon-medium"
   },
   "Paper name is too long.": {
     "revision": "248a1564f3da6f4b64eeaecd0b41ed7fab70bd3d83483fe682d2c606e7ededd8",
@@ -579,11 +614,6 @@
     "textHash": "807a475261625388fc3b7dfc3450bb34a2f9f14800e9056a8e6bdae47bc0ef7e",
     "model": "gemini-4-argon-medium"
   },
-  "Select unsent PDF notes for this task.": {
-    "revision": "75ecf056d6e2d27c02d41dd4fc691a8bc030160e4e13b012b900f1da5f6dde98",
-    "textHash": "7674a550025d798d3ae9b54d461c5e394b4a8781111b76b36b1af098b58ceb15",
-    "model": "gemini-4-argon-medium"
-  },
   "Select up to 10 valid attachments.": {
     "revision": "e1b4f7103e09669ccedc79fc16e9019585e161dc77d10dd334d47400958cdbe1",
     "textHash": "dfdbc9847d6213ef9320203a3d19fad2062f345fabda079b7b1b0a69d9e9ab1c",
@@ -639,6 +669,11 @@
     "textHash": "9b34b53d6558fab24eab7112b397194f6ed35d7471b13ae3ffa762f8000c7386",
     "model": "gemini-4-argon-medium"
   },
+  "Templates are not available here.": {
+    "revision": "75de8704de2ce113152285cf716bebea28a0afdbd7d2ab5ae86e14cbbeb2527e",
+    "textHash": "99d3f91a54694c125dfce1fd5c632524c240bef8eef48b3046bf210cf87e068a",
+    "model": "gemini-4-argon-medium"
+  },
   "That file has no uncommitted changes.": {
     "revision": "27f5d08e9c88a801bbdec5114bf490b8eccd72e94112a1ec847a88d0329a1935",
     "textHash": "dee535ac385ceaee0bc6371a529ac2b5f490de01f8e7f41abc4f51d12caf2614",
@@ -667,6 +702,11 @@
   "The PDF snapshot for this review is unavailable. Start a new AI review.": {
     "revision": "ef15dbaa7563117c16c97904d4a51d8c1957f2c3a1499ef3c4788968651a202a",
     "textHash": "40e5ab5e61c9c34cb8b766c2de3e904a546cce4f14e7ee5a3402202a6fe64b16",
+    "model": "gemini-4-argon-medium"
+  },
+  "The ZIP contains the same file twice.": {
+    "revision": "82bfd9697a1da394c097b35e9eb46be1c95a87299bb94eefa00df4cd17ce130d",
+    "textHash": "f600badf643906f0594ec8a7fa5e6acf264d4901198aeee976e68adc705d4d0f",
     "model": "gemini-4-argon-medium"
   },
   "The ZIP expands beyond 64 MB or 5,000 files.": {
@@ -699,6 +739,11 @@
     "textHash": "c82db13bba51ed828819dbd5fdc3ef339edb4f4e0159da7cd74e837255b8a19b",
     "model": "gemini-4-argon-medium"
   },
+  "The downloaded template did not match its checksum. Try again later.": {
+    "revision": "9293be2819f1067a2791588877aa4bb8a80dbb445084aa3be45bd7c8b1ac97a2",
+    "textHash": "12829b037f219e782f4ee58292170f293ce100f27022390355ee71b2ed0b70f0",
+    "model": "gemini-4-argon-medium"
+  },
   "The manuscript changed while copying this suggestion. Try again.": {
     "revision": "2ca95b8c2dd1a328c73b9ec2ff5c52747e61551d0336c98804df9221ab6722e2",
     "textHash": "f1d8852dda13adeaa92a271e022efff871582dab22b51918ac5790f1dd98eeb5",
@@ -722,16 +767,6 @@
   "The new version did not restart successfully.": {
     "revision": "3aaae99564abb4d93fbef39e6ca2ea6881acc7a77e8241f4d16fef6674e7a73a",
     "textHash": "4923f55be5b1694f1f2f36b7f2b9a7558777d726356ff965aceebc14f58ba76a",
-    "model": "gemini-4-argon-medium"
-  },
-  "The paper configuration must contain a JSON object.": {
-    "revision": "9deebbf38be567be0e10dd52a26377e26b33c5eee14602b9b8f414e56650bd2e",
-    "textHash": "a948abd783cf76e6aa516e5b029cb2be15f9bdf626b621f78a7cd6ec64fcd58e",
-    "model": "gemini-4-argon-medium"
-  },
-  "The paper configuration must not be a symbolic link.": {
-    "revision": "400df7498f1d3c4fc7cafd409ee9ba2362f1cf40be8b87a00b0a17175f433170",
-    "textHash": "c7bbe5ef99f065c0ef1d9e45925647192ee04288426ccbb7f8dd4285bef6f6aa",
     "model": "gemini-4-argon-medium"
   },
   "The review action is still being checked. Wait for it to finish.": {
@@ -799,9 +834,24 @@
     "textHash": "9624616401669c52bdb0b0ff64cd4c9449fa6b8843fbbf20790bf67b57402032",
     "model": "gemini-4-argon-medium"
   },
+  "The source edit could not be confirmed. Check task status before retrying.": {
+    "revision": "19b287d0f672c8dc58aab6c7e7145c95e3d922b91e5abe82103fd9535b2ec796",
+    "textHash": "e81350846f38125445a0866e0d1672cf24c532be202f26184afe50af69b10521",
+    "model": "gemini-4-argon-medium"
+  },
   "The task was paused before these instructions were queued. Your draft has been kept.": {
     "revision": "5051cde4ef286b1042ccfae9cc625eb43ab78d544c3ddbb97e462b525f426c8c",
     "textHash": "8c3ee7fdf9a3c5a31f3c7f768bdd6b532343a648a39c6091cf45ca05a56abe21",
+    "model": "gemini-4-argon-medium"
+  },
+  "The template archive could not be read. Choose another template.": {
+    "revision": "78e9c6430454417f7ddbe369591fae08d7a1254b3f7c1148f912c2745f1a39c2",
+    "textHash": "0ecb993bf6e181236a1368e823c34ca6b5802b4256407b4bb719fc61adc16aac",
+    "model": "gemini-4-argon-medium"
+  },
+  "The template is missing its main file. Choose another template.": {
+    "revision": "6f64a54b717a1aa41456d509f013e3d500df346b5f392b32eee5fdcef317a3bf",
+    "textHash": "a674c1ef8190fd77fd45540941218ae92bc703e116771614ce1485995498bb97",
     "model": "gemini-4-argon-medium"
   },
   "The update download timed out.": {
@@ -839,6 +889,11 @@
     "textHash": "51de8e3f1d558eabf3287d4757eb0c526dae08e19671e0543d62fb214c8731f5",
     "model": "gemini-4-argon-medium"
   },
+  "This PDF is out of date. Refresh it and try again.": {
+    "revision": "00b3351a941bdc5e5facfa0c5fcb6dac64e06d0e3c76b71c6bad6de906ed6afc",
+    "textHash": "3975aeaae91c4b0759e1ee8b69b53561ae6d8312c440452732ebc85a6523402c",
+    "model": "gemini-4-argon-medium"
+  },
   "This agent does not report usage.": {
     "revision": "f6ae295eb7be3406a7ba2250918169b40a60550cb87422a1dd9d619874a1daca",
     "textHash": "dfb1756dd1178b84bbf178c28c7b95404fb8d37511144611abaff5e3cc8bed72",
@@ -859,6 +914,11 @@
     "textHash": "c4db0981a9ce6966db29f57abbc74bb08e473d34c0db3dd4712f4b0502a723d2",
     "model": "gemini-4-argon-medium"
   },
+  "This edit ID was already used for another edit.": {
+    "revision": "cde06fea40dbb1eae9919ea12ba12be6e780f88bca42576c2b6dc800578cad56",
+    "textHash": "ee89dd3768c4baf6d98e5f7368d181e0cd0228e54f5c453f4b03f7135cb9dfc8",
+    "model": "gemini-4-argon-medium"
+  },
   "This entry is no longer among the changes. Refresh the page.": {
     "revision": "d6e71c1a77d597c88e8eea9404a92f8c4c166c9c361ad2fc5b0e435cbfdf225f",
     "textHash": "3b910d8bd9df43e66aed5b867372c946a730e3e5c8fa4b36a51bb352f15d75f5",
@@ -869,9 +929,19 @@
     "textHash": "703f697291dd1e515b1554730e1ab2882118dadd49b6a4d6c207c576f9993bb0",
     "model": "gemini-4-argon-medium"
   },
+  "This file cannot be edited here.": {
+    "revision": "835ca729f0627589421ca2bd54152c7c5320a5d4484b33f90259554e3c8b3585",
+    "textHash": "4e37726045cb5bcce900f350367ecef74daeac5c7ae2bed57091c2549e9837fc",
+    "model": "gemini-4-argon-medium"
+  },
   "This file is empty.": {
     "revision": "8aaaff2fc3a1be255688f3b632c0247c61f2502b9f672030a35ff59f727a2a47",
     "textHash": "dc4fda68c2de850be44a9ca739d99f01305141bfc3208087c9c2d8a40bbe01fc",
+    "model": "gemini-4-argon-medium"
+  },
+  "This file is not text that can be edited here.": {
+    "revision": "84fd368b551c35ce4cc4e49536ec52e64d95a344efbcba1afdf6ec19fbb85b01",
+    "textHash": "657e2a95deab3d020c7d2dbd5b95ac7703f9678d571a02ed93d30b2ed48225a0",
     "model": "gemini-4-argon-medium"
   },
   "This folder belongs to a parent Git repository. Select its root folder, or upload a copy.": {
@@ -969,6 +1039,16 @@
     "textHash": "c455e9b39c9ad64fbd12f0e6c98ca7ad0f0545bc0fc6c58bd31aa40130bac53a",
     "model": "gemini-4-argon-medium"
   },
+  "This source file is too large to edit here.": {
+    "revision": "70c27461d0e3b6026d7f8051fc5fbd212fda35d9f8aa94a4414e43a579c5d800",
+    "textHash": "679ff9797b16f471a61e91e8acca40dea5e4ea6175fde6bcf8ea714445a7d5f6",
+    "model": "gemini-4-argon-medium"
+  },
+  "This source file no longer exists.": {
+    "revision": "56980501d0cbf691b9d972a56f106a1f98ef291db861991ce11014ea4078d574",
+    "textHash": "b6a89fcbf2eb19acbf55a8ad53fbfdda175377e6e4252674beac03a2aeef233b",
+    "model": "gemini-4-argon-medium"
+  },
   "This suggestion does not belong to this review task.": {
     "revision": "1102caa088aa1543261acf2ad4e28a1fe5b3eeaa66e3d9b80426a59daafc9e74",
     "textHash": "5b0f8f339ddd798fa5e18599b549c714092a9b5c0087a86d415ec4aadefea6f2",
@@ -977,11 +1057,6 @@
   "This suggestion was ignored while copying. Restore it first.": {
     "revision": "96b5f4b382780ba5d11b9d6fa9ad439ced2e4ebaf7bf480723f6875f2b5eff64",
     "textHash": "7633395598d175fcad1122c35aac45fe07dd634f13ba58d157d8f40dfb79140b",
-    "model": "gemini-4-argon-medium"
-  },
-  "This task already applies accepted changes to the working directory.": {
-    "revision": "050a166bd905483db69734b6f780f5d6d3ce1a3d88e0a01e9ff949b40fb0c081",
-    "textHash": "314effa83b31a1228d2f09d2530fcb5d7f51691287a17b20b0ae1dec2acdf0b6",
     "model": "gemini-4-argon-medium"
   },
   "This task already has queued instructions. Wait or pause it first.": {
@@ -1024,6 +1099,16 @@
     "textHash": "a831cad12a6f5700192678986fe523b32702e7dad3df8b228b39fcf2dc24fda2",
     "model": "gemini-4-argon-medium"
   },
+  "This template changed after creation started. Choose another name to start again.": {
+    "revision": "5a219a7d466ece49a3d151eb399390b3190857c209259619f5a7e7969745a4f5",
+    "textHash": "0ff6ac24cdeb501127c055b058303bc61ca5348aa905425682fbcee00210aaed",
+    "model": "gemini-4-argon-medium"
+  },
+  "This template version is no longer available. Choose the template again.": {
+    "revision": "4b692b8cc79907fd3cb8653581441e190330e8f93b3d189aaabd1b332ce04ab2",
+    "textHash": "1aa25061d2c2d3c257d1e004a31166bb220c678beb53bb36ee0974194ee27771",
+    "model": "gemini-4-argon-medium"
+  },
   "Unknown Git action.": {
     "revision": "600cab673c15d56693a483d46ad6529d7faeb92e52be63fa83e0daedd35e894f",
     "textHash": "4a3b49eed4ef854f14080d3177e1912aa181900329413718344b5719d2251e62",
@@ -1037,6 +1122,11 @@
   "Unused attachments have reached 500 MB. Remove attachments from your drafts before uploading more.": {
     "revision": "62b7e274f3fb91c6ed081ff8419c9ffbb063704ba59406e819bcc46cac322e10",
     "textHash": "4eb1c35b383e4f7c380265372df3d900e15d677640add479f5ce1770fd90d414",
+    "model": "gemini-4-argon-medium"
+  },
+  "Updates are managed outside Papilot.": {
+    "revision": "035a44fdd736ce8ed6bd68ef83c72de7c8585bbe8a56525fc610fa9627c5d665",
+    "textHash": "93dcdb7b6ef7247a9d86521a6d14cd3483ac95ff623703e9811de99711febe27",
     "model": "gemini-4-argon-medium"
   },
   "Upload a file as binary data.": {
@@ -1089,11 +1179,6 @@
     "textHash": "594e0f6b904aa7b07bac85eada36bf5741ab4f6ef1721c577dea3309f88a5b95",
     "model": "gemini-4-argon-high"
   },
-  "Wait for the task and review actions to finish before choosing a destination.": {
-    "revision": "57d675966cf0bad4191b63eafbdfc332398ec0c39f0eeeca63192e34f14bdd58",
-    "textHash": "2b6bd4584710ead09eb58070947effcd2608686262751ba7ba62f0c075a8d02f",
-    "model": "gemini-4-argon-medium"
-  },
   "Wait for this paper’s PDF build to finish before changing its path or removing it.": {
     "revision": "aa561499e1aab5b2d5d28fbe93d2e4adb165de988c5708e1871084c65fd40baa",
     "textHash": "67466e8279f0234c59426a635fbbf617cd650c71590960130675e3f5245eb964",
@@ -1108,5 +1193,235 @@
     "revision": "0e62495da43c9f78354dce8767013281e1855550895215db3cff15be080462e8",
     "textHash": "e1e0cc8549b725cbe2d4f1e91951fa9c8665809ff7e6ac8d0d645aad6145227e",
     "model": "gemini-4-argon-medium"
+  },
+  "too large": {
+    "revision": "5d89e55c2dbefb91ee073c4b00ee8e148ee1f26a3473f7c8e6c955bc3d4f58b3",
+    "textHash": "487abf44850fe9c6c75798df5c67ba5c1d4846d704aff28432e688db30c96791",
+    "model": "gemini-4-argon-medium"
+  },
+  "unsupported index": {
+    "revision": "a0cc5a85da5d49d99289e05adf549f04eb4d575af283f7153cca88e4a3ce1f74",
+    "textHash": "815f757ef23c002db4e1dcbac2942d8cc361701125697d25d4b7b95045b50121",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose a TeX file with \\documentclass and \\begin{document}.": {
+    "revision": "450a5f85b4294d92ffc3db69281c39a16bd41453f2f0177516ddd3eb246abcca",
+    "textHash": "0c2a24f2084d13a648406c2e621803eabae90b1afaac4f76b2242c4eaffef74f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Could not list the files of this repository.": {
+    "revision": "49fefd2865a005d0735b0ecb6209122becf7db6365f157e24a89b6a6fd934963",
+    "textHash": "861cf3aecadb3a584951e0025d029de723417ddfb4dcbe4a70bee1cc718975f7",
+    "model": "gemini-4-argon-medium"
+  },
+  "Pi uses its own tool permissions.": {
+    "revision": "cd3839d582b61f5bba492f9a5b7ede4d4635aa6002f2d44897d536f38faa028d",
+    "textHash": "def29e0a82cfeb722e939f400c13bbe393de5fcf05add1966aad48943646818b",
+    "model": "manual"
+  },
+  "Pi was not found. Install the Pi CLI or set PAPILOT_PI_BIN, then reconnect.": {
+    "revision": "c71569e0b7634dcecd67b18109fc2f734bce92bcfaa0a674968275803c5de986",
+    "textHash": "c5023a32d6fbf26127582513c0db2a5edc1ba79cf095d56e327b87523120edd2",
+    "model": "manual"
+  },
+  "Invalid Pi thread ID.": {
+    "revision": "5e288437f007503c760a21c0c52c07f0f516d647c0b1b1a8af3b1e80a9c73a84",
+    "textHash": "2293dbec9b300c709408ffd0caedcd0e340ffddfe5f162e7273a2f9b94cf71a3",
+    "model": "manual"
+  },
+  "The Pi session file is missing. Restart this task to begin a new conversation.": {
+    "revision": "784a464538556b2a9e0f383d610f3dd5d00cbe813a99262ad10e4d49a2c5e4de",
+    "textHash": "02e3943998580d8f1de92ecb39d6f218b71aa7bb0ba0a9b55d5451be06decae9",
+    "model": "manual"
+  },
+  "This Pi thread is still running.": {
+    "revision": "e878c2d4a8bd563cce7e1d6f8a2b0e459b1a06640ee40f7cf75195cd943ca554",
+    "textHash": "47660f35527bd860806523d7bce1290b750221fa440d3d2d3ba7ec56fbedba73",
+    "model": "manual"
+  },
+  "Choose a Pi provider and model.": {
+    "revision": "9c1f77763df32505838b17f79d990b5071b2cb710932351cba3b0ec5e1b8e7b5",
+    "textHash": "2723cccba27666de77d6768937d1b421d7643c97da850dc01f0f3d6d7bd53f71",
+    "model": "manual"
+  },
+  "Pi could not read the attached image.": {
+    "revision": "8669103f4d4ad977244fb5168acbef5dcd6a4c6ef98f1ec1b3eb19b5cb8dc001",
+    "textHash": "3d313a1d473ecb033d30a31fa5c7b72ca546351af5322d3c7f450c33c05ff9c2",
+    "model": "manual"
+  },
+  "Choose one folder, ZIP or paper link.": {
+    "revision": "fe1692f0619073f0a64dac6d0e33af3392b6f9d65f1d5e05628feca127f9e014",
+    "textHash": "d8699c6ab14f5ffbdee9628cd8e39b9f3dc4a917d016c8bcb83d56d4c43fa32d",
+    "model": "codex"
+  },
+  "Choose one paper source.": {
+    "revision": "abe4e0fc3bcc5ca8582ae185c74196f488714a4b38087121258c4e27340f6502",
+    "textHash": "be63ed35fda108cbedc9328bf8925e8d4e5f2dc48826ca52891b999b3ff10c41",
+    "model": "manual-review"
+  },
+  "Could not download the source. Check the link and try again.": {
+    "revision": "753e83d1ec0dc44171a59c37fe453b43dd8b9f864ba10a82c0588ee432bd2c6e",
+    "textHash": "cb4ae7881b2dd783b6ef78e48f298d32b771d80e39d7ea58f9d2b2a4d7a0b54f",
+    "model": "codex"
+  },
+  "Could not reach the source website. Check the internet connection and try again.": {
+    "revision": "be45bdba45a3b56028615e4bef10802b81c9b9de9177221f3f74f94fc1200aee",
+    "textHash": "7d48e6a7dd756a7a71dd69e00d2425165c9f9bd34edcce5872e8e6ac99e5d5fa",
+    "model": "codex"
+  },
+  "GitHub could not download this repository. Check that it is public and the link is correct, or upload the source ZIP.": {
+    "revision": "0a8dc5dc792e8038719e4d131e2112a814becd5180874ccd2e8ff1bfcd267f0b",
+    "textHash": "6fac7c31c2dcad8cf8b96092a153716810eaea8b2eb795da7c068fa665257899",
+    "model": "manual-review"
+  },
+  "No source was found at this link. Check the paper link and version.": {
+    "revision": "1a772accd8b93fed3a32d174f13e8b50830231495998cf6d06414d6106c3beb6",
+    "textHash": "ad97c3e0479b292d5e9018df6100a5540e6a84d5cb74b960f6d639dc3f9a560b",
+    "model": "codex"
+  },
+  "Overleaf could not grant access. Use an enabled read-only sharing link.": {
+    "revision": "1f49c61e967621de2d170915723443111f1956368aa1c70608a6d975d4ce4996",
+    "textHash": "cf53e7e02ef9b7a6fd3eafb8d75e34ccae3f6c0e6e34ee4a98115146bdd11827",
+    "model": "codex"
+  },
+  "Overleaf could not open this sharing link. Check that sharing is enabled and use the read-only link, or upload the source ZIP.": {
+    "revision": "89e68a8ccbd394c2368e6c7155b926d014e4f76bdac734caf8909fb0795d283f",
+    "textHash": "72d662a536d5cfe9e293ecff08f7c2e6d51a84693aa9123c6c443702a7eafbba",
+    "model": "codex"
+  },
+  "Overleaf did not provide access to the source. Try a read-only sharing link or upload the source ZIP.": {
+    "revision": "42d0ccb9fa1241b0aace3558215421e615561fdd79380ebe7bcb180ccaac246e",
+    "textHash": "0ebc85c4fa19c29a25cffa31ec44910ae29442e6d597a4f6aa4a4fa70f6f7bed",
+    "model": "codex"
+  },
+  "Overleaf did not return a source ZIP. Try a read-only sharing link or upload the ZIP.": {
+    "revision": "04d7254900400d27194ef3914ce95e8ccd943c404dde828929ed9f13b2bca17d",
+    "textHash": "f75db39c3ec5b8ee2211feb455d09d2429424f0d8442321a444cf65d82a7254c",
+    "model": "codex"
+  },
+  "Overleaf returned an unexpected response. Try again or upload the source ZIP.": {
+    "revision": "374f4938739738a33bf0730c808baa4562b0d9da85431a12eb6b9937b556d65c",
+    "textHash": "503aca9eecbd23f20aabed3595ee1517a1bbba6e4628c6f15869400f2072fb51",
+    "model": "codex"
+  },
+  "Paper source imports need an HTTP or HTTPS proxy. Check the configured proxy.": {
+    "revision": "59d78dd4877b55b09ac78b57e909dfd72b7329a9ac1a6a93c4658ddd124b10af",
+    "textHash": "276ed87f3231e07eff8e603dfc8cd59df6ef053450612101aaae51803d6ceba0",
+    "model": "codex"
+  },
+  "Paste an arXiv paper link, an Overleaf sharing link, a public GitHub repository link, or a source archive link.": {
+    "revision": "c52a1bf093bfbe42fa4290d29fc88bbb8ba746da5d0b1bf5bfd6bc1ba361630e",
+    "textHash": "fb9f7316da15c12a7b3cf06d775cf897011f945e7ae15df5fd68a26d45987b67",
+    "model": "manual-review"
+  },
+  "Source archive links and special files are not supported.": {
+    "revision": "70901111b034685531502dcc681a0dc7a4c1429137eb9ec4af2bdc2c3bd69639",
+    "textHash": "e4b59d978d49dca9041cfd0d907e6ddfd7a5f592175db0cc51eeff0fe00968c9",
+    "model": "codex"
+  },
+  "The download contains no TeX source files. This paper may only provide a PDF.": {
+    "revision": "d26fc03b587e38016b4f16cb75ca8168d1b884b2105fa6782d86571697c512e6",
+    "textHash": "5edc27e87a6c8ff9d6b5ae584570b9bfeb518e70420fd1ddbd138c5beb19a217",
+    "model": "codex"
+  },
+  "The source archive contains the same file twice.": {
+    "revision": "334fc41a85b851d543d49c0f933bb20b10820ddc48aef2274d8ade39921a494b",
+    "textHash": "80575ac0bb6290f15336c7e6b3dd52e0eca691d611d796ebaed3f0e835ede140",
+    "model": "codex"
+  },
+  "The source archive expands beyond 64 MB or 5,000 files.": {
+    "revision": "d862504ecae1f5990906bbb3ac47292945f64969aac2e69a0269cbaec337e818",
+    "textHash": "50d66e4976bc05f7cb8e4d69e6460d4723a1909a6fdfae5ede0164dd81a98b8d",
+    "model": "codex"
+  },
+  "The source archive is damaged or expands beyond 64 MB.": {
+    "revision": "5fa87e1345fd8a7b66e085d512e5878b9937e861954af0316993f6a60fc100cd",
+    "textHash": "dc2e128c61ce74212409ce24d4b2dc9151d747c305fe969499ce8582327f6644",
+    "model": "codex"
+  },
+  "The source download exceeds 64 MB.": {
+    "revision": "0a48d8c72ec81051331f5c25f4a53f56a837c50dbab33ffc1eb90913cf681133",
+    "textHash": "f111fd8e7b67f7c9ba3b4cf6d8e62cecd06b02d5b7e43d0f6ab0159bc4eb548b",
+    "model": "codex"
+  },
+  "The source download timed out. Try again or upload the source archive.": {
+    "revision": "c130b4e802384c4a6b553191c71b4c1b9b81dcf37719c9924f6c8a70bc7c45b1",
+    "textHash": "33b725a2344a99b91ddda7145d8cfe908ed0b29b87923ebf4f740a37abadb5c0",
+    "model": "codex"
+  },
+  "The source link redirected to an unexpected website.": {
+    "revision": "c9fa26b2ff9bfa28a21e87e3aa639ade1085ac9f18ad0686b4c27aa0401fb33d",
+    "textHash": "e137f6d843cc83e8eccee59b0b3b266bec74562b3bd61a87869523962230df1d",
+    "model": "codex"
+  },
+  "The source link redirected too many times.": {
+    "revision": "f7dc83a97808407135ae76dee0fad1b97a29b0e3dd65b58d3a0b616873106eb7",
+    "textHash": "ab15516e3af1afb96551367d2a64cada27884c2a3c43edef1b0c0502459fcb40",
+    "model": "codex"
+  },
+  "The source response is damaged or too large.": {
+    "revision": "a4b463e5afe3d3de12a7c47fc2f94be8d7cf16ad224cb7a37fd5a82af5ef99c3",
+    "textHash": "8caf599c4f4db963636f3fdb87d9b057d51d2b287179cf1bb3315c4affc51ffd",
+    "model": "codex"
+  },
+  "The source response is too large to import.": {
+    "revision": "6049cbcbb53bbec3327b7f9608da9d5a39c3dbfbf9e76361ce8593becf0136ec",
+    "textHash": "c9c008805baafd3f9023668e424a8e9a7d0bb4459df3a2cf1c110271aefae830",
+    "model": "codex"
+  },
+  "The source website is busy. Wait a little and try again.": {
+    "revision": "b0d35cfff55963a1fd2a9d1d2e0115272f6e63217458b7d8ad64cd7e9b9c6b63",
+    "textHash": "a402ddd56cb674d6e535f06bdf8ba1799252884014271d5f4bf4df33fec154a7",
+    "model": "codex"
+  },
+  "The source website returned an unsupported response encoding.": {
+    "revision": "18fafabebb6266ffb04d4f4f41c48a08bbcfc01762c28eca47076f1d0e6daf26",
+    "textHash": "fb98a8c87d625eb85e2ae72106f604908dbb246e722267a63f305955716d8ede",
+    "model": "codex"
+  },
+  "This Overleaf sharing link is incomplete. Copy the full link, including the part after #.": {
+    "revision": "5a82ff5de92cc119dd7fe4c65c4ab34c4e08e30dff3f536142c5d4b48bbd1cf0",
+    "textHash": "3c4a2a3f13a89ca80f79e861b94f9d137dc2d88b3acae00b6ef9d5b4ed761690",
+    "model": "codex"
+  },
+  "This link returned a web page or PDF, not LaTeX source. Use an arXiv paper link, an Overleaf sharing link, or a source archive download.": {
+    "revision": "f6bebadeb50e364e6a1b046e164587b95f3b5eafa51514ed6f1e4070b8f72c2a",
+    "textHash": "d4fbc3b7a2c62b1a5bf00ef66c9c4bdab82957b09866613e3922f695cd8f6c6e",
+    "model": "codex"
+  },
+  "Use a public GitHub repository link, or upload its source ZIP.": {
+    "revision": "4994369c2bb21a40fca87fe2f4801d3f7d20a47e0563b0d8398e213b74536c5b",
+    "textHash": "b953180d50b304639de5db7dfea8e91cec42edafc2035dc1411c9b6fa185621a",
+    "model": "manual-review"
+  },
+  "Use a public HTTPS link without a username, password or custom port.": {
+    "revision": "8111c073691fa81d4a5f90cd8525247458ff866f404cfb8ee3a9d694117716d3",
+    "textHash": "f3d3fc07395266d582ece414a0208921714afc788a58a93255efddc44e5f2258",
+    "model": "codex"
+  },
+  "Use an arXiv abstract, PDF, HTML or source link for one paper.": {
+    "revision": "7fb89513a6d2cf2b3f480dc16481d474dac506077818d4b6de7db6920ffe3f5d",
+    "textHash": "88007583a2072c090cb5c0a755359505e3dace75a765b2a0f40fd1022a5f5aa4",
+    "model": "codex"
+  },
+  "Use an enabled Overleaf read-only sharing link. Private project links require an Overleaf login; you can also upload the source ZIP.": {
+    "revision": "b6be086f14c150a448e49617d17efa1eadcb16af4f0a18ce6f580051bdf77a66",
+    "textHash": "fdc8c907638703add65311bd884487a472560b1733f80450b69c5ed2ceba74a4",
+    "model": "codex"
+  },
+  "Drop one folder or LaTeX ZIP file.": {
+    "revision": "a1e49e04335058a20ed2b8044c43be74b6d46958b088248c7cacd0a77796569f",
+    "textHash": "da34f5cfa90b1b6f92d9fe4af73269100b5ece739cb3e7d1a9e0573611c1f4ff",
+    "model": "manual"
+  },
+  "No files found in this folder.": {
+    "revision": "fac6ca8f9fbbb6531131ee6e8c76916f924db4b7c6c341fb29614b8615de2685",
+    "textHash": "a1768af30a4694da330cde379f6568c0e32b6f37e919c95f8122caafdd64245f",
+    "model": "manual"
+  },
+  "Papilot cannot read this folder.": {
+    "revision": "8fb5f76b51ea9de50ddeb97dacbe1cb0bc503e497e8b1085eb9daa7ac7058c65",
+    "textHash": "712b43b2fa5a6bc5847c554870a4784660b2f60d35ae0abded02ae142b83361e",
+    "model": "manual"
   }
 }

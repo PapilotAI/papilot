@@ -16,7 +16,15 @@ contextBridge.exposeInMainWorld('papilotDesktop', {
     ipcRenderer.on('papilot:open-task', receive);
     return () => { ipcRenderer.off('papilot:open-task', receive); };
   },
-  // File › Open Folder… picks the folder in the main process and sends its path.
+  // A papilot://new link from the Universe website waits in the main process
+  // until the page takes it, so a link that launched the app is not lost.
+  takeNewPaper: (): Promise<{ id: string; version: string } | null> => ipcRenderer.invoke('papilot:take-new-paper'),
+  onNewPaper: (listener: () => void) => {
+    const receive = () => listener();
+    ipcRenderer.on('papilot:new-paper', receive);
+    return () => { ipcRenderer.off('papilot:new-paper', receive); };
+  },
+  // File › Open Paper… picks the folder in the main process and sends its path.
   onOpenFolder: (listener: (folder: string) => void) => {
     const receive = (_event: IpcRendererEvent, folder: unknown) => { if (typeof folder === 'string') listener(folder); };
     ipcRenderer.on('papilot:open-folder', receive);

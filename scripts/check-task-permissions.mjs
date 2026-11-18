@@ -7,7 +7,7 @@ import staticFiles from '@fastify/static';
 import { Codex } from '../src/server/codex.ts';
 import { ClaudeAgent } from '../src/server/agents.ts';
 import { CursorAgent } from '../src/server/cursor.ts';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 
 fs.mkdirSync('test-results', { recursive: true });
 const server = Fastify();
@@ -23,7 +23,7 @@ const runtime = { permissionOptions: new Codex().permissionOptions(), connected:
   { id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
   { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: 'Faster responses' } },
 ] };
-const snapshot = { version: 'test', csrf: 'test', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, claude: { ...runtime, permissionOptions: Object.assign(new ClaudeAgent(), { cli: '/fixture/claude' }).permissionOptions(), models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }] } } };
+const snapshot = { version: 'test', csrf: 'test', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, claude: { ...runtime, permissionOptions: Object.assign(new ClaudeAgent(undefined, undefined, undefined, 'linux'), { cli: '/fixture/claude' }).permissionOptions(), models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }] } } };
 snapshot.runtimes.kimi = { ...runtime, models: [{ id: 'kimi-k3', name: 'Kimi K3', isDefault: true, efforts: [] }], permissionOptions: [
   { value: 'workspace', label: 'Default', detail: 'Ask before tools' }, { value: 'plan', label: 'Plan', detail: 'Read-only planning' },
   { value: 'auto', label: 'Auto', detail: 'Approve safe operations' }, { value: 'full', label: 'YOLO', detail: 'Approve all tools' },
@@ -52,6 +52,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: 'test', phase: 'idle', canUpdate: false });
   if (url.pathname.endsWith('/ai-review')) return json({ notes: [] });
   if (url.pathname.endsWith('/manuscript')) return json({ git: { files: [] }, annotations: [], build: { status: 'building', current: false } });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/items')) return json({ items: [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
@@ -183,7 +184,26 @@ try {
   await expect(menu.getByText('Sandboxed; other requests denied', { exact: true })).toBeVisible();
   assert.equal(await menu.locator('.task-permission-detail').evaluate(el => el.scrollWidth <= el.clientWidth), true, 'permission descriptions must not be truncated');
   await page.screenshot({ animations: 'disabled', path: 'test-results/task-permissions-claude.png' });
-  task.agent = 'glm'; snapshot.runtimes.glm = { ...runtime, permissionOptions: new ClaudeAgent().permissionOptions() };
+  // The backend platform controls the label, even in a browser on another OS.
+  const sandboxedOptions = snapshot.runtimes.claude.permissionOptions;
+  snapshot.runtimes.claude.permissionOptions = Object.assign(new ClaudeAgent(undefined, undefined, undefined, 'win32'), { cli: '/fixture/claude.exe' }).permissionOptions();
+  await page.reload(); await open();
+  await expect(menu.getByRole('radio', { name: 'Accept edits', exact: true })).toBeChecked();
+  await expect(menu.getByRole('radio', { name: 'Sandboxed edits', exact: true })).toHaveCount(0);
+  await expect(trigger.locator('.agent-permission-label')).toHaveText('Accept edits');
+  await expect(menu.getByText('No sandbox; Other requests denied', { exact: true })).toBeVisible();
+  await choose(menu.getByRole('radio', { name: 'Bypass permissions', exact: true }));
+  await choose(menu.getByRole('radio', { name: 'Accept edits', exact: true }));
+  assert.equal(task.permissions, 'workspace');
+  await page.screenshot({ animations: 'disabled', path: 'test-results/task-permissions-claude-windows.png' });
+  await menu.press('Escape'); await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload(); await page.getByRole('button', { name: 'Chat', exact: true }).click(); await open();
+  await expect(menu.getByText('No sandbox; Other requests denied', { exact: true })).toBeVisible();
+  assert.equal(await menu.locator('.task-permission-detail').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+  await page.screenshot({ animations: 'disabled', path: 'test-results/task-permissions-claude-windows-mobile.png' });
+  await menu.press('Escape'); await page.setViewportSize({ width: 1440, height: 900 });
+  snapshot.runtimes.claude.permissionOptions = sandboxedOptions;
+  task.agent = 'glm'; snapshot.runtimes.glm = { ...runtime, permissionOptions: new ClaudeAgent(undefined, undefined, undefined, 'linux').permissionOptions() };
   await page.reload(); await open();
   await expect(menu.getByText('Sandboxed; exceptions need approval', { exact: true })).toBeVisible();
   task.agent = 'kimi'; task.model = null;

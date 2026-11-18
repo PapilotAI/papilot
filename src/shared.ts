@@ -9,8 +9,9 @@ export const MAX_ATTACHMENT_TOTAL = 100 * 1024 * 1024;
 export interface Attachment { id: string; projectId: string; name: string; size: number; mime: string }
 export type UpdateChannel = 'stable' | 'dev';
 export interface UpdateStatus {
+  // Present when the installation pins its own version (PAPILOT_INSTALL_METHOD).
+  packageManager?: 'nix' | 'managed';
   // Present when the update must be downloaded as a new desktop app.
-  packageManager?: 'nix';
   downloadUrl?: string;
   channel?: UpdateChannel;
   currentVersion: string; latestVersion: string | null;
@@ -42,6 +43,8 @@ export interface TaskReconciliation {
 export type TaskPermissions = string;
 export interface TaskPermissionOption { value: TaskPermissions; label: string; detail: string }
 export interface Task {
+  // A fresh session replaying another task's original request. Provider sessions are never reused.
+  restart?: { taskId: string; draftAttachments?: Attachment[] };
   permissions?: TaskPermissions;
   mode?: 'edit' | 'review';
   aiReview?: { key: string; notes?: number; revision?: number };
@@ -51,7 +54,9 @@ export interface Task {
   delivery?: { mode: 'workspace' | 'commit' | 'branch'; accepted: string; branch?: string; commit?: string; pending?: boolean } | null;
   id: string; projectId: string; name: string; title: string; instructions: string;
   titleSource?: 'prompt' | 'generated' | 'manual'; titleRevision?: number; titleGeneration?: 'pending' | 'failed' | null;
-  worktree: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
+  /** How full the agent's context window was after its latest reply. */
+  context?: ContextUsage | null;
+  worktree: string; /** The root document the task compiles, as the review engine recorded it. */ document?: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
   // The agent's thread was started with Papilot's view_pdf tool.
   viewPdf?: boolean;
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
@@ -63,31 +68,44 @@ export interface Task {
   pendingBuild?: PendingBuild | null;
   // Present until the task's manuscript copy exists (see TaskPreparation).
   preparation?: TaskPreparation | null;
-  // The task's last commit from its review, and the accepted text it included.
-  committed?: { hash: string; accepted: string; at: number; pushed?: boolean } | null;
 }
 // A task the author is through with, so the saved result can offer archiving:
 // every change of its last result is decided, no comment or rejection
 // waits to go back to the agent, and what was accepted has left the task
-// (applied or committed; older tasks accept straight into the working
-// directory). An answer without manuscript changes is finished too.
+// (applied or committed). An answer without manuscript changes is finished too.
 export function taskFinished(task: Task) {
   const review = task.review;
   if (task.status !== 'reviewing' || !review || task.reconciliation || task.pendingReview || task.delivery?.pending || review.counts?.pending || review.state === 'build_failed') return false;
   const unsent = review.unsent ?? ['accepted', 'rejected', 'commented'].reduce((count, kind) => count + (review.counts?.[kind] || 0), 0);
   if ((review.comments ?? unsent) > 0 || (unsent > 0 && !review.counts?.accepted)) return false;
   if (review.round === null) return true;
-  return review.state === 'done' && (!task.deferred || (review.files?.length === 0 && task.delivery?.mode !== 'branch'));
+  return review.state === 'done' && review.files?.length === 0 && task.delivery?.mode !== 'branch';
 }
 // reviewRound is 0 while awaiting a result, null when no changes were produced,
 // or the published round. Older runs omit it.
 export interface Run { id: string; taskId: string; requestKey: string; prompt: string; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
-export interface TimelineItem { id: string; taskId: string; type: string; text: string; rawText?: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta }
+/** One part of what fills the context window; ids are named in the web app. */
+export interface ContextPart { id: string; tokens: number }
+/** breakdown: the parts, when the agent can tell them apart, adding up to the window. */
+export interface ContextUsage { tokens: number; window: number; breakdown?: ContextPart[] }
+/** What a tool call did, when the agent says so: the chat words, groups and marks it by kind. */
+export interface ToolCallInfo { kind: string; target?: string; lines?: string; place?: ToolPlace }
+/** Where a read was in the paper: the sections it covered and the PDF pages they print on. */
+export interface ToolPlace { sections: { number: string; title: string }[]; more?: number; partial?: boolean; pages?: number[] }
+export interface TimelineItem { id: string; taskId: string; type: string; text: string; rawText?: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta; tool?: ToolCallInfo; pages?: PageView[]; changes?: FileEdit[] }
+/** A file an agent changed: its diff, and where in the paper the changes are. */
+export interface FileEdit { path: string; diff?: string; added: number; removed: number; places?: EditPlace[] }
+/** Changes within one part of the paper: its sections (innermost last), the page it starts on, and the lines changed. */
+export interface EditPlace { sections: { number: string; title: string }[]; page?: string; lines: string; added: number; removed: number }
+/** A page an agent looked at, kept by Papilot so the chat can show it. */
+export interface PageView { index: number; label: string | null; file: string }
 // A user message can run a skill or carry review feedback; the chat shows
 // those as what they are rather than as the prompt the agent receives.
 // Papilot itself sends the agent a build its own edits broke.
 export interface NoteAnchor { sources: { file: string; lines: [number, number] }[]; round?: number }
-export interface NoteSummary { group?: NoteGroup; kind?: MarkKind; stamp?: string; where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor }
+// paper: where a note made in the task's PDF reader was, so its page can be
+// shown to the agent; context: what the agent is told beyond its location.
+export interface NoteSummary { group?: NoteGroup; kind?: MarkKind; stamp?: string; where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor; context?: string[]; paper?: { page: number; rects: [number, number, number, number][]; round?: number; key?: string; build?: string } }
 export interface NoteChange { round: number; stop: number; units: string[]; state: 'pending' | 'accepted' | 'rejected' | 'commented' | 'mixed'; match: 'source' | 'quote' }
 export interface NoteResult { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
 export interface NoteOption { id: string; label: string; reason?: string; previewError?: string; edits: { unit: string; text: string }[] }
@@ -107,12 +125,18 @@ export interface BuildFailure { error: string; details: string[]; log?: string }
 export interface FeedbackSummary { round: number | null; accepted: number; rejected: number; undone: number; comments: { where: string; text: string }[]; buildError?: boolean }
 export interface Skill { output?: 'annotations'; id: string; name: string; description: string; hint: string; icon?: SkillIcon; source: 'builtin' | 'user' | 'paper' }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
-export type AgentId = 'codex' | 'claude' | 'antigravity' | 'kimi' | 'cursor' | 'copilot' | 'grok' | 'opencode' | 'qwen' | 'glm' | 'deepseek';
+export type AgentId = 'papilot' | 'pi' | 'codex' | 'claude' | 'antigravity' | 'kimi' | 'cursor' | 'copilot' | 'grok' | 'opencode' | 'qwen' | 'glm' | 'deepseek';
 // Every agent Papilot can drive, in menu order. Only the ones found on the host are offered.
-export const AGENT_IDS: AgentId[] = ['codex', 'claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'deepseek', 'qwen', 'opencode'];
-export const AGENT_NAMES: Record<AgentId, string> = { codex: 'Codex', claude: 'Claude', cursor: 'Cursor', copilot: 'Copilot', grok: 'Grok', antigravity: 'Antigravity', kimi: 'Kimi', glm: 'GLM', deepseek: 'DeepSeek', qwen: 'Qwen', opencode: 'OpenCode' };
+export const AGENT_IDS: AgentId[] = ['papilot', 'pi', 'codex', 'claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'deepseek', 'qwen', 'opencode'];
+export const AGENT_NAMES: Record<AgentId, string> = { papilot: 'Papilot Writer', pi: 'Pi', codex: 'Codex', claude: 'Claude', cursor: 'Cursor', copilot: 'Copilot', grok: 'Grok', antigravity: 'Antigravity', kimi: 'Kimi', glm: 'GLM', deepseek: 'DeepSeek', qwen: 'Qwen', opencode: 'OpenCode' };
+// Papilot Writer's providers: subscriptions it signs in to, and API keys
+// stored by Papilot or read from the environment.
+export interface WriterProvider { id: string; name: string; kind: 'login' | 'key'; env?: string; configured: boolean; source: 'stored' | 'environment' | null }
+export interface WriterLogin { id: string; provider: string; name: string; status: 'waiting' | 'done' | 'failed' | 'cancelled'; url: string | null; instructions: string | null; error: string | null; startedAt: number }
+export interface WriterAuth { providers: WriterProvider[]; logins: WriterLogin[] }
 export const isAgentId = (value: unknown): value is AgentId => AGENT_IDS.includes(value as AgentId);
-export interface AgentModel { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort: string | null; fastMode?: { serviceTier: string; description: string } }
+/** source: where an agent with several model providers gets this model, such as a subscription. */
+export interface AgentModel { id: string; name: string; source?: string; isDefault: boolean; efforts: string[]; defaultEffort: string | null; fastMode?: { serviceTier: string; description: string } }
 // The account's included usage: rolling windows (minutes long, reset time in ms) and credits.
 export interface UsageWindow { usedPercent: number; minutes: number | null; resetsAt: number | null }
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
@@ -156,7 +180,11 @@ export interface GitOverview { worktrees: GitWorktree[]; commits: GitGraphCommit
 // A running compilation, from latexmk's output: its step, the TeX pass, and
 // the pages typeset in that pass against the last known page count.
 export interface BuildProgress { step: 'tex' | 'bibliography' | 'pdf'; pass: number; pages: number; total: number | null; startedAt: number }
-export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; current: boolean; problems?: BuildProblemCounts; progress?: BuildProgress }
+export interface ManuscriptBuild { status: 'building' | 'ready' | 'failed'; key?: string; pages?: [number, number][]; builtAt?: number; error?: string; failureId?: string; current: boolean;
+  /** The working tree this build compiles or compiled, failed or not. */
+  tree?: string; problems?: BuildProblemCounts; progress?: BuildProgress;
+  /** The root document whose PDF `key` is. */
+  document?: string }
 // What the last finished build reported. Errors stop the build; warnings are
 // mistakes in the PDF (?? and missing citations); minor problems are
 // typesetting (overfull lines) and package remarks, listed but never counted.
@@ -177,7 +205,8 @@ export function countProblems(problems: Pick<BuildProblem, 'severity' | 'kind' |
   return counts;
 }
 // `key` names the PDF whose pages the locations refer to.
-export interface ManuscriptProblems { status: ManuscriptBuild['status']; key?: string; problems: BuildProblem[]; log: boolean }
+export interface ManuscriptProblems { status: ManuscriptBuild['status']; key?: string; failureId?: string; problems: BuildProblem[]; log: boolean }
+export interface BuildRepairResult { kind: 'settings' | 'source' | 'advice'; summary: string }
 // A delete mark asks for the marked text to go, or to be replaced by its
 // comment; a point marks a place rather than a passage. A stamp is the short
 // name of a quick note the author picked; its comment holds the instruction.
@@ -189,10 +218,37 @@ export const isMarkKind = (value: unknown): value is MarkKind => value === 'dele
 export interface QuickNote { id: string; label?: string; instruction?: string; icon?: string }
 export const QUICK_NOTE_LIMIT = 8;
 export const PRESET_QUICK_NOTES = ['polish', 'tighten', 'runt', 'connect', 'verify'];
-export interface Annotation { aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; kind?: MarkKind; stamp?: string; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
+export interface Annotation { context?: string[]; /** The root document whose PDF it is on; absent on notes from before a paper could compile several. */ document?: string; aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; kind?: MarkKind; stamp?: string; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number }
 // Review findings stay with their task; only explicit copies belong to the manuscript.
 export const isTaskReviewNote = (note: Annotation) => Boolean(note.aiReview && !note.aiReview.sourceId);
-export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[] }
+export interface NoteSection { id: string; title: string; level: number; notes: string[] }
+// The repository's files, as Git sees them, with the TeX files that are root
+// documents, and the one the paper compiles (null when none is chosen yet).
+export interface RepositoryFile { path: string; root?: true }
+export interface RepositoryFiles { document: string | null; files: RepositoryFile[] }
+export interface Manuscript { git: GitStatus; build: ManuscriptBuild; annotations: Annotation[]; noteSections?: NoteSection[]; unplacedSectionNotes?: number }
+// A source file for manual editing, as it is on disk: `revision` names its
+// bytes, so a save refuses when the file changed meanwhile, and `base` is the
+// file at the last commit (null when it has none), to show what changed.
+// Lines are 0-based, end excluded: `passage` is the paragraph a click on the
+// PDF named and `focus` the lines it hit; `drifted` says the passage changed
+// after the PDF it was found in was compiled. A task's file is in its
+// worktree, `base` is the file before the task, and `round` names the
+// review round that shows it, which a save continues; `reviewed` says that
+// round shows this very text, but for the rejected changes in `reverted`
+// whose text came back; its changes replaced parts of `before`.
+export interface SourceFile { file: string; revision: string; text: string; base: string | null; passage: [number, number]; focus: [number, number]; drifted: boolean; round?: number; before?: string | null; reviewed?: boolean; reverted?: string[] }
+// A task's saved file, and the review after the save.
+export interface TaskSourceSave { source: SourceFile; state: unknown }
+// A saved file, the lines that changed, the working tree whose build shows
+// it, and when it was written, by the server's clock (as builds' `builtAt`).
+export interface SourceSave { source: SourceFile; changed: [number, number]; tree: string; at: number }
+// Where saved lines were printed in a PDF: a page (0-based) and a box as fractions of it.
+export interface SourcePlace { page: number; rect: [number, number, number, number] }
+/** A 1-based inclusive range in a durable source snapshot. */
+export interface SourceAnchor { file: string; revision: string; lines: [number, number]; quote?: string }
+// Folders on the computer running Papilot, for choosing a location from a browser.
+export interface FolderListing { path: string; parent: string | null; folders: { name: string; path: string }[] }
 export interface PaperImport {
   id: string; path: string; name: string; copied: boolean; candidates: string[]; main: string; engine: string;
   phase: 'choose' | 'building' | 'failed' | 'ready' | 'repairing';

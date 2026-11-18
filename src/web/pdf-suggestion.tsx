@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode, type Ref, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { AGENT_NAMES, type Annotation } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
@@ -21,17 +22,20 @@ export interface PdfNoteActions {
   copy?: (note: Annotation) => Promise<void>;
 }
 
-function usePdfNotePosition(card: RefObject<HTMLElement | null>, rect: Annotation['rect'], preferredWidth = 280, enabled = true) {
+function usePdfNotePosition(card: RefObject<HTMLElement | null>, rect: Annotation['rect'], preferredWidth = 280, enabled = true, anchorLayer?: HTMLElement) {
   useLayoutEffect(() => {
     if (!enabled) return;
-    const element = card.current!, layer = element.closest<HTMLElement>('.note-layer')!, viewport = element.closest<HTMLElement>('.pdf-container')!;
+    const element = card.current!, layer = anchorLayer ?? element.closest<HTMLElement>('.note-layer')!, viewport = layer.closest<HTMLElement>('.pdf-container')!;
+    if (!viewport) return;
     let frame = 0;
     const place = () => {
-      const page = layer.getBoundingClientRect(), view = viewport.getBoundingClientRect();
-      const left = Math.max(page.left, view.left) + 8, right = Math.min(page.right, view.right) - 8;
-      const top = Math.max(page.top, view.top) + 8, bottom = Math.min(page.bottom, view.bottom) - 8;
+      const pageElement = layer.closest('.page');
+      if (!layer.isConnected || !pageElement) { element.style.visibility = 'hidden'; return; }
+      const page = layer.getBoundingClientRect(), visiblePage = pageElement.getBoundingClientRect(), view = viewport.getBoundingClientRect();
+      const left = (anchorLayer ? view.left : Math.max(page.left, view.left)) + 8, right = (anchorLayer ? view.right : Math.min(page.right, view.right)) - 8;
+      const top = (anchorLayer ? view.top : Math.max(page.top, view.top)) + 8, bottom = (anchorLayer ? view.bottom : Math.min(page.bottom, view.bottom)) - 8;
       const anchor = { left: page.left + rect[0] * page.width, right: page.left + rect[2] * page.width, top: page.top + rect[1] * page.height, bottom: page.top + rect[3] * page.height };
-      const visible = right > left && bottom > top && anchor.bottom >= top && anchor.top <= bottom && anchor.right >= left && anchor.left <= right;
+      const visible = right > left && bottom > top && anchor.bottom >= Math.max(top, visiblePage.top) && anchor.top <= Math.min(bottom, visiblePage.bottom) && anchor.right >= Math.max(left, visiblePage.left) && anchor.left <= Math.min(right, visiblePage.right);
       element.style.visibility = visible ? 'visible' : 'hidden';
       if (!visible) return;
       const width = Math.min(preferredWidth, right - left);
@@ -44,8 +48,9 @@ function usePdfNotePosition(card: RefObject<HTMLElement | null>, rect: Annotatio
       const x = beside ? anchor.right + 12 : Math.max(left, Math.min(anchor.left, right - width));
       const below = bottom - anchor.bottom, above = anchor.top - top;
       const y = beside ? anchor.top : below >= height + 10 || below >= above ? anchor.bottom + 10 : anchor.top - height - 10;
-      element.style.left = `${x - page.left}px`;
-      element.style.top = `${Math.max(top, Math.min(y, bottom - height)) - page.top}px`;
+      const origin = anchorLayer ? viewport.parentElement!.getBoundingClientRect() : page;
+      element.style.left = `${x - origin.left}px`;
+      element.style.top = `${Math.max(top, Math.min(y, bottom - height)) - origin.top}px`;
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(place); };
     const observer = new ResizeObserver(schedule);
@@ -53,7 +58,7 @@ function usePdfNotePosition(card: RefObject<HTMLElement | null>, rect: Annotatio
     viewport.addEventListener('scroll', schedule); window.addEventListener('resize', schedule);
     place();
     return () => { observer.disconnect(); cancelAnimationFrame(frame); viewport.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule); };
-  }, [card, enabled, preferredWidth, rect[0], rect[1], rect[2], rect[3]]);
+  }, [card, enabled, preferredWidth, anchorLayer, rect[0], rect[1], rect[2], rect[3]]);
 }
 
 export function NoteAttachButton({ number, ai = false, selected, disabled, destination, onClick }: {
@@ -82,14 +87,18 @@ export function TaskRemoveButton({ number, ai, disabled, onClick }: { number: nu
 
 // The PDF popover and reading list share the editor and actions. Floating cards
 // also follow their text anchor and close when the reader clicks elsewhere.
-export function PdfNoteCard({ note, number, index, total, selected, busy, error, draft, onDraftChange, onToggle, onDismiss, onClose, onPrevious, onNext, onSave, onEditing, destination, inline = false, inTask = false, header, children }: {
+export interface PdfNoteHandle { save: () => Promise<boolean> }
+export function PdfNoteCard({ controller, note, number, index, total, selected, busy, error, draft, onDraftChange, onToggle, onDismiss, onClose, onPrevious, onNext, onSave, onEditing, destination, inline = false, inTask = false, header, children, anchorLayer }: {
+  controller?: Ref<PdfNoteHandle>;
+  /** Cropped pages clip their marks; the card floats above them in the scroll host. */
+  anchorLayer?: HTMLElement;
   destination?: 'manuscript'; inline?: boolean; inTask?: boolean; header?: ReactNode; children?: ReactNode;
   note: Pick<Annotation, 'rect' | 'comment' | 'group' | 'aiReview' | 'kind' | 'stamp'> & { id?: string }; number: number; index: number; total: number; selected: boolean; busy: boolean; error: string;
   draft: string | null; onDraftChange: (draft: string | null) => void;
   onToggle?: () => void; onDismiss: () => void; onClose?: (restoreFocus?: boolean) => void; onPrevious?: () => void; onNext?: () => void;
   onSave: (comment: string, action: 'keep' | 'close' | 'quote') => Promise<boolean>; onEditing?: (editing: boolean) => void;
 }) {
-  const card = useRef<HTMLElement>(null), saving = useRef(false);
+  const card = useRef<HTMLElement>(null), saving = useRef<Promise<boolean> | null>(null);
   const text = useRef<HTMLParagraphElement>(null), input = useRef<HTMLTextAreaElement>(null);
   const editing = draft !== null, ai = Boolean(note.aiReview);
   // A delete mark's text is an optional replacement; clearing it goes back to deleting.
@@ -99,30 +108,45 @@ export function PdfNoteCard({ note, number, index, total, selected, busy, error,
   // once there is text to discard.
   const compose = !inline && !note.id, send = !inline && !destination;
   useEffect(() => { onEditing?.(editing); return () => onEditing?.(false); }, [editing, onEditing]);
-  function finish() { onDraftChange(null); requestAnimationFrame(() => text.current?.focus({ preventScroll: true })); }
+  // Focus goes back to the text in the commit that shows it again. A frame
+  // later is not enough: after a save the draft clears from a promise, and
+  // React may render that only after the next frame.
+  const refocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!refocus.current || editing) return;
+    refocus.current = false;
+    text.current?.focus({ preventScroll: true });
+  });
+  function finish() { onDraftChange(null); refocus.current = true; }
   function edit() { if (!busy) onDraftChange(note.comment); }
   function close(restoreFocus = true) {
-    if (inline) { onDraftChange(null); if (restoreFocus) requestAnimationFrame(() => text.current?.focus({ preventScroll: true })); }
+    if (inline) { onDraftChange(null); if (restoreFocus) refocus.current = true; }
     else onClose?.(restoreFocus);
   }
-  async function save(action: 'keep' | 'close' | 'quote' = 'keep', restoreFocus = true) {
-    if (busy || saving.current) return;
-    const comment = draft?.trim();
-    // A deletion needs no text: left empty, it stays a deletion.
-    if (editing && !comment && !deleting) { if (action === 'close') close(restoreFocus); return; }
-    // Adding a note to the task closes its popover, so the card itself seems
-    // to fly there; taking one out keeps it open for the copy to land on.
-    const adding = action === 'quote' && !destination && !selected;
-    const flight = action === 'quote' && !destination && !inTask && card.current ? adding ? noteToTask(card.current) : note.id ? noteFromTask(note.id, card.current) : null : null;
-    if (editing && (comment || '') !== note.comment) {
-      saving.current = true;
-      try { if (!await onSave(comment || '', action)) return; }
-      finally { saving.current = false; }
-    } else if (action === 'quote') onToggle?.();
-    flight?.();
-    if (action === 'close' || (adding && !inline)) { onDraftChange(null); close(restoreFocus); }
-    else if (editing) finish();
+  async function save(action: 'keep' | 'close' | 'quote' = 'keep', restoreFocus = true): Promise<boolean> {
+    if (saving.current) return saving.current;
+    if (busy) return false;
+    const pending = (async () => {
+      const comment = draft?.trim();
+      // A deletion needs no text: left empty, it stays a deletion.
+      if (editing && !comment && !deleting) { if (action === 'close') close(restoreFocus); return true; }
+      // Adding a note to the task closes its popover, so the card itself seems
+      // to fly there; taking one out keeps it open for the copy to land on.
+      const adding = action === 'quote' && !destination && !selected;
+      const flight = action === 'quote' && !destination && !inTask && card.current ? adding ? noteToTask(card.current) : note.id ? noteFromTask(note.id, card.current) : null : null;
+      if (editing && (comment || '') !== note.comment) {
+        if (!await onSave(comment || '', action)) return false;
+      } else if (action === 'quote') onToggle?.();
+      flight?.();
+      if (action === 'close' || (adding && !inline)) { onDraftChange(null); close(restoreFocus); }
+      else if (editing) finish();
+      return true;
+    })();
+    saving.current = pending;
+    try { return await pending; }
+    finally { saving.current = null; }
   }
+  useImperativeHandle(controller, () => ({ save: () => save('close', false) }));
   useEffect(() => {
     if (inline && !editing) return;
     const element = card.current!;
@@ -154,7 +178,7 @@ export function PdfNoteCard({ note, number, index, total, selected, busy, error,
     const element = input.current;
     if (element) { element.style.height = '0'; element.style.height = `${element.scrollHeight}px`; }
   }, [draft]);
-  usePdfNotePosition(card, note.rect, note.aiReview ? 330 : 280, !inline);
+  usePdfNotePosition(card, note.rect, note.aiReview ? 330 : 280, !inline, anchorLayer);
   // Enter in the popover sends, like the arrow; a note already in the chat
   // just saves, and the library keeps Enter for saving edits in place.
   const enterAction = !inline && !destination && !selected ? 'quote' : 'keep';
@@ -164,7 +188,7 @@ export function PdfNoteCard({ note, number, index, total, selected, busy, error,
   const sendButton = send && <NoteSendButton number={number} ai={ai} selected={selected} busy={busy} disabled={busy || (editing && !draft.trim() && !deleting)} onClick={() => void save('quote')}/>;
   const shown = deleting ? markText(note) : note.comment || (note.group ? t('Highlighted in {group}', { group: groupName(note.group) }) : '');
 
-  return <section ref={card} className={'pdf-note-card ' + (ai ? 'pdf-suggestion' : 'pdf-personal-note') + (inline ? ' pdf-note-inline' : '') + (compose ? ' pdf-note-compose' : '')} role={inline ? 'group' : 'dialog'} aria-modal={inline ? undefined : false} aria-label={ai ? t('AI suggestion {n}', { n: number }) : t('PDF note {n}', { n: number })} tabIndex={inline ? undefined : -1}>
+  const content = <section ref={card} className={'pdf-note-card ' + (ai ? 'pdf-suggestion' : 'pdf-personal-note') + (inline ? ' pdf-note-inline' : '') + (compose ? ' pdf-note-compose' : '')} role={inline ? 'group' : 'dialog'} aria-modal={inline ? undefined : false} aria-label={ai ? t('AI suggestion {n}', { n: number }) : t('PDF note {n}', { n: number })} tabIndex={inline ? undefined : -1}>
     {header}
     <div className="pdf-note-content"><div className="pdf-suggestion-body">{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{editing ?
       <textarea ref={input} className="pdf-note-input" aria-label={deleting ? t('Replacement for mark {n}', { n: number }) : t('Edit note {n}', { n: number })} placeholder={deleting ? t('Replace with… (leave empty to delete)') : t('Write a note…')} value={draft} rows={1} readOnly={busy} onChange={event => onDraftChange(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { event.preventDefault(); void save(enterAction); } }}/>
@@ -193,4 +217,6 @@ export function PdfNoteCard({ note, number, index, total, selected, busy, error,
       }}/>}
     </div>}
   </section>;
+  const host = anchorLayer?.closest('.pdf-container')?.parentElement;
+  return host ? createPortal(content, host) : content;
 }

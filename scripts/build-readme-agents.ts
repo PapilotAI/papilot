@@ -13,8 +13,8 @@ const names = AGENT_IDS.map(id => AGENT_NAMES[id]).join(', ');
 fs.mkdirSync(output, { recursive: true });
 
 for (const compact of [false, true]) {
-  const columns = compact ? 3 : 6;
-  const cellWidth = compact ? 116 : 136;
+  const columns = compact ? 3 : 7;
+  const cellWidth = 136;
   const rowHeight = 60;
   const width = columns * cellWidth;
   const height = Math.ceil(AGENT_IDS.length / columns) * rowHeight;

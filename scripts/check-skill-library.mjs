@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { SkillLibrary } from '../src/server/skill-library.ts';
 import { registerSkillRoutes } from '../src/server/skill-routes.ts';
 import { listedSkill, loadSkills } from '../src/server/skills.ts';
@@ -39,6 +39,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true, noteAlternativeRange: 'few' } });
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/quick-notes') return json({ quickNotes: null });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: loadSkills(project.path, roots).map(listedSkill) });
   if (url.pathname.endsWith('/git')) return json(git);
   if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792]], builtAt: 1 }, annotations: [] });
@@ -60,9 +61,7 @@ const close = () => dialog.getByRole('button', { name: 'Close', exact: true }).c
 const globalFile = path.join(roots.user, 'house-style', 'SKILL.md');
 try {
   await page.goto(origin); await open();
-  await expect(page.locator('.sidebar .skills-link')).toHaveCount(0);
   await expect(page.locator('dialog[open]')).toHaveCount(1);
-  await expect(dialog.locator('.skill-library-storage, .skill-library-file')).toHaveCount(0);
   await expect(dialog).not.toContainText(roots.user);
   await expect(dialog.locator('.skill-library-item')).toHaveCount(8);
   await expect(dialog.locator('.skill-library-browse')).toBeVisible();

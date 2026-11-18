@@ -5,7 +5,7 @@ import fs from 'node:fs';
 fs.mkdirSync('test-results', { recursive: true });
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { selectOption, selectedValue } from './select.mjs';
 
 const server = Fastify();
@@ -16,6 +16,33 @@ const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHA
 const context = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 900 } });
 const page = await context.newPage();
 await page.clock.install();
+// Make the panel-resize/page-jump race deterministic: hold frames scheduled
+// by the PDF's ResizeObservers, then run them after Enter changes the page
+// but before PDF.js handles the resulting scroll event. Other frames run normally.
+await page.addInitScript(() => {
+  const NativeResizeObserver = window.ResizeObserver;
+  window.ResizeObserver = class extends NativeResizeObserver {
+    constructor(callback) {
+      super((entries, observer) => {
+        const raf = window.requestAnimationFrame;
+        if (window.holdPdfResize && entries.some(entry => entry.target.matches('.manuscript-pages .pdf-container'))) {
+          window.requestAnimationFrame = frame => {
+            window.pendingPdfResize = frame;
+            return raf.call(window, () => {});
+          };
+        }
+        try { callback(entries, observer); }
+        finally { window.requestAnimationFrame = raf; }
+      });
+    }
+  };
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || !event.target.matches('[aria-label="Page number"]') || !window.pendingPdfResize) return;
+    const frame = window.pendingPdfResize;
+    window.pendingPdfResize = null; window.holdPdfResize = false;
+    frame(performance.now());
+  });
+});
 const pageErrors = [];
 page.on('pageerror', error => pageErrors.push(error.message));
 const task = { id: 'fixture-task-0001', projectId: 'fixture-paper', name: 'p-fixture', title: 'Clarify the introduction', instructions: 'Keep the technical meaning.', worktree: '/tmp/fixture', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 3, commented: 1 } } };
@@ -42,6 +69,7 @@ const diagnosticReport = { version: '0.6.0', checkedAt: 1700000000000, platform:
   { id: 'project.worktrees', ok: true, severity: 'warn', detail: 'Task folders are writable.', fix: null },
 ] };
 const creates = [];
+const publishes = [];
 let failCreate = true;
 let createResult = task;
 let heldState;
@@ -123,6 +151,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/git/overview')) return overviewFailure ? route.fulfill({ status: 503, json: { error: 'Repository unavailable.' } }) : json(overview());
   if (url.pathname.endsWith('/git/history')) return json({ versions: [], next: null });
   // Skills and the feedback bar have their own check (check-skills.mjs).
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git/diff')) return json({ path: url.searchParams.get('path'), diff: 'diff --git a/main.tex b/main.tex\n--- a/main.tex\n+++ b/main.tex\n@@ -1,2 +1,2 @@\n-Old line.\n+New line.\n Context.\n', truncated: false });
   if (url.pathname.endsWith('/git/commit')) {
@@ -226,6 +255,7 @@ await page.route('**/api/**', async route => {
     if (!snapshot.tasks.some(t => t.id === createResult.id)) snapshot.tasks.push(createResult);
     return json(createResult);
   }
+  if (url.pathname.endsWith('/publish')) { publishes.push(url.pathname.split('/')[3]); return json({ ok: true }); }
   if (url.pathname.endsWith('/prepare')) {
     const pending = snapshot.tasks.find(t => t.id === url.pathname.split('/')[3]);
     pending.status = 'preparing'; pending.error = null;
@@ -305,7 +335,6 @@ try {
   assert.deepEqual(await runtimeGroup.getByRole('button').allTextContents(), ['Git', 'Agents', 'LaTeX']);
   await runtimeGroup.getByRole('button', { name: 'Agents', exact: true }).click();
   const diagnostics = settingsDialog;
-  assert.equal(await diagnostics.locator('.runtime-advanced').count(), 0);
   assert.equal(await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).count(), 0);
   await diagnostics.getByRole('button', { name: 'Codex details', exact: true }).click();
   await diagnostics.locator('.runtime-agent-detection').getByText('Installation & setup', { exact: true }).click();
@@ -315,11 +344,10 @@ try {
   await diagnostics.getByText('No installation details were returned. Run the checks again to refresh.', { exact: true }).waitFor();
   await diagnostics.getByRole('button', { name: 'Close agent details' }).click();
   assert.deepEqual(diagnosticRequests, [{ projectId: task.projectId }, { projectId: task.projectId }]);
-  assert.equal(await diagnostics.locator('.diagnostic-checks').count(), 0, 'Agent checks belong in their card details, without a second list');
   assert.equal(await diagnostics.getByRole('heading', { name: 'Agent configuration', exact: true }).count(), 0);
   assert.equal(await diagnostics.getByRole('button', { name: 'Check again', exact: true }).count(), 0);
   const agentCards = diagnostics.locator('.diagnostic-agent-card[data-agent]');
-  assert.deepEqual(await agentCards.locator('h4').allTextContents(), ['Codex', 'Claude', 'Cursor', 'Copilot', 'Grok', 'Antigravity', 'Kimi', 'GLM', 'DeepSeek', 'Qwen', 'OpenCode']);
+  assert.deepEqual(await agentCards.locator('h4').allTextContents(), ['Codex', 'Claude', 'Papilot WriterBased on Pi', 'Pi', 'Cursor', 'Copilot', 'Grok', 'Antigravity', 'Kimi', 'GLM', 'DeepSeek', 'Qwen', 'OpenCode']);
   const availability = id => diagnostics.locator(`[data-agent="${id}"] .diagnostic-availability`);
   assert.equal(await availability('codex').innerText(), 'Ready');
   assert.equal(await availability('cursor').innerText(), 'Not detected');
@@ -443,7 +471,6 @@ try {
   const installation = diagnostics.getByRole('region', { name: 'LaTeX installation' });
   await installation.getByText('2025', { exact: true }).waitFor();
   await installation.getByText('/usr/local/texlive/2025', { exact: true }).waitFor();
-  assert.equal(await diagnostics.locator('.runtime-advanced').count(), 0);
   assert.equal(await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).count(), 0);
   assert.equal(diagnosticRequests.length, checksBeforeLatex, 'LaTeX only reads installation information');
   await diagnostics.locator('.settings-content').evaluate(el => { el.scrollTop = 0; });
@@ -634,15 +661,21 @@ try {
   await switcher.click();
   await page.getByRole('menuitemradio', { name: 'Example paper', exact: true }).waitFor();
   assert.equal(await page.getByRole('menuitemradio', { name: 'Example paper', exact: true }).getAttribute('aria-checked'), 'true');
-  await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Add a paper' });
+  await page.getByRole('menuitem', { name: 'Import or open', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New paper' });
   await dialog.waitFor();
-  // The folder chooser leads; typing a path is a collapsed fallback.
-  await expect(dialog.getByRole('button', { name: 'Choose folder', exact: true })).toBeFocused();
-  for (let i = 0; i < 9; i++) {
-    await page.keyboard.press(i < 5 ? 'Tab' : 'Shift+Tab');
-    assert.equal(await dialog.evaluate(el => el.contains(document.activeElement)), true);
+  // Importing a copy leads the dialog; the link field receives focus.
+  await expect(dialog.getByRole('textbox', { name: 'Paper or repository link', exact: true })).toBeFocused();
+  for (let i = 0; i < 18; i++) {
+    await page.keyboard.press(i < 9 ? 'Tab' : 'Shift+Tab');
+    // Native dialogs allow focus to visit browser chrome while the document
+    // stays inert. That reports BODY with the document itself unfocused.
+    assert.equal(await dialog.evaluate(el => el.matches(':modal') &&
+      (el.contains(document.activeElement) || (document.activeElement === document.body && !document.hasFocus()))), true);
   }
+  await dialog.getByRole('textbox', { name: 'Paper or repository link', exact: true }).focus();
+  await switcher.evaluate(el => el.focus());
+  await expect(dialog.getByRole('textbox', { name: 'Paper or repository link', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'hidden' });
   assert.equal(await switcher.evaluate(el => el === document.activeElement), true);
@@ -872,6 +905,8 @@ try {
   assert.equal(await page.locator('.manuscript-pages .pdf-toolbar > :last-child').first().getAttribute('aria-label'), 'Expand manuscript panel');
   assert.equal(await page.locator('.pdf-toolbar').getByRole('link', { name: 'Open PDF', exact: true }).count(), 0);
   await page.screenshot({ path: 'test-results/manuscript-panel-collapsed.png', fullPage: true });
+  await page.clock.runFor(100);
+  await page.evaluate(() => { window.holdPdfResize = true; });
   await expandPanel.press('Enter');
   await manuscriptSide.waitFor();
   assert.equal(await mountedPdf.evaluate(el => el.isConnected), true);
@@ -879,14 +914,16 @@ try {
   assert.equal(Math.round((await manuscriptSide.boundingBox()).width), originalSideWidth);
   assert.equal(await page.getByLabel('Page number').inputValue(), '2');
   await page.waitForFunction(() => document.activeElement === document.querySelector('.manuscript-side-header .manuscript-panel-toggle'));
+  await page.waitForFunction(() => Boolean(window.pendingPdfResize));
   console.log('PASS: Manuscript panel collapses and expands from the keyboard, preserving its draft, PDF and width');
   await prompt.fill('');
   await page.getByLabel('Page number').fill('1');
   await page.getByLabel('Page number').press('Enter');
+  await page.clock.runFor(200);
+  await expect(page.getByLabel('Page number')).toHaveValue('1');
   await contentsTrigger.press('ArrowDown');
   assert.equal(await contents.isVisible(), true);
   await expect(contents.getByRole('menuitemradio', { name: /^Introduction/ })).toHaveAttribute('aria-checked', 'true');
-  await page.clock.runFor(200);
   await page.screenshot({ path: 'test-results/contents-desktop.png', fullPage: true });
   await contents.getByRole('menuitemradio', { name: /^Method/ }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Page number"]').value === '2');
@@ -1457,7 +1494,6 @@ try {
   // An agent that cannot be used says why, with Reconnect, inside the same menu.
   await choose('Default model · Antigravity');
   await agentSettings.getByRole('status').getByText('spawn agy ENOENT', { exact: true }).waitFor();
-  assert.equal(await page.locator('.runtime-banner').count(), 0);
   assert.equal(await page.locator('.new-task-panel > .inline-error[role=status]').count(), 0);
   const reconnectsBeforePicker = reconnects;
   await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/state')), agentSettings.getByRole('button', { name: 'Reconnect', exact: true }).click()]);
@@ -1858,9 +1894,9 @@ try {
     assert.equal(await drawerToggle.evaluate(el => el === document.activeElement), true);
     await drawerToggle.click();
     await drawer.getByRole('button', { name: 'Paper: Example paper', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Add paper…', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Add a paper' }).waitFor();
-    await expect(page.getByRole('dialog', { name: 'Add a paper' }).getByRole('button', { name: 'Choose folder', exact: true })).toBeFocused();
+    await page.getByRole('menuitem', { name: 'Import or open', exact: true }).click();
+    await page.getByRole('dialog', { name: 'New paper' }).waitFor();
+    await expect(page.getByRole('dialog', { name: 'New paper' }).getByRole('textbox', { name: 'Paper or repository link', exact: true })).toBeFocused();
     await page.keyboard.press('Escape');
     if (width === 390) {
       await page.locator('.manuscript-link').click();
@@ -2013,9 +2049,19 @@ try {
   task.status = 'failed'; task.error = 'A build failed in the test fixture.'; task.review.job = { status: 'failed' };
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.getByRole('button', { name: 'Retry build', exact: true }).waitFor();
+  // The chat already shows the error, so View details appears only when it is hidden.
+  await page.locator('.task-error').getByText(task.error, { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'View details', exact: true }).count(), 0);
+  await selectWorkspaceView('Review');
   await page.getByRole('button', { name: 'View details', exact: true }).click();
-  assert.equal(await views.getByRole('button', { name: 'Chat', exact: true }).getAttribute('aria-pressed'), 'true');
-  await page.getByText(task.error, { exact: true }).waitFor();
+  assert.equal(await views.getByRole('button', { name: 'Split', exact: true }).getAttribute('aria-pressed'), 'true');
+  await page.locator('.task-error').getByText(task.error, { exact: true }).waitFor();
+  // With only the chat in view, the error offers the PDF comparison the review panel holds.
+  await selectWorkspaceView('Chat');
+  assert.equal(await page.getByRole('button', { name: 'View details', exact: true }).count(), 0);
+  await page.locator('.task-error-actions').getByRole('button', { name: 'Regenerate PDF comparison', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('.task-error-actions button[aria-busy=true]'));
+  assert.deepEqual(publishes, [task.id]);
   task.error = null; task.review.job = null;
   await selectWorkspaceView('Split');
   console.log('PASS: Long conversations follow new messages, preserve history reading position, and offer a jump back');

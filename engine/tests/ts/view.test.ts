@@ -75,6 +75,37 @@ it.skipIf(!tex)("reports a worktree that does not compile", async () => {
   }
 });
 
+it.skipIf(!tex)("a full build check refreshes the outline after an included chapter changes", async () => {
+  const f = new Fixture();
+  try {
+    f.write("paper/main.tex", String.raw`\documentclass{article}
+\begin{document}
+\include{sections/method}
+\include{sections/results}
+\end{document}
+`);
+    f.write("paper/sections/results.tex", "\\section{Results}\nResults text.\n");
+    f.repo.run(["add", "-A"]);
+    f.repo.run(["commit", "-qm", "Included chapters"]);
+    const app = f.app(), task = app.tasks.create("writer-outline"), builder = new Builder(app.project, app.repo);
+    app.project.partial_builds = true;
+    const before = await view(app, task.name, { check: true, full: true });
+    expect(before.error).toBeUndefined();
+    f.edit(task, METHOD, "\\section{Method}", "\\section{Approach}\n\\subsection{New detail}\nAdded text.");
+    const after = await app.tasks.snapshotAsync(task);
+    expect(await builder.planAsync(task.accepted, after, [METHOD])).toEqual(["sections/method"]);
+    const checked = await view(app, task.name, { check: true, full: true });
+    expect(checked.error).toBeUndefined();
+    expect(checked.targets).toEqual(["full"]);
+    expect(checked.pages).toEqual([]);
+    expect(checked.compiled!.pdf).not.toBe(before.compiled!.pdf);
+    const trace = fs.readFileSync(checked.compiled!.pdf.replace(/\.pdf$/, ".papilot"), "utf8");
+    expect(trace).toContain("Approach");
+    expect(trace).toContain("New detail");
+    expect(trace).toContain("Results");
+  } finally { await f.close(); }
+});
+
 it.skipIf(!tex)("does not mistake physical positions for printed page numbers", async () => {
   const f = new Fixture();
   try {

@@ -8,3 +8,5 @@ export const VERSION: string = JSON.parse(fs.readFileSync(path.join(ROOT, 'packa
 export const PORT = Number(process.env.PAPILOT_PORT || 7274);
 export const PUBLIC_ORIGIN = process.env.PAPILOT_PUBLIC_ORIGIN || '';
 export const OWNER = process.env.PAPILOT_TAILSCALE_LOGIN || '';
+/** Where the chat keeps a task's viewed pages. */
+export const pageViewDir = (taskId: string) => path.join(DATA, 'page-views', taskId.replace(/[^\w-]/g, '_'));

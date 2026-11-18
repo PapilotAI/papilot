@@ -20,6 +20,7 @@ export function permissionText(text: string) {
     "Unrestricted": t("Unrestricted"),
     "Accept edits": t("Accept edits"),
     "Always proceed": t("Always proceed"),
+    "Paper edits": t("Paper edits"),
   };
   return messages[text] || text;
 }
@@ -45,7 +46,11 @@ function permissionDetail(detail: string) {
     "Disable the sandbox and run tools without approval, subject to managed settings.": t("Bypass sandbox and approvals"),
     "Automatically approve edits and sandboxed commands. Other permission requests are denied in print mode.": t("Sandboxed; other requests denied"),
     "Automatically approve edits and sandboxed commands. Ask before other actions.": t("Sandboxed; exceptions need approval"),
+    "Automatically approve edits without a command sandbox. Other permission requests are denied in print mode.": `${t("No sandbox")}; ${t("Other requests denied")}`,
+    "Automatically approve edits without a command sandbox. Ask before other actions.": `${t("No sandbox")}; ${t("Native approvals")}`,
     "Disable the command sandbox and bypass tool approvals, subject to managed settings.": t("Bypass sandbox and approvals"),
+    "Read, edit LaTeX and BibTeX, compile, view pages and add verified references without asking. Ask before other files change, files are moved or deleted, and before chore mode runs shell commands.": t("LaTeX edits run; other changes ask first"),
+    "Never ask: every edit, deletion and chore-mode command runs without approval, still only inside the task worktree.": t("Never ask; stays in the task worktree"),
   };
   return messages[detail] || '';
 }

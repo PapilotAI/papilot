@@ -17,7 +17,7 @@ while IFS= read -r file; do
     # Shipped with the app, Markdown included.
     skills/* | examples/*) [[ $scope != none ]] || scope=quick ;;
     # Never part of the app.
-    *.md | LICENSE | docs/* | site/* | tests/* | i18n/* | .github/ISSUE_TEMPLATE/* | .github/workflows/pages.yml | \
+    *.md | LICENSE | docs/* | site/* | tests/* | i18n/* | .github/ISSUE_TEMPLATE/* | .github/workflows/site.yml | \
     scripts/build-site.mjs | scripts/check-site.mjs | scripts/site-* | scripts/i18n.ts | scripts/i18n/*) ;;
     # How installers are made and tested.
     scripts/desktop-layer.mjs | scripts/check-desktop.mjs | scripts/check-desktop-linux.sh | .github/workflows/desktop.yml)

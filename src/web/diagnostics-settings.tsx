@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AgentId, LatexInstallation, DiagnosticReport, Project, RuntimeStatus } from '../shared.ts';
+import type { AgentId, LatexInstallation, DiagnosticReport, Project, RuntimeStatus, WriterAuth } from '../shared.ts';
 import { RuntimeAgents } from './runtime-agents.tsx';
 
 export interface DiagnosticsSettingsProps {
@@ -9,9 +9,11 @@ export interface DiagnosticsSettingsProps {
   check: (projectId: string | undefined, signal: AbortSignal) => Promise<DiagnosticReport>;
   reconnect: () => Promise<void>;
   latex: (signal: AbortSignal) => Promise<LatexInstallation | null>;
+  /** Papilot Writer's providers: GET with no body, POST with one. */
+  writer?: (route: string, body?: unknown) => Promise<WriterAuth>;
 }
 
-export function DiagnosticsSettings({ online, runtimes, project, check, reconnect }: DiagnosticsSettingsProps) {
+export function DiagnosticsSettings({ online, runtimes, project, check, reconnect, writer }: DiagnosticsSettingsProps) {
   const [report, setReport] = useState<DiagnosticReport | null>(null), [busy, setBusy] = useState(true), [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -23,6 +25,6 @@ export function DiagnosticsSettings({ online, runtimes, project, check, reconnec
     return () => controller.abort();
   }, [attempt, project?.id, check]);
   return <div className="diagnostics-settings settings-page">
-    <RuntimeAgents online={online} runtimes={runtimes} report={report} busy={busy} checkFailed={failed} checkAgain={() => setAttempt(value => value + 1)} reconnect={async () => { await reconnect(); setAttempt(value => value + 1); }}/>
+    <RuntimeAgents online={online} runtimes={runtimes} report={report} busy={busy} checkFailed={failed} checkAgain={() => setAttempt(value => value + 1)} reconnect={async () => { await reconnect(); setAttempt(value => value + 1); }} writer={writer}/>
   </div>;
 }

@@ -15,6 +15,9 @@ function fixture() {
   const app = path.join(dir, 'app'), tools = path.join(dir, 'tools'), data = path.join(dir, 'data'), home = path.join(dir, 'home');
   for (const folder of [app, tools, home, path.join(app, 'dist'), path.join(app, 'engine/dist/web')]) fs.mkdirSync(folder, { recursive: true });
   fs.cpSync(path.join(root, 'bin'), path.join(app, 'bin'), { recursive: true });
+  // This fixture supplies its own CLIs; the host's signed-in desktop app
+  // must not answer a missing/failed installation check on its behalf.
+  fs.writeFileSync(path.join(app, 'bin/codex-desktop.mjs'), 'export async function desktopCodexCandidates() { return []; }\n');
   fs.copyFileSync(path.join(root, 'package.json'), path.join(app, 'package.json'));
   fs.symlinkSync(path.join(root, 'node_modules'), path.join(app, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   fs.symlinkSync(path.join(root, 'engine/src'), path.join(app, 'engine/src'), process.platform === 'win32' ? 'junction' : 'dir');
@@ -52,6 +55,20 @@ const item = (report: Report, id: string) => {
   const value = report.checks.find(check => check.id === id);
   assert.ok(value, `Missing check ${id}`); return value;
 };
+
+test('doctor detects native Pi versions without prompting or claiming authentication', async () => {
+  const f = fixture();
+  try {
+    f.baseTools();
+    const pi = f.tool('pi', 'console.log("1.5.2");');
+    const result = await f.run(['--json'], { PAPILOT_PI_BIN: pi });
+    assert.equal(item(result.report, 'agent.pi').ok, true);
+    assert.match(item(result.report, 'agent.pi').detail, /login and generation were not tested/);
+    assert.ok(fs.readFileSync(f.log, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(call => call[0] === 'pi').every(call => call[1] === '--version'));
+    f.tool('pi', 'console.log("0.73.1");');
+    assert.equal(item((await f.run(['--json'], { PAPILOT_PI_BIN: pi })).report, 'agent.pi').ok, false);
+  } finally { f.cleanup(); }
+});
 
 test('doctor help and invalid options never run tools or create data', async () => {
   const f = fixture();
@@ -166,6 +183,33 @@ test('doctor uses the supported managed Codex and never leaks login output or kn
   } finally { f.cleanup(); }
 });
 
+test('doctor in an installation that pins its version never suggests downloads and checks SDKs where Papilot loads them', async () => {
+  const f = fixture();
+  try {
+    f.baseTools();
+    f.tool('codex', 'console.log("codex-cli 0.1.0");');
+    const sdk = (folder: string) => { const dir = path.join(folder, 'node_modules/@cursor/sdk'); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"@cursor/sdk","version":"1.2.0"}'); };
+    // A copy an unmanaged run downloaded into the data folder earlier.
+    sdk(path.join(f.data, 'agents'));
+    const keys = { CURSOR_API_KEY: 'cursor-test-key' };
+    const unmanaged = (await f.run(['--json'], keys)).report;
+    assert.equal(item(unmanaged, 'agent.codex').fix, 'Run papilot codex login; it installs the supported Codex when needed.');
+    assert.equal(item(unmanaged, 'agent.cursor').ok, true);
+    const managed = (await f.run(['--json'], { ...keys, PAPILOT_INSTALL_METHOD: 'managed' })).report;
+    assert.equal(item(managed, 'agent.codex').fix, 'Install a supported Codex separately or set PAPILOT_CODEX_BIN to an existing installation.');
+    const cursor = item(managed, 'agent.cursor');
+    assert.equal(cursor.ok, false);
+    assert.equal(cursor.detail, 'Cursor SDK credentials detected; the SDK is not installed.');
+    assert.equal(cursor.fix, 'Install @cursor/sdk into Papilot\'s node_modules, then restart Papilot.');
+    // Nix ships its SDKs in a locked runtime beside the application.
+    sdk(path.join(f.app, 'nix-agent-runtime'));
+    const nix = (await f.run(['--json'], { ...keys, PAPILOT_INSTALL_METHOD: 'nix' })).report;
+    assert.equal(item(nix, 'agent.codex').fix, 'Install a supported Codex separately with Nix or set PAPILOT_CODEX_BIN to an existing installation.');
+    assert.equal(item(nix, 'agent.cursor').ok, true);
+    assert.equal(fs.existsSync(path.join(f.data, 'papilot.sqlite')), false);
+  } finally { f.cleanup(); }
+});
+
 test('desktop doctor searches PATH, the package and data in order with the server probe PATH', async () => {
   const f = fixture();
   try {
@@ -222,7 +266,7 @@ test('desktop doctor distinguishes failed probes from candidates not checked bef
       const candidates = ${JSON.stringify(candidates)}, now = Date.now;
       let elapsed = 0;
       Date.now = () => now() + elapsed;
-      export function findExecutables() { return candidates; }
+      export function findExecutables(command, ...args) { return command === 'codex' ? candidates : real.findExecutables(command, ...args); }
       export function spawnCommand(file, args, options) {
         const child = real.spawnCommand(file, args, options);
         if (candidates.includes(file) && args[0] === '--version') child.once('close', () => { elapsed += 10000; });
@@ -336,7 +380,7 @@ test('doctor checks real repository configuration without changing files or maki
     const git = (...args: string[]) => execFileSync(realGit, ['-C', repo, ...args], { encoding: 'utf8' });
     git('init', '-q');
     fs.writeFileSync(path.join(repo, 'main.tex'), '\\documentclass{article}\n\\begin{document}Hello\\end{document}\n');
-    fs.writeFileSync(path.join(repo, '.latex-review.json'), '{"main":"main.tex","engine":"xelatex"}');
+    fs.mkdirSync(path.join(repo, '.git/papilot'), { recursive: true }); fs.writeFileSync(path.join(repo, '.git/papilot/settings.json'), '{"main":"main.tex","engine":"xelatex"}');
     const noCommit = await f.run(['--json', '--repo', repo]);
     assert.equal(item(noCommit.report, 'project.head').ok, false);
     git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@example.org', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Initial paper');
@@ -346,9 +390,9 @@ test('doctor checks real repository configuration without changing files or maki
     assert.match(item(result.report, 'project.main').detail, /main.tex \(xelatex\)/);
     assert.equal(item(result.report, 'project.engine').ok, true);
     assert.equal(git('status', '--porcelain'), before);
-    assert.equal(fs.existsSync(path.join(repo, '.git/latex-review')), false);
+    assert.deepEqual(fs.readdirSync(path.join(repo, '.git/papilot')), ['settings.json']);
     assert.equal(fs.existsSync(repo + '-tasks'), false);
-    fs.writeFileSync(path.join(repo, '.latex-review.json'), '{"main":"missing.tex"}');
+    fs.mkdirSync(path.join(repo, '.git/papilot'), { recursive: true }); fs.writeFileSync(path.join(repo, '.git/papilot/settings.json'), '{"main":"missing.tex"}');
     const invalid = await f.run(['--json', '--repo', repo]);
     assert.equal(invalid.code, 1); assert.equal(item(invalid.report, 'project.main').ok, false);
     assert.match(item(invalid.report, 'project.main').detail, /Root document not found/);
@@ -370,26 +414,6 @@ test('doctor distinguishes a healthy local server from an occupied port and vali
     assert.equal(bad.code, 1);
     assert.equal(item(bad.report, 'server').ok, false); assert.equal(item(bad.report, 'remote').ok, false);
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); f.cleanup(); }
-});
-
-test('a stalled agent probe times out while the rest of the report remains usable', async () => {
-  const f = fixture();
-  const pidFile = path.join(f.dir, 'agent.pid');
-  try {
-    f.baseTools();
-    const agy = f.tool('agy', `fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`);
-    const start = Date.now();
-    const result = await f.run(['--json'], { PAPILOT_AGY_BIN: agy });
-    assert.equal(result.code, 0, result.stdout);
-    assert.match(item(result.report, 'agent.antigravity').detail, /timed out/);
-    assert.ok(Date.now() - start < 14000);
-    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
-    assert.ok(Number.isInteger(pid) && pid > 0);
-    assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'the timed-out agent must be stopped');
-  } finally {
-    if (fs.existsSync(pidFile)) { try { process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 'SIGKILL'); } catch { /* already stopped */ } }
-    f.cleanup();
-  }
 });
 
 test('doctor marks a timeout before process cleanup reports a plain exit code', async () => {

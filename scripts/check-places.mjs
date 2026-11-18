@@ -4,8 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { annotateReviewState, rewriteReviewHtml } from '../src/server/review.ts';
+import { checkPdfAnchors } from './pdf-anchors-check.mjs';
 
 // Leaving the manuscript for a task (or a task for the manuscript) unmounts
 // the view. Coming back opens it where the author was, not at the top.
@@ -15,7 +16,8 @@ await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
-const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } });
+const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 900 }, hasTouch: true });
+const page = await context.newPage();
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const prefix = '/review/paper';
 const runtime = { connected: true, authenticated: true, models: [] };
@@ -31,6 +33,7 @@ const detail = { task: 'places', round: 1, before: 'b', after: 'a', warnings: []
 const reviewState = { task: 'places', title: task.title, csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, history: [{ number: 1, created: 1 }], round: 1, revision: 'a', decisions: Object.fromEntries(ids.map(id => [id, 'pending'])), comments: {}, undo: null, job: null };
 let fullPdfWait;
 const fullPdfRequests = [];
+let manuscriptDocument = 'main.tex', manuscriptKey = 'pdf';
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
@@ -40,13 +43,24 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+  if (url.pathname.endsWith('/files')) return json({ document: manuscriptDocument, files: ['main.tex', 'letter.tex'].map(path => ({ path, root: true })) });
+  if (url.pathname.endsWith('/document')) {
+    manuscriptDocument = route.request().postDataJSON().main;
+    manuscriptKey = manuscriptDocument;
+    return json({});
+  }
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git')) return json({ branch: 'main', files: [] });
   if (url.pathname.endsWith('/git/history')) return json({ versions: [], next: null });
   if (url.pathname.endsWith('/git/overview')) return json({ commits: [], worktrees: [], truncated: false });
-  if (url.pathname.endsWith('/manuscript')) return json({ git: { branch: 'main', files: [] }, build: { status: 'ready', key: 'pdf', pages: [[612, 792], [612, 792]] }, annotations: [] });
+  if (url.pathname.endsWith('/manuscript')) return json({ git: { branch: 'main', files: [] }, build: { status: 'ready', key: manuscriptKey, document: manuscriptDocument, pages: [[612, 792], [612, 792]] }, annotations: [] });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
+  if (url.pathname.endsWith('/manuscript/anchors')) {
+    const target = route.request().postDataJSON(), line = Math.round(target.rect[1] * 10000) + 1;
+    return json({ source: { file: manuscriptDocument, revision: 'a'.repeat(64), lines: [line, line] } });
+  }
+  if (url.pathname.endsWith('/manuscript/anchors/resolve')) return json(route.request().postDataJSON().anchors.map(anchor => ({ id: anchor.id, place: { page: anchor.near, rect: [.1, (anchor.source.lines[0] - 1) / 10000, .9, Math.min(1, anchor.source.lines[0] / 10000 + .02)] } })));
   if (url.pathname.endsWith('/items')) return json({ items });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   throw Error(`Unexpected request ${url.pathname}`);
@@ -170,7 +184,7 @@ try {
   for (const [index, block] of detail.sections[0].blocks.entries()) {
     for (const strip of [...block.before, ...block.after]) Object.assign(strip, { page: 1, label: '1', top: 100 + index * 55, left: 0, width: 612, height: 35, text: [{ chars: [{ text: 'A paragraph in the review PDF.', rect: [60, 12, 250, 26] }] }] });
   }
-  await page.evaluate(() => { localStorage.setItem('latex-review:default-view', 'paper'); localStorage.removeItem('papilot:pdf-zoom'); });
+  await page.evaluate(() => { localStorage.setItem('papilot:review:default-view', 'paper'); localStorage.removeItem('papilot:pdf-zoom'); });
   await page.reload();
   const full = page.frameLocator('.review-frame');
   await expect(full.locator('.paper-page')).toHaveCount(2);
@@ -313,7 +327,7 @@ try {
   await pageNumber.fill('2'); await pageNumber.press('Enter');
   await expect.poll(secondPageOffset).toBeLessThan(2);
   await nextRound(2, async () => {
-    assert.equal(await full.locator('body').evaluate(() => localStorage.getItem('latex-review:/review/paper/:places:pdf:2')), null);
+    assert.equal(await full.locator('body').evaluate(() => localStorage.getItem('papilot:review:/review/paper/:places:pdf:2')), null);
   });
   await expect(full.locator('.change.current')).toHaveAttribute('data-stop', '0');
   await expect(full.locator('[data-stop="0"] .change-head')).toBeInViewport();
@@ -343,6 +357,49 @@ try {
   await entries.last().click();
   await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('2');
   await page.screenshot({ path: 'test-results/review-reader-phone.png' });
+
+  // Cached documents can replace a ready PDF directly, without an observed
+  // building state. Each must restore and update only its own reading place.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await manuscript();
+  await page.locator('.pdf-view .page[data-page-number="2"]').waitFor();
+  const saved = name => page.evaluate(name => JSON.parse(localStorage.getItem('papilot:places') || '{}')[`pdf:paper:${name}`], name);
+  const switchDocument = async name => {
+    const menu = page.locator('.manuscript-row').getByRole('button', { name: /^Files/ });
+    await menu.click();
+    await page.getByRole('list', { name: 'Repository files' }).getByRole('button', { name: `Compile ${name}`, exact: true }).click();
+    await expect(menu).toHaveText(name);
+    await page.locator('.pdf-view .page[data-page-number="2"]').waitFor();
+  };
+  const previousMainPlace = await saved('main.tex');
+  await box.evaluate(element => { element.scrollTop = 700; });
+  await expect.poll(() => scrollOf(box)).toBe(700);
+  await expect.poll(() => saved('main.tex')).not.toEqual(previousMainPlace);
+  const mainPlace = await saved('main.tex');
+  await switchDocument('letter.tex');
+  await expect.poll(() => scrollOf(box)).toBeLessThan(40);
+  await expect.poll(() => saved('letter.tex')).toBeTruthy();
+  const initialLetterPlace = await saved('letter.tex');
+  await box.evaluate(element => { element.scrollTop = 200; });
+  await expect.poll(() => scrollOf(box)).toBe(200);
+  await expect.poll(() => saved('letter.tex')).not.toEqual(initialLetterPlace);
+  const letterPlace = await saved('letter.tex');
+  assert.deepEqual(await saved('main.tex'), mainPlace, 'scrolling the letter must not overwrite the manuscript place');
+  await switchDocument('main.tex');
+  await expect.poll(() => scrollOf(box)).toBeGreaterThan(690);
+  near(await scrollOf(box), 700, 'the cached manuscript restores its own position');
+  assert.deepEqual(await saved('letter.tex'), letterPlace);
+  await switchDocument('letter.tex');
+  await expect.poll(async () => Math.abs(await scrollOf(box) - 200)).toBeLessThan(4);
+  near(await scrollOf(box), 200, 'the cached letter restores its own position');
+  await page.screenshot({ path: 'test-results/places-documents.png' });
+  await checkPdfAnchors(page, { switchDocument, recompile: async () => {
+    manuscriptKey += '-recompiled';
+    const loaded = page.waitForResponse(response => response.url().includes('/manuscript.pdf?key=' + manuscriptKey));
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await loaded;
+    await page.locator('.manuscript .page[data-page-number="2"] canvas').waitFor();
+  } });
   assert.deepEqual(errors, []);
   console.log('Places check passed');
 } catch (error) {

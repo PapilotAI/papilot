@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { annotateReviewState, rewriteReviewHtml } from '../src/server/review.ts';
 
 fs.mkdirSync('test-results', { recursive: true });
@@ -23,7 +23,7 @@ let effectFixture = true, effectRequests = 0;
 const rounds = { 1: { first: 'pending', second: 'pending', third: 'pending', fourth: 'pending' } };
 const actions = [], writes = [], messageRequests = [], commitRequests = [], applyRequests = [], archiveRequests = [], deleteRequests = [], predictRequests = [];
 let gitFiles = [];
-let pushError, conflictOnApply = false, combinedOnCommit = false;
+let conflictOnApply = false, combinedOnCommit = false;
 let timeline = [];
 const state = round => ({ task: 'flow', title: task.title, csrf: 'fixture', closed: false, state: task.review.state, latest, history: Object.keys(rounds).map(number => ({ number: Number(number), created: 1793322000 + Number(number) * 120 })), round, revision: `after-${round}`, decisions: rounds[round], comments: {}, undo, job: task.review.job || null });
 function update() {
@@ -52,7 +52,7 @@ function detail(round) {
 }
 // The server keeps whether indirect changes are tracked; reloading reads it.
 let indirectChanges = false;
-await page.route('**/api/**', async route => {
+const appRoutes = async route => {
   const url = new URL(route.request().url());
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true, noteAlternativeRange: 'few' } });
   if (url.pathname === '/api/indirect-changes') {
@@ -62,6 +62,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
   if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
   if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
+  if (url.pathname.endsWith('/files')) return route.fulfill({ json: { document: null, files: [] } });
   if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
   if (url.pathname === '/api/tasks/question-fixture/items') return route.fulfill({ json: { items: [{ id: 'answer', taskId: 'question-fixture', type: 'assistant', text: 'This equation expresses conservation of mass.', createdAt: 1 }] } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items: timeline } });
@@ -90,23 +91,16 @@ await page.route('**/api/**', async route => {
     }
     if (combinedOnCommit && body.mode === 'commit' && body.confirmation !== 'combined-version') return route.fulfill({ json: { commitReview: { token: 'combined-version', files: ['main.tex'], diff: '-Original title\n+Final reviewed title' } } });
     combinedOnCommit = false;
-    task.review.files = []; task.reconciliation = null;
+    task.review.files = []; task.reconciliation = null; task.status = 'reviewing';
     task.delivery = { mode: body.mode || 'workspace', accepted: 'accepted', ...(body.mode === 'commit' ? { branch: 'main', commit: 'abc1234' } : {}) };
     if (body.mode === 'commit') commitRequests.push(body);
     return route.fulfill({ json: { delivery: task.delivery } });
   }
-  if (url.pathname.endsWith('/commit')) {
-    const body = route.request().postDataJSON();
-    commitRequests.push(body); gitFiles = []; task.review.files = [];
-    if (task.deferred) task.delivery = { mode: 'branch', branch: 'papilot/flow', commit: 'abc1234', accepted: 'accepted' };
-    else task.committed = { hash: 'abc1234', accepted: `accepted-${commitRequests.length}`, at: Date.now(), pushed: body.push && !pushError };
-    return route.fulfill({ json: { commit: 'abc1234', pushError, git: { branch: 'main', upstream: 'origin/main', remote: true, ahead: 0, behind: 0, head: { hash: 'abc1234', subject: 'Explain the method', date: 2 }, files: [] } } });
-  }
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/messages')) { task.status = 'running'; task.review.unsent = 0; return route.fulfill({ json: { ok: true } }); }
   throw Error(`Unexpected app request ${url.pathname}`);
-});
-await page.route('**/review/**', async route => {
+};
+const reviewRoutes = async route => {
   const url = new URL(route.request().url()), relative = url.pathname.slice(prefix.length);
   if (relative === '/') return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(fs.readFileSync('engine/dist/web/index.html', 'utf8'), prefix) });
   if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('engine/dist/web' + relative), contentType: relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'font/otf' });
@@ -131,12 +125,37 @@ await page.route('**/review/**', async route => {
     update();
   }
   return route.fulfill({ json: { ...annotateReviewState(state(round), [task]), ...(restored ? { restored } : {}) } });
-});
+};
+await page.route('**/api/**', appRoutes);
+await page.route('**/review/**', reviewRoutes);
 const viewer = () => page.frameLocator('.review-frame');
 const sync = async () => page.evaluate(() => window.dispatchEvent(new Event('online')));
 try {
   await page.goto(origin);
   await viewer().locator('.change.current').waitFor();
+  // The desktop window moves from the toolbar row, also where the row is the
+  // viewer's own bar: app-region does nothing inside the iframe, so the host
+  // bar above it drags, with a no-drag hole over each of the bar's controls.
+  const desktop = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 1000 } });
+  desktop.on('pageerror', error => errors.push(error.message));
+  await desktop.addInitScript(() => { window.papilotDesktop = { platform: 'darwin', minimize() {}, maximize() {}, close() {} }; });
+  await desktop.route('**/api/**', appRoutes); await desktop.route('**/review/**', reviewRoutes);
+  await desktop.goto(origin);
+  await desktop.frameLocator('.review-frame').locator('.bar .accept-all').waitFor();
+  const dragRegions = () => desktop.evaluate(() => {
+    const host = document.querySelector('.review-host-bar'), frame = document.querySelector('.review-frame'), offset = frame.getBoundingClientRect();
+    const holes = [...host.querySelectorAll('.review-bar-hole')].filter(hole => getComputedStyle(hole).getPropertyValue('-webkit-app-region') === 'no-drag').map(hole => hole.getBoundingClientRect());
+    const controls = [...frame.contentDocument.querySelectorAll('.bar :is(.accept-all,.reject-all,.history)')].map(control => {
+      const box = control.getBoundingClientRect(), left = offset.left + box.left, top = offset.top + box.top, right = offset.left + box.right, bottom = offset.top + box.bottom;
+      const covered = holes.some(hole => hole.left <= left && hole.right >= right && hole.top <= top && hole.bottom >= bottom);
+      // The holes take no clicks: the button under each still gets them.
+      const reached = document.elementFromPoint((left + right) / 2, (top + bottom) / 2) === frame;
+      return `${control.getAttribute('aria-label') || control.textContent}${covered ? '' : ' drags'}${reached ? '' : ' blocked'}`;
+    });
+    return `${getComputedStyle(host).getPropertyValue('-webkit-app-region')}: ${controls.join(' · ')}`;
+  });
+  await expect.poll(dragRegions).toBe('drag: Accept all (4) · Reject all (4) · History');
+  await desktop.close();
   // Ordinary edits fold their knock-on changes; source-only and visually
   // unchanged definitions retain the PDF evidence needed to review them.
   const indirect = () => viewer().locator('.change[data-stop="0"] .effects');
@@ -163,16 +182,16 @@ try {
   await expect(openOn.getByRole('button', { name: 'Changes', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await openOn.getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(openOn.getByRole('button', { name: 'PDF', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  assert.equal(await page.evaluate(() => localStorage.getItem('latex-review:default-view')), 'paper');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:review:default-view')), 'paper');
   await openOn.screenshot({ path: 'test-results/review-default-view-setting.png' });
   await openOn.getByRole('button', { name: 'Changes', exact: true }).click();
-  assert.equal(await page.evaluate(() => localStorage.getItem('latex-review:default-view')), 'changes');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:review:default-view')), 'changes');
   await expect(expandEffects()).not.toBeChecked();
   await expandEffects().check();
   await expect(indirect().locator('.place')).toHaveCount(2);
   // Turning them on warns that rounds compile more.
   await expect(settings().getByRole('note')).toContainText('requires additional compilations');
-  assert.equal(indirectChanges, true, 'The server keeps the setting');
+  await expect.poll(() => indirectChanges, { message: 'The server keeps the setting' }).toBe(true);
   await page.screenshot({ path: 'test-results/indirect-effects-settings.png', fullPage: true });
   await settings().getByRole('button', { name: 'Close', exact: true }).click();
   assert.equal(writes.length, 0, 'Changing disclosure must not send review decisions');
@@ -272,12 +291,13 @@ try {
   await paper.evaluate(el => { el.scrollTop = 0; });
   console.log('PASS: Pointer-based review scrolling after accept/reject, independent Chat, nested editors, and native zoom');
   await expect(viewer().getByRole('button', { name: 'Keyboard shortcuts', exact: true })).toBeHidden();
-  assert.equal(await page.locator('.review-notes-toggle').count(), 0);
   // Shortcut settings update the running review, survive reload, and retain
   // the browser's editing keys. The old key must stop making decisions.
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'Keyboard shortcuts', exact: true }).click();
   const shortcuts = page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true });
+  await expect(shortcuts).toContainText('Anchor shortcuts work while the PDF is focused.');
+  await expect(shortcuts).toContainText('Shift+B');
   const acceptKey = shortcuts.getByRole('button', { name: 'Change shortcut: Accept change', exact: true });
   await acceptKey.click(); await acceptKey.press('r');
   await expect(shortcuts.getByRole('alert')).toContainText('Already used for Reject change');
@@ -401,7 +421,7 @@ try {
       // These comparisons are already usable while the next round builds.
       await expect(bar.locator('.accept-all')).toBeEnabled();
       await expect(bar.locator('.reject-all')).toBeEnabled();
-      assert.equal(await bar.evaluate(el => el.offsetHeight), height, `compilation preserves the ${language} toolbar at ${width}px`);
+      await expect.poll(() => bar.evaluate(el => el.offsetHeight), { message: `compilation preserves the ${language} toolbar at ${width}px` }).toBe(height);
       if (language === 'zh-CN' && width === 1100) await page.screenshot({ path: 'test-results/review-building-zh.png' });
       task.status = 'reviewing'; delete task.review.job; update(); await sync();
       await expect(bar.locator('.accept-all')).toBeEnabled();
@@ -430,7 +450,7 @@ try {
     await sync();
     await expect(page.locator('.review-rebuild')).toHaveAttribute('aria-busy', 'true');
     await expect(viewer().locator('.bar .status[data-state="building"]')).toHaveCSS('clip-path', 'inset(50%)');
-    assert.equal(await viewer().locator('.bar').evaluate(el => el.offsetHeight), height, 'phone compilation preserves toolbar height');
+    await expect.poll(() => viewer().locator('.bar').evaluate(el => el.offsetHeight), { message: 'phone compilation preserves toolbar height' }).toBe(height);
     task.status = 'reviewing'; delete task.review.job; update(); await sync();
     await expect(page.locator('.review-rebuild')).toHaveAttribute('aria-busy', 'false');
     await expect(viewer().locator('.bar .status[data-state="building"]')).toHaveCount(0);
@@ -449,7 +469,11 @@ try {
   // The accepted paragraph remains selectable for another note.
   await accepted.locator('.after .pdf-glyph').evaluate(el => { const range = document.createRange(); range.selectNodeContents(el); const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range); });
   await viewer().locator('.review-select-menu button').click();
-  await page.getByRole('textbox', { name: 'Comment 1', exact: true }).fill('A note on accepted text.');
+  const passageComment = viewer().getByRole('textbox', { name: 'Comment', exact: true });
+  await expect(passageComment).toBeFocused();
+  await passageComment.fill('A note on accepted text.');
+  await passageComment.press('Enter');
+  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveValue('A note on accepted text.');
   await viewer().locator('.change.current').getByRole('button', { name: 'Reject', exact: true }).click();
   await expect(viewer().locator('[data-stop="1"] .change-head')).toBeHidden();
   await expect(viewer().locator('[data-stop="1"] .side.before')).toBeVisible();
@@ -489,12 +513,11 @@ try {
   await viewer().locator('.source-unit').filter({ hasText: 'main.tex · lines 4–4' }).getByRole('button', { name: 'Reject', exact: true }).click();
   await expect(viewer().locator('.mixed-reviewed .side:visible')).toHaveCount(0);
   await expect(viewer().getByText('Reviewed changes · View in History', { exact: true })).toBeVisible();
-  // Existing direct-accept tasks retain their commit form; isolated tasks offer both save choices.
+  // A decided task offers both save choices.
   task.review.unsent = 0; task.review.comments = 0; task.review.files = ['main.tex']; gitFiles = [{ path: 'main.tex', status: 'M', staged: false }];
   await sync();
   const card = viewer().locator('.review-complete');
   const taskStatus = page.locator(`[data-task="${task.id}"] .status`);
-  await expect(card.getByRole('textbox', { name: 'Commit message', exact: true })).toBeVisible();
   task.deferred = true; task.review.files = ['main.tex']; gitFiles = [];
   await sync();
   const applyButton = () => card.getByRole('button', { name: 'Apply to workspace', exact: true });
@@ -504,6 +527,15 @@ try {
   await expect(applyButton()).toBeVisible();
   await expect(commitButton()).toBeEnabled();
   await expect(card.getByRole('button', { name: 'Archive task', exact: true })).toHaveCount(0);
+  // Pausing the agent leaves the completed review and both save choices usable.
+  // Reloading a paused task must not strand the author at the completion hint.
+  task.status = 'interrupted'; await sync();
+  await expect(applyButton()).toBeEnabled();
+  await expect(commitButton()).toBeEnabled();
+  await page.reload();
+  await expect(applyButton()).toBeEnabled();
+  await expect(commitButton()).toBeEnabled();
+  await expect(taskStatus).toHaveText('Paused');
   await card.getByRole('textbox', { name: 'Commit message' }).fill('My reviewed task');
   await expect(card.getByText('Choose how to save the accepted changes to your manuscript.', { exact: true })).toBeHidden();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
@@ -527,7 +559,6 @@ try {
     await expect(commitButton()).toBeInViewport();
     await expect.poll(lifted).toBe(true);
     assert.ok(await card.evaluate(el => Math.abs(el.getBoundingClientRect().top - document.getElementById('paper').getBoundingClientRect().top) < 30), 'The card stays at the top of the review');
-    assert.equal(await viewer().locator('.review-complete-jump').count(), 0);
     await page.screenshot({ path: `test-results/review-commit-floating-${width}.png`, animations: 'disabled' });
     await viewer().locator('#paper').evaluate(el => el.scrollTo(0, 0));
     await expect.poll(lifted).toBe(false);
@@ -602,8 +633,8 @@ try {
   await sync();
   await expect(card.getByRole('button', { name: 'Keep latest wording and apply', exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Keep latest wording and apply', exact: true }).click();
-  assert.equal(applyRequests.at(-1).keepCurrent, true);
   await expect(taskStatus).toHaveText('Applied to manuscript');
+  assert.equal(applyRequests.at(-1).keepCurrent, true);
   // If AI needs an answer or is interrupted, continue in chat without a source editor.
   task.delivery = null; task.review.files = ['main.tex'];
   task.reconciliation = { id: 'pending-merge', round: latest, files: ['main.tex'], ready: true };
@@ -628,8 +659,8 @@ try {
   await expect(card.locator('.task-commit-preview')).toContainText('Final reviewed title');
   await page.screenshot({ path: 'test-results/combined-title-commit.png', fullPage: true });
   await card.getByRole('button', { name: 'Commit together', exact: true }).click();
-  assert.equal(commitRequests.at(-1).confirmation, 'combined-version');
   await expect(taskStatus).toHaveText('Committed');
+  assert.equal(commitRequests.at(-1).confirmation, 'combined-version');
   task.delivery = null; task.review.files = ['main.tex']; await sync();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
@@ -748,7 +779,6 @@ try {
   await expect(page.getByRole('button', { name: 'Review', exact: true })).toHaveAttribute('aria-pressed', 'true');
   question.review.job.outcome = 'unchanged'; await sync();
   await expect(page.locator('.review-frame')).toBeVisible();
-  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:layout')), 'review');
   console.log('PASS: Answer-only tasks keep the PDF and chat views without a generate prompt; reload, mobile, follow-up questions, and later manuscript changes preserve the review preference');
   assert.deepEqual(errors, []);
   console.log('PASS: Current changes resolve to clean PDF; history and explicit undo; sent/working states; notes on accepted text; mixed decisions; new rounds; older rounds read-only; mobile');

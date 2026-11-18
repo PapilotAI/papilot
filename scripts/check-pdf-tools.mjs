@@ -4,11 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
+import { dragPdfText } from './pdf-selection-fixture.mjs';
 
 // The PDF's tool rail: each tool marks the way its name says, keys pick
 // tools, the magic pen's wheel and number keys add quick notes, its menu and
-// settings change them, and narrow viewers keep their old toolbar instead.
+// settings change them, and anchors share the rail without widening the header.
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
@@ -30,6 +31,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git')) return json(git);
   if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'pdf', pages: [[612, 792], [612, 792]] }, annotations: notes });
@@ -64,15 +66,13 @@ const rail = () => page.getByRole('toolbar', { name: 'Marking tools' });
 const tool = name => rail().getByRole('button', { name, exact: true });
 const words = () => page.locator('.page[data-page-number="1"] .textLayer span').filter({ hasText: /\S/ });
 async function selectText(index, release = true) {
-  await words().nth(index).evaluate((element, release) => {
+  if (release) return dragPdfText(page, words().nth(index));
+  // Keep a selection pending for the test that picks a marking tool later.
+  await words().nth(index).evaluate(element => {
     const range = document.createRange(); range.selectNodeContents(element);
     const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     document.dispatchEvent(new Event('selectionchange'));
-    if (release) {
-      const box = element.getBoundingClientRect();
-      element.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse', clientX: box.right, clientY: box.bottom }));
-    }
-  }, release);
+  });
 }
 // Floating cards are placed on animation frames and settings scroll a row into
 // view smoothly; act on an element once its box has held still.
@@ -89,12 +89,14 @@ const key = async value => { await page.locator('.pdf-container').focus(); await
 try {
   await page.goto(origin);
   await words().first().waitFor();
-  await expect(rail().getByRole('button')).toHaveCount(10);
+  await expect(rail().getByRole('button')).toHaveCount(15);
+  await expect(rail().getByRole('button', { name: /^(Back|Forward) in PDF$/ })).toHaveCount(0);
+  await expect(rail().locator('.rail-separator')).toHaveCount(1);
   await expect(tool('Undo')).toBeDisabled(); await expect(tool('Redo')).toBeDisabled();
-  assert.deepEqual(await rail().getByRole('button').evaluateAll(buttons => buttons.slice(-2).map(button => button.getAttribute('aria-label'))), ['Undo', 'Redo']);
-  const railBox = await rail().boundingBox(), redoBox = await tool('Redo').boundingBox();
-  const bottomGap = railBox.y + railBox.height - redoBox.y - redoBox.height;
-  assert.ok(bottomGap >= 0 && bottomGap < 12, 'History belongs inside the bottom of the rail');
+  assert.deepEqual(await rail().getByRole('button').evaluateAll(buttons => buttons.slice(-4).map(button => button.getAttribute('aria-label'))), ['Undo', 'Redo', 'Anchors', 'Add anchor']);
+  const railBox = await rail().boundingBox(), addBox = await tool('Add anchor').boundingBox();
+  const bottomGap = railBox.y + railBox.height - addBox.y - addBox.height;
+  assert.ok(bottomGap >= 0 && bottomGap < 12, 'Anchors follow history at the end of the rail');
   // Retracting the rail gives the width back to the PDF, keeps the selected
   // tool and keyboard shortcuts, and remembers the preference on reload.
   const collapse = () => tool('Collapse marking tools'), expand = () => tool('Expand marking tools');
@@ -119,7 +121,7 @@ try {
   await page.keyboard.press('Enter');
   await expect(collapse()).toHaveAttribute('aria-expanded', 'true');
   await expect(collapse()).toBeFocused();
-  await expect(rail().getByRole('button')).toHaveCount(10);
+  await expect(rail().getByRole('button')).toHaveCount(15);
   // The note tool is its own color picker: a click picks it, a second opens colors.
   await tool('Note').click();
   await expect(tool('Note')).toHaveAttribute('aria-pressed', 'true');
@@ -147,8 +149,8 @@ try {
   // Short windows scroll the tools while history stays visible and clickable.
   for (const height of [400, 320]) {
     await page.setViewportSize({ width: 1440, height });
-    const railBox = await settled(rail()), undoBox = await tool('Undo').boundingBox(), redoBox = await tool('Redo').boundingBox();
-    const gap = railBox.y + railBox.height - redoBox.y - redoBox.height;
+    const railBox = await settled(rail()), undoBox = await tool('Undo').boundingBox(), addBox = await tool('Add anchor').boundingBox();
+    const gap = railBox.y + railBox.height - addBox.y - addBox.height;
     assert.ok(gap >= 0 && gap < 12 && undoBox.y >= railBox.y);
     await tool('Undo').click(); await expect.poll(() => notes.length).toBe(0);
     await tool('Redo').click(); await expect.poll(() => notes).toEqual([originalMark]);
@@ -165,14 +167,16 @@ try {
   // Closing a menu restores keyboard focus while the browser is still
   // changing its popover stack. The hint must wait and never re-enter it.
   for (let repeat = 0; repeat < 3; repeat++) {
-    await tool('Collapse marking tools').focus(); await page.keyboard.press('Tab');
-    await expect(tool('Magic pen')).toBeFocused();
+    await tool('Collapse marking tools').focus();
+    for (const name of ['Find in PDF', 'Magic pen']) {
+      await page.keyboard.press('Tab'); await expect(tool(name)).toBeFocused();
+    }
     await expect(tool('Magic pen').locator('.rail-tip')).toBeVisible();
     await page.keyboard.press('Shift+Tab');
-    await expect(tool('Collapse marking tools')).toBeFocused();
+    await expect(tool('Find in PDF')).toBeFocused();
     await expect(page.locator('.rail-tip:popover-open')).toHaveCount(0);
     await page.keyboard.press('Tab');
-    for (let index = 0; index < 6; index++) await page.keyboard.press('Tab');
+    for (let index = 0; index < 7; index++) await page.keyboard.press('Tab');
     await expect(tool('Hand')).toBeFocused();
     await expect(tool('Hand').locator('.rail-tip')).toBeVisible();
     await page.keyboard.press('Enter');
@@ -435,10 +439,11 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(page.locator('.pdf-compact-tools')).toBeHidden();
-  await expect(page.locator('.pdf-toolbar .markup-toggle')).toHaveCount(0);
   await expect(rail()).toBeVisible();
   await expect(rail()).toHaveAttribute('aria-orientation', 'horizontal');
-  await expect(rail().getByRole('button')).toHaveCount(9);
+  // Hand stays on desktop; phones keep direct anchor creation beside the list.
+  await expect(rail().getByRole('button')).toHaveCount(14);
+  await expect(rail().locator('.pdf-anchor-quick-add')).toBeVisible();
   await expect(rail().getByRole('button', { name: 'Hand', exact: true })).toHaveCount(0);
   const mobileRailBox = await settled(rail());
   assert.ok(mobileRailBox.x >= 0 && mobileRailBox.x + mobileRailBox.width <= 390 && mobileRailBox.y > 700, 'Phone marking capsule floats within the bottom viewport');
@@ -457,7 +462,7 @@ try {
   await expect(page.locator('.pdf-view')).toHaveClass(/tool-select/);
   await expand().click();
   await expect(rail()).toHaveAttribute('data-collapsed', 'false');
-  await expect(rail().getByRole('button')).toHaveCount(9);
+  await expect(rail().getByRole('button')).toHaveCount(14);
   assert.deepEqual(errors, []);
   console.log('PASS: collapsible rail, bottom undo/redo, history retries and keyboard shortcuts, native text undo, deletions with replacements, the magic pen wheel, number lock, menu and settings, points, sticky notes, hand and Space, tool-after-selection, and phone collapsible bottom capsule.');
 } finally { await browser.close(); await server.close(); }

@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { App } from "../../src/server.ts";
 import { Repo } from "../../src/core/git.ts";
 import { diffUnits } from "../../src/core/changes.ts";
@@ -27,7 +29,7 @@ ${lines("Method")}
 ${lines("Detail")}
 `;
 export class Fixture {
-  base = fs.mkdtempSync(path.join(os.tmpdir(), "latex-review-ts-"));
+  base = fs.mkdtempSync(path.join(os.tmpdir(), "papilot-ts-"));
   root = path.join(this.base, "repo");
   repo: Repo;
   apps: App[] = [];
@@ -64,8 +66,34 @@ export class Fixture {
   }
   async close() {
     for (const app of this.apps) await app.close();
-    await fs.promises.rm(this.base, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await fs.promises.rm(this.base, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch((error) => {
+      // Windows can hold a file in the temporary folder for a moment after git
+      // exits. Removing it is not what any test checks.
+      if (process.platform !== "win32" || !["EPERM", "EBUSY"].includes(error?.code)) throw error;
+      console.warn(`Could not remove ${this.base}: ${error.message}`);
+    });
   }
+}
+/** Keeps `folder` from being deleted, as another program can: on Windows a
+ *  process uses it as its working directory; elsewhere a read-only folder
+ *  inside it holds a file. Resolves to the function that lets go. */
+export async function holdFolder(folder: string): Promise<() => Promise<void>> {
+  if (process.platform === "win32") {
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { cwd: folder, stdio: "ignore", windowsHide: true });
+    await once(child, "spawn");
+    return async () => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      const closed = once(child, "close");
+      child.kill();
+      await closed;
+    };
+  }
+  if (process.getuid?.() === 0) throw new Error("Run the tests as an ordinary user: root ignores folder permissions.");
+  const held = path.join(folder, "held");
+  fs.mkdirSync(held);
+  fs.writeFileSync(path.join(held, "file"), "Kept until released.");
+  fs.chmodSync(held, 0o555);
+  return async () => { if (fs.existsSync(held)) fs.chmodSync(held, 0o755); };
 }
 export function fakeRound(app: App, name: string) {
   const task = app.tasks.get(name),

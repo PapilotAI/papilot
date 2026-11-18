@@ -12,6 +12,7 @@ A **new paradigm** for responsible writing and typesetting with AI.
 [![Release](https://img.shields.io/github/v/release/PapilotAI/papilot?style=flat&label=release&color=0969da)](https://github.com/PapilotAI/papilot/releases/latest)
 [![GitHub total downloads](https://img.shields.io/github/downloads/PapilotAI/papilot/total?style=flat&logo=github&label=downloads&color=0969da)](https://github.com/PapilotAI/papilot/releases)
 [![npm monthly downloads](https://img.shields.io/npm/dm/papilot?style=flat&logo=npm&label=downloads&color=cb3837)](https://www.npmjs.com/package/papilot)
+[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/WdgZDDAvwj)
 <!-- END BADGES -->
 
 <p data-language-switcher><sub><a href="README.md">English</a>&nbsp;· <a href="docs/readme/README.zh-CN.md">简体中文</a>&nbsp;· <a href="docs/readme/README.zh-Hant.md">繁體中文</a>&nbsp;· <a href="docs/readme/README.ja.md">日本語</a>&nbsp;· <a href="docs/readme/README.ko.md">한국어</a>&nbsp;· <a href="docs/readme/README.de.md">Deutsch</a>&nbsp;· <a href="docs/readme/README.fr.md">Français</a>&nbsp;· <a href="docs/readme/README.es.md">Español</a>&nbsp;· <a href="docs/readme/README.pt.md">Português</a>&nbsp;· <a href="docs/readme/README.it.md">Italiano</a>&nbsp;· <a href="docs/readme/README.sv.md">Svenska</a></sub></p>
@@ -81,7 +82,7 @@ Mark a sentence, an equation or a figure, and write a note.<br>
       <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="docs/assets/readme-agents/compact-dark.svg">
       <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme-agents/desktop-dark.svg">
       <source media="(max-width: 600px)" srcset="docs/assets/readme-agents/compact.svg">
-      <img src="docs/assets/readme-agents/desktop.svg" alt="Codex, Claude, Cursor, Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode" width="816">
+      <img src="docs/assets/readme-agents/desktop.svg" alt="Papilot Writer, Pi, Codex, Claude, Cursor, Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode" width="816">
     </picture>
   </a>
 </p>
@@ -125,6 +126,27 @@ Want a sample first? Run `papilot demo`. Details are in the [guide](docs/guide.m
 <img src="docs/assets/readme-icons/discussion.svg" width="20" height="20" align="absmiddle" alt=""> &nbsp;**Have a question or an idea?** [Start a discussion](https://github.com/PapilotAI/papilot/discussions).
 
 <img src="docs/assets/readme-icons/pull-request.svg" width="20" height="20" align="absmiddle" alt=""> &nbsp;**Become a contributor.** Pull requests are very welcome, including ones written with AI agents. Start with the [contributing guide](.github/CONTRIBUTING.md).
+
+## Contributors
+
+<p>
+  <a href="https://github.com/PapilotAI/papilot/graphs/contributors">
+    <picture>
+      <source media="(max-width: 600px)" srcset="docs/assets/readme-contributors/compact.svg">
+      <img src="docs/assets/readme-contributors/desktop.svg" alt="Papilot's contributors">
+    </picture>
+  </a>
+</p>
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=papilotai%2Fpapilot&type=date&logscale=&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=papilotai/papilot&type=date&legend=bottom-right" />
+ </picture>
+</a>
 
 ---
 

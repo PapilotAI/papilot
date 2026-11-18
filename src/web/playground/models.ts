@@ -6,6 +6,7 @@ const model = (id: string, name: string, efforts: string[] = [], defaultEffort: 
 const codexEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 const claudeEfforts = ['low', 'medium', 'high', 'xhigh', 'max'];
 const catalog: Partial<Record<AgentId, AgentModel[]>> = {
+  papilot: [{ ...model('openai-codex/gpt-6-astra', 'GPT-6 Astra', codexEfforts, 'medium', true), source: 'ChatGPT Plus or Pro' }],
   codex: [
     model('gpt-6-astra', 'GPT-6 Astra', codexEfforts, 'xhigh', true),
     model('gpt-6.1-sol', 'GPT-6.1 Sol', codexEfforts, 'high'),
@@ -23,6 +24,10 @@ const catalog: Partial<Record<AgentId, AgentModel[]>> = {
   deepseek: [model('deepseek/deepseek-v4-pro', 'DeepSeek V4 Pro', [], null, true)],
 };
 const permissions: Partial<Record<AgentId, TaskPermissionOption[]>> = {
+  papilot: [
+    { value: 'workspace', label: 'Paper edits', detail: 'Read, edit LaTeX and BibTeX, compile, view pages and add verified references without asking. Ask before other files change, files are moved or deleted, and before chore mode runs shell commands.' },
+    { value: 'full', label: 'Full access', detail: 'Never ask: every edit, deletion and chore-mode command runs without approval, still only inside the task worktree.' },
+  ],
   codex: [
     { value: 'workspace', label: 'Workspace access', detail: 'Write within the workspace and configured writable roots, with network access. Ask before exceeding sandbox restrictions.' },
     { value: 'full', label: 'Full access', detail: 'Disable the sandbox and run tools without approval, subject to managed settings.' },

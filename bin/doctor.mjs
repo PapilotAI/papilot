@@ -1,5 +1,7 @@
+import { piExecutable, PI_MIN_VERSION, supportedPi } from './pi-cli.mjs';
 import { agentPath, findExecutable, killTree, spawnCommand } from './agent-paths.mjs';
-import { codexCandidates } from './codex-lookup.mjs';
+import { codexInstallations } from './codex-lookup.mjs';
+import { agentSdkFolder, managedInstall } from './installation.mjs';
 // Deliberately uses only Node built-ins: diagnostics must work before npm setup.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -66,7 +68,11 @@ function writableDirectory(target) {
   } catch { return false; }
 }
 function installedModule(name, directory = root) {
-  try { return createRequire(path.join(directory, 'package.json')).resolve(name); } catch { return null; }
+  const require = createRequire(path.join(directory, 'package.json'));
+  try { return require.resolve(name); } catch {}
+  // An import-only package (no "require" export) is installed when its folder is on the lookup path.
+  for (const folder of require.resolve.paths(name) || []) if (fs.existsSync(path.join(folder, name, 'package.json'))) return path.join(folder, name);
+  return null;
 }
 
 export async function doctor(args) {
@@ -100,6 +106,13 @@ export async function doctor(args) {
   const engine = expand(process.env.PAPILOT_REVIEW_ENGINE || path.join(root, 'engine'));
   const sourceCheckout = fs.existsSync(path.join(root, '.git'));
   const repair = sourceCheckout ? 'Run npm ci in the Papilot checkout.' : 'Reinstall Papilot with npm install -g papilot.';
+  // Agent SDKs are looked for where Papilot loads them. Managed installations
+  // never install Codex or an SDK themselves.
+  const method = managedInstall(), sdkFolder = agentSdkFolder(root, data);
+  const separateCodex = `Install a supported Codex separately${method === 'nix' ? ' with Nix' : ''} or set PAPILOT_CODEX_BIN to an existing installation.`;
+  const agentSdk = name => installedModule(name) || (sdkFolder && installedModule(name, sdkFolder));
+  const sdkFix = (name, fix) => method === 'nix' ? 'Reinstall the Papilot Nix package; it includes the agent SDKs.'
+    : method ? `Install ${name} into Papilot's node_modules, then restart Papilot.` : fix;
 
   check('node', supportedNode(process.versions.node), 'error', `Node.js ${process.versions.node} (${process.execPath})`, 'Install Node.js 22.22 or newer, then run papilot doctor again.');
   const missing = Object.keys(pkg.dependencies).filter(name => !installedModule(name));
@@ -131,7 +144,8 @@ export async function doctor(args) {
 
   async function desktopCodexCheck() {
     const configured = process.env.PAPILOT_CODEX_BIN;
-    const candidates = codexCandidates(process.env, data, root);
+    const candidates = [];
+    for await (const file of codexInstallations(process.env, data, root)) candidates.push(file);
     const env = { ...process.env, PATH: agentPath(process.env) };
     // Probes and login share a budget within the diagnostics deadline.
     const deadline = Date.now() + 20000;
@@ -151,7 +165,7 @@ export async function doctor(args) {
     const untried = candidates.slice(tried.length);
     const failure = [tried.length ? `Codex could not be run (${tried.join(', ')}).` : '', untried.length ? `Codex candidates not checked in time (${untried.join(', ')}).` : ''].filter(Boolean).join(' ');
     check('agent.codex', false, 'warn', configured ? 'PAPILOT_CODEX_BIN does not point to an executable.' : !candidates.length ? 'Codex is not installed.' : failure,
-      process.env.PAPILOT_INSTALL_METHOD === 'nix' ? 'Install a supported Codex separately with Nix or set PAPILOT_CODEX_BIN to an existing installation.'
+      method ? separateCodex
         : configured ? 'Correct PAPILOT_CODEX_BIN.'
         : `${candidates.length ? 'Reinstall' : 'Install'} Codex (npm install -g @openai/codex), then select Reconnect.`);
     return false;
@@ -181,7 +195,7 @@ export async function doctor(args) {
       return ready;
     }
     check('agent.codex', false, 'warn', configured ? 'PAPILOT_CODEX_BIN does not point to an executable.' : !found.length ? 'Codex is not installed.' : `No installed Codex meets version ${minimum}.`,
-      process.env.PAPILOT_INSTALL_METHOD === 'nix' ? 'Install a supported Codex separately with Nix or set PAPILOT_CODEX_BIN to an existing installation.'
+      method ? separateCodex
         : configured ? 'Correct PAPILOT_CODEX_BIN or unset it to use automatic installation.'
         : 'Run papilot codex login; it installs the supported Codex when needed.');
     return false;
@@ -197,9 +211,9 @@ export async function doctor(args) {
       check('agent.claude', ready, 'warn', `${cli}: ${ready ? `Claude Code signed in${login.subscriptionType ? ` (${login.subscriptionType} plan)` : ''}; generation was not tested` : login ? 'Claude Code is not signed in' : result.reason || 'login status unavailable'}.`, 'Run claude auth login, then select Reconnect in Papilot. Set PAPILOT_CLAUDE_BIN if needed.');
       return ready;
     }
-    const sdk = installedModule('@anthropic-ai/claude-agent-sdk') || installedModule('@anthropic-ai/claude-agent-sdk', path.join(data, 'agents'));
+    const sdk = agentSdk('@anthropic-ai/claude-agent-sdk');
     const configured = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY'].some(key => Boolean(process.env[key]));
-    check('agent.claude', Boolean(sdk && configured), configured ? 'warn' : 'info', !configured ? 'Claude Code is not installed and no Claude API key is configured, so Papilot does not offer Claude.' : sdk ? 'Claude SDK installed; API credentials configured (not validated).' : 'Claude API credentials configured; the Agent SDK is not installed yet.', !configured ? 'Install Claude Code and sign in with claude auth login to use your Claude plan, or start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured.' : 'Start papilot once to install the Claude Agent SDK.');
+    check('agent.claude', Boolean(sdk && configured), configured ? 'warn' : 'info', !configured ? 'Claude Code is not installed and no Claude API key is configured, so Papilot does not offer Claude.' : sdk ? 'Claude SDK installed; API credentials configured (not validated).' : `Claude API credentials configured; the Agent SDK is not installed${method ? '' : ' yet'}.`, !configured ? 'Install Claude Code and sign in with claude auth login to use your Claude plan, or start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured.' : sdkFix('@anthropic-ai/claude-agent-sdk', 'Start papilot once to install the Claude Agent SDK.'));
     return Boolean(sdk && configured);
   }
   async function agyCheck() {
@@ -234,17 +248,25 @@ export async function doctor(args) {
   // SDK agents: a key in the environment (or the SDK's own login) selects them; keys are not validated.
   async function cursorCheck() {
     const configured = Boolean(process.env.CURSOR_API_KEY) || fs.existsSync(path.join(os.homedir(), '.cursor/sdk/auth.json'));
-    const sdk = installedModule('@cursor/sdk') || installedModule('@cursor/sdk', path.join(data, 'agents'));
-    check('agent.cursor', Boolean(configured && sdk), configured ? 'warn' : 'info', !configured ? 'Neither CURSOR_API_KEY nor a saved Cursor SDK login was found for the user running Papilot.' : sdk ? 'Cursor SDK installed; SDK credentials detected (not validated).' : 'Cursor SDK credentials detected; the SDK is installed on first use.', !configured ? 'Start Papilot with CURSOR_API_KEY set to a key from the Cursor dashboard, or configure the Cursor SDK login. The Cursor app and CLI login are not used. Restart Papilot after changing its environment.' : 'Start papilot and choose Cursor once to install the SDK.');
+    const sdk = agentSdk('@cursor/sdk');
+    check('agent.cursor', Boolean(configured && sdk), configured ? 'warn' : 'info', !configured ? 'Neither CURSOR_API_KEY nor a saved Cursor SDK login was found for the user running Papilot.' : sdk ? 'Cursor SDK installed; SDK credentials detected (not validated).' : `Cursor SDK credentials detected; the SDK is ${method ? 'not installed' : 'installed on first use'}.`, !configured ? 'Start Papilot with CURSOR_API_KEY set to a key from the Cursor dashboard, or configure the Cursor SDK login. The Cursor app and CLI login are not used. Restart Papilot after changing its environment.' : sdkFix('@cursor/sdk', 'Start papilot and choose Cursor once to install the SDK.'));
     return configured;
   }
   async function glmCheck() {
     const configured = Boolean(process.env.ZHIPU_API_KEY || process.env.ZAI_API_KEY);
-    const sdk = installedModule('@anthropic-ai/claude-agent-sdk') || installedModule('@anthropic-ai/claude-agent-sdk', path.join(data, 'agents'));
-    check('agent.glm', Boolean(configured && sdk), configured ? 'warn' : 'info', !configured ? 'ZHIPU_API_KEY or ZAI_API_KEY is not set, so Papilot does not offer GLM.' : sdk ? `GLM key configured for ${process.env.ZHIPU_API_KEY ? 'open.bigmodel.cn' : 'api.z.ai'} (not validated).` : 'GLM key configured; the Claude Agent SDK that runs GLM is installed on first use.', !configured ? 'Start Papilot with ZHIPU_API_KEY (open.bigmodel.cn) or ZAI_API_KEY (api.z.ai) set to your GLM Coding Plan or API key.' : 'Start papilot and choose GLM once to install the Claude Agent SDK.');
+    const sdk = agentSdk('@anthropic-ai/claude-agent-sdk');
+    check('agent.glm', Boolean(configured && sdk), configured ? 'warn' : 'info', !configured ? 'ZHIPU_API_KEY or ZAI_API_KEY is not set, so Papilot does not offer GLM.' : sdk ? `GLM key configured for ${process.env.ZHIPU_API_KEY ? 'open.bigmodel.cn' : 'api.z.ai'} (not validated).` : `GLM key configured; the Claude Agent SDK that runs GLM is ${method ? 'not installed' : 'installed on first use'}.`, !configured ? 'Start Papilot with ZHIPU_API_KEY (open.bigmodel.cn) or ZAI_API_KEY (api.z.ai) set to your GLM Coding Plan or API key.' : sdkFix('@anthropic-ai/claude-agent-sdk', 'Start papilot and choose GLM once to install the Claude Agent SDK.'));
     return configured;
   }
-  const agents = await Promise.all([codexCheck(), claudeCheck(), cursorCheck(), copilotCheck(), grokCheck(), agyCheck(), kimiCheck(), glmCheck(), deepseekCheck(), qwenCheck(), opencodeCheck()]);
+  async function piCheck() {
+    const file = piExecutable(process.env);
+    if (!file) { check('agent.pi', false, 'info', missingAgent('pi', 'PAPILOT_PI_BIN'), 'Install Pi from https://pi.dev and configure a provider in pi. Set PAPILOT_PI_BIN if needed.'); return false; }
+    const result = await command(file, ['--version']);
+    const ready = result.ok && supportedPi(result.stdout);
+    check('agent.pi', ready, 'warn', `${file}: ${ready ? 'Pi CLI available; login and generation were not tested' : result.reason || `Pi ${PI_MIN_VERSION} or newer is required`}.`, 'Update Pi, run pi and use /login or configure a provider, then reconnect.');
+    return ready;
+  }
+  const agents = await Promise.all([piCheck(), codexCheck(), claudeCheck(), cursorCheck(), copilotCheck(), grokCheck(), agyCheck(), kimiCheck(), glmCheck(), deepseekCheck(), qwenCheck(), opencodeCheck()]);
   check('agents', agents.some(Boolean), 'warn', agents.some(Boolean) ? 'At least one agent passed its configuration check; live editing was not tested.' : 'No agent passed its configuration check. PDF reading can still be used with a working TeX installation.', 'Configure one agent before starting editing tasks.');
 
   if (repo) {
@@ -257,17 +279,18 @@ export async function doctor(args) {
       if (atRoot) {
         const head = await command(git, ['-C', repo, 'rev-parse', '--verify', 'HEAD']);
         check('project.head', head.ok, 'error', head.ok ? 'The repository has an initial commit.' : 'The repository has no initial commit.', 'Create the first Git commit before adding this paper to Papilot.');
+        let settings = 'the settings.json in the papilot folder of its Git directory';
         try {
           const { register } = await import('tsx/esm/api');
           const unregister = register();
-          let project;
-          try { project = (await import(pathToFileURL(path.join(engine, 'src/core/config.ts')).href)).loadProject(repo); }
+          let project, config;
+          try { config = await import(pathToFileURL(path.join(engine, 'src/core/config.ts')).href); settings = config.settingsFile(repo); project = config.loadProject(repo); }
           finally { unregister(); }
           check('project.main', true, 'error', `${project.main} (${project.engine}); configuration loaded without compiling.`);
           await tool(project.engine, ['--version'], `Install ${project.engine} through your TeX distribution.`, 'project.engine');
-          check('project.worktrees', writableDirectory(project.worktrees), 'error', `Task worktrees: ${project.worktrees}`, 'Choose a writable worktrees directory outside the repository in .latex-review.json.');
+          check('project.worktrees', writableDirectory(project.worktrees), 'error', `Task worktrees: ${project.worktrees}`, `Choose a writable worktrees directory outside the repository in ${settings}.`);
         } catch (error) {
-          check('project.main', false, 'error', `Could not load the paper configuration: ${error.message}`, 'Check .latex-review.json, its main/source_dir settings, and the review-engine/dependencies checks above.');
+          check('project.main', false, 'error', `Could not load the paper configuration: ${error.message}`, `Check ${settings}, its main/source_dir settings, and the review-engine/dependencies checks above.`);
         }
       }
     }
@@ -310,7 +333,7 @@ export async function doctor(args) {
     }
   }
   // Keep reports stable even though independent probes finish in any order.
-  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.codex', 'agent.claude', 'agent.cursor', 'agent.copilot', 'agent.grok', 'agent.antigravity', 'agent.kimi', 'agent.glm', 'agent.deepseek', 'agent.qwen', 'agent.opencode', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
+  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.pi', 'agent.codex', 'agent.claude', 'agent.cursor', 'agent.copilot', 'agent.grok', 'agent.antigravity', 'agent.kimi', 'agent.glm', 'agent.deepseek', 'agent.qwen', 'agent.opencode', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
   checks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const report = { name: 'Papilot', version: pkg.version, ok: !checks.some(item => !item.ok && item.severity === 'error'), checks };
   if (json) console.log(JSON.stringify(report, null, 2));

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 
 fs.mkdirSync('test-results', { recursive: true });
 const server = Fastify();
@@ -35,6 +35,7 @@ await context.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return json({ version: 'test', csrf: 'fixture', projects: [project], tasks: [], requests: [], runtime });
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: 'test', phase: 'idle', checkedAt: 1, error: null, canUpdate: true });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
@@ -176,7 +177,7 @@ try {
   await expect(staged).toHaveCount(0);
   await panel.getByRole('button', { name: 'main.tex', exact: true }).click();
   await page.getByRole('region', { name: 'Changes in main.tex', exact: true }).getByText('Updated.', { exact: true }).waitFor();
-  await expect(panel.locator('.git-panel .git-diff-view,.git-panel .git-diff-wrap')).toHaveCount(0);
+  await expect(panel.locator('.git-panel .git-diff-view')).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'main.tex', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await panel.getByRole('button', { name: 'results.tex chapters', exact: true }).click();
   const sourceDiff = page.getByRole('region', { name: 'Changes in chapters/results.tex', exact: true });

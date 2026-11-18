@@ -35,8 +35,9 @@ export async function checkSiteBehavior(context) {
     await page.evaluate(() => window.finishCopy());
     assert.deepEqual(await events('copy_install'), [], 'an old collection period cannot leak a delayed result into a new one');
 
-    await page.locator('.nav a[href="#features"]').click();
-    assert.deepEqual((await events('navigation')).at(-1).data, { locale: 'en', target: 'features', placement: 'header' });
+    await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
+    await page.locator('.scroll-cue').click();
+    assert.deepEqual((await events('navigation')).at(-1).data, { locale: 'en', target: 'agents', placement: 'hero' });
     await page.locator('#download-button').focus();
     await page.keyboard.press('ArrowDown');
     assert.deepEqual((await events('menu_open')).at(-1).data, { locale: 'en', menu: 'download', placement: 'hero' });

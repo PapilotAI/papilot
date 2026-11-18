@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
-import { Fixture, METHOD, BODY, fakeRound } from "./helpers.ts";
+import { Fixture, METHOD, BODY, fakeRound, holdFolder } from "./helpers.ts";
 import { safePath } from "../../src/core/review.ts";
 import { App } from "../../src/server.ts";
 import type { Task, ActionKind } from "../../src/types.ts";
@@ -305,7 +305,7 @@ it("inserts the round of an undo that a restart interrupted before the insert", 
   await app.publisher.join();
   // As if the server stopped after the undo, before its round.
   app.store.execute("DELETE FROM rounds WHERE task=? AND number=3", later.name);
-  app.repo.run(["update-ref", "-d", `refs/latex-review/${later.name}/round-3`]);
+  app.repo.run(["update-ref", "-d", `refs/papilot/${later.name}/round-3`]);
   await app.close(); f.apps.splice(f.apps.indexOf(app), 1);
   const restarted = f.app();
   vi.spyOn(restarted.publisher, "publish").mockImplementation(async (job) => {
@@ -362,7 +362,39 @@ it("reattaches matching scopes and requires explicit force before discarding", a
   await app.tasks.finish(task.name, true);
   expect(app.tasks.list()).toEqual([]);
   expect(fs.existsSync(task.worktree)).toBe(false);
-  expect(app.repo.text(["for-each-ref", "refs/latex-review/polish/"])).toBe("");
+  expect(app.repo.text(["for-each-ref", "refs/papilot/polish/"])).toBe("");
+});
+it("a folder another program keeps open stops finishing until a retry after it is released", async () => {
+  const release = await holdFolder(task.worktree);
+  try {
+    await expect(app.tasks.finish(task.name, true)).rejects.toThrow(
+      `Could not delete the task folder ${task.worktree}. If another program is using it`,
+    );
+    expect(fs.existsSync(task.worktree)).toBe(true);
+    expect(app.tasks.get(task.name).closed).toBeNull();
+  } finally {
+    await release();
+  }
+  await app.tasks.finish(task.name, true);
+  expect(fs.existsSync(task.worktree)).toBe(false);
+  expect(fs.existsSync(path.join(f.root, ".git/worktrees", task.name))).toBe(false);
+  expect(app.tasks.list()).toEqual([]);
+  expect(app.repo.text(["for-each-ref", "refs/papilot/polish/"])).toBe("");
+});
+it("finishing removes a worktree folder that Git unregistered but could not delete", async () => {
+  const release = await holdFolder(task.worktree);
+  try {
+    // What `git worktree remove` left before Papilot deleted the folder itself.
+    expect(() => app.repo.run(["worktree", "remove", "--force", task.worktree])).toThrow();
+  } finally {
+    await release();
+  }
+  expect(fs.existsSync(task.worktree)).toBe(true);
+  expect(fs.existsSync(path.join(f.root, ".git/worktrees", task.name))).toBe(false);
+  await app.tasks.finish(task.name, true);
+  expect(fs.existsSync(task.worktree)).toBe(false);
+  expect(app.tasks.list()).toEqual([]);
+  expect(app.repo.text(["for-each-ref", "refs/papilot/polish/"])).toBe("");
 });
 it("recreating a finished task clears its old write journal", async () => {
   two();

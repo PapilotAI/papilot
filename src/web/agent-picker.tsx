@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { AgentId, RuntimeStatus, TaskPermissions } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
@@ -19,10 +19,12 @@ export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect
   // An agent that was not found is not connecting: say so until it is installed and Reconnect finds it.
   const message = runtime.installed === false ? t('{agent} was not found on this computer. Install or set it up, then select Reconnect.', { agent: name })
     : error ? (first.length <= 120 ? first : t('{agent} is unavailable', { agent: name })) : runtime.connected ? t('Sign-in required') : t('Connecting to {agent}…', { agent: name });
+  // A running agent without a sign-in reloads the host's current one (see connectAgent).
+  const signedOut = runtime.connected && !runtime.authenticated;
   return <div className="agent-connection" data-state={connecting ? 'connecting' : 'error'}>
     <div className="agent-connection-message" role="status">{connecting ? <span className="spinner" aria-hidden="true"/> : <Icon name="alert" size={14}/>}<span>{message}</span></div>
     {error && error !== message && <details><summary>{t('Connection details')}</summary><p>{error}</p></details>}
-    <button type="button" disabled={reconnecting} onClick={onReconnect}><Icon name="refresh" size={12}/>{reconnecting ? t('Connecting…') : t('Reconnect')}</button>
+    <button type="button" disabled={reconnecting} title={signedOut ? t('Use the current {agent} sign-in on the Papilot host', { agent: name }) : undefined} onClick={onReconnect}><Icon name="refresh" size={12}/>{reconnecting ? signedOut ? t('Refreshing…') : t('Connecting…') : signedOut ? t('Refresh') : t('Reconnect')}</button>
   </div>;
 }
 
@@ -38,6 +40,19 @@ export function NoAgentNotice({ reconnecting, onReconnect, onAdd }: { reconnecti
   </div>;
 }
 
+// Shown to authors who chose another agent before Papilot Writer existed:
+// their choice stays, and this suggests trying the built-in agent once.
+export function WriterSuggestion({ ready, onUse, onSetUp, onDismiss }: { ready: boolean; onUse: () => void; onSetUp: () => void; onDismiss: () => void }) {
+  return <div className="agent-connection writer-suggestion" data-state="info">
+    <div className="agent-connection-message" role="note"><BrandIcon name="papilot" size={16}/><span>{t('Try Papilot Writer, the paper-writing agent built into Papilot. Your current agent stays the default until you switch.')}</span></div>
+    <div className="agent-connection-actions">
+      {ready ? <button type="button" className="button primary compact" onClick={onUse}>{t('Use Papilot Writer')}</button>
+        : <button type="button" className="button primary compact" onClick={onSetUp}>{t('Set up Papilot Writer')}</button>}
+      <button type="button" className="button secondary compact" onClick={onDismiss}>{t('Not now')}</button>
+    </div>
+  </div>;
+}
+
 // Recent agent and model choices, newest first, shown above the full list.
 const RECENT = 'papilot:recent-models';
 function readRecent(): { agent: AgentId; model: string }[] {
@@ -48,8 +63,17 @@ function remember(agent: AgentId, model: string) {
   browserStorage.setItem(RECENT, JSON.stringify(next));
 }
 
-export interface AgentOption { value: AgentId; label: string; runtime?: RuntimeStatus }
-interface Choice { key: string; agent: AgentOption; model: string; name: string; isDefault: boolean; recent: boolean }
+export interface AgentOption { value: AgentId; label: string; runtime?: RuntimeStatus; allowUnknownDefault?: boolean; restartsTask?: boolean }
+// An agent's models in runs of the same source, in list order; models without one stay ungrouped.
+function bySource(items: Choice[]) {
+  const parts: { source?: string; items: Choice[] }[] = [];
+  for (const item of items) {
+    const last = parts.at(-1);
+    if (last && last.source === item.source) last.items.push(item); else parts.push({ source: item.source, items: [item] });
+  }
+  return parts;
+}
+interface Choice { key: string; agent: AgentOption; model: string; name: string; source?: string; isDefault: boolean; recent: boolean }
 
 // An agent's state when it cannot be used yet, shown beside its name.
 function agentState(runtime?: RuntimeStatus) {
@@ -86,12 +110,12 @@ export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, 
   const choices = (option: AgentOption): Choice[] => {
     const list = option.runtime?.models || [];
     return [
-      ...(allowUnknownDefault && !list.some(item => item.isDefault) ? [{ key: `${option.value}\n`, agent: option, model: '', name: t('Default model'), isDefault: false, recent: false }] : []),
-      ...list.map(item => ({ key: `${option.value}\n${item.id}`, agent: option, model: item.id, name: item.name, isDefault: item.isDefault, recent: false })),
+      ...((option.allowUnknownDefault ?? allowUnknownDefault) && !list.some(item => item.isDefault) ? [{ key: `${option.value}\n`, agent: option, model: '', name: t('Default model'), isDefault: false, recent: false }] : []),
+      ...list.map(item => ({ key: `${option.value}\n${item.id}`, agent: option, model: item.id, name: item.name, source: item.source, isDefault: item.isDefault, recent: false })),
     ];
   };
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  const matches = (choice: Choice) => terms.every(term => `${choice.agent.label} ${choice.name} ${choice.model}`.toLocaleLowerCase().includes(term));
+  const matches = (choice: Choice) => terms.every(term => `${choice.agent.label} ${choice.source || ''} ${choice.name} ${choice.model}`.toLocaleLowerCase().includes(term));
   const groups = agents.map(option => ({ option, items: choices(option).filter(matches) })).filter(group => group.items.length);
   const recentItems = terms.length ? [] : recent.flatMap(item => {
     const option = agents.find(candidate => candidate.value === item.agent);
@@ -117,18 +141,28 @@ export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, 
     return () => { observer.disconnect(); window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
   }, [open]);
   useEffect(() => { if (disabled || noAgent) panel.current?.hidePopover(); }, [disabled, noAgent]);
+  function revealOption(option: HTMLElement | null | undefined) {
+    const container = list.current;
+    if (!container || !option) return;
+    const bounds = container.getBoundingClientRect(), item = option.getBoundingClientRect();
+    // scrollIntoView can also scroll the containing modal. That dismisses
+    // the picker as soon as it opens inside a scrollable dialog.
+    if (item.top < bounds.top) container.scrollTop -= bounds.top - item.top;
+    else if (item.bottom > bounds.bottom) container.scrollTop += item.bottom - bounds.bottom;
+  }
   // Keep the active option in view while moving through the list with the keyboard.
-  useEffect(() => { if (open && active) list.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(active)}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active, open]);
+  useEffect(() => { if (open && active) revealOption(list.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(active)}"]`)); }, [active, open]);
   function show() {
     setQuery(''); setRecent(readRecent());
     panel.current?.showPopover(); position(); setOpen(true);
     const chosen = visible.find(isSelected);
     setActive(chosen?.key || visible[0]?.key || '');
-    requestAnimationFrame(() => list.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }));
+    requestAnimationFrame(() => revealOption(list.current?.querySelector<HTMLElement>('[aria-selected="true"]')));
     // Typing filters right away; on a touch screen the keyboard would cover the list, so search waits for a tap.
-    if (!window.matchMedia('(pointer: coarse)').matches) search.current?.focus();
+    if (!window.matchMedia('(pointer: coarse)').matches) search.current?.focus({ preventScroll: true });
   }
   function choose(choice: Choice) {
+    if (disabled) return;
     onSelect(choice.agent.value, choice.model);
     remember(choice.agent.value, choice.model);
     setActive(choice.key);
@@ -140,11 +174,14 @@ export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, 
   }
   const renderChoice = (choice: Choice) => {
     const chosen = isSelected(choice), state = agentState(choice.agent.runtime);
-    return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={`${choice.name} · ${choice.agent.label}`}
+    const restart = choice.agent.restartsTask ? t('Restart task') : undefined;
+    return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={[choice.name, choice.source, choice.agent.label].filter(Boolean).join(' · ')}
+      aria-description={restart} title={restart}
       className={'model-option' + (choice.key === active ? ' active' : '')} onPointerMove={() => setActive(choice.key)} onClick={() => choose(choice)}>
       {choice.recent && <BrandIcon name={choice.agent.value} size={15}/>}<span className="model-option-name">{choice.name}</span>
       {choice.isDefault && !choice.recent && <small className="model-option-tag">{t('Default')}</small>}
-      {(choice.recent || state) && <small className={'model-option-agent' + (state ? ' warn' : '')}>{choice.recent ? choice.agent.label : state}</small>}
+      {(choice.recent || state) && <small className={'model-option-agent' + (state ? ' warn' : '')}>{choice.recent ? [choice.agent.label, choice.source].filter(Boolean).join(' · ') : state}</small>}
+      {restart && <span className="model-option-restart" aria-hidden="true"><Icon name="refresh" size={14}/></span>}
       {chosen && <Icon name="check" size={14}/>}
     </div>;
   };
@@ -167,7 +204,7 @@ export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, 
       <label className="model-search"><Icon name="search" size={14}/>
         <input ref={search} type="search" value={query} placeholder={t('Search models')} aria-label={t('Search models')} role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-autocomplete="list"
           aria-activedescendant={activeChoice ? `${id}-${activeChoice.key.replace(/\W/g, '_')}` : undefined}
-          onChange={event => { setQuery(event.target.value); const terms = event.target.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean); const first = agents.flatMap(choices).find(choice => terms.every(term => `${choice.agent.label} ${choice.name} ${choice.model}`.toLocaleLowerCase().includes(term))); setActive(first?.key || ''); }}
+          onChange={event => { setQuery(event.target.value); const terms = event.target.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean); const first = agents.flatMap(choices).find(choice => terms.every(term => `${choice.agent.label} ${choice.source || ''} ${choice.name} ${choice.model}`.toLocaleLowerCase().includes(term))); setActive(first?.key || ''); }}
           onKeyDown={event => {
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); move(event.key === 'ArrowDown' ? 1 : -1); }
             else if (event.key === 'Enter' && activeChoice) { event.preventDefault(); choose(activeChoice); }
@@ -177,7 +214,9 @@ export function AgentPicker({ agents, agent, model, effort, fast, reconnecting, 
         {recentItems.length > 0 && <div role="group" aria-label={t('Recent')} className="model-group"><div className="model-group-head" aria-hidden="true">{t('Recent')}</div>{recentItems.map(renderChoice)}</div>}
         {groups.map(group => <div key={group.option.value} role="group" aria-label={group.option.label} className="model-group">
           <div className="model-group-head" aria-hidden="true"><BrandIcon name={group.option.value} size={15}/>{group.option.label}</div>
-          {group.items.map(renderChoice)}
+          {bySource(group.items).map(part => part.source
+            ? <div key={part.source} role="group" aria-label={`${group.option.label}, ${part.source}`} className="model-subgroup"><div className="model-subgroup-head" aria-hidden="true">{part.source}</div>{part.items.map(renderChoice)}</div>
+            : <Fragment key="">{part.items.map(renderChoice)}</Fragment>)}
         </div>)}
         {!visible.length && <p className="model-empty">{t('No models match “{query}”', { query: query.trim() })}</p>}
       </div>

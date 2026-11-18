@@ -31,16 +31,29 @@ export class AttachmentDraft {
   constructor(private key: string, private storage: Storage) {
     try {
       const files: Attachment[] = JSON.parse(savedDraft(key, storage) || '[]');
-      if (Array.isArray(files)) this.entries = files.filter(file => file && typeof file.id === 'string' && typeof file.projectId === 'string' && typeof file.name === 'string' && typeof file.size === 'number' && typeof file.mime === 'string').slice(0, MAX_ATTACHMENTS)
+      if (Array.isArray(files)) this.entries = files.filter(file => file && typeof file.id === 'string' && typeof file.projectId === 'string' && typeof file.name === 'string' && typeof file.size === 'number' && typeof file.mime === 'string')
         .map(file => ({ key: file.id, name: file.name, size: file.size, attachment: file, uploading: false }));
     } catch { /* A damaged draft must not prevent the composer from opening. */ }
     this.changed();
   }
   private changed() {
     const files = this.entries.flatMap(entry => entry.attachment ? [entry.attachment] : []);
-    this.snapshot = { entries: this.entries, files, blocked: this.entries.some(entry => entry.uploading || Boolean(entry.error)), error: this.error };
+    const limit = this.entries.length > MAX_ATTACHMENTS ? t('Attach up to 10 files per message.')
+      : this.entries.reduce((sum, entry) => sum + entry.size, 0) > MAX_ATTACHMENT_TOTAL ? t('Attachments must total 100 MB or less.') : '';
+    this.snapshot = { entries: this.entries, files, blocked: Boolean(limit) || this.entries.some(entry => entry.uploading || Boolean(entry.error)), error: limit || this.error };
     if (files.length) this.storage.setItem(this.key, JSON.stringify(files)); else this.storage.removeItem(this.key);
     for (const listener of this.listeners) listener();
+  }
+  // A replacement can be opened before its restart response arrives. Merge
+  // copied files into that live draft without discarding new files or uploads.
+  restore(files: Attachment[]) {
+    const ids = new Set(this.entries.flatMap(entry => entry.attachment ? [entry.attachment.id] : []));
+    for (const file of files) {
+      if (ids.has(file.id)) continue;
+      ids.add(file.id);
+      this.entries = [...this.entries, { key: file.id, name: file.name, size: file.size, attachment: file, uploading: false }];
+    }
+    this.changed();
   }
   async add(files: File[], upload: UploadAttachment) {
     this.error = '';

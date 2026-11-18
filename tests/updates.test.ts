@@ -450,13 +450,14 @@ for (const version of ['0.7.0', devVersion]) for (const broken of [false, true])
     });
   }
 });
-test('downloaded releases tolerate a slow isolated startup before activation', async () => {
+test('downloaded releases may start slowly before activation, but not past the deadline', async () => {
   const stage = temporary(), root = path.join(stage, 'candidate'), log = fs.openSync(path.join(stage, 'probe.log'), 'w');
   try {
     fakeRelease(root, '0.7.0');
-    const main = path.join(root, 'src/server/main.ts');
-    fs.writeFileSync(main, 'await new Promise(resolve => setTimeout(resolve, 12000));\n' + fs.readFileSync(main, 'utf8'));
-    await probeInstallation(root, '0.7.0', stage, log);
+    const main = path.join(root, 'src/server/main.ts'), original = fs.readFileSync(main, 'utf8');
+    fs.writeFileSync(main, 'await new Promise(resolve => setTimeout(resolve, 1500));\n' + original);
+    await probeInstallation(root, '0.7.0', stage, log, 8000);
+    await assert.rejects(probeInstallation(root, '0.7.0', stage, log, 500), /did not pass its startup check/);
   }
   finally { fs.closeSync(log); fs.rmSync(stage, { recursive: true, force: true }); }
 });
@@ -508,8 +509,12 @@ for (const version of ['0.7.0', devVersion]) test(`a browser install of ${versio
     for (let i = 0; i < 100 && !(await health(port, version)); i++) await sleep(100);
     const diagnostics = () => [path.join(folder, 'server.log'), path.join(data, 'updates/restart.log'), path.join(data, 'updates/server.log'), path.join(data, 'updates/status.json')].filter(file => fs.existsSync(file)).map(file => fs.readFileSync(file, 'utf8')).join('\n');
     assert.ok(await health(port, version), diagnostics());
-    for (let i = 0; i < 30 && readJson(path.join(data, 'updates/status.json'))?.phase !== 'updated'; i++) await sleep(100);
-    assert.equal(readJson(path.join(data, 'updates/status.json')).phase, 'updated');
+    // The worker records the update once its own health check, which also
+    // matches the update's instance and polls every 300 ms with a 1.5 s
+    // timeout, sees the new server: on a slow runner that comes seconds
+    // after this test's check.
+    for (let i = 0; i < 150 && readJson(path.join(data, 'updates/status.json'))?.phase !== 'updated'; i++) await sleep(100);
+    assert.equal(readJson(path.join(data, 'updates/status.json')).phase, 'updated', diagnostics());
     assert.deepEqual((await (await fetch(base + '/api/state')).json()).projects.map((project: any) => project.id), ['kept-paper']);
     assert.equal(execFileSync(process.execPath, [path.join(original, 'bin/papilot.mjs'), '--data', data, '--version'], { encoding: 'utf8' }).trim(), version);
     await stop(); started = launch('src/server/main.ts');

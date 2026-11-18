@@ -6,6 +6,7 @@ import { cleanPath, within } from "./git.ts";
 import { capture } from "./process.ts";
 import { mupdf } from "../render/pdf.ts";
 import type { App } from "../server.ts";
+import type { Project } from "./config.ts";
 import type { BuildInfo } from "../types.ts";
 // A task's agent looks at its typeset pages: the task worktree as it is now,
 // or the accepted text, compiled like a review round (only the chapters the
@@ -17,6 +18,10 @@ export interface ViewRequest {
   locations?: string[];
   pages?: string[];
   accepted?: boolean;
+  /** Only compile and report problems, drawing no pages (Papilot Writer's check_build). */
+  check?: boolean;
+  /** Compile every chapter, so the paper map includes the whole current outline. */
+  full?: boolean;
 }
 export interface ViewedPage {
   /** The page's position in the PDF that was built, from 1. */
@@ -35,6 +40,13 @@ export interface ViewResult {
   targets: string[];
   error?: string;
   details?: string[];
+  /** With check: the built PDF's page count, the build time and its problems. */
+  pageCount?: number;
+  seconds?: number;
+  errors?: string[];
+  warnings?: string[];
+  /** With check: where the build is, for Papilot Writer's paper map. */
+  compiled?: { pdf: string; root: string; cwd: string; sourceDir: string };
 }
 // How far from an asked-for line SyncTeX may look for one that printed
 // something (blank lines and comments print nothing).
@@ -44,7 +56,7 @@ const NEARBY = 10,
   KEEP = 6 * 3600 * 1000;
 // A new folder for one view's pages, after removing the task's old ones.
 function folder(app: App, name: string) {
-  const views = path.join(app.project.state, "views", name);
+  const views = path.join(app.state, "views", name);
   for (const entry of fs.existsSync(views) ? fs.readdirSync(views) : []) {
     const old = path.join(views, entry);
     if (Date.now() - fs.statSync(old).mtimeMs > KEEP)
@@ -59,14 +71,14 @@ interface Location {
   file: string;
   line: number;
 }
-function location(app: App, worktree: string, value: string): Location {
+function location(project: Project, worktree: string, value: string): Location {
   const match = /^(.*?):(\d+)$/.exec(value.trim());
   if (!match) throw new Error(`Give a location as file:line, such as main.tex:12: ${value}`);
   let file = match[1];
   if (path.isAbsolute(file)) file = path.relative(worktree, file);
   file = cleanPath(file);
-  if (!within(file, [app.project.source_dir]))
-    throw new Error(`${file} is outside the paper's source folder ${app.project.source_dir}.`);
+  if (!within(file, [project.source_dir]))
+    throw new Error(`${file} is outside the paper's source folder ${project.source_dir}.`);
   return { asked: value.trim(), file, line: Number(match[2]) };
 }
 // The pages SyncTeX gives for a source line, or for the nearest line that
@@ -95,19 +107,19 @@ export async function view(
   request: ViewRequest,
 ): Promise<ViewResult> {
   const task = app.tasks.get(name),
-    project = app.project;
+    project = app.projectOf(task);
   if (!fs.existsSync(task.worktree))
     throw new Error(`The task worktree ${task.worktree} no longer exists.`);
   const locations = (request.locations ?? []).map((l) =>
-      location(app, task.worktree, l),
+      location(project, task.worktree, l),
     ),
     labels = (request.pages ?? []).map((p) => p.trim()).filter(Boolean);
-  if (!locations.length && !labels.length)
+  if (!locations.length && !labels.length && !request.check)
     throw new Error("Ask for at least one source location or page number.");
   const after = await app.tasks.snapshotAsync(task),
     before = task.accepted,
     builder = new Builder(project, app.repo),
-    targets = await builder.planAsync(before, after, [
+    targets = request.full ? ["full"] : await builder.planAsync(before, after, [
       ...new Set([
         ...(await app.repo.changedFilesAsync(before, after)),
         ...locations.map((l) => l.file),
@@ -137,6 +149,11 @@ export async function view(
   }
   const pdf = build.pdf,
     document = mupdf.Document.openDocument(fs.readFileSync(pdf), "application/pdf");
+  if (request.check) {
+    const pageCount = document.countPages();
+    document.destroy();
+    return { pages: [], missing: [], targets, pageCount, seconds: build.seconds, errors: build.errors ?? [], warnings: build.warnings, compiled: { pdf, root: build.root, cwd: build.cwd, sourceDir: project.source_dir || "" } };
+  }
   try {
     // MuPDF synthesizes 1, 2, ... when /PageLabels is absent. Those are
     // physical positions, not the printed numbers (front matter may be i, ii).

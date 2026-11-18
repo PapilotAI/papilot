@@ -9,9 +9,10 @@ import { createServer } from 'node:net';
 import http from 'node:http';
 import { buildLayer } from './desktop-layer.mjs';
 import { findCommand } from '../engine/src/core/platform.mjs';
-import { _electron as electron, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { _electron as electron, expect } from './playwright.mjs';
 import { selectOption, selectedValue } from './select.mjs';
 import { checkDesktopNotifications } from './check-desktop-notifications.mjs';
+import { checkWindowsHitRegions } from './check-desktop-windows.mjs';
 import { assertInstalledTools } from './desktop-requirements.mjs';
 
 const require = createRequire(import.meta.url);
@@ -106,9 +107,11 @@ try {
     assert.equal(overlap, false, 'Toolbar controls stay clear of the Windows window buttons');
   }
   if (process.platform !== 'darwin') {
+    await checkWindowsHitRegions(application, page);
     const maximize = page.getByRole('button', { name: /^(Maximize or restore window|最大化或还原窗口)$/ });
     await maximize.click();
     await expect.poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized())).toBe(true);
+    await checkWindowsHitRegions(application, page);
     await maximize.click();
     await expect.poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized())).toBe(false);
   }
@@ -120,11 +123,13 @@ try {
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(900);
     await expect(page.locator('.sidebar')).toBeHidden();
     await expect.poll(async () => (await page.locator('.main').boundingBox()).x).toBe(0);
+    await checkWindowsHitRegions(application, page);
     await page.screenshot({ path: 'test-results/desktop-windows-compact.png' });
     await page.getByRole('button', { name: /^(Show task list|显示任务列表)$/ }).click();
     await page.locator('.sidebar').getByRole('button', { name: /^(Version Management|版本管理)/ }).click();
     await expect(page.locator('.git-workspace')).toBeVisible();
     await expect(page.locator('.sidebar')).toBeHidden();
+    await checkWindowsHitRegions(application, page);
     await page.screenshot({ path: 'test-results/desktop-windows-version-management.png' });
     await page.getByRole('button', { name: /^(Show task list|显示任务列表)$/ }).click();
     await page.locator('.sidebar').getByRole('button', { name: /^(Manuscript|稿件)/ }).click();
@@ -143,8 +148,8 @@ try {
     return { sandbox: preferences.sandbox, nodeIntegration: preferences.nodeIntegration, contextIsolation: preferences.contextIsolation };
   });
   assert.deepEqual(windowOptions, { sandbox: true, nodeIntegration: false, contextIsolation: true });
-  // Like an editor, Open a folder goes straight to the system picker and the
-  // folder opens as a paper in place: nothing is typed, uploaded or copied.
+  // Import or open offers every source; Open existing folder uses the system picker and
+  // opens the original paper in place, without uploading or copying it.
   const localPaper = path.join(data, 'local-paper'); fs.mkdirSync(localPaper);
   fs.writeFileSync(path.join(localPaper, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nLocal paper.\n\\end{document}\n');
   const largeAsset = path.join(localPaper, 'large.dat'); fs.writeFileSync(largeAsset, ''); fs.truncateSync(largeAsset, 65 * 1024 * 1024);
@@ -159,21 +164,23 @@ try {
     };
   }, folder);
   const paperMenu = page.getByRole('button', { name: /^Paper:|^论文：/ });
-  const openFromSidebar = async () => { await paperMenu.click(); await page.getByRole('menuitem', { name: /^(Open a folder|打开文件夹)$/ }).click(); };
+  const importDialog = page.getByRole('dialog', { name: /^(New paper|新建论文)$/ });
+  const openFromSidebar = async () => { await paperMenu.click(); await page.getByRole('menuitem', { name: /^(Import or open|导入或打开)$/ }).click(); await importDialog.getByRole('button', { name: /^(Choose folder…|选择文件夹…)$/ }).click(); };
   const openFromFileMenu = () => application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('open-folder').click());
   const opened = name => expect(page.getByRole('button', { name: new RegExp(`^(Paper: |论文：)${name}$`) })).toBeVisible({ timeout: 30000 });
   await pick(null);
   await openFromSidebar();
   await expect.poll(() => application.evaluate(() => globalThis.pickerCalls)).toBe(1);
-  assert.equal(await page.getByRole('dialog').count(), 0, 'Open a folder shows no import dialog');
+  await expect(importDialog).toBeVisible();
   assert.equal(openRequests.length, 0, 'Canceling the picker opens nothing');
   await pick(localPaper);
-  await openFromSidebar();
+  await importDialog.getByRole('button', { name: /^(Choose folder…|选择文件夹…)$/ }).click();
   await opened('local-paper');
+  await expect(importDialog).toBeHidden();
   assert.deepEqual(openRequests, [{ route: '/api/projects/open', body: { path: localPaper } }]);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(localPaper, '.latex-review.json'), 'utf8')), { main: 'main.tex', engine: 'pdflatex', source_dir: '' });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(localPaper, '.git/papilot/settings.json'), 'utf8')), { main: 'main.tex', engine: 'pdflatex', source_dir: '' });
   assert.ok(fs.existsSync(path.join(localPaper, '.git')), 'The opened folder gets its version history in place');
-  // File › Open Folder… asks for the main file only when several could be it.
+  // File › Open Paper… asks for the main file only when several could be it.
   const twoMains = path.join(data, 'two-mains'); fs.mkdirSync(twoMains);
   for (const name of ['a.tex', 'b.tex']) fs.writeFileSync(path.join(twoMains, name), '\\documentclass{article}\n\\begin{document}\nPaper.\n\\end{document}\n');
   await pick(twoMains);
@@ -187,7 +194,7 @@ try {
   await opened('two-mains');
   await expect(mainDialog).toBeHidden();
   assert.deepEqual(openRequests.slice(1), [{ route: '/api/projects/open', body: { path: twoMains } }, { route: '/api/projects/open', body: { path: twoMains, main: 'b.tex' } }]);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(twoMains, '.latex-review.json'), 'utf8')).main, 'b.tex');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(twoMains, '.git/papilot/settings.json'), 'utf8')).main, 'b.tex');
   // A folder already in Papilot opens again instead of being added twice.
   await pick(localPaper);
   await openFromFileMenu();
@@ -238,6 +245,7 @@ try {
     // again and must be dismissed before clicking the HTML window controls.
     await dismissInitialSetup(moved);
     if (process.platform !== 'darwin') {
+      await checkWindowsHitRegions(application, moved);
       const closed = application.waitForEvent('close');
       await moved.getByRole('button', { name: /^(Close window|关闭窗口)$/ }).click();
       await closed;

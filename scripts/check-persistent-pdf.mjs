@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
@@ -28,6 +28,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/note-alternatives')) return json({ noteAlternatives: true, noteAlternativeRange: 'few' });
   if (url.pathname.endsWith('/quick-notes')) return json({ quickNotes: null });
   if (url.pathname.endsWith('/predict')) return route.fulfill({ json: { ok: true } });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/items')) return json({ items: [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
@@ -40,7 +41,7 @@ await page.route('**/api/**', async route => {
   }
   throw new Error(`Unexpected request: ${url.pathname}`);
 });
-await page.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: brokenReview ? '<html><body>Unavailable</body></html>' : '<html><body><div id="root"><main id="paper"><div class="waiting">Building</div></main></div><script>window.addEventListener("latex-review:view-changed", event => { document.documentElement.dataset.view = event.detail; });</script></body></html>' }));
+await page.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: brokenReview ? '<html><body>Unavailable</body></html>' : '<html><body><div id="root"><main id="paper"><div class="waiting">Building</div></main></div><script>window.addEventListener("papilot:review:view-changed", event => { document.documentElement.dataset.view = event.detail; });</script></body></html>' }));
 const preview = page.locator('.task-document-preview');
 const canvas = preview.locator('.pdfViewer canvas').first();
 const views = page.getByRole('group', { name: 'Workspace view' });
@@ -78,6 +79,9 @@ try {
     await readable();
     assert.ok(await original.evaluate(el => el.isConnected), 'Task status must not remount the PDF');
     await expect(views.getByRole('button')).toHaveCount(3);
+    // A stopped turn can build its first comparison from the toolbar, without
+    // a prompt over the PDF; waiting turns and answers have nothing to build.
+    await expect(preview.getByRole('button', { name: 'Generate PDF comparison', exact: true })).toHaveCount(['building', 'failed'].includes(status) ? 1 : 0);
   }
   await expect(page.getByRole('button', { name: 'Generate PDF comparison', exact: true })).toHaveCount(0);
   // A new, unavailable PDF must leave the successfully loaded pages intact.
@@ -167,11 +171,17 @@ try {
   manuscript.build = { status: 'ready', key: 'rebuilt', current: true };
   await sync();
   await expect(page.locator('.task-grid')).toHaveClass(/layout-conversation/);
-  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:layout')), 'conversation');
   await expect.poll(() => requests.some(url => url.includes('key=rebuilt'))).toBe(true);
   await views.getByRole('button', { name: 'Split', exact: true }).click();
   await readable();
   await expect.poll(() => box.evaluate(el => Math.round(el.scrollTop))).toBeGreaterThan(500);
+  // A chosen view lasts for the session; Papilot starts side by side again.
+  await views.getByRole('button', { name: 'Chat', exact: true }).click();
+  await expect(page.locator('.task-grid')).toHaveClass(/layout-conversation/);
+  await page.evaluate(() => localStorage.setItem('papilot:layout', 'conversation'));
+  await page.reload();
+  await expect(page.locator('.task-grid')).toHaveClass(/layout-split/);
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:layout')), null, 'An earlier saved view is cleared');
   assert.deepEqual(errors, []);
   console.log('PASS: Persistent PDF across task states, no changes, failed replacement, review readiness/failure, PDF-mode escape, hidden Chat shortcuts/place retention, reload, and mobile');
 } finally { await browser.close(); await server.close(); }

@@ -54,7 +54,9 @@ export function registerAiReviewRoutes(app: FastifyInstance, store: Store, manus
       if (current.deletedAt !== undefined) throw new Error('This suggestion was ignored while copying. Restore it first.');
       if (current.aiReview!.copiedTo) return { note: current, copy: store.annotation(current.projectId, current.aiReview!.copiedTo) };
       const copyId = 'adopt-' + createHash('sha256').update(`${id}:${noteId}`).digest('hex').slice(0, 40);
-      const copy = store.saveAnnotation({ ...placed, id: copyId, createdAt: Date.now(), aiReview: { taskId: id, agent: current.aiReview!.agent, sourceId: noteId } });
+      // The copy is on the manuscript's PDF, of the document compiled now.
+      const { document: _, ...unplaced } = placed, document = manuscripts.documentOf(original.projectId, placed.key);
+      const copy = store.saveAnnotation({ ...unplaced, ...(document ? { document } : {}), id: copyId, createdAt: Date.now(), aiReview: { taskId: id, agent: current.aiReview!.agent, sourceId: noteId } });
       const note = store.saveAnnotation({ ...current, aiReview: { ...current.aiReview!, copiedTo: copyId } });
       changed(id);
       return { note, copy };

@@ -6,10 +6,120 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
-- **DeepSeek task permissions.** Choose sandboxed editing or bypass permissions for each task. Papilot applies the selected native Harness preset to new, resumed and continuing sessions; read-only remains enforced for restricted tasks. ([#111](https://github.com/PapilotAI/papilot/pull/111))
+- **Archive or delete tasks in bulk.** The task-list menu can archive or delete all current tasks in a paper, and clear all archived tasks from the archive view. Confirmations show the scope and count, processing shows progress, and failed tasks can be retried without repeating successful operations.
+- **Crop PDF margins for mobile reading.** Choose **Crop margins** near the end of the PDF tool rail, drag the four edges in the page-shaped preview, then apply the crop to every page. The preview fills the available screen space. **Fit width** fits the remaining area, and each document remembers its crop on this device across reopening and recompilation. **Reset** restores the full page. Notes and source locations stay aligned, and exported PDFs keep their original margins. ([#194](https://github.com/PapilotAI/papilot/issues/194))
+- **Save reading anchors in a PDF.** Desktop anchors appear as numbered buttons at the end of the tool rail; phones keep a compact bookmark list. Use **Shift+B** to add, **B** to focus anchors, and **[** / **]** to jump between them. Rename anchors in place. Manuscript anchors follow their TeX source after recompilation, updating page numbers when content moves. Deleted or ambiguous source is marked unavailable. Anchors persist separately for each document in the current browser and can be renamed or deleted. See [Reading with anchors](docs/guide.md#reading-with-anchors).
+
+- Support the native Pi CLI as a separate agent alongside Papilot Writer, using existing Pi providers, skills and extensions, with streamed tools and replies, image attachments, extension dialogs and resumable task sessions ([discussion #192](https://github.com/PapilotAI/papilot/discussions/192)). Requires Pi 1.5.1 or newer.
+
+- **Import paper source from a link.** Paste or drop an arXiv paper URL, an Overleaf sharing link, a public GitHub repository link, or a public HTTPS source archive URL in **Import**. A single entry in the paper menu and empty screen handles links, folders and ZIPs; the dialog uses its close button instead of a duplicate Cancel action. Papilot downloads and checks the source, detects the main TeX file and opens the usual compilation flow. Import, compilation and open actions pair icons with text labels; arXiv, Overleaf and GitHub marks identify the supported services. arXiv links keep the requested version; ZIP, TAR, TAR.GZ and single-file arXiv sources are supported. Overleaf imports the current source snapshot from both `/read/…` and `/project/…/share#…` view links; copy the complete link, including the fragment. Private project URLs require a view link or an exported ZIP. ([#74](https://github.com/PapilotAI/papilot/issues/74))
+- **Browse the repository and compile any of its documents.** **Manuscript** in the sidebar names the document it compiles; select the name to list the paper's repository, where any text file opens in the source editor beside the PDF. When a repository holds several root documents, such as a thesis, its slides and a response letter, the play button on a document's row compiles it instead of the current one. Each document keeps its own build settings, notes and reading position, and a task keeps compiling the document it was started on. ([#188](https://github.com/PapilotAI/papilot/pull/188))
+- **Run Papilot from an installation that pins its version.** Container images, server deployments and system packages can set `PAPILOT_INSTALL_METHOD=managed` to get the behavior the Nix package already has: Papilot never checks for or installs updates, ignores releases that earlier in-app updates installed, and never downloads Codex or agent SDKs at runtime. **Settings → Updates** shows the current version with a note that updates are managed outside Papilot, without the unavailable **Check for updates** button (Nix installations too). A missing SDK names the package to install, and `papilot doctor` suggests installing Codex and SDKs with the installation. Under Nix, `papilot doctor` now finds the agent SDKs the package includes. See [Updates](docs/guide.md#updates). ([#190](https://github.com/PapilotAI/papilot/pull/190))
+- **Start a paper from a template.** **Templates** opens a gallery of [Papilot Universe](https://papilot.ai/universe/) templates (university theses, conference and journal author kits, slides, posters, CVs and books, plus more than 400 conferences, each pointing at the template its call for papers asks for) with type filters and search. Papilot downloads the chosen version, verifies its checksum, creates the folder with Git history and sets the template's main file and engine. **Open in Papilot** on a template's Universe page opens the desktop app with that template chosen. Blank and example projects are available offline.
 
 ### Changed
 
+- Refresh the Mac installer with a minimal PDF diff and annotation: a blue connector guides the Papilot icon from the selected paper region into Applications inside its note. Use the current “Next-Generation AI LaTeX Editor” tagline.
+
+- Add a folder button (**Browse…**) inside folder path fields in the browser, for opening an existing paper or choosing where to save a new one. On the computer running Papilot it opens the system folder picker; on other devices, such as a phone over Tailscale, it lists that computer's folders. When several TeX files are found, choose the main file from a themed list showing each file's folder.
+
+- Clarify **Import or open**: opening an existing folder edits its original files, while **Import a copy** keeps originals unchanged. The original-folder option is visible immediately. Folder and ZIP uploads stream to disk without the former 64 MiB / 5,000-file caps.
+
+- Simplify PDF reading controls: remove back/forward history buttons and their separator, align the outline bookmark, anchor numbers and **+** in one compact column, and show a corner delete button on hover or keyboard focus. Phones also show **+** for direct anchor creation. Deletion keeps the current reading position and moves keyboard focus to the next anchor or **+**. Contents, page controls and internal links remain available.
+
+- Show common AI conference templates before theses, with conference cards, compact search and a GitHub **Contribute** link. Retry catalog failures without losing a draft; **Blank** stays available, and late template links respect an explicit choice.
+
+- Simplify the PDF toolbars with one separator before Undo and Redo, keeping the other tools together.
+- Add a [Universe](https://papilot.ai/universe/) template-library link with a blue planet icon beside the homepage logo, visible on desktop and phones. Simplify the left navigation to Universe and Blog, and add translated template links below the downloads and in the footer. The orbit turns once on hover or keyboard focus and respects reduced motion; the online demo uses a play icon in narrow headers.
+- Choose any agent’s model from the existing model menu below the chat. A restart icon marks models that start a new task. Models from the current agent keep the conversation; choosing another agent automatically stops the current task and reruns its original request in a linked replacement task, preserving unsent drafts.
+- **One dialog for new papers.** **Blank**, **Import** and **Templates** share a single panel with preserved drafts, compact inline actions, and a built-in example project. **Templates** directly opens the full Universe gallery with type filters and search. Desktop save locations use a folder summary and **Change…** system picker. Word and Markdown conversion are not included.
+
+- **New paper and Import.** The paper menu and empty screen offer **New paper** and **Import**, and the desktop File menu says **Open Paper…**, replacing the easily confused *Create a new paper* and *Add paper…*. The new-paper dialog shows the folder it will create in place of explanatory text. **Choose folder** in the desktop import dialog opens the system picker and uses the original folder in place. ([#182](https://github.com/PapilotAI/papilot/pull/182))
+
+### Fixed
+
+- **AI review works on long theses.** The review used to put the whole PDF's text in its first message, and Codex refused it once the text passed 1 MiB, failing with `Input exceeds the maximum length of 1048576 characters`. Papilot now saves the text, one PDF line per row, in the review's task copy, and the reviewer reads the parts the request covers. A review focused on one chapter no longer sends the whole thesis to the model. Send a new message to a review that failed this way to continue it. ([#189](https://github.com/PapilotAI/papilot/pull/189))
+- **Claude starts with default permissions on native Windows.** Claude and GLM use **Accept edits** with an explicit **No sandbox** explanation instead of requiring an unavailable command sandbox. Native permission checks remain active: the CLI declines requests needing approval, while the SDK asks in Papilot. Sandboxed edits remain enforced on macOS, Linux and WSL. ([#167](https://github.com/PapilotAI/papilot/issues/167))
+- **Codex tasks can be deleted on native Windows.** While a task's conversation stays loaded, Codex keeps programs such as MCP servers running inside the task folder, and Windows cannot delete a folder another program is using. Deleting a task now archives its Codex conversation first, which stops them. If another program still holds the folder, the error shows its path, and **Retry deletion** finishes the cleanup once that program closes it, including for tasks already stuck at **Deleting task**. ([#179](https://github.com/PapilotAI/papilot/issues/179))
+- **Task titles and commit messages generate on native Windows with MCP servers configured.** Codex runs your MCP servers, such as the Codex app's `node_repl`, in the folder of each one-off conversation that writes a title or commit message, and Papilot never ended those conversations. Windows could not remove the folder, so task titles failed to generate and **Generate commit message** reported `EPERM`. Papilot now ends each one-off conversation when it finishes, so on every platform those MCP servers stop instead of running until Codex restarts. ([#186](https://github.com/PapilotAI/papilot/pull/186))
+
+- Keep PDF page jumps when a pending panel resize reapplies Fit width, instead of restoring the page shown before the jump. ([#195](https://github.com/PapilotAI/papilot/pull/195))
+
+### Changed
+
+- Shorten the **Delete task** dialog to one line. It says what is lost and what stays: unaccepted edits and comments are lost, accepted changes stay in your manuscript.
+
+## [0.10.4] - 2026-11-14
+
+Keep PDF selection buttons from triggering links underneath, and discover Codex backends installed with desktop apps.
+
+### Fixed
+
+- **Floating PDF buttons keep their click targets in place.** The Add note and Edit source buttons now fade in without moving. Clicking a newly appeared icon or button edge no longer exposes a PDF link beneath it and jumps to another page. Ordinary PDF links still navigate normally. ([#163](https://github.com/PapilotAI/papilot/pull/163))
+- **Find Codex without a separate CLI installation.** On native Windows, Papilot discovers the current user's registered Codex desktop package; on macOS, it checks Codex and ChatGPT apps in the standard Applications folders. Startup and diagnostics use the same discovery, and reconnect checks again after a desktop app is installed or updated. Existing CLI installations and explicit binary overrides keep their priority. ([#162](https://github.com/PapilotAI/papilot/pull/162))
+
+### Changed
+
+- Refresh the homepage, README showcase and social preview to reflect the current interface. Add contributor avatars and Star History across all README translations. ([#141](https://github.com/PapilotAI/papilot/pull/141))
+
+## [0.10.3] - 2026-11-14
+
+Correct Antigravity task completion after historical API errors or denied operations, and honor explicit author authorization in task prompts.
+
+### Fixed
+
+- **Resumed Antigravity tasks no longer fail on an old API error.** Antigravity can return an earlier turn's failed request even after the current turn finishes successfully. Papilot now recognizes the completed final reply and generates the PDF comparison; new errors and unfinished work still report a failure. ([#158](https://github.com/PapilotAI/papilot/pull/158))
+- **Antigravity permission denials stay actionable.** When the agent stops at a denied operation without a final reply, the task now needs attention instead of appearing completed. The conversation identifies the declined operation, and translated guidance explains how to continue. ([#161](https://github.com/PapilotAI/papilot/pull/161))
+- **Task prompts honor explicit manuscript and Git authorization.** An author's explicit request to write to the manuscript, commit or push is no longer contradicted by blanket instructions. Normal task edits still use the isolated task directory, and the selected runtime permissions remain enforced. ([#159](https://github.com/PapilotAI/papilot/pull/159))
+
+## [0.10.2] - 2026-11-13
+
+Fix Windows window controls and MiKTeX compilation, improve recovery from LaTeX build failures, and answer PDF-note questions without editing the manuscript.
+
+### Changed
+
+- **Tasks follow recent activity.** Continuing an older conversation moves it to the top of the sidebar, matching its displayed timestamp and preserving the order after reload. ([#150](https://github.com/PapilotAI/papilot/pull/150))
+- Update the Hono and Node server adapter dependencies. ([#149](https://github.com/PapilotAI/papilot/pull/149), [#151](https://github.com/PapilotAI/papilot/pull/151))
+
+### Fixed
+
+- **Windows window buttons respond to mouse clicks.** Minimize, maximize/restore and close no longer behave as title-bar drag handles, including in compact windows and Version Management. ([#154](https://github.com/PapilotAI/papilot/pull/154))
+- **MiKTeX builds start correctly on Windows.** Preview hooks no longer lose their quotes in the latexmk launcher and fail with a Perl syntax error before TeX starts. Foreground previews and background builds keep the paper's own hooks. ([#156](https://github.com/PapilotAI/papilot/pull/156))
+- **PDF-note questions get an answer in chat.** Editing remains the default, but questions and requests for explanation or discussion no longer direct the agent to rewrite the manuscript unless an edit is also requested. Mixed notes are handled individually. ([#157](https://github.com/PapilotAI/papilot/pull/157))
+- **Recover from LaTeX build failures.** Compilation Problems can diagnose a failure with the selected agent, test proposed build settings and retain settings that work. Nested output and TikZ checksum directories are handled correctly, and a repaired revision remains available for source review when the original manuscript produced no PDF. Task PDFs stay tied to their published build. ([#148](https://github.com/PapilotAI/papilot/pull/148))
+- **Find desktop Codex installations managed by Volta on Windows.** The probe and app-server start from the user's home directory so the host installation resolves outside the packaged app. ([#148](https://github.com/PapilotAI/papilot/pull/148))
+
+## [0.10.1] - 2026-11-12
+
+Review and edit a task's changes in the source editor, the part of the source editor meant for 0.10.0, and drag the desktop window from every toolbar.
+
+### Added
+
+- **Review and edit a task's changes in the source editor.** In a task's review, LaTeX on a change opens its whole file in the source editor, in a tab beside the chat, at that change. The round's changes show in the text as the review's cards: each under a header with its title and Accept, Reject and Comment, the lines before, with struck words marked, over the lines after. They act through the review itself, and the editor and the review follow each other. ⌘S saves the file into the task and reviews it in a new round, where the review keeps its place. On phones and in the demo, for an earlier round, and for changes the editor cannot show (a new file, a bibliography entry, a file with CRLF line endings), LaTeX still shows inline in the review. ([#146](https://github.com/PapilotAI/papilot/pull/146))
+
+### Changed
+
+- **The PDF highlight gives way to your edit.** When the source editor opens from the PDF, the passage is highlighted on the PDF too, until you start typing. ([#146](https://github.com/PapilotAI/papilot/pull/146))
+
+### Fixed
+
+- **Drag the desktop window from any toolbar.** Empty toolbar space over a task's changes now moves the window, as it does elsewhere, while the review's buttons still take clicks. Toolbars side by side now share one height, so their lines meet. ([#143](https://github.com/PapilotAI/papilot/pull/143))
+- **A source save too large to read back is refused before writing.** A save within the character limit could exceed the file limit once encoded, as Chinese text or CRLF line endings do; it wrote the file, then reported a failed save that every retry repeated. ([#146](https://github.com/PapilotAI/papilot/pull/146))
+
+## [0.10.0] - 2026-11-12
+
+Open a passage's LaTeX straight from the PDF, review without waiting for compilation, and use Papilot comfortably on a phone.
+
+### Added
+
+- **Edit the LaTeX straight from the PDF.** Pick the new Edit source tool (E) in the marking tools, then click a passage or drag over text: its file opens in a code editor in a tab beside New task, scrolled to the passage with the clicked lines highlighted and flashing, and the selected or clicked word marked. Bars beside the line numbers show what changed since the last commit. Unsaved changes show as a mark; ⌘S saves the file, without an agent, and compiles the manuscript: the new PDF and the editor then flash the saved lines, or the tab shows the compile errors on its lines and the last PDF stays. In Changes, picking a change opens its lines in the editor, and moving to a changed line in the editor shows its change. Edits made elsewhere since the PDF was compiled are followed to the current file, a save is refused if the file changed while you typed, and unsaved drafts are kept. ([#119](https://github.com/PapilotAI/papilot/pull/119))
+- **DeepSeek task permissions.** Choose sandboxed editing or bypass permissions for each task. Papilot applies the selected native Harness preset to new, resumed and continuing sessions; read-only remains enforced for restricted tasks. ([#111](https://github.com/PapilotAI/papilot/pull/111))
+
+- **Refresh a lost Codex sign-in.** When another Codex on the computer signs in again or replaces its sign-in, Papilot's Codex tasks no longer fail with "Please sign in again" while Codex still shows Ready. Codex now shows as signed out and queued tasks wait; **Refresh**, in the composer's notice or in **Settings → Agents → Codex**, restarts Codex with the computer's current sign-in, and turns in progress can be resumed. If the computer itself is signed out, the notice says to run `papilot codex login` there first. ([#137](https://github.com/PapilotAI/papilot/pull/137))
+
+### Changed
+
+- **Paper settings stay out of the paper.** Papilot keeps a paper's main file, engine and other settings in `.git/papilot/settings.json`, beside its review state in `.git/papilot/` and its task history in `refs/papilot/`, so opening a folder no longer adds a file to it or to its first commit. A paper's tasks, reviews, compiled PDFs and settings move there the first time this version opens it, and review shortcuts, preferences and drafts carry over. The `.latex-review.json` in your repository is no longer read and can be deleted. Once this version has opened a paper, an older Papilot cannot work with its tasks. ([#134](https://github.com/PapilotAI/papilot/pull/134))
 - **Compilation never holds up review.** Accepting or rejecting a change takes effect at once, and the next comparison is already loaded. Each decision starts compiling the paper as decided in the background; the next decision replaces that build, as latexmk's live mode does, and unchanged work is reused. The PDF view shows that paper, or the previous one while it compiles, and nothing locks meanwhile. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **Comparisons are ready when the agent finishes.** While the agent edits, Papilot compiles and renders the round it will publish, so only the last edit's incremental build can remain when the turn ends. Accepting works while the agent edits; rejections are queued until its turn ends. Apply finds the manuscript PDF already compiled once the decisions settle, and starting a task returns at once. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **Background TeX runs at full speed.** Builds no longer run at background priority, which on Apple silicon moved them to efficiency cores and made each pass about four times slower. At most two TeX runs share the machine, in the order of what the author is reading, across tasks. ([#112](https://github.com/PapilotAI/papilot/pull/112))
@@ -17,13 +127,26 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 - **Shorter change locations.** A change shows its file's name and line span; hovering shows the full path, every line and the page. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **Note alternatives are off until chosen.** Pick a count in Review preferences to have edits prepare them; a saved choice is kept. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **Smoother review scrolling.** The review scrolls natively, and selectable PDF text is laid out once scrolling rests. ([#112](https://github.com/PapilotAI/papilot/pull/112))
-
 - **A much smaller desktop installer.** The desktop app no longer includes Codex: it uses the Codex installed on the computer, and **Settings → Runtime → Agents** says when none is found or none runs, so you can install it and select **Reconnect**. The review engine also no longer carries its own copy of dependencies the app already has. ([#110](https://github.com/PapilotAI/papilot/pull/110))
 - **Quicker with a long history.** Each streamed agent message updates one task and one message instead of reading every task and the whole conversation again, and the app's state poll gets an empty answer when nothing changed instead of every task again. ([#110](https://github.com/PapilotAI/papilot/pull/110))
 - **Note review stays continuous.** After a confirmed decision the drawer stays open and moves to the next pending note; the last note stays open to inspect or undo. Each change's "Other options" button opens at once, and a note's alternative PDFs load only when it is shown. While another option loads, the previous comparison stays in place, dimmed, and cannot be accepted. ([#115](https://github.com/PapilotAI/papilot/pull/115))
+- **A phone layout built for touch.** On phones the paper fills the screen under a slim translucent bar. The PDF and review toolbars fit on one row with a page indicator, the marking tools float in a bottom bar that a swipe collapses, My notes, agent settings and menus open as bottom sheets, and Settings and Version Management are laid out for a small screen. ([#118](https://github.com/PapilotAI/papilot/pull/118))
+- **The manuscript PDF stays during task reviews.** A task with no published changes, or whose comparison is loading or failed, keeps the paper readable instead of switching to the chat or a placeholder, and a published task PDF stays while the next comparison loads. ([#116](https://github.com/PapilotAI/papilot/pull/116))
+- **A simpler Version Management view.** The branch, its sync state and Fetch, Pull and Push share one toolbar; the commit message, AI-written message and Commit share one box; and staging or discarding a whole group is one click. ([#117](https://github.com/PapilotAI/papilot/pull/117))
+- **A simpler Add a paper dialog.** Open a folder, import a ZIP or type a folder path from the first screen; compilation shows as a compact list of steps, and the actions share one footer. ([#120](https://github.com/PapilotAI/papilot/pull/120))
+- **Clearer note selection.** The change a note preview refers to is highlighted, a change's note numbers share one compact row, and an agent that is starting normally shows a small spinner instead of a warning card. ([#108](https://github.com/PapilotAI/papilot/pull/108))
+
+### Removed
+
+- **Tasks that write accepted changes straight into the manuscript**, created by Papilot 0.1–0.6, lose their own commit form. They still open, and Papilot refuses to apply them; tasks created since 0.7 are unaffected. ([#128](https://github.com/PapilotAI/papilot/pull/128))
+- **The standalone review skill and its command line.** The review engine now serves only Papilot. ([#127](https://github.com/PapilotAI/papilot/pull/127))
+- **Updating in place from Papilot 0.8.2 or earlier.** Those installs need one reinstall: `npm install -g papilot@latest`. Papilot 0.8.3 and later and the desktop app update as usual. ([#132](https://github.com/PapilotAI/papilot/pull/132))
 
 ### Fixed
 
+- **Antigravity tasks no longer fail after a recovered API error.** When a Gemini request failed (for example `API error (attempt 2): INTERNAL (code 500)`), agy retried it and the agent finished its work, but agy still reported the error, so the task stopped with "This step needs attention" and no PDF comparison. Papilot now sees that the agent replied after the last failed request, and the comparison is built as usual. A request that still fails after agy's retries is reported as before. ([#129](https://github.com/PapilotAI/papilot/pull/129))
+- **A stopped task can build its PDF comparison again.** Since the manuscript PDF stays visible during tasks, a turn that stopped on an error before its first comparison had no way to build one. The PDF toolbar now has Generate PDF comparison in that state, as it has Regenerate PDF comparison once a comparison exists, and with only the chat in view the error card offers it. View details appears only while the chat is hidden, and opens it beside the review instead of hiding the review. ([#129](https://github.com/PapilotAI/papilot/pull/129))
+- **Tasks open side by side.** Papilot starts with the review and chat side by side. A view chosen in the switcher lasts until Papilot is closed, so a single switch, such as the old View details button that changed to Chat only, no longer becomes the view at every start. ([#129](https://github.com/PapilotAI/papilot/pull/129))
 - **Tasks that fix a compilation error can be reviewed.** When the text a task starts from does not compile, as when you ask the agent to fix the problems of the last compilation, the PDF comparison no longer fails. The Before pages show what LaTeX typeset after skipping the errors, a note above the changes lists them, and the agent's version must still compile cleanly. ([#121](https://github.com/PapilotAI/papilot/pull/121))
 - **Apply reuses the final selection's compilation.** Intermediate decisions no longer refresh the manuscript. Older tasks that write accepted changes directly compile once their last pending change is decided, and Apply or Commit compiles only once the changes are in the manuscript. ([#115](https://github.com/PapilotAI/papilot/pull/115))
 - **A lost file lock no longer stops the app.** When another process took over or removed a lock Papilot held, for example while an earlier app's review engine shut down, the server crashed. Now the review engine that lost its lock stops, and Papilot continues with the engine that holds it, so two never write a paper's review state at once. ([#115](https://github.com/PapilotAI/papilot/pull/115))
@@ -33,6 +156,15 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 - **Saving is offered after rejecting changes.** Rejections no longer hide Apply and Commit; sending them to the agent stays optional. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **Decisions made on an iPhone survive locking or switching apps.** They are kept in the browser and sent once the page reopens. ([#112](https://github.com/PapilotAI/papilot/pull/112))
 - **My notes shows how many notes it holds**, and each edit's buttons in the LaTeX view match the change's own. ([#112](https://github.com/PapilotAI/papilot/pull/112))
+- **Codex workspace tasks start on Windows.** Every Codex task with Workspace access failed with "Codex could not apply workspace permissions." When no Windows sandbox is configured, Papilot now gives Codex its unelevated sandbox, which needs no administrator setup; a sandbox you configured is kept. ([#135](https://github.com/PapilotAI/papilot/pull/135))
+- **Requests no longer time out while the server is still working.** Slow imports, uploads, Git actions and AI reviews no longer report a timeout after 15 or 30 seconds. ([#106](https://github.com/PapilotAI/papilot/pull/106))
+- **Notes around an edited LaTeX environment stay separate.** Editing a display formula or removing a list no longer joins every change in its file into one, so accepting one note no longer applies unrelated edits, and each alternative opens at its own passage. ([#107](https://github.com/PapilotAI/papilot/pull/107))
+- **Cancelling keeps a PDF TeX already finished.** A build cancelled while TeX's output was still closing no longer discards the PDF it produced. ([#133](https://github.com/PapilotAI/papilot/pull/133))
+- **PDF notes stay recognized when their LaTeX excerpt contains a code fence.** ([#130](https://github.com/PapilotAI/papilot/pull/130))
+- **The note-alternatives labels no longer overlap on phones**, as Spanish "Desactivado" and "Pocas" did. ([#136](https://github.com/PapilotAI/papilot/pull/136))
+- **Typing right after switching views reaches the composer.** Choosing Split, Review or Chat no longer moves focus back to the switcher once you have clicked into the composer, so the first keys are no longer lost. ([#144](https://github.com/PapilotAI/papilot/pull/144))
+- **Focus returns to a note after you save it from the keyboard.** ([#144](https://github.com/PapilotAI/papilot/pull/144))
+- **A magic-pen tap on a touch screen opens the instruction wheel reliably**, instead of sometimes writing a plain note or leaving the wheel unable to close. ([#144](https://github.com/PapilotAI/papilot/pull/144))
 
 ## [0.9.4] - 2026-11-09
 
@@ -464,7 +596,14 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/PapilotAI/papilot/compare/v0.10.1...v0.10.2
+[0.10.1]: https://github.com/PapilotAI/papilot/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/PapilotAI/papilot/compare/v0.9.4...v0.10.0
+[0.9.4]: https://github.com/PapilotAI/papilot/compare/v0.9.3...v0.9.4
+[0.9.3]: https://github.com/PapilotAI/papilot/compare/v0.9.2...v0.9.3
+[0.9.2]: https://github.com/PapilotAI/papilot/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/PapilotAI/papilot/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/PapilotAI/papilot/compare/v0.8.9...v0.9.0
 [0.8.9]: https://github.com/PapilotAI/papilot/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/PapilotAI/papilot/compare/v0.8.7...v0.8.8

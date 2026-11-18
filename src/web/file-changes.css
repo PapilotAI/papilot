@@ -1,0 +1,19 @@
+.file-diffs{display:grid;gap:8px;margin:4px 0 8px}
+.file-diffs header{display:flex;align-items:baseline;gap:8px;min-width:0;font-size:12px;color:var(--text-2)}
+.file-diff-path{font-family:var(--mono);white-space:nowrap}
+.file-diff-where{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-3)}
+.change-count{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px}
+.change-count ins{color:var(--green);text-decoration:none}.change-count del{color:var(--red);text-decoration:none}
+.tool-item pre.file-diff{margin:4px 0 0;padding:6px 0;max-height:320px;white-space:pre;overflow:auto;font-size:12px;line-height:1.5}
+.diff-line{display:block;padding:0 12px;min-width:max-content}
+.diff-line.add{background:var(--green-soft);color:var(--green)}
+.diff-line.del{background:var(--red-soft);color:var(--red)}
+.diff-line.hunk{color:var(--text-3);user-select:none}
+.change-summary{align-self:stretch;margin:6px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg-subtle);font-size:13px}
+.change-summary>header{display:flex;align-items:center;gap:6px;margin-bottom:6px;color:var(--text-2)}
+.change-summary>header span{color:var(--text-3);font-size:12px}
+.change-summary ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.change-summary li{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;align-items:baseline}
+.change-where{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.change-page{margin-left:8px;color:var(--text-3);font-size:12px}
+.change-file{grid-column:1/-1;font:11.5px var(--mono);color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

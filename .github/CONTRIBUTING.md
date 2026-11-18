@@ -42,7 +42,7 @@ Open `http://127.0.0.1:7276`. For the latest committed development version witho
 
 | Path | What it holds |
 | --- | --- |
-| `src/server` | The Fastify server, the agent adapters (Codex, Claude, Cursor, GLM, Antigravity, and Copilot, Grok, Kimi, DeepSeek, Qwen and OpenCode through ACP), tasks, Git and the PDF build |
+| `src/server` | The Fastify server, the agent adapters (Papilot Writer, Pi through RPC, Codex, Claude, Cursor, GLM, Antigravity, and Copilot, Grok, Kimi, DeepSeek, Qwen and OpenCode through ACP), tasks, Git and the PDF build |
 | `src/web` | The React interface and the PDF viewer |
 | `src/shared.ts` | Types shared by the server and the interface |
 | `desktop/` | Electron app, native assets, packaging and desktop runtime |
@@ -69,5 +69,6 @@ Changes to the review engine also need `npm test` in `engine/`.
 - Interface text is in English and says plainly what happens.
 - Write commit messages as a short imperative summary, with a body that explains why.
 - Attach screenshots for interface changes.
+- When an interface change shows in the homepage's windows (`site/index.html`), redraw them there; `npm run readme:showcase` then recaptures the README images in `docs/assets/readme-showcase/` from the homepage and the real interface.
 
 By contributing, you agree that your work is released under the [MIT License](../LICENSE). Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).

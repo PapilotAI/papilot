@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { annotateReviewState, rewriteReviewHtml } from '../src/server/review.ts';
 
 fs.mkdirSync('test-results', { recursive: true });
@@ -34,6 +34,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/items')) return json({ items: [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git')) return json({ files: [], branch: 'main', ahead: 0, behind: 0 });
   if (url.pathname.endsWith('/manuscript')) return json({ git: { files: [] }, annotations: [], build: { status: 'building', current: false } });
@@ -147,10 +148,12 @@ try {
   await page.reload();
   await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
   await expect(frame.locator('html')).toHaveAttribute('data-papilot-phone', '');
-  await expect.poll(() => frame.locator('.change.current .dock').evaluate(dock => {
-    const box = dock.getBoundingClientRect();
-    return box.bottom <= innerHeight && box.bottom >= innerHeight - 16 && box.left >= 0 && box.right <= innerWidth;
-  })).toBe(true);
+  // The decision dock floats just above the marking tools, fully on screen.
+  const dockPlacement = async () => {
+    const dock = await frame.locator('.change.current .dock').boundingBox(), tools = await page.locator('.review-marking-rail .pdf-rail').boundingBox();
+    return Boolean(dock && tools) && dock.x >= 0 && dock.x + dock.width <= 390 && dock.y >= 0 && dock.y + dock.height <= tools.y && tools.y - (dock.y + dock.height) <= 24;
+  };
+  await expect.poll(dockPlacement).toBe(true);
   assert.deepEqual(errors, []);
   console.log('PASS: all 12 UI/PDF/review appearance combinations, inline and standalone changes, preview filters, controls, LaTeX colors, per-edit action hover states, pending/decided toolbars at 320/500/700 px, localized two-digit numbers, pointer target sizes, and phone dock positioning.');
 } catch (error) {

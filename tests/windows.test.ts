@@ -7,7 +7,7 @@ import { spawn, spawnSync } from '../engine/src/core/commands.mjs';
 import { findCommand, npmCli, terminateTree } from '../engine/src/core/platform.mjs';
 import { cleanPath } from '../engine/src/core/git.ts';
 import { relocate } from '../engine/src/core/build.ts';
-import { SynctexIndex, utf8Synctex } from '../engine/src/render/synctex.ts';
+import { SynctexIndex, windowsSynctex } from '../engine/src/render/synctex.ts';
 import { backendEnvironment, linkBundle, startBackend } from '../desktop/runtime.ts';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { findExecutable, spawnSyncCommand, execCommand } from '../bin/agent-paths.mjs';
@@ -185,6 +185,43 @@ test('SyncTeX reads adjacent data from paths with spaces and Unicode', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('Windows SyncTeX maps MiKTeX Input separators without rewriting compiler files', () => {
+  const dir = temporary(), pdf = path.join(dir, 'main.pdf');
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const template = gunzipSync(fs.readFileSync('examples/papilot-paper/preview/main.synctex.gz')).toString();
+  try {
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    for (const compressed of [true, false]) {
+      const sync = pdf.replace(/\.pdf$/, compressed ? '.synctex.gz' : '.synctex');
+      for (const root of ['E:/paper with spaces/论文', '//server/share/paper']) {
+        const forward = template.replaceAll('@PAPILOT_EXAMPLE@', root);
+        const query = root + '/main.tex';
+        const lookup = (text: string) => {
+          const bytes = compressed ? gzipSync(text) : Buffer.from(text);
+          fs.writeFileSync(sync, bytes);
+          const index = new SynctexIndex(pdf);
+          try {
+            const rows = Array.from({ length: 100 }, (_, i) => index.view(query.replaceAll('/', '\\'), i + 1));
+            assert.deepEqual(fs.readFileSync(sync), bytes, 'compiler output stays unchanged');
+            return rows;
+          } finally { index.close(); }
+        };
+        const expected = lookup(forward);
+        assert.ok(expected.some(rows => rows.length), 'forward-slash control must locate text');
+        for (const mixed of [false, true]) {
+          const miktex = forward.replace(/^(Input:\d+:)([^\r\n]*)/gm, (_, head, input: string) =>
+            head + (mixed ? input.replaceAll('/', '\\').replace('E:\\', 'E:/') : input.replaceAll('/', '\\')));
+          assert.deepEqual(lookup(miktex), expected, `${compressed ? 'gzip' : 'plain'} ${root} mixed=${mixed}`);
+        }
+      }
+      fs.unlinkSync(sync);
+    }
+  } finally {
+    Object.defineProperty(process, 'platform', platform);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('update dependency links work without symlink privileges', () => {
   const dir = temporary(), bundle = path.join(dir, 'bundle'), layer = path.join(dir, 'layer');
   try {
@@ -230,9 +267,24 @@ test('desktop backend opens SQLite and exits cleanly through IPC', { timeout: 90
 
 test('legacy Windows SyncTeX paths are decoded without changing UTF-8 output', () => {
   const legacy = Buffer.concat([Buffer.from('Input:1:C:/'), Buffer.from([0xc2, 0xdb, 0xce, 0xc4]), Buffer.from('/main.tex\n')]);
-  assert.equal(gunzipSync(utf8Synctex(gzipSync(legacy), () => 'gbk')).toString(), 'Input:1:C:/论文/main.tex\n');
+  assert.equal(gunzipSync(windowsSynctex(gzipSync(legacy), () => 'gbk')).toString(), 'Input:1:C:/论文/main.tex\n');
   const utf8 = gzipSync(Buffer.from('Input:1:C:/论文/main.tex\n'));
-  assert.equal(utf8Synctex(utf8, () => { throw new Error('Do not reinterpret valid UTF-8'); }), utf8);
+  assert.equal(windowsSynctex(utf8, () => { throw new Error('Do not reinterpret valid UTF-8'); }), utf8);
+});
+
+test('Windows SyncTeX normalizes only Input paths after decoding, preserving line endings', () => {
+  for (const compressed of [false, true]) {
+    const pack = (data: Buffer) => compressed ? gzipSync(data) : data;
+    const unpack = (data: Uint8Array) => Buffer.from(compressed ? gunzipSync(data) : data).toString('utf8');
+    const text = 'SyncTeX Version:1\r\nInput:1:C:/paper\\论文\\main.tex\r\nInput:12:\\\\server\\share\\part.tex\nContent:\r\n!123\nComment:keep\\this\n';
+    const expected = 'SyncTeX Version:1\r\nInput:1:C:/paper/论文/main.tex\r\nInput:12://server/share/part.tex\nContent:\r\n!123\nComment:keep\\this\n';
+    const result = windowsSynctex(pack(Buffer.from(text)), () => { throw new Error('Valid UTF-8'); });
+    assert.equal(unpack(result), expected);
+    assert.equal(windowsSynctex(result), result, 'already-normalized data is returned unchanged');
+    // 表 is 0x95 0x5c in Shift-JIS: normalize the decoded slash, not this byte.
+    const legacy = Buffer.concat([Buffer.from('Input:1:C:\\'), Buffer.from([0x95, 0x5c]), Buffer.from('\\main.tex\r\n')]);
+    assert.equal(unpack(windowsSynctex(pack(legacy), () => 'shift_jis')), 'Input:1:C:/表/main.tex\r\n');
+  }
 });
 
 test('reused SyncTeX relocates cache keys while preserving legacy path bytes', async () => {

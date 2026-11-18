@@ -36,7 +36,6 @@ const stateRoute = (round?: number | null) => {
 };
 import { EFFECTS_EVENT, EFFECTS_STORAGE, readExpandedEffects } from "./effect-preferences.ts";
 import { readView, VIEW_EVENT, VIEW_CHOSEN_EVENT, VIEW_STORAGE, type ReviewView } from "./view-preferences.ts";
-import { STATUS } from "./overview.tsx";
 import { language, locale, t, tn, withLanguage } from "./i18n.ts";
 import {
   ConfirmReferences,
@@ -47,6 +46,7 @@ import {
 } from "./references.tsx";
 import { bindingLabel, readShortcuts, resolveShortcuts, shortcutAction, SHORTCUT_EVENT, SHORTCUT_STORAGE } from "./shortcuts.ts";
 import { sendsMessage } from "./send-key.ts";
+import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SelectSource, type SourceSaved } from "./review-events.ts";
 import { DecisionQueue, Unreachable, withQueued, type QueuedDecision } from "./decision-queue.ts";
 import {
   STATE,
@@ -61,6 +61,7 @@ import {
   progress,
   resolvedSide,
   stopState,
+  STATUS,
   visibleStop,
   wordDiff,
 } from "./model.ts";
@@ -216,6 +217,9 @@ export function ReviewApp({
     // How far into the current change the author had read, restored once
     // when the review reopens on it in the same view.
     returning = useRef<{ index: number; offset: number; paper: boolean } | null>(null),
+    // How the current change was reached, for the workspace: picked by the
+    // author, followed while scrolling, or asked for from the source editor.
+    reached = useRef<CurrentChange["from"]>("scroll"),
     snapshot = useRef({ state, detail: publishedDetail, busy, composer, current, open: openSource }),
     // Polls again at once, after the last queued decision is confirmed.
     pollNow = useRef(() => {}),
@@ -230,7 +234,7 @@ export function ReviewApp({
   // Uncommitted changes have no action journal to make a retry safe.
   // Unconfirmed decisions are kept in the browser, so that a reload, a closed
   // tab or a locked phone sends them later rather than losing them.
-  const queueKey = changes ? null : `latex-review:queue:${location.pathname}:${task}`;
+  const queueKey = changes ? null : `papilot:review:queue:${location.pathname}:${task}`;
   queue.current ??= new DecisionQueue<Queued, PageState>({
     send: entry => settle.current!.send(entry),
     confirmed: (entry, next, remaining) => settle.current!.confirmed(entry, next, remaining),
@@ -269,7 +273,7 @@ export function ReviewApp({
     return () => { document.removeEventListener("visibilitychange", listener); window.removeEventListener("pagehide", listener); };
   }, []);
   // Where each review was left; a host's uncommitted changes are kept per paper.
-  const placeKey = `latex-review:${location.pathname}:${changes ? 'changes' : task}`;
+  const placeKey = `papilot:review:${location.pathname}:${changes ? 'changes' : task}`;
   const [shortcuts, setShortcuts] = useState(readShortcuts);
   // The whole paper with the changes in place, or the changed sections only.
   // A host may fix the view in the address (Papilot's manuscript chooses its
@@ -325,7 +329,7 @@ export function ReviewApp({
   const focused = noteFocus?.round === detail?.round ? noteFocus?.units ?? undefined : undefined;
   const inFocus = (id: string) => !focused || focused.includes(id);
   function showHelp() {
-    if (window.dispatchEvent(new Event('latex-review:help', { cancelable: true }))) setHelp(true);
+    if (window.dispatchEvent(new Event('papilot:review:help', { cancelable: true }))) setHelp(true);
   }
   snapshot.current = { state, detail: publishedDetail, busy, composer, current, open: openSource };
   const units = useMemo(
@@ -499,6 +503,7 @@ export function ReviewApp({
   }
   function select(index: number, scroll = true) {
     if (index < 0 || index >= stops.length) return;
+    if (scroll && reached.current !== "source") reached.current = "pick";
     if (scroll) returning.current = null;
     setCurrent(index);
     store(placeKey, {
@@ -544,6 +549,106 @@ export function ReviewApp({
   useEffect(() => {
     if (current >= 0 && !returning.current && Date.now() >= scrollUntil.current && paper.current?.scrollTop) remember(current);
   }, [current]);
+  // The workspace's source editor follows the current change, and asks for
+  // the change at a line of a file.
+  const unitLines = (unit: Unit): [number, number][] => unit.whole_file
+    ? [[Math.max(0, unit.new_start - 1), unit.new_end]]
+    : unit.ops.filter((op) => op[0] !== "equal").map((op) => [op[3], op[4]]);
+  function announce(index: number) {
+    const from = reached.current;
+    reached.current = "scroll";
+    if (!stops[index]) return;
+    const detail: CurrentChange = {
+      stop: index, from,
+      units: stops[index].units.map((id) => units.get(id)).filter((unit): unit is NonNullable<typeof unit> => Boolean(unit && unit.kind === "text" && unit.status !== "deleted"))
+        .map((unit) => ({ id: unit.id, file: unit.file, lines: unitLines(unit) })),
+    };
+    window.dispatchEvent(new CustomEvent(CURRENT_CHANGE_EVENT, { detail }));
+  }
+  useEffect(() => { if (current >= 0) announce(current); }, [current, detail]);
+  // The workspace's editor shows the changes in their files, with Accept and
+  // Reject, which decide them here as the buttons on the page do.
+  function announceChanges() {
+    if (!detail) return;
+    const changes: ReviewChanges["changes"] = detail.units.filter((unit) => unit.kind === "text" && unit.status !== "deleted" && unit.text_ops?.length)
+      .map((unit) => ({ id: unit.id, file: unit.file, ops: unit.text_ops!, decision: decisions[unit.id] ?? "pending", confirmed: state?.decisions?.[unit.id] ?? "pending" }));
+    const cards: ReviewChanges["stops"] = stops.map((stop, index) => ({ title: t("Change {n}", { n: index + 1 }), units: stop.units,
+      actions: kinds(stop.units).map((kind) => ({ kind, label: label(kind), lock: actionLock(kind) ?? null })) }));
+    window.dispatchEvent(new CustomEvent<ReviewChanges>(REVIEW_CHANGES_EVENT, { detail: { round: detail.round, changes, stops: cards, labels: { before: t("Before"), after: t("After") } } }));
+  }
+  useEffect(announceChanges, [detail, decisions, state]);
+  useEffect(() => {
+    const chosen = (event: Event) => {
+      const request = (event as CustomEvent<DecideChange & { again?: boolean }>).detail, { round, changes: ids, action } = request;
+      if (detail?.round !== round || !["accept", "reject", "comment"].includes(action)) return;
+      const kind = action as Kind;
+      if (kind !== "comment") { void decide(kind, targets(ids, kind)); return; }
+      // A comment belongs to its card, which becomes current first.
+      const index = stops.findIndex((stop) => stop.units.some((id) => ids.includes(id)));
+      if (index >= 0 && index !== current && !request.again) {
+        select(index);
+        requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(DECIDE_EVENT, { detail: { ...request, again: true } })));
+        return;
+      }
+      beginComposer(targets(ids, "comment"));
+    };
+    window.addEventListener(DECIDE_EVENT, chosen);
+    return () => window.removeEventListener(DECIDE_EVENT, chosen);
+  });
+  // A change's source, offered to the workspace's editor: true when it opened there.
+  function offerSource(chosen: Unit[]) {
+    // The editor shows the task's files as they are now, with the latest
+    // round's changes. An earlier round, a closed task or a previewed option
+    // keeps the inline LaTeX, and so do changes without character-level
+    // operations, such as a new file or a bibliography entry, which have no
+    // card in the editor.
+    if (!latest || !detail) return false;
+    const shown = chosen.filter((item) => item.kind === "text" && item.status !== "deleted");
+    if (!shown.length || shown.some((item) => !item.text_ops?.length)) return false;
+    // Nor can the editor place cards in a file with CRLF line endings, whose
+    // offsets count the carriage returns; its context shows them.
+    if (shown.some((item) => /\r/.test(item.old_text + item.new_text + (item.old_context?.text ?? "")))) return false;
+    const unit = shown[0];
+    const marks = chosen.filter((item) => item.file === unit.file && item.kind === "text").flatMap(unitLines);
+    if (!marks.length) return false;
+    const request: OpenSource = { round: detail.round, change: unit.id, file: unit.file, marks,
+      lines: [Math.min(...marks.map((range) => range[0])), Math.max(...marks.map((range) => Math.max(range[1], range[0] + 1)))] };
+    // The editor shows the changes of the round it opens in.
+    announceChanges();
+    return !window.dispatchEvent(new CustomEvent(OPEN_SOURCE_EVENT, { detail: request, cancelable: true }));
+  }
+  useEffect(() => {
+    const choose = (event: Event) => {
+      const { file, line } = (event as CustomEvent<SelectSource>).detail;
+      let best = -1, distance = Infinity;
+      stops.forEach((stop, index) => stop.units.forEach((id) => {
+        const unit = units.get(id);
+        if (!unit || unit.file !== file) return;
+        for (const [from, to] of unitLines(unit)) {
+          const away = line < from ? from - line : line >= Math.max(to, from + 1) ? line - Math.max(to, from + 1) + 1 : 0;
+          if (away < distance) { distance = away; best = index; }
+        }
+      }));
+      // Only a line in or right beside a change has one.
+      if (best < 0 || distance > 1 || best === current) return;
+      reached.current = "source";
+      select(best);
+    };
+    window.addEventListener(SELECT_SOURCE_EVENT, choose);
+    return () => window.removeEventListener(SELECT_SOURCE_EVENT, choose);
+  });
+  // A file saved in the workspace's editor shows as an edit made here: the
+  // review continues from the new state, at the edited place.
+  useEffect(() => {
+    const saved = (event: Event) => {
+      const { state: next, file, line } = (event as CustomEvent<SourceSaved>).detail;
+      const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${current}"]`);
+      editedPlace.current = { file, line: line + 1, offset: article ? past(article) : 0, paper: paperView };
+      epoch.current++; setState(next);
+    };
+    window.addEventListener(SOURCE_SAVED_EVENT, saved);
+    return () => window.removeEventListener(SOURCE_SAVED_EVENT, saved);
+  });
   useEffect(() => {
     let cancelled = false,
       polling = false,
@@ -707,12 +812,12 @@ export function ReviewApp({
     )
       return;
     const scoped = focused !== undefined || changes.length !== stops[current]?.units.length;
-    const event = new CustomEvent('latex-review:comment', { cancelable: true, detail: {
+    const event = new CustomEvent('papilot:review:comment', { cancelable: true, detail: {
       round: detail?.round, stop: current, changes,
       ...(scoped ? { scope: commentScope(changes.map(id => units.get(id)!).filter(Boolean)) } : {}),
     } });
     if (!window.dispatchEvent(event)) return;
-    const key = `latex-review:${task}:draft:${detail?.round}:${changes.join(",")}`;
+    const key = `papilot:review:${task}:draft:${detail?.round}:${changes.join(",")}`;
     setDraft(readStorage(key, ""));
     setComposer({ changes, stop: current, key });
   }
@@ -780,7 +885,7 @@ export function ReviewApp({
       setState(next);
       setQueued(remaining);
       // The host refreshes what depends on the decision, such as Git status.
-      window.dispatchEvent(new CustomEvent("latex-review:decided"));
+      window.dispatchEvent(new CustomEvent("papilot:review:decided"));
       if (entry.draft) store(entry.draft, "");
       if (!remaining.length) {
         if (entry.done) setToast(entry.done);
@@ -802,7 +907,9 @@ export function ReviewApp({
     },
   };
   async function undo() {
-    if ((!state?.undo && !queue.current!.pending.length) || !latest || snapshot.current.busy)
+    // The snapshot has the decision confirmed a moment ago, before this
+    // render's state does: Undo pressed right after a decision takes it back.
+    if ((!snapshot.current.state?.undo && !queue.current!.pending.length) || !latest || snapshot.current.busy)
       return;
     // The latest decision has not been sent yet: it is simply dropped, and
     // nothing reaches the server or compiles.
@@ -830,7 +937,7 @@ export function ReviewApp({
         id: last.id,
       });
       setState(next);
-      window.dispatchEvent(new CustomEvent("latex-review:decided"));
+      window.dispatchEvent(new CustomEvent("papilot:review:decided"));
       // An undo of an earlier round's accept inserted the next round.
       if (next.latest !== snapshot.current.detail?.round) pollNow.current();
       const target = stops.findIndex((s) =>
@@ -856,6 +963,8 @@ export function ReviewApp({
     await decide("comment", composer.changes, draft.trim());
   }
   function toggleSource(index: number) {
+    // A workspace with its own editor shows the source there, not on the page.
+    if (!openSource.has(index) && offerSource((stops[index]?.units ?? []).map((id) => units.get(id)!).filter(Boolean))) return;
     setOpenSource((previous) => {
       const next = new Set(previous);
       if (next.has(index)) next.delete(index);
@@ -951,7 +1060,7 @@ export function ReviewApp({
           };
         });
     const index = visibleStop(regions, current, box.top + 60, box.bottom - 100);
-    if (index !== current) select(index, false);
+    if (index !== current) { reached.current = "scroll"; select(index, false); }
     if (index >= 0) remember(index);
   }
   const actionBar = (index: number) => {
@@ -1228,8 +1337,10 @@ export function ReviewApp({
         data-resolved={resolved}
         tabIndex={-1}
         onClick={() => {
-          if (block.units.some(inFocus) && index !== current && !composer && (expanded || !reviewed))
-            select(index, false);
+          if (!block.units.some(inFocus) || composer || (!expanded && reviewed)) return;
+          reached.current = "pick";
+          if (index !== current) select(index, false);
+          else announce(index);
         }}
       >
         {reviewed && !expanded && !resolved && (
@@ -1399,6 +1510,7 @@ export function ReviewApp({
                   building={Boolean(state?.job && ["queued", "running"].includes(state.job.status))}
                   locked={!latest ? t("A newer round is available. Reload the page.") : decisions[unit.id] === "rejected" ? t("This change was rejected. Undo that decision before editing it.") : actionLock("source") || (waiting.has(unit.id) && detail!.rendering !== "failed" ? t("PDF comparison in progress") : null)}
                   onSaving={saving => { snapshot.current.busy = saving; setBusy(saving); }}
+                  onOpen={() => offerSource([unit])}
                   onSaved={next => {
                     const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${index}"]`);
                     editedPlace.current = { file: unit.file, line: unit.new_start, offset: article ? past(article) : 0, paper: paperView };
@@ -1551,9 +1663,6 @@ export function ReviewApp({
   return (
     <>
       <header className="bar">
-        <a className="ghost overview-link" href={withLanguage("/")}>
-          ← {t("All reviews")}
-        </a>
         <div className="identity">
           <h1>{state?.title ?? "LaTeX Review"}</h1>
           <span className="muted">
@@ -1921,13 +2030,11 @@ export function ReviewApp({
               </details>
             </div>
           ) : null}
-          {/* A task that fixes a compilation error starts from text that
-              does not compile: its Before pages went on past the errors. */}
           {detail?.baselineErrors?.length ? (
             <div className="banner">
               <details>
                 <summary>
-                  {t("The text before these changes has compilation errors. Its pages show what LaTeX typeset after skipping them.")}
+                  {detail.sourceOnly ? t("Source only") : t("The text before these changes has compilation errors. Its pages show what LaTeX typeset after skipping them.")}
                 </summary>
                 <pre className="details">{detail.baselineErrors.join("\n")}</pre>
               </details>
@@ -1955,6 +2062,7 @@ export function ReviewApp({
                     url={applied.shown.pdf}
                     buildKey={applied.shown.key}
                     scrollRoot={paper}
+                    place={`${placeKey}:applied`}
                     status={<AppliedStatus applied={applied} />}
                   />
                 ) : (

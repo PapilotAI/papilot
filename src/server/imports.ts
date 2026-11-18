@@ -7,15 +7,17 @@ import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import yauzl from 'yauzl';
+import tar from 'tar-stream';
+import { gunzip } from 'node:zlib';
+import { downloadPaperSource } from './paper-link.ts';
 import { DATA, ENGINE } from './paths.ts';
 import { realPath } from './real-path.ts';
 import type { PaperImport, Project } from '../shared.ts';
 import type { Manuscripts } from './manuscript.ts';
 
 const execute = promisify(execFile);
-// These limits apply to uploads, not folders already on this computer.
+// Downloads and in-memory template previews remain bounded. Local uploads stream to disk.
 const MAX_BYTES = 64 * 1024 * 1024, MAX_FILES = 5000;
-const CONFIG = '.latex-review.json';
 const skip = (name: string) => ['.git', '__macosx', '.ds_store', 'node_modules', '.papilot'].includes(name.toLowerCase()) || name.startsWith('._');
 const git = async (root: string, ...args: string[]) => (await execute('git', ['-C', root, ...args], { timeout: 30000, maxBuffer: 8 * 1024 * 1024 })).stdout.trim();
 function safeName(name: unknown): string {
@@ -23,16 +25,21 @@ function safeName(name: unknown): string {
   return name;
 }
 function bytes(value: unknown) {
-  if (typeof value !== 'string' || value.length > Math.ceil(MAX_BYTES / 3) * 4 || value.length % 4 || /[^A-Za-z0-9+/=]/.test(value) || /=/.test(value.slice(0, -2)) || /=[^=]$/.test(value)) throw new Error('Invalid upload data.');
+  if (typeof value !== 'string' || value.length % 4 || /[^A-Za-z0-9+/=]/.test(value) || /=/.test(value.slice(0, -2)) || /=[^=]$/.test(value)) throw new Error('Invalid upload data.');
   return Buffer.from(value, 'base64');
 }
-function config(root: string): Record<string, unknown> {
-  const file = path.join(root, CONFIG);
-  if (!fs.existsSync(file)) return {};
-  if (fs.lstatSync(file).isSymbolicLink()) throw new Error('The paper configuration must not be a symbolic link.');
-  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('The paper configuration must contain a JSON object.');
-  return data;
+type Config = typeof import('../../engine/src/core/config.ts');
+type LegacyState = typeof import('../../engine/src/core/legacy-state.ts');
+const configModule = (): Promise<Config> => import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href);
+// The settings Papilot saved for a paper in its Git directory. A folder that
+// is not its own repository yet has only those an earlier version kept in
+// the folder itself.
+async function config(root: string): Promise<Record<string, unknown>> {
+  let top: string | undefined;
+  try { top = await git(root, 'rev-parse', '--show-toplevel'); } catch { /* Not a repository yet. */ }
+  if (top && realPath(top) === realPath(root)) return (await configModule()).readSettings(root);
+  const { legacySettings } = await import(pathToFileURL(path.join(ENGINE, 'src/core/legacy-state.ts')).href) as LegacyState;
+  return legacySettings(root) ?? {};
 }
 export function texFiles(root: string) {
   const files: string[] = [], folders = [''];
@@ -47,7 +54,7 @@ export function texFiles(root: string) {
   }
   return files.sort();
 }
-function existingTex(root: string, file: unknown): file is string {
+export function existingTex(root: string, file: unknown): file is string {
   if (typeof file !== 'string' || !/\.tex$/i.test(file)) return false;
   try {
     safeName(file);
@@ -66,25 +73,28 @@ function sourceHead(file: string) {
     return buffer.subarray(0, fs.readSync(fd, buffer, 0, buffer.length, 0)).toString('utf8');
   } finally { fs.closeSync(fd); }
 }
+/** Whether a TeX file of the folder is a root document: one that declares its
+ *  class and begins the document, outside comments. */
+export function isRootDocument(root: string, file: unknown): file is string {
+  if (!existingTex(root, file)) return false;
+  const text = sourceHead(path.join(root, file)).replace(/(?<!\\)%[^\n]*/g, '');
+  return /\\documentclass\b/.test(text) && /\\begin\s*\{document\}/.test(text);
+}
 export async function inspectPaper(root: string) {
   let settings: Record<string, unknown> = {}, error: string | undefined;
-  try { settings = config(root); } catch (failure) { error = (failure as Error).message; }
+  try { settings = await config(root); } catch (failure) { error = (failure as Error).message; }
   let main = existingTex(root, settings.main) ? settings.main : '', engine = '';
   // Most papers already declare their main file or keep it near the root.
   // Do not enumerate caches, assets and supporting papers just to open them.
   if (!main) {
     try {
-      const module = await import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href);
-      const detected = module.detectMain(root);
+      const detected = (await configModule()).detectMain(root);
       if (existingTex(root, detected)) main = detected;
     } catch { /* Unusual layouts fall back to a deeper search. */ }
   }
   let candidates = main ? [main] : [];
   if (!main) {
-    const files = texFiles(root), roots = files.filter(file => {
-      const text = sourceHead(path.join(root, file)).replace(/(?<!\\)%[^\n]*/g, '');
-      return /\\documentclass\b/.test(text) && /\\begin\s*\{document\}/.test(text);
-    });
+    const files = texFiles(root), roots = files.filter(file => isRootDocument(root, file));
     main = roots.length === 1 ? roots[0] : '';
     const found = new Set(roots);
     candidates = [...roots, ...files.filter(file => !found.has(file))];
@@ -102,11 +112,12 @@ function engineFor(root: string, main: string, settings: Record<string, unknown>
 }
 // Keep the author's settings, including a source folder that still contains
 // the main file; without one, the whole folder compiles.
-function rememberMain(root: string, main: string, engine: string) {
-  const settings = config(root), folder = typeof settings.source_dir === 'string' ? settings.source_dir.replace(/\/+$/, '') : null;
+export async function rememberMain(root: string, main: string, engine: string) {
+  const { readSettings, writeSettings } = await configModule();
+  const settings = readSettings(root), folder = typeof settings.source_dir === 'string' ? settings.source_dir.replace(/\/+$/, '') : null;
   const contains = folder === '' || (folder !== null && main.startsWith(folder + '/'));
   const next = { ...settings, main, engine, ...(contains ? {} : { source_dir: '' }) };
-  if (JSON.stringify(next) !== JSON.stringify(settings)) fs.writeFileSync(path.join(root, CONFIG), JSON.stringify(next, null, 2) + '\n');
+  if (JSON.stringify(next) !== JSON.stringify(settings)) writeSettings(root, next);
 }
 async function repositoryRoot(root: string) {
   let top: string | undefined;
@@ -114,14 +125,14 @@ async function repositoryRoot(root: string) {
   if (top && realPath(top) !== realPath(root)) throw new Error('This folder belongs to a parent Git repository. Select its root folder, or upload a copy.');
   return top;
 }
-export async function prepareRepository(root: string) {
+export async function prepareRepository(root: string, message = 'Import paper into Papilot') {
   const top = await repositoryRoot(root);
   if (!top) await git(root, 'init', '-q');
   try { await git(root, 'rev-parse', '--verify', 'HEAD'); return; } catch { /* Empty repositories need their first snapshot. */ }
   // Do not change the author's global identity or overwrite their ignore rules.
   if (!fs.existsSync(path.join(root, '.gitignore'))) fs.writeFileSync(path.join(root, '.gitignore'), '*.aux\n*.log\n*.fls\n*.fdb_latexmk\n*.synctex.gz\n*.toc\n*.out\n.DS_Store\n');
   await git(root, 'add', '--all');
-  await git(root, '-c', 'user.name=Papilot', '-c', 'user.email=papilot@localhost', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Import paper into Papilot');
+  await git(root, '-c', 'user.name=Papilot', '-c', 'user.email=papilot@localhost', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', message);
 }
 // The desktop app opens a folder the way an editor does. A paper already in
 // Papilot opens again; any other folder with a clear main file is added as it
@@ -142,27 +153,90 @@ export async function openFolder(input: { path?: unknown; main?: unknown }, know
   }
   const main = input.main ?? detected.main;
   if (!existingTex(root, main)) throw new Error('Choose an existing TeX main file.');
-  rememberMain(root, main, engineFor(root, main, config(root)));
+  await prepareRepository(root);
+  await rememberMain(root, main, engineFor(root, main, (await configModule()).readSettings(root)));
   return { project: await register(root, path.basename(root)) };
 }
-export async function extractZip(buffer: Buffer, root: string) {
-  if (buffer.length > MAX_BYTES) throw new Error('Choose a ZIP smaller than 64 MB.');
-  const zip = await new Promise<yauzl.ZipFile>((resolve, reject) => yauzl.fromBuffer(buffer, { lazyEntries: true, strictFileNames: true, validateEntrySizes: true }, (error, value) => error ? reject(error) : resolve(value)));
-  await new Promise<void>((resolve, reject) => {
+// Uploaded ZIPs and Universe templates share path and file-type validation.
+async function zipEntries(buffer: Buffer | string, visit: (name: string, stream: NodeJS.ReadableStream) => Promise<void>, bounded = false, signal?: AbortSignal) {
+  if (bounded && typeof buffer !== 'string' && buffer.length > MAX_BYTES) throw new Error('Choose a ZIP smaller than 64 MB.');
+  const zip = await new Promise<yauzl.ZipFile>((resolve, reject) => {
+    const options = { lazyEntries: true, strictFileNames: true, validateEntrySizes: true };
+    const ready = (error: Error | null, value: yauzl.ZipFile) => error ? reject(error) : resolve(value);
+    if (typeof buffer === 'string') yauzl.open(buffer, options, ready);
+    else yauzl.fromBuffer(buffer, options, ready);
+  });
+  // A file-backed ZIP releases its descriptor asynchronously; callers may delete it next.
+  const closed = typeof buffer === 'string' ? new Promise<void>(resolve => zip.once('close', resolve)) : undefined;
+  try { await new Promise<void>((resolve, reject) => {
     let count = 0, total = 0;
     const fail = (error: unknown) => { zip.close(); reject(error); };
     zip.on('error', fail); zip.on('end', resolve);
     zip.on('entry', (entry: yauzl.Entry) => { void (async () => {
-      if (++count > MAX_FILES || (total += entry.uncompressedSize) > MAX_BYTES) throw new Error('The ZIP expands beyond 64 MB or 5,000 files.');
+      signal?.throwIfAborted();
+      if (bounded && (++count > MAX_FILES || (total += entry.uncompressedSize) > MAX_BYTES)) throw new Error('The ZIP expands beyond 64 MB or 5,000 files.');
       const name = safeName(entry.fileName.replace(/\/$/, ''));
       const mode = (entry.externalFileAttributes >>> 16) & 0o170000;
       if (mode && mode !== 0o100000 && mode !== 0o040000) throw new Error('ZIP links and special files are not supported.');
       if (name.split('/').some(skip) || entry.fileName.endsWith('/')) { zip.readEntry(); return; }
-      const target = path.join(root, name); fs.mkdirSync(path.dirname(target), { recursive: true });
       const stream = await new Promise<NodeJS.ReadableStream>((resolve, reject) => zip.openReadStream(entry, (error, stream) => error ? reject(error) : resolve(stream)));
-      await pipeline(stream, fs.createWriteStream(target, { flags: 'wx', mode: 0o600 })); zip.readEntry();
+      // An unconsumed entry stream keeps the ZIP open, so release it if the visitor fails before piping it.
+      try { await visit(name, stream); } catch (error) { (stream as NodeJS.ReadableStream & { destroy(): void }).destroy(); throw error; }
+      zip.readEntry();
     })().catch(fail); });
     zip.readEntry();
+  }); } finally { zip.close(); await closed; }
+}
+export function extractZip(buffer: Buffer | string, root: string, bounded = false, signal?: AbortSignal) {
+  return zipEntries(buffer, async (name, stream) => {
+    const target = path.join(root, name); fs.mkdirSync(path.dirname(target), { recursive: true });
+    await pipeline(stream, fs.createWriteStream(target, { flags: 'wx', mode: 0o600 }), { signal });
+  }, bounded, signal);
+}
+export async function readZip(buffer: Buffer) {
+  const files = new Map<string, Buffer>(), seen = new Set<string>();
+  await zipEntries(buffer, async (name, stream) => {
+    // Case-insensitive file systems would merge these into one file.
+    if (seen.has(name.toLowerCase())) throw new Error('The ZIP contains the same file twice.');
+    seen.add(name.toLowerCase());
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    files.set(name, Buffer.concat(chunks));
+  }, true);
+  return files;
+}
+
+export async function extractSource(buffer: Buffer, root: string, zipOnly = false) {
+  if (buffer.length > MAX_BYTES) throw new Error('The source download exceeds 64 MB.');
+  if (buffer.subarray(0, 2).toString() === 'PK') return extractZip(buffer, root, true);
+  if (zipOnly) throw new Error('Overleaf did not return a source ZIP. Try a read-only sharing link or upload the ZIP.');
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    try { buffer = await promisify(gunzip)(buffer, { maxOutputLength: MAX_BYTES }); }
+    catch { throw new Error('The source archive is damaged or expands beyond 64 MB.'); }
+  }
+  const head = buffer.subarray(0, 300000).toString('utf8');
+  if (/^\s*(?:<!doctype\s+html|<html|<\?xml)|^%PDF-/i.test(head)) throw new Error('This link returned a web page or PDF, not LaTeX source. Use an arXiv paper link, an Overleaf sharing link, or a source archive download.');
+  // arXiv also serves single TeX submissions, with or without gzip.
+  if (!buffer.includes(0) && /\\(?:documentclass|documentstyle|begin\s*\{document\})/.test(head)) {
+    fs.writeFileSync(path.join(root, 'main.tex'), buffer, { flag: 'wx', mode: 0o600 }); return;
+  }
+  const archive = tar.extract(), seen = new Set<string>(); let count = 0, total = 0;
+  await new Promise<void>((resolve, reject) => {
+    archive.on('error', reject); archive.on('finish', resolve);
+    archive.on('entry', (header, stream, next) => { void (async () => {
+      if (++count > MAX_FILES || (total += header.size ?? 0) > MAX_BYTES) throw new Error('The source archive expands beyond 64 MB or 5,000 files.');
+      if (header.type !== 'file' && header.type !== 'directory') throw new Error('Source archive links and special files are not supported.');
+      // Conventional tar exports prefix names with ./ and may include ./ itself.
+      const raw = header.name.replace(/^(?:\.\/)+/, '').replace(/\/$/, '');
+      if (!raw && header.type === 'directory') { stream.resume(); next(); return; }
+      const name = safeName(raw);
+      if (header.type === 'directory' || name.split('/').some(skip)) { stream.resume(); next(); return; }
+      if (seen.has(name.toLowerCase())) throw new Error('The source archive contains the same file twice.');
+      seen.add(name.toLowerCase());
+      const target = path.join(root, name); fs.mkdirSync(path.dirname(target), { recursive: true });
+      await pipeline(stream, fs.createWriteStream(target, { flags: 'wx', mode: 0o600 })); next();
+    })().catch(error => archive.destroy(error)); });
+    archive.end(buffer);
   });
 }
 
@@ -170,8 +244,16 @@ export class PaperImports {
   private sessions = new Map<string, PaperImport>();
   private active = new Set<string>();
   get busy() { return this.active.size > 0; }
-  constructor(private manuscripts: Manuscripts, private directory = DATA, private registered: (root: string) => boolean = () => false) {
-    const folder = path.join(directory, 'imports');
+  constructor(private manuscripts: Manuscripts, private directory = DATA, private registered: (root: string) => boolean = () => false, private source = downloadPaperSource) {
+    // Staged ZIPs belong to requests that ended with a previous server process.
+    if (fs.existsSync(directory)) for (const name of fs.readdirSync(directory)) if (name.startsWith('upload-')) fs.rmSync(path.join(directory, name), { recursive: true, force: true });
+    const folder = path.join(directory, 'imports'), papers = path.join(directory, 'papers');
+    // A copy is saved with its receipt only once complete and is never added to the workspace without one,
+    // so a copy without a receipt was interrupted by a previous server process.
+    if (fs.existsSync(papers)) for (const id of fs.readdirSync(papers)) {
+      const root = path.join(papers, id);
+      if (/^[a-f0-9-]{36}$/.test(id) && !fs.existsSync(path.join(folder, id + '.json')) && !registered(root)) fs.rmSync(root, { recursive: true, force: true });
+    }
     if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder)) {
       if (/^[a-f0-9-]{36}\.json$/.test(file)) try { this.get(file.slice(0, -5)); } catch { /* An unreadable receipt must not prevent other papers from opening. */ }
     }
@@ -194,10 +276,37 @@ export class PaperImports {
     }
     return { ...value };
   }
-  async create(input: { path?: unknown; name?: unknown; zip?: unknown; files?: unknown }) {
-    const id = randomUUID(); let root = '', copied = false;
-    if ([input.path, input.zip, input.files].filter(value => value !== undefined).length !== 1) throw new Error('Choose one folder or ZIP.');
+  async upload(files: AsyncIterable<{ filename: string; file: NodeJS.ReadableStream }>, name: unknown, archive: boolean, signal?: AbortSignal) {
+    return this.create({ name }, async root => {
+      let count = 0;
+      for await (const part of files) {
+        signal?.throwIfAborted();
+        count++;
+        if (archive) {
+          if (count !== 1) throw new Error('Drop one folder or LaTeX ZIP file.');
+          const temporary = await fs.promises.mkdtemp(path.join(this.directory, 'upload-'));
+          try {
+            const file = path.join(temporary, 'source.zip');
+            await pipeline(part.file, fs.createWriteStream(file, { flags: 'wx', mode: 0o600 }), { signal });
+            await extractZip(file, root, false, signal);
+          } finally { await fs.promises.rm(temporary, { recursive: true, force: true }); }
+        } else {
+          let file: string;
+          try { file = safeName(decodeURIComponent(part.filename)); } catch { throw new Error('Invalid file path in upload.'); }
+          if (file.split('/').some(skip)) { for await (const _chunk of part.file) { /* Drain ignored files without buffering. */ } continue; }
+          const target = path.join(root, file);
+          await fs.promises.mkdir(path.dirname(target), { recursive: true });
+          await pipeline(part.file, fs.createWriteStream(target, { flags: 'wx', mode: 0o600 }), { signal });
+        }
+      }
+      if (!count) throw new Error('No files found in this folder.');
+    }, signal);
+  }
+  async create(input: { path?: unknown; name?: unknown; zip?: unknown; files?: unknown; url?: unknown }, upload?: (root: string) => Promise<void>, signal?: AbortSignal) {
+    const id = randomUUID(); let root = '', copied = false, sourceName = '';
+    if ([input.path, input.zip, input.files, input.url, upload].filter(value => value !== undefined).length !== 1) throw new Error('Choose one folder, ZIP or paper link.');
     if (input.name !== undefined && (typeof input.name !== 'string' || input.name.length > 120)) throw new Error('Paper name is too long.');
+    this.active.add(id);
     try {
       if (input.path !== undefined) {
         if (typeof input.path !== 'string' || !input.path.trim()) throw new Error('Enter a folder path.');
@@ -205,15 +314,17 @@ export class PaperImports {
         if (!fs.statSync(root).isDirectory()) throw new Error('Select a folder containing the paper.');
       } else {
         root = path.join(this.directory, 'papers', id); copied = true; fs.mkdirSync(root, { recursive: true, mode: 0o700 });
-        if (input.zip !== undefined) await extractZip(bytes(input.zip), root);
+        if (upload) await upload(root);
+        else if (input.url !== undefined) {
+          const source = await this.source(input.url); sourceName = source.name;
+          await extractSource(source.data, root, source.zip);
+        } else if (input.zip !== undefined) await extractZip(bytes(input.zip), root);
         else {
-          if (!Array.isArray(input.files) || !input.files.length || input.files.length > MAX_FILES) throw new Error('Choose between 1 and 5,000 files.');
-          let total = 0;
+          if (!Array.isArray(input.files) || !input.files.length) throw new Error('No files found in this folder.');
           for (const file of input.files) {
             const name = safeName(file.path);
             if (name.split('/').some(skip)) continue;
-            const data = bytes(file.data); total += data.length;
-            if (total > MAX_BYTES) throw new Error('Choose a folder smaller than 64 MB.');
+            const data = bytes(file.data);
             const target = path.join(root, name); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, data, { flag: 'wx', mode: 0o600 });
           }
         }
@@ -224,10 +335,13 @@ export class PaperImports {
       if (this.registered(root)) throw new Error('This paper is already added. Open it from the paper list.');
       if (!copied && [...this.sessions.values()].some(item => item.path === root)) return this.get([...this.sessions.values()].find(item => item.path === root)!.id);
       const detected = await inspectPaper(root);
+      signal?.throwIfAborted();
+      if (input.url !== undefined && !detected.candidates.length) throw new Error('The download contains no TeX source files. This paper may only provide a PDF.');
       const existing = !copied && [...this.sessions.values()].find(item => item.path === root);
       if (existing) return this.get(existing.id);
-      return this.save({ id, path: root, copied, name: (input.name as string)?.trim() || path.basename(root), ...detected, phase: 'choose' });
+      return this.save({ id, path: root, copied, name: (input.name as string)?.trim() || sourceName || path.basename(root), ...detected, phase: 'choose' });
     } catch (error) { if (copied) fs.rmSync(path.join(this.directory, 'papers', id), { recursive: true, force: true }); throw error; }
+    finally { this.active.delete(id); }
   }
   async build(id: string, input: { main?: unknown; engine?: unknown; name?: unknown }, repair?: (root: string, error: string) => Promise<string>) {
     const value = this.get(id);
@@ -244,8 +358,8 @@ export class PaperImports {
     void (async () => {
       try {
         await repositoryRoot(value.path);
-        if (!repair) rememberMain(value.path, main as string, engine as string);
         await prepareRepository(value.path); value.versioned = true;
+        if (!repair) await rememberMain(value.path, main as string, engine as string);
         if (repair) { value.summary = await repair(value.path, previousError); Object.assign(value, await inspectPaper(value.path)); }
         value.phase = 'building'; this.save(value);
         // A retry starts a new build without forcing a clean one, so the

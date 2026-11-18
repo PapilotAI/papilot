@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
+import { dragPdfText } from './pdf-selection-fixture.mjs';
 
 // A newer pass of the manuscript lands while a note is being written on the
 // pages on screen. The card stays open and keeps its draft, the note names
@@ -31,6 +32,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/state') return json(snapshot);
   if (url.pathname === '/api/quick-notes') return json({ quickNotes: null });
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git')) return json(git);
   if (url.pathname.endsWith('/manuscript')) { manuscriptReads++; return json({ git, build: { status: 'building', key, pages: [[612, 792], [612, 792]] }, annotations: notes }); }
@@ -52,13 +54,7 @@ await page.route('**/api/**', async route => {
 const rail = () => page.getByRole('toolbar', { name: 'Marking tools' });
 const textOnPage = () => page.locator('.page[data-page-number="1"] .textLayer span').filter({ hasText: /\S/ });
 async function selectText(index) {
-  await textOnPage().nth(index).evaluate(element => {
-    const range = document.createRange(); range.selectNodeContents(element);
-    const selection = document.getSelection(); selection.removeAllRanges(); selection.addRange(range);
-    document.dispatchEvent(new Event('selectionchange'));
-    const box = element.getBoundingClientRect();
-    element.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse', clientX: box.right, clientY: box.bottom }));
-  });
+  await dragPdfText(page, textOnPage().nth(index));
 }
 async function newerPass(name) {
   const before = manuscriptReads;

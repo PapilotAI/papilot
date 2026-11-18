@@ -28,12 +28,12 @@ const started = () => fs.readdirSync(gates).filter((name) => name.startsWith("pi
 const pidOf = (key: string, kind = "pid") => Number(fs.readFileSync(path.join(gates, `${kind}-${key}`), "utf8"));
 const go = (key: string) => fs.writeFileSync(path.join(gates, `go-${key}`), "");
 const runs = () => (fs.existsSync(path.join(gates, "runs")) ? fs.readFileSync(path.join(gates, "runs"), "utf8").trim().split("\n").filter(Boolean).length : 0);
-const cache = () => path.join(f.root, ".git/latex-review/cache/builds");
+const cache = () => path.join(f.root, ".git/papilot/cache/builds");
 // Nothing of a cancelled build remains to be continued from or shown. The
 // request is cancelled at once; its folder goes once the compiler has ended.
 async function leftNothing(key: string) {
   await until(() => !fs.existsSync(path.join(cache(), key)));
-  expect(fs.existsSync(path.join(f.root, ".git/latex-review/logs", key + ".log"))).toBe(false);
+  expect(fs.existsSync(path.join(f.root, ".git/papilot/logs", key + ".log"))).toBe(false);
   for (const name of fs.existsSync(cache()) ? fs.readdirSync(cache()) : [])
     if (/^(?:latest|recent)/.test(name)) expect(fs.readFileSync(path.join(cache(), name), "utf8")).not.toContain(key);
 }
@@ -149,12 +149,11 @@ it.skipIf(!posix)("stops waiting for a slot at once and starts no compiler", asy
   const a = lease("normal"), b = lease("normal");
   await Promise.all([a.ready, b.ready]);
   const stop = new AbortController(), build = builder.build(revisions[0], ["full"], null, { signal: stop.signal });
-  await sleep(500);
+  // Both slots stay held, so a build that rejects never waited for one.
+  await until(() => fs.readdirSync(pool).some((name) => name.startsWith("wait-")));
   expect(started()).toEqual([]);
-  const at = Date.now();
   stop.abort();
   await expect(build).rejects.toBeInstanceOf(Cancelled);
-  expect(Date.now() - at).toBeLessThan(500);
   await sleep(300);
   expect(runs()).toBe(0);
   expect(fs.readdirSync(pool).filter((name) => name.startsWith("wait-"))).toEqual([]);

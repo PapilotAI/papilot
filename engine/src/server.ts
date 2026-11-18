@@ -5,8 +5,9 @@ import Fastify from "fastify";
 import staticFiles from "@fastify/static";
 import compress from "@fastify/compress";
 import { WEB, codeVersion, environmentVersion } from "./runtime.ts";
-import { Repo } from "./core/git.ts";
-import { CONFIG_NAME, loadProject, type Project } from "./core/config.ts";
+import { Repo, cleanPath, stateDir } from "./core/git.ts";
+import { serverHome } from "./client.ts";
+import { buildOverridesFile, documentsFile, loadProject, projectFor, settingsFile, type Project } from "./core/config.ts";
 import { Store } from "./core/store.ts";
 import { Tasks } from "./core/tasks.ts";
 import { Review } from "./core/review.ts";
@@ -21,7 +22,7 @@ import { view, type ViewRequest } from "./core/view.ts";
 import { acquireLock, now, readJson, realPath, writeJson } from "./core/files.ts";
 import { stopAll } from "./core/process.ts";
 import { checkInputs, Confirmations, ReferenceChecker } from "./core/verify.ts";
-import type { ActionKind, SourceEditRequest } from "./types.ts";
+import type { ActionKind, SourceEditRequest, SourceFileSave, Task } from "./types.ts";
 export class App {
   root: string;
   repo: Repo;
@@ -41,13 +42,18 @@ export class App {
   references: ReferenceChecker;
   confirmations: Confirmations;
   private cachedProject?: Project;
-  private stamp?: number;
+  private stamp?: string;
   constructor(root: string) {
     this.root = realPath(root);
     this.repo = new Repo(this.root);
-    this.state = path.join(this.repo.gitDir(), "latex-review");
+    this.state = stateDir(this.repo.gitDir());
     this.store = new Store(path.join(this.state, "state.sqlite3"));
     this.tasks = new Tasks(this);
+    // Tasks from before a repository could compile several root documents
+    // compiled its one document, the current one.
+    if (this.store.one("SELECT 1 FROM tasks WHERE document IS NULL LIMIT 1")) try {
+      this.store.execute("UPDATE tasks SET document=? WHERE document IS NULL", this.project.main);
+    } catch { /* No document compiles now; they follow the one that will. */ }
     this.review = new Review(this);
     this.sourceEdits = new SourceEdits(this);
     this.delivery = new Deliveries(this);
@@ -81,14 +87,44 @@ export class App {
     this.writing = result.then(() => undefined, () => undefined);
     return result;
   }
+  private settingsStamp() {
+    return [settingsFile(this.root), buildOverridesFile(this.root), documentsFile(this.root)].map(file => {
+      const stat = file ? fs.statSync(file, { throwIfNoEntry: false }) : undefined;
+      return stat ? `${stat.ino}:${stat.mtimeMs}` : "";
+    }).join(";");
+  }
   get project() {
-    const config = path.join(this.root, CONFIG_NAME),
-      stamp = fs.existsSync(config) ? fs.statSync(config).mtimeMs : 0;
+    const stamp = this.settingsStamp();
     if (!this.cachedProject || this.stamp !== stamp) {
       this.cachedProject = loadProject(this.root);
       this.stamp = stamp;
     }
     return this.cachedProject;
+  }
+  // By document: its settings, or null while its main file is gone and it
+  // compiles as the current document.
+  private documentProjects = new Map<string, { stamp: string; project: Project | null }>();
+  /** The settings a task compiles with: those of the root document it was
+   *  started on, which the paper may no longer be compiling. */
+  projectOf(task: Task | string): Project {
+    return this.projectFor((typeof task === "string" ? this.tasks.get(task, false) : task).document);
+  }
+  /** The settings `document` compiles with, or the paper's current ones. */
+  projectFor(document?: string | null): Project {
+    if (!document) return this.project;
+    document = cleanPath(document);
+    // The cache holds while the settings are the same and the main file is
+    // still there, or still gone: one renamed or removed compiles as the
+    // current document until it is back.
+    const stamp = this.settingsStamp(), there = fs.existsSync(path.join(this.root, document)), cached = this.documentProjects.get(document);
+    if (cached?.stamp === stamp && (cached.project !== null) === there) return cached.project ?? this.project;
+    const project = projectFor(this.root, document), own = project.main === document ? project : null;
+    this.documentProjects.set(document, { stamp, project: own });
+    return own ?? this.project;
+  }
+  /** The root document a task compiles, when it can be told. */
+  documentOf(name: string) {
+    try { return this.projectOf(name).main; } catch { return this.tasks.get(name, false).document ?? null; }
   }
   page(name: string) {
     return `${this.url}/?task=${encodeURIComponent(name)}`;
@@ -104,6 +140,7 @@ export class App {
       delivery: delivery ? { ...this.delivery.result(delivery), pending: !delivery.done } : null,
       reconciliation: reconciliation ?? null,
       worktree: task.worktree,
+      document: this.documentOf(name),
       url: this.page(name),
       viewing: now() - (this.viewers.get(name) ?? 0) < 15,
       scope: {
@@ -247,6 +284,19 @@ export function createServer(app: App) {
       } } } },
       request => app.sourceEdits.save(request.params.name, request.body),
     );
+    // A whole file of the task, for an editor beside the review.
+    server.get<{ Params: { name: string }; Querystring: { file: string } }>(
+      "/api/tasks/:name/source/file",
+      { schema: { querystring: { type: "object", required: ["file"], properties: { file: { type: "string", minLength: 1, maxLength: 1024 } } } } },
+      request => app.sourceEdits.readFile(request.params.name, request.query.file),
+    );
+    server.post<{ Params: { name: string }; Body: SourceFileSave }>(
+      "/api/tasks/:name/source/file",
+      { bodyLimit: 8 * 1024 * 1024, schema: { body: { type: "object", additionalProperties: false, required: ["id", "round", "file", "revision", "text"], properties: {
+        id: { type: "string", pattern: "^[A-Za-z0-9-]{1,80}$" }, round: { type: "integer", minimum: 1 }, file: { type: "string", minLength: 1, maxLength: 1024 }, revision: { type: "string", pattern: "^[a-f0-9]{64}$" }, text: { type: "string", maxLength: 2000000 },
+      } } } },
+      request => app.sourceEdits.saveFile(request.params.name, request.body),
+    );
     server.get<{ Params: { name: string }; Querystring: { after?: string } }>(
       "/api/tasks/:name/feedback",
       (request) =>
@@ -276,13 +326,16 @@ export function createServer(app: App) {
       request => useNoteOption(app, app.tasks.get(request.params.name).name, request.body));
     server.get<{ Params: { name: string; number: string } }>(
       "/api/tasks/:name/rounds/:number",
-      (request) =>
-        app.review.positioned(
+      async (request) => ({
+        ...(await app.review.positioned(
           app.review.roundDetail(
             request.params.name,
             Number(request.params.number),
           ),
-        ),
+        )),
+        // The root document the task compiles, for its complete PDF.
+        document: app.documentOf(request.params.name),
+      }),
     );
     // The places an edit changes away from its lines, past those its round
     // rendered: rendering them takes a moment, so the page asks for them.
@@ -396,6 +449,7 @@ export function createServer(app: App) {
         sections?: string[];
         files?: string[];
         deferred?: boolean;
+        document?: string;
       };
     }>(
       "/api/tasks",
@@ -409,6 +463,8 @@ export function createServer(app: App) {
               sections: { type: "array", items: { type: "string" } },
               files: { type: "array", items: { type: "string" } },
               deferred: { type: "boolean" },
+              // The root document a new task compiles; the current one by default.
+              document: { type: "string" },
             },
           },
         },
@@ -416,7 +472,7 @@ export function createServer(app: App) {
       async (request) => {
         const d = request.body;
         return app.taskInfo(
-          (await app.tasks.createAsync(d.name, d.title, d.sections, d.files, d.deferred)).name,
+          (await app.tasks.createAsync(d.name, d.title, d.sections, d.files, d.deferred, d.document)).name,
         );
       },
     );
@@ -438,7 +494,7 @@ export function createServer(app: App) {
     // The task's typeset pages as images, for its agent to look at.
     server.post<{ Params: { name: string }; Body: ViewRequest }>(
       "/api/tasks/:name/view",
-      { schema: { body: { ...objectSchema, additionalProperties: false, properties: { locations: { type: "array", items: { type: "string", maxLength: 1000 } }, pages: { type: "array", items: { type: "string", maxLength: 40 } }, accepted: { type: "boolean" } } } } },
+      { schema: { body: { ...objectSchema, additionalProperties: false, properties: { locations: { type: "array", items: { type: "string", maxLength: 1000 } }, pages: { type: "array", items: { type: "string", maxLength: 40 } }, accepted: { type: "boolean" }, check: { type: "boolean" }, full: { type: "boolean" } } } } },
       (request) => view(app, request.params.name, request.body),
     );
     server.post<{ Params: { name: string }; Body: { keepCurrent?: boolean; mode?: "workspace" | "commit"; message?: string; confirmation?: string } }>(
@@ -452,11 +508,6 @@ export function createServer(app: App) {
       const writes = await app.delivery.preview(request.params.name);
       return { files: writes && Object.fromEntries(Object.entries(writes).map(([file, data]) => [file, data?.toString("base64") ?? null])) };
     });
-    server.post<{ Params: { name: string }; Body: { mode: "workspace" | "branch"; message?: string } }>(
-      "/api/tasks/:name/deliver",
-      { schema: { body: { ...objectSchema, required: ["mode"], properties: { mode: { enum: ["workspace", "branch"] }, message: { type: "string", maxLength: 5000 } } } } },
-      request => app.delivery.deliver(request.params.name, request.body.mode, request.body.message),
-    );
     server.post<{
       Params: { name: string };
       Body: {
@@ -499,19 +550,6 @@ export function createServer(app: App) {
         },
       },
       (request) => app.review.undo(request.params.name, request.body.id),
-    );
-    server.post<{ Params: { name: string }; Body: { body: string } }>(
-      "/api/tasks/:name/note",
-      {
-        schema: {
-          body: {
-            ...objectSchema,
-            required: ["body"],
-            properties: { body: { type: "string" } },
-          },
-        },
-      },
-      (request) => app.review.note(request.params.name, request.body.body),
     );
     server.post<{ Params: { name: string }; Body: { force?: boolean } }>(
       "/api/tasks/:name/finish",
@@ -604,7 +642,7 @@ async function run(root: string, port: number, idle: number, owner?: Owner) {
   // closing open requests, rather than write its review state beside it;
   // Papilot's next request connects to that engine.
   let lost = false, stop = () => {};
-  const home = path.join(new Repo(root).gitDir(), "latex-review/server"),
+  const home = serverHome(root),
     release = await acquireLock(path.join(home, "server.lock"), false, { onLost: () => { lost = true; stop(); } }),
     app = new App(root),
     server = createServer(app);

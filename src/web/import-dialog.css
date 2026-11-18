@@ -1,28 +1,29 @@
-.modal.import-dialog { width: min(540px, calc(100vw - 32px)); }
-.import-dialog .modal-description { margin-bottom: 16px; }
 
 /* Phase 1: Folder / ZIP picker & dropzone (no tinted fills, compact actions) */
-.import-drop { border: 1px dashed var(--line-strong); border-radius: var(--r-lg); background: transparent; padding: 18px 18px 13px; display: flex; flex-direction: column; transition: border-color .15s, box-shadow .15s; }
+.import-drop { border: 1px dashed var(--line-strong); border-radius: var(--r-lg); background: transparent; padding: 22px 18px 18px; display: flex; flex-direction: column; align-items: center; gap: 12px; transition: border-color .15s, box-shadow .15s; }
+.import-dialog h2 + .import-drop { margin-top: 20px; }
 .import-drop.dragging { border-color: var(--accent); box-shadow: var(--ring); }
-.import-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
-.import-option { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; text-align: left; }
-.import-option:first-child { padding-right: 18px; border-right: 1px solid var(--line); }
-.import-option:last-child { padding-left: 18px; }
-.import-option-head { display: flex; align-items: center; gap: 7px; color: var(--text); }
-.import-option-head > svg { flex: none; color: var(--text-3); }
-.import-option-head strong { font-size: 13.5px; font-weight: 600; line-height: 1.35; }
-.import-option p { margin: 0; flex: 1; font-size: 12.5px; line-height: 1.55; color: var(--text-2); }
-.import-option .button { align-self: flex-start; width: auto; margin-top: 6px; }
-.import-drop-hint { width: 100%; margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--line); font-size: 12px; color: var(--text-3); line-height: 1.4; text-align: center; }
+.import-options { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.import-options .button { gap: 6px; }
+.import-options .button svg { color: var(--text-3); }
+.import-drop-hint { display:flex;align-items:center;gap:7px;font-size: 13px; color: var(--text-2); line-height: 1.4; text-align: center; }
+.import-drop-hint svg{flex:none}
+.import-original h3, .import-copy h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.import-original > p, .import-copy > p { margin: 6px 0 12px; font-size: 12px; color: var(--text-2); line-height: 1.5; }
+.import-original { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 
 /* Direct local path field */
 .import-path { margin: 16px 0 0; }
-.import-dialog .import-path > label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500; color: var(--text); }
-.import-path-row { display: flex; align-items: center; gap: 8px; }
+.import-dialog .import-path > label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 13px; font-weight: 500; color: var(--text); }
+.import-dialog .import-path > label > svg, .import-dialog .button > svg { flex: none; }
+.import-path-row { display: flex; align-items: stretch; gap: 8px; }
 .import-dialog input, .import-dialog .chip-select.field-select { height: 34px; padding: 0 10px; border-radius: 7px; font-size: 13.5px; box-shadow: none; }
 .import-dialog input:focus, .import-dialog .chip-select.field-select:focus-visible { border-color: var(--accent); box-shadow: var(--ring); }
 .import-path-row input { margin-top: 0; flex: 1; min-width: 0; height: 32px; font-size: 13px; }
 .import-path-row .button { flex: none; height: 32px; }
+.import-link { margin:0 0 22px; }
+.import-link-hint { display:flex;flex-wrap:wrap;gap:8px 14px;margin:10px 0 0;color:var(--text-3);font-size:12px;line-height:1.5 }
+.import-source { display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--text-2) }
 .import-reading { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13px; color: var(--text-2); }
 
 /* Phase 2: Stepper */
@@ -101,29 +102,28 @@
 .import-later { margin-right: auto; margin-left: -8px; padding-inline: 8px; }
 
 @media (max-width: 680px) {
-  .modal.import-dialog .button { min-height: 32px; height: auto; padding-block: 5px; }
-  .modal.import-dialog input { font-size: 16px; height: 36px; }
-  .modal.import-dialog .chip-select.field-select { height: 36px; }
+  .import-dialog .button { min-height: 32px; height: auto; padding-block: 5px; }
+  .import-dialog input { font-size: 16px; height: 36px; }
+  .import-dialog .chip-select.field-select { height: 36px; }
 }
 
 @media (max-width: 520px) {
-  .modal.import-dialog { padding: 22px 18px 18px; }
-  .import-drop { padding: 15px 15px 12px; }
-  .import-options { grid-template-columns: minmax(0, 1fr); }
-  .import-option:first-child { padding-right: 0; padding-bottom: 14px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .import-option:last-child { padding-left: 0; padding-top: 14px; }
+  .import-drop { padding: 18px 15px 15px; }
   .import-steps { flex-wrap: wrap; gap: 8px 14px; }
   .import-steps li:not(:last-child) { flex: 0 1 auto; }
   .import-steps li:not(:last-child)::after { display: none; }
-  .import-location { flex-wrap: wrap; gap: 6px 9px; }
-  .import-location-body { flex-basis: calc(100% - 28px); }
-  .import-location .button { margin-left: 17px; margin-right: 0; }
+  .import-location{gap:6px}
+  .import-location .button{white-space:normal;max-width:40%;margin:0}
   .import-settings { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .import-path-row { flex-wrap: wrap; }
-  .import-path-row input { flex-basis: 180px; }
+  .import-path-row input { flex-basis:0; }
   .modal .import-footer { gap: 8px; }
   .modal .import-footer .button { white-space: normal; }
   .import-later { margin-left: -6px; padding-inline: 6px; }
 }
 
 .import-dialog input[hidden] { display: none; }
+
+@media (pointer: coarse) {
+  .import-dialog .import-path-row input { font-size: 16px; height: 48px; }
+  :is(.import-copy, .import-original) .button { height: auto; min-height: 48px; }
+}

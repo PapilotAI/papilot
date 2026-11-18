@@ -1,6 +1,6 @@
 import { isPlayground } from './playground-mode.ts';
 import taskCommitStyles from './task-commit.css?inline';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { Task } from '../shared.ts';
 import { useReviewDraft } from './review-draft.ts';
@@ -8,6 +8,7 @@ import { ReviewNotes } from './review-notes.tsx';
 import { Icon } from './icons.tsx';
 import themeStyles from './theme.css?inline';
 import { syncAppearance } from './appearance.ts';
+import { desktopWindow } from './desktop-chrome.tsx';
 import { language, t, useLanguage } from './i18n.ts';
 import { NoteReviewControls, NoteReviewScope, useNoteResults } from './note-results.tsx';
 import { ReviewNoteConnections } from './review-note-connections.tsx';
@@ -20,6 +21,7 @@ import { ModeSwitch } from './mode-switch.tsx';
 import { PdfContents, PdfPageControls, PdfFind, PdfFindButton } from './pdf-controls.tsx';
 import { PDF_READER_COMMAND, PDF_READER_STATE, type PdfReaderCommand, type PdfReaderState } from '../../engine/src/web/pdf-reader.ts';
 import { VIEW_CHOSEN_EVENT } from '../../engine/src/web/view-preferences.ts';
+import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SourceSaved } from '../../engine/src/web/review-events.ts';
 
 // The viewer reads the interface language from its address.
 export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number, change?: number) => `${isPlayground ? import.meta.env.BASE_URL + 'src/web/playground/review.html' : `/review/${task.projectId}/`}?task=${task.name}${round ? `&round=${round}${change === undefined ? '&history=1' : `&change=${change}`}` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
@@ -81,8 +83,8 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       --accept:var(--green);--reject:var(--red);--comment:var(--accent);--ok-soft:var(--green-soft);--bad-soft:var(--red-soft);--warn:var(--amber-text);--warn-soft:var(--amber-soft);--warn-line:var(--amber-line);
     }
     .review-body{margin-left:var(--papilot-rail,0px)}
-    .bar{display:flex;align-items:center;height:var(--papilot-bar-height,44px);min-height:var(--papilot-bar-height,44px);padding:0 max(14px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + 14px);gap:12px;flex-wrap:nowrap;overflow:hidden}
-    .bar .overview-link,.bar .identity h1,.bar .identity span{display:none}
+    .bar{display:flex;align-items:center;height:var(--papilot-bar-height,46px);min-height:var(--papilot-bar-height,46px);padding:0 max(14px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + 14px);gap:12px;flex-wrap:nowrap;overflow:hidden}
+    .bar .identity h1,.bar .identity span{display:none}
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
     .bar .identity span{font-size:13px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis}
     .bar .meter{display:flex;order:initial;width:auto;font-size:13px}
@@ -255,7 +257,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     :root[data-papilot-build-indicator] .bar .status[data-state="building"]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%)}
     .bar .accept-all,.bar .reject-all{flex-shrink:0;white-space:nowrap}
     .bar .batch-count{margin-left:0;background:var(--bg-muted);color:var(--text-2)}
-    :root[data-papilot-toolbar-stacked] .bar{padding:calc(var(--papilot-bar-height,44px) + 4px) 8px 4px;min-height:calc(var(--papilot-bar-height,44px) + 44px)}
+    :root[data-papilot-toolbar-stacked] .bar{padding:calc(var(--papilot-bar-height,46px) + 4px) 8px 4px;min-height:calc(var(--papilot-bar-height,46px) + 44px)}
     :root[data-papilot-toolbar-stacked] .bar .identity{display:none}
     :root[data-papilot-toolbar-stacked] .bar .bar-end{margin-left:auto}
     /* The common PDF toolbar owns the first row; review decisions keep a
@@ -302,13 +304,59 @@ function cropMargins(doc: Document) {
   root.setProperty('--pdf-crop-scale', (1 / span).toFixed(4)); root.setProperty('--pdf-crop-shift', Math.max(0, min - 0.02).toFixed(4));
 }
 
+// The desktop app moves its window from the toolbar row. Over the changes the
+// row's middle is the viewer's own bar, inside the iframe, where app-region has
+// no effect. The host bar on top drags instead, with a no-drag hole over each
+// control of the viewer's bar, so its buttons still take clicks.
+const BAR_CONTROLS = 'button,a,input,select,textarea,[role="slider"],[role="combobox"]';
+type DragHole = { left: number; top: number; width: number; height: number };
+function useDragHoles(host: RefObject<HTMLElement | null>, frame: RefObject<HTMLIFrameElement | null>, doc: Document | null, ready: boolean, readingPdf: boolean) {
+  const [holes, setHoles] = useState<DragHole[]>([]);
+  useEffect(() => {
+    const area = host.current, box = frame.current, bar = doc?.querySelector<HTMLElement>('.bar'), view = doc?.defaultView;
+    if (!desktopWindow || !area || !box || !bar || !view) { setHoles([]); return; }
+    let pending = 0;
+    const measure = () => {
+      pending = 0;
+      if (!area.isConnected || !box.isConnected) return;
+      const outer = area.getBoundingClientRect(), inner = box.getBoundingClientRect();
+      const x = inner.left - outer.left, y = inner.top - outer.top, next: DragHole[] = [];
+      for (const control of bar.querySelectorAll(BAR_CONTROLS)) {
+        const r = control.getBoundingClientRect();
+        const left = Math.max(0, Math.floor(x + r.left)), right = Math.min(outer.width, Math.ceil(x + r.right));
+        const top = Math.max(0, Math.floor(y + r.top)), bottom = Math.min(outer.height, Math.ceil(y + r.bottom));
+        if (right > left && bottom > top) next.push({ left, top, width: right - left, height: bottom - top });
+      }
+      setHoles(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+    };
+    const schedule = () => { pending ||= requestAnimationFrame(measure); };
+    // Each document measures its own elements.
+    const outside = new ResizeObserver(schedule), inside = new view.ResizeObserver(schedule);
+    outside.observe(area); outside.observe(box);
+    const observe = () => { inside.disconnect(); for (const element of [bar, ...bar.querySelectorAll('*')]) inside.observe(element); schedule(); };
+    const changes = new MutationObserver(observe);
+    changes.observe(bar, { childList: true, subtree: true, attributes: true });
+    observe();
+    return () => { cancelAnimationFrame(pending); outside.disconnect(); inside.disconnect(); changes.disconnect(); };
+  }, [doc, ready, readingPdf]);
+  return holes;
+}
+
 
 // The iframe can finish loading an HTTP error or an empty document. Wait for the
 // actual viewer, keep watching slow startup, and let the user retry safely.
 // completion is the next step shown in the viewer's card once every change is decided.
 // Without a task the frame shows the paper's uncommitted changes (changesOf),
 // and the viewer's own waiting message shows while they are compared.
-export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided, onReadyChange, onFullPaperChange, view: controlledView, onViewChange, keepPdf }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void; onReadyChange?: (ready: boolean, round?: number) => void; onFullPaperChange?: (available: boolean) => void; view?: ReviewView; onViewChange?: (value: ReviewView) => void; keepPdf?: boolean }) {
+// onCurrentChange follows the viewer's current change; sources asks the
+// viewer for the change at a line of a file.
+export interface ReviewSources { select: (file: string, line: number) => void; saved: (state: unknown, file: string, line: number) => void; decide: (round: number, changes: string[], action: string) => void }
+export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided, onReadyChange, onFullPaperChange, view: controlledView, onViewChange, keepPdf, onCurrentChange, sources, onOpenSource, onChanges }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void; onReadyChange?: (ready: boolean, round?: number) => void; onFullPaperChange?: (available: boolean) => void; view?: ReviewView; onViewChange?: (value: ReviewView) => void; keepPdf?: boolean;
+  onCurrentChange?: (change: CurrentChange) => void; sources?: Ref<ReviewSources>;
+  /** Opens a change's source in the workspace's editor; false leaves it to the viewer's own. */
+  onOpenSource?: (request: OpenSource) => boolean;
+  /** The changes the viewer reviews, and their decisions, whenever they change. */
+  onChanges?: (changes: ReviewChanges) => void }) {
   const draft = useReviewDraft(task?.id || '');
   const quoteFocus = draft.reveal;
   const shortcuts = useShortcuts();
@@ -368,6 +416,26 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   }, [document]);
   const [railSlot, setRailSlot] = useState<HTMLDivElement | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
+  const following = useRef(onCurrentChange); following.current = onCurrentChange;
+  const opening = useRef(onOpenSource); opening.current = onOpenSource;
+  const changing = useRef(onChanges); changing.current = onChanges;
+  useEffect(() => {
+    const view = document?.defaultView;
+    if (!view) return;
+    const current = (event: Event) => following.current?.((event as CustomEvent<CurrentChange>).detail);
+    // Cancelling the viewer's request keeps it from editing the lines itself.
+    const open = (event: Event) => { if (opening.current?.((event as CustomEvent<OpenSource>).detail)) event.preventDefault(); };
+    const changed = (event: Event) => changing.current?.((event as CustomEvent<ReviewChanges>).detail);
+    view.addEventListener(CURRENT_CHANGE_EVENT, current);
+    view.addEventListener(OPEN_SOURCE_EVENT, open);
+    view.addEventListener(REVIEW_CHANGES_EVENT, changed);
+    return () => { view.removeEventListener(CURRENT_CHANGE_EVENT, current); view.removeEventListener(OPEN_SOURCE_EVENT, open); view.removeEventListener(REVIEW_CHANGES_EVENT, changed); };
+  }, [document]);
+  useImperativeHandle(sources, () => ({
+    select: (file, line) => document?.defaultView?.dispatchEvent(new CustomEvent(SELECT_SOURCE_EVENT, { detail: { file, line } })),
+    saved: (state, file, line) => document?.defaultView?.dispatchEvent(new CustomEvent<SourceSaved>(SOURCE_SAVED_EVENT, { detail: { state: state as SourceSaved['state'], file, line } })),
+    decide: (round, changes, action) => document?.defaultView?.dispatchEvent(new CustomEvent<DecideChange>(DECIDE_EVENT, { detail: { round, changes, action } })),
+  }), [document]);
   const toolbar = useRef<HTMLDivElement>(null), leading = useRef<HTMLDivElement>(null), hostBar = useRef<HTMLDivElement>(null);
   const [reserve, setReserve] = useState(0), [leadWidth, setLeadWidth] = useState(0);
   const decided = useRef(onDecided); decided.current = onDecided;
@@ -420,8 +488,8 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     const view = document?.defaultView;
     if (!view) return;
     const open = (event: Event) => { event.preventDefault(); window.dispatchEvent(new Event('papilot:open-shortcuts')); };
-    view.addEventListener('latex-review:help', open);
-    return () => view.removeEventListener('latex-review:help', open);
+    view.addEventListener('papilot:review:help', open);
+    return () => view.removeEventListener('papilot:review:help', open);
   }, [document]);
   const taskBuilding = Boolean(task && (task.status === 'building' || task.pendingBuild || task.review?.state === 'building'));
   useEffect(() => {
@@ -499,7 +567,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
       if (!doc || (!doc.getElementById('root') && !doc.getElementById('paper'))) { setPhase('error'); return; }
       compactReviewFrame(doc, reserve, leadWidth, Boolean(changesOf));
       setDocument(doc);
-      frame.current?.contentWindow?.addEventListener('latex-review:decided', () => { decided.current?.(); linksRef.current?.reload(); });
+      frame.current?.contentWindow?.addEventListener('papilot:review:decided', () => { decided.current?.(); linksRef.current?.reload(); });
       // The viewer scrolls only its paper. Revealing or focusing something can
       // scroll its document or #root too, overflow hidden or not, which slides
       // the viewer's bar out from under our tools and the paper in; put them back.
@@ -571,6 +639,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   const readiness = useRef(onReadyChange); readiness.current = onReadyChange;
   useEffect(() => { onReadyChange?.(ready, displayedRound); }, [ready, displayedRound, onReadyChange]);
   useEffect(() => () => { readiness.current?.(false); }, []);
+  const dragHoles = useDragHoles(hostBar, frame, document, ready, readingPdf);
   const [slot, setSlot] = useState<Element | null>(null);
   useEffect(() => {
     if (!document || !ready) { setSlot(null); return; }
@@ -599,6 +668,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
       {readingPdf && <PdfFindButton open={findOpen} onClick={() => findOpen ? closeFind() : setFindOpen(true)}/>}
       <div ref={toolbar} className="review-tools">{task && onComment && <ReviewNotes railSlot={railSlot} doc={ready && !noteLinks?.preview ? document : null} task={task} onComment={onComment}/>}{tools}</div>
       {readingPdf && findOpen && <PdfFind inputRef={findInput} query={query} matches={reader?.find || { current: 0, total: 0 }} notFound={reader?.find?.notFound || false} onQuery={value => { setQuery(value); readerCommand({ type: 'find', query: value, again: false, previous: false }); }} onNext={previous => readerCommand({ type: 'find', query, again: true, previous })} onClose={closeFind}/>}
+      {dragHoles.map((hole, index) => <span key={index} className="review-bar-hole" style={hole}/>)}
     </div>
     {task && onComment && <div ref={setRailSlot} className="review-marking-rail"/>}
     {slot && completion ? createPortal(completion, slot) : null}

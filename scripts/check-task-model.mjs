@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../engine/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from './playwright.mjs';
 import { selectOption, selectedValue } from './select.mjs';
 
 const server = Fastify();
@@ -35,6 +35,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: 'test', phase: 'idle', canUpdate: false });
+  if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/items')) return json({ items: [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
@@ -61,9 +62,9 @@ try {
   await expect(taskSettings).toContainText('Medium');
   await taskSettings.click();
   await taskModelMenu.getByText('Next turn', { exact: true }).waitFor();
-  assert.ok((await taskModelMenu.getByRole('option').allTextContents()).every(name => !/Opus/.test(name)), 'recent choices cannot switch the task agent');
+  await expect(taskModelMenu.getByRole('option', { name: 'Opus · Claude', exact: true }).last()).toBeVisible();
   await taskModelMenu.getByRole('combobox').fill('opus');
-  await expect(taskModelMenu.getByRole('option')).toHaveCount(0);
+  await expect(taskModelMenu.getByRole('option', { name: 'Opus · Claude', exact: true })).toHaveCount(1);
   await taskModelMenu.getByRole('combobox').fill('');
   await taskModelMenu.getByRole('option', { name: 'Deep model · Codex', exact: true }).last().click();
   await expect.poll(() => task.model).toBe('deep-model');
@@ -89,12 +90,12 @@ try {
   await expect(taskEffort).toHaveAttribute('aria-valuetext', 'Medium');
   runtime.models[0].isDefault = false;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await expect(taskModelMenu.locator('.model-option-tag').filter({ hasText: 'Default' })).toHaveCount(0);
+  await expect(taskModelMenu.getByRole('group', { name: 'Codex', exact: true }).locator('.model-option-tag').filter({ hasText: 'Default' })).toHaveCount(0);
   await expect(taskModelMenu.getByRole('option', { name: 'Default model · Codex', exact: true })).toHaveCount(0);
   await expect(taskSettings, 'an existing task keeps its explicit selection when the host default is unknown').toContainText('Fast model');
   runtime.models[0].isDefault = true;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await expect(taskModelMenu.locator('.model-option-tag').filter({ hasText: 'Default' })).toHaveCount(1);
+  await expect(taskModelMenu.getByRole('group', { name: 'Codex', exact: true }).locator('.model-option-tag').filter({ hasText: 'Default' })).toHaveCount(1);
   // Rapid changes are saved in order; instructions wait for their settings.
   holdModel = new Promise(resolve => { releaseModel = resolve; });
   await taskEffort.press('End');
@@ -141,6 +142,14 @@ try {
   Object.assign(runtime, { connected: true, authenticated: false, error: null });
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(connection.getByRole('status')).toHaveText('Sign-in required');
+  // A running agent that lost its sign-in offers Refresh, which loads the host's current one.
+  await expect(connection.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+  await expect(connection.getByRole('button', { name: 'Reconnect', exact: true })).toHaveCount(0);
+  Object.assign(runtime, { error: 'Codex sign-in expired. Select Refresh to load the current sign-in on the Papilot host. If it is still signed out, run papilot codex login there first.' });
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(connection.getByRole('status')).toHaveText('Codex sign-in expired');
+  await expect(connection.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+  await page.screenshot({ path: 'test-results/agent-sign-in-expired-mobile.png' });
   Object.assign(runtime, { connected: true, authenticated: true, error: null });
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(connection).toHaveCount(0);
@@ -165,6 +174,7 @@ try {
     if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
     if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
     if (url.pathname === '/api/updates') return json({ currentVersion: 'test', latestVersion: 'test', phase: 'idle', canUpdate: false });
+    if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
     if (url.pathname.endsWith('/skills')) return json({ skills: [] });
     if (url.pathname.endsWith('/manuscript')) return json({ git: { files: [] }, annotations: [], build: { status: 'building', current: false } });
     if (url.pathname === '/api/tasks' && route.request().method() === 'POST') {
@@ -211,6 +221,7 @@ try {
   await expect(modelName).toHaveText('Default model');
   await composer.getByRole('button', { name: 'Agent settings', exact: true }).click();
   const unknown = composer.getByRole('dialog', { name: 'Agent settings', exact: true });
+  await expect(unknown.locator('.model-option-restart')).toHaveCount(0); // New tasks have no conversation to restart.
   await expect(unknown.getByRole('option', { name: 'Default model · Codex', exact: true })).toHaveAttribute('aria-selected', 'true');
   await composer.keyboard.press('Escape');
   await composer.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -220,6 +231,7 @@ try {
   // Every other agent uses the same resolution in Settings, the composer and
   // task creation, even when its default isn't the first catalog entry.
   for (const [agent, label, model, name] of [
+    ['pi', 'Pi', 'custom/research', 'Research model'],
     ['claude', 'Claude', 'haiku', 'Haiku'], ['cursor', 'Cursor', 'auto', 'Auto'],
     ['kimi', 'Kimi', 'kimi/k3', 'K3'], ['copilot', 'Copilot', 'copilot-model', 'Copilot model'],
     ['grok', 'Grok', 'grok-model', 'Grok model'], ['qwen', 'Qwen', 'qwen-model', 'Qwen model'],

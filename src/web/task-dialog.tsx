@@ -31,9 +31,7 @@ export function DeleteTaskDialog({ task, submit, onClose, onDeleted, refresh }: 
     <section className="modal delete-dialog">
       <h2 id="delete-title">{t('Delete task?')}</h2>
       <p className="delete-task-name">{task.title}</p>
-      <p id="delete-description">{t('This permanently removes the task from Papilot, including its conversation, worktree, and PDF review files. Unaccepted edits and saved comments will be discarded, and review decisions can no longer be undone.')}</p>
-      <p>{t('Accepted changes in your manuscript stay in place. Other tasks are not affected.')}</p>
-      {task.status === 'deleting' && <p className="muted">{t('Deletion has already started. Retry to confirm the cleanup and remove the task.')}</p>}
+      <p id="delete-description">{task.status === 'deleting' ? t('The last deletion did not finish.') : t('Unaccepted edits and comments will be lost. Accepted changes stay in your manuscript.')}</p>
       {blocked && <p className="inline-error" role="status">{blocked}</p>}
       {error && <p className="inline-error" role="alert">{error}</p>}
       <div className="button-row"><button data-cancel className="button secondary" disabled={busy} onClick={onClose}>{t('Cancel')}</button><button className="button danger" disabled={busy || Boolean(blocked)} onClick={() => void remove()}>{busy ? t('Deleting…') : task.status === 'deleting' ? t('Retry deletion') : t('Delete task')}</button></div>

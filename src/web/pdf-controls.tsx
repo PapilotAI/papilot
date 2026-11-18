@@ -43,8 +43,8 @@ export function PdfPageControls({ page, pages, zoom, onPage, onZoom, onZoomBy }:
   </>;
 }
 
-export function PdfFindButton({ open, onClick }: { open: boolean; onClick: () => void }) {
-  return <button type="button" className={'icon-button' + (open ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={open} title={t('Find (⌘F)')} onClick={onClick}><Icon name="search" size={16}/></button>;
+export function PdfFindButton({ open, onClick, className = 'icon-button' }: { open: boolean; onClick: () => void; className?: string }) {
+  return <button type="button" className={className + (open ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={open} title={t('Find (⌘F)')} onClick={onClick}><Icon name="search" size={16}/></button>;
 }
 
 export function PdfFind({ inputRef, query, matches, notFound, onQuery, onNext, onClose }: {

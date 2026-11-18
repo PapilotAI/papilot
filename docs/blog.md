@@ -1,6 +1,6 @@
 # Publishing on the Papilot blog
 
-The blog uses the website's static build and GitHub Pages deployment. Articles, language navigation and RSS are fully rendered without JavaScript. No CMS, database or additional runtime is needed.
+The blog uses the website's static build and Cloudflare deployment. Articles, language navigation and RSS are fully rendered without JavaScript. No CMS, database or additional runtime is needed.
 
 ## Add an article
 
