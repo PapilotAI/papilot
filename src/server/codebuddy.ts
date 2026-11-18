@@ -18,7 +18,7 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
   get supportsReadOnlyTasks() { return this.profile.readOnly !== false; }
   private starting: Promise<void> | null = null;
   private generation = 0;
-  private probe: AcpAgent | null = null;
+  private probe: { client: AcpAgent; cwd: string } | null = null;
   private clients = new Map<AcpAgent, { cwd: string; retiring: boolean }>();
   private sessions = new Map<string, { cwd: string; client: AcpAgent; params: any; running: boolean }>();
   private turns = new Map<string, AcpAgent>();
@@ -43,9 +43,13 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
   }
   private async discover() {
     const generation = this.generation;
+    // A failed shutdown or directory removal retains the old probe. Finish
+    // releasing it before allocating another disposable workspace or process.
+    await this.cleanupProbe();
+    if (generation !== this.generation) throw new Error(`${this.profile.name} disconnected.`);
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), `papilot-${this.profile.id}-catalog-`));
     const probe = new AcpAgent(this.profile, this.binary, this.launch, cwd);
-    this.probe = probe;
+    this.probe = { client: probe, cwd };
     let catalog: any, account: any, permissions: TaskPermissionOption[];
     try {
       await probe.start();
@@ -53,12 +57,7 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
       account = await probe.request('account/read');
       permissions = probe.permissionOptions();
     } finally {
-      try {
-        await probe.shutdown();
-        // Windows can retain a recently exited process's directory handles for
-        // a short time. Node retries EPERM/EBUSY without blocking the server.
-        await fs.promises.rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-      } finally { if (this.probe === probe) this.probe = null; }
+      await this.cleanupProbe();
     }
     // Discovery includes releasing its disposable workspace. A cleanup failure
     // must not publish a ready account while start() rejects the connection.
@@ -67,6 +66,16 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
     this.account = account;
     this.permissions = permissions!;
     this.ready = true;
+  }
+
+  private async cleanupProbe() {
+    const probe = this.probe;
+    if (!probe) return;
+    await probe.client.shutdown();
+    // Windows can retain a recently exited process's directory handles for
+    // a short time. Node retries EPERM/EBUSY without blocking the server.
+    await fs.promises.rm(probe.cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    if (this.probe === probe) this.probe = null;
   }
 
   private client(cwd: string) {
@@ -236,7 +245,7 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
     this.account = { account: null, requiresOpenaiAuth: true };
     this.catalog = { data: [] };
     this.permissions = [];
-    this.probe?.close();
+    this.probe?.client.close();
     // Keep only metadata for threads Workspace may still consider loaded.
     for (const client of [...this.clients.keys()]) this.forget(client, true);
   }

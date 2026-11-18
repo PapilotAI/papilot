@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -106,12 +107,143 @@ test('CodeBuddy remains unavailable when disposable workspace cleanup fails, the
     assert.deepEqual(await f.agent.request('account/read'), { account: null, requiresOpenaiAuth: true });
     assert.deepEqual(await f.agent.request('model/list'), { data: [] });
     assert.deepEqual(f.agent.permissionOptions(), []);
+    const oldFolder = f.processes[0].cwd;
+    await assert.rejects(f.agent.start(), /EPERM/);
+    assert.equal(f.processes.length, 1, 'failed cleanup must not allocate another discovery process');
+    assert.deepEqual(folders, [oldFolder, oldFolder], 'retry removes the retained workspace');
     cleanup.mock.restore();
     await f.agent.start();
     assert.equal(f.agent.ready, true);
+    assert.equal(fs.existsSync(oldFolder), false, 'the earlier failed workspace is eventually removed');
+    assert.equal(f.processes.length, 2);
   } finally {
     cleanup.mock.restore(); f.agent.close();
     for (const folder of folders) await remove(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+test('CodeBuddy retains a timed-out discovery worker across close and reconnect until its streams close', { timeout: 5000 }, async t => {
+  const f = fixture();
+  f.behavior.delayClose = true;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const started = f.agent.start(), failed = assert.rejects(started, /did not exit/);
+    await until(() => Boolean(f.processes[0]?.child.killed));
+    const old = f.processes[0];
+    old.child.exitCode = 0;
+    old.child.emit('exit', 0);
+    t.mock.timers.tick(10000);
+    await failed;
+    f.agent.close();
+    await assert.rejects(f.agent.start(), /did not exit/);
+    assert.equal(f.processes.length, 1, 'reconnect must retain the old probe and its cleanup barrier');
+    assert.equal(f.agent.ready, false);
+    assert.equal(fs.existsSync(old.cwd), true, 'the directory stays while inherited streams remain open');
+    old.finishExit();
+    f.behavior.delayClose = false;
+    t.mock.timers.reset();
+    await f.agent.start();
+    assert.equal(f.agent.ready, true);
+    assert.equal(f.processes.length, 2);
+    assert.equal(fs.existsSync(old.cwd), false);
+  } finally {
+    t.mock.timers.reset(); f.behavior.delayClose = false;
+    for (const entry of f.processes) entry.finishExit();
+    f.agent.close();
+    for (const entry of f.processes) await fs.promises.rm(entry.cwd, { recursive: true, force: true });
+  }
+});
+
+test('CodeBuddy discovery retains a real descendant and removes its workspace before reconnecting', { skip: process.platform === 'win32', timeout: 5000 }, async t => {
+  const script = `
+    const { spawn } = require('node:child_process');
+    const { createInterface } = require('node:readline');
+    createInterface({ input: process.stdin }).on('line', line => {
+      const message = JSON.parse(line);
+      const result = message.method === 'initialize' ? { protocolVersion: 1, agentCapabilities: {} }
+        : message.method === 'session/new' ? { sessionId: 'probe', modes: { availableModes: [{ id: 'default' }] }, models: { currentModelId: 'auto', availableModels: [{ modelId: 'auto', name: 'Auto' }] } } : {};
+      const reply = () => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
+      if (message.method === 'session/new' && process.argv[1] === 'hold') {
+        const descendant = spawn(process.execPath, ['-e', 'process.stdin.resume(); process.stdin.once("end", () => process.exit(0));'], { stdio: [3, 'inherit', 'inherit'] });
+        descendant.once('spawn', reply);
+      } else if (message.id !== undefined) reply();
+    });
+  `;
+  const processes: { child: ChildProcess; cwd: string; closed: Promise<unknown>; didClose: boolean }[] = [];
+  let firstExit!: () => void;
+  const exited = new Promise<void>(resolve => { firstExit = resolve; });
+  const agent = new CodeBuddyAgent('fake-codebuddy', (_binary, _args, options) => {
+    assert.ok(options?.cwd, 'discovery launches in its disposable workspace');
+    const first = processes.length === 0;
+    if (!first) assert.equal(fs.existsSync(processes[0].cwd), false, 'old discovery workspace must be removed before launching its replacement');
+    const child = spawn(process.execPath, ['-e', script, first ? 'hold' : 'normal'], { ...options, stdio: ['pipe', 'pipe', 'pipe', 'pipe'] });
+    const entry = { child, cwd: String(options.cwd), closed: Promise.resolve() as Promise<unknown>, didClose: false };
+    entry.closed = once(child, 'close').then(() => { entry.didClose = true; });
+    if (first) child.once('exit', firstExit);
+    processes.push(entry);
+    return child;
+  });
+  const release = (child: ChildProcess) => (child.stdio[3] as NodeJS.WritableStream).end();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const failed = assert.rejects(agent.start(), /did not exit/);
+    await exited;
+    const old = processes[0];
+    assert.equal(old.didClose, false, 'the descendant retains stdout and stderr after its parent exits');
+    t.mock.timers.tick(10000);
+    await failed;
+    assert.equal(agent.ready, false);
+    agent.close();
+    await assert.rejects(agent.start(), /did not exit/);
+    assert.equal(processes.length, 1, 'reconnect must not bypass the retained discovery process');
+    assert.equal(old.didClose, false);
+    assert.equal(fs.existsSync(old.cwd), true);
+    release(old.child);
+    await old.closed;
+    t.mock.timers.reset();
+    await agent.start();
+    assert.equal(agent.ready, true);
+    assert.equal(processes.length, 2);
+    assert.ok(processes.every(entry => entry.didClose && !fs.existsSync(entry.cwd)));
+  } finally {
+    t.mock.timers.reset(); agent.close();
+    for (const { child } of processes) {
+      release(child);
+      if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL');
+    }
+    await Promise.all(processes.map(entry => entry.closed));
+    for (const { cwd } of processes) await fs.promises.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('CodeBuddy close during retained probe cleanup prevents a replacement discovery process', { timeout: 5000 }, async t => {
+  const f = fixture(), remove = fs.promises.rm.bind(fs.promises);
+  const cleanup = t.mock.method(fs.promises, 'rm', async () => { throw new Error('EPERM: probe is locked'); });
+  let release: () => void = () => {};
+  try {
+    await assert.rejects(f.agent.start(), /EPERM/);
+    const oldFolder = f.processes[0].cwd;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let removing = false;
+    cleanup.mock.mockImplementation(async (folder: fs.PathLike, options?: fs.RmOptions) => {
+      removing = true;
+      await gate;
+      await remove(folder, options);
+    });
+    const retry = f.agent.start(), disconnected = assert.rejects(retry, /disconnected/);
+    await until(() => removing);
+    f.agent.close();
+    release();
+    await disconnected;
+    assert.equal(f.processes.length, 1);
+    assert.equal(fs.existsSync(oldFolder), false);
+    cleanup.mock.restore();
+    await f.agent.start();
+    assert.equal(f.agent.ready, true);
+    assert.equal(f.processes.length, 2);
+  } finally {
+    release(); cleanup.mock.restore(); f.agent.close();
+    for (const entry of f.processes) await remove(entry.cwd, { recursive: true, force: true });
   }
 });
 
