@@ -924,6 +924,11 @@
     "textHash": "684bd3895930b97150bd842f92ede6fe81f153016b4fcc4befe61a691735d0f6",
     "model": "gemini-4-argon-medium"
   },
+  "This PDF has compilation errors.": {
+    "revision": "e80aac4f822748fcf415a331ce6c03a38ec5d2c3b8cfdcf14fe7f4e990632b9b",
+    "textHash": "7100f878ae8d898d4f740282d91efb27498877b92f76c787da336287b9b7f42f",
+    "model": "manual"
+  },
   "This change's own PDF comparison is still rendering. This comparison was rendered for the same change in the changes published at {time}.": {
     "revision": "aebdff74f54a9948149a3284a2851e086106c2c6d5f8e6a1140fe17b641ac73c",
     "textHash": "4455121ed0821ffe2f1cebb75997e4b2128c57780fe6c1148967091ed3b0170a",

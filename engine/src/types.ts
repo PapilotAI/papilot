@@ -658,7 +658,7 @@ export interface TaskInfo extends Summary {
 /** The paper as decided so far (engine core/applied.ts), as the review page reads it. */
 export interface AppliedView {
   accepted: string;
-  shown: { accepted: string; key: string; targets: string[]; round: number; at: number; current: boolean; pdf: string } | null;
+  shown: { accepted: string; key: string; targets: string[]; round: number; at: number; current: boolean; pdf: string; errors?: string[] } | null;
   building: boolean;
   error?: { message: string; details: string[]; log?: string };
 }

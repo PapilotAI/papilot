@@ -6,6 +6,7 @@ import { t } from "./i18n.ts";
 import { cMapData } from "./pdf-cmaps.ts";
 import { paintAppliedPages } from "./applied-pages.ts";
 import { fullPaperReader } from "./full-paper-reader.ts";
+import { CompilationErrors } from "./CompilationErrors.tsx";
 
 const besideChunk = (url: string) =>
   import.meta.env.DEV ? url : new URL(url.split("/").pop()!, import.meta.url).href;
@@ -21,7 +22,7 @@ const CMapData = cMapData(
 // the author is making: it waits until that ends.
 
 interface Page { width: number; height: number; label: string }
-interface Shown { url: string; key: string; pdf: PDFDocumentProxy; pages: Page[] }
+interface Shown { url: string; key: string; pdf: PDFDocumentProxy; pages: Page[]; errors?: string[] }
 interface Line { text: string; glyphs: { text: string; rect: [number, number, number, number] }[] }
 
 let context: CanvasRenderingContext2D | null | undefined;
@@ -89,10 +90,12 @@ function PageText({ shown, index }: { shown: Shown; index: number }) {
   );
 }
 
-export function AppliedPaper({ url, buildKey, scrollRoot, place, status }: {
+export function AppliedPaper({ url, buildKey, errors, scrollRoot, place, status }: {
   url: string;
   /** The build `url` shows; notes on its pages name it. */
   buildKey: string;
+  /** Compiler diagnostics belonging to this immutable build. */
+  errors?: string[];
   scrollRoot: RefObject<HTMLElement | null>;
   /** Reading position shared across builds of this task's decided paper. */
   place: string;
@@ -123,7 +126,7 @@ export function AppliedPaper({ url, buildKey, scrollRoot, place, status }: {
       if (!live) return;
       setError("");
       adopted = true;
-      setShown({ url, key: buildKey, pdf, pages });
+      setShown({ url, key: buildKey, pdf, pages, errors });
     })().catch((failure: Error) => { if (live) setError(failure.message); });
     return () => {
       live = false;
@@ -149,6 +152,7 @@ export function AppliedPaper({ url, buildKey, scrollRoot, place, status }: {
   return (
     <>
       {status}
+      {shown.errors?.length ? <CompilationErrors title={t("This PDF has compilation errors.")} errors={shown.errors} /> : null}
       <div className="paper applied-paper" ref={box} data-build={shown.key}>
         {shown.pages.map((page, index) => (
           <section

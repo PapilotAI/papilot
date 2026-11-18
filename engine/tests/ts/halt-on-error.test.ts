@@ -121,3 +121,51 @@ it.skipIf(!tex).each(["nav", "snm"])("strict Beamer builds recover from stale .%
     expect(fs.existsSync(first.pdf)).toBe(true);
   } finally { await f.close(); }
 }, 120000);
+
+it.skipIf(!tex)("accepted PDF diagnostics follow the baseline, partial decisions, restart and repair", async () => {
+  const f = new Fixture();
+  try {
+    f.write("paper/main.tex", paper("Original text.\n\n\\PackageError{fixture}{Baseline diagnostic}{}").replace("\\begin{document}", "\\input{defs}\n\\begin{document}"));
+    f.write("paper/defs.tex", "% Definitions.\n");
+    f.repo.run(["add", "."]); f.repo.run(["commit", "-qm", "baseline"]);
+    let app = f.app();
+    await app.ready;
+    const task = app.tasks.create("partial", "Partial", [], ["paper"], true);
+    f.edit(task, "paper/main.tex", "Original", "\\addedword{}");
+    f.edit(task, "paper/main.tex", "\\PackageError{fixture}{Baseline diagnostic}{}", "");
+    f.write("paper/defs.tex", "\\newcommand{\\addedword}{Revised}\n", task.worktree);
+    const job = app.publisher.submit(task.name, undefined, false);
+    await app.publisher.join();
+    expect(app.publisher.job(job.id).status).toBe("done");
+    const round = app.review.latestRound(task.name)!;
+    expect(round.summary.revisedErrors).toBeUndefined();
+    const baseline = await app.applied.state(task.name);
+    expect(baseline.shown?.current).toBe(true);
+    expect(baseline.shown?.errors?.join("\n")).toContain("Baseline diagnostic");
+
+    const use = round.units.filter(unit => unit.file === "paper/main.tex" && unit.new_text.includes("\\addedword"));
+    expect(use).toHaveLength(1);
+    await app.review.decide(task.name, { id: "use", action: "accept", round: round.number, changes: use.map(unit => unit.id) });
+    await app.applied.join();
+    const broken = await app.applied.state(task.name);
+    expect(broken.shown?.current).toBe(true);
+    expect(broken.error).toBeUndefined();
+    expect(broken.shown?.errors?.join("\n")).toContain("Undefined control sequence");
+    const pdf = new PdfDocument((await app.applied.pdf(task.name, broken.shown!.key))!);
+    try { expect(pdf.page(0).text()).toContain("text."); } finally { pdf.close(); }
+
+    await app.close(); f.apps.splice(f.apps.indexOf(app), 1);
+    app = f.app(); await app.ready;
+    expect((await app.applied.state(task.name)).shown).toEqual(broken.shown);
+    await app.review.decide(task.name, { id: "repair", action: "accept", round: round.number, changes: round.units.filter(unit => !use.includes(unit)).map(unit => unit.id) });
+    await app.applied.join();
+    const repaired = await app.applied.state(task.name);
+    expect(repaired.shown?.current).toBe(true);
+    expect(repaired.shown?.errors).toBeUndefined();
+    const fixed = new PdfDocument((await app.applied.pdf(task.name, repaired.shown!.key))!);
+    try { expect(fixed.page(0).text()).toContain("Revised text."); } finally { fixed.close(); }
+    await app.review.undo(task.name, "repair");
+    await app.applied.join();
+    expect((await app.applied.state(task.name)).shown?.errors).toEqual(broken.shown?.errors);
+  } finally { await f.close(); }
+}, 120000);
