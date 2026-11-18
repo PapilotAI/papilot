@@ -461,5 +461,7 @@
   "Send enabled or routes.": "Envoyez enabled ou routes.",
   "This worker has already finished.": "Ce processus a déjà terminé.",
   "Connect an agent that supports read-only tasks, such as Codex.": "Connectez un agent qui prend en charge les tâches en lecture seule, comme Codex.",
-  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "L’agent sélectionné ne prend pas en charge le diagnostic de compilation en lecture seule. Sélectionnez un autre agent."
+  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "L’agent sélectionné ne prend pas en charge le diagnostic de compilation en lecture seule. Sélectionnez un autre agent.",
+  "The selected agent does not support read-only AI review. Select another agent.": "L’agent sélectionné ne prend pas en charge la relecture par IA en lecture seule. Sélectionnez un autre agent.",
+  "The selected agent does not support read-only tasks through ACP. Select another agent.": "L’agent sélectionné ne prend pas en charge les tâches en lecture seule via ACP. Sélectionnez un autre agent."
 }

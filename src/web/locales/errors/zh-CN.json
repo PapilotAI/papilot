@@ -461,5 +461,7 @@
   "Send enabled or routes.": "请发送 enabled 或 routes。",
   "This worker has already finished.": "此工作进程已完成。",
   "Connect an agent that supports read-only tasks, such as Codex.": "请连接支持只读任务的智能体，例如 Codex。",
-  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "所选智能体不支持只读编译诊断。请选择其他智能体。"
+  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "所选智能体不支持只读编译诊断。请选择其他智能体。",
+  "The selected agent does not support read-only AI review. Select another agent.": "所选智能体不支持只读 AI 审阅。请选择其他智能体。",
+  "The selected agent does not support read-only tasks through ACP. Select another agent.": "所选智能体不支持通过 ACP 执行只读任务。请选择其他智能体。"
 }

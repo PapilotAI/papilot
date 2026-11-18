@@ -1883,5 +1883,15 @@
     "revision": "d2a19d419fcd7ec34d282d25c107656fe56e12d272edce057916bb113a00cb4a",
     "textHash": "eb5e3d98e56c6ed0a418ddaadb7eea056cc1513b68c310a45be4f55b75984659",
     "model": "codex-manual"
+  },
+  "The selected agent does not support read-only AI review. Select another agent.": {
+    "revision": "a4edc5546693f6ceb0ed2e65f8f840f3dce64ebfb21d85f838ca88d6a5a5df2c",
+    "textHash": "f45af116ad81703703e4f4060a22912a1bb39ab1983cbf280a1dcd7ae9d5e525",
+    "model": "codex-manual"
+  },
+  "The selected agent does not support read-only tasks through ACP. Select another agent.": {
+    "revision": "548fff83c262753b0bb250e7929c9e64014046c1d38ad1c361f59a6dfcabb172",
+    "textHash": "7e200ea154807f53f295526ee02a6c157701cf2e5a36953f0dd436359dbf9f20",
+    "model": "codex-manual"
   }
 }

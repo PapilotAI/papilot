@@ -461,5 +461,7 @@
   "Send enabled or routes.": "enabled または routes を送信してください。",
   "This worker has already finished.": "このワーカーはすでに終了しています。",
   "Connect an agent that supports read-only tasks, such as Codex.": "Codex など、読み取り専用タスクに対応したエージェントに接続してください。",
-  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "選択したエージェントは読み取り専用のコンパイル診断に対応していません。別のエージェントを選択してください。"
+  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "選択したエージェントは読み取り専用のコンパイル診断に対応していません。別のエージェントを選択してください。",
+  "The selected agent does not support read-only AI review. Select another agent.": "選択したエージェントは読み取り専用の AI レビューに対応していません。別のエージェントを選択してください。",
+  "The selected agent does not support read-only tasks through ACP. Select another agent.": "選択したエージェントは ACP 経由の読み取り専用タスクに対応していません。別のエージェントを選択してください。"
 }

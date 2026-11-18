@@ -298,8 +298,8 @@ test('CodeBuddy resumes after reconnect in the original worktree and reapplies p
 test('CodeBuddy rejects read-only tasks before launching a native process', async () => {
   const f = fixture();
   try {
-    await assert.rejects(f.agent.request('thread/start', { cwd: os.tmpdir(), sandbox: 'read-only' }), /does not support read-only/);
-    await assert.rejects(f.agent.request('thread/resume', { threadId: 'saved', cwd: os.tmpdir(), sandbox: 'read-only' }), /does not support read-only/);
+    await assert.rejects(f.agent.request('thread/start', { cwd: os.tmpdir(), sandbox: 'read-only' }), /The selected agent does not support read-only tasks through ACP\. Select another agent\./);
+    await assert.rejects(f.agent.request('thread/resume', { threadId: 'saved', cwd: os.tmpdir(), sandbox: 'read-only' }), /The selected agent does not support read-only tasks through ACP\. Select another agent\./);
     assert.equal(f.processes.length, 0);
   } finally { f.agent.close(); }
 });

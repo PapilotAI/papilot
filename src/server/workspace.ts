@@ -1862,7 +1862,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     try { return await work(); } finally { this.committing.delete(projectId); }
   }
   private requireReviewAgent(agent: AgentId) {
-    if (this.agents[agent].supportsReadOnlyTasks === false) throw new Error(`${AGENT_NAMES[agent]} does not support read-only AI review. Select another agent for this task.`);
+    if (this.agents[agent].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only AI review. Select another agent.');
   }
   private validateTaskPermissions(value: unknown, agent: AgentId, reviewing: boolean) {
     if (typeof value !== 'string' || !value) throw new Error('Invalid task permissions.');

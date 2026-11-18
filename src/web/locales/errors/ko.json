@@ -461,5 +461,7 @@
   "Send enabled or routes.": "enabled 또는 routes를 전송하세요.",
   "This worker has already finished.": "이 작업자는 이미 완료되었습니다.",
   "Connect an agent that supports read-only tasks, such as Codex.": "Codex처럼 읽기 전용 작업을 지원하는 에이전트에 연결하세요.",
-  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "선택한 에이전트는 읽기 전용 컴파일 진단을 지원하지 않습니다. 다른 에이전트를 선택하세요."
+  "The selected agent does not support read-only compilation diagnosis. Select another agent.": "선택한 에이전트는 읽기 전용 컴파일 진단을 지원하지 않습니다. 다른 에이전트를 선택하세요.",
+  "The selected agent does not support read-only AI review. Select another agent.": "선택한 에이전트는 읽기 전용 AI 검토를 지원하지 않습니다. 다른 에이전트를 선택하세요.",
+  "The selected agent does not support read-only tasks through ACP. Select another agent.": "선택한 에이전트는 ACP를 통한 읽기 전용 작업을 지원하지 않습니다. 다른 에이전트를 선택하세요."
 }

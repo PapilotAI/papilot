@@ -96,7 +96,7 @@ test('WorkBuddy does not represent its planning mode as a read-only sandbox', { 
   const f = fixture();
   try {
     await f.agent.start();
-    await assert.rejects(f.agent.request('thread/start', { cwd: os.tmpdir(), sandbox: 'read-only' }), /read.only/i);
+    await assert.rejects(f.agent.request('thread/start', { cwd: os.tmpdir(), sandbox: 'read-only' }), /The selected agent does not support read-only tasks through ACP\. Select another agent\./);
     assert.equal(f.calls.some(call => call.method === 'session/prompt'), false);
   } finally { f.agent.close(); }
 });

@@ -126,7 +126,7 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
     if (method === 'model/list') return this.catalog;
     if (method === 'account/rateLimits/read') throw new Error(`${this.profile.name} does not report usage to Papilot.`);
     if (method === 'thread/start' || method === 'thread/resume') {
-      if (params.sandbox === 'read-only' && this.profile.readOnly === false) throw new Error(`${this.profile.name} does not support read-only tasks through ACP. Select another agent for this task.`);
+      if (params.sandbox === 'read-only' && this.profile.readOnly === false) throw new Error('The selected agent does not support read-only tasks through ACP. Select another agent.');
       if (typeof params.cwd !== 'string' || !path.isAbsolute(params.cwd)) throw new Error(`${this.profile.name} needs an absolute task working directory.`);
       connected();
       const cwd = path.resolve(params.cwd), id = method === 'thread/resume' ? String(params.threadId) : null;

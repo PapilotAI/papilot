@@ -277,7 +277,7 @@ export class AcpAgent extends Adapter {
     if (method === 'thread/start' || method === 'thread/resume') {
       const resumed = method === 'thread/resume';
       const readOnly = params.sandbox === 'read-only';
-      if (readOnly && this.profile.readOnly === false) throw new Error(`${this.name} does not support read-only tasks through ACP. Select another agent for this task.`);
+      if (readOnly && this.profile.readOnly === false) throw new Error('The selected agent does not support read-only tasks through ACP. Select another agent.');
       const permissions = readOnly ? (this.profile.id === 'deepseek' ? 'read-only' : 'workspace') : params.taskPermissions || 'workspace';
       // Local model metadata is authoritative only for a still-cached session.
       // After reconnecting, the CLI may restore a different model from disk.

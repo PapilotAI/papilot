@@ -1338,8 +1338,8 @@ for (const [provider, broader] of [['qoder', 'yolo'], ['codebuddy', 'bypassPermi
       f.rpc().reply(prompt.id, { stopReason: 'end_turn' });
       assert.equal((await done).status, 'completed');
       const count = f.calls.filter(call => call.method === 'session/new' || call.method === 'session/load').length;
-      await assert.rejects(f.agent.request('thread/start', { cwd: '/paper', sandbox: 'read-only' }), /does not support read-only tasks/);
-      await assert.rejects(f.agent.request('thread/resume', { threadId: thread.id, cwd: '/paper', sandbox: 'read-only' }), /does not support read-only tasks/);
+      await assert.rejects(f.agent.request('thread/start', { cwd: '/paper', sandbox: 'read-only' }), /The selected agent does not support read-only tasks through ACP\. Select another agent\./);
+      await assert.rejects(f.agent.request('thread/resume', { threadId: thread.id, cwd: '/paper', sandbox: 'read-only' }), /The selected agent does not support read-only tasks through ACP\. Select another agent\./);
       assert.equal(f.calls.filter(call => call.method === 'session/new' || call.method === 'session/load').length, count);
     } finally { f.agent.close(); }
   });
