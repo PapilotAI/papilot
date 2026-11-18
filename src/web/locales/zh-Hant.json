@@ -1471,6 +1471,9 @@
   "{n} task failed.": "{n} 個任務處理失敗。",
   "Delete all": "全部刪除",
   "{done} of {total}": "{done} / {total}",
+  "Collaboration mode": "協作模式",
+  "Experiments": "實驗功能",
+  "Enable collaboration mode": "啟用協作模式",
   "Add anchor": "新增錨點",
   "Anchors": "錨點",
   "Edit anchor: {name}": "編輯錨點：{name}",
@@ -1497,5 +1500,15 @@
   "Folders on the computer running Papilot": "執行 Papilot 的電腦上的資料夾",
   "Open": "開啟",
   "/Users/you/papers/my-paper": "/Users/you/papers/my-paper",
-  "Browse…": "瀏覽…"
+  "Browse…": "瀏覽…",
+  "Checks and reasoning": "檢查與推理",
+  "Clarity and flow of passages": "段落清晰度與流暢度",
+  "Codex assigns annotations to the workers below and checks every one before publishing.": "Codex 會將標註指派給下方的工作代理，並在發布前逐一檢查。",
+  "Math, facts, references and formatting": "數學、事實、參考文獻與格式",
+  "Polishing": "潤飾",
+  "Quick edits": "快速修改",
+  "Same as coordinator": "與協調者相同",
+  "Typos, word choice and small LaTeX fixes": "錯別字、遣詞用字與小型 LaTeX 修正",
+  "Stop worker": "停止工作程序",
+  "Stopped": "已停止"
 }

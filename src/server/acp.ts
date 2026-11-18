@@ -38,6 +38,9 @@ export interface AcpProfile {
   authMethods?: string[];
   sessionMeta?: Record<string, unknown>;
   modelEfforts?: boolean;
+  // false skips probing every model's efforts at start (a one-off worker needs only its own
+  // model); model and effort changes are still confirmed before prompting.
+  discoverEfforts?: boolean;
   permissionModes?: Record<string, { value?: string; label: string; detail: string }>;
 }
 const permissionModes = {
@@ -197,7 +200,7 @@ export class AcpAgent extends Adapter {
         .filter(option => this.profile.id !== 'deepseek' || option.value !== 'read-only')
         .map(({ native: _, ...option }) => option);
       this.readModels(probe, true);
-      if (this.profile.modelEfforts) await this.learnEfforts(probe);
+      if (this.profile.modelEfforts && this.profile.discoverEfforts !== false) await this.learnEfforts(probe);
       const sessionCapabilities = this.capabilities.sessionCapabilities || {};
       if (sessionCapabilities.delete) await this.rpc('session/delete', { sessionId: probe.sessionId });
       else if (sessionCapabilities.close) await this.rpc('session/close', { sessionId: probe.sessionId });

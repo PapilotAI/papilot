@@ -23,7 +23,7 @@ import overleaf from './brand-icons/overleaf.svg';
 import github from './brand-icons/github.svg';
 import './brand-icon.css';
 
-const marks = { papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, deepseek, qwen, opencode, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github };
+const marks = { collaboration: codex, papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, deepseek, qwen, opencode, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github };
 export type Brand = keyof typeof marks;
 
 // Decorative beside a visible name. Local assets work offline and inherit theme colors.

@@ -1,5 +1,6 @@
+import { agentLabel } from './agent-choice.ts';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { AGENT_IDS, AGENT_NAMES, type AgentId, type RuntimeStatus, type Task } from '../shared.ts';
+import { AGENT_IDS, type AgentId, type RuntimeStatus, type Task } from '../shared.ts';
 import { AgentPicker } from './agent-picker.tsx';
 import { t } from './i18n.ts';
 import { requestId } from './request-id.ts';
@@ -64,8 +65,8 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
       finally { restartPending.current = false; setRestarting(false); onSaving(false); refresh(); }
     });
   }
-  return <><AgentPicker agents={AGENT_IDS.filter(id => id === agent || runtimes[id]?.models.length)
-    .map(value => ({ value, label: AGENT_NAMES[value], runtime: value === agent ? runtime : runtimes[value], allowUnknownDefault: value === agent && !choice.model, restartsTask: value !== agent }))} agent={agent}
+  return <><AgentPicker agents={AGENT_IDS.filter(id => id === agent || ((id !== 'collaboration' || (runtimes.collaboration?.hidden === false && task.mode !== 'review')) && runtimes[id]?.models.length))
+    .map(value => ({ value, label: agentLabel(value), runtime: value === agent ? runtime : runtimes[value], allowUnknownDefault: value === agent && !choice.model, restartsTask: value !== agent }))} agent={agent}
     permissions={permissions}
     permissionMode={task.mode !== 'review' ? task.permissions || 'workspace' : undefined}
     model={choice.model || ''} effort={choice.effort || ''} fast={Boolean(choice.serviceTier && choice.serviceTier !== 'default')}

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { killTree } from '../bin/agent-paths.mjs';
 import { codexCandidates, firstRunnable, isWsl, windowsDrive } from '../bin/codex-lookup.mjs';
@@ -99,6 +100,32 @@ async function waitFor(check: () => boolean) {
   while (!check() && Date.now() < deadline) await delay(10);
   assert.ok(check(), 'the child process reached the expected state');
 }
+
+test('closing a Windows Codex wrapper stops its native child and releases its directory', { skip: POSIX && 'Windows terminates wrappers without forwarding signals', timeout: 20000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-wrapper-')), ready = path.join(root, 'ready'), wrapper = path.join(root, 'wrapper.cjs');
+  const codex = new Codex(process.execPath, [wrapper], { ...env(root), PATH: process.env.PATH });
+  let descendant = 0;
+  try {
+    const childScript = `require('node:fs').writeFileSync(${JSON.stringify(ready)}, String(process.pid)); setInterval(() => {}, 1000);`;
+    fs.writeFileSync(wrapper, `
+      const { spawn } = require('node:child_process');
+      spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], { cwd: ${JSON.stringify(root)}, stdio: 'ignore' });
+      require('node:readline').createInterface({ input: process.stdin }).on('line', line => {
+        const message = JSON.parse(line);
+        if (message.id !== undefined) console.log(JSON.stringify({ id: message.id, result: message.method === 'config/read' ? { config: {} } : {} }));
+      });
+      setInterval(() => {}, 1000);
+    `);
+    await codex.start(); await waitFor(() => fs.existsSync(ready)); descendant = Number(fs.readFileSync(ready, 'utf8'));
+    const closed = once(codex.child!, 'close'); codex.close(); await closed;
+    assert.throws(() => process.kill(descendant, 0), 'the native child must stop, not only its npm wrapper');
+    descendant = 0;
+    fs.rmSync(root, { recursive: true, force: true }); assert.equal(fs.existsSync(root), false);
+  } finally {
+    codex.close(); if (descendant) killTree(descendant, 'SIGKILL');
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('closing Codex cancels a hanging version probe and its children immediately', { skip: !POSIX && 'uses a POSIX process group', timeout: 6000 }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-')), pids = path.join(root, 'pids');

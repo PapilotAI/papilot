@@ -1471,6 +1471,9 @@
   "{n} task failed.": "{n} uppgift misslyckades.",
   "Delete all": "Radera alla",
   "{done} of {total}": "{done} av {total}",
+  "Collaboration mode": "Samarbetsläge",
+  "Experiments": "Experimentella funktioner",
+  "Enable collaboration mode": "Aktivera samarbetsläge",
   "Add anchor": "Lägg till ankare",
   "Anchors": "Ankare",
   "Edit anchor: {name}": "Redigera ankare: {name}",
@@ -1497,5 +1500,15 @@
   "Folders on the computer running Papilot": "Mappar på datorn som kör Papilot",
   "Open": "Öppna",
   "/Users/you/papers/my-paper": "/Users/you/papers/my-paper",
-  "Browse…": "Bläddra…"
+  "Browse…": "Bläddra…",
+  "Checks and reasoning": "Kontroller och resonemang",
+  "Clarity and flow of passages": "Tydlighet och flyt i textavsnitt",
+  "Codex assigns annotations to the workers below and checks every one before publishing.": "Codex tilldelar kommentarer till medarbetarna nedan och kontrollerar varje kommentar före publicering.",
+  "Math, facts, references and formatting": "Matematik, fakta, referenser och formatering",
+  "Polishing": "Finputsning",
+  "Quick edits": "Snabba ändringar",
+  "Same as coordinator": "Samma som koordinator",
+  "Typos, word choice and small LaTeX fixes": "Stavfel, ordval och mindre LaTeX-korrigeringar",
+  "Stop worker": "Stoppa arbetare",
+  "Stopped": "Stoppad"
 }

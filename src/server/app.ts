@@ -1,5 +1,5 @@
 import { isNoteGroup } from '../note-groups.ts';
-import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES } from '../shared.ts';
+import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validRoutes } from '../shared.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
 import { registerImportUpload } from './import-upload.ts';
@@ -298,6 +298,16 @@ export async function buildApp(options: AppOptions) {
     const quickNotes = value === null ? undefined : readQuickNotes(value);
     store.savePreference('quick-notes', quickNotes);
     return { quickNotes: quickNotes || null };
+  });
+  app.get('/api/collaboration', () => workspace.collaborationSettings());
+  app.post('/api/collaboration', (request, reply) => {
+    const { enabled, routes } = (request.body as any) || {};
+    if (enabled === undefined && routes === undefined) return reply.code(400).send({ error: 'Send enabled or routes.' });
+    if (enabled !== undefined && typeof enabled !== 'boolean') return reply.code(400).send({ error: 'Send enabled as true or false.' });
+    if (routes !== undefined && !validRoutes(routes)) return reply.code(400).send({ error: 'Choose a supported worker for each collaboration role.' });
+    if (routes !== undefined) workspace.setCollaborationRoutes(routes);
+    if (enabled !== undefined) workspace.setCollaborationEnabled(enabled);
+    return workspace.collaborationSettings();
   });
   app.get('/api/indirect-changes', () => ({ indirectChanges: indirectChanges() }));
   const alternativePreferences = () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') === true, noteAlternativeRange: noteAlternativeRange(store.preference('note-alternative-range')) });
@@ -657,6 +667,7 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/title', task, request => workspace.requestTaskTitle(request.params.id));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/archive', task, request => workspace.archiveTask(request.params.id, (request.body as any)?.archived, (request.body as any)?.finished === true));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/interrupt', task, request => workspace.interrupt(request.params.id).then(() => ({ ok: true })));
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/workers/stop', task, request => { workspace.stopWorker(request.params.id, string((request.body as any)?.item, 'Worker')); return { ok: true }; });
   // Deleting a task that is already gone succeeds, so a lost response can be retried; a hidden one answers the same.
   // A page an agent looked at, as the chat shows it with that tool call.
   app.get<{ Params: { id: string; file: string } }>('/api/tasks/:id/pages/:file', task, (request, reply) => {

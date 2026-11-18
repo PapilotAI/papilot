@@ -1,4 +1,4 @@
-.file-diffs{display:grid;gap:8px;margin:4px 0 8px}
+.file-diffs{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin:4px 0 8px}
 .file-diffs header{display:flex;align-items:baseline;gap:8px;min-width:0;font-size:12px;color:var(--text-2)}
 .file-diff-path{font-family:var(--mono);white-space:nowrap}
 .file-diff-where{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-3)}

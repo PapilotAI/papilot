@@ -1471,6 +1471,9 @@
   "{n} task failed.": "작업 {n}개 처리에 실패했습니다.",
   "Delete all": "모두 삭제",
   "{done} of {total}": "{done} / {total}",
+  "Collaboration mode": "협업 모드",
+  "Experiments": "실험 기능",
+  "Enable collaboration mode": "협업 모드 활성화",
   "Add anchor": "앵커 추가",
   "Anchors": "앵커",
   "Edit anchor: {name}": "앵커 편집: {name}",
@@ -1497,5 +1500,15 @@
   "Folders on the computer running Papilot": "Papilot을 실행 중인 컴퓨터의 폴더",
   "Open": "열기",
   "/Users/you/papers/my-paper": "/Users/you/papers/my-paper",
-  "Browse…": "찾아보기…"
+  "Browse…": "찾아보기…",
+  "Checks and reasoning": "검증 및 추론",
+  "Clarity and flow of passages": "문단의 명확성 및 흐름",
+  "Codex assigns annotations to the workers below and checks every one before publishing.": "Codex가 아래 작업자에게 주석을 할당하고 게시 전에 모든 항목을 확인합니다.",
+  "Math, facts, references and formatting": "수식, 사실 관계, 참고문헌 및 서식",
+  "Polishing": "다듬기",
+  "Quick edits": "빠른 수정",
+  "Same as coordinator": "코디네이터와 동일",
+  "Typos, word choice and small LaTeX fixes": "오타, 어휘 선택 및 간단한 LaTeX 수정",
+  "Stop worker": "워커 중지",
+  "Stopped": "중지됨"
 }

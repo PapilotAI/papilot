@@ -1448,5 +1448,140 @@
     "revision": "e5f8c32b821cacc9b3870a4ce6d6c8bd6c32c43a4508c4eb4d2b09f136a6ce9c",
     "textHash": "7543a12669bd2b26d6f85df640debc00942cda267b17b66d24b64484c199eba2",
     "model": "manual"
+  },
+  "Send enabled as true or false.": {
+    "revision": "8e81f038f2d922615e1fcf45943a61fa034fd52b9271f6e4fec81d84f9e2605b",
+    "textHash": "d0a79bae26c4e1560e1ba0de7438f70c810880d4b47efb8d314fe5afa152b5b7",
+    "model": "codex"
+  },
+  "Provide source evidence as an array.": {
+    "revision": "4f3be49edd9bfc89b6b37720e08b5fb97305642bba7b5d822105338fc6ee50da",
+    "textHash": "9b8ce8dd5cb8644d2729eb7e30b0b09575b536f26dd032d0430835158d92bfe1",
+    "model": "codex"
+  },
+  "Evidence must name a source file inside this task.": {
+    "revision": "ac0699caca9619c767dc2e1a3db6471cc2b5672b50d999213400bbd843f1634c",
+    "textHash": "c9a9488f6ed3e7c2fc7a77d296853df80ca6aa059578a7f2849eadc64d8a7994",
+    "model": "codex"
+  },
+  "Provide unique annotation IDs.": {
+    "revision": "5acc79bd9b6704915b7c6ead30c4e2c25b1a827f1330cef65342dab30ad1d433",
+    "textHash": "926791d5b8cc9f9a0984ff2dd9636766aa19a8342699df17a50cc165af93e7f7",
+    "model": "codex"
+  },
+  "Unknown annotation ID.": {
+    "revision": "4390c01e32af637e92d3521642e09aee2490fedc4b4cf1debf8c3d06f51a1a3b",
+    "textHash": "e7746a1f9453d50b00a854bb1442ee6a8aaba564321f570191c00b7f61a81128",
+    "model": "codex"
+  },
+  "Read the relevant source before delegating.": {
+    "revision": "cda37e85cf69737d7825b3e4bcf305dd237534d3721acb3eaaac77a3b3cc7eab",
+    "textHash": "53f8d4ccb2442c6eeb47519f308765cdf400e7adc71705aef7217d80eed4b4fe",
+    "model": "codex"
+  },
+  "Report an outcome for every annotation.": {
+    "revision": "116234e6bf95d1898318a1dc09dbe1ebc25432691ec7007b99442f338b024c1a",
+    "textHash": "b217117f59c9eacde289615a120b9ed4d89cc61dc14200c44251e29140c5a6ea",
+    "model": "codex"
+  },
+  "Annotation IDs must be known and occur exactly once.": {
+    "revision": "9a54c1ffb54ef0a73ee3595d1bb0adf2428fa0b24f439b45366e8fd6c719bd8c",
+    "textHash": "3bc2ab33b7d81a035b8bbcc06473d9c41dccf7a8106c50d6cf7dcf9406ad5aca",
+    "model": "codex"
+  },
+  "Invalid annotation outcome.": {
+    "revision": "ccf03314aeb86b683e75a682c985abbe79f9e45884d9a92e20a876c17498d6e6",
+    "textHash": "0365416d6fdfa90a8d1a9ddaf6ccd1d9c0877a274277094ad3dbd84e0e968110",
+    "model": "codex"
+  },
+  "Resolved annotations require source evidence.": {
+    "revision": "b9d4add7c147d90f459b44df4a4e8d0253cc4f2757fc77a3568bdcb64cd26a71",
+    "textHash": "84b705852d905ef6b0b3af877cefeb7b9525126bcff9307db0fd14d89641e109",
+    "model": "codex"
+  },
+  "The independent audit returned incomplete outcomes. Retry the audit.": {
+    "revision": "3e2db1da7802150ce2c17efeb0d91f0ba9fb0d45d5182502d6046b42a884473a",
+    "textHash": "6fbd916b43b0833f84e6ab77fc3dbb8ac6f83c9e6a6b23bff2df2a915a618239",
+    "model": "codex"
+  },
+  "The workflow was stopped.": {
+    "revision": "deae5911d18f3a182cb00a447230e6d16b8eb7116effa2a173b6857f04719cf7",
+    "textHash": "afa904bc20127d2e586085716120b2e7e2135934a96fbe6ad5a532135bcfb297",
+    "model": "codex"
+  },
+  "The manuscript changed during the audit. Audit again.": {
+    "revision": "57a697e082337364dd9c6e74da378b8aa5b678a7af709fb6842444722ec1685c",
+    "textHash": "6714277800c479b0cf3f2836bbbf460e8b11f0c187f1c9a3502e40fb1144394c",
+    "model": "codex"
+  },
+  "The workflow helper was stopped.": {
+    "revision": "82b1cd292990c277a32924a600c1d20674a9d861daafa26f7357ebd51668dd41",
+    "textHash": "1908531410b7083a6c987646fb24a87ee5391bfab55e4f2f98d827d7dc64406d",
+    "model": "codex"
+  },
+  "The workflow helper disconnected.": {
+    "revision": "be7313ba0ddca18b8aac1e469195aec668bc49695a59df17d15ac32270bd0787",
+    "textHash": "864457e4edb017ed3d9199c05661c0e43a52008be56e0aded82cf659c9f92ae1",
+    "model": "codex"
+  },
+  "Enable collaboration mode in Settings → About Papilot → Experiments first.": {
+    "revision": "e5beab41434b27178379e9cab20b2653c95d00a1b8bd6914098ec7fd56361d10",
+    "textHash": "af9de48537d9d1197a2ae7b84260fdd7b5994a53e744e7701efe49461eb83b8a",
+    "model": "codex"
+  },
+  "Choose Codex for an AI review. Collaboration mode edits annotations.": {
+    "revision": "85adf150335cc4dc4f9c0132f31eec027216fa04b81a19e3860f2a4775ccd349",
+    "textHash": "3e061b83709d6cd0af99e986cdffeb462ce4ddc4dc3d948427485181ed1207ab",
+    "model": "codex"
+  },
+  "Enable collaboration mode before selecting it.": {
+    "revision": "911f2d303d525ab9198912a4e4019b8513433f99e8d26d83858f2ecf3247dc69",
+    "textHash": "bfdac6d5382f18f843cbca69d8a4cb04e893f449097cdaf4f894589cc3574504",
+    "model": "codex"
+  },
+  "The workflow is no longer active.": {
+    "revision": "4446518d3ec713c7a272b96ff8c800250e6c9dd40b3778df71fdcb9db3d00d65",
+    "textHash": "d975e112717bc0ef9f6bb5f2f181bc2d3780a247cbd2c51801fd13786d3f5454",
+    "model": "codex"
+  },
+  "Collaboration mode needs a successful audit of the final source before publication. Continue the task to check all annotations.": {
+    "revision": "6b8e23a18e690a0d8decf683356cc70786cdea87cd81b77503854966b6e5feb4",
+    "textHash": "c5e760a10752e97fd8804077c33c70b734b0fe10c1ffc18fcc6b73a38a526722",
+    "model": "codex"
+  },
+  "Delegated edits must stay within the selected source files.": {
+    "revision": "96bc84dbb23bc181e7f46efe8b4606c846406cab78816324d3c67d461015a488",
+    "textHash": "a3c2de9244a6238e7f6e4da95581a72423545501f650c2afdb954bd21714a058",
+    "model": "codex"
+  },
+  "The source changed while merging delegated edits. Retry the delegation.": {
+    "revision": "9bc625c9acf3402c712bdd8a6e7729fd80f3fb07038834d5724f321ecfee9c3e",
+    "textHash": "f3f847ec4418273eecfb49279b18176d22646dcdb413322e20b13eaf1599067f",
+    "model": "codex"
+  },
+  "Codex could not apply isolated workflow permissions.": {
+    "revision": "ded8b60690a1890366fdaa84834be7fb67a6c5192623dce27955b44b3365c877",
+    "textHash": "421a7896d0b0399c2b346435615ce529ba4590d8715db3cd92cdb4c7486160ef",
+    "model": "codex"
+  },
+  "Choose a supported worker for each collaboration role.": {
+    "revision": "5b4999e55da069ba009fcb0e8f5fa97d6efa88a65386bd7639ad2158cc77e8f4",
+    "textHash": "595fd0c8dc950f2bf803d656fcd0c60c286dc450b6507e75eb52d5d846295cbb",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose the quick, polish or rigorous role.": {
+    "revision": "919d66e00e6e382ed13c4637b5cb84b67560c0a375ec8d90c002f1c091edd3cb",
+    "textHash": "e11cdc9003193db9a66f921bd32e1fa8b60be4519507a558349f379fd1e65da1",
+    "model": "gemini-4-argon-medium"
+  },
+  "Send enabled or routes.": {
+    "revision": "fb67f5fe2585fe7b801526acfe3b5811abebadc3d46e59fd338892fd711cc6e0",
+    "textHash": "f93746dc2f40018efb0d5b22a9cbeb12a8c8ac86ffe397b4e9a995bba8c1fcff",
+    "model": "gemini-4-argon-medium"
+  },
+  "This worker has already finished.": {
+    "revision": "749013e309b5530aedb8045511fd46a23cd517c735cfc0fb69c122204b74f50e",
+    "textHash": "e8aecb854e877b0b91874f14c8807f53aa3df338482b3d8daa5787313dbad161",
+    "model": "gemini-4-argon-medium"
   }
 }

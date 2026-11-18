@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ROOT } from '../src/server/paths.ts';
-import { ACP_PROFILES, AcpAgent, KimiAgent, opencodeConfig } from '../src/server/acp.ts';
+import { ACP_PROFILES, AcpAgent, KimiAgent, opencodeConfig, type AcpProfile } from '../src/server/acp.ts';
+import { workflowOpenCodeProfile } from '../src/server/collaboration.ts';
 import { findExecutable } from '../src/server/agents.ts';
 import { GrokAgent } from '../src/server/grok.ts';
 import { RpcResponseError } from '../src/server/codex.ts';
@@ -644,7 +645,7 @@ test('OpenCode is set to its dedicated default mode and asked to request approva
 });
 
 // Model-specific options, including grouped choices and a model without efforts.
-function openCodeEffortFixture() {
+function openCodeEffortFixture(profile: AcpProfile = ACP_PROFILES.opencode) {
   const levels: Record<string, string[]> = { first: ['low', 'high', 'default'], second: ['medium', 'high', 'max', 'default'], plain: [] };
   const options = (model: string, effort = 'default') => [
     { id: 'model', category: 'model', currentValue: model, options: [{ group: 'Provider', options: Object.keys(levels).map(value => ({ value, name: value })) }] },
@@ -684,7 +685,7 @@ function openCodeEffortFixture() {
     });
     return rpc.child;
   };
-  return { agent: new AcpAgent(ACP_PROFILES.opencode, 'fake-opencode', launch as any), calls, sessions, behavior, levels };
+  return { agent: new AcpAgent(profile, 'fake-opencode', launch as any), calls, sessions, behavior, levels };
 }
 
 test('OpenCode discovers per-model efforts, retries stale responses and preserves defaults across turns', async () => {
@@ -729,6 +730,22 @@ for (const missing of [false, true]) test(`OpenCode rejects unconfirmed model ch
     assert.equal(calls.slice(before).filter(c => c.method === 'session/set_config_option').length, 3);
     assert.equal(calls.slice(before).some(c => c.method === 'session/prompt' || c.params?.configId === 'effort'), false);
   } finally { agent.close(); }
+});
+
+test('a Collaboration OpenCode worker skips effort discovery but still confirms its model and effort', async () => {
+  for (const unconfirmed of ['model', 'effort'] as const) {
+    const { agent, calls, behavior } = openCodeEffortFixture(workflowOpenCodeProfile());
+    try {
+      await agent.start();
+      assert.equal(calls.some(c => c.method === 'session/set_config_option'), false, 'no catalog-wide probing at start');
+      const { thread } = await agent.request('thread/start', { cwd: '/paper', model: 'first' });
+      if (unconfirmed === 'model') behavior.stale = 10; else behavior.effortResponse = 'stale';
+      const result = await run(agent, thread.id, { model: 'second', effort: 'max' });
+      assert.equal(result.status, 'failed');
+      assert.match(result.error.message, unconfirmed === 'model' ? /could not apply model=second/ : /could not apply effort=max/);
+      assert.equal(calls.some(c => c.method === 'session/prompt'), false, 'never generates under an unconfirmed choice');
+    } finally { agent.close(); }
+  }
 });
 
 test('OpenCode skips failed discovery and bounds the total discovery time', async t => {

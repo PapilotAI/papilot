@@ -359,6 +359,7 @@ body.resizing iframe{pointer-events:none}
 .tool-item[data-kind="command"] .tool-label{font-family:var(--mono);font-size:12.5px}
 .tool-item .spinner{width:12px;height:12px;border-width:1.5px}
 .tool-status{font-size:12px;font-weight:500;color:var(--red)}
+.tool-item.stopped .tool-status{color:var(--text-3)}
 .tool-item pre{margin:4px 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg-subtle);white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;font:13px/1.55 var(--mono);color:var(--text-2)}
 .tool-item+.message,.tool-group+.message{margin-top:10px}
 .tool-group{margin:0 0 4px;color:var(--text-2);align-self:stretch;max-width:100%}
@@ -412,6 +413,12 @@ body.resizing iframe{pointer-events:none}
 .tool-pages a:hover img{border-color:var(--line-hover)}
 .tool-pages a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
 .tool-group-items{margin:4px 0 8px 6px;padding-left:12px;border-left:1px solid var(--line)}
+/* A collaboration worker's steps under its delegation, like a subagent's. */
+.worker-message{margin:2px 0 6px;font-size:13px;line-height:1.55;color:var(--text-2)}
+.worker-message>:first-child{margin-top:0}
+.worker-message>:last-child{margin-bottom:0}
+.worker-stop{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 8px}
+.worker-stop .inline-error{margin:0}
 .notes-message .message-body{white-space:normal;padding:10px 14px 12px}
 .sent-notes-head{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12.5px;font-weight:500;color:var(--text-2)}
 .sent-notes-head>svg{color:var(--text-3)}

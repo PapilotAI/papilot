@@ -83,7 +83,7 @@ export function taskFinished(task: Task) {
 }
 // reviewRound is 0 while awaiting a result, null when no changes were produced,
 // or the published round. Older runs omit it.
-export interface Run { id: string; taskId: string; requestKey: string; prompt: string; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
+export interface Run { workflowAudit?: { fingerprint: string; report: string; files: string[] }; id: string; taskId: string; requestKey: string; prompt: string; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
 /** One part of what fills the context window; ids are named in the web app. */
 export interface ContextPart { id: string; tokens: number }
 /** breakdown: the parts, when the agent can tell them apart, adding up to the window. */
@@ -92,7 +92,8 @@ export interface ContextUsage { tokens: number; window: number; breakdown?: Cont
 export interface ToolCallInfo { kind: string; target?: string; lines?: string; place?: ToolPlace }
 /** Where a read was in the paper: the sections it covered and the PDF pages they print on. */
 export interface ToolPlace { sections: { number: string; title: string }[]; more?: number; partial?: boolean; pages?: number[] }
-export interface TimelineItem { id: string; taskId: string; type: string; text: string; rawText?: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta; tool?: ToolCallInfo; pages?: PageView[]; changes?: FileEdit[] }
+// parent: in Collaboration mode, the delegation whose worker took this step.
+export interface TimelineItem { id: string; taskId: string; type: string; text: string; rawText?: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta; tool?: ToolCallInfo; pages?: PageView[]; changes?: FileEdit[]; parent?: string }
 /** A file an agent changed: its diff, and where in the paper the changes are. */
 export interface FileEdit { path: string; diff?: string; added: number; removed: number; places?: EditPlace[] }
 /** Changes within one part of the paper: its sections (innermost last), the page it starts on, and the lines changed. */
@@ -117,7 +118,8 @@ export const MAX_NOTE_ALTERNATIVES = 6;
 // Prepared by the editing agent in the same turn, before review-unit IDs exist.
 export interface PreparedNoteOptions { note: number; current: { label: string; reason: string }; options: { label: string; reason: string; edits: { file: string; find: string; replace: string }[] }[] }
 export interface NoteOptions { before?: Record<string, string>; round: number; key: string; options: NoteOption[]; selected?: string; locked?: string; comparisonKey?: string }
-export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
+// request: the author's own overall request sent with notes, which the prompt otherwise only embeds.
+export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; request?: string; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
 // Historical attribution on messages and notes from older shared workspaces.
 export interface Author { id: string; name: string }
 // A failed review build as the engine reports it; log is the compiler log's path.
@@ -125,10 +127,42 @@ export interface BuildFailure { error: string; details: string[]; log?: string }
 export interface FeedbackSummary { round: number | null; accepted: number; rejected: number; undone: number; comments: { where: string; text: string }[]; buildError?: boolean }
 export interface Skill { output?: 'annotations'; id: string; name: string; description: string; hint: string; icon?: SkillIcon; source: 'builtin' | 'user' | 'paper' }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
-export type AgentId = 'papilot' | 'pi' | 'codex' | 'claude' | 'antigravity' | 'kimi' | 'cursor' | 'copilot' | 'grok' | 'opencode' | 'qwen' | 'glm' | 'deepseek';
+export type AgentId = 'papilot' | 'pi' | 'codex' | 'claude' | 'antigravity' | 'kimi' | 'cursor' | 'copilot' | 'grok' | 'opencode' | 'qwen' | 'glm' | 'deepseek' | 'collaboration';
 // Every agent Papilot can drive, in menu order. Only the ones found on the host are offered.
-export const AGENT_IDS: AgentId[] = ['papilot', 'pi', 'codex', 'claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'deepseek', 'qwen', 'opencode'];
-export const AGENT_NAMES: Record<AgentId, string> = { papilot: 'Papilot Writer', pi: 'Pi', codex: 'Codex', claude: 'Claude', cursor: 'Cursor', copilot: 'Copilot', grok: 'Grok', antigravity: 'Antigravity', kimi: 'Kimi', glm: 'GLM', deepseek: 'DeepSeek', qwen: 'Qwen', opencode: 'OpenCode' };
+export const AGENT_IDS: AgentId[] = ['papilot', 'pi', 'codex', 'claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'deepseek', 'qwen', 'opencode', 'collaboration'];
+export const AGENT_NAMES: Record<AgentId, string> = { papilot: 'Papilot Writer', pi: 'Pi', codex: 'Codex', claude: 'Claude', cursor: 'Cursor', copilot: 'Copilot', grok: 'Grok', antigravity: 'Antigravity', kimi: 'Kimi', glm: 'GLM', deepseek: 'DeepSeek', qwen: 'Qwen', opencode: 'OpenCode', collaboration: 'Collaboration mode' };
+export const usesCodex = (id: AgentId) => id === 'codex' || id === 'collaboration';
+// Collaboration mode: the coordinator sends each piece of work to the worker
+// configured for its role. A Codex worker without a model uses the task's.
+export type CollaborationRole = 'quick' | 'polish' | 'rigorous';
+export const COLLABORATION_ROLES: CollaborationRole[] = ['quick', 'polish', 'rigorous'];
+export type CollaborationWorkerAgent = 'codex' | 'antigravity' | 'opencode';
+export const COLLABORATION_WORKERS: CollaborationWorkerAgent[] = ['codex', 'antigravity', 'opencode'];
+export interface CollaborationRoute { agent: CollaborationWorkerAgent; model: string | null; effort: string | null }
+export type CollaborationRoutes = Record<CollaborationRole, CollaborationRoute>;
+export interface CollaborationSettings { enabled: boolean; routes: CollaborationRoutes }
+export const DEFAULT_COLLABORATION_ROUTE: CollaborationRoute = { agent: 'codex', model: null, effort: null };
+// A route update from a client: every role, a known worker, optional strings.
+export function validRoutes(value: unknown): value is CollaborationRoutes {
+  if (!value || typeof value !== 'object') return false;
+  const optional = (field: unknown) => field === null || typeof field === 'string';
+  return COLLABORATION_ROLES.every(role => {
+    const route = (value as Record<string, any>)[role];
+    return route && COLLABORATION_WORKERS.includes(route.agent) && optional(route.model) && optional(route.effort);
+  });
+}
+// Saved routes are validated field by field; anything else uses the default.
+export function collaborationRoutes(value: unknown): CollaborationRoutes {
+  const saved = value && typeof value === 'object' ? value as Record<string, any> : {};
+  return Object.fromEntries(COLLABORATION_ROLES.map(role => {
+    const route = saved[role];
+    if (!route || !COLLABORATION_WORKERS.includes(route.agent)) return [role, DEFAULT_COLLABORATION_ROUTE];
+    const text = (field: unknown) => typeof field === 'string' && field.trim() ? field.trim() : null;
+    const model = text(route.model);
+    // Without a model, a Codex worker also uses the task's reasoning effort.
+    return [role, { agent: route.agent, model, effort: route.agent === 'codex' && !model ? null : text(route.effort) }];
+  })) as CollaborationRoutes;
+}
 // Papilot Writer's providers: subscriptions it signs in to, and API keys
 // stored by Papilot or read from the environment.
 export interface WriterProvider { id: string; name: string; kind: 'login' | 'key'; env?: string; configured: boolean; source: 'stored' | 'environment' | null }
@@ -142,7 +176,7 @@ export interface UsageWindow { usedPercent: number; minutes: number | null; rese
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
 // installed is false when the agent was not found on the host (no CLI, SDK
 // credentials or key); such agents are not offered. Older servers omit it.
-export interface RuntimeStatus { permissionOptions?: TaskPermissionOption[]; connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
+export interface RuntimeStatus { hidden?: boolean; permissionOptions?: TaskPermissionOption[]; connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
 export interface DiagnosticCheck { id: string; ok: boolean; severity: 'error' | 'warn' | 'info'; detail: string; fix: string | null }
 // A compact summary of the host tools required to work on papers.
 export interface SystemRequirements {

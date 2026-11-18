@@ -534,7 +534,7 @@ export class AntigravityAgent extends Adapter {
   private catalog: { model: string; displayName: string; efforts: string[]; ids: Record<string, string>; isDefault: boolean; defaultEffort: string | null }[] = [];
   private conversations: Record<string, string> = {};
   constructor(private binary = process.env.PAPILOT_AGY_BIN || 'agy', private file = path.join(DATA, 'antigravity-conversations.json'),
-    private launch: (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => ChildProcess = (command, args, options) => spawnCommand(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'] })) {
+    private launch: (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => ChildProcess = (command, args, options) => spawnCommand(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'] }), private isolation?: 'read-only' | { files: string[] }) {
     super();
     try { this.conversations = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { /* None yet. */ }
   }
@@ -576,6 +576,7 @@ export class AntigravityAgent extends Adapter {
         settings.permissions = { allow: files.map(file => `read_file(${file})`) };
       }
     } catch (error) { this.finish(turn, 'failed', error instanceof Error ? error.message : String(error)); return; }
+    if (this.isolation) settings.permissions = { allow: typeof this.isolation === 'object' ? this.isolation.files.map(file => `write_file(${file})`) : [], ask: [], deny: [...(this.isolation === 'read-only' ? ['read_file(*)', 'write_file(*)'] : []), 'command(*)', 'read_url(*)', 'execute_url(*)', 'mcp(*)'] };
     const conversation = this.conversations[turn.threadId], entry = this.catalog.find(model => model.model === thread.model);
     const model = entry ? entry.ids[effort || entry.defaultEffort || ''] || Object.values(entry.ids)[0] : thread.model;
     // agy has no separate system prompt: the first turn carries Papilot's instructions.
@@ -644,6 +645,7 @@ export class AntigravityAgent extends Adapter {
     child.stdin!.end(JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n');
   }
   private save() {
+    if (this.isolation) return;
     try { fs.mkdirSync(path.dirname(this.file), { recursive: true }); fs.writeFileSync(this.file, JSON.stringify(this.conversations)); } catch { /* A later turn starts a new conversation. */ }
   }
 }

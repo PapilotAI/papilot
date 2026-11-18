@@ -1471,6 +1471,9 @@
   "{n} task failed.": "{n} tâche a échoué.",
   "Delete all": "Tout supprimer",
   "{done} of {total}": "{done} sur {total}",
+  "Collaboration mode": "Mode collaboratif",
+  "Experiments": "Fonctions expérimentales",
+  "Enable collaboration mode": "Activer le mode collaboratif",
   "Add anchor": "Ajouter un repère",
   "Anchors": "Repères",
   "Edit anchor: {name}": "Modifier le repère : {name}",
@@ -1497,5 +1500,15 @@
   "Folders on the computer running Papilot": "Dossiers de l’ordinateur qui exécute Papilot",
   "Open": "Ouvrir",
   "/Users/you/papers/my-paper": "/Users/you/papers/my-paper",
-  "Browse…": "Parcourir…"
+  "Browse…": "Parcourir…",
+  "Checks and reasoning": "Vérifications et raisonnement",
+  "Clarity and flow of passages": "Clarté et fluidité des passages",
+  "Codex assigns annotations to the workers below and checks every one before publishing.": "Codex attribue les annotations aux agents ci-dessous et vérifie chacune d'elles avant publication.",
+  "Math, facts, references and formatting": "Mathématiques, faits, références et mise en forme",
+  "Polishing": "Peaufinage",
+  "Quick edits": "Modifications rapides",
+  "Same as coordinator": "Identique au coordinateur",
+  "Typos, word choice and small LaTeX fixes": "Coquilles, choix des mots et petites corrections LaTeX",
+  "Stop worker": "Arrêter le worker",
+  "Stopped": "Arrêté"
 }
