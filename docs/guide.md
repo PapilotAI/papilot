@@ -241,6 +241,8 @@ Papilot continues past recoverable LaTeX errors by default and shows the generat
 
 Task reviews and Git comparisons show compiler errors for both the original and revised text. When accepting only some changes produces errors, the accepted PDF shows its own diagnostics; expand the message above its pages to read them. Agents receive these diagnostics when they use `view_pdf`, and AI reviewers receive the errors associated with their saved PDF.
 
+Chapter comparisons also include chapters changed by earlier accepted edits. If the initial full build has errors, Papilot compares the whole document so errors in other chapters remain visible.
+
 To stop at the first error instead, add `"halt_on_error": true` to the existing object in `.git/papilot/settings.json`, then recompile. Set it to `false` or remove it to restore the default. This setting belongs to the selected root document and is restored when you switch back to it.
 
 In the manuscript's **Compilation Problems** panel, select **Fix with an agent…** to have the selected agent diagnose the failed build. Papilot gives it the compiler diagnostics and relevant source excerpts in a read-only turn. If the agent proposes changes to the engine, source directory, or use of the current `latexmkrc`, Papilot tests them and saves a successful configuration in its data directory for this paper and compiler host. Later builds use those settings after a restart. A subsequent change to the paper's explicit build settings takes precedence. If the agent thinks a different main document should be used, it asks you to check the selection.

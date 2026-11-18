@@ -6,6 +6,8 @@ import { loadProject } from "../../src/core/config.ts";
 import { which } from "../../src/core/process.ts";
 import { mupdf } from "../../src/render/pdf.ts";
 import { Fixture } from "./helpers.ts";
+import { view } from "../../src/core/view.ts";
+import { previewNoteOption } from "../../src/core/option-preview.ts";
 import type { BuildInfo } from "../../src/types.ts";
 const tex = Boolean(which("latexmk") && which("pdflatex"));
 const text = (pdf: string) => {
@@ -51,6 +53,64 @@ const chapter = (name: string, other: string, cite: string, opening: string) => 
 ${opening} See Section~\ref{sec:${other}} on page~\pageref{sec:${other}} and \cite{${cite}}.
 ${Array.from({ length: 40 }, (_, i) => `Body ${name} sentence ${i}.`).join(" ")}
 `;
+it.skipIf(!tex).each(["seed", "accepted"])("chapter reviews retain errors outside the new edit from the %s text", async (origin) => {
+  const f = new Fixture(), problem = "\\PackageError{fixture}{Other chapter diagnostic}{}";
+  try {
+    f.write("paper/main.tex", "\\documentclass{book}\n\\begin{document}\n\\include{chapters/a}\n\\include{chapters/b}\n\\include{chapters/c}\n\\end{document}\n");
+    for (const name of ["a", "b", "c"])
+      f.write(`paper/chapters/${name}.tex`, `\\chapter{${name.toUpperCase()}}\nOriginal chapter ${name}.\n${name === "b" && origin === "seed" ? problem : ""}\n`);
+    f.repo.run(["rm", "-q", "paper/sections/method.tex"]);
+    f.repo.run(["add", "-A"]); f.repo.run(["commit", "-qm", "Book"]);
+    const app = f.app(), task = app.tasks.create("chapters", "Chapters", [], ["paper"], true);
+    const publish = async () => {
+      const job = app.publisher.submit(task.name, undefined, false);
+      await app.publisher.join();
+      expect(app.publisher.job(job.id).status).toBe("done");
+      return app.review.latestRound(task.name)!;
+    };
+    if (origin === "accepted") {
+      f.edit(task, "paper/chapters/b.tex", "Original chapter b.", `Original chapter b. ${problem}`);
+      const first = await publish();
+      await app.review.decide(task.name, { action: "accept", round: first.number, changes: first.units.map(unit => unit.id) });
+      await app.applied.join();
+      expect((await app.applied.state(task.name)).shown?.errors?.join("\n")).toContain("Other chapter diagnostic");
+    }
+    f.edit(task, "paper/chapters/a.tex", "Original", "Revised");
+    const checked = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
+    expect(checked.errors?.join("\n")).toContain("Other chapter diagnostic");
+    expect(checked.targets).toEqual(origin === "seed" ? ["full"] : ["chapters/a", "chapters/b"]);
+    app.publisher.prefetch(task.name);
+    await app.publisher.join();
+    const round = await publish();
+    expect(round.summary.targets).toEqual(checked.targets);
+    expect(round.summary.baselineErrors?.join("\n")).toContain("Other chapter diagnostic");
+    expect(round.summary.revisedErrors?.join("\n")).toContain("Other chapter diagnostic");
+    if (origin === "seed") {
+      // A round saved by the earlier implementation may already have clean
+      // chapter PDFs built from a recovered full seed. Previews and decisions
+      // must expand both sides, rather than reuse that partial baseline.
+      const builder = new Builder(app.project, app.repo), seed = await builder.buildSeed(task.base), targets = ["chapters/a"];
+      const sides = await Promise.all([round.before, round.after].map(rev => builder.build(rev, targets, seed, { date: round.summary.date, force: true })));
+      expect(sides.every(build => !build.errors?.length)).toBe(true);
+      app.store.execute("UPDATE rounds SET summary=? WHERE task=? AND number=?", JSON.stringify({ ...round.summary, targets, builds: [seed.key, ...sides.map(build => build.key)], baselineErrors: undefined, revisedErrors: undefined }), task.name, round.number);
+    }
+    const selected = round.units.find(unit => unit.file === "paper/chapters/a.tex")!;
+    const option = await previewNoteOption(app, task.name, { id: "alternative", round: round.number, edits: [{ unit: selected.id, text: "Alternative" }] });
+    expect(option.baselineErrors?.join("\n")).toContain("Other chapter diagnostic");
+    expect(option.revisedErrors?.join("\n")).toContain("Other chapter diagnostic");
+    await app.review.decide(task.name, { action: "accept", round: round.number, changes: [selected.id] });
+    await app.applied.join();
+    const accepted = (await app.applied.state(task.name)).shown;
+    expect(accepted?.errors?.join("\n")).toContain("Other chapter diagnostic");
+    expect(accepted?.targets).toEqual(checked.targets);
+    f.edit(task, "paper/chapters/b.tex", problem, "");
+    const repaired = await publish();
+    expect(repaired.summary.baselineErrors?.join("\n")).toContain("Other chapter diagnostic");
+    expect(repaired.summary.revisedErrors).toBeUndefined();
+    expect((await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] })).errors).toEqual([]);
+  } finally { await f.close(); }
+}, 180000);
+
 it.skipIf(!tex)(
   "the first chapter build of a round continues from its seed and typesets the same pages in fewer passes",
   async () => {

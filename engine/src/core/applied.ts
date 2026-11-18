@@ -63,6 +63,7 @@ export class Applied {
     // The round's own seed once it rendered; before that the one it builds.
     const seed = (keys.length > 2 ? await builder.completed(keys[0]) : null)
       ?? await builder.buildSeed(this.app.tasks.get(name).base, { priority: () => this.priority(name) });
+    if (seed.errors?.length) return { targets: ["full"], date, seed: null };
     return { targets, date, seed };
   }
   /** The task's accepted text may have changed: compiles it now, at once. A

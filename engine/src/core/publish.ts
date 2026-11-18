@@ -344,13 +344,13 @@ export class Publisher {
     const builder = new Builder(project, app.repo),
       priority = () => this.followPriority(name);
     const date = buildDate(), options = { date, signal, priority };
-    let targets = await builder.planAsync(before, after, files), seed: BuildInfo | null = null;
+    let targets = await builder.planAsync(before, after, files, task.base), seed: BuildInfo | null = null;
     // A starting text that does not compile is compiled as the round's
     // publication will compile it (see renderComparison).
     if (targets[0] !== "full") {
       if (!(await knownBroken(builder, task.base, ["full"], null, date).catch(compileFailure)))
         seed = await builder.buildSeed(task.base, { priority }).catch(compileFailure);
-      if (!seed) targets = ["full"];
+      if (!seed || seed.errors?.length) { targets = ["full"]; seed = null; }
     }
     if (signal.aborted || this.stopping) return replace();
     const [baseline, revised] = await Promise.allSettled([
@@ -735,7 +735,7 @@ export class Publisher {
     const units = await withHashesAsync(app.repo, before, after, optionUnits ?? await diffUnitsAsync(app.repo, before, after, (f) =>
       isFigure(project, f),
     ));
-    const targets = await new Builder(project, app.repo).planAsync(before, after, files),
+    const targets = await new Builder(project, app.repo).planAsync(before, after, files, task.base),
       shown = await provisional(app, name, latest, { before, after, units }),
       pending = final + ".pending-" + randomBytes(4).toString("hex");
     try {
@@ -805,8 +805,9 @@ export class Publisher {
       // both versions compile whole instead (see below).
       if (!(await knownBroken(builder, base, ["full"], null, date).catch(compileFailure)))
         seed = await this.compile(job, "baseline", builder, base, ["full"], null, { asSeed: true }).catch(compileFailure);
-      if (!seed) {
+      if (!seed || seed.errors?.length) {
         targets = ["full"];
+        seed = null;
         this.revisions.delete(job.id);
       }
     }
@@ -824,6 +825,7 @@ export class Publisher {
       // changing the source tree or engine version. Rebuild the seed once,
       // after both attempts finish, then use it for both comparison sides.
       seed = await this.compile(job, "baseline", builder, base, ["full"], null, { asSeed: true, force: true }).catch(failed("The comparison baseline could not be compiled."));
+      if (seed.errors?.length) { targets = ["full"]; seed = null; this.revisions.delete(job.id); }
       builds = await versions();
     }
     // A task that fixes a compilation error starts from text that does not

@@ -118,22 +118,26 @@ export async function view(
     throw new Error("Ask for at least one source location or page number.");
   const after = await app.tasks.snapshotAsync(task),
     before = task.accepted,
-    builder = new Builder(project, app.repo),
-    targets = request.full ? ["full"] : await builder.planAsync(before, after, [
+    builder = new Builder(project, app.repo);
+  let targets = request.full ? ["full"] : await builder.planAsync(before, after, [
       ...new Set([
         ...(await app.repo.changedFilesAsync(before, after)),
         ...locations.map((l) => l.file),
       ]),
-    ]);
+    ], task.base);
   let build: BuildInfo;
   try {
     let seed = targets[0] !== "full" ? await builder.buildSeed(task.base) : null;
+    const compile = () => {
+      if (seed?.errors?.length) { targets = ["full"]; seed = null; }
+      return builder.build(request.accepted ? before : after, targets, seed);
+    };
     try {
-      build = await builder.build(request.accepted ? before : after, targets, seed);
+      build = await compile();
     } catch (error) {
       if (!seed || !auxiliaryBuildError(error)) throw error;
       seed = await builder.buildSeed(task.base, { force: true });
-      build = await builder.build(request.accepted ? before : after, targets, seed);
+      build = await compile();
     }
   } catch (error) {
     if (!(error instanceof BuildError)) throw error;

@@ -392,9 +392,14 @@ export class Builder {
     return this.choose(this.documentTexts(before), this.documentTexts(after), changed);
   }
   /** `plan` for servers, which keep answering requests meanwhile. */
-  async planAsync(before: string, after: string, changed: string[]) {
-    const [old, next] = await Promise.all([this.documentTextsAsync(before), this.documentTextsAsync(after)]);
-    return this.choose(old, next, changed);
+  async planAsync(before: string, after: string, changed: string[], seedRevision?: string) {
+    const [old, next, accepted] = await Promise.all([
+      this.documentTextsAsync(before), this.documentTextsAsync(after),
+      seedRevision ? this.repo.changedFilesAsync(seedRevision, before) : [],
+    ]);
+    // Omitted chapters must still match the fixed seed. Otherwise an error
+    // accepted in an earlier round disappears when the next edit is elsewhere.
+    return this.choose(old, next, [...new Set([...changed, ...accepted])]);
   }
   private choose(old: Record<string, string>, next: Record<string, string>, changed: string[]) {
     const p = this.project,
