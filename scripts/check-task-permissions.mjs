@@ -7,6 +7,8 @@ import staticFiles from '@fastify/static';
 import { Codex } from '../src/server/codex.ts';
 import { ClaudeAgent } from '../src/server/agents.ts';
 import { CursorAgent } from '../src/server/cursor.ts';
+import { ACP_PROFILES } from '../src/server/acp.ts';
+import { WORKBUDDY_PROFILE } from '../src/server/workbuddy.ts';
 import { chromium, expect } from './playwright.mjs';
 
 fs.mkdirSync('test-results', { recursive: true });
@@ -298,6 +300,44 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: 'dark' }); await open(fresh);
   await page.screenshot({ animations: 'disabled', path: 'test-results/task-permissions-dark.png' });
+  // Use the adapters' actual descriptions: unknown runtime copy must not turn
+  // into an empty tooltip, accessible description, or selected-mode hint.
+  const profiles = [ACP_PROFILES.qoder, ACP_PROFILES.codebuddy, WORKBUDDY_PROFILE];
+  for (const profile of profiles) snapshot.runtimes[profile.id] = { ...runtime, permissionOptions:
+    Object.entries(profile.permissionModes).map(([mode, option]) => ({ ...option,
+      value: mode === 'default' ? 'workspace' : option.value || (mode === 'yolo' ? 'full' : mode) })) };
+  snapshot.tasks = [task];
+  for (const [language, width, dark] of [['en', 1440, false], ['zh-CN', 390, true]]) {
+    await page.evaluate(language => localStorage.setItem('papilot:language', language), language);
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ colorScheme: dark ? 'dark' : 'light' });
+    for (const profile of profiles) {
+      Object.assign(task, { agent: profile.id, model: null, effort: null, permissions: 'workspace' });
+      await page.reload();
+      await page.getByRole('button', { name: language === 'en' ? 'Chat' : '对话', exact: true }).click();
+      const settings = page.locator('.activity-panel .agent-picker-trigger');
+      const panel = page.locator('.activity-panel .agent-picker-panel');
+      for (const option of snapshot.runtimes[profile.id].permissionOptions) {
+        if (!await panel.isVisible()) await settings.click();
+        const radio = panel.locator(`input[type="radio"][value="${option.value}"]`);
+        const description = await radio.getAttribute('aria-description');
+        assert.ok(description?.trim(), `${profile.name} ${option.label} needs an accessible description`);
+        if (language !== 'en') assert.match(description, /[\u3400-\u9fff]/, 'Permission descriptions must be localized');
+        await expect(radio.locator('..')).toHaveAttribute('title', description);
+        if (!await radio.isChecked()) {
+          await Promise.all([page.waitForResponse(response => response.url().endsWith('/permissions')), radio.click()]);
+          await expect(settings).toBeEnabled();
+          if (!await panel.isVisible()) await settings.click();
+        }
+        await expect(radio).toBeChecked();
+        await expect(panel.locator('.task-permission-detail')).toHaveText(description);
+        assert.equal(await panel.locator('.task-permission-detail').evaluate(element => element.scrollWidth <= element.clientWidth), true);
+        if (profile.id === 'codebuddy' && option.value === 'full') assert.match(description, language === 'en' ? /native rules still apply/ : /仍遵循原生规则/);
+        if (profile.id === 'workbuddy' && option.value === 'plan') assert.match(description, language === 'en' ? /may write planning files/ : /可能写入计划文件/);
+        await page.screenshot({ animations: 'disabled', path: `test-results/task-permissions-${profile.id}-${option.value}-${language}.png` });
+      }
+    }
+  }
   assert.deepEqual(errors, []);
   console.log('PASS: shared agent menu, native permission options, busy/save locks, delayed/failed refresh consistency, persistence, error recovery, provider/review restrictions, creation, keyboard and narrow-screen layout.');
 } catch (error) { await page.screenshot({ path: 'test-results/task-permissions-failure.png' }); throw error; }

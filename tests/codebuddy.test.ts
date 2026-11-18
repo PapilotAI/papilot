@@ -13,7 +13,7 @@ const modes = ['default', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermi
 function fixture() {
   let serial = 0;
   const stored = new Map<string, string>();
-  const behavior = { rejectResume: false, delayClose: false };
+  const behavior = { rejectResume: false, rejectModel: false, delayClose: false };
   const processes: { cwd: string; args: string[]; env: NodeJS.ProcessEnv; calls: any[]; child: any; send: (message: any) => void; finishExit: () => void }[] = [];
   const launch = (_binary: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
     const child: any = new EventEmitter();
@@ -43,6 +43,8 @@ function fixture() {
             stored.set(sessionId, options.cwd);
             send({ id, result: { sessionId, modes: { currentModeId: 'bypassPermissions', availableModes: modes.map(id => ({ id })) },
               models: { currentModelId: 'auto', availableModels: [{ modelId: 'auto', name: 'Auto' }] } } });
+          } else if (method === 'session/set_model' && behavior.rejectModel) {
+            send({ id, error: { code: -32000, message: 'Model unavailable' } });
           } else if (method === 'session/prompt') {
             pending.set(params.sessionId, message);
             send({ id: `approve-${params.sessionId}`, method: 'session/request_permission', params: { sessionId: params.sessionId,
@@ -222,6 +224,153 @@ test('CodeBuddy rejects a failed restore before submitting a prompt and can retr
     await until(() => f.notifications.some(event => event.method === 'turn/completed'));
   } finally { f.agent.close(); fs.rmSync(cwd, { recursive: true, force: true }); }
 });
+
+for (const known of [false, true]) for (const next of ['resume', 'delete', 'reconnect'] as const) {
+  test(`CodeBuddy waits for a failed ${known ? 'known' : 'uncached'} restore worker before ${next}`, { timeout: 5000 }, async () => {
+    const f = fixture(), cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codebuddy-failed-restore-'));
+    try {
+      await f.agent.start();
+      const { thread } = await f.agent.request('thread/start', { cwd });
+      if (known) f.processes.at(-1)!.finishExit();
+      else await f.agent.closeThread(thread.id);
+      f.behavior.rejectResume = true; f.behavior.delayClose = true;
+      await assert.rejects(f.agent.request('thread/resume', { threadId: thread.id, cwd }), /Resume unavailable/);
+      const failed = f.processes.at(-1)!;
+      assert.equal(failed.child.killed, true);
+      assert.equal(failed.child.exitCode, undefined);
+      f.behavior.rejectResume = false;
+      if (next === 'reconnect') {
+        f.agent.close();
+        f.behavior.delayClose = false; // The separate discovery worker can exit.
+        await f.agent.start();
+      }
+      const count = f.processes.length;
+      let finished = false;
+      const pending = (next === 'delete' ? f.agent.closeThread(thread.id)
+        : next === 'resume' ? f.agent.request('thread/resume', { threadId: thread.id, cwd })
+        : f.agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Continue' }] }))
+        .then(() => { finished = true; });
+      await tick(); await tick();
+      assert.equal(finished, false, 'the failed restore still owns the worktree');
+      assert.equal(f.processes.length, count, 'no replacement may overlap the failed restore');
+      f.behavior.delayClose = false;
+      failed.finishExit();
+      await pending;
+      if (next === 'reconnect') {
+        await until(() => f.requests.length === 1);
+        f.agent.respond(f.requests[0].id, { decision: 'decline' });
+        await until(() => f.notifications.some(event => event.method === 'turn/completed'));
+      }
+    } finally {
+      f.behavior.delayClose = false;
+      for (const worker of f.processes) if (worker.child.killed && worker.child.exitCode == null) worker.finishExit();
+      f.agent.close(); fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+}
+
+test('CodeBuddy keeps a failed shutdown attached to the session until the process exits', { timeout: 5000 }, async t => {
+  const f = fixture(), cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codebuddy-shutdown-retry-'));
+  try {
+    await f.agent.start();
+    const { thread } = await f.agent.request('thread/start', { cwd });
+    const worker = f.processes.at(-1)!;
+    f.behavior.delayClose = true;
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const deleted = assert.rejects(f.agent.closeThread(thread.id), /did not exit/);
+    t.mock.timers.tick(10000);
+    await deleted;
+    await assert.rejects(f.agent.closeThread(thread.id), /did not exit/);
+    await assert.rejects(f.agent.request('thread/resume', { threadId: thread.id, cwd }), /did not exit/);
+    assert.equal(f.processes.length, 2, 'a timed-out worker must prevent replacements');
+    f.behavior.delayClose = false;
+    worker.finishExit();
+    await f.agent.closeThread(thread.id);
+    await assert.rejects(f.agent.request('turn/start', { threadId: thread.id, input: [] }), /Start or resume/);
+  } finally {
+    f.behavior.delayClose = false;
+    for (const worker of f.processes) if (worker.child.killed && worker.child.exitCode == null) worker.finishExit();
+    f.agent.close(); fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+for (const reconnect of [false, true]) {
+  test(`CodeBuddy waits for a failed task creation worker before ${reconnect ? 'reconnecting' : 'retrying'}`, { timeout: 5000 }, async () => {
+    const f = fixture(), cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codebuddy-failed-start-'));
+    try {
+      await f.agent.start();
+      f.behavior.rejectModel = true; f.behavior.delayClose = true;
+      await assert.rejects(f.agent.request('thread/start', { cwd, model: 'auto' }), /Model unavailable/);
+      const failed = f.processes.at(-1)!;
+      assert.equal(failed.child.killed, true);
+      f.behavior.rejectModel = false;
+      if (reconnect) {
+        f.agent.close();
+        f.behavior.delayClose = false;
+        await f.agent.start();
+      }
+      const count = f.processes.length;
+      let finished = false;
+      const pending = f.agent.request('thread/start', { cwd, model: 'auto' }).then(() => { finished = true; });
+      await tick(); await tick();
+      assert.equal(finished, false, 'a failed start must release its process even without a registered session');
+      assert.equal(f.processes.length, count);
+      f.behavior.delayClose = false;
+      failed.finishExit();
+      await pending;
+      assert.equal(finished, true);
+    } finally {
+      f.behavior.delayClose = false;
+      for (const worker of f.processes) if (worker.child.killed && worker.child.exitCode == null) worker.finishExit();
+      f.agent.close(); fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const hasThread of [false, true]) {
+  test(`CodeBuddy worktree release waits for workers ${hasThread ? 'with' : 'without'} a thread ID and can retry`, { timeout: 5000 }, async t => {
+    const f = fixture(), root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codebuddy-worktree-close-'));
+    const cwd = path.join(root, 'deleted'), other = path.join(root, 'preserved');
+    fs.mkdirSync(cwd); fs.mkdirSync(other);
+    try {
+      await f.agent.start();
+      const { thread: otherThread } = await f.agent.request('thread/start', { cwd: other });
+      const otherWorker = f.processes.at(-1)!;
+      let threadId: string | undefined;
+      t.mock.timers.enable({ apis: ['setTimeout'] });
+      f.behavior.delayClose = true;
+      if (hasThread) threadId = (await f.agent.request('thread/start', { cwd })).thread.id;
+      else {
+        f.behavior.rejectModel = true;
+        await assert.rejects(f.agent.request('thread/start', { cwd, model: 'auto' }), /Model unavailable/);
+        f.behavior.rejectModel = false;
+      }
+      const worker = f.processes.at(-1)!;
+      let finished = false;
+      const closing = f.agent.closeWorktree(cwd).finally(() => { finished = true; });
+      const failure = assert.rejects(closing, /did not exit/);
+      await tick(); await tick();
+      assert.equal(finished, false);
+      assert.equal(worker.child.killed, true);
+      assert.equal(otherWorker.child.killed, undefined, 'other worktrees keep their workers');
+      t.mock.timers.tick(10000);
+      await failure;
+      await assert.rejects(f.agent.closeWorktree(cwd), /did not exit/);
+      if (threadId) await assert.rejects(f.agent.request('turn/start', { threadId, input: [] }), /did not exit/);
+      else await assert.rejects(f.agent.request('thread/start', { cwd }), /did not exit/);
+      f.behavior.delayClose = false;
+      worker.finishExit();
+      await f.agent.closeWorktree(cwd);
+      if (threadId) await assert.rejects(f.agent.request('turn/start', { threadId, input: [] }), /Start or resume/);
+      assert.equal(otherWorker.child.killed, undefined);
+      await f.agent.closeThread(otherThread.id);
+    } finally {
+      f.behavior.delayClose = false;
+      for (const worker of f.processes) if (worker.child.killed && worker.child.exitCode == null) worker.finishExit();
+      f.agent.close(); fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
 
 for (const next of ['delete', 'resume'] as const) {
   test(`CodeBuddy waits for a released worker to exit before ${next}`, { timeout: 5000 }, async () => {

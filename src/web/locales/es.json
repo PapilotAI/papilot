@@ -1502,5 +1502,7 @@
   "Uses CodeBuddy CLI and its saved login through ACP.": "Usa CodeBuddy CLI y su inicio de sesión guardado mediante ACP.",
   "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": "Usa un lanzador ACP de WorkBuddy configurado. El lanzador debe tener acceso a su inicio de sesión.",
   "No WorkBuddy ACP launcher is configured.": "No hay ningún lanzador ACP de WorkBuddy configurado.",
-  "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": "Establece {variable} en un lanzador ACP de WorkBuddy y reinicia Papilot."
+  "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": "Establece {variable} en un lanzador ACP de WorkBuddy y reinicia Papilot.",
+  "Skip approval prompts; native rules still apply": "Omitir solicitudes de aprobación; se siguen aplicando las reglas nativas",
+  "Plan changes; may write planning files": "Planificar cambios; puede escribir archivos de planificación"
 }

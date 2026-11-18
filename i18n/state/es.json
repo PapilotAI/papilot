@@ -6088,5 +6088,15 @@
     "revision": "3ee5ffa25fcebf51cfc2e50acd12f64a3f5a067ff12ff672769f18877951977e",
     "textHash": "6e338a7430cb028be9b49f0a037c8d052a5705b75111340f8804896b2bc84867",
     "model": "manual"
+  },
+  "Skip approval prompts; native rules still apply": {
+    "revision": "dfd84f9e73b2110918c8c4c4b5915a4ef299c2c004e68d66bc9f3175eba8dd9d",
+    "textHash": "15dd6cafcac0dce4bd5a8e8259c4d31b6bd72e0a2d5134f052f9f4f9b2bbfbc5",
+    "model": "manual"
+  },
+  "Plan changes; may write planning files": {
+    "revision": "17686fcc73d0831d6b80a22f79ab51eaaecf2e9b79af377b2d013740c72462c2",
+    "textHash": "c22c0534cc6ec3039423ff9a481d1b9d9a3bd3dade26fd91299bf4553ef0f661",
+    "model": "manual"
   }
 }

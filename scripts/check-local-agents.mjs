@@ -14,6 +14,34 @@ const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHA
 const missing = { installed: false, connected: false, authenticated: false, account: null, error: null, models: [] };
 const errors = [];
 fs.mkdirSync('test-results', { recursive: true });
+async function checkIcon(icon) {
+  await expect(icon).toHaveAttribute('aria-hidden', 'true');
+  // Large SVGs are separate build assets. A visible element alone does not
+  // mean its CSS mask has loaded, and a missing mask leaves a blank icon.
+  await icon.evaluate(async element => {
+    const source = getComputedStyle(element).maskImage.match(/^url\("(.+)"\)$/)?.[1];
+    if (!source) throw new Error('The brand icon has no image mask.');
+    const image = new Image(); image.src = source;
+    await image.decode();
+  });
+  const screenshot = await icon.screenshot({ animations: 'disabled' });
+  const contrast = await icon.evaluate(async (_, data) => {
+    const image = new Image(); image.src = `data:image/png;base64,${data}`;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const linear = value => { const channel = value / 255; return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; };
+    let minimum = 1, maximum = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      const luminance = 0.2126 * linear(pixels[index]) + 0.7152 * linear(pixels[index + 1]) + 0.0722 * linear(pixels[index + 2]);
+      minimum = Math.min(minimum, luminance); maximum = Math.max(maximum, luminance);
+    }
+    return (maximum + 0.05) / (minimum + 0.05);
+  }, screenshot.toString('base64'));
+  assert.ok(contrast >= 3, 'The rendered brand icon must be visible against its background.');
+}
 try {
   for (const [width, dark, language] of [[1280, false, 'en'], [390, true, 'en'], [390, false, 'zh-CN']]) {
     const context = await browser.newContext({ locale: 'en-US', viewport: { width, height: 900 }, colorScheme: dark ? 'dark' : 'light', hasTouch: width < 600 });
@@ -44,11 +72,13 @@ try {
     for (const id of ['qoder', 'codebuddy', 'workbuddy']) {
       const card = page.locator(`[data-agent="${id}"]`);
       await expect(card).toHaveAttribute('data-availability', 'missing');
+      await expect(card.locator('.brand-icon')).toHaveAttribute('data-brand', id);
+      await checkIcon(card.locator('.brand-icon'));
+      await card.screenshot({ path: `test-results/${id}-card-${width}-${language}.png`, animations: 'disabled' });
       await card.locator('button').click();
       const panel = page.locator('.runtime-agent-detail');
       await panel.locator('.runtime-agent-detection summary').click();
       await expect(panel).toContainText(`PAPILOT_${id.toUpperCase()}_BIN`);
-      await expect(card.locator('.brand-icon')).toHaveAttribute('data-brand', id);
       await panel.locator('.runtime-agent-header').scrollIntoViewIfNeeded();
       await page.screenshot({ path: `test-results/${id}-setup-${width}-${language}.png`, animations: 'disabled' });
       await panel.locator('.runtime-agent-header button').click();

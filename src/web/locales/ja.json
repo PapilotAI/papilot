@@ -1502,5 +1502,7 @@
   "Uses CodeBuddy CLI and its saved login through ACP.": "ACP 経由で CodeBuddy CLI と保存済みのログイン情報を使用します。",
   "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": "設定済みの WorkBuddy ACP ランチャーを使用します。ランチャーからログイン情報を利用できる必要があります。",
   "No WorkBuddy ACP launcher is configured.": "WorkBuddy ACP ランチャーが設定されていません。",
-  "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": "{variable} に WorkBuddy ACP ランチャーを設定し、Papilot を再起動してください。"
+  "Set {variable} to a WorkBuddy ACP launcher, then restart Papilot.": "{variable} に WorkBuddy ACP ランチャーを設定し、Papilot を再起動してください。",
+  "Skip approval prompts; native rules still apply": "承認の確認を省略（ネイティブのルールは適用）",
+  "Plan changes; may write planning files": "変更を計画（計画ファイルに書き込む場合あり）"
 }

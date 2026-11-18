@@ -34,6 +34,9 @@ export interface AgentRuntime extends EventEmitter {
   /** Ends the conversation of a task being deleted, so the agent lets go of
    *  what it keeps open in the task worktree before Papilot removes it. */
   closeThread?(threadId: string): Promise<void>;
+  /** Releases native processes before deleting a worktree, including a failed
+   *  startup that never returned a thread ID. Failure must block deletion. */
+  closeWorktree?(cwd: string): Promise<void>;
   request(method: string, params: any, timeout?: number): Promise<any>;
   respond(id: string | number, result: unknown): void;
   reject(id: string | number, message: string): void;

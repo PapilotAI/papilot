@@ -1772,10 +1772,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     this.deletions.add(taskId);
     this.store.updateTask(taskId, { status: 'deleting', pauseVersion: (task.pauseVersion || 0) + 1, error: null });
     try {
-      // The conversation goes with the task. Ending it first releases what the
-      // agent keeps open in the worktree; if it fails, the engine reports a
-      // folder still in use and a retry finishes the cleanup.
-      if (task.threadId) await this.agents[this.agentOf(task)].closeThread?.(task.threadId).catch(() => {});
+      // Native workers must release the worktree even when startup failed
+      // before returning a thread ID. Archiving the conversation is best effort.
+      const agent = this.agents[this.agentOf(task)];
+      await agent.closeWorktree?.(task.worktree);
+      if (task.threadId) await agent.closeThread?.(task.threadId).catch(() => {});
       // The engine never saw a task whose preparation was not submitted.
       const client = unprepared && !task.preparation?.submitted ? null : await this.connectReview(this.store.project(task.projectId).path);
       const finish = async () => {

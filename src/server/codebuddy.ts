@@ -8,6 +8,8 @@ import type { AgentRuntime } from './agents.ts';
 import { AcpAgent, ACP_PROFILES, type AcpProfile } from './acp.ts';
 import { RpcResponseError } from './codex.ts';
 
+const sameCwd = (left: string, right: string) => process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+
 // CodeBuddy's ACP server uses the process working directory, not session/new's
 // cwd. Give each task its own process, including after a restart, so concurrent
 // papers cannot share a workspace or native session state.
@@ -17,7 +19,7 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
   private starting: Promise<void> | null = null;
   private generation = 0;
   private probe: AcpAgent | null = null;
-  private clients = new Set<AcpAgent>();
+  private clients = new Map<AcpAgent, { cwd: string; retiring: boolean }>();
   private sessions = new Map<string, { cwd: string; client: AcpAgent; params: any; running: boolean }>();
   private turns = new Map<string, AcpAgent>();
   private approvals = new Map<string, AcpAgent>();
@@ -69,9 +71,9 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
 
   private client(cwd: string) {
     const client = new AcpAgent(this.profile, this.binary, this.launch, cwd);
-    this.clients.add(client);
+    this.clients.set(client, { cwd, retiring: false });
     client.on('notification', message => {
-      if (!this.clients.has(client)) return;
+      if (this.clients.get(client)?.retiring !== false) return;
       if (message.method === 'turn/completed') {
         this.turns.delete(message.params.turn.id);
         const session = this.sessions.get(message.params.threadId);
@@ -84,7 +86,7 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
       if (message.method === 'turn/completed') this.forget(client, true);
     });
     client.on('request', message => {
-      if (!this.clients.has(client)) return;
+      if (this.clients.get(client)?.retiring !== false) return;
       this.approvals.set(String(message.id), client);
       this.emit('request', message);
     });
@@ -93,14 +95,17 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
     return client;
   }
   private forget(client: AcpAgent, retain = false) {
-    this.clients.delete(client);
+    const tracked = this.clients.get(client);
+    if (tracked) tracked.retiring = true;
     for (const [id, entry] of this.sessions) if (entry.client === client) {
       if (retain) entry.running = false;
       else this.sessions.delete(id);
     }
     for (const [id, owner] of this.turns) if (owner === client) this.turns.delete(id);
     for (const [id, owner] of this.approvals) if (owner === client) this.approvals.delete(id);
-    client.close();
+    // A failed start has no session ID yet. Keep its process ownership until
+    // exit so a retry in the same worktree cannot bypass cleanup.
+    void client.shutdown().then(() => { this.clients.delete(client); }, () => {});
   }
 
   async request(method: string, params: any = {}): Promise<any> {
@@ -117,8 +122,13 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
       connected();
       const cwd = path.resolve(params.cwd), id = method === 'thread/resume' ? String(params.threadId) : null;
       const known = id ? this.sessions.get(id) : undefined;
-      if (known && (process.platform === 'win32' ? known.cwd.toLowerCase() !== cwd.toLowerCase() : known.cwd !== cwd)) throw new Error(`${this.profile.name} cannot move an active session to another working directory.`);
+      if (known && !sameCwd(known.cwd, cwd)) throw new Error(`${this.profile.name} cannot move an active session to another working directory.`);
       if (known?.running) throw new Error('Pause the task before restoring its session.');
+      for (const [client, entry] of this.clients) if (entry.retiring && sameCwd(entry.cwd, cwd)) {
+        await client.shutdown();
+        connected();
+        this.clients.delete(client);
+      }
       if (known?.client.ready) {
         const result = await known.client.request(method, params);
         connected();
@@ -141,7 +151,12 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
         return result;
       } catch (error) {
         this.forget(client);
-        if (known && id && !this.sessions.has(id)) this.sessions.set(id, known);
+        // A failed restore may still hold the worktree while its process exits.
+        // Keep that worker, not the previously stopped one, so retries and
+        // deletion wait for the process that actually needs to release it.
+        if (id && !this.sessions.has(id)) this.sessions.set(id, {
+          cwd, client, params: { ...known?.params, ...params, threadId: id }, running: false,
+        });
         throw error;
       }
     }
@@ -195,8 +210,25 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
     const client = this.sessions.get(threadId)?.client;
     if (!client) return;
     const stopped = client.shutdown();
-    this.forget(client);
+    // A failed shutdown must remain retryable, including after reconnecting.
+    this.forget(client, true);
     await stopped;
+    this.forget(client);
+  }
+  async closeWorktree(cwd: string) {
+    const directory = path.resolve(cwd);
+    const clients = new Set([
+      ...[...this.clients].filter(([, entry]) => sameCwd(entry.cwd, directory)).map(([client]) => client),
+      ...[...this.sessions.values()].filter(entry => sameCwd(entry.cwd, directory)).map(entry => entry.client),
+    ]);
+    await Promise.all([...clients].map(client => {
+      const stopped = client.shutdown();
+      this.forget(client, true);
+      return stopped;
+    }));
+    // Retain every session until all processes release the directory. A failed
+    // shutdown must remain attached so deletion can retry safely.
+    for (const client of clients) this.forget(client);
   }
   close() {
     this.generation++;
@@ -206,7 +238,7 @@ export class SessionAcpAgent extends EventEmitter implements AgentRuntime {
     this.permissions = [];
     this.probe?.close();
     // Keep only metadata for threads Workspace may still consider loaded.
-    for (const client of [...this.clients]) this.forget(client, true);
+    for (const client of [...this.clients.keys()]) this.forget(client, true);
   }
 }
 

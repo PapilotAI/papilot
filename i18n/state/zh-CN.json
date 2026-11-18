@@ -333,5 +333,15 @@
     "revision": "d9614616a3814d93462a080f54da8f1984a6a2564f1d01c1d00fa97a23168305",
     "textHash": "d3f0398e6c5d6715340bcbe1a9100165d99d6fcb241fd5225af12c5e34927ff3",
     "model": "manual"
+  },
+  "Skip approval prompts; native rules still apply": {
+    "revision": "eaed6f5827622569d9d7d1dd8996fbb45222cf203834f9ae8cca46ce361ac781",
+    "textHash": "edf11720a106c483c3cb745457e5c8cf7437f6aacd0fb7d58f6df62fae7472f4",
+    "model": "manual"
+  },
+  "Plan changes; may write planning files": {
+    "revision": "79b17297bac867706217f76c2d028d6da76531a4621881aac89f922c8e5cf3b2",
+    "textHash": "c6a7960d55d21226e94ca0555edad8cb59d44e9df51a4011c82e4e98736735f1",
+    "model": "manual"
   }
 }

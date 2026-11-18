@@ -1569,6 +1569,34 @@ test('deletion ends the task conversation before the engine removes its worktree
   }
 });
 
+for (const hasThread of [false, true]) test(`deletion waits for worktree release ${hasThread ? 'with' : 'without'} a thread ID`, async () => {
+  const f = fixture(deletionReview), stopped = deferred<void>();
+  let attempts = 0, archived = false;
+  try {
+    f.store.updateTask(f.task.id, { agent: 'codebuddy', threadId: hasThread ? f.task.threadId : null });
+    f.workspace.agents.codebuddy.closeWorktree = async cwd => {
+      assert.equal(cwd, f.task.worktree);
+      attempts++;
+      if (attempts === 1) throw new Error('CodeBuddy did not exit.');
+      await stopped.promise;
+    };
+    f.workspace.agents.codebuddy.closeThread = async () => { archived = true; throw new Error('Archive unavailable'); };
+    await assert.rejects(f.workspace.deleteTask(f.task.id), /CodeBuddy did not exit/);
+    assert.equal(archived, false);
+    assert.equal(f.calls.length, 0, 'the engine must not remove a worktree still owned by an agent');
+    assert.equal(f.store.task(f.task.id).status, 'deleting');
+    assert.match(f.store.task(f.task.id).error!, /CodeBuddy did not exit/);
+    const retry = f.workspace.deleteTask(f.task.id);
+    await tick();
+    assert.equal(archived, false, 'archiving follows successful worktree release');
+    assert.equal(f.calls.length, 0, 'retry must also await process exit');
+    stopped.resolve();
+    assert.deepEqual(await retry, { ok: true });
+    assert.equal(archived, hasThread);
+    assert.equal(f.store.tasks().length, 0);
+  } finally { stopped.resolve(); f.close(); }
+});
+
 test('deletion waits for every pending comment and then removes only the selected task', async () => {
   const first = deferred<void>(), second = deferred<void>();
   const f = fixture(deletionReview);

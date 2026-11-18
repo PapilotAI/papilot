@@ -275,6 +275,9 @@ jobs:
       - name: pi-agent
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-pi-agent.mjs
+      - name: local-agents
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-local-agents.mjs
       - name: skill-library
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-skill-library.mjs
