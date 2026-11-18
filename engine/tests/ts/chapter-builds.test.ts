@@ -53,7 +53,7 @@ const chapter = (name: string, other: string, cite: string, opening: string) => 
 ${opening} See Section~\ref{sec:${other}} on page~\pageref{sec:${other}} and \cite{${cite}}.
 ${Array.from({ length: 40 }, (_, i) => `Body ${name} sentence ${i}.`).join(" ")}
 `;
-it.skipIf(!tex)("a recovered full refresh supersedes clean chapter seeds without becoming continuation state", async () => {
+it.skipIf(!tex).each(["manual", "comparison"])("a recovered %s full build supersedes clean seeds without becoming continuation state", async origin => {
   const f = new Fixture(), external = path.join(f.base, "package.tex");
   try {
     fs.writeFileSync(external, "Package text.\n");
@@ -69,13 +69,14 @@ it.skipIf(!tex)("a recovered full refresh supersedes clean chapter seeds without
     // A package update changes compilation without changing the Git tree or
     // TeX engine version, just as a manual recompile can discover in practice.
     fs.writeFileSync(external, "Package text. \\PackageError{fixture}{Updated package diagnostic}{}\n");
-    const recovered = await builder.build(task.base, ["full"], null, { force: true });
+    const recovered = await builder.build(task.base, ["full"], null, origin === "manual" ? { force: true }
+      : { date: { SOURCE_DATE_EPOCH: "1600000000", FORCE_SOURCE_DATE: "1" } });
     expect(recovered.errors?.join("\n")).toContain("Updated package diagnostic");
-    expect((await builder.build(task.base)).key).toBe(recovered.key);
+    if (origin === "manual") expect((await builder.build(task.base)).key).toBe(recovered.key);
     expect((await builder.buildSeed(task.base)).key).toBe(recovered.key);
     // Older caches recorded only the clean build. Their preferred refresh
     // still must prevent it from being selected again, including after loss.
-    for (const { file, bytes } of history) fs.writeFileSync(file, bytes);
+    if (origin === "manual") for (const { file, bytes } of history) fs.writeFileSync(file, bytes);
     let authoritative = await builder.buildSeed(task.base);
     expect(authoritative.errors?.join("\n")).toContain("Updated package diagnostic");
     fs.rmSync(path.join(path.dirname(authoritative.pdf), "main.aux"));
@@ -105,6 +106,10 @@ it.skipIf(!tex)("a recovered full refresh supersedes clean chapter seeds without
     const repaired = await builder.build(task.base, ["full"], null, { date: { SOURCE_DATE_EPOCH: "1700000000", FORCE_SOURCE_DATE: "1" } });
     expect(repaired.errors).toBeUndefined();
     expect((await builder.buildSeed(task.base)).key).toBe(repaired.key);
+    fs.rmSync(path.join(path.dirname(repaired.pdf), "main.aux"));
+    const reseeded = await builder.buildSeed(task.base);
+    expect(reseeded.errors).toBeUndefined();
+    expect(reseeded.key).not.toBe(authoritative.key);
     const again = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
     expect(again.targets).toEqual(["chapters/a"]);
     expect(again.errors).toEqual([]);

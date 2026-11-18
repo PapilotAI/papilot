@@ -438,7 +438,6 @@ export class Builder {
     // fresh evidence instead of resurrecting their superseded clean seed.
     if (preferred && (!entries.some(entry => entry.key === preferred) || !await this.finished(path.join(this.cache, preferred))))
       return this.build(rev, ["full"], null, { ...options, force: true });
-    let incomplete = false;
     for (const entry of entries) {
       if (entry.context !== context || (entry.tree && entry.tree !== tree)
         || (process.env.SOURCE_DATE_EPOCH && entry.date !== process.env.SOURCE_DATE_EPOCH)) continue;
@@ -446,7 +445,8 @@ export class Builder {
       try {
         const replacement = this.preferred(entry.key),
           folder = path.join(this.cache, replacement ?? entry.key), info = await this.finished(folder);
-        if (replacement && !info) return this.build(rev, ["full"], null, { ...options, force: true });
+        if (!info && (replacement || entry.tree === tree))
+          return this.build(rev, ["full"], null, { ...options, force: true });
         if (!info || info.tree !== tree || JSON.stringify(info.targets) !== '["full"]') continue;
         matched = true;
         // The latest full result governs scope even when its auxiliaries
@@ -466,11 +466,13 @@ export class Builder {
         }
         await this.remember(["full"], { ...entry, key: info.key, tree });
         return info;
-      } catch { incomplete ||= matched; }
+      } catch {
+        // The newest matching result stays authoritative even if its seed
+        // files were removed. Rebuild instead of reviving older diagnostics.
+        if (matched) return this.build(rev, ["full"], null, { ...options, force: true });
+      }
     }
-    // A cached PDF with missing auxiliary state must not be returned again
-    // by the normal build cache, even if it was made earlier today.
-    return this.build(rev, ["full"], null, { ...options, ...(incomplete ? { force: true } : {}) });
+    return this.build(rev, ["full"], null, options);
   }
   /** What identifies the build of `rev`: its cache key, and the tree and
    *  date that it compiles. */
