@@ -272,11 +272,15 @@ try {
   assert.equal(engine.review.latestRound(retry.name).visuals, 'failed');
   await expect(viewer().locator('.change-carried').first()).toContainText('PDF from');
   await expect(viewer().locator('.comparison-waiting').first()).toContainText('PDF comparison failed');
+  await expect(viewer().locator('.change .source'), 'comparison failure never auto-opens an inline source card').toHaveCount(0);
+  await expect(viewer().locator('.comparison-waiting').first().getByRole('button', { name: 'Show LaTeX source', exact: true })).toBeVisible();
+  const retryFromCard = viewer().locator('.comparison-waiting').first().getByRole('button', { name: 'Retry comparison', exact: true });
+  await expect(retryFromCard).toBeVisible();
   await expect(viewer().locator('.change:has(.comparison-waiting) button.accept')).toHaveCount(0);
   await expect(viewer().locator('.change.current')).toBeVisible();
   await noFalseReady();
   await page.screenshot({ path: 'test-results/review-application-failed.png' });
-  fs.rmSync(fail); await page.locator('.review-rebuild').click();
+  fs.rmSync(fail); await retryFromCard.click();
   await expect(page.locator('.review-rebuild')).toHaveAttribute('data-state', 'ready', { timeout: 60000 });
   await expect(viewer().locator('.bar .accept-all')).toBeEnabled();
   await expect(viewer().locator('.bar .status')).toHaveCount(0);

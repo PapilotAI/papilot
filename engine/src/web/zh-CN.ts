@@ -109,8 +109,16 @@ export const zhCN: Record<string, string> = {
   "Copy reference": "复制引用",
   "{n} edits · LaTeX": "{n} 处编辑 · LaTeX",
   "Revised after your comment: ": "根据你的评论修订：",
-  "No visible change in the PDF; see the LaTeX source.":
-    "PDF 中没有可见变化，请查看 LaTeX 源码。",
+  "No visible change in the PDF.": "PDF 中没有可见变化。",
+  "No PDF preview for this source change.": "这处源码改动没有对应的 PDF 预览。",
+  "No PDF comparison because the previous version could not be compiled.":
+    "修改前的版本无法编译，因此暂无 PDF 对比。",
+  "No PDF comparison: the text before these changes could not be compiled.":
+    "暂无 PDF 对比：修改前的文本无法编译。",
+  "Binary file changed. No PDF comparison is available.":
+    "二进制文件已更改，暂无 PDF 对比。",
+  "Hide LaTeX source": "隐藏 LaTeX 源码",
+  "Retry comparison": "重试对比",
   "Continued: only line breaks moved here.": "续：这里只有换行位置变化。",
   "{n} related PDF change": "{n} 处相关 PDF 变化",
   "{n} related PDF changes": "{n} 处相关 PDF 变化",

@@ -51,3 +51,8 @@ export interface DecideChange { round: number; changes: string[]; action: string
  *  (0-based) of `file`, as after an edit made in the viewer. */
 export const SOURCE_SAVED_EVENT = "latex-review:source-saved";
 export interface SourceSaved { state: PageState; file: string; line: number }
+
+/** Asks the workspace to rebuild the task's PDF comparison, sent on the
+ *  viewer's `window` and cancelable: a workspace with its own publish flow
+ *  cancels it and triggers that build. */
+export const RETRY_COMPARISON_EVENT = "latex-review:retry-comparison";

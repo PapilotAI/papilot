@@ -139,6 +139,11 @@
     "textHash": "2ad1356b1471f6c36e2fdbfde256325c90d94c8654593575dbeaf51bea346998",
     "model": "gemini-4-argon-medium"
   },
+  "Binary file changed. No PDF comparison is available.": {
+    "revision": "f46d25a9d50d6ac4dfe304af6a7ac70ff42c46f1c90d29019759043c6d9a4bed",
+    "textHash": "cc3270d82b8d6a7ab98466ea9c0895eb93ced4874011bdceeec5c29bd8917724",
+    "model": "gemini-4-argon-medium"
+  },
   "Cancel": {
     "revision": "b1bd08c82e5c2107d81cab8c7b8594e22509047a8265919ec59b68a9444585b0",
     "textHash": "18c9d912a21072ddff188e816624629685101130d7b2abd498114a8a45236727",
@@ -369,6 +374,11 @@
     "textHash": "948d392455cc69c46a767464e4956c3e4d974679cc78e201a89e6da81b4d6ef2",
     "model": "gemini-4-argon-medium"
   },
+  "Hide LaTeX source": {
+    "revision": "6bc81058806f43172beee93693d18053bc7e2645b77f18041fd2a297e8596667",
+    "textHash": "b1a7c56d98c1ab91cdfa3b70a6e5244b0dfead8837480d5cbbf389da8cf17a13",
+    "model": "gemini-4-argon-medium"
+  },
   "History": {
     "revision": "a5f90ccecf19d460b9ddd1928a5f290292d4c32cd714d4e37b69836b6ce53f25",
     "textHash": "cc91da834ddfe49422e8d340937347baa57e27c085c9d6f10e7a089f10018cb9",
@@ -479,6 +489,21 @@
     "textHash": "b553eced6c8bd8e5f2879c4c3eccd9bbdaa0985aee2990f01c3db02978b666df",
     "model": "gemini-4-argon-medium"
   },
+  "No PDF comparison because the previous version could not be compiled.": {
+    "revision": "8a98c809139eecb455d1bc2dd8207362b5a6384a4ef5ab2da73af5b3d15f6d09",
+    "textHash": "a4bcc5964811878ce9b801ff575a80f775724e93ab4ecd0d01a00d8a1b519003",
+    "model": "gemini-4-argon-medium"
+  },
+  "No PDF comparison: the text before these changes could not be compiled.": {
+    "revision": "912532e29834da2efe177235b45f09f139e25cf09a6470813a074369d2e8474d",
+    "textHash": "e244d620356f2dd582f2adc00a5646977dce0d4e6fe7e9496756fd7e5e06ec91",
+    "model": "gemini-4-argon-medium"
+  },
+  "No PDF preview for this source change.": {
+    "revision": "70357db04a51d83e6fab8f945968c848655328f1d3c8f2b8862a22f655191292",
+    "textHash": "b25f5365bb56600da708a7ededf35c652c6bd1a56232b353450ee047bfa3dab5",
+    "model": "gemini-4-argon-medium"
+  },
   "No arXiv paper has this identifier, and no record matches the title.": {
     "revision": "72e9405db8b147e3d76c31790b64e24e91013493e4bde26162b94738e1a35808",
     "textHash": "6706da3733fccd5bc5e8cec2a65eff84cdb74735c2f2477290be72fd65d6b07c",
@@ -509,9 +534,9 @@
     "textHash": "4d52ef92a9a362ad91727cba7edd9e9e4289bd34f41849056434d77d66fabb51",
     "model": "gemini-4-argon-medium"
   },
-  "No visible change in the PDF; see the LaTeX source.": {
-    "revision": "e45fcb8dbdd231581f7ada322b8f5cefd879661b51b0c1bd066ea62f54adddb1",
-    "textHash": "99115b8e0526d93a48097d2f848c6e2a10b2b3449dd625313584e31b2898c193",
+  "No visible change in the PDF.": {
+    "revision": "2f7b77e97075d6194c103a0917e2902c8c9329fdd61bcfcaa64c9bcf04b02053",
+    "textHash": "282e58c8748eb5dad79d781a70a1b94754c58984d60f26cacc005c4357a57f6e",
     "model": "gemini-4-argon-medium"
   },
   "Not checked online": {
@@ -687,6 +712,11 @@
   "Rendering the diff": {
     "revision": "f47349b643a6c9ceb5a874df981ad3a8c87c375b13f390e93ed9d20d20e19ab9",
     "textHash": "f922d49e5fbbbf79f8f0193de3df441a0960aa94c0e098a7dc0e46445a03043e",
+    "model": "gemini-4-argon-medium"
+  },
+  "Retry comparison": {
+    "revision": "80f4e4a04da0f704108c12ad4d8808b3ade37ccb5328b1335e11cc74389a8816",
+    "textHash": "956a276b5609028bd9248825967b6aca21396829baa0764ed14dada23825b7ab",
     "model": "gemini-4-argon-medium"
   },
   "Revert": {
@@ -893,6 +923,11 @@
     "revision": "7014683363d3029a8642a9c525a9e47467214d68f2bb5e912a82746c5ea7d179",
     "textHash": "7547cdd7bb68831bcdb4aebb332b372b53dc391ae6a852e31f46836c68f3eb4a",
     "model": "gemini-4-argon-medium"
+  },
+  "The revised text has compilation errors.": {
+    "revision": "01588e48f100a846fd0408771cd2a3eb3f6ef45d521fad950095472ca449e781",
+    "textHash": "4ff2b5570363d722ad59316560d8ff2439f4f6da4d0df398675b0a0d7ac9239f",
+    "model": "manual"
   },
   "The same edit now prints elsewhere, on another page or in a float.": {
     "revision": "6fe5ac4d0c75bd7fca2830cacce66708c526cfd79af5f1819cb8185ca7b93544",
@@ -1238,10 +1273,5 @@
     "revision": "ef51e7cb2f4f41749349744c7578d69857bc93a03dedfc5d19dd7f21ab921487",
     "textHash": "c1c1e522c573638e71bc733289184576b9e2a940d82d6deb272472f9b8e56539",
     "model": "gemini-4-argon-medium"
-  },
-  "The revised text has compilation errors.": {
-    "revision": "01588e48f100a846fd0408771cd2a3eb3f6ef45d521fad950095472ca449e781",
-    "textHash": "4ff2b5570363d722ad59316560d8ff2439f4f6da4d0df398675b0a0d7ac9239f",
-    "model": "manual"
   }
 }

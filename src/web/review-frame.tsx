@@ -21,7 +21,7 @@ import { ModeSwitch } from './mode-switch.tsx';
 import { PdfContents, PdfPageControls, PdfFind, PdfFindButton } from './pdf-controls.tsx';
 import { PDF_READER_COMMAND, PDF_READER_STATE, type PdfReaderCommand, type PdfReaderState } from '../../engine/src/web/pdf-reader.ts';
 import { VIEW_CHOSEN_EVENT } from '../../engine/src/web/view-preferences.ts';
-import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SourceSaved } from '../../engine/src/web/review-events.ts';
+import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SourceSaved } from '../../engine/src/web/review-events.ts';
 
 // The viewer reads the interface language from its address.
 export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number, change?: number) => `${isPlayground ? import.meta.env.BASE_URL + 'src/web/playground/review.html' : `/review/${task.projectId}/`}?task=${task.name}${round ? `&round=${round}${change === undefined ? '&history=1' : `&change=${change}`}` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
@@ -143,6 +143,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       .change-head .copy-reference{display:none}
       .change-head .link{height:36px;padding:0 8px}
       .change-head .source-toggle{width:36px}
+      .comparison-action{min-block-size:36px;padding-inline:12px;font-size:13px}
       .change-head .dock{display:flex;position:fixed;z-index:6;left:50%;right:auto;transform:translateX(-50%);width:min(352px,calc(100% - 20px));bottom:calc(max(10px,env(safe-area-inset-bottom)) + var(--papilot-bottom-rail,0px));margin:0;transition:bottom .16s cubic-bezier(.2,0,0,1)}
       .change-head .actions{display:flex;width:100%;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:4px;padding:4px;border-radius:12px;background:var(--raised);box-shadow:var(--shadow-sm)}
       .change-head .actions>*{order:initial!important}
@@ -288,10 +289,14 @@ function useDragHoles(host: RefObject<HTMLElement | null>, frame: RefObject<HTML
 // onCurrentChange follows the viewer's current change; sources asks the
 // viewer for the change at a line of a file.
 export interface ReviewSources { select: (file: string, line: number) => void; saved: (state: unknown, file: string, line: number) => void; decide: (round: number, changes: string[], action: string) => void }
-export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided, onReadyChange, onFullPaperChange, view: controlledView, onViewChange, keepPdf, onCurrentChange, sources, onOpenSource, onChanges }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void; onReadyChange?: (ready: boolean, round?: number) => void; onFullPaperChange?: (available: boolean) => void; view?: ReviewView; onViewChange?: (value: ReviewView) => void; keepPdf?: boolean;
+export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided, onReadyChange, onFullPaperChange, view: controlledView, onViewChange, keepPdf, onCurrentChange, sources, onOpenSource, onRetryComparison, retryBusy, onChanges }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void; onReadyChange?: (ready: boolean, round?: number) => void; onFullPaperChange?: (available: boolean) => void; view?: ReviewView; onViewChange?: (value: ReviewView) => void; keepPdf?: boolean;
   onCurrentChange?: (change: CurrentChange) => void; sources?: Ref<ReviewSources>;
   /** Opens a change's source in the workspace's editor; false leaves it to the viewer's own. */
   onOpenSource?: (request: OpenSource) => boolean;
+  /** Rebuilds the task's PDF comparison when requested from the viewer. */
+  onRetryComparison?: () => void;
+  /** Disables viewer-triggered comparison retries while the task cannot publish. */
+  retryBusy?: boolean;
   /** The changes the viewer reviews, and their decisions, whenever they change. */
   onChanges?: (changes: ReviewChanges) => void }) {
   const draft = useReviewDraft(task?.id || '');
@@ -355,6 +360,9 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   const frame = useRef<HTMLIFrameElement>(null);
   const following = useRef(onCurrentChange); following.current = onCurrentChange;
   const opening = useRef(onOpenSource); opening.current = onOpenSource;
+  const retrying = useRef(onRetryComparison); retrying.current = onRetryComparison;
+  const retryBusyRef = useRef(Boolean(retryBusy)); retryBusyRef.current = Boolean(retryBusy);
+  const keepPdfRef = useRef(Boolean(keepPdf)); keepPdfRef.current = Boolean(keepPdf);
   const changing = useRef(onChanges); changing.current = onChanges;
   useEffect(() => {
     const view = document?.defaultView;
@@ -362,12 +370,23 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     const current = (event: Event) => following.current?.((event as CustomEvent<CurrentChange>).detail);
     // Cancelling the viewer's request keeps it from editing the lines itself.
     const open = (event: Event) => { if (opening.current?.((event as CustomEvent<OpenSource>).detail)) event.preventDefault(); };
+    const retry = (event: Event) => {
+      if (!retrying.current) return;
+      event.preventDefault();
+      if (!retryBusyRef.current) retrying.current();
+    };
     const changed = (event: Event) => changing.current?.((event as CustomEvent<ReviewChanges>).detail);
     view.addEventListener(CURRENT_CHANGE_EVENT, current);
     view.addEventListener(OPEN_SOURCE_EVENT, open);
+    view.addEventListener(RETRY_COMPARISON_EVENT, retry);
     view.addEventListener(REVIEW_CHANGES_EVENT, changed);
-    return () => { view.removeEventListener(CURRENT_CHANGE_EVENT, current); view.removeEventListener(OPEN_SOURCE_EVENT, open); view.removeEventListener(REVIEW_CHANGES_EVENT, changed); };
+    return () => { view.removeEventListener(CURRENT_CHANGE_EVENT, current); view.removeEventListener(OPEN_SOURCE_EVENT, open); view.removeEventListener(RETRY_COMPARISON_EVENT, retry); view.removeEventListener(REVIEW_CHANGES_EVENT, changed); };
   }, [document]);
+  useEffect(() => {
+    if (!document) return;
+    if (onRetryComparison) document.documentElement.dataset.papilotRetry = retryBusy ? 'busy' : '1';
+    else delete document.documentElement.dataset.papilotRetry;
+  }, [document, Boolean(onRetryComparison), Boolean(retryBusy)]);
   useImperativeHandle(sources, () => ({
     select: (file, line) => document?.defaultView?.dispatchEvent(new CustomEvent(SELECT_SOURCE_EVENT, { detail: { file, line } })),
     saved: (state, file, line) => document?.defaultView?.dispatchEvent(new CustomEvent<SourceSaved>(SOURCE_SAVED_EVENT, { detail: { state: state as SourceSaved['state'], file, line } })),
@@ -532,7 +551,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
         const paper = doc.getElementById('paper');
         if (!paper) return;
         setDisplayedRound(Number(doc.documentElement.dataset.papilotRound) || undefined);
-        if (!changesOf && paper.querySelector('.comparison-waiting[data-state="failed"]') && !paper.querySelector('.pdf-strip img[src],.paper-page,.applied-page')) {
+        if (!changesOf && keepPdfRef.current && !doc.querySelector('.review-mode') && paper.querySelector('.comparison-waiting[data-state="failed"]') && !paper.querySelector('.pdf-strip img[src],.paper-page,.applied-page,.comparison-notice,.bib-entry')) {
           setPhase('error'); return;
         }
         // An inline edit/annotation error must not hide an otherwise usable

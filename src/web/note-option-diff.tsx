@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import type { Block, RoundDetail, Strip } from '../../engine/src/types.ts';
 import { PdfStrip } from '../../engine/src/web/PdfStrip.tsx';
+import { sourceActionLabel, unavailableComparisonMessage, type UnavailableComparisonReason } from '../../engine/src/web/comparison-notice.ts';
 import { wordDiff } from '../../engine/src/web/model.ts';
 import { t, useLanguage } from './i18n.ts';
 import { noteComparisonCrop, noteComparisonScope } from './note-comparison-scope.ts';
@@ -56,7 +57,7 @@ function CompactContext({ image, base, edge }: { image: Strip; base: string; edg
  * attributing highlights only to the note's exact edits. */
 // A stale comparison is the previous one, kept in place while the selected
 // option's loads so the drawer does not jump; it is dimmed and inert.
-export function NoteOptionDiff({ detail, focus, stale = false }: { detail: RoundDetail; focus: string[]; stale?: boolean }) {
+export function NoteOptionDiff({ detail, focus, stale = false, onShowSource }: { detail: RoundDetail; focus: string[]; stale?: boolean; onShowSource?: () => void }) {
   const { language } = useLanguage();
   const scoped = noteComparisonScope(detail, focus);
   const strips = (images: Strip[], label: string) => images.map((image, index) => {
@@ -71,15 +72,27 @@ export function NoteOptionDiff({ detail, focus, stale = false }: { detail: Round
     if (item.kind === 'gap') return <div key={index} className="note-comparison-gap" role="separator">⋯</div>;
     if (item.kind === 'context') return <CompactContext key={detail.files + item.image.clean} image={item.image} base={detail.files} edge={blocks[index + 1]?.kind === 'change' ? 'end' : 'start'}/>;
     const units = detail.units.filter(unit => item.units.includes(unit.id));
+    const hasBefore = !item.identical && !item.reflow && item.before.length > 0;
+    const hasAfter = item.after.length > 0;
+    const binaryOnly = units.length > 0 && units.every(unit => unit.kind === 'binary');
+    const reason: UnavailableComparisonReason | null = item.identical
+      ? 'identical'
+      : !hasBefore && !hasAfter
+        ? (detail.sourceOnly ? 'baseline-failed' : binaryOnly ? 'binary' : 'unmapped')
+        : null;
     return <div key={index} className="note-comparison-change" data-units={item.units.join(' ')} data-related={item.units.some(id => focus.includes(id))}>
-      <div className="note-comparison-side before">
+      {hasBefore && <div className="note-comparison-side before">
         <span className="note-comparison-side-label">{t('Before')}</span>
-        {item.before.length ? strips(item.before, t('Before')) : <pre>{units.map(unit => unit.old_text).join('\n')}</pre>}
-      </div>
-      <div className="note-comparison-side after">
+        {strips(item.before, t('Before'))}
+      </div>}
+      {hasAfter && <div className="note-comparison-side after">
         <span className="note-comparison-side-label">{t('After')}</span>
-        {item.after.length ? strips(item.after, t('After')) : <pre>{units.map(unit => unit.new_text).join('\n')}</pre>}
-      </div>
+        {strips(item.after, t('After'))}
+      </div>}
+      {reason && <div className="note-comparison-notice" data-reason={reason}>
+        <p>{unavailableComparisonMessage(reason, language)}</p>
+        {onShowSource && units.some(unit => unit.kind !== 'binary') && <button type="button" className="note-comparison-action" onClick={onShowSource}>{sourceActionLabel(false, language)}</button>}
+      </div>}
     </div>;
   };
   return <div className="note-option-comparison" role="region" aria-label={t('Complete PDF comparison')} tabIndex={stale ? -1 : 0} data-revision={detail.after} data-stale={stale || undefined} inert={stale} aria-hidden={stale || undefined}>

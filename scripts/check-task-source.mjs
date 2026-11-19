@@ -36,16 +36,18 @@ const call = async (route, body) => {
   return result;
 };
 const client = { url: app.url, token: app.csrf, get: route => call(route), post: (route, body = {}) => call(route, body) };
+const clients = new Map([[f.root, client]]);
+const connectReview = async root => clients.get(root) ?? client;
 class Agent extends EventEmitter { ready = false; close() {} }
 const store = new Store(':memory:');
-const workspace = new Workspace(store, new Agent(), async () => client, Object.fromEntries(AGENT_IDS.filter(id => id !== 'codex').map(id => [id, new Agent()])));
+const workspace = new Workspace(store, new Agent(), connectReview, Object.fromEntries(AGENT_IDS.filter(id => id !== 'codex').map(id => [id, new Agent()])));
 store.saveProject({ id: 'paper', path: f.root, name: 'Paper', createdAt: 1 });
 store.saveTask({ id: 'sources', projectId: 'paper', name: task.name, title: task.title, instructions: '', worktree: task.worktree, threadId: null, turnId: null, model: null, status: 'reviewing', deferred: true, createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null });
 await workspace.refresh('sources');
 const manuscripts = new Manuscripts();
 manuscripts.predict = async () => {};
 const listener = { kind: 'local', port: 0, publicOrigin: '', owner: '' };
-const server = await buildApp({ listener, store, workspace, manuscripts, csrf: 'fixture', serialGit: gitQueue(), dist: path.resolve('dist'), version: 'test', connectReview: async () => client });
+const server = await buildApp({ listener, store, workspace, manuscripts, csrf: 'fixture', serialGit: gitQueue(), dist: path.resolve('dist'), version: 'test', connectReview });
 await server.listen({ host: '127.0.0.1', port: 0 });
 listener.port = server.server.address().port;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
@@ -55,7 +57,11 @@ try {
   const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 950 } });
   page.on('pageerror', error => errors.push(error.message));
   page.on('response', response => { if (response.status() >= 500) errors.push(`${response.status()} ${response.url()}`); });
-  await page.addInitScript(() => { localStorage.setItem('papilot:task', 'sources'); localStorage.setItem('papilot:project', 'paper'); localStorage.setItem('papilot:language', 'en'); });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('papilot:task')) localStorage.setItem('papilot:task', 'sources');
+    if (!localStorage.getItem('papilot:project')) localStorage.setItem('papilot:project', 'paper');
+    localStorage.setItem('papilot:language', 'en');
+  });
   await page.goto(`http://127.0.0.1:${listener.port}`);
   const viewer = page.frameLocator('.review-frame'), side = page.locator('#conversation-panel');
   await expect(viewer.locator('.change.current')).toBeVisible({ timeout: 60000 });
@@ -139,6 +145,7 @@ try {
   await expect.poll(() => app.review.latestRound(task.name)?.number, { timeout: 90000 }).toBeGreaterThan(round);
   await expect.poll(() => app.review.latestRound(task.name)?.visuals, { timeout: 90000 }).toBe('ready');
   await expect(viewer.locator('.change').last()).toContainText('Typed in Papilot', { timeout: 60000 });
+  await expect(viewer.locator('.change .source'), 'saving in the workspace editor never auto-opens an inline source card').toHaveCount(0);
   await expect(side.locator('.cm-review-added').last(), 'the new round\'s changes show in the text').toContainText('Typed in Papilot', { timeout: 30000 });
   await page.screenshot({ path: 'test-results/task-source-saved.png' });
   await expect(side.locator('.source-panel-error')).toHaveCount(0);
@@ -157,8 +164,137 @@ try {
   await viewer.locator('.change.current .source-toggle').click();
   await expect(viewer.locator('.change.current .source'), 'an earlier round shows its LaTeX in the card').toBeVisible();
   await expect(side.getByRole('tab', { name: 'method.tex' }), 'the editor does not open for an earlier round').toHaveCount(0);
+
+  // Identical rendered output and strip-free unmapped changes never auto-open
+  // inline source cards; explicit inspection uses the workspace editor, and
+  // every pending change remains discoverable and reviewable.
+  const quiet = app.tasks.create('quiet', 'Quiet source edits', [], ['paper'], true);
+  f.edit(quiet, 'paper/main.tex', '\\documentclass{article}\n', '\\documentclass{article}\n\\newcommand{\\unusedhelper}{helper}\n');
+  f.edit(quiet, METHOD, 'Original first paragraph.', 'Original first paragraph.% comment only');
+  app.publisher.submit(quiet.name); await app.publisher.join();
+  const quietDetail = app.review.roundDetail(quiet.name, 1);
+  assert.equal(app.review.latestRound(quiet.name)?.visuals, 'ready');
+  assert.ok(quietDetail.units.some(unit => unit.visual === 'identical'), 'real compile produces an identical unit');
+  assert.ok(quietDetail.units.some(unit => unit.visual === 'unmapped'), 'real compile produces an unmapped unit');
+  store.saveTask({ id: 'quiet', projectId: 'paper', name: quiet.name, title: quiet.title, instructions: '', worktree: quiet.worktree, threadId: null, turnId: null, model: null, status: 'reviewing', deferred: true, createdAt: 2, updatedAt: 2, feedbackCursor: 0, error: null, review: null });
+  await workspace.refresh('quiet');
+
+  // Broken-baseline sourceOnly recovery task: baseline cannot compile while
+  // the task's fix compiles cleanly.
+  const fBroken = new Fixture();
+  let engineBroken;
+  try {
+    fBroken.write('paper/main.tex', '\\documentclass{article}\n\\input{missing-task-source-input}\n\\begin{document}\n\\input{sections/method}\n\\end{document}\n');
+    fBroken.write(METHOD, '\\section{Method}\nBaseline text.\n');
+    fBroken.repo.run(['add', '-A']); fBroken.repo.run(['commit', '-qm', 'Broken baseline']);
+    const appBroken = fBroken.app(); await appBroken.ready;
+    const fixTask = appBroken.tasks.create('fix-baseline', 'Repair broken baseline', [], ['paper'], true);
+    fBroken.edit(fixTask, 'paper/main.tex', '\\input{missing-task-source-input}\n', '');
+    appBroken.publisher.submit(fixTask.name); await appBroken.publisher.join();
+    assert.equal(appBroken.review.roundDetail(fixTask.name, 1).sourceOnly, true);
+    engineBroken = createServer(appBroken);
+    await engineBroken.listen({ host: '127.0.0.1', port: 0 });
+    appBroken.url = `http://127.0.0.1:${engineBroken.server.address().port}`;
+    const callBroken = async (route, body) => {
+      const response = await fetch(appBroken.url + route, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': appBroken.csrf }, body: JSON.stringify(body) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || response.statusText);
+      return result;
+    };
+    const clientBroken = { url: appBroken.url, token: appBroken.csrf, get: route => callBroken(route), post: (route, body = {}) => callBroken(route, body) };
+    clients.set(fBroken.root, clientBroken);
+    store.saveProject({ id: 'broken-paper', path: fBroken.root, name: 'Broken Paper', createdAt: 2 });
+    store.saveTask({ id: 'fix-baseline', projectId: 'broken-paper', name: fixTask.name, title: fixTask.title, instructions: '', worktree: fixTask.worktree, threadId: null, turnId: null, model: null, status: 'reviewing', deferred: true, createdAt: 3, updatedAt: 3, feedbackCursor: 0, error: null, review: null });
+    await workspace.refresh('fix-baseline');
+
+    // Open the quiet task in Papilot and verify zero auto inline source cards.
+    await page.evaluate(() => { localStorage.setItem('papilot:task', 'quiet'); localStorage.setItem('papilot:project', 'paper'); });
+    await page.reload();
+    await expect(viewer.locator('.change').first()).toBeVisible({ timeout: 60000 });
+    await expect(viewer.locator('.change .source'), 'identical/unmapped edits never auto-open inline source').toHaveCount(0);
+    await expect(viewer.locator('.comparison-notice[data-reason="identical"]')).toContainText('No visible change in the PDF.');
+    await expect(viewer.locator('.comparison-notice[data-reason="unmapped"]')).toContainText('No PDF preview for this source change.');
+    await page.screenshot({ path: 'test-results/task-source-quiet-light.png' });
+    // Explicit Show LaTeX source routes to Papilot's workspace editor, not inline source.
+    await viewer.locator('.comparison-notice[data-reason="identical"]').getByRole('button', { name: 'Show LaTeX source', exact: true }).click();
+    await expect(side.locator('.cm-editor')).toBeVisible();
+    await expect(viewer.locator('.change .source'), 'explicit source inspection opens the workspace editor, not an inline card').toHaveCount(0);
+    // Dark theme visual check.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(viewer.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.screenshot({ path: 'test-results/task-source-quiet-dark.png' });
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(viewer.locator('html')).toHaveAttribute('data-theme', 'light');
+    await side.locator('.side-tab-close').click();
+    // All pending quiet changes remain reviewable and accept cleanly.
+    const quietTotal = Object.keys(app.review.pageState(quiet.name).decisions).length;
+    assert.ok(quietTotal >= 2, `expected at least 2 quiet units, got ${quietTotal}`);
+    await expect(viewer.getByRole('progressbar', { name: `0 of ${quietTotal} decided`, exact: true })).toBeVisible();
+    await viewer.getByRole('button', { name: `Accept all (${quietTotal})`, exact: true }).click();
+    await expect.poll(() => Object.values(app.review.pageState(quiet.name).decisions).every(d => d === 'accepted')).toBe(true);
+
+    // Open the broken-baseline sourceOnly task inside Papilot: no auto inline
+    // source, clear banner + notice, and Show LaTeX source opens workspace editor.
+    await page.evaluate(() => { localStorage.setItem('papilot:task', 'fix-baseline'); localStorage.setItem('papilot:project', 'broken-paper'); });
+    await page.reload();
+    await expect(viewer.locator('.change').first()).toBeVisible({ timeout: 60000 });
+    await expect(viewer.locator('.change .source'), 'sourceOnly round never auto-opens inline source in Papilot').toHaveCount(0);
+    await expect(viewer.locator('summary').filter({ hasText: 'No PDF comparison: the text before these changes could not be compiled.' })).toBeVisible();
+    await expect(viewer.locator('.banner-with-action').getByRole('button', { name: 'Retry comparison', exact: true })).toBeVisible();
+    await expect(viewer.locator('.comparison-notice[data-reason="baseline-failed"]')).toContainText('No PDF comparison because the previous version could not be compiled.');
+    await page.screenshot({ path: 'test-results/source-only-papilot-light.png' });
+    await viewer.locator('.comparison-notice').getByRole('button', { name: 'Show LaTeX source', exact: true }).click();
+    await expect(side.getByRole('tab', { name: 'main.tex' })).toHaveAttribute('aria-selected', 'true');
+    await expect(viewer.locator('.change .source'), 'sourceOnly explicit source routes to workspace editor').toHaveCount(0);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(viewer.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.screenshot({ path: 'test-results/source-only-papilot-dark.png' });
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(viewer.locator('html')).toHaveAttribute('data-theme', 'light');
+    await side.locator('.side-tab-close').click();
+    // Hosted Retry comparison on the sourceOnly banner triggers a clean rebuild without error toasts.
+    const retryResponse = page.waitForResponse(response => response.url().endsWith('/api/tasks/fix-baseline/publish') && response.request().method() === 'POST');
+    await viewer.locator('.banner-with-action').getByRole('button', { name: 'Retry comparison', exact: true }).click();
+    assert.equal((await retryResponse).status(), 200);
+    await appBroken.publisher.join();
+    await expect(page.locator('.toast')).toHaveCount(0);
+    await expect(viewer.locator('.change .source')).toHaveCount(0);
+
+    // Verify mobile layout in both themes and explicit inline fallback on phone.
+    const mobilePage = await browser.newPage({ locale: 'en-US', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    mobilePage.on('pageerror', error => errors.push(error.message));
+    mobilePage.on('response', response => { if (response.status() >= 500) errors.push(`${response.status()} ${response.url()}`); });
+    try {
+      await mobilePage.addInitScript(() => { localStorage.setItem('papilot:task', 'fix-baseline'); localStorage.setItem('papilot:project', 'broken-paper'); localStorage.setItem('papilot:language', 'en'); });
+      await mobilePage.goto(`http://127.0.0.1:${listener.port}`);
+      const mobileViewer = mobilePage.frameLocator('.review-frame');
+      await expect(mobileViewer.locator('.change').first()).toBeVisible({ timeout: 60000 });
+      await expect(mobileViewer.locator('.change .source')).toHaveCount(0);
+      assert.ok(await mobileViewer.locator('#paper').evaluate(el => el.scrollWidth - el.clientWidth <= 1), 'no horizontal overflow on mobile light');
+      await mobilePage.screenshot({ path: 'test-results/source-only-mobile-light.png' });
+      await mobilePage.emulateMedia({ colorScheme: 'dark' });
+      await expect(mobilePage.locator('html')).toHaveAttribute('data-theme', 'dark');
+      await expect(mobileViewer.locator('html')).toHaveAttribute('data-theme', 'dark');
+      assert.ok(await mobileViewer.locator('#paper').evaluate(el => el.scrollWidth - el.clientWidth <= 1), 'no horizontal overflow on mobile dark');
+      await mobilePage.screenshot({ path: 'test-results/source-only-mobile-dark.png' });
+      await mobileViewer.locator('.comparison-notice').getByRole('button', { name: 'Show LaTeX source', exact: true }).click();
+      await expect(mobileViewer.locator('.change .source'), 'mobile falls back to inline source on explicit request').toBeVisible();
+      await mobileViewer.locator('.change.current .dock button.accept').click();
+      await expect.poll(() => appBroken.review.pageState(fixTask.name).decisions.c001).toBe('accepted');
+    } finally {
+      await mobilePage.close();
+    }
+  } finally {
+    await engineBroken?.close();
+    await fBroken.close();
+  }
+
   assert.deepEqual(errors, []);
-  console.log('PASS: LaTeX on a change opens its whole file in the editor beside the chat, which shows the round\'s changes as the review\'s cards (title, Accept, Reject and Comment over the lines before and after) acting through the review; rejected text comes back and the rest stay placed; the caret and the review follow each other; ⌘S saves into the task and reviews it in a new round; the chat stays as it was');
+  console.log('PASS: LaTeX on a change opens its whole file in the editor beside the chat, which shows the round\'s changes as the review\'s cards (title, Accept, Reject and Comment over the lines before and after) acting through the review; rejected text comes back and the rest stay placed; the caret and the review follow each other; ⌘S saves into the task and reviews it in a new round; identical, unmapped and baseline-failed changes never auto-open inline source cards; the chat stays as it was');
 } finally {
   await browser.close();
   await server.close(); await engine.close(); workspace.close(); store.close();

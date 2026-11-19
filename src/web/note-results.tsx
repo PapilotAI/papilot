@@ -459,7 +459,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
       <textarea ref={commentInput} rows={2} aria-label={t('Comment on {label}', { label: editing.option!.label })} placeholder={t('What should change here?')} value={editing.comment} readOnly={feedback.busy} onChange={event => draft.edit(editing.id, event.target.value)} onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') setEditor(null); }}/>
       <button type="button" className="icon-button" aria-label={t('Close comment')} title={t('Close comment')} onClick={() => setEditor(null)}><Icon name="close" size={14}/></button>
     </div>}
-    {displayed && (source ? <NoteOptionSource detail={displayed} focus={focusedUnits} stale={!comparison}/> : <NoteOptionDiff detail={displayed} focus={focusedUnits} stale={!comparison}/>)}
+    {displayed && (source ? <NoteOptionSource detail={displayed} focus={focusedUnits} stale={!comparison}/> : <NoteOptionDiff detail={displayed} focus={focusedUnits} stale={!comparison} onShowSource={comparison ? () => setSource(true) : undefined}/>)}
     {!displayed && !loadFailure && !error && <p className="note-option-hint" role="status"><span className="spinner"/>{t('Loading PDF comparison…')}</p>}
     {loadFailure && <p className="note-option-error" role="alert">{optionError(loadFailure)} <button type="button" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></p>}
     {(saving || previewBusy) && <span className="sr-only" role="status">{saving ? t('Saving choice…') : t('Preparing this option’s PDF diff…')}</span>}

@@ -696,8 +696,8 @@ export class Publisher {
       latest.summary.buildSettings === buildSettings &&
       (latest.summary.indirect ?? true) === indirect
     )
-      // A round whose render failed or was interrupted renders again.
-      return (latest.visuals ?? "ready") === "ready"
+      // A round whose render failed, was interrupted, or fell back to source-only renders again.
+      return (latest.visuals ?? "ready") === "ready" && !latest.summary.sourceOnly
         ? { result: { outcome: "unchanged", round: latest.number, changes: latest.units.length } }
         : { round: latest };
     const files = await app.repo.changedFilesAsync(before, after);

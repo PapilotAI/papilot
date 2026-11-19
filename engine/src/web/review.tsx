@@ -23,6 +23,7 @@ import { PdfStrip } from "./PdfStrip.tsx";
 import { SourceEditor } from "./SourceEditor.tsx";
 import { ChangeMap } from "./ChangeMap.tsx";
 import { CompilationErrors } from "./CompilationErrors.tsx";
+import { sourceActionLabel, unavailableComparisonMessage, type UnavailableComparisonReason } from "./comparison-notice.ts";
 import { placeable, type PlacedChange } from "./paper.ts";
 // pdf.js loads only when the full paper is shown.
 const FullPaper = lazy(() => import("./FullPaper.tsx").then((module) => ({ default: module.FullPaper })));
@@ -47,7 +48,7 @@ import {
 } from "./references.tsx";
 import { bindingLabel, readShortcuts, resolveShortcuts, shortcutAction, SHORTCUT_EVENT, SHORTCUT_STORAGE } from "./shortcuts.ts";
 import { sendsMessage } from "./send-key.ts";
-import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SelectSource, type SourceSaved } from "./review-events.ts";
+import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SelectSource, type SourceSaved } from "./review-events.ts";
 import { DecisionQueue, Unreachable, withQueued, type QueuedDecision } from "./decision-queue.ts";
 import {
   STATE,
@@ -186,6 +187,10 @@ export function ReviewApp({
     [toast, setToast] = useState(""),
     [noteFocus, setNoteFocus] = useState<{ round: number; units: string[] | null } | null>(null),
     [openSource, setOpenSource] = useState<Set<number>>(new Set()),
+    [retryingComparison, setRetryingComparison] = useState(false),
+    [hostRetry, setHostRetry] = useState<string>(
+      () => (typeof document !== "undefined" ? document.documentElement.dataset.papilotRetry ?? "" : ""),
+    ),
     // Places past the first few of each edit, keyed by round and edit.
     [more, setMore] = useState<
       Record<string, PlaceView[] | "loading" | { error: string }>
@@ -212,7 +217,7 @@ export function ReviewApp({
   const detail = previewing && optionPreview?.detail ? optionPreview.detail : publishedDetail;
   const previewNow = useRef(previewing); previewNow.current = previewing;
   const paper = useRef<HTMLElement>(null),
-    editedPlace = useRef<{ file: string; line: number; offset: number; paper: boolean } | null>(null),
+    editedPlace = useRef<{ file: string; line: number; offset: number; paper: boolean; inline: boolean } | null>(null),
     epoch = useRef(0),
     scrollUntil = useRef(0),
     // How far into the current change the author had read, restored once
@@ -644,12 +649,24 @@ export function ReviewApp({
     const saved = (event: Event) => {
       const { state: next, file, line } = (event as CustomEvent<SourceSaved>).detail;
       const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${current}"]`);
-      editedPlace.current = { file, line: line + 1, offset: article ? past(article) : 0, paper: paperView };
+      editedPlace.current = { file, line: line + 1, offset: article ? past(article) : 0, paper: paperView, inline: false };
       epoch.current++; setState(next);
     };
     window.addEventListener(SOURCE_SAVED_EVENT, saved);
     return () => window.removeEventListener(SOURCE_SAVED_EVENT, saved);
   });
+  const hostRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setHostRetry(root.dataset.papilotRetry ?? "");
+    sync();
+    const watcher = new MutationObserver(sync);
+    watcher.observe(root, { attributes: true, attributeFilter: ["data-papilot-retry"] });
+    return () => {
+      watcher.disconnect();
+      if (hostRetryTimer.current) clearTimeout(hostRetryTimer.current);
+    };
+  }, []);
   useEffect(() => {
     let cancelled = false,
       polling = false,
@@ -744,7 +761,7 @@ export function ReviewApp({
           setState(loadedState);
           setDetail(loaded);
           setCurrent(index);
-          setOpenSource(new Set(same ? [...previous.open].map(moved).filter((i) => i >= 0) : edited && index >= 0 ? [index] : []));
+          setOpenSource(new Set(same ? [...previous.open].map(moved).filter((i) => i >= 0) : edited?.inline && index >= 0 ? [index] : []));
           editedPlace.current = null;
           if (same && index >= 0)
             requestAnimationFrame(() => {
@@ -963,9 +980,53 @@ export function ReviewApp({
     if (!composer || !draft.trim() || busy) return;
     await decide("comment", composer.changes, draft.trim());
   }
+  const standaloneRetry = !transport && !location.pathname.startsWith("/review/");
+  const hostRetryAvailable = hostRetry === "1" || hostRetry === "busy";
+  const hostRetryBusy = hostRetry === "busy";
+  const canRetryComparison = Boolean(
+    latest &&
+    !changes &&
+    !previewing &&
+    !state?.closed &&
+    !state?.decisionLock &&
+    !state?.rejectLock &&
+    state?.state !== "building" &&
+    (hostRetryAvailable || standaloneRetry),
+  );
+  const retryDisabled = retryingComparison || hostRetryBusy;
+  async function retryComparison() {
+    if (!canRetryComparison || retryDisabled) return;
+    if (!window.dispatchEvent(new Event(RETRY_COMPARISON_EVENT, { cancelable: true }))) {
+      setRetryingComparison(true);
+      pollNow.current();
+      if (hostRetryTimer.current) clearTimeout(hostRetryTimer.current);
+      hostRetryTimer.current = setTimeout(() => {
+        hostRetryTimer.current = null;
+        setRetryingComparison(false);
+      }, 1500);
+      return;
+    }
+    if (!standaloneRetry) return;
+    setRetryingComparison(true);
+    try {
+      await api("/publish", {});
+      pollNow.current();
+    } catch (error) {
+      setToast((error as Error).message);
+    } finally {
+      setRetryingComparison(false);
+    }
+  }
   function toggleSource(index: number) {
     // A workspace with its own editor shows the source there, not on the page.
-    if (!openSource.has(index) && offerSource((stops[index]?.units ?? []).map((id) => units.get(id)!).filter(Boolean))) return;
+    if (!openSource.has(index) && offerSource((stops[index]?.units ?? []).map((id) => units.get(id)!).filter(Boolean))) {
+      if (index !== current) {
+        reached.current = "source";
+        setCurrent(index);
+      }
+      return;
+    }
+    if (openSource.has(index)) editedPlace.current = null;
     setOpenSource((previous) => {
       const next = new Set(previous);
       if (next.has(index)) next.delete(index);
@@ -1305,10 +1366,29 @@ export function ReviewApp({
             : undefined
           : resolvedSide(block.units, decisions) ||
             (status === "commented" ? "after" : undefined),
-      source =
-        openSource.has(index) ||
-        (!bib.length && !block.waiting &&
-          (block.identical || (!block.before.length && !block.after.length))),
+      source = openSource.has(index),
+      hasStrips = block.before.length > 0 || block.after.length > 0,
+      blockEffects = known.filter((u) => u.effects && firstStop.get(u.id) === index),
+      hasEffects = blockEffects.length > 0,
+      binaryOnly = known.length > 0 && known.every((u) => u.kind === "binary"),
+      hasSourceText = known.some((u) => u.kind !== "binary"),
+      unavailableReason: UnavailableComparisonReason | null =
+        !block.waiting && !bib.length
+          ? block.identical && !hasEffects
+            ? "identical"
+            : !hasStrips && detail?.sourceOnly
+              ? "baseline-failed"
+              : !hasStrips && !hasEffects
+                ? (binaryOnly ? "binary" : "unmapped")
+                : null
+          : null,
+      unavailableNotice = unavailableReason
+        ? {
+            reason: unavailableReason,
+            message: unavailableComparisonMessage(unavailableReason),
+            sourceAction: hasSourceText,
+          }
+        : null,
       remarks = [
         ...new Set(
           block.units.map((id) => state?.comments[id]).filter(Boolean),
@@ -1440,7 +1520,7 @@ export function ReviewApp({
             title={[t('Show LaTeX source'), shortcuts.source.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
             aria-keyshortcuts={shortcuts.source.join(' ')}
             aria-expanded={source}
-            onClick={() => toggleSource(index)}
+            onClick={(event) => { event.stopPropagation(); toggleSource(index); }}
           >
             {block.units.length > 1
               ? t("{n} edits · LaTeX", { n: block.units.length })
@@ -1462,20 +1542,66 @@ export function ReviewApp({
           </div>
         )}
         {block.waiting && (
-          <p className="comparison-waiting" data-state={detail?.rendering ?? "pending"}>
-            {detail?.rendering !== "failed" && detail?.round === state?.latest && <span className="pulse" aria-hidden="true" />}
-            {waitingLabel()}
-          </p>
+          <div
+            className="comparison-waiting"
+            data-state={
+              detail?.rendering === "failed"
+                ? "failed"
+                : detail?.round !== state?.latest
+                  ? "unavailable"
+                  : detail?.rendering ?? "pending"
+            }
+          >
+            <span className="comparison-waiting-message">
+              {detail?.rendering !== "failed" && detail?.round === state?.latest && <span className="pulse" aria-hidden="true" />}
+              {waitingLabel()}
+            </span>
+            {(detail?.rendering === "failed" || detail?.round !== state?.latest) && (
+              <span className="comparison-notice-actions">
+                {detail?.rendering === "failed" && canRetryComparison && (
+                  <button
+                    type="button"
+                    className="comparison-action"
+                    disabled={retryDisabled}
+                    aria-busy={retryDisabled || undefined}
+                    onClick={(event) => { event.stopPropagation(); void retryComparison(); }}
+                  >
+                    {t("Retry comparison")}
+                  </button>
+                )}
+                {hasSourceText && (
+                  <button
+                    type="button"
+                    className="comparison-action"
+                    onClick={(event) => { event.stopPropagation(); toggleSource(index); }}
+                  >
+                    {sourceActionLabel(source)}
+                  </button>
+                )}
+              </span>
+            )}
+          </div>
         )}
         {!block.identical &&
           !block.reflow &&
           block.before.length > 0 &&
           images(block.before, "before")}
         {block.after.length > 0 && images(block.after, "after")}
-        {block.identical && !bib.length && (
-          <p className="caption">
-            {t("No visible change in the PDF; see the LaTeX source.")}
-          </p>
+        {unavailableNotice && (
+          <div className="comparison-notice" data-reason={unavailableNotice.reason}>
+            <p className="comparison-notice-text">{unavailableNotice.message}</p>
+            {unavailableNotice.sourceAction && (
+              <span className="comparison-notice-actions">
+                <button
+                  type="button"
+                  className="comparison-action"
+                  onClick={(event) => { event.stopPropagation(); toggleSource(index); }}
+                >
+                  {sourceActionLabel(source)}
+                </button>
+              </span>
+            )}
+          </div>
         )}
         {block.reflow && (
           <p className="caption">
@@ -1527,7 +1653,7 @@ export function ReviewApp({
                   onOpen={() => offerSource([unit])}
                   onSaved={next => {
                     const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${index}"]`);
-                    editedPlace.current = { file: unit.file, line: unit.new_start, offset: article ? past(article) : 0, paper: paperView };
+                    editedPlace.current = { file: unit.file, line: unit.new_start, offset: article ? past(article) : 0, paper: paperView, inline: true };
                     epoch.current++; setState(next);
                   }}
                   title={<span className="source-location" title={unit.file}>
@@ -1592,9 +1718,7 @@ export function ReviewApp({
             ))}
           </div>
         )}
-        {known
-          .filter((u) => u.effects && firstStop.get(u.id) === index)
-          .map((u) => effects(u, Boolean(resolved)))}
+        {blockEffects.map((u) => effects(u, Boolean(resolved)))}
       </article>
     );
   }
@@ -2052,7 +2176,21 @@ export function ReviewApp({
             <CompilationErrors title={t("The revised text has compilation errors.")} errors={detail.revisedErrors} />
           ) : null}
           {detail?.baselineErrors?.length ? (
-            <CompilationErrors title={detail.sourceOnly ? t("Source only") : t("The text before these changes has compilation errors. Its pages show what LaTeX typeset after skipping them.")} errors={detail.baselineErrors} />
+            <CompilationErrors
+              title={detail.sourceOnly ? t("No PDF comparison: the text before these changes could not be compiled.") : t("The text before these changes has compilation errors. Its pages show what LaTeX typeset after skipping them.")}
+              errors={detail.baselineErrors}
+              action={detail.sourceOnly && canRetryComparison ? (
+                <button
+                  type="button"
+                  className="comparison-action"
+                  disabled={retryDisabled}
+                  aria-busy={retryDisabled || undefined}
+                  onClick={() => void retryComparison()}
+                >
+                  {t("Retry comparison")}
+                </button>
+              ) : undefined}
+            />
           ) : null}
           {detail?.references &&
             (detail.references.entries.length > 0 ||

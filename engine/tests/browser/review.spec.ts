@@ -834,3 +834,249 @@ test("a whitespace edit beside visible ones does not call the change invisible",
   await expect(page.locator(`.change[data-stop="${mixed}"] .change-kind`)).toHaveCount(0);
   await expect(page.locator(`.change[data-stop="${invisible}"] .change-kind`)).toHaveText("No visible change");
 });
+
+test("identical and strip-free changes stay out of inline source until explicitly requested", async ({ page }) => {
+  let identicalStop = -1, unmappedStop = -1, effectsStop = -1, binaryStop = -1;
+  await page.route("**/rounds/1", async route => {
+    const response = await route.fetch(), detail = await response.json();
+    const blocks = detail.sections.flatMap((s: { blocks: { kind: string; units: string[]; before: unknown[]; after: unknown[]; identical?: boolean }[] }) =>
+      s.blocks.filter(b => b.kind === "change"));
+    const byId = new Map(detail.units.map((u: { id: string }) => [u.id, u]));
+    const textBlocks = blocks.filter((b: { units: string[] }) =>
+      b.units.every(id => {
+        const u = byId.get(id) as { kind: string; status: string; text_ops?: unknown[] };
+        return u.kind === "text" && u.status !== "deleted" && Boolean(u.text_ops?.length);
+      }));
+    expect(textBlocks.length).toBeGreaterThanOrEqual(4);
+    const [identicalBlock, unmappedBlock, effectsBlock, binaryBlock] = textBlocks;
+    identicalStop = blocks.indexOf(identicalBlock);
+    unmappedStop = blocks.indexOf(unmappedBlock);
+    effectsStop = blocks.indexOf(effectsBlock);
+    binaryStop = blocks.indexOf(binaryBlock);
+    const sampleStrip = identicalBlock.after[0] ?? identicalBlock.before[0];
+
+    // 1. Identical rendered output with a PDF strip.
+    identicalBlock.identical = true;
+    identicalBlock.before = [];
+    identicalBlock.after = sampleStrip ? [sampleStrip] : [];
+    for (const id of identicalBlock.units) (byId.get(id) as { visual: string }).visual = "identical";
+
+    // 2. Unmapped source change with no PDF strips and no indirect effects.
+    unmappedBlock.identical = false;
+    unmappedBlock.before = [];
+    unmappedBlock.after = [];
+    for (const id of unmappedBlock.units) {
+      const unit = byId.get(id) as { visual: string; effects?: unknown };
+      unit.visual = "unmapped";
+      delete unit.effects;
+    }
+
+    // 3. Unmapped source change with related PDF effects elsewhere.
+    effectsBlock.identical = false;
+    effectsBlock.before = [];
+    effectsBlock.after = [];
+    const effectUnit = byId.get(effectsBlock.units[0]) as { visual: string; effects?: unknown };
+    effectUnit.visual = "unmapped";
+    effectUnit.effects = {
+      total: 1,
+      verified: true,
+      shown: [{ page: "1", section: "1 Design", before: [], after: sampleStrip ? [sampleStrip] : [] }],
+    };
+
+    // 4. Strip-free binary file change.
+    binaryBlock.identical = false;
+    binaryBlock.before = [];
+    binaryBlock.after = [];
+    binaryBlock.units = [binaryBlock.units[0]];
+    const binaryUnit = byId.get(binaryBlock.units[0]) as { kind: string; visual: string; effects?: unknown };
+    binaryUnit.kind = "binary";
+    binaryUnit.visual = "unmapped";
+    delete binaryUnit.effects;
+
+    await route.fulfill({ response, json: detail });
+  });
+
+  await page.reload();
+  await expect(page.locator(".change").first()).toBeVisible();
+  // No inline source card opens automatically for any of the four cases.
+  await expect(page.locator(".change .source")).toHaveCount(0);
+
+  const identicalCard = page.locator(`.change[data-stop="${identicalStop}"]`);
+  await expect(identicalCard.locator('.comparison-notice[data-reason="identical"]')).toContainText("No visible change in the PDF.");
+  await expect(identicalCard.locator('.side.after.identical')).toBeVisible();
+  const identicalSourceButton = identicalCard.locator('.comparison-notice').getByRole("button", { name: "Show LaTeX source", exact: true });
+  await expect(identicalSourceButton).toBeVisible();
+
+  const unmappedCard = page.locator(`.change[data-stop="${unmappedStop}"]`);
+  await expect(unmappedCard.locator('.comparison-notice[data-reason="unmapped"]')).toContainText("No PDF preview for this source change.");
+  await expect(unmappedCard.locator('.comparison-notice').getByRole("button", { name: "Show LaTeX source", exact: true })).toBeVisible();
+
+  const effectsCard = page.locator(`.change[data-stop="${effectsStop}"]`);
+  await expect(effectsCard.locator('.comparison-notice')).toHaveCount(0);
+  await expect(effectsCard.locator('.effects')).toBeVisible();
+  await expect(effectsCard.locator('.source')).toHaveCount(0);
+
+  const binaryCard = page.locator(`.change[data-stop="${binaryStop}"]`);
+  await expect(binaryCard.locator('.comparison-notice[data-reason="binary"]')).toContainText("Binary file changed. No PDF comparison is available.");
+  await expect(binaryCard.locator('.comparison-notice button')).toHaveCount(0);
+
+  // Explicit source inspection opens inline source in standalone mode and toggles back cleanly.
+  await identicalSourceButton.click();
+  await expect(identicalCard.locator(".source")).toBeVisible();
+  await expect(identicalCard.locator('.comparison-notice').getByRole("button", { name: "Hide LaTeX source", exact: true })).toBeVisible();
+  await identicalCard.locator('.comparison-notice').getByRole("button", { name: "Hide LaTeX source", exact: true }).click();
+  await expect(identicalCard.locator(".source")).toHaveCount(0);
+
+  // When a host intercepts OPEN_SOURCE_EVENT, explicit requests route there without opening inline source.
+  await page.evaluate(() => {
+    (window as unknown as { openedSources?: unknown[] }).openedSources = [];
+    window.addEventListener("latex-review:open-source", (event) => {
+      event.preventDefault();
+      (window as unknown as { openedSources: unknown[] }).openedSources.push((event as CustomEvent).detail);
+    });
+  });
+  await unmappedCard.locator('.comparison-notice').getByRole("button", { name: "Show LaTeX source", exact: true }).click();
+  await expect(unmappedCard.locator(".source")).toHaveCount(0);
+  expect(await page.evaluate(() => ((window as unknown as { openedSources?: unknown[] }).openedSources ?? []).length)).toBe(1);
+
+  // Pending decisions remain discoverable and work cleanly with Accept and Undo.
+  const total = await totalUnits(page);
+  await unmappedCard.click();
+  await expect(unmappedCard).toHaveClass(/\bcurrent\b/);
+  await unmappedCard.locator(".dock button.accept").click();
+  await expect(unmappedCard).toHaveAttribute("data-state", "accepted");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+z" : "Control+z");
+  await expect(page.getByRole("progressbar", { name: `0 of ${total} decided`, exact: true })).toBeVisible();
+  await expect(unmappedCard.locator('.comparison-notice[data-reason="unmapped"]')).toBeVisible();
+
+  // Check desktop & mobile layouts without horizontal overflow.
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const overflow = await page.locator("#paper").evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: `.cache/unavailable-notices-${width}.png` });
+  }
+});
+
+test("baseline-failed sourceOnly and failed-comparison states show recovery actions without auto-opening source", async ({ page }) => {
+  let mode: "sourceOnly" | "pending" | "failed" | "failed-commented" | "ready" = "sourceOnly";
+  let publishRequests = 0;
+  let currentRound = 1;
+
+  await page.route("**/api/tasks/tighten-design/state*", async route => {
+    const response = await route.fetch({ url: route.request().url().replace(/([?&]round=)\d+/, "$11") });
+    const state = await response.json();
+    state.round = currentRound;
+    state.latest = currentRound;
+    if (mode === "pending") {
+      state.state = "building";
+      state.rendering = "pending";
+      state.waiting = Object.keys(state.decisions);
+    } else if (mode === "failed" || mode === "failed-commented") {
+      state.state = "build_failed";
+      state.rendering = "failed";
+      state.waiting = Object.keys(state.decisions);
+      if (mode === "failed-commented") {
+        const firstId = Object.keys(state.decisions)[0];
+        if (firstId) {
+          state.decisions[firstId] = "commented";
+          state.comments[firstId] = "Check baseline compile error";
+        }
+      }
+    }
+    await route.fulfill({ response, json: state });
+  });
+  await page.route("**/api/tasks/tighten-design/rounds/*", async route => {
+    const response = await route.fetch({ url: route.request().url().replace(/\/rounds\/\d+$/, "/rounds/1") });
+    const detail = { ...(await response.json()), round: currentRound };
+    if (mode === "sourceOnly") {
+      const units = detail.units.slice(0, 1).map((u: object) => ({ ...u, visual: "unmapped", pages: [], section: null, effects: undefined }));
+      await route.fulfill({
+        response,
+        json: {
+          ...detail,
+          units,
+          sections: [],
+          loose: [{ kind: "change", units: [units[0].id], identical: false, before: [], after: [] }],
+          sourceOnly: true,
+          baselineErrors: ["main.tex:2: File `missing.tex' not found."],
+          pdf: undefined,
+        },
+      });
+      return;
+    }
+    if (mode === "pending" || mode === "failed" || mode === "failed-commented") {
+      const units = detail.units.slice(0, 1).map((u: object) => ({ ...u, waiting: true, effects: undefined }));
+      await route.fulfill({
+        response,
+        json: {
+          ...detail,
+          rendering: mode === "pending" ? "pending" : "failed",
+          units,
+          sections: [],
+          loose: [{ kind: "change", units: [units[0].id], identical: false, before: [], after: [], waiting: true }],
+          pdf: undefined,
+        },
+      });
+      return;
+    }
+    await route.fulfill({ response, json: detail });
+  });
+  await page.route("**/api/tasks/tighten-design/publish", async route => {
+    publishRequests++;
+    currentRound++;
+    mode = "ready";
+    await route.fulfill({ json: { ok: true } });
+  });
+
+  // 1. Baseline-failed sourceOnly round: no auto source card, clear banner + card notice + actions.
+  await page.reload();
+  await expect(page.locator(".change").first()).toBeVisible();
+  await expect(page.locator(".change .source")).toHaveCount(0);
+  await expect(page.locator("summary").filter({ hasText: "No PDF comparison: the text before these changes could not be compiled." })).toBeVisible();
+  const bannerRetry = page.locator(".banner-with-action").getByRole("button", { name: "Retry comparison", exact: true });
+  await expect(bannerRetry).toBeVisible();
+  const card = page.locator('.change[data-stop="0"]');
+  await expect(card.locator('.comparison-notice[data-reason="baseline-failed"]')).toContainText("No PDF comparison because the previous version could not be compiled.");
+  await expect(card.locator('.comparison-notice').getByRole("button", { name: "Show LaTeX source", exact: true })).toBeVisible();
+  await expect(card.locator(".dock button.accept")).toBeEnabled();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const overflow = await page.locator("#paper").evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: `.cache/source-only-${width}.png` });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await bannerRetry.click();
+  await expect.poll(() => publishRequests).toBe(1);
+  await expect(page.locator(".pdf-strip img").first()).toBeVisible({ timeout: 10000 });
+  await expect(page.locator(".change .source")).toHaveCount(0);
+
+  // 2. Comparison preparing (pending): waiting indicator, no auto source card, decisions gated.
+  mode = "pending";
+  await page.reload();
+  await expect(page.locator('.comparison-waiting[data-state="pending"]')).toContainText("PDF comparison in progress");
+  await expect(page.locator(".change .source")).toHaveCount(0);
+  await expect(page.locator('.change[data-stop="0"] button.accept')).toHaveCount(0);
+
+  // 3. Commented waiting/failed change collapses cleanly without leaving an orphaned waiting bar.
+  mode = "failed-commented";
+  await page.reload();
+  await expect(page.locator('.change[data-stop="0"]')).toHaveClass(/reviewed-change/);
+  await expect(page.locator('.change[data-stop="0"] .comparison-waiting')).toBeHidden();
+
+  // 4. Comparison failed -> explicit Show LaTeX source works on demand, and Retry comparison recovers to full PDF strips.
+  mode = "failed";
+  await page.reload();
+  const failed = page.locator('.comparison-waiting[data-state="failed"]');
+  await expect(failed).toContainText("PDF comparison failed");
+  await expect(page.locator(".change .source")).toHaveCount(0);
+  await failed.getByRole("button", { name: "Show LaTeX source", exact: true }).click();
+  await expect(page.locator('.change[data-stop="0"] .source')).toBeVisible();
+  await failed.getByRole("button", { name: "Hide LaTeX source", exact: true }).click();
+  await expect(page.locator('.change[data-stop="0"] .source')).toHaveCount(0);
+  await failed.getByRole("button", { name: "Retry comparison", exact: true }).click();
+  await expect.poll(() => publishRequests).toBe(2);
+  await expect(page.locator(".pdf-strip img").first()).toBeVisible({ timeout: 10000 });
+  await expect(page.locator(".change .source")).toHaveCount(0);
+});
