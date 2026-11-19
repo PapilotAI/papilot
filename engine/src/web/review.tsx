@@ -1019,14 +1019,12 @@ export function ReviewApp({
     }
   }
   function toggleSource(index: number) {
-    // A workspace with its own editor shows the source there, not on the page.
-    if (!openSource.has(index) && offerSource((stops[index]?.units ?? []).map((id) => units.get(id)!).filter(Boolean))) {
-      if (index !== current) {
-        reached.current = "source";
-        setCurrent(index);
-      }
-      return;
+    if (index !== current) {
+      reached.current = "source";
+      select(index, false);
     }
+    // A workspace with its own editor shows the source there, not on the page.
+    if (!openSource.has(index) && offerSource((stops[index]?.units ?? []).map((id) => units.get(id)!).filter(Boolean))) return;
     if (openSource.has(index)) editedPlace.current = null;
     setOpenSource((previous) => {
       const next = new Set(previous);

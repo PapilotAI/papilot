@@ -958,6 +958,32 @@ test("identical and strip-free changes stay out of inline source until explicitl
   }
 });
 
+for (const width of [1440, 390]) test(`inline source selects its change before keyboard decisions at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1200 });
+  await page.route("**/rounds/1", async route => {
+    const response = await route.fetch(), detail = await response.json();
+    const units = detail.units.slice(0, 2);
+    await route.fulfill({ response, json: { ...detail, units, sections: [], loose: units.map((unit: { id: string }) => ({ kind: "change", units: [unit.id], before: [], after: [], identical: true })) } });
+  });
+  await page.reload();
+  const first = page.locator('.change[data-stop="0"]'), second = page.locator('.change[data-stop="1"]');
+  await expect(first).toHaveClass(/current/);
+  await second.locator('.source-toggle').click();
+  await expect(second.locator('.source')).toBeVisible();
+  await expect(second).toHaveClass(/current/);
+  await expect(first).not.toHaveClass(/current/);
+  const chosen = (await second.getAttribute('data-units'))!.split(' ');
+  const request = page.waitForRequest(request => request.url().endsWith('/decide') && request.method() === 'POST');
+  await second.focus();
+  await page.keyboard.press('a');
+  expect((await request).postDataJSON()).toMatchObject({ action: 'accept', changes: chosen });
+  await expect(second).toHaveAttribute('data-state', 'accepted');
+  await expect(first).toHaveAttribute('data-state', 'pending');
+  // The suite shares its review server; restore the decision before the next case.
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+  await expect(second).toHaveAttribute('data-state', 'pending');
+});
+
 test("baseline-failed sourceOnly and failed-comparison states show recovery actions without auto-opening source", async ({ page }) => {
   let mode: "sourceOnly" | "pending" | "failed" | "failed-commented" | "ready" = "sourceOnly";
   let publishRequests = 0;
