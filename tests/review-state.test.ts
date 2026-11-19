@@ -131,6 +131,9 @@ test('viewer locks buttons and keyboard decisions, permits comments, and follows
     await page.goto(`${origin}/?task=example`);
     await expect(page.locator('.change.current')).toBeVisible();
     await expect(page.locator('#review-lock')).toContainText('Pause this task');
+    await expect(page.locator('.change.current .source')).toHaveCount(0);
+    await page.locator('.change.current .comparison-notice').getByRole('button', { name: 'Show LaTeX source', exact: true }).click();
+    await expect(page.locator('.change.current .source')).toBeVisible();
     const decisions = page.locator('button.accept, button.reject, button.undo');
     // A key pressed before the viewer listens is lost; once the composer is
     // open, C does nothing more, so pressing again is safe.
