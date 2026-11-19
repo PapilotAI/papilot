@@ -464,5 +464,15 @@
   "The selected agent does not support read-only AI review. Select another agent.": "選択したエージェントは読み取り専用の AI レビューに対応していません。別のエージェントを選択してください。",
   "The selected agent does not support read-only tasks through ACP. Select another agent.": "選択したエージェントは ACP 経由の読み取り専用タスクに対応していません。別のエージェントを選択してください。",
   "Choose latexmk or PhiTeX.": "latexmk または PhiTeX を選択してください。",
-  "Enable collaboration mode in Settings → Experiments first.": "まず設定 → 実験的な機能で協調モードを有効にしてください。"
+  "Enable collaboration mode in Settings → Experiments first.": "まず設定 → 実験的な機能で協調モードを有効にしてください。",
+  "Choose a UTF-8 text file up to 2 MB.": "2 MB 以下の UTF-8 テキストファイルを選択してください。",
+  "Choose a file without hard links.": "ハードリンクのないファイルを選択してください。",
+  "Enter an absolute path to the SSH identity file.": "SSH 秘密鍵ファイルの絶対パスを入力してください。",
+  "Enter an absolute remote folder path or a path starting with ~/.": "リモートフォルダーの絶対パスか、~/ で始まるパスを入力してください。",
+  "Invalid SSH destination.": "SSH 接続先が無効です。",
+  "SSH connection not found.": "SSH 接続が見つかりません。",
+  "The remote file changed. Copy your edits before reloading.": "リモートファイルが変更されました。再読み込みする前に編集内容をコピーしてください。",
+  "This file uses mixed line endings. Normalize them before editing.": "改行コードが混在しています。編集前に統一してください。",
+  "Unexpected SSH response. Check that the remote shell can run Python 3.": "SSH の応答が想定外です。リモートシェルで Python 3 が動作するか確認してください。",
+  "Invalid page number.": "ページ番号が無効です。"
 }

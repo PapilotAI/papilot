@@ -1898,5 +1898,55 @@
     "revision": "89e50cb5d7211c46f0287aa31758ed9324d471cacd2ef48a1d1574df4bffc1b5",
     "textHash": "f3f5920002d695ec783067042d57a5c1cf581c67ee01146fca365d2a52e4cf92",
     "model": "gemini-4-argon-medium"
+  },
+  "Choose a UTF-8 text file up to 2 MB.": {
+    "revision": "ae6babfe05352048c49248b6e88391a3e48218c2dd4ea088722e8482ffb67d18",
+    "textHash": "e1eae8b1dd48835220e93d1f1f388a1f2c76df986edd8a77694bb1821edb7039",
+    "model": "gpt-6"
+  },
+  "Choose a file without hard links.": {
+    "revision": "99cdf3f1ba0d3bc0d204c4a67aba42023dd2a180e3c66cc86562681e1d88f9d8",
+    "textHash": "b29efed6adabc37822b9bd0a2a4aa147884a77ece72382a5f12ba140ffc507fa",
+    "model": "gpt-6"
+  },
+  "Enter an absolute path to the SSH identity file.": {
+    "revision": "0180ab29a8d80754f9944445f1f7c9f4a74fb5f62918a6e83609229add6cd9df",
+    "textHash": "2528159a915a5dd0594c6ebcd59712e9219ea52cb49eb66e530ce3926d6e3720",
+    "model": "gpt-6"
+  },
+  "Enter an absolute remote folder path or a path starting with ~/.": {
+    "revision": "49e93495bf717b0f29d9c1cc8e0623ce895bcfe4aa3e4b3ce5a2a3848ef67ad8",
+    "textHash": "b32df9e7f6d822df9ca5f82824fca08b0e3f3ee0a81b3d700f57c3722294b8b4",
+    "model": "gpt-6"
+  },
+  "Invalid SSH destination.": {
+    "revision": "ec5da8fd60ce000d24067c22380ec7b46c73ec00e57ca340e132abe7e0ad0431",
+    "textHash": "1dbd7bb17a08c15c6902fcb41235579b3171d94c8a38fbe921be223339e684ba",
+    "model": "gpt-6"
+  },
+  "SSH connection not found.": {
+    "revision": "b25dc559f4b28655e8bb2e735209c8b39b1b41def12d1daa14f4a037ad07c0ba",
+    "textHash": "4beb415c848a5d292850c3040947966b724b067f67c13d4f9639c4167b4ca635",
+    "model": "gpt-6"
+  },
+  "The remote file changed. Copy your edits before reloading.": {
+    "revision": "4c94577194933d725bbc5b652da5331b126d1a4a4de70a2addb2836039809344",
+    "textHash": "a0a2ccad70a485bc7bdf11a5fb84be5d693393c226d2a276503e2b78afa0586a",
+    "model": "gpt-6"
+  },
+  "This file uses mixed line endings. Normalize them before editing.": {
+    "revision": "782a28c658e586f8c1fecdc68aeddc8fb0aac0c8cd936c93d3c0b45160b688d0",
+    "textHash": "f860311d850575180d6e093bfb343cb7f9f5bf393de0d23ce6ba5580477a50ee",
+    "model": "gpt-6"
+  },
+  "Unexpected SSH response. Check that the remote shell can run Python 3.": {
+    "revision": "78502a6bfb7bf631bd2ac77f4420d13b09bbcf5410d6053b0cce3ee697532fb2",
+    "textHash": "a097f98f6cb0bb51a88bdf27692b6fc6b089f0d3742a2338b5d7169db54cffde",
+    "model": "gpt-6"
+  },
+  "Invalid page number.": {
+    "revision": "e7ce33a8be2027f26c0f98f97fc5ce41d4b695f394858b84937a19269561ec6f",
+    "textHash": "28a66228caed934c36edfcf80ea7be601b1f1bb001133342b21cb8875f8cb524",
+    "model": "gpt-6"
   }
 }

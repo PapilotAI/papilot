@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- Open an [SSH remote folder](docs/guide.md#edit-a-remote-folder-over-ssh) from **Import or open**. Choose an OpenSSH alias or enter a server manually, preview directories and filenames starting at the server root (`/`), then open the manuscript folder in the source editor.
+
 ### Fixed
 
 - Preserve the full five-stripe Papilot logo at every size in the app, including the sidebar and Settings navigation. ([#226](https://github.com/PapilotAI/papilot/issues/226))

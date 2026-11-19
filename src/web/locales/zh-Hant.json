@@ -1592,5 +1592,21 @@
   "Could not read the compiler. Try again.": "無法讀取編譯器，請再試一次。",
   "Could not save the compiler. Try again.": "無法儲存編譯器，請再試一次。",
   "PhiTeX is not installed on this computer.": "此電腦未安裝 PhiTeX。",
-  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} 僅會重新編譯每次編輯變更的部分。LuaLaTeX 論文仍會繼續使用 latexmk。"
+  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} 僅會重新編譯每次編輯變更的部分。LuaLaTeX 論文仍會繼續使用 latexmk。",
+  "Forget connection": "移除連線記錄",
+  "Identity file (optional)": "私密金鑰檔案（選填）",
+  "Manual connection": "手動連線",
+  "Remote folder": "遠端資料夾",
+  "SSH connection": "SSH 連線",
+  "SSH host": "SSH 主機",
+  "SSH port": "SSH 連接埠",
+  "SSH remote folder": "SSH 遠端資料夾",
+  "SSH user": "SSH 使用者名稱",
+  "Saved connections": "已儲存的連線",
+  "Verify the host key in a terminal first. Use an SSH key or agent and a Unix server with Python 3.7+.": "首次連線請在終端機核對主機指紋。請使用 SSH 金鑰或代理程式登入，Unix 伺服器須安裝 Python 3.7 或更新版本。",
+  "Folder contents": "資料夾內容",
+  "Go to folder…": "前往資料夾…",
+  "Open saved folder": "開啟已儲存的資料夾",
+  "Preview remote folders": "預覽遠端資料夾",
+  "This folder is empty.": "此資料夾是空的。"
 }

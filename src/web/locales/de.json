@@ -1592,5 +1592,21 @@
   "Could not read the compiler. Try again.": "Compiler konnte nicht gelesen werden. Versuchen Sie es erneut.",
   "Could not save the compiler. Try again.": "Compiler konnte nicht gespeichert werden. Versuchen Sie es erneut.",
   "PhiTeX is not installed on this computer.": "PhiTeX ist auf diesem Computer nicht installiert.",
-  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} kompiliert nur neu, was sich durch die jeweilige Bearbeitung ändert. LuaLaTeX-Artikel verwenden weiterhin latexmk."
+  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} kompiliert nur neu, was sich durch die jeweilige Bearbeitung ändert. LuaLaTeX-Artikel verwenden weiterhin latexmk.",
+  "Forget connection": "Verbindung entfernen",
+  "Identity file (optional)": "Schlüsseldatei (optional)",
+  "Manual connection": "Manuelle Verbindung",
+  "Remote folder": "Ordner auf dem Server",
+  "SSH connection": "SSH-Verbindung",
+  "SSH host": "SSH-Host",
+  "SSH port": "SSH-Port",
+  "SSH remote folder": "SSH-Remoteordner",
+  "SSH user": "SSH-Benutzername",
+  "Saved connections": "Gespeicherte Verbindungen",
+  "Verify the host key in a terminal first. Use an SSH key or agent and a Unix server with Python 3.7+.": "Prüfen Sie zuerst den Hostschlüssel im Terminal. Verwenden Sie einen SSH-Schlüssel oder SSH-Agenten und einen Unix-Server mit Python ab Version 3.7.",
+  "Folder contents": "Ordnerinhalt",
+  "Go to folder…": "Zum Ordner wechseln…",
+  "Open saved folder": "Gespeicherten Ordner öffnen",
+  "Preview remote folders": "Remote-Ordner ansehen",
+  "This folder is empty.": "Dieser Ordner ist leer."
 }

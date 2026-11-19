@@ -38,7 +38,7 @@ function BuildStatus({ draft }: { draft: PaperImport }) {
     </div>
   </div>;
 }
-export function ImportPanel({ api, agent, canRepair, source, onChooseFolder, onDone, onClose, onBusyChange }: { api: Api; agent: AgentId; canRepair: boolean; source?: 'overleaf'; onChooseFolder?: () => Promise<void>; onDone: (project: Project) => Promise<void>; onClose: () => void; onBusyChange: (busy: boolean) => void }) {
+export function ImportPanel({ api, agent, canRepair, source, onChooseFolder, onOpenSsh, onDone, onClose, onBusyChange }: { api: Api; agent: AgentId; canRepair: boolean; source?: 'overleaf'; onOpenSsh?: () => void; onChooseFolder?: () => Promise<void>; onDone: (project: Project) => Promise<void>; onClose: () => void; onBusyChange: (busy: boolean) => void }) {
   const defaultMemoryKey = source === 'overleaf' ? 'papilot:overleaf-import' : 'papilot:paper-import';
   const memoryKey = useRef(defaultMemoryKey);
   const dialog = useRef<HTMLDivElement>(null), folder = useRef<HTMLInputElement>(null), zip = useRef<HTMLInputElement>(null), pending = useRef(false);
@@ -172,6 +172,7 @@ export function ImportPanel({ api, agent, canRepair, source, onChooseFolder, onD
                 <button type="submit" className={'button compact ' + (form.path.trim() ? 'primary' : 'secondary')} disabled={locked}>{t('Open')}</button>
               </FolderField>
             </form>}
+          {onOpenSsh && <button type="button" className="button secondary compact" disabled={locked} onClick={onOpenSsh}><Icon name="terminal" size={15}/>{t('SSH remote folder')}</button>}
         </section>}
         {busy && <p className="import-reading" role="status"><span className="spinner"/>{fromLink ? t('Downloading paper source…') : t('Reading paper files…')}</p>}
         {error && <p id={linkId + '-error'} className="inline-error" role="alert">{error}</p>}

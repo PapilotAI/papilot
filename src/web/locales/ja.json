@@ -1592,5 +1592,21 @@
   "Could not read the compiler. Try again.": "コンパイラの設定を読み込めませんでした。もう一度お試しください。",
   "Could not save the compiler. Try again.": "コンパイラの設定を保存できませんでした。もう一度お試しください。",
   "PhiTeX is not installed on this computer.": "このコンピュータには PhiTeX がインストールされていません。",
-  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} は、各編集で変更された部分のみを再ビルドします。LuaLaTeX の論文では引き続き latexmk が使用されます。"
+  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} は、各編集で変更された部分のみを再ビルドします。LuaLaTeX の論文では引き続き latexmk が使用されます。",
+  "Forget connection": "接続履歴を削除",
+  "Identity file (optional)": "秘密鍵ファイル（任意）",
+  "Manual connection": "手動接続",
+  "Remote folder": "リモートフォルダー",
+  "SSH connection": "SSH 接続",
+  "SSH host": "SSH ホスト",
+  "SSH port": "SSH ポート",
+  "SSH remote folder": "SSH リモートフォルダー",
+  "SSH user": "SSH ユーザー名",
+  "Saved connections": "保存した接続",
+  "Verify the host key in a terminal first. Use an SSH key or agent and a Unix server with Python 3.7+.": "最初にターミナルでホスト鍵を確認してください。SSH 鍵またはエージェントと、Python 3.7 以降を備えた Unix サーバーが必要です。",
+  "Folder contents": "フォルダーの内容",
+  "Go to folder…": "フォルダーへ移動…",
+  "Open saved folder": "保存したフォルダーを開く",
+  "Preview remote folders": "リモートフォルダーをプレビュー",
+  "This folder is empty.": "このフォルダーは空です。"
 }

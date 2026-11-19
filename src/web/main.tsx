@@ -98,12 +98,14 @@ import type { OutlineItem, PdfHandle, PdfHistoryActions, Rect } from './pdf-view
 const PlaygroundNotice = import.meta.env.MODE === 'playground' ? lazy(() => import('./playground/notice.tsx').then(module => ({ default: module.PlaygroundNotice }))) : null;
 const PlaygroundPresets = import.meta.env.MODE === 'playground' ? lazy(() => import('./playground/preset-tasks.tsx').then(module => ({ default: module.PlaygroundPresets }))) : null;
 const PlaygroundProgress = import.meta.env.MODE === 'playground' ? lazy(() => import('./playground/progress.tsx').then(module => ({ default: module.PlaygroundProgress }))) : null;
+const SshDialog = lazy(() => import('./ssh-dialog.tsx'));
 const PdfView = lazy(() => import('./pdf-view.tsx').then(module => ({ default: module.PdfView })));
 import './style.css';
 import './note-controls.css';
 
 let token = '';
 const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), b => b.toString(16).padStart(2, '0')).join('');
+
 async function api<T = any>(route: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   if (import.meta.env.MODE === 'playground') return (await import('./playground/api.ts')).playgroundApi<T>(route, body, signal);
   return requestApi<T>(route, token, body, signal);
@@ -1189,7 +1191,7 @@ function App() {
   const sidebarRef = useRef<HTMLElement>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [bulkTarget, setBulkTarget] = useState<BulkTaskAction | null>(null);
-  const [modal, setModal] = useState<'project' | 'create' | 'overleaf' | null>(null);
+  const [modal, setModal] = useState<'project' | 'create' | 'overleaf' | 'ssh' | null>(null);
   const [createPreset, setCreatePreset] = useState<{ id: string; version: string } | null>(null);
   const [openingFolder, setOpeningFolder] = useState(false), [mainChoice, setMainChoice] = useState<{ path: string; name: string; candidates: string[] } | null>(null);
   const folderRequest = useRef(false);
@@ -2262,7 +2264,8 @@ function App() {
     }}/>}
     {mainChoice && <MainFileDialog key={mainChoice.path} name={mainChoice.name} candidates={mainChoice.candidates} open={main => openFolder(mainChoice.path, main)} onClose={() => setMainChoice(null)}/>}
     {openingFolder && !mainChoice && <div role="status" className="toast toast-status"><span className="spinner"/><span>{t('Reading paper files…')}</span></div>}
-    {modal && <NewPaperDialog key={createPreset ? createPreset.id + '@' + createPreset.version : 'new'} initialTab={modal === 'create' ? 'blank' : 'import'} source={modal === 'overleaf' ? 'overleaf' : undefined} preset={createPreset ?? undefined} api={api} agent={agentChoice} canRepair={Object.values(runtimes).some(runtime => runtime?.connected && runtime.authenticated)} onChooseFolder={nativeFolders ? async () => { const path = await chooseDirectory(); if (path) await openFolder(path); } : undefined} onClose={() => { setModal(null); setCreatePreset(null); }} onDone={async paper => {
+    {modal === 'ssh' && <Suspense fallback={null}><SshDialog api={api} onClose={() => setModal('project')}/></Suspense>}
+    {modal && modal !== 'ssh' && <NewPaperDialog key={createPreset ? createPreset.id + '@' + createPreset.version : 'new'} initialTab={modal === 'create' ? 'blank' : 'import'} source={modal === 'overleaf' ? 'overleaf' : undefined} preset={createPreset ?? undefined} onOpenSsh={isPlayground ? undefined : () => setModal('ssh')} api={api} agent={agentChoice} canRepair={Object.values(runtimes).some(runtime => runtime?.connected && runtime.authenticated)} onChooseFolder={nativeFolders ? async () => { const path = await chooseDirectory(); if (path) await openFolder(path); } : undefined} onClose={() => { setModal(null); setCreatePreset(null); }} onDone={async paper => {
       setCreatePreset(null);
       await refresh(true);
       setProjectId(paper.id); setSelected(''); setPage('manuscript'); setManuscriptView('pdf'); setModal(null); setSidebar(false);

@@ -464,5 +464,15 @@
   "The selected agent does not support read-only AI review. Select another agent.": "所選智慧代理不支援唯讀 AI 審閱。請選擇其他智慧代理。",
   "The selected agent does not support read-only tasks through ACP. Select another agent.": "所選智慧代理不支援透過 ACP 執行唯讀任務。請選擇其他智慧代理。",
   "Choose latexmk or PhiTeX.": "請選擇 latexmk 或 PhiTeX。",
-  "Enable collaboration mode in Settings → Experiments first.": "請先在設定 → 實驗功能中啟用協作模式。"
+  "Enable collaboration mode in Settings → Experiments first.": "請先在設定 → 實驗功能中啟用協作模式。",
+  "Choose a UTF-8 text file up to 2 MB.": "請選擇不超過 2 MB 的 UTF-8 文字檔。",
+  "Choose a file without hard links.": "請選擇沒有硬連結的檔案。",
+  "Enter an absolute path to the SSH identity file.": "請輸入 SSH 私密金鑰檔案的絕對路徑。",
+  "Enter an absolute remote folder path or a path starting with ~/.": "請輸入遠端資料夾的絕對路徑，或使用以 ~/ 開頭的路徑。",
+  "Invalid SSH destination.": "SSH 主機、使用者名稱或連接埠無效。",
+  "SSH connection not found.": "找不到已儲存的 SSH 連線。",
+  "The remote file changed. Copy your edits before reloading.": "遠端檔案已變更。請先複製你的修改，再重新載入。",
+  "This file uses mixed line endings. Normalize them before editing.": "檔案含有多種換行符號。請先統一換行符號再編輯。",
+  "Unexpected SSH response. Check that the remote shell can run Python 3.": "SSH 回應異常。請確認遠端 shell 能執行 Python 3。",
+  "Invalid page number.": "頁碼無效。"
 }

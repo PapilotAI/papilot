@@ -1592,5 +1592,21 @@
   "Could not read the compiler. Try again.": "Kunde inte läsa kompilatorn. Försök igen.",
   "Could not save the compiler. Try again.": "Kunde inte spara kompilatorn. Försök igen.",
   "PhiTeX is not installed on this computer.": "PhiTeX är inte installerat på den här datorn.",
-  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} bygger endast om det som varje redigering ändrar. LuaLaTeX-artiklar fortsätter att använda latexmk."
+  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} bygger endast om det som varje redigering ändrar. LuaLaTeX-artiklar fortsätter att använda latexmk.",
+  "Forget connection": "Glöm anslutningen",
+  "Identity file (optional)": "Privat nyckelfil (valfritt)",
+  "Manual connection": "Manuell anslutning",
+  "Remote folder": "Fjärrmapp",
+  "SSH connection": "SSH-anslutning",
+  "SSH host": "SSH-värd",
+  "SSH port": "SSH-port",
+  "SSH remote folder": "Fjärrmapp via SSH",
+  "SSH user": "SSH-användare",
+  "Saved connections": "Sparade anslutningar",
+  "Verify the host key in a terminal first. Use an SSH key or agent and a Unix server with Python 3.7+.": "Verifiera först värdnyckeln i en terminal. Använd en SSH-nyckel eller SSH-agent och en Unix-server med Python 3.7 eller senare.",
+  "Folder contents": "Mappinnehåll",
+  "Go to folder…": "Gå till mapp…",
+  "Open saved folder": "Öppna sparad mapp",
+  "Preview remote folders": "Förhandsvisa fjärrmappar",
+  "This folder is empty.": "Mappen är tom."
 }

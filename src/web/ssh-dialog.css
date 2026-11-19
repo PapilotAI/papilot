@@ -1,0 +1,51 @@
+.ssh-backdrop:modal, .ssh-backdrop::backdrop { overscroll-behavior: contain }
+.ssh-backdrop::backdrop { overflow: hidden }
+.ssh-dialog.ssh-open { width: min(1050px, 100%); display: flex; flex-direction: column; height: min(78dvh, 740px) }
+.ssh-dialog .ssh-options { margin-bottom: 12px; color: var(--text-2); font-size: 12px }
+.ssh-options summary { cursor: pointer }
+.ssh-fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px; margin-top: 8px }
+.ssh-fields label:last-child { grid-column: 1 / -1 }
+.ssh-help, .ssh-file-bar [role=status] { color: var(--text-3); font-size: 12px }
+.ssh-dialog .ssh-help { margin-block: 6px 12px }
+.ssh-toolbar, .ssh-file-bar, .ssh-location, .ssh-entry { display: flex; align-items: center; gap: 8px; min-width: 0 }
+.ssh-toolbar { padding-bottom: 12px }
+.ssh-toolbar strong, .ssh-file-bar strong, .ssh-entry span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ssh-workspace { flex: 1; display: flex; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r) }
+.ssh-files { flex: 1; min-width: 0; overflow: auto; padding: 4px }
+.ssh-workspace.has-file .ssh-files { flex: 0 0 clamp(160px, 26%, 300px); border-right: 1px solid var(--line) }
+.ssh-location, .ssh-file-bar { background: var(--raised); min-height: 32px; border-bottom: 1px solid var(--line) }
+.ssh-location { position: sticky; top: -4px; font-family: var(--mono); overflow-wrap: anywhere }
+.ssh-location span, .ssh-file-bar strong { flex: 1 }
+.ssh-entry { width: 100%; text-align: left; padding: 7px; border-radius: var(--r-sm) }
+.ssh-entry svg { flex: none; color: var(--text-3) }
+button.ssh-entry:hover, .ssh-entry[aria-current=true] { background: var(--bg-muted) }
+.ssh-source { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0 }
+.ssh-file-bar { padding: 3px 8px }
+.ssh-code { min-height: 0; flex: 1; overflow: hidden }
+.ssh-dialog .inline-error { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0 }
+@media(max-width: 680px) {
+  .ssh-workspace { flex-direction: column }
+  .ssh-workspace.has-file .ssh-files { flex: 0 1 30%; border-right: 0; border-bottom: 1px solid var(--line) }
+  .ssh-dialog.ssh-open { height: 88dvh }
+}
+@media(pointer: coarse) {
+  .ssh-dialog :is(.ssh-entry, .button, input, select, summary) { min-height: 44px }
+  .ssh-dialog :is(input, select) { font-size: 16px }
+}
+
+.ssh-picker .ssh-files { max-height: min(46dvh, 360px); border: 1px solid var(--line); border-radius: var(--r) }
+.ssh-picker .button-row { margin-top: 12px }
+
+.ssh-trail ol, .ssh-preview-entries { margin: 0; padding: 0; list-style: none }
+.ssh-trail ol { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding-block: 6px; font-family: var(--mono); font-size: 13px }
+.ssh-trail li { min-width: 0; overflow-wrap: anywhere }
+.ssh-trail li + li::before { content: "›" / ""; margin-inline: 3px 6px; color: var(--text-3) }
+.ssh-trail button { text-decoration: underline; text-underline-offset: 2px }
+.ssh-trail [aria-current] { font-weight: 600 }
+.ssh-preview-file { color: var(--text-2) }
+.ssh-preview-pages, .ssh-jump form { display: flex; gap: 6px; align-items: center }
+.ssh-preview-pages { justify-content: center; font-variant-numeric: tabular-nums }
+.ssh-jump { margin-top: 10px; font-size: 12px }
+.ssh-jump summary { cursor: pointer; color: var(--text-2) }
+.ssh-jump form { margin-top: 4px }
+.ssh-jump input { min-width: 0; flex: 1 }

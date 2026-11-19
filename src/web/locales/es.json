@@ -1592,5 +1592,21 @@
   "Could not read the compiler. Try again.": "No se pudo leer el compilador. Inténtalo de nuevo.",
   "Could not save the compiler. Try again.": "No se pudo guardar el compilador. Inténtalo de nuevo.",
   "PhiTeX is not installed on this computer.": "PhiTeX no está instalado en este equipo.",
-  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} recompila solo lo que cambia en cada edición. Los artículos de LuaLaTeX siguen usando latexmk."
+  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} recompila solo lo que cambia en cada edición. Los artículos de LuaLaTeX siguen usando latexmk.",
+  "Forget connection": "Olvidar conexión",
+  "Identity file (optional)": "Archivo de clave privada (opcional)",
+  "Manual connection": "Conexión manual",
+  "Remote folder": "Carpeta remota",
+  "SSH connection": "Conexión SSH",
+  "SSH host": "Host SSH",
+  "SSH port": "Puerto SSH",
+  "SSH remote folder": "Carpeta remota por SSH",
+  "SSH user": "Usuario SSH",
+  "Saved connections": "Conexiones guardadas",
+  "Verify the host key in a terminal first. Use an SSH key or agent and a Unix server with Python 3.7+.": "Verifica primero la clave del servidor en una terminal. Usa una clave o un agente SSH y un servidor Unix con Python 3.7 o posterior.",
+  "Folder contents": "Contenido de la carpeta",
+  "Go to folder…": "Ir a la carpeta…",
+  "Open saved folder": "Abrir carpeta guardada",
+  "Preview remote folders": "Explorar carpetas remotas",
+  "This folder is empty.": "Esta carpeta está vacía."
 }

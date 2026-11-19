@@ -464,5 +464,15 @@
   "The selected agent does not support read-only AI review. Select another agent.": "Den valda agenten stöder inte AI-granskning med enbart läsåtkomst. Välj en annan agent.",
   "The selected agent does not support read-only tasks through ACP. Select another agent.": "Den valda agenten stöder inte uppgifter med enbart läsåtkomst via ACP. Välj en annan agent.",
   "Choose latexmk or PhiTeX.": "Välj latexmk eller PhiTeX.",
-  "Enable collaboration mode in Settings → Experiments first.": "Aktivera först samarbetsläget under Inställningar → Experimentella funktioner."
+  "Enable collaboration mode in Settings → Experiments first.": "Aktivera först samarbetsläget under Inställningar → Experimentella funktioner.",
+  "Choose a UTF-8 text file up to 2 MB.": "Välj en UTF-8-textfil på högst 2 MB.",
+  "Choose a file without hard links.": "Välj en fil utan hårda länkar.",
+  "Enter an absolute path to the SSH identity file.": "Ange den absoluta sökvägen till SSH-nyckelfilen.",
+  "Enter an absolute remote folder path or a path starting with ~/.": "Ange en absolut sökväg till fjärrmappen eller en sökväg som börjar med ~/.",
+  "Invalid SSH destination.": "Ogiltigt SSH-mål.",
+  "SSH connection not found.": "SSH-anslutningen hittades inte.",
+  "The remote file changed. Copy your edits before reloading.": "Fjärrfilen har ändrats. Kopiera dina ändringar innan du läser in filen igen.",
+  "This file uses mixed line endings. Normalize them before editing.": "Filen innehåller olika radslut. Gör dem enhetliga innan du redigerar.",
+  "Unexpected SSH response. Check that the remote shell can run Python 3.": "Oväntat SSH-svar. Kontrollera att fjärrskalet kan köra Python 3.",
+  "Invalid page number.": "Ogiltigt sidnummer."
 }

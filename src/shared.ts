@@ -346,3 +346,11 @@ export interface BibliographyReport {
   missing: (ReferenceCitation & { key: string })[]; duplicates: string[][]; similar: { ids: string[]; by: 'doi' | 'title' }[]; all_cited: boolean;
   checks: Record<string, ReferenceCheck>; pending: number; confirmed: Record<string, number>;
 }
+
+/** A saved SSH folder. OpenSSH obtains credentials on the Papilot host. */
+export interface SshFolder {
+  id: string; host: string; user?: string; port?: number; identity?: string; root: string;
+}
+export interface SshEntry { name: string; folder: boolean }
+export interface SshFolderPreview { root: string; entries: SshEntry[]; page: number; pages: number }
+export interface SshDocument { text: string; revision: string }

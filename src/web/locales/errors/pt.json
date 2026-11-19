@@ -464,5 +464,15 @@
   "The selected agent does not support read-only AI review. Select another agent.": "O agente selecionado não suporta a revisão por IA em modo somente leitura. Selecione outro agente.",
   "The selected agent does not support read-only tasks through ACP. Select another agent.": "O agente selecionado não suporta tarefas em modo somente leitura via ACP. Selecione outro agente.",
   "Choose latexmk or PhiTeX.": "Escolha latexmk ou PhiTeX.",
-  "Enable collaboration mode in Settings → Experiments first.": "Primeiro ative o modo colaborativo em Configurações → Recursos experimentais."
+  "Enable collaboration mode in Settings → Experiments first.": "Primeiro ative o modo colaborativo em Configurações → Recursos experimentais.",
+  "Choose a UTF-8 text file up to 2 MB.": "Escolha um arquivo de texto UTF-8 de até 2 MB.",
+  "Choose a file without hard links.": "Escolha um arquivo sem links físicos.",
+  "Enter an absolute path to the SSH identity file.": "Insira o caminho absoluto do arquivo de chave SSH.",
+  "Enter an absolute remote folder path or a path starting with ~/.": "Insira um caminho absoluto para a pasta remota ou um caminho iniciado por ~/.",
+  "Invalid SSH destination.": "Destino SSH inválido.",
+  "SSH connection not found.": "Conexão SSH não encontrada.",
+  "The remote file changed. Copy your edits before reloading.": "O arquivo remoto foi alterado. Copie suas edições antes de recarregá-lo.",
+  "This file uses mixed line endings. Normalize them before editing.": "O arquivo usa diferentes finais de linha. Uniformize-os antes de editar.",
+  "Unexpected SSH response. Check that the remote shell can run Python 3.": "Resposta SSH inesperada. Verifique se o shell remoto pode executar o Python 3.",
+  "Invalid page number.": "Número de página inválido."
 }

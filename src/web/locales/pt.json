@@ -1592,5 +1592,21 @@
   "Could not read the compiler. Try again.": "Não foi possível ler o compilador. Tente novamente.",
   "Could not save the compiler. Try again.": "Não foi possível salvar o compilador. Tente novamente.",
   "PhiTeX is not installed on this computer.": "O PhiTeX não está instalado neste computador.",
-  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "O PhiTeX {version} recompila apenas o que cada edição altera. Artigos em LuaLaTeX continuam usando o latexmk."
+  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "O PhiTeX {version} recompila apenas o que cada edição altera. Artigos em LuaLaTeX continuam usando o latexmk.",
+  "Forget connection": "Esquecer conexão",
+  "Identity file (optional)": "Arquivo da chave privada (opcional)",
+  "Manual connection": "Conexão manual",
+  "Remote folder": "Pasta remota",
+  "SSH connection": "Conexão SSH",
+  "SSH host": "Host SSH",
+  "SSH port": "Porta SSH",
+  "SSH remote folder": "Pasta remota por SSH",
+  "SSH user": "Usuário SSH",
+  "Saved connections": "Conexões salvas",
+  "Verify the host key in a terminal first. Use an SSH key or agent and a Unix server with Python 3.7+.": "Primeiro verifique a chave do host em um terminal. Use uma chave ou um agente SSH e um servidor Unix com Python 3.7 ou superior.",
+  "Folder contents": "Conteúdo da pasta",
+  "Go to folder…": "Ir para a pasta…",
+  "Open saved folder": "Abrir pasta salva",
+  "Preview remote folders": "Explorar pastas remotas",
+  "This folder is empty.": "Esta pasta está vazia."
 }

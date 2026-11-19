@@ -3,6 +3,7 @@ import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validRoutes } from '../s
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
 import { registerImportUpload } from './import-upload.ts';
+import { registerSshRoutes } from './ssh/routes.ts';
 import { listFolders, nearestFolder } from './folders.ts';
 import { isLocalRequest } from './security.ts';
 import { chooseFolder, closeFolderPicker } from './folder-picker.ts';
@@ -218,6 +219,7 @@ export async function buildApp(options: AppOptions) {
   app.addHook('onError', async request => { projectRequests.get(request)?.(); });
   await app.register(compress);
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
+  registerSshRoutes(app, store);
   registerSkillRoutes(app, store);
   registerAiReviewRoutes(app, store, manuscripts);
   const project = (param = 'id') => ({ config: { resource: { project: param } } }), task = { config: { resource: { task: 'id' } } };

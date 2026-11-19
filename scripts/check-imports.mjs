@@ -1,3 +1,4 @@
+import { checkSshFolder } from './check-ssh-folder.mjs';
 import { readyRequirements } from './required-tools-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -72,6 +73,7 @@ try {
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
   await page.getByRole('button', { name: 'Import or open', exact: true }).first().click();
   let dialog = page.getByRole('dialog', { name: 'New paper' }); await dialog.waitFor();
+  await checkSshFolder(page);
   assert.equal(await dialog.getByRole('button', { name: 'Cancel', exact: true }).count(), 0);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });

@@ -1592,5 +1592,21 @@
   "Could not read the compiler. Try again.": "컴파일러를 읽을 수 없습니다. 다시 시도해 주세요.",
   "Could not save the compiler. Try again.": "컴파일러를 저장할 수 없습니다. 다시 시도해 주세요.",
   "PhiTeX is not installed on this computer.": "이 컴퓨터에 PhiTeX가 설치되어 있지 않습니다.",
-  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} 버전은 편집 시 변경된 부분만 다시 빌드합니다. LuaLaTeX 논문은 계속 latexmk를 사용합니다."
+  "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} 버전은 편집 시 변경된 부분만 다시 빌드합니다. LuaLaTeX 논문은 계속 latexmk를 사용합니다.",
+  "Forget connection": "저장된 연결 삭제",
+  "Identity file (optional)": "개인 키 파일(선택 사항)",
+  "Manual connection": "수동 연결",
+  "Remote folder": "원격 폴더",
+  "SSH connection": "SSH 연결",
+  "SSH host": "SSH 호스트",
+  "SSH port": "SSH 포트",
+  "SSH remote folder": "SSH 원격 폴더",
+  "SSH user": "SSH 사용자 이름",
+  "Saved connections": "저장된 연결",
+  "Verify the host key in a terminal first. Use an SSH key or agent and a Unix server with Python 3.7+.": "먼저 터미널에서 호스트 키를 확인하세요. SSH 키 또는 에이전트와 Python 3.7 이상이 설치된 Unix 서버가 필요합니다.",
+  "Folder contents": "폴더 내용",
+  "Go to folder…": "폴더로 이동…",
+  "Open saved folder": "저장된 폴더 열기",
+  "Preview remote folders": "원격 폴더 미리보기",
+  "This folder is empty.": "이 폴더는 비어 있습니다."
 }
