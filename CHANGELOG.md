@@ -19,6 +19,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Fixed
 
 - Keep PDF anchors usable at their saved positions while source relocation is pending or fails, with a retry for failed lookups. Avoid overlapping native and custom anchor tooltips.
+- Preserve the full five-stripe Papilot logo in the browser tab icon for the app, website and online demo.
 - Prepare annotation alternatives earlier, prioritize the option being inspected and reuse unfinished comparisons under cache pressure. Optional PDFs still do not hold up the main review, application or commit. ([#228](https://github.com/PapilotAI/papilot/issues/228))
 - Let successful Antigravity turns proceed to review when the CLI repeats an earlier model-capacity error after switching models. New errors and unfinished replies still report failure.
 - Find DeepSeek Harness on Windows when it was installed in a custom folder without registering `dsh` on PATH. Reconnect checks the installation record and uses the bundled CLI; explicit paths and existing PATH commands retain priority.

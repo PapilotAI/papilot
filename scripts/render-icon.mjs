@@ -48,9 +48,9 @@ try {
       await fs.writeFile(path.join(iconset, `icon_${size / 2}x${size / 2}@2x.png`), png);
     }
   }
-  // Browser tabs show the favicon at 16 to 32 px: the three-stripe tile, edge to
-  // edge. iOS rounds the opaque home-screen icon itself.
-  await fs.writeFile(path.join(root, 'public/favicon.png'), await render([small], 64, true));
+  // Keep the full five-stripe mark in browser tabs, with the tile edge to edge.
+  // iOS rounds the opaque home-screen icon itself.
+  await fs.writeFile(path.join(root, 'public/favicon.png'), await render([source], 64, true));
   await fs.writeFile(path.join(root, 'public/apple-touch-icon.png'), await render(layers, 180));
   const url = png => `data:image/png;base64,${png.toString('base64')}`;
   const icons = { light: url(await fs.readFile(path.join(directory, 'icon.png'))), dark: url(await render([dark], 1024)) };
