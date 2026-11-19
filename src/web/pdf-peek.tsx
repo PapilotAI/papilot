@@ -21,14 +21,19 @@ export function PdfPeek({ container, document: pdf, disabled }: {
     const box = container.current;
     if (!box || disabled) return;
     let active: HTMLAnchorElement | null = null, timer: ReturnType<typeof setTimeout> | undefined;
-    let leaving: ReturnType<typeof setTimeout> | undefined, opened = false;
-    const close = () => { clearTimeout(timer); clearTimeout(leaving); active = null; opened = false; setTarget(null); };
-    const open = (link: HTMLAnchorElement, immediate = false) => {
+    let leaving: ReturnType<typeof setTimeout> | undefined, opened = false, keyboard = false;
+    const close = () => { clearTimeout(timer); clearTimeout(leaving); active = null; opened = false; keyboard = false; setTarget(null); };
+    const open = (link: HTMLAnchorElement, immediate = false, fromKeyboard = false) => {
       clearTimeout(leaving);
       if (link === active && opened) return;
-      close(); active = link;
+      close(); active = link; keyboard = fromKeyboard;
       const show = () => {
-        if (active === link && link.isConnected && box.clientHeight) { opened = true; setTarget({ link, document: pdf }); }
+        const rect = link.getBoundingClientRect(), view = box.getBoundingClientRect();
+        if (active === link && link.isConnected && box.clientHeight
+          && rect.bottom > Math.max(0, view.top) && rect.top < Math.min(window.innerHeight, view.bottom)
+          && rect.right > Math.max(0, view.left) && rect.left < Math.min(window.innerWidth, view.right)) {
+          opened = true; setTarget({ link, document: pdf });
+        }
       };
       if (immediate) show(); else timer = setTimeout(show, 400);
     };
@@ -46,7 +51,7 @@ export function PdfPeek({ container, document: pdf, disabled }: {
     };
     const focus = (event: FocusEvent) => {
       const link = internalLink(event.target);
-      if (link?.matches(':focus-visible')) open(link);
+      if (link?.matches(':focus-visible')) open(link, false, true);
     };
     const blur = (event: FocusEvent) => { if (!within(event.relatedTarget)) close(); };
     const click = (event: MouseEvent) => {
@@ -69,7 +74,12 @@ export function PdfPeek({ container, document: pdf, disabled }: {
     popup.addEventListener('pointerleave', out, { signal });
     document.addEventListener('keydown', key, { capture: true, signal });
     document.addEventListener('pointerdown', event => { if (!within(event.target)) close(); }, { capture: true, signal });
-    document.addEventListener('scroll', close, { capture: true, signal });
+    document.addEventListener('scroll', () => {
+      // WebKit scrolls a newly focused PDF link after focusin. Keep its
+      // pending preview; show() verifies it is still visible after scrolling.
+      if (keyboard && !opened && active === document.activeElement) return;
+      close();
+    }, { capture: true, signal });
     window.addEventListener('blur', close, { signal });
     window.addEventListener('resize', close, { signal });
     window.visualViewport?.addEventListener('resize', close, { signal });

@@ -167,6 +167,8 @@ Beta & 96.1 & 18 \\\hline
     await page.mouse.move(20, 20); await expect(peek).toBeHidden();
     // A focused link offers the same preview and Enter still follows it.
     await page.keyboard.press('Tab'); await links.nth(0).focus();
+    // Native focus scrolling (notably WebKit) must not cancel this pending hint.
+    await page.locator('.pdf-container').dispatchEvent('scroll');
     await expect(peek.locator('canvas')).toBeVisible();
     await expect(links.nth(0)).toBeFocused();
     await page.keyboard.press('Escape'); await expect(peek).toBeHidden();
