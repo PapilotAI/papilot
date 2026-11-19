@@ -259,6 +259,7 @@ export class Review {
       ),
       round: number ?? null,
       revision: round?.after ?? null,
+      ...(round?.summary.job ? { renderJob: round.summary.job } : {}),
       ...(round ? this.shown(name, round) : { decisions: {}, comments: {} }),
       ...(round && (round.visuals ?? "ready") !== "ready" ? { rendering: round.visuals as "pending" | "failed" } : {}),
       waiting: round ? round.units.filter(unit => !comparable(round, rendered(this.app, name, round.number), unit.id)).map(unit => unit.id) : [],
@@ -353,6 +354,7 @@ export class Review {
       round: number,
       before: round.before,
       after: round.after,
+      ...(round.summary.job ? { renderJob: round.summary.job } : {}),
       units: round.units.map((u) => ({
         ...u,
         ...context(u),

@@ -102,7 +102,7 @@ export interface Round {
     /** Whether the round lists indirect changes; absent in older rounds,
      * which did. */
     indirect?: boolean;
-    /** The build job that inserted the round. */
+    /** The build job currently rendering this round, or its last render. */
     job?: string;
     /** Compilation errors in the accepted text. */
     baselineErrors?: string[];
@@ -497,6 +497,8 @@ export interface RoundDetail extends Omit<RenderedRound, "units"> {
   round: number;
   before: string;
   after: string;
+  /** Identifies a comparison rebuild even when the source revision is unchanged. */
+  renderJob?: string;
   units: (Unit & Partial<VisualUnit> & { history?: History[]; formattingFor?: string; waiting?: boolean; carried?: number })[];
   warnings: string[];
   /** Compilation errors in the accepted text. */
@@ -571,6 +573,8 @@ export interface PageState {
   history?: { number: number; created: number }[];
   round: number | null;
   revision: string | null;
+  /** Identifies a comparison rebuild of the requested round. */
+  renderJob?: string;
   decisions: Record<string, Decision>;
   comments: Record<string, string>;
   /** The round's own comparison is still rendering, or failed. */

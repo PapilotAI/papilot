@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
-import { Builder } from "../../src/core/build.ts";
+import { Builder, BuildError } from "../../src/core/build.ts";
 import { which } from "../../src/core/process.ts";
 import { rendered, roundFolder } from "../../src/core/carry.ts";
 import { Fixture } from "./helpers.ts";
@@ -37,6 +37,50 @@ function holdBuilds() {
   });
   return { release, started, spy };
 }
+
+it.skipIf(!tex)("retries a source-only comparison in place and identifies each render through failure and recovery", async () => {
+  const f = new Fixture(), app = f.app();
+  let held: ReturnType<typeof holdBuilds> | undefined;
+  try {
+    await app.ready;
+    const task = app.tasks.create("repair-environment", "Repair environment", [], ["paper"], true);
+    f.edit(task, FILE, "Method sentence 2.", "The revised method.");
+    const build = Builder.prototype.build;
+    const broken = vi.spyOn(Builder.prototype, "build").mockImplementation(function (this: Builder, ...args) {
+      if (args[0] === task.accepted) return Promise.reject(new BuildError("A TeX package is unavailable."));
+      return build.apply(this, args);
+    });
+    const initial = await publish(app, task);
+    const original = app.review.roundDetail(task.name, initial.number);
+    expect(original.sourceOnly).toBe(true);
+    expect(original.renderJob).toBe(initial.summary.job);
+    broken.mockRestore();
+
+    // A failed retry must also leave a retryable round, with its decisions intact.
+    const failure = vi.spyOn(Builder.prototype, "build").mockRejectedValue(new Error("Compiler unavailable"));
+    const failed = app.publisher.submit(task.name); await app.publisher.join();
+    expect(app.publisher.job(failed.id).status).toBe("failed");
+    expect(app.review.pageState(task.name)).toMatchObject({ round: 1, revision: original.after, rendering: "failed", renderJob: failed.id });
+    failure.mockRestore();
+
+    held = holdBuilds();
+    const retry = app.publisher.submit(task.name); await held.started;
+    expect(app.review.pageState(task.name)).toMatchObject({ round: 1, revision: original.after, rendering: "pending", renderJob: retry.id });
+    expect(app.review.roundDetail(task.name, 1)).toMatchObject({ rendering: "pending", renderJob: retry.id });
+    held.release(); await app.publisher.join();
+    expect(app.publisher.job(retry.id)).toMatchObject({ status: "done", result: { round: 1 } });
+    const ready = app.review.roundDetail(task.name, 1);
+    expect(ready).toMatchObject({ before: original.before, after: original.after, renderJob: retry.id });
+    expect(ready.sourceOnly).toBeUndefined();
+    expect(ready.baselineErrors).toBeUndefined();
+    expect(ready.rendering).toBeUndefined();
+    expect(ready.units.some(unit => unit.visual === "text")).toBe(true);
+    expect(app.review.pageState(task.name).renderJob).toBe(ready.renderJob);
+    expect(Object.values(app.review.pageState(task.name).decisions)).toEqual(original.units.map(() => "pending"));
+    expect(app.review.latestRound(task.name)?.number).toBe(1);
+    expect(f.read(FILE)).toContain("Method sentence 2.");
+  } finally { held?.release(); await f.close(); vi.restoreAllMocks(); }
+}, 120000);
 
 it.skipIf(!tex)("inserts before rendering, gates only waiting changes, and keeps decisions without restarting publication", async () => {
   const { f, app, task } = await fixture(), held = holdBuilds();

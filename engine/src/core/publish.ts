@@ -695,11 +695,18 @@ export class Publisher {
       latest.summary.renderer === codeVersion() &&
       latest.summary.buildSettings === buildSettings &&
       (latest.summary.indirect ?? true) === indirect
-    )
+    ) {
       // A round whose render failed, was interrupted, or fell back to source-only renders again.
-      return (latest.visuals ?? "ready") === "ready" && !latest.summary.sourceOnly
-        ? { result: { outcome: "unchanged", round: latest.number, changes: latest.units.length } }
-        : { round: latest };
+      if ((latest.visuals ?? "ready") === "ready" && !latest.summary.sourceOnly)
+        return { result: { outcome: "unchanged", round: latest.number, changes: latest.units.length } };
+      // Keep the round and its decisions, but identify this render even if it
+      // finishes between two viewer polls without changing the source revision.
+      app.store.execute(
+        "UPDATE rounds SET visuals='pending', summary=? WHERE task=? AND number=?",
+        JSON.stringify({ ...latest.summary, job: job.id }), name, latest.number,
+      );
+      return { round: app.review.round(name, latest.number) };
+    }
     const files = await app.repo.changedFilesAsync(before, after);
     const optionUnits = await noteOptionUnits(app, name, job.id, before, after);
     const number = (latest?.number ?? 0) + 1,

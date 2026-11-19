@@ -961,13 +961,15 @@ test("identical and strip-free changes stay out of inline source until explicitl
 test("baseline-failed sourceOnly and failed-comparison states show recovery actions without auto-opening source", async ({ page }) => {
   let mode: "sourceOnly" | "pending" | "failed" | "failed-commented" | "ready" = "sourceOnly";
   let publishRequests = 0;
-  let currentRound = 1;
+  const currentRound = 1;
+  let renderJob = "initial-render";
 
   await page.route("**/api/tasks/tighten-design/state*", async route => {
     const response = await route.fetch({ url: route.request().url().replace(/([?&]round=)\d+/, "$11") });
     const state = await response.json();
     state.round = currentRound;
     state.latest = currentRound;
+    state.renderJob = renderJob;
     if (mode === "pending") {
       state.state = "building";
       state.rendering = "pending";
@@ -988,7 +990,7 @@ test("baseline-failed sourceOnly and failed-comparison states show recovery acti
   });
   await page.route("**/api/tasks/tighten-design/rounds/*", async route => {
     const response = await route.fetch({ url: route.request().url().replace(/\/rounds\/\d+$/, "/rounds/1") });
-    const detail = { ...(await response.json()), round: currentRound };
+    const detail = { ...(await response.json()), round: currentRound, renderJob };
     if (mode === "sourceOnly") {
       const units = detail.units.slice(0, 1).map((u: object) => ({ ...u, visual: "unmapped", pages: [], section: null, effects: undefined }));
       await route.fulfill({
@@ -1024,7 +1026,9 @@ test("baseline-failed sourceOnly and failed-comparison states show recovery acti
   });
   await page.route("**/api/tasks/tighten-design/publish", async route => {
     publishRequests++;
-    currentRound++;
+    // A cached retry can finish between polls, without a new source revision
+    // or an observed pending state. Its render job still invalidates the PDF.
+    renderJob = `retry-${publishRequests}`;
     mode = "ready";
     await route.fulfill({ json: { ok: true } });
   });

@@ -27,13 +27,12 @@ export function noteComparisonScope(detail: RoundDetail, focus: string[]) {
     if (precise) return blocks.flatMap<Block>(block => {
       if (block.kind !== 'change' || !block.units.some(id => focused.has(id))) return [];
       const before = block.before.filter(image => focusedMarks(image, focused).length), after = block.after.filter(image => focusedMarks(image, focused).length);
-      return before.length || after.length ? [{ ...block, units: block.units.filter(id => focused.has(id)), before, after }] : [];
+      const unavailable = !block.before.length && !block.after.length;
+      return before.length || after.length || unavailable ? [{ ...block, units: block.units.filter(id => focused.has(id)), before, after }] : [];
     });
     const included = new Set<number>();
     blocks.forEach((block, index) => {
       if (block.kind !== 'change' || !block.units.some(id => focused.has(id))) return;
-      // Source-only changes have no PDF content; they remain in LaTeX view.
-      if (!block.before.length && !block.after.length) return;
       included.add(index);
       if (blocks[index - 1]?.kind === 'context') included.add(index - 1);
       if (blocks[index + 1]?.kind === 'context') included.add(index + 1);

@@ -703,6 +703,7 @@ export function ReviewApp({
           target &&
           (target !== previous.detail?.round ||
             (next.revision && next.revision !== previous.detail?.after) ||
+            (next.round === previous.detail?.round && next.renderJob !== previous.detail?.renderJob) ||
             // The round's own comparison arrived, or failed.
             (next.round === previous.detail?.round && (next.rendering ?? null) !== (previous.detail?.rendering ?? null))));
         if (changed && !snapshot.current.composer && !paper.current?.querySelector('.source-editor[data-dirty="true"]')) {

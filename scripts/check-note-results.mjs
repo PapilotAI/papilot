@@ -45,6 +45,7 @@ let releaseBriefPreview;
 const briefPreviewWait = new Promise(resolve => { releaseBriefPreview = resolve; });
 let rejectFails = false;
 let comparisonVersion = 'initial';
+let previewMode = 'normal';
 const alternateSource = '\\emph{A concise alternative preserving the technical term.}';
 const strip = text => {
   const src = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="30"><rect width="600" height="30" fill="white"/><text x="40" y="20" font-size="12">${text.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</text></svg>`);
@@ -76,6 +77,12 @@ await page.route('**/api/**', async route => {
     if (round === 2 && option === 'brief' && comparisonVersion === 'initial') await briefPreviewWait;
     previewReads.push({ key: url.searchParams.get('key'), round, option, background: url.searchParams.get('background') === '1' });
     const candidate = round === 2 ? [...units[round].map(unit => ({ ...unit, new_text: option === 'brief' ? alternateSource : unit.new_text })), unit('other', 80, 'Three datasets.', 'Five datasets.')] : units[round];
+    if (previewMode !== 'normal') return route.fulfill({ json: {
+      ...rounds[round], task: task.name, before: 'before', after: `candidate-${option}-${comparisonVersion}`, files: '', warnings: [],
+      units: candidate.map(unit => previewMode === 'binary' && unit.id === 'c1' ? { ...unit, kind: 'binary' } : unit),
+      sourceOnly: previewMode === 'baseline-failed' || undefined,
+      loose: [{ kind: 'change', units: ['c1'], identical: previewMode === 'identical', before: [], after: [] }],
+    } });
     const blocks = round === 2 ? [{ kind: 'change', units: candidate.map(unit => unit.id), before: [strip('Unrelated leading strip'), sharedStrip(candidate[0].old_text)], after: [strip('Unrelated leading strip'), sharedStrip(candidate[0].new_text)] }] : candidate.map(unit => ({ kind: 'change', units: [unit.id], before: [strip(unit.old_text)], after: [strip(unit.new_text)] }));
     return route.fulfill({ json: { ...rounds[round], units: candidate, task: task.name, before: 'before', after: `candidate-${option}-${comparisonVersion}`, files: '', warnings: [], loose: [...blocks, ...Array.from({ length: 5 }, (_, i) => ({ kind: 'change', units: ['space-' + i], identical: true, before: [], after: [] }))] } });
   }
@@ -249,6 +256,32 @@ try {
   await page.screenshot({ path: 'test-results/note-results-desktop-light.png', fullPage: true });
   await page.emulateMedia({ colorScheme: 'dark' });
 
+  async function checkUnavailablePreviews(size) {
+    for (const mode of ['baseline-failed', 'unmapped', 'binary', 'identical']) {
+      previewMode = mode; comparisonVersion = `${size}-${mode}`; task.updatedAt++;
+      await decided();
+      const notice = controls().locator(`.note-comparison-notice[data-reason="${mode}"]`);
+      await expect(notice).toBeVisible();
+      await expect(controls().locator('.note-option-comparison pre')).toHaveCount(0);
+      const show = notice.getByRole('button', { name: 'Show LaTeX source', exact: true });
+      if (mode === 'binary') await expect(show).toHaveCount(0);
+      else {
+        await show.click();
+        await controls().getByRole('region', { name: 'LaTeX comparison', exact: true }).waitFor();
+        await sourceToggle.click();
+        await expect(notice).toBeVisible();
+      }
+      if (mode === 'baseline-failed') for (const theme of ['light', 'dark']) {
+        await page.emulateMedia({ colorScheme: theme });
+        await page.screenshot({ path: `test-results/note-options-unavailable-${size}-${theme}.png`, fullPage: true });
+      }
+    }
+    previewMode = 'normal'; comparisonVersion = `${size}-restored`; task.updatedAt++;
+    await decided();
+    await expect(controls().locator('.note-comparison-crop').first()).toBeVisible();
+  }
+  await checkUnavailablePreviews('desktop');
+
   // Load the phone layout directly rather than resizing a page mid-load.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
@@ -279,6 +312,9 @@ try {
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390, 'every action remains reachable on mobile');
   }
   await page.screenshot({ path: 'test-results/note-options-latex-mobile.png', fullPage: true });
+  await sourceToggle.click();
+  await checkUnavailablePreviews('mobile');
+  await sourceToggle.click();
   const draftBefore = await page.evaluate(id => localStorage.getItem('papilot:review-notes:' + id), task.id);
   rejectFails = true;
   await controls().getByRole('button', { name: 'Reject Concise', exact: true }).click();
