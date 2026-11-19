@@ -14,6 +14,7 @@ import { createServer } from '../engine/src/server.ts';
 // The real app-server from the @openai/codex dev dependency. A loaded thread
 // runs the user's stdio MCP servers in its working directory, which Windows
 // then cannot delete (issue #179). This one records where it runs.
+// Disable plugins to avoid unrelated background Git syncs.
 const CODEX = path.join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'codex.cmd' : 'codex');
 const MCP_SERVER = `import fs from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -36,7 +37,7 @@ test('deleting a Codex task stops the MCP servers Codex runs in its worktree, th
   const disk = new Fixture(), app = disk.app(), engine = createServer(app), store = new Store(':memory:');
   const home = path.join(disk.base, 'codex-home'), server = path.join(disk.base, 'mcp-server.mjs'), log = path.join(disk.base, 'mcp-servers.log');
   fs.mkdirSync(home); fs.writeFileSync(server, MCP_SERVER);
-  const codex = new Codex(CODEX, ['app-server', '--listen', 'stdio://', '-c', `mcp_servers.holder.command=${JSON.stringify(process.execPath)}`, '-c', `mcp_servers.holder.args=${JSON.stringify([server, log])}`],
+  const codex = new Codex(CODEX, ['app-server', '--listen', 'stdio://', '-c', 'features.plugins=false', '-c', `mcp_servers.holder.command=${JSON.stringify(process.execPath)}`, '-c', `mcp_servers.holder.args=${JSON.stringify([server, log])}`],
     { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: os.tmpdir() });
   let workspace: Workspace | undefined;
   const started = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { pid: number; cwd: string }) : [];

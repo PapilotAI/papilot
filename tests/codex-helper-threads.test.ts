@@ -13,6 +13,7 @@ import { Workspace } from '../src/server/workspace.ts';
 // The real app-server from the @openai/codex dev dependency, with a canned
 // local model endpoint. A loaded thread runs the user's stdio MCP servers in
 // its working directory; this one records where it runs.
+// Disable plugins to avoid unrelated background Git syncs.
 const CODEX = path.join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'codex.cmd' : 'codex');
 const MCP_SERVER = `import fs from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -61,7 +62,7 @@ test('a commit message stops the MCP servers Codex runs for its helper turn and 
   });
   model.listen(0, '127.0.0.1'); await once(model, 'listening');
   const port = (model.address() as { port: number }).port;
-  const settings = ['model="fixture"', 'model_provider="fixture"', 'model_providers.fixture.name="Fixture"', `model_providers.fixture.base_url="http://127.0.0.1:${port}/v1"`, 'model_providers.fixture.wire_api="responses"', 'model_providers.fixture.requires_openai_auth=false',
+  const settings = ['features.plugins=false', 'model="fixture"', 'model_provider="fixture"', 'model_providers.fixture.name="Fixture"', `model_providers.fixture.base_url="http://127.0.0.1:${port}/v1"`, 'model_providers.fixture.wire_api="responses"', 'model_providers.fixture.requires_openai_auth=false',
     `mcp_servers.holder.command=${JSON.stringify(process.execPath)}`, `mcp_servers.holder.args=${JSON.stringify([server, log])}`];
   const codex = new Codex(CODEX, ['app-server', '--listen', 'stdio://', ...settings.flatMap(setting => ['-c', setting])], { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: os.tmpdir() });
   const store = new Store(':memory:'), workspace = new Workspace(store, codex);

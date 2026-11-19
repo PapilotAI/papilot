@@ -11,6 +11,7 @@ import { delegateWorkflow, runWorkflowHelper, type WorkflowGenerate } from '../s
 // The installed native runtime talks only to a disposable canned Responses
 // endpoint. This exercises real tool registration, sandboxing and apply_patch,
 // without host credentials or live model calls.
+// Disable plugins to avoid unrelated background Git syncs.
 test('native Codex workers edit snapshots without inherited tools, network or writable roots', { timeout: 60000 }, async () => {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-worker-')));
   const paper = path.join(dir, 'paper'), extra = path.join(dir, 'extra'), home = path.join(dir, 'home');
@@ -42,7 +43,7 @@ test('native Codex workers edit snapshots without inherited tools, network or wr
   });
   endpoint.listen(0, '127.0.0.1'); await once(endpoint, 'listening');
   const port = (endpoint.address() as { port: number }).port, selected = 'gpt-6.1-sol';
-  const settings = ['model_provider="fixture"', 'model_providers.fixture.name="Fixture"', `model_providers.fixture.base_url="http://127.0.0.1:${port}/v1"`, 'model_providers.fixture.wire_api="responses"', 'model_providers.fixture.requires_openai_auth=false',
+  const settings = ['features.plugins=false', 'model_provider="fixture"', 'model_providers.fixture.name="Fixture"', `model_providers.fixture.base_url="http://127.0.0.1:${port}/v1"`, 'model_providers.fixture.wire_api="responses"', 'model_providers.fixture.requires_openai_auth=false',
     `sandbox_workspace_write.writable_roots=[${JSON.stringify(extra)}]`, 'sandbox_workspace_write.network_access=true', 'features.shell_tool=true', 'features.multi_agent=true',
     `mcp_servers.host_fixture.command=${JSON.stringify(process.execPath)}`, `mcp_servers.host_fixture.args=${JSON.stringify([mcp])}`];
   const binary = path.join(process.cwd(), 'node_modules/.bin', process.platform === 'win32' ? 'codex.cmd' : 'codex');

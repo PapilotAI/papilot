@@ -13,7 +13,7 @@ import type { Task } from '../src/shared.ts';
 
 // The real app-server from the @openai/codex dev dependency. The model
 // endpoint is local and canned: no credentials, external API requests or
-// model charges are needed.
+// model charges are needed. Disable plugins to avoid unrelated background Git syncs.
 const CODEX = path.join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'codex.cmd' : 'codex');
 for (const history of ['new', 'legacy-loaded', 'legacy-restarted'] as const)
 for (const initial of ['workspace', 'full'] as const) test(`real Codex switches permissions with ${history} history starting with ${initial}`, { timeout: 60000 }, async () => {
@@ -39,7 +39,7 @@ for (const initial of ['workspace', 'full'] as const) test(`real Codex switches 
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as { port: number }).port;
-  const args = ['app-server', '--listen', 'stdio://'];
+  const args = ['app-server', '--listen', 'stdio://', '-c', 'features.plugins=false'];
   for (const setting of ['model="fixture"', 'model_provider="fixture"', 'model_providers.fixture.name="Fixture"', `model_providers.fixture.base_url="http://127.0.0.1:${port}/v1"`, 'model_providers.fixture.wire_api="responses"', 'model_providers.fixture.requires_openai_auth=false', `sandbox_workspace_write.writable_roots=[${JSON.stringify(extra)}]`, 'sandbox_workspace_write.exclude_tmpdir_env_var=true', 'sandbox_workspace_write.exclude_slash_tmp=true']) args.push('-c', setting);
   const codex = new Codex(CODEX, args, { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: os.tmpdir() });
   const store = new Store(':memory:');
@@ -133,7 +133,7 @@ test('Codex refuses a workspace policy resolver that retains full access and cle
 test('on Windows, Codex threads get the sandbox that needs no setup unless the user configured one', { timeout: 60000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-windows-'));
   const start = async (platform: NodeJS.Platform) => {
-    const codex = new Codex(CODEX, ['app-server', '--listen', 'stdio://'], { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: os.tmpdir() }, platform);
+    const codex = new Codex(CODEX, ['app-server', '--listen', 'stdio://', '-c', 'features.plugins=false'], { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: os.tmpdir() }, platform);
     await codex.start();
     const sent: any[] = [], write = codex.child!.stdin!.write.bind(codex.child!.stdin!);
     codex.child!.stdin!.write = ((line: string, ...rest: any[]) => { sent.push(JSON.parse(line)); return (write as any)(line, ...rest); }) as any;
