@@ -26,6 +26,8 @@ import { cMapData } from '../../engine/src/web/pdf-cmaps.ts';
 import { cropDocument, cropLayerStyle, fullPageViewport, isCropped, originalPageRect, readPdfCrop, savePdfCrop, type PdfCrop } from './pdf-crop.ts';
 import { PdfCropDialog } from './pdf-crop-dialog.tsx';
 import { PdfSelectionActions } from './pdf-selection-actions.tsx';
+import { PdfPeek } from './pdf-peek.tsx';
+import { resolvePdfDestination } from './pdf-destination.ts';
 
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
 const CMapData = cMapData(import.meta.glob<string>('../../node_modules/pdfjs-dist/cmaps/*.bcmap', { eager: true, import: 'default', query: '?url&no-inline' }));
@@ -465,15 +467,8 @@ export const PdfView = forwardRef<PdfHandle, {
     links.goToDestination = async (dest: string | unknown[]) => {
       const document = loaded.current;
       if (!document) return;
-      const explicit = typeof dest === 'string' ? await document.getDestination(dest) : await dest;
-      if (!Array.isArray(explicit)) return;
-      const [target] = explicit;
-      let pageNumber: number | null = null;
-      if (target && typeof target === 'object') {
-        const ref = target as { num: number; gen: number };
-        pageNumber = document.cachedPageNumber(ref) ?? await document.getPageIndex(ref).then(index => index + 1, () => null);
-      } else if (Number.isInteger(target)) pageNumber = (target as number) + 1;
-      if (loaded.current === document && pageNumber && pageNumber >= 1 && pageNumber <= viewer.pagesCount) viewer.scrollPageIntoView({ pageNumber, destArray: explicit });
+      const target = await resolvePdfDestination(document, dest);
+      if (loaded.current === document && target) viewer.scrollPageIntoView({ pageNumber: target.pageNumber, destArray: target.explicit });
     };
     let location: { page: number; left: number; top: number } | undefined;
     tools.current = { bus, links, find, viewer, cropTo(next) {
@@ -612,7 +607,7 @@ export const PdfView = forwardRef<PdfHandle, {
       const tool = toolRef.current, start = down; down = null;
       const touchMagic = event.pointerType === 'touch' && tool === 'magic' && !picking.current?.active() && Boolean(start && performance.now() - start.time < 450);
       if ((tool !== 'note' && tool !== 'delete' && tool !== 'magic' && tool !== 'source') || latest.current.readOnly || (tool !== 'source' && latest.current.markingDisabled) || editingRef.current || (event.pointerType === 'touch' && !touchMagic) || event.button !== 0
-        || !box.contains(event.target as Node) || (event.target as Element).closest('button,input,textarea,select,.pdf-note-card')) return;
+        || !box.contains(event.target as Node) || (event.target as Element).closest('button,a,input,textarea,select,.pdf-note-card')) return;
       const at = { x: event.clientX, y: event.clientY }, page = (event.target as Element).closest<HTMLElement>('.page');
       const click = Boolean(start && !pressed.current.card && Math.hypot(at.x - start.x, at.y - start.y) < (event.pointerType === 'touch' ? 10 : 5)), onNote = Boolean(noteAt(event));
       setTimeout(() => {
@@ -1002,6 +997,7 @@ export const PdfView = forwardRef<PdfHandle, {
       {dismissedNote && <div className="pdf-suggestion-undo" role="status">{dismissedNote.aiReview ? t('Suggestion ignored.') : t('Note deleted.')}<button type="button" disabled={noteLocked} onClick={() => void restoreNote()}>{t('Undo')}</button>{noteError && <p role="alert">{noteError}</p>}</div>}
     </div>
     </div>
+    {loaded.current && <PdfPeek container={container} document={loaded.current} disabled={Boolean(props.suspended || editing || cropping || props.region || wheel)}/>}
     {wheel && <StampWheel x={wheel.x} y={wheel.y} stamps={stamps} onPick={pickStamp} onClose={() => { setWheel(null); container.current?.focus({ preventScroll: true }); }}
       onFree={() => { const target = wheel.target; setWheel(null); openCard(target); }}/>}
     {cropping && loaded.current && <PdfCropDialog document={loaded.current} page={page} crop={crop} onApply={next => tools.current?.cropTo(next)} onClose={() => {

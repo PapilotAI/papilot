@@ -2420,7 +2420,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Loading…": {
-    "revision": "1a8b1bad7f947fb5a483eb1f447bb56057b2f240a3db0cb546520770f642a288",
+    "revision": "4d08bc979714362e85ad4b5d80342a31b6f6074aee9fc5e38d1144f6e3897b2a",
     "textHash": "3456fed2e7fac2a0d0bb0ddb6c3784485bc4541653573ee07e78df45e9ee978a",
     "model": "gemini-4-argon-medium"
   },
@@ -3225,7 +3225,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Page {page}": {
-    "revision": "4135098dc8ac41f551f749b6683926bf801dac619dc3d3166092f2f20d7fde8d",
+    "revision": "22210ff5ef1f037efb87cd097fa9e0ee8aa1e34a538fa6d912c541be8bd849b7",
     "textHash": "187f2e0d9e46b1f2508fe6e225103b8fb7227dc79a8f137b2a165141e57f76f0",
     "model": "codex-reviewed"
   },
@@ -3435,9 +3435,14 @@
     "model": "gemini-4-argon-medium"
   },
   "Preview": {
-    "revision": "7ceecb91cb3165701eb224841e1606465970b0dd63cf3e8c779c3812b9eea0d9",
+    "revision": "f6a0b2463e64ff7444e020dc92ba57fa9c5e4f98fb926792c893ff749f4ceda5",
     "textHash": "88638a3f4b7ff730aaad7ed36ce82f6135bd5cc864e1c76996b738b2372552d1",
     "model": "gemini-4-argon-medium"
+  },
+  "Preview unavailable": {
+    "revision": "6de6e4f3369f317f0b1b4d86cdc6c415524f154188d2696df504adebeef46d58",
+    "textHash": "15478c1177efeb7ffda7a39262d9291644ab05570b379cee86dd629294eccde9",
+    "model": "manual"
   },
   "Previous anchor": {
     "revision": "0478b2210e4bc038f44476d9fb71bdb05da0aa1e5955076035bba43b10a4fa18",
