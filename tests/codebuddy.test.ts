@@ -154,7 +154,9 @@ test('CodeBuddy retains a timed-out discovery worker across close and reconnect 
   }
 });
 
-test('CodeBuddy discovery retains inherited streams after its owned group exits and removes its workspace before reconnecting', { skip: process.platform === 'win32', timeout: 5000 }, async t => {
+// Keep real OS process checks and shutdown timers on the same clock. Allow the
+// actual 10-second shutdown deadline to expire, then verify reconnection.
+test('CodeBuddy discovery retains inherited streams after its owned group exits and removes its workspace before reconnecting', { skip: process.platform === 'win32', timeout: 20000 }, async () => {
   const script = `
     const { spawn } = require('node:child_process');
     const { createInterface } = require('node:readline');
@@ -186,13 +188,11 @@ test('CodeBuddy discovery retains inherited streams after its owned group exits 
     return child;
   });
   const release = (child: ChildProcess) => (child.stdio[3] as NodeJS.WritableStream).end();
-  t.mock.timers.enable({ apis: ['setTimeout'] });
   try {
     const failed = assert.rejects(agent.start(), /did not exit/);
     await exited;
     const old = processes[0];
     assert.equal(old.didClose, false, 'the descendant retains stdout and stderr after its parent exits');
-    t.mock.timers.tick(10000);
     await failed;
     assert.equal(agent.ready, false);
     agent.close();
@@ -202,13 +202,12 @@ test('CodeBuddy discovery retains inherited streams after its owned group exits 
     assert.equal(fs.existsSync(old.cwd), true);
     release(old.child);
     await old.closed;
-    t.mock.timers.reset();
     await agent.start();
     assert.equal(agent.ready, true);
     assert.equal(processes.length, 2);
     assert.ok(processes.every(entry => entry.didClose && !fs.existsSync(entry.cwd)));
   } finally {
-    t.mock.timers.reset(); agent.close();
+    agent.close();
     for (const { child } of processes) {
       release(child);
       if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL');
