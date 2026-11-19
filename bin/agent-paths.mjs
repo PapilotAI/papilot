@@ -66,6 +66,38 @@ export function findExecutable(command, env = process.env) {
     const file = candidate + extension;
     try { if (!fs.statSync(file).isFile()) continue; fs.accessSync(file, WINDOWS ? fs.constants.F_OK : fs.constants.X_OK); return file; } catch { /* try next */ }
   }
+  if (WINDOWS && !explicit && /^dsh(?:\.cmd)?$/i.test(command)) return installedDeepSeek(env);
+  return null;
+}
+
+// Harness records custom install locations even when its optional dsh command
+// has not been registered. Query only after ordinary lookup fails; explicit
+// paths and other agents never start PowerShell. Read again on Reconnect so an
+// install, move or uninstall does not leave a cached executable behind.
+function installedDeepSeek(env) {
+  const script = String.raw`
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$locations = @(Get-ItemProperty -Path @(
+  'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKCU:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+) -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq 'DeepSeek Harness' } | ForEach-Object { $_.InstallLocation })
+ConvertTo-Json -InputObject $locations -Compress
+`;
+  try {
+    const result = spawnSync(systemExecutable('WindowsPowerShell/v1.0/powershell.exe'),
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      { encoding: 'utf8', windowsHide: true, timeout: 3000, maxBuffer: 64 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    if (result.error || result.status !== 0) return null;
+    const locations = JSON.parse(result.stdout);
+    if (!Array.isArray(locations)) return null;
+    for (const location of locations) {
+      if (typeof location !== 'string' || !path.isAbsolute(location)) continue;
+      const cli = findExecutable(path.join(location, 'resources/runtime/cli/bin/dsh.cmd'), env);
+      if (cli) return cli;
+    }
+  } catch { /* Missing, restricted or incompatible PowerShell leaves the agent unavailable. */ }
   return null;
 }
 // Every executable PATH offers for a command, in order, each installation once
