@@ -2410,7 +2410,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Loading…": {
-    "revision": "2dbd58f53ce7a6c0795331c0da4256a596842c544cc02f67276397655f927466",
+    "revision": "b3673338361f4cc9f063681ae53c0ce1d87086490002c229195a656f80fe3652",
     "textHash": "6cc1bbba0f84d197bb42da0098be583bd0113c1a437cc797ccd6d9394a1a6e30",
     "model": "gemini-4-argon-medium"
   },
@@ -3655,7 +3655,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Refresh": {
-    "revision": "cfd395da0f8a3c024c889f4520ff3ad6dd7a9b96a25c09bf1a497f2aea1e8abe",
+    "revision": "a9fc13653c89b8df410cf73e7adff24356779cef9a6a92956545740a14f6db79",
     "textHash": "dafb59613e1236142cfb04e696d1455caba7233cfd0790f84a754582c0084ac2",
     "model": "gemini-4-argon-medium"
   },
@@ -6553,6 +6553,61 @@
     "revision": "f9900bbdffacd70f2f6f07cc95f201493e62b0f5f2d60b622f1d8cfcae04739b",
     "textHash": "43c285745c8e9f5928c92669371071b525448cc1130c7e4f8f3a97118743aaa6",
     "model": "manual"
+  },
+  "Allow Papilot in macOS Accessibility settings.": {
+    "revision": "71b6896a8bf78bb86e134ae611efe0fd8128133d1b05e55d223cc77bd1cba691",
+    "textHash": "5012977448465d8d40b105ba12eef397e216222cd655508d7acc5d610ed33ad3",
+    "model": "codex"
+  },
+  "Shortcut failed. Try again.": {
+    "revision": "03f976952fa5f6685d610f0bd0ed3326ccfebe616fa28e68609f59398d2bc4a9",
+    "textHash": "003ea982c10987c1a1d36b37c82afe7bcd9fcba5baa7c308525fecd541fa6440",
+    "model": "codex"
+  },
+  "Install Typeless first.": {
+    "revision": "0e8a2c39af75f37834386e769b2d88aa49d7da5d778aa694ed42d57bd4239fb0",
+    "textHash": "b410621770c383c0f2dd372f37c5c80aca443a48276e7cf0fd8fdee1c1ca542c",
+    "model": "codex"
+  },
+  "Dictate PDF notes with Typeless.": {
+    "revision": "50f04e02b0e875844531c6fad0809d39792caa27276d293da96095c5116ba45f",
+    "textHash": "07f91c406db169c1667901ddfdb7a69e97426df356b25bee780c8b9702670efe",
+    "model": "codex"
+  },
+  "Open Typeless first.": {
+    "revision": "97194cc8307af54ab3b2ea5eb853c9d15e4d1ecd9683976db44090ade19aa89b",
+    "textHash": "ab585c5750a041e3fb8cf21c03cb99b3bfd88aad32aa8a890ef785fcc5c5bab7",
+    "model": "codex"
+  },
+  "Release modifier keys and retry.": {
+    "revision": "abdc86e490310c13f10cf4b9c2b9869d860fbe7f4141c9e10ce1bb0f5298dc10",
+    "textHash": "aea6af5cc077e81d0572cb340b651e2fbb160294f9ec2affde17d964f8017f09",
+    "model": "codex"
+  },
+  "Toggle dictation": {
+    "revision": "f35cbd4ba9f88a8461a72cbc0af5cb448fa0f614928b0ab21dd52bfa80a63f43",
+    "textHash": "559ab20089103fe6f51860b4d774a59de65f1dadc3c81928ff4b9f063282701c",
+    "model": "codex"
+  },
+  "{shortcut} sent": {
+    "revision": "a39451e335771a30adf15f206770bd64fa56672423e9eda505b9ac81ecbc974c",
+    "textHash": "fb504670cbf743c3e5ab7cf4500dc3e5a98197413f14346cb1b717d53e72d77f",
+    "model": "codex"
+  },
+  "Check your Typeless shortcut.": {
+    "revision": "c5faa26d1930906781c83b2a1c87590ab110c8bd3557a0ec4e8c490b3699a2e3",
+    "textHash": "ae10c26473907d7b796308af87b7365d766c5a038315aa331f2767a386da57e8",
+    "model": "codex"
+  },
+  "Shortcut: {shortcut}": {
+    "revision": "bb9e1f4856ed32f64fce75d5a1cb2037c6758d21eb7dbb92e080a3c6de8a9022",
+    "textHash": "26cf447128d39ad9e900f6e9af1a72ae3ed82e747fc39ac0934ccb7b5449720f",
+    "model": "codex"
+  },
+  "Typeless voice notes": {
+    "revision": "e1455f3061ad1decb14f5f9676db61d0396765a6adc039539abab5febe2079a2",
+    "textHash": "7bfb5f0b37a2b841561dd2ae79902fcdb69d3f1bd1ea332c7ae06e264d9e7192",
+    "model": "codex"
   },
   "Saved page {page}": {
     "revision": "c548c66391e51ae790e011dc7fc90c7f776ad86daf09df52877af84f9c6090eb",

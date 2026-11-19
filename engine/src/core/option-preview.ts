@@ -5,9 +5,9 @@ import type { App } from "../server.ts";
 import type { Op, RenderedRound, RoundDetail, Unit } from "../types.ts";
 import { groupFormattingChanges } from "./formatting-changes.ts";
 import { splitLines } from "./changes.ts";
-import { Builder, buildDate } from "./build.ts";
+import { Builder, buildDate, reprioritize, type BuildPriority } from "./build.ts";
 import { readJson, writeJson } from "./files.ts";
-import { render, sourceComparison } from "./publish.ts";
+import { render, reprioritizeRenders, sourceComparison } from "./publish.ts";
 import type { OptionInput } from "./note-options.ts";
 
 /** Keep annotation IDs and old ranges stable while adjusting candidate ranges.
@@ -68,8 +68,8 @@ export function optionCandidate(units: Unit[], edits: OptionInput["edits"], sour
   return { files, units: updated };
 }
 
-const pending = new Map<string, Promise<RoundDetail>>();
-export async function previewNoteOption(app: App, name: string, input: OptionInput & { rejected?: string[] }): Promise<RoundDetail> {
+const pending = new Map<string, { promise: Promise<RoundDetail>; priority: BuildPriority }>();
+export async function previewNoteOption(app: App, name: string, input: OptionInput & { rejected?: string[]; background?: boolean }): Promise<RoundDetail> {
   if (!input || !Array.isArray(input.edits) || !input.edits.length || input.edits.length > 100
     || input.edits.some(edit => !edit || typeof edit.unit !== "string" || typeof edit.text !== "string" || edit.text.includes("\0") || edit.text.length > 20000))
     throw new Error("Invalid note option.");
@@ -101,7 +101,16 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
   const output = path.join(app.state, "cache/option-previews", name, String(round.number), key);
   const cached = readJson<RoundDetail | null>(path.join(output, "preview.json"), null);
   if (cached) return cached;
-  if (pending.has(output)) return pending.get(output)!;
+  const existing = pending.get(output);
+  if (existing) {
+    if (input.background !== true) { existing.priority = "foreground"; reprioritize(); reprioritizeRenders(); }
+    return existing.promise;
+  }
+  // The existing machine-wide TeX/render pool bounds concurrency. Optional
+  // work yields to publication and saving; selecting it promotes the same
+  // build, including one already waiting for a compiler slot.
+  const entry = { priority: input.background === true ? "background" : "foreground" } as { promise: Promise<RoundDetail>; priority: BuildPriority };
+  const priority = () => entry.priority;
   const work = (async () => {
     const candidate = optionCandidate(round.units, input.edits, file => {
       const data = app.repo.blob(round.after, file);
@@ -115,20 +124,20 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
     // Rebuilding the whole thesis here was both slow and a different comparison.
     const keys = round.summary.builds;
     let seed = targets.includes("full") ? null
-      : (keys.length > 2 ? await builder.completed(keys[0]) : null) ?? await builder.buildSeed(task.base);
+      : (keys.length > 2 ? await builder.completed(keys[0]) : null) ?? await builder.buildSeed(task.base, { priority });
     const expanded = Boolean(seed?.errors?.length);
     if (expanded) { targets = ["full"]; seed = null; }
     const baseline = !expanded && keys.length >= 2 ? await builder.completed(keys.at(-2)!) : null;
     const [old, next] = await Promise.all([
-      round.summary.sourceOnly ? null : baseline ?? builder.build(round.before, targets, seed, { date }),
-      builder.build(after, targets, seed, { date }),
+      round.summary.sourceOnly ? null : baseline ?? builder.build(round.before, targets, seed, { date, priority }),
+      builder.build(after, targets, seed, { date, priority }),
     ]);
     fs.mkdirSync(output, { recursive: true });
     // A choice can restore part of the original wording (including cancelling
     // an insertion). Keep its decision ID in the saved round, but do not render
     // a before/after card for an edit that this candidate no longer contains.
     const visible = candidate.units.filter(unit => unit.kind !== "text" || unit.truncated || unit.whole_file || unit.old_text !== unit.new_text);
-    if (old) await render(output, { main: project.main, source_dir: project.source_dir, figures: project.figures, old, new: next, units: visible, indirect: false });
+    if (old) await render(output, { main: project.main, source_dir: project.source_dir, figures: project.figures, old, new: next, units: visible, indirect: false }, undefined, priority);
     const rendered = old
       ? readJson<RenderedRound>(path.join(output, "round.json"), { units: {}, sections: [], loose: [] })
       : sourceComparison(visible);
@@ -144,7 +153,8 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
     writeJson(path.join(output, "preview.json"), detail);
     return detail;
   })();
-  pending.set(output, work);
+  entry.promise = work;
+  pending.set(output, entry);
   try { return await work; }
   catch (error) { fs.rmSync(output, { recursive: true, force: true }); throw error; }
   finally { pending.delete(output); }

@@ -100,7 +100,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
     ] },
     { label: t('Application'), entries: [
       ...(updates ? [{ page: 'updates' as const, label: t('Updates'), icon: 'refresh' }] : []),
-      ...(diagnostics?.compiler || workflow ? [{ page: 'experiments' as const, label: t('Experiments'), icon: 'flask', keywords: `PhiTeX ${t('Compile with PhiTeX')} ${t('Enable collaboration mode')}` }] : []),
+      ...(diagnostics?.compiler || workflow || window.papilotDesktop?.platform === 'darwin' ? [{ page: 'experiments' as const, label: t('Experiments'), icon: 'flask', keywords: `Typeless PhiTeX ${t('Compile with PhiTeX')} ${t('Enable collaboration mode')}` }] : []),
       { page: 'about', label: t('About Papilot'), icon: 'info', keywords: t('Third-party licenses') },
     ] },
   ];

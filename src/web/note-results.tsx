@@ -13,7 +13,7 @@ export interface NoteFocus { key: string; change: NoteChange; sequence: number; 
 type OptionsRequest = (id: string, key: string, body?: { round: number; option?: string; id?: string; accept?: boolean; reject?: boolean }) => Promise<NoteOptions | { building: true }>;
 type Preview = { key: string; round: number; option: string; version?: string; detail?: RoundDetail } | null;
 type Advance = { key: string; round: number; units: string[] };
-type PreviewRequest = (id: string, key: string, round: number, option: string, retry?: boolean, version?: string) => Promise<RoundDetail>;
+type PreviewRequest = (id: string, key: string, round: number, option: string, retry?: boolean, version?: string, background?: boolean) => Promise<RoundDetail>;
 const previewKey = (id: string, key: string, round: number, option: string, version?: string) => JSON.stringify([id, key, round, option, version]);
 const comparisonCache = new NotePreviewCache<RoundDetail>();
 const optionCache = new Map<string, NoteOptions>();
@@ -58,7 +58,7 @@ function optionLockText(reason: string) {
 // A dropped connection says nothing the author can act on beyond retrying.
 const optionError = (message: string) => /fetch failed|failed to fetch|networkerror|load failed/i.test(message)
   ? t('Request failed. Please try again.') : errorText(message);
-async function warmComparison(detail: RoundDetail) {
+async function warmComparison(detail: RoundDetail, background = false) {
   const strips = [...detail.sections.flatMap(section => section.blocks), ...detail.loose].flatMap(block => block.kind === 'context' ? [block.image] : block.kind === 'change' ? [...block.before, ...block.after] : []);
   // Decode the first visible strips before swapping, so a ready comparison
   // does not briefly show a blank page while its SVGs arrive.
@@ -66,7 +66,9 @@ async function warmComparison(detail: RoundDetail) {
   try {
     await Promise.race([
       Promise.allSettled([...new Set(strips.map(strip => detail.files + (strip.clean || strip.src)))].slice(0, 16).map(src => {
-        const image = new Image(); image.src = src; return image.decode();
+        const image = new Image();
+        if (background) image.fetchPriority = 'low';
+        image.src = src; return image.decode();
       })),
       new Promise(resolve => { timer = setTimeout(resolve, 500); }),
     ]);
@@ -178,7 +180,11 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     })();
     return () => { cancelled = true; };
   }, [id, task?.status, task?.review?.round, task?.updatedAt, decisions, noteSignature]);
-  const value: Links = { task, optionsRequest, previewRequest: previewRequest && ((id, key, round, option, retry, version) => comparisonCache.read(previewKey(id, key, round, option, version), () => previewRequest(id, key, round, option, retry, version).then(warmComparison))), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
+  const value: Links = { task, optionsRequest, previewRequest: previewRequest && ((id, key, round, option, retry, version, background = false) => comparisonCache.read(previewKey(id, key, round, option, version),
+    background => previewRequest(id, key, round, option, retry, version, background).then(detail => warmComparison(detail, background)),
+    // A second lightweight request promotes the engine's existing work. Keep
+    // one decoded result and one promise for everyone waiting in this page.
+    background ? () => { void previewRequest(id, key, round, option, retry, version, false).catch(() => {}); } : undefined)), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
     alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
     decisionSaved: decision => { setAdvance(decision); reload(); }, showChange };
@@ -367,17 +373,14 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
     : links.preview?.option === selected && links.preview.version === data.comparisonKey ? links.preview.detail : undefined
     : undefined;
   useEffect(() => { if (comparison) setShown(comparison); }, [comparison]);
-  // Once the shown comparison is in, the note's other options load while
-  // the author reads, so switching to one shows it at once.
+  // Start as soon as the choices arrive, even while the baseline's images
+  // load. Low-priority work shares the engine's bounded compiler pool.
   useEffect(() => {
-    if (!task || !data || data.locked || !links.previewRequest || !comparison) return;
+    if (!task || !data || data.locked || !links.previewRequest || links.focus?.key !== note.key) return;
     const others = data.options.filter(option => option.id !== selected && !option.previewError);
     if (!others.length) return;
-    const warm = () => { for (const option of others) void links.previewRequest!(task.id, note.key, data.round, option.id, false, data.comparisonKey).catch(() => {}); };
-    if (typeof requestIdleCallback !== 'function') { const timer = window.setTimeout(warm, 300); return () => window.clearTimeout(timer); }
-    const idle = requestIdleCallback(warm, { timeout: 1500 });
-    return () => cancelIdleCallback(idle);
-  }, [task?.id, note.key, data?.round, data?.comparisonKey, data?.locked, optionIds, Boolean(comparison)]);
+    for (const option of others) void links.previewRequest(task.id, note.key, data.round, option.id, false, data.comparisonKey, true).catch(() => {});
+  }, [task?.id, note.key, data?.round, data?.comparisonKey, data?.locked, optionIds, links.focus?.key]);
   if (!request || !task) return null;
   const loadFailure = selected === saved && !comparison ? baselineError : '';
   const stale = !comparison && !loadFailure && !error ? shown : null, displayed = comparison || stale;

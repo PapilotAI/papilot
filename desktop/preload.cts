@@ -4,6 +4,8 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 // filesystem access. Papers open in place; their files stay on disk.
 contextBridge.exposeInMainWorld('papilotDesktop', {
   platform: process.platform,
+  typelessStatus: () => ipcRenderer.invoke('papilot:typeless-status'),
+  typelessShortcut: (inputId: string) => ipcRenderer.invoke('papilot:typeless-shortcut', inputId),
   minimize: () => ipcRenderer.send('papilot:window', 'minimize'),
   maximize: () => ipcRenderer.send('papilot:window', 'maximize'),
   close: () => ipcRenderer.send('papilot:window', 'close'),

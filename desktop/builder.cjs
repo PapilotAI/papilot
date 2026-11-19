@@ -4,7 +4,8 @@ module.exports = {
   // Universe pages open templates with papilot://new?template=<id>&version=<version>.
   protocols: [{ name: 'Papilot', schemes: ['papilot'] }],
   directories: { app: '.desktop/app', output: 'release/desktop', buildResources: 'desktop/assets' },
-  files: ['*.js', '*.mjs', '*.cjs', '*.html', '*.css', 'package.json', '!node_modules{,/**/*}'],
+  files: ['*.js', '*.mjs', '*.cjs', '*.html', '*.css', 'typeless-keyboard', 'package.json', '!node_modules{,/**/*}'],
+  asarUnpack: ['typeless-keyboard'],
   extraResources: [
     { from: '.desktop/server', to: 'server' },
     // electron-builder's generic file copier skips root node_modules.

@@ -8,6 +8,10 @@ import { rewriteReviewHtml } from '../src/server/review.ts';
 import { readyRequirements } from './required-tools-fixture.mjs';
 
 const server = Fastify();
+let previewHandler;
+// Use real HTTP/1.1 for previews: route.fulfill cannot expose connection starvation.
+server.get('/api/tasks/:id/note-options/preview', (request, reply) => previewHandler(new URL(request.url, 'http://fixture'), reply));
+server.post('/preview-connection-probe', async () => ({ ok: true }));
 await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
@@ -30,6 +34,9 @@ try {
       return { src, clean: src, width: 600, height: 36, page: 1, label: '1', text: [{ text, chars: Array.from(text, (text, index) => ({ text, rect: [12 + index * 9, 8, 21 + index * 9, 28] })) }], marks: [{ unit, kind: 'added', rect: [12, 8, 220, 28] }] };
     };
     let version = 1, failPreview = false, latePreview = null, saveFails = false, pendingBuild = null;
+    let releaseBaseline, releaseAlternative, releaseLate = () => {};
+    const baselineGate = new Promise(resolve => { releaseBaseline = resolve; });
+    const alternativeGate = new Promise(resolve => { releaseAlternative = resolve; });
     const changed = () => { task.updatedAt++; task.review.counts.pending = Object.values(decisions).filter(state => state === 'pending').length; };
     const notes = () => noteUnits.map((unit, index) => ({ key: `run:${index}`, itemId: 'run', index, note: annotations[index], round: task.review.round, state: 'matched', changes: [{ round: task.review.round, stop: ['a', 'b', 'c'].indexOf(unit), units: [unit], state: decisions[unit], match: 'source' }] }));
     const detail = (unit, option) => ({ task: 'flow', round: task.review.round, before: 'before', after: `${unit}-${option}-v${version}`, files: '', warnings: [], sections: [],
@@ -40,7 +47,18 @@ try {
       return { key, round: task.review.round, comparisonKey: `v${version}`, selected: selected[unit],
         ...(decisions[unit] !== 'pending' ? { locked: 'This note includes a reviewed change. Undo that decision before replacing it.' } : {}),
         options: [{ id: 'current', label: `Original ${unit}`, reason: 'Keep the original proposal.', edits: [{ unit, text: `current ${unit}` }] },
-          { id: 'alternative', label: `Alternative ${unit}`, reason: 'Use the alternative wording.', edits: [{ unit, text: `alternative ${unit}` }] }] };
+          { id: 'alternative', label: `Alternative ${unit}`, reason: 'Use the alternative wording.', edits: [{ unit, text: `alternative ${unit}` }] },
+          ...(unit === 'a' ? Array.from({ length: 5 }, (_, i) => ({ id: `extra-${i}`, label: `Extra ${i}`, reason: 'Another wording.', edits: [{ unit, text: `extra ${i}` }] })) : [])] };
+    };
+    previewHandler = async (url, reply) => {
+      const unit = noteUnits[Number(url.searchParams.get('key').split(':')[1])], option = url.searchParams.get('option');
+      const result = detail(unit, option); previews.push({ unit, option, version, background: url.searchParams.get('background') === '1' });
+      if (version === 1 && unit === 'a') await (option === 'current' ? baselineGate : alternativeGate);
+      if (unit === 'a' && option === 'alternative') {
+        if (latePreview) { const wait = latePreview; latePreview = null; await wait; return reply.code(503).send({ error: 'Late preview failure' }); }
+        if (failPreview && url.searchParams.get('retry') !== '1') return reply.code(503).send({ error: 'fetch failed' });
+      }
+      return reply.send(result);
     };
     await page.route('**/api/**', async route => {
       const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
@@ -57,15 +75,7 @@ try {
       if (url.pathname === '/api/note-alternatives') return json({ noteAlternatives: true });
       if (url.pathname.endsWith('/items')) return json({ items });
       if (url.pathname.endsWith('/note-results')) return json({ notes: notes() });
-      if (url.pathname.endsWith('/note-options/preview')) {
-        const unit = noteUnits[Number(url.searchParams.get('key').split(':')[1])], option = url.searchParams.get('option');
-        const result = detail(unit, option); previews.push({ unit, option, version });
-        if (unit === 'a' && option === 'alternative') {
-          if (latePreview) { const wait = latePreview; latePreview = null; await wait; return route.fulfill({ status: 503, json: { error: 'Late preview failure' } }); }
-          if (failPreview && url.searchParams.get('retry') !== '1') return route.fulfill({ status: 503, json: { error: 'fetch failed' } });
-        }
-        return json(result);
-      }
+      if (url.pathname.endsWith('/note-options/preview')) return route.continue();
       if (url.pathname.endsWith('/note-options')) {
         if (route.request().method() === 'GET') return json(options(url.searchParams.get('key')));
         const body = route.request().postDataJSON(), unit = noteUnits[Number(body.key.split(':')[1])]; writes.push(body);
@@ -102,6 +112,11 @@ try {
     try {
       await page.goto(origin);
       await frame().getByRole('button', { name: 'Show note 1: Improve note 1.', exact: true }).click();
+      await expect.poll(() => previews.some(request => request.unit === 'a' && request.option === 'alternative' && request.background)).toBe(true);
+      assert.equal(await comparison('a-current-v1').count(), 0, 'Alternatives start before the baseline response is available');
+      assert.deepEqual(await page.evaluate(() => fetch('/preview-connection-probe', { method: 'POST', signal: AbortSignal.timeout(10000) }).then(response => response.json())), { ok: true }, 'A write reaches the server while optional previews are pending');
+      assert.equal(previews.filter(request => request.background).length, 1, 'Only one of six alternatives occupies a connection');
+      releaseBaseline();
       await expect(comparison('a-current-v1')).toBeVisible();
       // Selected segments must rise above their groove in both themes, including
       // the host's scope switch beside the embedded viewer's controls.
@@ -138,6 +153,19 @@ try {
         const [first, second] = [...run.children].map(glyph => glyph.getBoundingClientRect());
         return getComputedStyle(run).position === 'absolute' && second.left > first.left;
       })).toBe(true);
+      await tab('Alternative a').click();
+      await expect.poll(() => previews.filter(request => request.unit === 'a' && request.option === 'alternative' && !request.background).length).toBe(1);
+      await expect(drawer.locator('.note-option-tab[aria-selected="true"] .spinner')).toBeVisible();
+      releaseAlternative();
+      await expect(comparison('a-alternative-v1')).toBeVisible();
+      const selectedReads = () => previews.filter(request => request.unit === 'a' && ['current', 'alternative'].includes(request.option)).length;
+      const preparedRequests = selectedReads();
+      const switchStart = performance.now();
+      await tab('Original a').click(); await expect(comparison('a-current-v1')).toBeVisible();
+      await tab('Alternative a').click(); await expect(comparison('a-alternative-v1')).toBeVisible();
+      assert.equal(selectedReads(), preparedRequests, 'Repeated selection uses decoded comparisons without any request');
+      console.log(`${width}px: two cached tab switches displayed in ${Math.round(performance.now() - switchStart)} ms (including browser automation)`);
+      await tab('Original a').click();
       failPreview = true; version++; changed(); await sync();
       await expect(comparison('a-current-v2')).toBeVisible();
       await tab('Alternative a').click();
@@ -151,7 +179,7 @@ try {
       assert.equal(writes.length, 0, 'switching and retrying previews never saves a choice');
 
       failPreview = false; await tab('Original a').click();
-      let releaseLate; latePreview = new Promise(resolve => { releaseLate = resolve; });
+      latePreview = new Promise(resolve => { releaseLate = resolve; });
       version++; changed(); await sync();
       await expect(comparison('a-current-v3')).toBeVisible();
       await expect.poll(() => previews.some(request => request.unit === 'a' && request.option === 'alternative' && request.version === 3)).toBe(true);
@@ -206,8 +234,9 @@ try {
       await page.screenshot({ path: `test-results/note-options-flow-${width}.png` });
       console.log(`PASS ${width}px: preview failure/retry, stale response isolation, confirmed acceptance, shared-note skipping, asynchronous alternative save, final drawer retention and decisions after undo`);
     } catch (error) {
+      releaseBaseline(); releaseAlternative();
       await page.screenshot({ path: `test-results/note-options-flow-error-${width}.png` });
       throw error;
-    } finally { await page.close(); }
+    } finally { releaseBaseline(); releaseAlternative(); releaseLate(); await page.close(); }
   }
 } finally { await browser.close(); await server.close(); }

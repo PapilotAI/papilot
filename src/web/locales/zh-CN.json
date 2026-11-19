@@ -371,5 +371,16 @@
   "Commit-message agent": "提交信息智能体",
   "Follow current conversation": "跟随当前会话",
   "Use the conversation’s model and reasoning effort, or the new-task settings if none. An explicit choice applies only to commit messages and is saved in this browser.": "使用当前会话的模型和推理强度；没有会话时使用新任务设置。显式选择仅用于提交信息，并保存在此浏览器中。",
+  "Allow Papilot in macOS Accessibility settings.": "请在 macOS 辅助功能中允许 Papilot。",
+  "Shortcut failed. Try again.": "快捷键发送失败，请重试。",
+  "Install Typeless first.": "请先安装 Typeless。",
+  "Dictate PDF notes with Typeless.": "用 Typeless 口述 PDF 批注。",
+  "Open Typeless first.": "请先打开 Typeless。",
+  "Release modifier keys and retry.": "请松开修饰键后重试。",
+  "Toggle dictation": "切换听写",
+  "{shortcut} sent": "已发送 {shortcut}",
+  "Check your Typeless shortcut.": "请检查 Typeless 快捷键。",
+  "Shortcut: {shortcut}": "快捷键：{shortcut}",
+  "Typeless voice notes": "Typeless 语音批注",
   "Saved page {page}": "上次位置 · 第 {page} 页"
 }

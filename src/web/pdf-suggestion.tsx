@@ -9,6 +9,7 @@ import { groupName } from './note-groups.tsx';
 import { markText } from './note-content.tsx';
 import { sendsMessage } from './composer.ts';
 import { noteFromTask, noteToTask } from './note-flight.ts';
+import { useTypelessNote } from './typeless.tsx';
 
 export interface PdfNoteActions {
   has: (id: string) => boolean;
@@ -107,6 +108,7 @@ export function PdfNoteCard({ controller, note, number, index, total, selected, 
   // elsewhere closes it (keeping any text), so it shows a discard button only
   // once there is text to discard.
   const compose = !inline && !note.id, send = !inline && !destination;
+  const typeless = useTypelessNote(input, compose && editing && !busy);
   useEffect(() => { onEditing?.(editing); return () => onEditing?.(false); }, [editing, onEditing]);
   // Focus goes back to the text in the commit that shows it again. A frame
   // later is not enough: after a save the draft clears from a promise, and
@@ -124,6 +126,7 @@ export function PdfNoteCard({ controller, note, number, index, total, selected, 
     else onClose?.(restoreFocus);
   }
   async function save(action: 'keep' | 'close' | 'quote' = 'keep', restoreFocus = true): Promise<boolean> {
+    if (typeless.pending.current) return false;
     if (saving.current) return saving.current;
     if (busy) return false;
     const pending = (async () => {
@@ -191,13 +194,14 @@ export function PdfNoteCard({ controller, note, number, index, total, selected, 
   const content = <section ref={card} className={'pdf-note-card ' + (ai ? 'pdf-suggestion' : 'pdf-personal-note') + (inline ? ' pdf-note-inline' : '') + (compose ? ' pdf-note-compose' : '')} role={inline ? 'group' : 'dialog'} aria-modal={inline ? undefined : false} aria-label={ai ? t('AI suggestion {n}', { n: number }) : t('PDF note {n}', { n: number })} tabIndex={inline ? undefined : -1}>
     {header}
     <div className="pdf-note-content"><div className="pdf-suggestion-body">{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{editing ?
-      <textarea ref={input} className="pdf-note-input" aria-label={deleting ? t('Replacement for mark {n}', { n: number }) : t('Edit note {n}', { n: number })} placeholder={deleting ? t('Replace with… (leave empty to delete)') : t('Write a note…')} value={draft} rows={1} readOnly={busy} onChange={event => onDraftChange(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { event.preventDefault(); void save(enterAction); } }}/>
+      <textarea ref={input} id={typeless.inputId} className="pdf-note-input" aria-label={deleting ? t('Replacement for mark {n}', { n: number }) : t('Edit note {n}', { n: number })} placeholder={deleting ? t('Replace with… (leave empty to delete)') : t('Write a note…')} value={draft} rows={1} readOnly={busy} onChange={event => onDraftChange(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { event.preventDefault(); void save(enterAction); } }}/>
       : ai ? <p>{note.comment}</p> : <p ref={text} className="pdf-note-text note-edit-trigger" role="button" tabIndex={busy ? -1 : 0} aria-disabled={busy} aria-label={t('Edit note {n}: {comment}', { n: number, comment: shown })} title={deleting ? t('Give a replacement') : t('Edit note')} onClick={() => {
         const selection = window.getSelection();
         if (selection && !selection.isCollapsed && text.current?.contains(selection.anchorNode)) return;
         edit();
       }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); edit(); } }} data-kind={note.kind}>{shown}</p>}
-    </div>{compose ? <div className="pdf-note-compose-tools">{draft?.trim() && deleteButton}{sendButton}</div> : !inline && (ai || !send) && <button type="button" className="icon-button pdf-note-close" aria-label={ai ? t('Close suggestion') : t('Close note')} title={ai ? t('Close suggestion') : t('Close note')} disabled={busy} onClick={() => void save('close')}>{busy ? <span className="spinner"/> : <Icon name="close" size={14}/>}</button>}</div>
+    </div>{compose ? <div className="pdf-note-compose-tools">{typeless.button}{draft?.trim() && deleteButton}{sendButton}</div> : !inline && (ai || !send) && <button type="button" className="icon-button pdf-note-close" aria-label={ai ? t('Close suggestion') : t('Close note')} title={ai ? t('Close suggestion') : t('Close note')} disabled={busy} onClick={() => void save('close')}>{busy ? <span className="spinner"/> : <Icon name="close" size={14}/>}</button>}</div>
+    {typeless.hint}
     {children}
     {error && <p className="inline-error" role="alert">{error}</p>}
     {!compose && <div className="pdf-note-tools">

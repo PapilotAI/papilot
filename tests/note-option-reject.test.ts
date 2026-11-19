@@ -132,6 +132,9 @@ test('rejecting a note restores its source even when previewing an alternative; 
     assert.equal(currentPreview.json().after, 'respects-rejection', 'Current proposal also uses a decision-aware preview');
     assert.equal(previews.length, 1);
     assert.deepEqual((previews[0] as { rejected: string[] }).rejected, [neighbor.id], 'The engine must validate the same rejection state as the browser comparison key');
+    assert.equal((previews[0] as { background: boolean }).background, false);
+    assert.equal((await local.inject({ method: 'GET', url: url + rejectedKey + '&background=1', headers })).statusCode, 200);
+    assert.equal((previews.at(-1) as { background: boolean }).background, true, 'Prefetch priority reaches the engine');
     for (const [message, transient, expectedStatus] of [['fetch failed', true, 200], ['fetch failed', false, 400], ['Invalid optional LaTeX', false, 400]] as const) {
       previewFailure = new Error(message); failOnce = transient;
       const beforeConnections: number = connections, beforePreviews: number = previews.length;

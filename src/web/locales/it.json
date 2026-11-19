@@ -1596,5 +1596,16 @@
   "Commit-message agent": "Agente dei messaggi di commit",
   "Follow current conversation": "Segui la conversazione corrente",
   "Use the conversation’s model and reasoning effort, or the new-task settings if none. An explicit choice applies only to commit messages and is saved in this browser.": "Usa il modello e il livello di ragionamento della conversazione o, se assente, le impostazioni delle nuove attività. Una scelta esplicita si applica solo ai messaggi di commit e viene salvata in questo browser.",
+  "Allow Papilot in macOS Accessibility settings.": "Consenti Papilot nelle impostazioni di accessibilità di macOS.",
+  "Shortcut failed. Try again.": "Invio della scorciatoia non riuscito. Riprova.",
+  "Install Typeless first.": "Installa prima Typeless.",
+  "Dictate PDF notes with Typeless.": "Detta note PDF con Typeless.",
+  "Open Typeless first.": "Apri prima Typeless.",
+  "Release modifier keys and retry.": "Rilascia i tasti modificatori e riprova.",
+  "Toggle dictation": "Attiva o ferma la dettatura",
+  "{shortcut} sent": "{shortcut} inviata",
+  "Check your Typeless shortcut.": "Controlla la scorciatoia Typeless.",
+  "Shortcut: {shortcut}": "Scorciatoia: {shortcut}",
+  "Typeless voice notes": "Note vocali Typeless",
   "Saved page {page}": "Pagina salvata {page}"
 }

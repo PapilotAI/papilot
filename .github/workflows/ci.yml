@@ -120,6 +120,9 @@ jobs:
         run: node --import tsx scripts/check-review-application.mjs
         env:
           PAPILOT_BROWSER_CHANNEL: chromium
+      - name: Alternative preview compilation and cache reuse
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-note-preview-performance.mjs
       - name: Review flow
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-review-flow.mjs
@@ -135,8 +138,8 @@ jobs:
         run: node --import tsx scripts/check-note-options-flow.mjs
         env:
           PAPILOT_BROWSER_CHANNEL: chromium
-      - name: Keep screenshots of a failed check
-        if: failure()
+      - name: Keep review screenshots and timings
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: review-browser-results
@@ -321,6 +324,9 @@ jobs:
       - name: task-preparation
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-task-preparation.mjs
+      - name: typeless
+        if: ${{ !cancelled() }}
+        run: node scripts/check-typeless.mjs
       - name: ui
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-ui.mjs
@@ -349,6 +355,7 @@ jobs:
             test-results/section-comments-*.png
             test-results/anchors-*.png
             test-results/bulk-tasks-*.png
+            test-results/typeless-*.png
           if-no-files-found: ignore
           retention-days: 7
       - name: Keep screenshots of a failed check

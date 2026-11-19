@@ -67,6 +67,33 @@ test('prepared choice counts are guidance, with a bounded response size', () => 
   assert.deepEqual(readPreparedNoteOptions(response([{ ...prepared, options: Array(7).fill(prepared.options[0]) }]), 1), []);
 });
 
+test('background preparation covers each annotation before its next alternative', async () => {
+  const store = new Store(':memory:');
+  const task = { id: 'task', name: 'task', status: 'reviewing', review: { round: 1 } } as Task;
+  const run = { id: 'run', taskId: task.id, requestKey: 'run', prompt: '', status: 'completed', createdAt: 1, reviewRound: 1, noteOptions: [prepared] } as Run;
+  const requests: string[] = [];
+  const client = {
+    url: 'http://round-robin-preview-test',
+    get: async (route: string) => route.includes('/rounds/') ? { round: 1, before: 'before', after: 'after', units, sections: [], loose: [{ kind: 'change', units: ['c001', 'c002'] }] }
+      : { latest: 1, closed: false, decisions: { c001: 'pending', c002: 'pending' } },
+    post: async (_route: string, body: any) => { assert.equal(body.background, true); requests.push(body.id); },
+  } as unknown as ReviewClient;
+  try {
+    store.saveRun(run);
+    store.saveItem({ id: run.id, taskId: task.id, type: 'user', text: '', createdAt: 1, meta: { notes: [
+      { where: 'main.tex line 1', quote: 'fast', comment: 'Clarify speed.' },
+      { where: 'main.tex line 1', quote: 'stable', comment: 'Clarify stability.' },
+    ] } });
+    for (const [i, unit] of units.entries()) store.savePreference(noteOptionsKey(task.id, `run:${i}`, 1), {
+      round: 1, key: `run:${i}`, selected: 'current', options: [unit.new_text, 'first', 'second'].map((text, j) => ({
+        id: j ? `${i}-${text}` : 'current', label: text, reason: 'Clarify.', edits: [{ unit: unit.id, text }],
+      })),
+    });
+    await prepareNoteComparisons(store, task, client);
+    assert.deepEqual(requests, ['0-first', '1-first', '0-second', '1-second']);
+  } finally { store.close(); }
+});
+
 test('prepared choices are extracted once and streaming preserves the conversational summary', () => {
   assert.deepEqual(readPreparedNoteOptions(response(), 1), [prepared]);
   assert.deepEqual(readPreparedNoteOptions(response(), 0), []);

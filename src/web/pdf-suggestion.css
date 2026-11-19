@@ -2,6 +2,7 @@
    row of icon actions; the reading list reuses it as a flat row. */
 .pdf-note-card{position:absolute;z-index:5;display:flex;flex-direction:column;gap:8px;box-sizing:border-box;width:280px;padding:10px 8px 8px 12px;border:0;border-radius:12px;background:var(--raised);color:var(--text);box-shadow:var(--float);font:13px/1.6 var(--sans);pointer-events:auto;text-align:left;outline:none}
 .pdf-note-content{display:flex;align-items:stretch;gap:4px;min-height:0}
+.pdf-note-card .typeless-note-status{margin:0;color:var(--text-3);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
 .pdf-suggestion-body{flex:1;min-width:0;min-height:0;max-height:inherit;overflow:auto;overscroll-behavior:contain;-webkit-user-select:text;user-select:text}
 .pdf-suggestion-body p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 var(--sans)}
 .pdf-note-text{cursor:text;border-radius:5px;outline:none}
@@ -13,6 +14,7 @@
 .pdf-note-card .icon-button{flex:none;width:28px;height:28px;border-radius:5px;color:var(--text-2)}
 .pdf-note-card .icon-button:hover:not(:disabled){color:var(--text);background:var(--bg-muted)}
 .pdf-note-card .icon-button:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
+.pdf-note-card .typeless-note-button[data-state=sent]{color:var(--accent)}
 .pdf-note-card .pdf-note-close{align-self:flex-start;margin-top:-4px}
 .pdf-note-tools{display:flex;align-items:center;gap:2px;flex:none;color:var(--text-3)}
 .pdf-note-tools-space{flex:1}

@@ -286,7 +286,48 @@ it('reuses the published chapter scope, baseline and frozen date, compiling only
   expect(detail.build?.targets).toEqual(targets);
   expect(completed.mock.calls).toEqual([[keys[0]], [keys[1]]]);
   expect(seed).not.toHaveBeenCalled();
-  expect(build).toHaveBeenCalledExactlyOnceWith(detail.after, targets, info(keys[0]), { date });
+  expect(build).toHaveBeenCalledExactlyOnceWith(detail.after, targets, info(keys[0]), { date, priority: expect.any(Function) });
+});
+
+for (const phase of ['compilation', 'rendering']) it(`promotes a background comparison in place during ${phase}`, async () => {
+  const selected = units().find(unit => unit.new_text === 'Approach')!;
+  const pdf = path.join(app.state, 'preview-test.pdf'); fs.writeFileSync(pdf, 'test PDF');
+  const deferred = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>(done => { resolve = done; });
+    return { promise, resolve };
+  };
+  const compiling = deferred(), compiled = deferred();
+  const rendering = deferred(), rendered = deferred();
+  const priorities: (() => string)[] = [];
+  const build = vi.spyOn(Builder.prototype, 'build').mockImplementation(async (rev, _targets, _seed, options) => {
+    priorities.push(options!.priority as () => string); compiling.resolve(); await compiled.promise;
+    return { key: rev, tree: rev, targets: ['full'], root: task.worktree, cwd: task.worktree, pdf, seconds: 0, warnings: [] };
+  });
+  const render = vi.spyOn(publisher, 'render').mockImplementation(async (out, _request, _variant, priority) => {
+    priorities.push(priority!); rendering.resolve(); await rendered.promise;
+    fs.writeFileSync(path.join(out, 'round.json'), JSON.stringify({ units: {}, sections: [], loose: [] }));
+  });
+  const input = { id: 'promoted', round: 1, edits: [{ unit: selected.id, text: 'Procedure' }] };
+  const warming = previewNoteOption(app, task.name, { ...input, background: true });
+  let foreground: Promise<unknown> | undefined;
+  try {
+    await compiling.promise;
+    expect(priorities.map(priority => priority())).toEqual(['background', 'background']);
+    if (phase === 'rendering') { compiled.resolve(); await rendering.promise; }
+    expect(priorities.at(-1)!()).toBe('background');
+    foreground = previewNoteOption(app, task.name, input);
+    expect(priorities.every(priority => priority() === 'foreground')).toBe(true);
+    const again = previewNoteOption(app, task.name, { ...input, background: true });
+    compiled.resolve(); await rendering.promise;
+    expect(priorities.at(-1)!()).toBe('foreground');
+    rendered.resolve();
+    const [first, second, third] = await Promise.all([warming, foreground, again]);
+    expect(second).toBe(first); expect(third).toBe(first);
+    expect(build).toHaveBeenCalledTimes(2); expect(render).toHaveBeenCalledOnce();
+    await previewNoteOption(app, task.name, input);
+    expect(build).toHaveBeenCalledTimes(2);
+  } finally { compiled.resolve(); rendered.resolve(); await Promise.allSettled([warming, foreground]); }
 });
 
 it('preview caches follow rejection and undo without resurrecting a neighboring edit', async () => {

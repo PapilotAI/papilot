@@ -112,6 +112,7 @@ const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode
   atom: <><ellipse cx="12" cy="12" rx="10" ry="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></>,
   dna: <><path d="M7 2c0 10 10 10 10 20M17 2c0 10-10 10-10 20M7.5 5h9M9.5 9h5m-5 6h5m-7 4h9"/></>,
   microscope: <><path d="m8 3 4-1 3 9-4 1Zm2 9 1 3M4 17h10M3 21h18M12 21v-4m4-10a7 7 0 0 1 0 14"/></>,
+  microphone: <><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4m-4 0h8"/></>,
   brain: <><path d="M12 5a3 3 0 0 0-6-1 4 4 0 0 0-3 6 4 4 0 0 0 0 6 4 4 0 0 0 6 4 3 3 0 0 0 3-3Zm0 0a3 3 0 0 1 6-1 4 4 0 0 1 3 6 4 4 0 0 1 0 6 4 4 0 0 1-6 4 3 3 0 0 1-3-3M6 4v3m12-3v3M3 10h3l2 2m13-2h-3l-2 2M6 16l3 1m9-1-3 1"/></>,
   network: <><circle cx="12" cy="12" r="3"/><circle cx="4" cy="4" r="2"/><circle cx="20" cy="4" r="2"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="20" r="2"/><path d="m5.5 5.5 4.4 4.4m4.2 4.2 4.4 4.4m0-13-4.4 4.4m-4.2 4.2-4.4 4.4"/></>,
   shield: <><path d="m12 2 8 3v6c0 5-4 9-8 11-4-2-8-6-8-11V5Z"/><path d="m8 12 3 3 5-6"/></>,

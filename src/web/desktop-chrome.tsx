@@ -1,11 +1,14 @@
 import './desktop-chrome.css';
 import { createPortal } from 'react-dom';
 import { t } from './i18n.ts';
+import type { TypelessStatus } from '../../desktop/typeless-control.ts';
 
 declare global {
   interface Window {
     papilotDesktop?: {
       platform: string; minimize(): void; maximize(): void; close(): void;
+      typelessStatus?(): Promise<TypelessStatus>;
+      typelessShortcut?(inputId: string): Promise<TypelessStatus>;
       chooseDirectory?(): Promise<string | null>;
       overleafSignIn?(origin: string): Promise<string | null>;
       openEnvironment?(): Promise<void>;

@@ -74,7 +74,7 @@ await page.route('**/api/**', async route => {
     assert.equal(url.searchParams.get('comparison'), comparisonVersion);
     const round = Number(url.searchParams.get('round')), option = url.searchParams.get('option');
     if (round === 2 && option === 'brief' && comparisonVersion === 'initial') await briefPreviewWait;
-    previewReads.push({ key: url.searchParams.get('key'), round, option });
+    previewReads.push({ key: url.searchParams.get('key'), round, option, background: url.searchParams.get('background') === '1' });
     const candidate = round === 2 ? [...units[round].map(unit => ({ ...unit, new_text: option === 'brief' ? alternateSource : unit.new_text })), unit('other', 80, 'Three datasets.', 'Five datasets.')] : units[round];
     const blocks = round === 2 ? [{ kind: 'change', units: candidate.map(unit => unit.id), before: [strip('Unrelated leading strip'), sharedStrip(candidate[0].old_text)], after: [strip('Unrelated leading strip'), sharedStrip(candidate[0].new_text)] }] : candidate.map(unit => ({ kind: 'change', units: [unit.id], before: [strip(unit.old_text)], after: [strip(unit.new_text)] }));
     return route.fulfill({ json: { ...rounds[round], units: candidate, task: task.name, before: 'before', after: `candidate-${option}-${comparisonVersion}`, files: '', warnings: [], loose: [...blocks, ...Array.from({ length: 5 }, (_, i) => ({ kind: 'change', units: ['space-' + i], identical: true, before: [], after: [] }))] } });
@@ -130,7 +130,7 @@ try {
   await frame().getByRole('button', { name: 'Other options · 1', exact: true }).click();
   await controls().getByRole('tab', { name: 'Concise', exact: true }).waitFor();
   assert.equal(optionReads.length, 3, 'Opening a cached note does not repeat its manifest request');
-  await expect.poll(() => previewReads[0], { message: 'The visible comparison loads first; the note\'s other options follow while the author reads' }).toEqual({ key: 'request-2:0', round: 2, option: 'current' });
+  await expect.poll(() => previewReads[0], { message: 'The visible comparison loads first; the note\'s other options follow while the author reads' }).toEqual({ key: 'request-2:0', round: 2, option: 'current', background: false });
   await frame().locator('.source-fixture p').first().click();
   await controls().waitFor({ state: 'hidden' });
   const original = await page.locator('[data-note-result]').allTextContents();
@@ -219,7 +219,9 @@ try {
   releaseBriefPreview();
   const sourceView = controls().locator('.note-option-source[data-revision="candidate-brief-initial"]');
   await sourceView.waitFor();
-  assert.equal(previewReads.filter(read => read.key === 'request-2:0' && read.option === 'brief').length, 1, 'A newly visible option loads its preview once');
+  await expect.poll(() => previewReads.filter(read => read.key === 'request-2:0' && read.option === 'brief').map(read => read.background).sort()).toEqual([false, true]);
+  // The foreground request raises the existing engine work's priority; the
+  // cache and engine tests verify that decoding and compilation happen once.
   assert.ok((await sourceView.locator('.note-source-unit[data-unit="c1"]').textContent()).includes(alternateSource), 'source follows the selected alternative');
   assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"]').count(), 0, 'other groups are excluded from this note’s drawer');
   assert.equal(await sourceView.locator('.note-source-unit[data-unit="other"] ins, .note-source-unit[data-unit="other"] del').count(), 0, 'unrelated edits retain context without focused colors');

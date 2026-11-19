@@ -2,7 +2,7 @@ import { errorText, t } from './i18n.ts';
 
 // Long operations wait for the server. The caller may cancel a request when
 // its view closes or a newer selection replaces it.
-export async function requestApi<T = any>(route: string, token: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+export async function requestApi<T = any>(route: string, token: string, body?: unknown, signal?: AbortSignal, priority?: RequestPriority): Promise<T> {
   const file = body instanceof File, form = body instanceof FormData;
   const response = await fetch('/api' + route, {
     method: body === undefined ? 'GET' : 'POST',
@@ -10,6 +10,7 @@ export async function requestApi<T = any>(route: string, token: string, body?: u
       ...(file ? { 'X-Papilot-Filename': encodeURIComponent(body.name) } : {}) },
     ...(body === undefined ? {} : { body: file || form ? body : JSON.stringify(body) }),
     signal,
+    ...(priority ? { priority } : {}),
   });
   const value = await response.json();
   // An Overleaf request that needs a sign-in names the server to sign in to.

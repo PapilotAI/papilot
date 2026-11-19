@@ -1596,5 +1596,16 @@
   "Commit-message agent": "コミットメッセージのエージェント",
   "Follow current conversation": "現在の会話に従う",
   "Use the conversation’s model and reasoning effort, or the new-task settings if none. An explicit choice applies only to commit messages and is saved in this browser.": "会話のモデルと推論レベルを使用します。会話がなければ新規タスクの設定を使用します。明示的な選択はコミットメッセージのみに適用され、このブラウザーに保存されます。",
+  "Allow Papilot in macOS Accessibility settings.": "macOS のアクセシビリティ設定で Papilot を許可してください。",
+  "Shortcut failed. Try again.": "送信できませんでした。再試行してください。",
+  "Install Typeless first.": "先に Typeless をインストールしてください。",
+  "Dictate PDF notes with Typeless.": "Typeless で PDF 注釈を音声入力。",
+  "Open Typeless first.": "先に Typeless を開いてください。",
+  "Release modifier keys and retry.": "修飾キーを離して再試行してください。",
+  "Toggle dictation": "音声入力を切り替え",
+  "{shortcut} sent": "{shortcut} を送信しました",
+  "Check your Typeless shortcut.": "Typeless のショートカットを確認してください。",
+  "Shortcut: {shortcut}": "ショートカット：{shortcut}",
+  "Typeless voice notes": "Typeless 音声注釈",
   "Saved page {page}": "保存時のページ {page}"
 }

@@ -542,7 +542,7 @@ export async function buildApp(options: AppOptions) {
     return retryReviewRead(connectReview, project.path, async client =>
       (await noteOptionContext(store, store.task(request.params.id), string(request.query.key, 'Note key', 200), client)).options);
   });
-  app.get<{ Params: { id: string }; Querystring: { key: string; round: string; option: string; retry?: string; comparison?: string } }>('/api/tasks/:id/note-options/preview', task, async request => {
+  app.get<{ Params: { id: string }; Querystring: { key: string; round: string; option: string; retry?: string; comparison?: string; background?: string } }>('/api/tasks/:id/note-options/preview', task, async request => {
     const project = store.project(store.task(request.params.id).projectId);
     return retryReviewRead(connectReview, project.path, async client => {
       const current = store.task(request.params.id);
@@ -554,7 +554,7 @@ export async function buildApp(options: AppOptions) {
       const option = context.options.options.find(option => option.id === request.query.option);
       if (!option) throw new Error('This option is no longer available.');
       if (option.previewError && request.query.retry !== '1') throw new Error(option.previewError);
-      const detail = await client.post(`${taskRoute(current.name)}/source/options/preview`, { id: option.id, round: context.options.round, edits: option.edits, rejected: context.rejected }, 120000);
+      const detail = await client.post(`${taskRoute(current.name)}/source/options/preview`, { id: option.id, round: context.options.round, edits: option.edits, rejected: context.rejected, background: request.query.background === '1' }, 1850000);
       if (option.previewError) {
         delete option.previewError;
         store.savePreference(noteOptionsKey(current.id, context.options.key, context.options.round), context.options);

@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import type { CompilerChoice } from '../shared.ts';
 import { CollaborationSettings, type CollaborationSettingsProps } from './collaboration-settings.tsx';
 import { t } from './i18n.ts';
+import { TypelessExperiment } from './typeless.tsx';
 
 export type ChooseCompiler = (compiler?: CompilerChoice['compiler']) => Promise<CompilerChoice>;
 
@@ -34,6 +35,7 @@ function PhitexExperiment({ choose, online }: { choose: ChooseCompiler; online: 
 
 export function ExperimentSettings({ compiler, workflow, online }: { compiler?: ChooseCompiler; workflow?: CollaborationSettingsProps; online: boolean }) {
   return <div className="settings-page experiment-settings">
+    <TypelessExperiment/>
     {compiler && <PhitexExperiment choose={compiler} online={online}/>}
     {workflow && <CollaborationSettings {...workflow}/>}
   </div>;

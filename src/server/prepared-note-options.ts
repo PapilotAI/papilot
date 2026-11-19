@@ -166,23 +166,27 @@ export async function prepareNoteComparisons(store: Store, task: Task, client: R
   const total = contexts.reduce((n, options) => n + options.options.filter(option => option.id !== options.selected).length, 0);
   let completed = 0;
   if (total) progress(completed, total);
-  // Keep compilers bounded; each candidate already reuses the published baseline.
-  for (const options of contexts) for (const option of options.options) {
+  // Warm one alternative per note before the next alternative of any note.
+  // The first choices of later annotations should not wait for all six choices
+  // of the first. Foreground requests can join and promote these same builds.
+  const candidates = contexts.map(options => ({ options, remaining: options.options.filter(option => option.id !== options.selected) }));
+  while (candidates.some(candidate => candidate.remaining.length)) for (const candidate of candidates) {
+    const { options, remaining } = candidate, option = remaining.shift();
+    if (!option) continue;
     if (stopped()) return;
-    if (option.id === options.selected) continue;
     const context = await noteOptionContext(store, task, options.key, client);
     if (stopped()) return;
-    if (context.options.locked || context.options.comparisonKey !== options.comparisonKey) break;
+    if (context.options.locked || context.options.comparisonKey !== options.comparisonKey) { remaining.length = 0; continue; }
     let previewError: string | undefined;
     try {
-      await client.post(`${taskRoute(task.name)}/source/options/preview`, { id: option.id, round: options.round, edits: option.edits, rejected: context.rejected }, 1850000);
+      await client.post(`${taskRoute(task.name)}/source/options/preview`, { id: option.id, round: options.round, edits: option.edits, rejected: context.rejected, background: true }, 1850000);
     } catch (error) {
       previewError = (error as Error).message;
     }
     if (stopped()) return;
     const fresh = await noteOptionContext(store, task, options.key, client);
     if (stopped()) return;
-    if (fresh.options.locked || fresh.options.comparisonKey !== options.comparisonKey) break;
+    if (fresh.options.locked || fresh.options.comparisonKey !== options.comparisonKey) { remaining.length = 0; continue; }
     const saved = fresh.options.options.find(candidate => candidate.id === option.id);
     if (saved) {
       // Read the latest choices again: a decision or another preview may have

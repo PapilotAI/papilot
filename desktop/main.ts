@@ -7,6 +7,7 @@ import { desktopNotifications } from './notifications.js';
 import { chooseEnvironment } from './environment-window.js';
 import { readEnvironment, saveEnvironment, startWsl, linuxPath, type Environment } from './wsl.js';
 import { overleafSignIn } from './overleaf-sign-in.js';
+import { typelessControl } from './typeless-control.js';
 
 const nix = process.env.PAPILOT_INSTALL_METHOD === 'nix';
 const releases = 'https://github.com/PapilotAI/papilot/releases';
@@ -29,6 +30,8 @@ const notifications = desktopNotifications({
     if (taskId) window?.webContents.send('papilot:open-task', taskId);
   },
 });
+const typeless = typelessControl();
+let typelessSending = false;
 // papilot://new?template=<id>&version=<version> starts a paper from a Universe template.
 let pendingTemplate: { id: string; version: string } | null = null;
 function templateLink(url: string) {
@@ -103,6 +106,26 @@ else {
       },
     });
     const appPage = (event: Electron.IpcMainInvokeEvent) => window && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && event.senderFrame && new URL(event.senderFrame.url).origin === origin;
+    ipcMain.handle('papilot:typeless-status', event => process.platform === 'darwin' && appPage(event) ? typeless.status() : { status: 'unavailable' });
+    ipcMain.handle('papilot:typeless-shortcut', async (event, inputId: unknown) => {
+      if (process.platform !== 'darwin' || !appPage(event) || typeof inputId !== 'string' || inputId.length > 200) return { status: 'unavailable' };
+      if (typelessSending) return { status: 'busy' };
+      typelessSending = true;
+      const contents = event.sender, swallow = (event: Electron.Event) => event.preventDefault();
+      // The global Typeless listener still receives the chord. Papilot must
+      // not treat an unconsumed Return/Escape/Cmd+Q as a note or menu action.
+      contents.on('before-input-event', swallow);
+      contents.setIgnoreMenuShortcuts(true);
+      try {
+        return await typeless.send(async () => {
+          if (!appPage(event) || !window?.isFocused()) return false;
+          return await event.senderFrame!.executeJavaScript(`document.hasFocus() && document.activeElement?.id === ${JSON.stringify(inputId)} && document.activeElement.matches('textarea.pdf-note-input:not([readonly]):not([disabled])')`) === true;
+        });
+      } finally {
+        typelessSending = false;
+        if (!contents.isDestroyed()) { contents.removeListener('before-input-event', swallow); contents.setIgnoreMenuShortcuts(false); }
+      }
+    });
     ipcMain.handle('papilot:open-environment', event => { if (process.platform === 'win32' && appPage(event)) openEnvironment(); });
     ipcMain.handle('papilot:take-new-paper', event => { if (!appPage(event)) return null; const choice = pendingTemplate; pendingTemplate = null; return choice; });
     ipcMain.handle('papilot:current-environment', event => appPage(event) ? environment.kind === 'wsl' ? `WSL · ${environment.distribution}` : 'Windows' : '');

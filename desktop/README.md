@@ -18,6 +18,8 @@ Linux release CI builds on Ubuntu 22.04 x64. Other Linux versions and desktop en
 
 After downloading an AppImage, grant execute permission with `chmod +x Papilot-*.AppImage`. If FUSE is unavailable, run it with `APPIMAGE_EXTRACT_AND_RUN=1` to use temporary extraction instead. The deb can be installed with `sudo apt install ./Papilot-*.deb`.
 
+On macOS, install Apple’s Command Line Tools (`xcode-select --install`) to compile the native Typeless keyboard helper. The optional [Typeless experiment](../docs/typeless.md) reads and sends the shortcut on the editor’s Mac.
+
 After changing desktop TypeScript, run `npm run desktop:compile`. After changing web code, run `npm run build`. Restart the development app to pick up those changes.
 
 ```sh
