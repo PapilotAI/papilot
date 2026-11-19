@@ -148,6 +148,12 @@ Each failed check includes a suggested fix. Exit code **0** means no blocking er
 
 From a source checkout, use `npm run doctor -- --data .papilot` (or `node bin/papilot.mjs doctor --data .papilot` if npm dependencies are missing). The CLI default is `~/.papilot`, even in a checkout; specify the data folder used by the instance you are diagnosing. `PAPILOT_DATA`, `PAPILOT_PORT` and the agent overrides are honored; command-line data and port options take precedence.
 
+## Commit message language
+
+Choose **Settings → Git → Commit message language → English** to generate English commit messages even when task titles and recent commits are in another language. You can also select any of the other listed languages. The choice is saved in this browser or desktop app and applies to Version Management, the staged-commit dialog and task commits, independently of the interface language.
+
+**Auto** (the default) follows recent commit subjects and uses English when none are supplied. Changing the setting affects the next generation; existing drafts and manually written messages stay as they are. Use **Generate commit message** to replace a draft in the selected language.
+
 ## Reading with anchors
 
 The PDF toolbar starts expanded each time you open the view. The arrow at the top of the desktop toolbar folds the tools away, and the floating down arrow in the same place opens them again. On phones, use the arrow at the end of the bottom toolbar or swipe it down to collapse it, then tap the up arrow to reopen it.

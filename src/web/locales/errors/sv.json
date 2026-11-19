@@ -39,6 +39,7 @@
   "Choose a paper name that is a valid folder name.": "Välj ett artikelnamn som är ett giltigt mappnamn.",
   "Choose a source file.": "Välj en källfil.",
   "Choose a supported LaTeX engine.": "Välj en LaTeX-motor som stöds.",
+  "Choose a supported commit message language.": "Välj ett språk som stöds för commit-meddelanden.",
   "Choose a template from the list.": "Välj en mall från listan.",
   "Choose a valid destination agent.": "Välj en giltig målagent.",
   "Choose a valid update channel.": "Välj en giltig uppdateringskanal.",

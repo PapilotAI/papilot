@@ -39,6 +39,7 @@
   "Choose a paper name that is a valid folder name.": "Elige un nombre de artículo que sea válido como nombre de carpeta.",
   "Choose a source file.": "Elige un archivo fuente.",
   "Choose a supported LaTeX engine.": "Elige un motor de LaTeX compatible.",
+  "Choose a supported commit message language.": "Elige un idioma compatible para los mensajes de commit.",
   "Choose a template from the list.": "Elige una plantilla de la lista.",
   "Choose a valid destination agent.": "Elige un agente de destino válido.",
   "Choose a valid update channel.": "Elige un canal de actualización válido.",

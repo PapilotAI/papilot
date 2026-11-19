@@ -1,4 +1,5 @@
 import { isNoteGroup } from '../note-groups.ts';
+import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
 import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validRoutes } from '../shared.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
@@ -53,6 +54,11 @@ import { registerOverleafRoutes } from './overleaf/routes.ts';
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
 const overleafByWorkspace = new WeakMap<Workspace, OverleafService>();
 const creationsByWorkspace = new WeakMap<Workspace, PaperCreations>();
+function commitMessageLanguage(value: unknown): CommitMessageLanguage {
+  if (value === undefined) return 'auto';
+  if (!isCommitMessageLanguage(value)) throw new Error('Choose a supported commit message language.');
+  return value;
+}
 // A review write's reply does not wait for the task's summary to be read
 // again: that runs right after it, once at a time per task, and once more
 // for writes that arrive meanwhile. The review page's reads of the task wait
@@ -716,7 +722,7 @@ export async function buildApp(options: AppOptions) {
     const task = store.task(request.params.id), b = (request.body || {}) as Record<string, unknown>;
     if (b.agent !== undefined && !isAgentId(b.agent)) throw new Error('Invalid agent.');
     const settings = commitModelSettings({ ...(b.agent === undefined ? { model: task.model || undefined, effort: task.effort || undefined, serviceTier: task.serviceTier } : {}), ...b });
-    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? task.agent : agent(b.agent), ...settings, fresh: b.fresh === true });
+    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? task.agent : agent(b.agent), ...settings, fresh: b.fresh === true, language: commitMessageLanguage(b.language) });
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/permissions', task, request => workspace.updateTaskPermissions(request.params.id, (request.body as any)?.permissions));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/model', task, request => {
@@ -795,7 +801,7 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/message', project(), request => {
     const b = request.body as any;
     if (b.agent !== undefined && !isAgentId(b.agent)) throw new Error('Invalid agent.');
-    return workspace.commitMessage(store.project(request.params.id).id, paths(b.paths), { agent: b.agent === undefined ? undefined : agent(b.agent), ...commitModelSettings(b), fresh: b.fresh === true, staged: b.staged === true });
+    return workspace.commitMessage(store.project(request.params.id).id, paths(b.paths), { agent: b.agent === undefined ? undefined : agent(b.agent), ...commitModelSettings(b), fresh: b.fresh === true, staged: b.staged === true, language: commitMessageLanguage(b.language) });
   });
   // A merge in progress is resolved by an agent, committed, or abandoned.
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/resolve', project(), request => {

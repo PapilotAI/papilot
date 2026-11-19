@@ -2194,6 +2194,54 @@ test('commit-message model settings reach the actual helper turn', async () => {
   } finally { f.close(); }
 });
 
+test('commit-message language overrides Chinese context and separates pending and cached messages', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-message-language-')), f = fixture();
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+  try {
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@localhost'); git('config', 'commit.gpgsign', 'false');
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Original opening.\n');
+    git('add', '.'); git('commit', '-qm', '撰写引言');
+    fs.writeFileSync(path.join(root, 'main.tex'), 'Tighter opening.\n');
+    f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: root, createdAt: 1 });
+    f.store.updateTask(f.task.id, { title: '改进引言', review: { state: 'done', round: 1, counts: {}, files: ['main.tex'] } });
+    f.codex.ready = true;
+    const automatic = deferred<string>(), english = deferred<string>(), calls: any[] = [];
+    (f.workspace as any).oneOff = (_agent: string, options: any) => {
+      calls.push(options);
+      return options.instructions.includes('Write the subject and body in English (en)') ? english.promise : automatic.promise;
+    };
+    const waitForCalls = async (count: number) => {
+      for (let attempt = 0; attempt < 500 && calls.length < count; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+      assert.equal(calls.length, count, 'each language starts its own helper turn');
+    };
+    const auto = f.workspace.commitMessage(f.task.projectId, ['main.tex']);
+    await waitForCalls(1);
+    const en = f.workspace.commitMessage(f.task.projectId, ['main.tex'], { language: 'en' });
+    await waitForCalls(2);
+    const sameEnglish = f.workspace.commitMessage(f.task.projectId, ['main.tex'], { language: 'en' });
+    assert.match(calls[0].instructions, /Follow the style and language of the recent commit subjects, or write in English when there are none/);
+    assert.match(calls[1].instructions, /regardless of the language of task titles, recent commits or the diff/);
+    assert.doesNotMatch(calls[1].instructions, /Follow the style and language/);
+    for (const call of calls) {
+      assert.match(call.prompt, /撰写引言/); assert.match(call.prompt, /改进引言/);
+      assert.equal(call.sandbox, 'read-only');
+    }
+    english.resolve('Tighten the introduction');
+    assert.equal((await en).message, 'Tighten the introduction');
+    assert.equal((await sameEnglish).message, 'Tighten the introduction');
+    automatic.resolve('精简引言');
+    assert.equal((await auto).message, '精简引言');
+    assert.equal((await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { language: 'en' })).message, 'Tighten the introduction');
+    assert.equal((await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { language: 'auto' })).message, '精简引言');
+    assert.equal(calls.length, 2, 'each language reuses only its own generation');
+    await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { language: 'zh-Hant' });
+    assert.match(calls[2].instructions, /Write the subject and body in 繁體中文 \(zh-Hant\)/);
+    await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { language: 'en', fresh: true });
+    assert.equal(calls.length, 4, 'regeneration still bypasses the selected language cache');
+  } finally { f.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('read-only helpers fall back to a capable agent while write helpers keep the selected agent', async () => {
   const claude = new FakeCodex(); claude.ready = true; claude.supportsReadOnlyTasks = false;
   const f = fixture(undefined, { claude });

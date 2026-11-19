@@ -94,6 +94,11 @@
     "textHash": "93e76151bbeb05ffaa776dd18e9b4c18bac3e2d16307fced3de693b4cd3ae659",
     "model": "manual"
   },
+  "Commit message language": {
+    "revision": "80bc3cbe0922e89e4ade4d8d92d9d69f58d3e0a76e1e2da65fcd612d9c59afaa",
+    "textHash": "3b24eff353240e9578ce4846a7532585a5c3dc5c285db5456362b6f5887dfd36",
+    "model": "manual"
+  },
   "Connecting to Overleaf…": {
     "revision": "93bf2049e8fac0f68b03b7dc169e8c2be3bbf855346a18a60ac9c6a8ed5cde00",
     "textHash": "79f5d558eaad20e6d3a3ed42984e9a49aea046b52bee62e976d09bb9edc82257",
@@ -167,6 +172,11 @@
   "Folders on the computer running Papilot": {
     "revision": "5ac71a7ea4385a4b87d0032c57410dbd08ba9352ffd55caf2c28bbe42b3786ea",
     "textHash": "3a03016b6a8449f7baed2c342ad8ac34cecffcd0f2c58dd8ae03e887a2c809e0",
+    "model": "manual"
+  },
+  "For generated messages. Auto follows recent commits, or uses English when there are none.": {
+    "revision": "9433334bd244db77220840fdf0ac2daaf49924f62dacfe8935650214952be030",
+    "textHash": "bdb619498a742e8d0c2d5461c4dab479b3d99c90d7bfc6bc9ffb609ae916dcf8",
     "model": "manual"
   },
   "Import": {

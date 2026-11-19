@@ -939,6 +939,11 @@
     "textHash": "9e0fccb5a6831e47dd47e48bc6d44b3f9098378815f74a13795fc7add18da945",
     "model": "gemini-4-argon-medium"
   },
+  "Commit message language": {
+    "revision": "b3b2e3056d17638630cfad219e3e4d57e007f962081d7f3e1003e3348ebb4c7a",
+    "textHash": "c19c5a5a0de7eef915f7fb625ef33aefbf1871c5e0886bf8a52c9c674e350824",
+    "model": "manual"
+  },
   "Commit staged changes in 1 file": {
     "revision": "8a7683fe25821b24f1797882d633b005f4fe1222f9e2c3b5e8ed10d284bc9713",
     "textHash": "cc67c0626931c31e033b24dc71beade186280ff7b808ccf14e27d74135e2371a",
@@ -1912,6 +1917,11 @@
   "Folders on the computer running Papilot": {
     "revision": "3ad0f49266e91b618fcd8e54eebb6d984b3c4d3bb82f9595f3cc8944d8c8c63b",
     "textHash": "cfbd186792c0316afa39b27b4edd198050f2ac3e05e97465f3343b8fe7f0bedc",
+    "model": "manual"
+  },
+  "For generated messages. Auto follows recent commits, or uses English when there are none.": {
+    "revision": "24652c54ccc13d2ff13c38400cc89dea19b63aa30ad39935acc60cbe2b662f15",
+    "textHash": "3ff8fc04b6c6e250b02d72304b5c1e2c784b70aa68cd668d13437923bbf85c83",
     "model": "manual"
   },
   "For the SDK instead, start Papilot with ANTHROPIC_API_KEY or a supported cloud provider configured. Restart Papilot after changing its environment.": {

@@ -39,6 +39,7 @@
   "Choose a paper name that is a valid folder name.": "フォルダー名として使用できる論文名を選んでください。",
   "Choose a source file.": "ソースファイルを選択してください。",
   "Choose a supported LaTeX engine.": "サポートされている LaTeX エンジンを選択してください。",
+  "Choose a supported commit message language.": "対応しているコミットメッセージの言語を選んでください。",
   "Choose a template from the list.": "一覧からテンプレートを選択してください。",
   "Choose a valid destination agent.": "有効な切り替え先エージェントを選んでください。",
   "Choose a valid update channel.": "有効な更新チャンネルを選択してください。",

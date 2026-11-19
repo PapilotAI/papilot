@@ -103,6 +103,25 @@ try {
         const label = `${language}/${width}/${name}`;
         if (overflow.length) await page.screenshot({ path: `test-results/settings-overflow-${language}-${width}-${name}.png` });
         assert.deepEqual(overflow, [], label);
+        if (name === 'git' && ['en', 'zh-Hans'].includes(language) && [320, 390, 1280].includes(width)) {
+          const choice = page.locator('.settings-content-git .chip-select[role="combobox"]');
+          await expect(choice).toHaveAttribute('data-value', 'auto');
+          // Keyboard selection keeps the interface language unchanged.
+          await choice.focus(); await choice.press('Home'); await choice.press('ArrowDown'); await choice.press('Enter');
+          await expect(choice).toHaveAttribute('data-value', 'en');
+          await expect(page.locator('html')).toHaveAttribute('lang', language);
+          for (const colorScheme of ['light', 'dark']) {
+            await page.emulateMedia({ colorScheme });
+            await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme);
+            await expect(choice).toHaveCSS('background-color', colorScheme === 'dark' ? 'rgb(56, 56, 56)' : 'rgb(245, 245, 245)');
+            await page.screenshot({ animations: 'disabled', path: `test-results/settings-commit-language-${language}-${width}-${colorScheme}.png` });
+          }
+          await choice.click();
+          await page.screenshot({ animations: 'disabled', path: `test-results/settings-commit-language-menu-${language}-${width}.png` });
+          await choice.press('Home'); await choice.press('Enter');
+          await expect(choice).toHaveAttribute('data-value', 'auto');
+          await page.emulateMedia({ colorScheme: 'light' });
+        }
         if (language === 'en' && name === 'general' && [320, 1280].includes(width)) {
           const slider = page.locator('.settings-effort input[type="range"]');
           for (const colorScheme of ['light', 'dark']) {

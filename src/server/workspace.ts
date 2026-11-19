@@ -33,7 +33,8 @@ import { pathIdentity, realPath } from './real-path.ts';
 import { findSkill, type SkillFile } from './skills.ts';
 import { buildFixPrompt, reviewInstructions, skillPrompt, summarizeFeedback } from '../conversation.ts';
 import { reconciliationPrompt } from './reconcile.ts';
-import { commitMessageFrom } from '../commit.ts';
+import { commitMessageFrom, type CommitMessageLanguage } from '../commit.ts';
+import { LANGUAGES } from '../../engine/src/locales.ts';
 import { taskCaptionFrom, taskCaptionInstructions } from '../task-caption.ts';
 import { noteOptionsSummary, preparedNoteOptionsInstructions, readPreparedNoteOptions, savePreparedNoteOptions, prepareNoteComparisons } from './prepared-note-options.ts';
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
@@ -115,7 +116,12 @@ const signInFailure = (error: { message?: unknown; codexErrorInfo?: unknown } | 
 const LIGHT = /\b(?:luna|mini|nano|haiku|flash|lite)\b/i;
 export const lightModel = (models: AgentModel[]) => models.find(model => LIGHT.test(model.id) || LIGHT.test(model.name));
 // A commit message's agent sees the changes in its prompt and needs no tools.
-const commitInstructions = 'You write Git commit messages for the repository of a LaTeX paper. Reply with the commit message only, without a preamble, quotes or a code fence: a subject line in the imperative mood under 72 characters and, only when the change needs more explanation, a blank line and a body of a few short plain sentences. Describe what changed in the paper, such as its wording, sections, equations, figures or references, rather than listing files. Follow the style and language of the recent commit subjects, or write in English when there are none. Everything you need is in the message: do not run commands, read files or edit anything.';
+function commitInstructions(language: CommitMessageLanguage = 'auto') {
+  const languageRule = language === 'auto'
+    ? 'Follow the style and language of the recent commit subjects, or write in English when there are none.'
+    : `Write the subject and body in ${LANGUAGES.find(item => item.id === language)!.name} (${language}), regardless of the language of task titles, recent commits or the diff. Follow the style of recent commit subjects where compatible with this language.`;
+  return `You write Git commit messages for the repository of a LaTeX paper. Reply with the commit message only, without a preamble, quotes or a code fence: a subject line in the imperative mood under 72 characters and, only when the change needs more explanation, a blank line and a body of a few short plain sentences. Describe what changed in the paper, such as its wording, sections, equations, figures or references, rather than listing files. ${languageRule} Everything you need is in the message: do not run commands, read files or edit anything.`;
+}
 // A merge's agent edits the conflicted files in the manuscript checkout and nothing else.
 const mergeInstructions = 'You resolve Git merge conflicts in the repository of a LaTeX paper. Edit only the files listed as conflicted, and in each one remove every conflict marker (<<<<<<<, ||||||| , =======, >>>>>>>) so that the text reads as one coherent version. Keep the changes from both sides wherever they are compatible; where both sides rewrote the same passage, combine their intent, and where they truly contradict each other, prefer the version that is more complete and correct and say so. Keep the LaTeX valid: balanced environments and braces, labels, references and citations. You may read any file to understand the context. Do not edit other files, and do not run Git commands that change the repository, such as add, commit, merge, checkout, reset, restore or stash: the author reviews the result and commits the merge.';
 const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [] });
@@ -1788,7 +1794,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // generate button: one read-only turn with the selected model and reasoning
   // effort. The same changes get the message already
   // written, or being written, for them unless the author asks for a fresh one.
-  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string; effort?: string; serviceTier?: string; fresh?: boolean; staged?: boolean; taskId?: string } = {}) {
+  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string; effort?: string; serviceTier?: string; fresh?: boolean; staged?: boolean; taskId?: string; language?: CommitMessageLanguage } = {}) {
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', { readOnly: true, strict: true });
     if (choice.model && model?.id !== choice.model) throw new Error('Choose an available model for this agent.');
     if (choice.effort && model && !model.efforts.includes(choice.effort)) throw new Error('This model does not support that reasoning effort.');
@@ -1804,9 +1810,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       `Changed files:\n${files.map(file => `${file.status === '?' ? 'A' : file.status} ${file.from ? `${file.from} -> ` : ''}${file.path}`).join('\n')}`,
       `Diff:\n${patch}`,
     ].filter(Boolean).join('\n\n');
-    const key = createHash('sha256').update(`${id}\0${model?.id ?? ''}\0${effort ?? ''}\0${serviceTier ?? ''}\0${prompt}`).digest('hex'), kept = this.messages.get(key);
+    const instructions = commitInstructions(choice.language);
+    const key = createHash('sha256').update(`${id}\0${model?.id ?? ''}\0${effort ?? ''}\0${serviceTier ?? ''}\0${instructions}\0${prompt}`).digest('hex'), kept = this.messages.get(key);
     if (kept && !choice.fresh) return kept;
-    const written = this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions: commitInstructions, prompt, model, effort, serviceTier, timeout: 120000, what: 'write a commit message' }).then(reply => {
+    const written = this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions, prompt, model, effort, serviceTier, timeout: 120000, what: 'write a commit message' }).then(reply => {
       const message = commitMessageFrom(reply);
       if (!message) throw new Error(`${AGENT_NAMES[id]} did not return a commit message. Try again.`);
       return { message, agent: id };

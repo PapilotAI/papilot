@@ -39,6 +39,7 @@
   "Choose a paper name that is a valid folder name.": "請選擇可用作資料夾名稱的論文名稱。",
   "Choose a source file.": "請選擇原始碼檔案。",
   "Choose a supported LaTeX engine.": "請選擇支援的 LaTeX 引擎。",
+  "Choose a supported commit message language.": "請選擇支援的提交訊息語言。",
   "Choose a template from the list.": "請從清單中選擇範本。",
   "Choose a valid destination agent.": "請選擇有效的目標智慧代理。",
   "Choose a valid update channel.": "請選擇有效的更新頻道。",

@@ -1,3 +1,5 @@
+import { LANGUAGES, type Language } from '../engine/src/locales.ts';
+
 // What the Git panel leaves out of a commit unless chosen, and offers to add
 // to .gitignore: LaTeX's build output, minted's cache and macOS folder files.
 // Each file maps to the pattern that ignores every file of its kind.
@@ -20,4 +22,9 @@ export function commitMessageFrom(reply: string) {
   const subject = lines[first].trim().replace(/^#+\s+/, '').replace(/^\*\*(.+)\*\*$/, '$1').replace(/^(["'`])(.+)\1$/, '$2').replace(/\.$/, '').trim();
   const body = lines.slice(first + 1).join('\n').trim();
   return body ? `${subject}\n\n${body}` : subject;
+}
+
+export type CommitMessageLanguage = Language | 'auto';
+export function isCommitMessageLanguage(value: unknown): value is CommitMessageLanguage {
+  return value === 'auto' || LANGUAGES.some(language => language.id === value);
 }

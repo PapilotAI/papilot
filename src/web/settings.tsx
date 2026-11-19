@@ -14,7 +14,8 @@ import { agentLabel, offeredAgents } from './agent-choice.ts';
 import { CommitAgentSettings } from './commit-agent-settings.tsx';
 import type { CommitMessageChoice } from './commit-agent-preferences.ts';
 import type { RefreshUsage } from './usage.tsx';
-import { saveAdvancedGit, useAdvancedGit } from './git-preferences.ts';
+import { saveAdvancedGit, useAdvancedGit, saveCommitMessageLanguage, useCommitMessageLanguage } from './git-preferences.ts';
+import type { CommitMessageLanguage } from '../commit.ts';
 import { saveDefaultReviewView, useDefaultReviewView } from './review-view.ts';
 import { ModeSwitch } from './mode-switch.tsx';
 import { AppearanceSettings, type AppearanceSettingsProps } from './appearance-settings.tsx';
@@ -46,6 +47,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
   const { choice } = useLanguage();
   const indirectChanges = useIndirectChanges(), reviewView = useDefaultReviewView();
   const advancedGit = useAdvancedGit();
+  const commitLanguage = useCommitMessageLanguage();
   useEffect(loadIndirectChanges, []);
   useEffect(loadNoteAlternatives, []);
   const [page, setPage] = useState<SettingsPage>(initialPage);
@@ -92,7 +94,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
       ...(overleaf ? [{ page: 'overleaf' as const, label: 'Overleaf', icon: 'overleaf', keywords: `${t('Sync with Overleaf…')} ${t('Sign in')} ${t('Sign out')}` }] : []),
     ] },
     { label: t('Runtime'), entries: [
-      { page: 'git', label: 'Git', icon: 'git', keywords: `${t('Version history')} ${t('Show advanced Git features')} ${t('Commit-message agent')}` },
+      { page: 'git', label: 'Git', icon: 'git', keywords: `${t('Version history')} ${t('Show advanced Git features')} ${t('Commit-message agent')} ${t('Commit message language')}` },
       ...(diagnostics ? [
         { page: 'agents', label: t('Agents'), icon: 'terminal', keywords: `${t('Agent configuration')} ${t('Available models')} ${t('Usage & limits')}` },
         { page: 'latex', label: 'LaTeX', icon: 'paper', keywords: 'TeX Live MacTeX BasicTeX MiKTeX' },
@@ -177,6 +179,10 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
           {requirements && <section className="settings-card settings-card-body"><ToolRequirement tool="git" {...requirements}/></section>}
           <section className="settings-card">
             <CommitAgentSettings refreshUsage={refreshUsage} current={commitWriter} agents={diagnostics ? offeredAgents(diagnostics.runtimes).map(value => ({ value, label: agentLabel(value), runtime: diagnostics.runtimes[value] })) : modelDefaults.agents} reconnect={diagnostics?.reconnect}/>
+            <div className="settings-row settings-choice">
+              <div className="settings-text"><span className="settings-name">{t('Commit message language')}</span><p>{t('For generated messages. Auto follows recent commits, or uses English when there are none.')}</p></div>
+              <ChipSelect label={t('Commit message language')} value={commitLanguage} onChange={value => saveCommitMessageLanguage(value as CommitMessageLanguage)} options={[{ value: 'auto', label: t('Auto') }, ...LANGUAGES.map(item => ({ value: item.id, label: item.name }))]}/>
+            </div>
             <div className="settings-row settings-toggle">
               <div className="settings-text">
                 <label className="settings-name" htmlFor="settings-advanced-git">{t('Show advanced Git features')}</label>

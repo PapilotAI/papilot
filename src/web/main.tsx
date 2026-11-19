@@ -69,7 +69,7 @@ import { TaskApplyState } from './task-apply-state.ts';
 import { taskSaveStatus } from './task-save-status.ts';
 import { TaskSaved } from './task-saved.tsx';
 import { GitRepository } from './git-overview.tsx';
-import { useAdvancedGit } from './git-preferences.ts';
+import { useAdvancedGit, commitMessageLanguage } from './git-preferences.ts';
 import { commitConversation, rememberCommitConversation, useCommitMessageAgent, type CommitMessageChoice } from './commit-agent-preferences.ts';
 import { GitDiffView } from './git-diff-view.tsx';
 import { VersionHistory, type HistorySelection } from './git-history.tsx';
@@ -633,7 +633,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, writer, messageWri
     const request = ++messageRequest.current;
     setBusy('message'); setWritingAgent(messageWriter.agent); setError(''); setNotice('');
     try {
-      const result = await api<{ message: string }>(`/projects/${projectId}/git/message`, { paths: chosen.map(file => file.path), staged: staged.length > 0, ...messageWriter, fresh: Boolean(message.trim()) });
+      const result = await api<{ message: string }>(`/projects/${projectId}/git/message`, { paths: chosen.map(file => file.path), staged: staged.length > 0, ...messageWriter, language: commitMessageLanguage(), fresh: Boolean(message.trim()) });
       // Leaving and reopening Git may create a newer manual draft.
       if (request === messageRequest.current) saveMessage(result.message);
     } catch (e) { if (request === messageRequest.current) setError(e instanceof Error ? e.message : String(e)); }
@@ -1166,7 +1166,7 @@ function ManuscriptView({ notesRequest, taskCards, navigationGuard, collapsed, s
       {source.panel && <div className="side-pane" hidden={side !== 'source'}>{source.panel}</div>}
     </aside>
     {committing && <CommitDialog branch={git?.branch ?? null} files={staged} staged remote={Boolean(git?.remote)} agent={agentLabel(writer.agent)} onClose={() => setCommitting(false)}
-      generate={fresh => api<{ message: string }>(`/projects/${project.id}/git/message`, { paths: staged, staged: true, ...writer, fresh }).then(result => result.message)}
+      generate={fresh => api<{ message: string }>(`/projects/${project.id}/git/message`, { paths: staged, staged: true, ...writer, language: commitMessageLanguage(), fresh }).then(result => result.message)}
       commit={async (message, push) => {
         const result = await api<{ commit: string; git: GitStatus; pushError?: string }>(`/projects/${project.id}/git/commit`, { message, staged: true, push });
         onGit(result.git); setCommitting(false);
@@ -2053,7 +2053,7 @@ function App() {
     branch={projectGit?.branch ?? null} canCommit={Boolean(task.review?.files?.length || task.delivery?.mode === 'branch' || task.delivery?.pending)} preferred={merging?.intent?.mode}
     pending={task.delivery?.pending && task.delivery.mode !== 'branch' ? task.delivery.mode : undefined}
     apply={() => saveTask('workspace')} commit={(message, confirmation) => saveTask('commit', message, confirmation)}
-    agent={agentLabel(commitWriter.agent)} generate={() => api<{ message: string }>(`/tasks/${task.id}/commit-message`, { ...commitWriter, fresh: true }).then(result => result.message)}
+    agent={agentLabel(commitWriter.agent)} generate={() => api<{ message: string }>(`/tasks/${task.id}/commit-message`, { ...commitWriter, fresh: true, language: commitMessageLanguage() }).then(result => result.message)}
     shown={isPlayground ? undefined : () => void api(`/tasks/${task.id}/predict`, {}).catch(() => undefined)}/>
     : merging ? <TaskConflict status={task.status} waiting={mergeWaiting} onChat={() => selectLayout('conversation')}/>
     : saved === 'committed' && task.delivery ? savedResult(t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' }))

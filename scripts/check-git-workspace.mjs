@@ -39,7 +39,7 @@ const handleApi = async route => {
   if (url.pathname.endsWith('/git/message') || url.pathname.endsWith('/commit-message')) {
     const body = route.request().postDataJSON(); messageRequests.push(body);
     if (messageGate) await messageGate;
-    return messageError ? route.fulfill({ status: 400, json: { error: messageError } }) : json({ message: `Written by ${body.agent}`, agent: body.agent });
+    return messageError ? route.fulfill({ status: 400, json: { error: messageError } }) : json({ message: body.language === 'auto' ? '改进引言' : `Written by ${body.agent}`, agent: body.agent });
   }
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true, noteAlternativeRange: 'few' } });
@@ -85,6 +85,7 @@ const handleApi = async route => {
   throw new Error(`Unexpected request: ${route.request().method()} ${url.pathname}`);
 };
 await page.route('**/api/**', handleApi);
+await page.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: '<html><body><header class="bar"></header><main id="paper"></main></body></html>' }));
 const workspace = page.getByRole('region', { name: 'Version Management', exact: true });
 const panel = workspace.locator('.git-panel');
 const details = workspace.locator('.git-details');
@@ -122,6 +123,63 @@ try {
   assert.equal(Math.round(left.x), Math.round((await page.locator('.main').boundingBox()).x));
   await expect(details.getByRole('region', { name: 'Changes in main.tex', exact: true })).toContainText('New main.tex');
   const message = panel.getByRole('textbox', { name: 'Commit message' });
+  const generateLanguage = panel.getByRole('button', { name: 'Generate commit message', exact: true });
+  const chooseLanguage = async value => {
+    await page.locator('.settings-link').click();
+    await page.locator('[data-settings-page="git"]').click();
+    const choice = page.getByRole('combobox', { name: 'Commit message language', exact: true });
+    await choice.click();
+    await page.locator(`.select-list:popover-open [data-value="${value}"]`).click();
+    await expect(choice).toHaveAttribute('data-value', value);
+    await page.locator('.settings-dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  };
+  await generateLanguage.click();
+  await expect(message).toHaveValue('改进引言');
+  assert.equal(messageRequests.at(-1).language, 'auto');
+  await message.fill('My handwritten message');
+  await chooseLanguage('en');
+  await expect(message).toHaveValue('My handwritten message');
+  await generateLanguage.click();
+  await expect(message).toHaveValue(/^Written by /);
+  assert.equal(messageRequests.at(-1).language, 'en');
+  await page.reload();
+  await openGit();
+  await generateLanguage.click();
+  await expect(message).toHaveValue(/^Written by /);
+  assert.equal(messageRequests.at(-1).language, 'en', 'language survives a reload');
+  await chooseLanguage('auto');
+  await expect(message).toHaveValue(/^Written by /);
+  await generateLanguage.click();
+  await expect(message).toHaveValue('改进引言');
+  assert.equal(messageRequests.at(-1).language, 'auto', 'automatic language can be restored');
+  await chooseLanguage('en');
+
+  // The staged manuscript dialog reads the same saved preference.
+  git.files[0].staged = true;
+  await page.reload();
+  await page.locator('.manuscript-link').click();
+  await page.locator('.manuscript').getByRole('button', { name: 'Changes', exact: true }).click();
+  await page.getByRole('button', { name: 'Commit…', exact: true }).click();
+  const dialog = page.locator('.commit-dialog');
+  await expect(dialog.getByRole('textbox', { name: 'Commit message', exact: true })).toHaveValue(/^Written by /);
+  assert.equal(messageRequests.at(-1).language, 'en');
+  assert.equal(messageRequests.at(-1).staged, true);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  git.files[0].staged = false;
+
+  // A task's inline commit step also uses English, despite its Chinese title.
+  Object.assign(task, { title: '改进引言', status: 'reviewing', deferred: true, review: { state: 'done', round: 1, counts: { accepted: 1 }, files: ['main.tex'] } });
+  await page.reload();
+  await page.locator(`.task-row[data-task="${task.id}"] .task-link`).click();
+  await page.getByRole('group', { name: 'Workspace view', exact: true }).getByRole('button', { name: 'Chat', exact: true }).click();
+  const taskCommit = page.locator('.task-apply');
+  await taskCommit.getByRole('button', { name: 'Generate commit message', exact: true }).click();
+  await expect(taskCommit.getByRole('textbox', { name: 'Commit message', exact: true })).toHaveValue(/^Written by /);
+  assert.equal(messageRequests.at(-1).language, 'en');
+  assert.equal(messageRequests.at(-1).fresh, true);
+  assert.equal(messageRequests.at(-1).agent, task.agent);
+  Object.assign(task, { title: 'Clarify the introduction', status: 'idle', deferred: false, review: null });
+  await openGit();
   await message.fill('Keep this commit draft');
   // Same status and line counts must not leave an outdated working-tree diff.
   diffText = 'Updated on focus';

@@ -1397,6 +1397,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="Commit message"]')?.value === 'Tighten the introduction');
   assert.deepEqual(gitMessages.map(body => [body.paths, body.staged]), [[['main.tex'], true]]);
   assert.equal(gitMessages[0].agent, task.agent || 'codex');
+  assert.equal(gitMessages[0].language, 'auto');
   await commitMessage.press('Enter');
   await gitPanel.getByRole('status').filter({ hasText: 'Committed def5678.' }).waitFor();
   assert.deepEqual(gitCommits, [{ message: 'Tighten the introduction', staged: true }]);

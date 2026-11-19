@@ -174,6 +174,11 @@
     "textHash": "96984afe35f79aae0d8b813a835505e9c29f9530ae24deb59383558e1e98fa87",
     "model": "gemini-4-argon-medium"
   },
+  "Choose a supported commit message language.": {
+    "revision": "d7c97826d17d806cd24569d15d3fb301be88f7717475f9d252afebc4ce550034",
+    "textHash": "e4812ecc654a500b57b86af1ca0a432b485ede976289b6da1d122748f899d76f",
+    "model": "manual"
+  },
   "Choose a template from the list.": {
     "revision": "2cab8ebc166e9c81e3bcf5bc628a232f1a00532f040ab5ff6bce8932e4b18a45",
     "textHash": "b567b53b5d135903518fa904a878f8ef6e1e990f592d21419258f9912416b9a3",
