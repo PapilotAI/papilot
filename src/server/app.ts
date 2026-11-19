@@ -509,7 +509,7 @@ export async function buildApp(options: AppOptions) {
     for (const key of ['model', 'effort', 'serviceTier']) if (body[key] !== undefined && typeof body[key] !== 'string') throw new Error('Choose valid destination model settings.');
     return workspace.restartTask(request.params.id, { id: string(body.id, 'Task ID', 64), agent: body.agent,
       model: typeof body.model === 'string' ? body.model : undefined, effort: typeof body.effort === 'string' ? body.effort : undefined,
-      serviceTier: typeof body.serviceTier === 'string' ? body.serviceTier : undefined, stop: body.stop === true, draftAttachments: attachmentIds(body.draftAttachments) });
+      serviceTier: typeof body.serviceTier === 'string' ? body.serviceTier : undefined, permissions: body.permissions, stop: body.stop === true, draftAttachments: attachmentIds(body.draftAttachments) });
   });
   app.get<{ Params: { id: string }; Querystring: { since?: string } }>('/api/tasks/:id/items', task, request => { store.task(request.params.id); return store.itemsSince(request.params.id, typeof request.query.since === 'string' ? request.query.since : undefined); });
   app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {

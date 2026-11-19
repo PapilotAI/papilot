@@ -21,6 +21,7 @@ const runtime = { connected: true, authenticated: true, account: null, error: nu
   { id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
   { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: 'Faster responses' } },
 ] };
+runtime.permissionOptions = [{ value: 'workspace', label: 'Workspace access', detail: 'Native approvals' }, { value: 'full', label: 'Full access', detail: 'Approve all tools' }];
 const snapshot = { version: 'test', csrf: 'test', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, claude: { ...runtime, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }] } } };
 const modelChanges = [], messages = [], restarts = [];
 let failRestart = true, loseRestartResponse = false;
@@ -28,6 +29,8 @@ let holdRestart, releaseRestart;
 let holdModel, releaseModel;
 await context.addInitScript(() => {
   localStorage.setItem('papilot:task', 'fixture-task');
+  localStorage.setItem('papilot:model-preferences:' + JSON.stringify(['claude', 'opus']), JSON.stringify({ effort: 'low', fast: false }));
+  localStorage.setItem('papilot:permissions:claude', 'full');
   localStorage.setItem('papilot:draft:fixture-task', 'My unsent instructions.');
   localStorage.setItem('papilot:draft-skill:fixture-task', 'polish');
   localStorage.setItem('papilot:files:task:fixture-task', JSON.stringify([{ id: 'original-draft-file', projectId: 'paper', name: 'draft-reference.txt', size: 10, mime: 'text/plain' }]));
@@ -125,7 +128,8 @@ try {
   await page.screenshot({ path: 'test-results/task-restart-error.png', animations: 'disabled' });
   assert.equal(restarts.length, 1);
   assert.equal(restarts[0].agent, 'claude'); assert.equal(restarts[0].model, 'opus'); assert.equal(restarts[0].stop, true);
-  assert.equal(restarts[0].effort, '', 'The destination uses its own default effort');
+  assert.equal(restarts[0].effort, 'low', 'The destination restores its remembered effort');
+  assert.equal(restarts[0].permissions, 'full', 'The destination restores its own permission choice');
   assert.deepEqual(restarts[0].draftAttachments, ['original-draft-file']);
   assert.equal(messages.length, 0, 'Restart never auto-sends the draft');
   failRestart = false; loseRestartResponse = true;

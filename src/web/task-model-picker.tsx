@@ -6,10 +6,12 @@ import { t } from './i18n.ts';
 import type { RefreshUsage } from './usage.tsx';
 import { requestId } from './request-id.ts';
 import { browserStorage } from './storage.ts';
+import { readModelPreferences, readPermissionPreference, saveModelPreferences, savePermissionPreference } from './agent-preferences.ts';
+import { taskEffort } from './task-effort.ts';
 
 type Settings = Pick<Task, 'model' | 'effort' | 'serviceTier'>;
 const settingsOf = (task: Settings): Settings => ({ model: task.model, effort: task.effort, serviceTier: task.serviceTier });
-interface RestartSettings { id: string; agent: AgentId; model: string; effort: string; stop: boolean }
+interface RestartSettings { id: string; agent: AgentId; model: string; effort: string; serviceTier?: string; permissions: string; stop: boolean }
 const newId = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
 
 export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnecting, onReconnect, save, onSaving, refresh, reportError, permissions, restart, refreshUsage }: {
@@ -30,12 +32,30 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
     current.current = saved.current = settingsOf(task); setChoice(current.current);
   }, [task.model, task.effort, task.serviceTier]);
   const agent = task.agent || 'codex';
-  function change(next: Settings) {
+  function remember(settings: Settings) {
+    const model = settings.model || runtime?.models.find(model => model.isDefault)?.id || '';
+    saveModelPreferences(agent, model, { effort: settings.effort || '', fast: Boolean(settings.serviceTier && settings.serviceTier !== 'default') });
+  }
+  function modelSettings(id: string | null, previous: Settings): Settings {
+    if (previous.model === id) return previous;
+    const model = runtime?.models.find(model => id ? model.id === id : model.isDefault);
+    const preference = readModelPreferences(agent, id || '', model);
+    const effort = preference ? taskEffort(preference.effort, model) : previous.effort;
+    return { model: id, effort: model?.efforts.includes(effort || '') ? effort : null,
+      serviceTier: (preference ? preference.fast : previous.serviceTier === model?.fastMode?.serviceTier) && model?.fastMode ? model.fastMode.serviceTier : 'default' };
+  }
+  function change(update: (previous: Settings) => Settings) {
     if (disabled || restartPending.current) return;
+    const next = update(current.current);
     current.current = next; setChoice(next); pending.current++; onSaving(true);
     // Serialize rapid slider/model changes, keeping the menu open while saving.
     queue.current = queue.current.then(async () => {
-      try { saved.current = settingsOf(await save({ model: next.model || '', effort: next.effort || '', ...(agent === 'codex' ? { serviceTier: next.serviceTier || 'default' } : {}) })); }
+      try {
+        // Resolve model switches after preceding saves, including rapid A/B/A.
+        const next = update(saved.current);
+        const result = await save({ model: next.model || '', effort: next.effort || '', ...(agent === 'codex' ? { serviceTier: next.serviceTier || 'default' } : {}) });
+        remember(saved.current); saved.current = settingsOf(result); remember(saved.current);
+      }
       catch (error) { reportError(error); }
       finally {
         if (--pending.current === 0) {
@@ -47,9 +67,7 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
   function select(nextAgent: AgentId, id: string) {
     if (disabled || restartPending.current) return;
     if (nextAgent === agent) {
-      const model = runtime?.models.find(model => model.id === id), previous = current.current;
-      change({ model: id, effort: model?.efforts.includes(previous.effort || '') ? previous.effort : null,
-        serviceTier: previous.serviceTier === model?.fastMode?.serviceTier ? previous.serviceTier : 'default' });
+      change(previous => modelSettings(id, previous));
       return;
     }
     restartPending.current = true; setRestarting(true); onSaving(true);
@@ -60,7 +78,13 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
     // Finish any queued model edits before stopping the original task.
     queue.current = queue.current.then(async () => {
       try {
-        await restart({ id: replacementId, agent: nextAgent, model: id, effort: '', stop: true });
+        remember(saved.current);
+        if (task.mode !== 'review') savePermissionPreference(agent, task.permissions || 'workspace');
+        const runtime = runtimes[nextAgent], model = runtime?.models.find(model => id ? model.id === id : model.isDefault);
+        const preference = readModelPreferences(nextAgent, id, model);
+        await restart({ id: replacementId, agent: nextAgent, model: id, effort: preference ? taskEffort(preference.effort, model) : '',
+          ...(nextAgent === 'codex' ? { serviceTier: preference?.fast && model?.fastMode ? model.fastMode.serviceTier : 'default' } : {}),
+          permissions: task.mode === 'review' ? 'workspace' : readPermissionPreference(nextAgent, runtime), stop: true });
         if (browserStorage.getItem(key) === savedRequest) browserStorage.removeItem(key);
       }
       catch (error) { reportError(error); }
@@ -75,7 +99,7 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
     disabled={disabled || restarting} reconnecting={reconnecting} onReconnect={onReconnect} description={pending.current ? t('Saving…') : t('Next turn')}
     onSelect={select}
     onChange={patch => {
-      const previous = current.current, model = runtime?.models.find(model => previous.model ? model.id === previous.model : model.isDefault);
-      change({ ...previous, ...(patch.effort !== undefined ? { effort: patch.effort || null } : {}), ...(patch.fast !== undefined ? { serviceTier: patch.fast ? model?.fastMode?.serviceTier : 'default' } : {}) });
+      const id = current.current.model, model = runtime?.models.find(model => id ? model.id === id : model.isDefault);
+      change(previous => ({ ...modelSettings(id, previous), ...(patch.effort !== undefined ? { effort: patch.effort || null } : {}), ...(patch.fast !== undefined ? { serviceTier: patch.fast ? model?.fastMode?.serviceTier : 'default' } : {}) }));
     }}/>{restarting && <span className="spinner" role="status" aria-label={t('Stopping and restarting…')} title={t('Stopping and restarting…')}/>}</>;
 }

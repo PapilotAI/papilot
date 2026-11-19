@@ -106,6 +106,7 @@ try {
   await expect(full).toBeChecked();
   await expect(trigger.locator('.agent-permission-label')).toHaveText('Full access');
   assert.equal(task.permissions, 'full');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:permissions:codex')), 'full');
   await page.screenshot({ animations: 'disabled', path: 'test-results/task-permissions-full.png' });
   await menu.press('Escape');
   await page.screenshot({ animations: 'disabled', path: 'test-results/task-permissions-collapsed.png' });
@@ -119,6 +120,7 @@ try {
   await expect(workspace).toBeChecked();
   await expect(trigger.locator('.agent-permission-label')).toHaveText('Workspace access');
   permissionFailure = false;
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:permissions:codex')), 'workspace', 'a failed permission save does not become a preference');
   // The save response confirms the mode even when the separate state refresh
   // is slow or fails. Both controls must agree before another message can send.
   for (const refreshMode of ['delayed', 'failed']) {
@@ -250,8 +252,8 @@ try {
   await page.reload();
   const fresh = page.locator('.new-task-panel').getByRole('button', { name: 'Agent settings', exact: true });
   await expect(fresh).toHaveCount(1);
-  await expect(fresh.locator('.agent-permission-label')).toHaveText('Workspace access');
-  await open(fresh); await expect(workspace).toBeChecked();
+  await expect(fresh.locator('.agent-permission-label')).toHaveText('Full access');
+  await open(fresh); await expect(full, 'new tasks restore the last successfully saved Codex permissions').toBeChecked();
   await full.check(); await expect(full).toBeChecked();
   await expect(menu.getByRole('slider', { name: 'Reasoning effort', exact: true })).toBeVisible();
   await expect(page.locator(':popover-open')).toHaveCount(1);

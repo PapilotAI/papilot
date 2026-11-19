@@ -20,6 +20,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Fixed
 
 - Stop automatically opening inline LaTeX source-diff cards in PDF review when a change has no visible PDF difference, lacks a PDF preview, or fails to produce a comparison; show a concise status notice with explicit **Show LaTeX source** and **Retry comparison** actions instead, while preserving all pending review decisions and routing explicit desktop source inspection to the workspace editor. ([#234](https://github.com/PapilotAI/papilot/issues/234))
+- Remember reasoning effort and Fast mode per model, and editing permissions per agent, when switching models or starting another task. Choices survive reloads; switching an existing task to another agent restores that agent’s supported settings.
+
 - Keep PDF anchors usable at their saved positions while source relocation is pending or fails, with a retry for failed lookups. Avoid overlapping native and custom anchor tooltips.
 - Preserve the full five-stripe Papilot logo in the browser tab icon for the app, website and online demo.
 - Prepare annotation alternatives earlier, prioritize the option being inspected and reuse unfinished comparisons under cache pressure. Optional PDFs still do not hold up the main review, application or commit. ([#228](https://github.com/PapilotAI/papilot/issues/228))

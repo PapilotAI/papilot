@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { type RuntimeStatus, type Task, type TaskPermissions } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
+import { savePermissionPreference } from './agent-preferences.ts';
 
 // Keep runtime-provided text discoverable by the locale catalog extractor.
 export function permissionText(text: string) {
@@ -87,7 +88,10 @@ export function TaskPermissionOptions({ task, runtime, disabled, save, onSaved, 
   return <PermissionOptions runtime={runtime} value={task.permissions || 'workspace'} disabled={disabled || busy || task.status === 'preparing' || saving} hint={busy ? t('Pause to change') : undefined}
     onChange={async permissions => {
       setSaving(true); onSaving(true);
-      try { onSaved(await save(permissions)); }
+      try {
+        const saved = await save(permissions);
+        savePermissionPreference(saved.agent || 'codex', saved.permissions || 'workspace'); onSaved(saved);
+      }
       catch (error) { reportError(error); }
       finally { refresh(); setSaving(false); onSaving(false); }
     }}/>;

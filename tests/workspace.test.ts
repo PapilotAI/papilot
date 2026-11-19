@@ -3708,7 +3708,7 @@ test('restart preserves the original request and source context in a new session
 test('restart validates destination settings and preserves unavailable context rather than silently dropping it', async () => {
   const f = restartFixture();
   try {
-    for (const change of [{ model: 'codex-model' }, { effort: 'xhigh' }, { serviceTier: 'priority' }]) await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, ...change }), /available model|reasoning effort|Fast mode/);
+    for (const change of [{ model: 'codex-model' }, { effort: 'xhigh' }, { serviceTier: 'priority' }, { permissions: 'unsupported' }, { permissions: 123 }]) await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, ...change }), /available model|reasoning effort|Fast mode|permissions/);
     f.workspace.runtimes.claude.authenticated = false;
     await assert.rejects(f.workspace.restartTask(f.task.id, f.choice), /Connect and sign in/);
     f.workspace.runtimes.claude.authenticated = true;
@@ -3719,6 +3719,37 @@ test('restart validates destination settings and preserves unavailable context r
     await assert.rejects(f.workspace.restartTask(f.task.id, f.choice), /Attachment is missing/);
     assert.equal(f.store.tasks().length, 1);
   } finally { f.close(); }
+});
+
+test('restart restores validated destination permissions and keeps AI reviews restricted', async () => {
+  const f = restartFixture();
+  try {
+    (f.workspace as any).agents.claude.permissionOptions = () => [{ value: 'workspace' }, { value: 'full' }];
+    const replacement = await f.workspace.restartTask(f.task.id, { ...f.choice, permissions: 'full' });
+    await f.workspace.prepareTask(replacement.id);
+    assert.equal(replacement.permissions, 'full');
+    assert.equal(replacement.effort, 'high');
+    assert.equal(f.store.task(replacement.id).permissions, 'full');
+    assert.equal((await f.workspace.restartTask(f.task.id, { ...f.choice, permissions: 'full' })).id, replacement.id);
+    f.store.updateTask(f.task.id, { mode: 'review' });
+    await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, id: 'review-replacement-id', permissions: 'full' }), /only available for editing tasks/);
+    assert.equal(f.store.findTask('review-replacement-id'), undefined);
+  } finally { f.close(); }
+});
+
+test('restart rejects a permission mode removed while the original task stops', async () => {
+  const f = restartFixture(), stopped = deferred<void>();
+  try {
+    let options = [{ value: 'workspace' }, { value: 'full' }];
+    (f.workspace as any).agents.claude.permissionOptions = () => options;
+    f.store.updateTask(f.task.id, { status: 'running', turnId: 'original-turn' });
+    (f.workspace as any).active.set(f.task.id, f.run);
+    f.workspace.interrupt = async () => { await stopped.promise; (f.workspace as any).active.delete(f.task.id); f.store.updateTask(f.task.id, { status: 'interrupted' }); };
+    const restarting = f.workspace.restartTask(f.task.id, { ...f.choice, stop: true, permissions: 'full' });
+    options = [{ value: 'workspace' }]; stopped.resolve();
+    await assert.rejects(restarting, /Invalid task permissions/);
+    assert.equal(f.store.tasks().length, 1);
+  } finally { stopped.resolve(); f.close(); }
 });
 
 test('restart requires stop confirmation and waits for the original agent to actually stop', async () => {

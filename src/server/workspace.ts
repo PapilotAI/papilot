@@ -536,14 +536,14 @@ export class Workspace extends EventEmitter {
     void this.prepareTask(task.id);
       return this.store.task(task.id);
   }
-  restartTask(taskId: string, input: { id: string; agent: AgentId; model?: string; effort?: string; serviceTier?: string; stop?: boolean; draftAttachments?: string[] }): Promise<Task> {
+  restartTask(taskId: string, input: { id: string; agent: AgentId; model?: string; effort?: string; serviceTier?: string; permissions?: unknown; stop?: boolean; draftAttachments?: string[] }): Promise<Task> {
     const pending = this.restarting.get(taskId);
     if (pending) return pending.id === input.id ? pending.promise : Promise.reject(new Error('This task is already being restarted.'));
     const promise = this.restart(taskId, input).finally(() => { this.restarting.delete(taskId); this.schedule(); });
     this.restarting.set(taskId, { id: input.id, promise });
     return promise;
   }
-  private async restart(taskId: string, input: { id: string; agent: AgentId; model?: string; effort?: string; serviceTier?: string; stop?: boolean; draftAttachments?: string[] }): Promise<Task> {
+  private async restart(taskId: string, input: { id: string; agent: AgentId; model?: string; effort?: string; serviceTier?: string; permissions?: unknown; stop?: boolean; draftAttachments?: string[] }): Promise<Task> {
     if (!/^[\w-]{16,64}$/.test(input.id) || input.id === taskId || this.store.taskDeleted(input.id)) throw new Error('Invalid replacement task ID.');
     const original = this.store.task(taskId), existing = this.store.findTask(input.id);
     if (existing) {
@@ -559,6 +559,8 @@ export class Workspace extends EventEmitter {
     if (!model) throw new Error('Choose an available model for the destination agent.');
     if (input.effort && !model.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
     if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+    const permissions = input.permissions ?? 'workspace';
+    this.validateTaskPermissions(permissions, input.agent, original.mode === 'review');
     const initial = this.store.runByKey('initial-' + taskId), message = initial && this.store.item(taskId, initial.id);
     if (!initial || !message) throw new Error('The original request is unavailable. Open the original conversation to create a new task.');
     const blocked = () => {
@@ -601,6 +603,7 @@ export class Workspace extends EventEmitter {
       const currentRuntime = this.runtimes[input.agent], currentModel = currentRuntime.models.find(item => item.id === model.id);
       if (!currentRuntime.connected || !currentRuntime.authenticated) throw new Error('The destination agent disconnected. Reconnect and retry.');
       if (!currentModel || (input.effort && !currentModel.efforts.includes(input.effort)) || (input.serviceTier && input.serviceTier !== 'default' && input.serviceTier !== currentModel.fastMode?.serviceTier)) throw new Error('The destination model settings changed. Choose an available model and retry.');
+      this.validateTaskPermissions(permissions, input.agent, original.mode === 'review');
       if (this.store.findTask(input.id) || this.store.taskDeleted(input.id)) throw new Error('Invalid replacement task ID.');
       let prompt = original.mode === 'review' ? original.instructions : initial.prompt;
       for (let i = 0; i < originalFiles.length; i++) {
@@ -610,7 +613,7 @@ export class Workspace extends EventEmitter {
       const now = Date.now(), id = input.id;
       const replacement: Task = { id, projectId: original.projectId, name: 'p-' + id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48), title: original.title, titleSource: 'prompt',
         instructions: original.instructions, ...(original.mode === 'review' ? { mode: 'review' } : {}), restart: { taskId, ...(drafts.length ? { draftAttachments: drafts } : {}) },
-        permissions: 'workspace', worktree: '', deferred: true, threadId: null, turnId: null, agent: input.agent, model: model.id, effort: input.effort || null,
+        permissions: permissions as string, worktree: '', deferred: true, threadId: null, turnId: null, agent: input.agent, model: model.id, effort: input.effort || null,
         ...(input.agent === 'codex' ? { serviceTier: input.serviceTier || 'default' } : {}), status: 'preparing', preparation: {}, createdAt: now, updatedAt: now, feedbackCursor: 0, error: null, review: null };
       const run: Run = { id: randomUUID(), taskId: id, requestKey: 'initial-' + id, prompt, ...(files.length ? { attachments: files } : {}),
         ...(initial.noteOptionsRequested ? { noteOptionsRequested: true } : {}), status: 'queued', createdAt: now, finishedAt: null, reviewRound: 0 };

@@ -1572,7 +1572,7 @@ try {
   await choose('K3 · Kimi');
   assert.equal(await effortChoice.getAttribute('aria-valuetext'), 'High');
   await effortChoice.press('End');
-  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:kimi'), localStorage.getItem('papilot:effort:kimi')]), ['kimi', 'kimi/k3', 'max']);
+  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('papilot:agent'), localStorage.getItem('papilot:model:kimi'), JSON.parse(localStorage.getItem('papilot:model-preferences:' + JSON.stringify(['kimi', 'kimi/k3']))).effort]), ['kimi', 'kimi/k3', 'max']);
   assert.equal(await fastMode.count(), 0);
   await page.screenshot({ path: 'test-results/kimi-agent-settings.png', fullPage: true });
   // Only agents the host has are offered: one found later appears with the next state.
@@ -1627,7 +1627,7 @@ try {
   await defaultEffort.press('Home');
   await defaultEffort.press('ArrowRight');
   assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Medium');
-  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:effort:claude')), 'medium');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('papilot:model-preferences:' + JSON.stringify(['claude', 'haiku']))).effort), 'medium');
   await selectOption(defaultModel, JSON.stringify(['antigravity', '']));
   assert.equal(await defaultEffort.count(), 0);
   await settingsDialog.getByText('This model uses its own reasoning settings.', { exact: true }).waitFor();
@@ -1640,10 +1640,10 @@ try {
   await page.waitForFunction(() => document.querySelector('.settings-effort input')?.max === '5');
   await defaultEffort.press('End');
   assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'Ultra');
-  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:effort:codex')), 'ultra');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('papilot:model-preferences:' + JSON.stringify(['codex', 'deep-model']))).effort), 'ultra');
   await page.screenshot({ path: 'test-results/settings-effort-desktop.png', animations: 'disabled' });
   await settingsDialog.getByRole('button', { name: 'Model default', exact: true }).click();
-  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:effort:codex')), '');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('papilot:model-preferences:' + JSON.stringify(['codex', 'deep-model']))).effort), '');
   assert.equal(await defaultEffort.getAttribute('aria-valuetext'), 'High');
   assert.equal(await settingsDialog.getByRole('button', { name: 'Model default', exact: true }).isDisabled(), true);
   await defaultEffort.press('End');

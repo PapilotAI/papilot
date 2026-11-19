@@ -82,8 +82,8 @@ import { ComparisonProgress } from './comparison-progress.tsx';
 import { PapilotMark } from './papilot-mark.tsx';
 import { AgentConnectionNotice, AgentPicker, NoAgentNotice, WriterSuggestion } from './agent-picker.tsx';
 import { taskEffort } from './task-effort.ts';
+import { readModelPreferences, readPermissionPreference, saveModelPreferences, savePermissionPreference, useAgentPreferenceChanges } from './agent-preferences.ts';
 import { PermissionOptions, TaskPermissionOptions } from './task-permissions.tsx';
-import { type TaskPermissions } from '../shared.ts';
 import { TaskModelPicker } from './task-model-picker.tsx';
 import { TaskFlight, type TaskFlightData } from './task-flight.tsx';
 import { returnNotes } from './note-flight.ts';
@@ -1213,14 +1213,9 @@ function App() {
   const [skillsRevision, setSkillsRevision] = useState(0);
   // The agent, and each agent's model and reasoning effort, are remembered for
   // every new task, whether it starts from the composer or from PDF notes.
-  const [newPermissions, setNewPermissions] = useState<TaskPermissions>('workspace');
+  useAgentPreferenceChanges();
   const [savedAgent, setAgentChoice] = useState<AgentId | null>(() => { const saved = browserStorage.getItem('papilot:agent'); return isAgentId(saved) ? saved : null; });
-  const [agentPrefs, setAgentPrefs] = useState(() => Object.fromEntries(AGENT_IDS.map(id => [id, {
-    model: browserStorage.getItem(`papilot:model:${id}`) ?? '',
-    // null until an effort is chosen; '' is an explicit choice of the model's default.
-    effort: browserStorage.getItem(`papilot:effort:${id}`) ?? (isPlayground && id === 'codex' ? 'xhigh' : null),
-    fast: browserStorage.getItem(`papilot:fast:${id}`) === 'true',
-  }])) as Record<AgentId, { model: string; effort: string | null; fast: boolean }>);
+  const [agentModels, setAgentModels] = useState(() => Object.fromEntries(AGENT_IDS.map(id => [id, browserStorage.getItem(`papilot:model:${id}`) || ''])) as Record<AgentId, string>);
   const [creating, setCreating] = useState(false), [createError, setCreateError] = useState('');
   const [addedTask, setAddedTask] = useState<Pick<Task, 'id' | 'title'> | null>(null);
   const [flyingTask, setFlyingTask] = useState<TaskFlightData | null>(null);
@@ -1550,25 +1545,25 @@ function App() {
   const dismissWriter = () => { setWriterDismissed(true); browserStorage.setItem('papilot:writer-suggestion', 'dismissed'); };
   const writerReady = Boolean(runtimes.papilot?.connected && runtimes.papilot.authenticated);
   const suggestWriter = !writerDismissed && !missingAgent && savedAgent !== null && agentChoice !== 'papilot' && offered.includes('papilot');
-  const effectivePermissions = runtimes[agentChoice]?.permissionOptions?.some(option => option.value === newPermissions) ? newPermissions : 'workspace';
-  const models = runtimes[agentChoice]?.models || [], pref = agentPrefs[agentChoice];
-  const chosenModel = models.length && !models.some(m => m.id === pref.model) ? '' : pref.model;
+  const effectivePermissions = readPermissionPreference(agentChoice, runtimes[agentChoice]);
+  const models = runtimes[agentChoice]?.models || [], preferredModel = agentModels[agentChoice];
+  const chosenModel = models.length && !models.some(m => m.id === preferredModel) ? '' : preferredModel;
   const modelInfo = models.find(m => m.id === chosenModel) || models.find(m => m.isDefault);
+  const pref = readModelPreferences(agentChoice, chosenModel, modelInfo) || { effort: isPlayground && agentChoice === 'codex' ? 'xhigh' : null, fast: false };
   const agent = { agent: agentChoice, model: modelInfo?.id || chosenModel, effort: taskEffort(pref.effort, modelInfo), serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
   const commitWriter: CommitMessageChoice = commitPreference === 'conversation' ? (commitContext ? { agent: commitContext.agent || 'codex', model: commitContext.model || '', effort: commitContext.effort || '', ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}) } : agent) : commitPreference;
-  const remember = (change: Partial<{ model: string; effort: string; fast: boolean }>) => {
-    setAgentPrefs(current => ({ ...current, [agentChoice]: { ...current[agentChoice], ...change } }));
-    for (const [key, value] of Object.entries(change)) browserStorage.setItem(`papilot:${key}:${agentChoice}`, String(value));
+  const remember = (change: Partial<{ effort: string; fast: boolean }>) => {
+    saveModelPreferences(agentChoice, agent.model, { ...pref, ...change });
   };
   // One choice in the picker sets both the agent and its model.
   const chooseModel = (id: AgentId, model: string) => {
     setAgentChoice(id); browserStorage.setItem('papilot:agent', id);
-    setAgentPrefs(current => ({ ...current, [id]: { ...current[id], model } })); browserStorage.setItem(`papilot:model:${id}`, model);
+    setAgentModels(current => ({ ...current, [id]: model })); browserStorage.setItem(`papilot:model:${id}`, model);
   };
   const agentOptions = (disabled: boolean) => <AgentPicker refreshUsage={refreshUsage} disabled={disabled} noAgent={missingAgent} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
     agents={offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))}
     permissionMode={newSkill?.output !== 'annotations' ? effectivePermissions : undefined}
-    permissions={newSkill?.output !== 'annotations' && <PermissionOptions runtime={runtimes[agentChoice]} value={effectivePermissions} disabled={disabled} onChange={setNewPermissions}/>}
+    permissions={newSkill?.output !== 'annotations' && <PermissionOptions runtime={runtimes[agentChoice]} value={effectivePermissions} disabled={disabled} onChange={value => savePermissionPreference(agentChoice, value)}/>}
     reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onSelect={chooseModel} onChange={remember}/>;
   async function openPreparedTask(preset?: string, annotations?: string[]) {
     if (creating) return;
@@ -1600,7 +1595,7 @@ function App() {
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
       const title = skill ? (text ? `${skillName(skill)}: ${taskTitle(text)}` : skillName(skill)).slice(0, 120) : text ? taskTitle(text) : attached.length === 1 ? taskTitle(attached[0].comment || (attached[0].group && groupInstructions[canonicalGroup(attached[0].group)]) || '') : attached.length ? t('Address {n} PDF notes', { n: attached.length }) : files[0].name.slice(0, 120);
-      const body = { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), ...(attached.length ? { annotations: [...submittedNotes] } : {}), ...(Object.keys(groupInstructions).length ? { groupInstructions } : {}), ...(files.length ? { attachments: files.map(file => file.id) } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, serviceTier: agent.serviceTier, permissions: !reviewing && runtimes[agent.agent]?.permissionOptions?.some(option => option.value === newPermissions) ? newPermissions : 'workspace' };
+      const body = { projectId: target, title, instructions: text, ...(skill ? { skill: skill.id } : {}), ...(attached.length ? { annotations: [...submittedNotes] } : {}), ...(Object.keys(groupInstructions).length ? { groupInstructions } : {}), ...(files.length ? { attachments: files.map(file => file.id) } : {}), agent: agent.agent, model: agent.model, effort: agent.effort, serviceTier: agent.serviceTier, permissions: reviewing ? 'workspace' : effectivePermissions };
       const id = requestId(browserStorage, 'papilot:new-task-request', JSON.stringify([target, text, skill?.id || '', [...submittedNotes], groupInstructions, files.map(file => file.id)]), uuid);
       // The task answers at once and gets its manuscript copy in the background.
       const created = await api<Task>('/tasks', { ...body, id });

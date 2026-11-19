@@ -49,6 +49,17 @@ async function fixture(latexInstallation: AppOptions['latexInstallation'] = asyn
 
 }
 
+test('task restart forwards destination permissions and model settings', async () => {
+  const f = await fixture(), choices: any[] = [];
+  f.workspace.restartTask = async (_task, choice) => { choices.push(choice); return f.store.task('thesis-task'); };
+  try {
+    const choice = { id: 'replacement-task-id', agent: 'claude', model: 'opus', effort: 'high', permissions: 'full', stop: true };
+    const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/restart', headers: f.as, payload: choice });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.deepEqual(choices, [{ ...choice, serviceTier: undefined, draftAttachments: [] }]);
+  } finally { await f.close(); }
+});
+
 test('commit-message endpoints validate and forward the requested language', async () => {
   const f = await fixture(), choices: any[] = [];
   f.workspace.commitMessage = async (_project, _paths, choice) => { choices.push(choice); return { message: 'Clarify the introduction', agent: 'codex' }; };
