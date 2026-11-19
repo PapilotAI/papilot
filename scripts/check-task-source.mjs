@@ -289,6 +289,8 @@ try {
       await mobilePage.close();
     }
   } finally {
+    // Stop the desktop review's polling before disposing its fixture server.
+    await page.close();
     await engineBroken?.close();
     await fBroken.close();
   }
