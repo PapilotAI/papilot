@@ -4,36 +4,44 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-20
+
+Turn feedback into PDF notes, keep track of passages being revised, and preview references without leaving the page. See the [release notes](docs/releases/0.12.0/release-notes.md) for setup and update instructions.
+
 ### Added
 
-- Let ordinary agent tasks search and read small portions of the manuscript PDF and save annotations as they work. Comments can come from files or conversation; no import mode or manuscript rewrite is required. Annotations use real PDF anchors, persist across interrupted turns, and support idempotent creation and revision-checked updates, deletion and restoration.
-- Keep sent PDF notes visible on the manuscript as translucent dashed marks while their task is unfinished. Status dots distinguish running and ready tasks; click a mark to open its review. Marks disappear after completion or delivery to the manuscript.
-- Peek at internal PDF references with a 400 ms hover, Alt-click (Option-click on macOS), or keyboard focus. Equations, tables, figures and bibliography entries preview in place without changing your reading position; ordinary clicks still navigate.
-
-- Choose the language of generated commit messages in **Settings → Git**, independently of the interface language. **Auto** keeps following recent commits; an explicit language applies to Git, staged commits and task commits.
-- Add the opt-in **Typeless voice notes** experiment in the macOS desktop app. New PDF notes send the configured Typeless dictation shortcut; a microphone button sends it again while keeping the draft focused. Brief icon feedback confirms shortcut delivery; only errors add visible text. The experiment does not report recording state and requires waiting for transcription before leaving a note. See [setup and limitations](docs/typeless.md). ([#231](https://github.com/PapilotAI/papilot/issues/231))
+- **Let agents manage manuscript notes.** Ordinary tasks can search and read the current PDF, then create, update, delete or restore annotations at real PDF locations. Feedback can come from files or conversation; no import mode or manuscript rewrite is required. Notes are saved incrementally and survive interrupted turns. Codex and Papilot Writer have native tools; other supported agents need command and local-network access. A current compiled PDF with selectable text is required, and the tools do not annotate unaccepted task edits. ([#250](https://github.com/PapilotAI/papilot/pull/250))
+- **Keep sent notes visible while their tasks are unfinished.** Faint dashed marks and status dots show running and ready tasks on the manuscript; click a mark or use its keyboard-accessible dot to open the review. Paused and failed tasks remain visible. Marks clear after completion, application, commit or deletion; confirmed relocation preserves their positions after recompilation. ([#248](https://github.com/PapilotAI/papilot/pull/248))
+- **Preview internal PDF references in place.** Hover an embedded link for 400 ms, Alt-click it (Option-click on macOS), or focus it with the keyboard to see an equation, table, figure or citation excerpt without changing the page, zoom or reading position. Escape dismisses it; ordinary clicks and touch taps retain navigation. Large objects can extend beyond the excerpt. ([#249](https://github.com/PapilotAI/papilot/pull/249))
+- Choose generated commit-message language in **Settings → Git**, independently of interface language. **Auto** follows recent commits; an explicit choice applies to Git, staged commits and task commits. ([#244](https://github.com/PapilotAI/papilot/pull/244))
+- Add the default-off **Typeless voice notes** experiment to the macOS desktop app. New PDF notes and their microphone button send Typeless's configured shortcut. The success icon confirms delivery, not recording state; closing a note does not stop dictation or cancel late insertion. Wait for transcription before leaving the note. Requires Typeless setup and Papilot Accessibility permission. See [setup and limitations](docs/typeless.md). ([#242](https://github.com/PapilotAI/papilot/pull/242), [#231](https://github.com/PapilotAI/papilot/issues/231))
 
 ### Changed
 
-- **Check Antigravity quotas from either task composer.** The agent/model menu shows the account's reported five-hour and weekly usage, reset times and model groups, with automatic and manual refresh. Missing quota data stays unavailable and quota queries do not delay conversations. ([#229](https://github.com/PapilotAI/papilot/issues/229))
-- **Choose the commit-message agent in Settings → Git.** By default, generation follows the current conversation and preserves that context within the same paper when opening Git; papers without conversation context use the new-task agent. The conversation’s model, reasoning effort and Fast mode follow it too. The same model picker used in tasks lets you save an explicit choice across conversations and reloads; this applies to task commit messages too and reports unavailable agents or models instead of silently switching. ([#233](https://github.com/PapilotAI/papilot/issues/233))
-
-- **Star Papilot on GitHub from the website.** The homepage header's GitHub button shows the repository's star count beside the GitHub mark, a **Star on GitHub** link sits below the download button and beside the download section's links, and the online demo's notice and download dialog offer it next to **Download Papilot**. Website links now point to the PapilotAI/papilot repository instead of its former address.
-- **A clearer README.** It now opens with what Papilot does, then illustrated reasons to use it (including live Overleaf sync, reviewing from a phone and Papilot Universe templates), a download card for each system and the terminal, the agents it works with, and a diagram of a task from opening the paper to committing and syncing.
+- **Check Antigravity quotas from either task composer.** The model menu shows reported five-hour and weekly usage, reset times and model groups, with automatic and manual refresh. Missing quota data stays unavailable without delaying conversations. ([#237](https://github.com/PapilotAI/papilot/pull/237), [#229](https://github.com/PapilotAI/papilot/issues/229))
+- **Choose the commit-message agent in Settings → Git.** By default, generation follows the current conversation's agent, model, reasoning effort and Fast mode; papers without conversation context use the new-task agent. Save an explicit choice with the task model picker. The setting applies to task commits too and reports unavailable selections instead of silently switching. ([#238](https://github.com/PapilotAI/papilot/pull/238), [#233](https://github.com/PapilotAI/papilot/issues/233))
+- Redesign the README around illustrated writing workflows and installation choices, add workflow and typeset-review articles, and show GitHub stars and clearer repository links on the website and demo. ([#230](https://github.com/PapilotAI/papilot/pull/230))
 
 ### Fixed
 
-- Stop automatically opening inline LaTeX source-diff cards in PDF review when a change has no visible PDF difference, lacks a PDF preview, or fails to produce a comparison; show a concise status notice with explicit **Show LaTeX source** and **Retry comparison** actions instead, while preserving all pending review decisions and routing explicit desktop source inspection to the workspace editor. ([#234](https://github.com/PapilotAI/papilot/issues/234))
-- Remember reasoning effort and Fast mode per model, and editing permissions per agent, when switching models or starting another task. Choices survive reloads; switching an existing task to another agent restores that agent’s supported settings.
+- Remember reasoning effort and Fast mode per model, and editing permissions per agent, when switching models or starting another task. Choices survive reloads; cross-agent restarts restore supported settings. Existing tasks retain their settings until edited, failed saves do not replace remembered choices, and rapid queued changes preserve the intended selection. Preferences remain local to this browser or desktop app. ([#247](https://github.com/PapilotAI/papilot/pull/247))
+- Replace automatically opened inline LaTeX diff cards with compact PDF-review status notices and explicit **Show LaTeX source** and **Retry comparison** actions when changes have no visible PDF difference or comparisons are unavailable or fail. Preserve pending decisions, support retrying the same round, and route explicit desktop source inspection to the workspace editor. ([#246](https://github.com/PapilotAI/papilot/pull/246), [#234](https://github.com/PapilotAI/papilot/issues/234))
+- Prepare annotation alternatives earlier, prioritize the option being inspected and reuse unfinished comparisons under cache pressure. Optional PDFs still do not hold up the main review, application or commit. ([#239](https://github.com/PapilotAI/papilot/pull/239), [#228](https://github.com/PapilotAI/papilot/issues/228))
+- Keep PDF anchors usable at saved positions while source relocation is pending or fails, with a retry for failed lookups and no overlapping native/custom tooltips. ([#243](https://github.com/PapilotAI/papilot/pull/243))
+- Let successful Antigravity turns proceed to review when the CLI repeats an earlier model-capacity error after switching models; new errors and unfinished replies still fail. ([#240](https://github.com/PapilotAI/papilot/pull/240))
+- Find DeepSeek Harness on Windows when installed in a custom folder without `dsh` on PATH. Explicit paths and existing PATH commands keep priority. ([#241](https://github.com/PapilotAI/papilot/pull/241))
+- Preserve the full five-stripe Papilot logo throughout the app and in the app, website and demo browser icons. ([#232](https://github.com/PapilotAI/papilot/pull/232), [#245](https://github.com/PapilotAI/papilot/pull/245), [#226](https://github.com/PapilotAI/papilot/issues/226))
+- Keep successful task statuses green, including completed answers without manuscript changes; use gray for results applied or committed to the manuscript. ([#235](https://github.com/PapilotAI/papilot/pull/235), [#227](https://github.com/PapilotAI/papilot/issues/227))
+- Show “Creating your paper…” only after **Create paper**, not while choosing a save folder. ([#225](https://github.com/PapilotAI/papilot/pull/225), [#224](https://github.com/PapilotAI/papilot/issues/224))
+- Stabilize development checks: pin the Git-sync conflict fixture's style independently of user settings, and close the source-review browser page before its fixture server to avoid teardown-only HTTP errors. ([#217](https://github.com/PapilotAI/papilot/pull/217), [#251](https://github.com/PapilotAI/papilot/pull/251))
 
-- Keep PDF anchors usable at their saved positions while source relocation is pending or fails, with a retry for failed lookups. Avoid overlapping native and custom anchor tooltips.
-- Preserve the full five-stripe Papilot logo in the browser tab icon for the app, website and online demo.
-- Prepare annotation alternatives earlier, prioritize the option being inspected and reuse unfinished comparisons under cache pressure. Optional PDFs still do not hold up the main review, application or commit. ([#228](https://github.com/PapilotAI/papilot/issues/228))
-- Let successful Antigravity turns proceed to review when the CLI repeats an earlier model-capacity error after switching models. New errors and unfinished replies still report failure.
-- Find DeepSeek Harness on Windows when it was installed in a custom folder without registering `dsh` on PATH. Reconnect checks the installation record and uses the bundled CLI; explicit paths and existing PATH commands retain priority.
-- Preserve the full five-stripe Papilot logo at every size in the app, including the sidebar and Settings navigation. ([#226](https://github.com/PapilotAI/papilot/issues/226))
-- Keep successful task statuses green, including **Completed** answers without manuscript changes. Use gray for current results applied or committed to the manuscript. ([#227](https://github.com/PapilotAI/papilot/issues/227))
-- Show “Creating your paper…” in **New paper** only after **Create paper**, not while choosing a save folder. ([#224](https://github.com/PapilotAI/papilot/issues/224))
+### Contributors
+
+Thanks to @chengluyu for the Git-sync regression fix ([#217](https://github.com/PapilotAI/papilot/pull/217)).
+
+### Updates
+
+Upgrading the desktop app from 0.11.0 requires a new desktop installer/package. Use **Settings → Updates** or the matching release asset and retain your existing data and paper folders. CLI/server installations update separately with `npm install -g papilot@0.12.0`; managed deployments use their deployment system. Experiments remain off unless enabled.
 
 ## [0.11.0] - 2026-11-18
 
@@ -657,7 +665,8 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/PapilotAI/papilot/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/PapilotAI/papilot/compare/v0.10.4...v0.11.0
 [0.10.4]: https://github.com/PapilotAI/papilot/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/PapilotAI/papilot/compare/v0.10.2...v0.10.3
