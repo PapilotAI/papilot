@@ -75,6 +75,100 @@ export async function checkPdfAnchors(page, { switchDocument, recompile }) {
   assert.equal(original.length, 2); assert.notEqual(original[0].id, original[1].id);
   assert.equal(original[0].page, original[1].page, 'two anchors on one page preserve distinct positions');
   assert.notEqual(original[0].top, original[1].top);
+  // Source relocation must not block navigation to a saved position, including
+  // while the request is delayed or fails. A retry can refine the destination.
+  const resolvePattern = '**/manuscript/anchors/resolve';
+  let failLookup, lookupReceived;
+  const lookupWait = new Promise(resolve => { failLookup = resolve; });
+  const lookupRequest = new Promise(resolve => { lookupReceived = resolve; });
+  await page.route(resolvePattern, async route => {
+    lookupReceived(); await lookupWait;
+    await route.fulfill({ status: 503, json: { error: 'Source lookup temporarily unavailable' } });
+  });
+  await replace([{ ...original[0], key: 'previous-build' }, original[1]]);
+  await lookupRequest;
+  const resolvingSlot = page.locator('.pdf-anchor-slot').first();
+  await expect(resolvingSlot).toHaveAttribute('aria-description', 'Saved page 1');
+  await expect(resolvingSlot).toHaveAttribute('aria-disabled', 'false');
+  await resolvingSlot.click(); await near(introTop);
+  await scroll(equationTop);
+  await trigger.click();
+  await expect(menu.getByRole('button', { name: 'Introduction', exact: true })).toHaveAccessibleDescription('Saved page 1');
+  await menu.getByRole('button', { name: 'Introduction', exact: true }).click(); await near(introTop);
+  await resolvingSlot.hover();
+  await expect(resolvingSlot.locator('.rail-tip')).toBeVisible();
+  await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-tooltip-loading.png' });
+  failLookup();
+  await trigger.click();
+  await expect(menu.getByRole('alert')).toContainText('Source lookup temporarily unavailable');
+  await menu.press('Escape');
+  await expect(resolvingSlot).toHaveAttribute('aria-description', 'Saved page 1');
+  await expect(resolvingSlot).toHaveAttribute('aria-disabled', 'false');
+  await scroll(equationTop);
+  await resolvingSlot.click(); await near(introTop);
+  await box.focus();
+  await page.keyboard.press(']'); await near(equationTop);
+  await page.keyboard.press('['); await near(introTop);
+  await expect(page.locator('.pdf-anchor-slot').nth(1)).toHaveAttribute('aria-disabled', 'false');
+  await trigger.click();
+  await expect(menu.getByRole('alert')).toContainText('Source lookup temporarily unavailable');
+  await expect(menu).not.toContainText('Finding the source…');
+  await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-source-error.png' });
+  await page.unroute(resolvePattern);
+  await page.route(resolvePattern, route => route.fulfill({ json: [{ id: original[0].id, place: { page: 1, rect: [.1, .2, .9, .3] } }] }));
+  await menu.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(menu.getByRole('button', { name: 'Introduction', exact: true })).toBeEnabled();
+  await expect(menu.getByRole('alert')).toHaveCount(0);
+  await menu.press('Escape');
+  await expect(resolvingSlot).toHaveAttribute('aria-description', 'Page 2');
+  await resolvingSlot.click();
+  await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('2');
+  await page.unroute(resolvePattern);
+  const relocated = await stored(), extra = { ...original[1], id: 'added-during-refresh' };
+  const failRefresh = route => route.fulfill({ status: 503, json: { error: 'Source refresh unavailable' } });
+  await page.route(resolvePattern, failRefresh);
+  await replace([...relocated, extra]);
+  await trigger.click(); await expect(menu.getByRole('alert')).toContainText('Source refresh unavailable'); await menu.press('Escape');
+  await expect(resolvingSlot).toHaveAttribute('aria-description', 'Page 2');
+  await scroll(introTop); await resolvingSlot.click();
+  await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue('2');
+  await page.unroute(resolvePattern);
+  // An authoritative missing-source result still disables the stale target.
+  await page.route(resolvePattern, route => route.fulfill({ json: [{ id: original[0].id, place: null }] }));
+  await replace([{ ...original[0], key: 'missing-source' }, original[1]]);
+  await expect(resolvingSlot).toHaveAttribute('aria-description', 'Source unavailable');
+  await expect(resolvingSlot).toHaveAttribute('aria-disabled', 'true');
+  await page.unroute(resolvePattern);
+  await page.route(resolvePattern, failRefresh);
+  await replace([...(await stored()), extra]);
+  await trigger.click(); await expect(menu.getByRole('alert')).toContainText('Source refresh unavailable'); await menu.press('Escape');
+  await expect(resolvingSlot).toHaveAttribute('aria-description', 'Source unavailable');
+  await expect(resolvingSlot).toHaveAttribute('aria-disabled', 'true');
+  await page.unroute(resolvePattern);
+  await replace(original);
+  // Custom rail tooltips replace native titles, preserving keyboard access.
+  for (const control of [resolvingSlot, trigger, page.locator('.pdf-anchor-quick-add')]) {
+    await expect(control).not.toHaveAttribute('title');
+    await control.hover();
+    await expect(control.locator('.rail-tip')).toBeVisible();
+    await expect(page.locator('.rail-tip:popover-open')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(control.locator('.rail-tip')).toBeHidden();
+  }
+  await resolvingSlot.focus();
+  await expect(resolvingSlot.locator('.rail-tip')).toBeVisible();
+  await page.screenshot({ animations: 'disabled', path: 'test-results/anchors-tooltip-focus.png' });
+  await box.focus();
+  await replace([{ ...original[0], name: 'Big-Step and Small-Step Semantics' }, original[1]]);
+  for (const colorScheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme });
+    await resolvingSlot.hover();
+    await expect(resolvingSlot.locator('.rail-tip')).toBeVisible();
+    await page.screenshot({ animations: 'disabled', path: `test-results/anchors-tooltip-${colorScheme}.png` });
+    await box.hover();
+  }
+  await page.emulateMedia({ colorScheme: 'light' });
+  await replace(original);
   await scroll(introTop); await trigger.click(); await scroll(equationTop);
   await menu.getByRole('button', { name: 'Add anchor', exact: true }).click();
   await expect(menu.locator('.pdf-anchor-row')).toHaveCount(3);

@@ -1595,5 +1595,6 @@
   "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} ricompila solo ciò che cambia a ogni modifica. Gli articoli LuaLaTeX continuano a usare latexmk.",
   "Commit-message agent": "Agente dei messaggi di commit",
   "Follow current conversation": "Segui la conversazione corrente",
-  "Use the conversation’s model and reasoning effort, or the new-task settings if none. An explicit choice applies only to commit messages and is saved in this browser.": "Usa il modello e il livello di ragionamento della conversazione o, se assente, le impostazioni delle nuove attività. Una scelta esplicita si applica solo ai messaggi di commit e viene salvata in questo browser."
+  "Use the conversation’s model and reasoning effort, or the new-task settings if none. An explicit choice applies only to commit messages and is saved in this browser.": "Usa il modello e il livello di ragionamento della conversazione o, se assente, le impostazioni delle nuove attività. Una scelta esplicita si applica solo ai messaggi di commit e viene salvata in questo browser.",
+  "Saved page {page}": "Pagina salvata {page}"
 }

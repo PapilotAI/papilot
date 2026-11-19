@@ -370,5 +370,6 @@
   "Enable collaboration mode": "启用协作模式",
   "Commit-message agent": "提交信息智能体",
   "Follow current conversation": "跟随当前会话",
-  "Use the conversation’s model and reasoning effort, or the new-task settings if none. An explicit choice applies only to commit messages and is saved in this browser.": "使用当前会话的模型和推理强度；没有会话时使用新任务设置。显式选择仅用于提交信息，并保存在此浏览器中。"
+  "Use the conversation’s model and reasoning effort, or the new-task settings if none. An explicit choice applies only to commit messages and is saved in this browser.": "使用当前会话的模型和推理强度；没有会话时使用新任务设置。显式选择仅用于提交信息，并保存在此浏览器中。",
+  "Saved page {page}": "上次位置 · 第 {page} 页"
 }

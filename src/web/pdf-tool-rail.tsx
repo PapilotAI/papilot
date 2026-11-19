@@ -76,12 +76,15 @@ export function PdfToolRail({ tool, onTool, group, onGroup, disabled, suspended,
     const media = window.matchMedia('(max-width: 680px)');
     const sync = () => { setMobile(media.matches); if (media.matches) queueRailTip(null); };
     const hide = () => queueRailTip(null);
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') hide(); };
     sync();
     media.addEventListener('change', sync);
     window.addEventListener('resize', hide);
+    document.addEventListener('keydown', escape);
     return () => {
       media.removeEventListener('change', sync);
       window.removeEventListener('resize', hide);
+      document.removeEventListener('keydown', escape);
       if (railTipFrame.current !== null) cancelAnimationFrame(railTipFrame.current);
       railTipFrame.current = null;
       railTipTarget.current = null;

@@ -7,6 +7,7 @@ import './pdf-anchors.css';
 
 // LAN HTTP does not expose randomUUID, but still supports getRandomValues.
 const anchorId = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+const positionKey = ({ id, source, key, page, left, top }: PdfAnchor) => JSON.stringify([id, source, key, page, left, top]);
 
 export interface PdfAnchorsHandle { add: () => void; focus: () => void; travel: (direction: -1 | 1) => void }
 export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
@@ -35,18 +36,42 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
     let cancelled = false;
     const current = JSON.parse(sources) as PdfAnchor[];
     const positions: Record<string, PdfPosition | null> = Object.create(null);
-    for (const anchor of current) if (!anchor.source || anchor.key === buildKey) positions[anchor.id] = anchor.source ? anchor : null;
-    setResolved({ key: buildKey, positions });
+    // Keep completed results for unchanged anchors while refreshing this build.
+    // In particular, a known missing source must not become provisional again.
+    const publish = (updates: Record<string, PdfPosition | null>) => setResolved(previous => {
+      const positions: Record<string, PdfPosition | null> = Object.create(null);
+      if (previous.key === buildKey) for (const anchor of current) {
+        const key = positionKey(anchor);
+        if (Object.hasOwn(previous.positions, key)) positions[key] = previous.positions[key];
+      }
+      return { key: buildKey, positions: { ...positions, ...updates } };
+    });
+    for (const anchor of current) if (!anchor.source || anchor.key === buildKey) positions[positionKey(anchor)] = anchor.source ? anchor : null;
+    publish(positions);
     const pending = current.filter(anchor => anchor.source && anchor.key !== buildKey);
     if (pending.length) void resolver.current(pending).then(results => {
-      if (!cancelled) { for (const result of results) positions[result.id] = result.position; setResolved({ key: buildKey, positions: { ...positions } }); setError(''); }
+      if (cancelled) return;
+      for (const anchor of pending) positions[positionKey(anchor)] = results.find(result => result.id === anchor.id)?.position ?? null;
+      publish(positions); setError('');
     }).catch(failure => { if (!cancelled) { resolveFailed.current = true; setError(failure instanceof Error ? failure.message : String(failure)); } });
     return () => { cancelled = true; };
   }, [buildKey, sources, ready, retry, Boolean(resolve)]);
   const draft = useRef(editing); draft.current = editing;
   const focus = useRef<string | null>(null);
-  const targetOf = (anchor: PdfAnchor) => resolve ? resolved.key === buildKey ? resolved.positions[anchor.id] : undefined : anchor;
-  const available = (anchor: PdfAnchor) => { const target = targetOf(anchor); return ready && target && target.page <= pages ? target : null; };
+  const targetOf = (anchor: PdfAnchor) => resolve ? resolved.key === buildKey ? resolved.positions[positionKey(anchor)] : undefined : anchor;
+  const available = (anchor: PdfAnchor) => {
+    const resolved = targetOf(anchor);
+    // Source relocation refines navigation; an in-flight or failed lookup must
+    // not prevent returning to a saved PDF position that still exists.
+    const target = resolved === undefined && anchor.source ? anchor : resolved;
+    return ready && target && target.page <= pages ? target : null;
+  };
+  const descriptionOf = (anchor: PdfAnchor) => {
+    const target = available(anchor);
+    if (!ready) return t('Finding the source…');
+    if (!target) return resolve ? t('Source unavailable') : t('Page unavailable');
+    return targetOf(anchor) === undefined ? t('Saved page {page}', { page: target.page }) : t('Page {page}', { page: target.page });
+  };
   function visit(anchor: PdfAnchor) {
     const target = available(anchor);
     if (!target) return;
@@ -181,9 +206,8 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
       }}>
       <div className="pdf-anchors-heading">{t('Anchors')}</div>
       {anchors.length ? <ul className="pdf-anchor-list">{anchors.map(anchor => {
-        const target = targetOf(anchor);
-        const unavailable = ready && (target === null || Boolean(target && target.page > pages)), renaming = editing?.id === anchor.id;
-        const unavailableText = resolve ? t('Source unavailable') : t('Page unavailable');
+        const target = available(anchor);
+        const unavailable = ready && !target, renaming = editing?.id === anchor.id;
         return <li key={anchor.id} className="pdf-anchor-row" onBlur={event => { if (draft.current?.id === anchor.id && !event.currentTarget.contains(event.relatedTarget as Node | null)) finishRename(); }}>
           <span className="pdf-anchor-page" aria-hidden="true">{target?.page ?? '—'}</span>
           {renaming ? <input autoFocus className="pdf-anchor-name" aria-label={t('Edit anchor: {name}', { name: anchor.name })} value={editing.name}
@@ -191,8 +215,8 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
               if (event.nativeEvent.isComposing || event.keyCode === 229) return;
               if (event.key === 'Enter' || event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finishRename(event.key === 'Enter', true); }
             }}/>
-            : <button id={id + '-' + anchor.id} className="pdf-anchor-jump" type="button" aria-label={anchor.name} aria-description={unavailable ? unavailableText : undefined} disabled={!ready || !target || unavailable} onClick={() => visit(anchor)}>
-              <span>{anchor.name}</span>{unavailable ? <small>{unavailableText}</small> : target === undefined ? <small>{t('Finding the source…')}</small> : anchor.source && <small>{anchor.source.file}</small>}
+            : <button id={id + '-' + anchor.id} className="pdf-anchor-jump" type="button" aria-label={anchor.name} aria-description={!ready || unavailable || targetOf(anchor) === undefined ? descriptionOf(anchor) : undefined} disabled={!target} onClick={() => visit(anchor)}>
+              <span>{anchor.name}</span>{!ready || unavailable || targetOf(anchor) === undefined ? <small>{descriptionOf(anchor)}</small> : anchor.source && <small>{anchor.source.file}</small>}
             </button>}
           <button type="button" className="pdf-anchor-action" aria-label={renaming ? t('Save') : t('Edit anchor: {name}', { name: anchor.name })} title={renaming ? t('Save') : t('Edit anchor: {name}', { name: anchor.name })}
             onClick={() => { if (renaming) finishRename(true, true); else setEditing({ id: anchor.id, name: anchor.name }); }}><Icon name={renaming ? 'check' : 'pencil'} size={15}/></button>
@@ -204,7 +228,7 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
     </div>;
   return <div className="pdf-anchor-tools" role="group" aria-label={t('Anchors')}>
     <span className="menu-anchor">
-    <button ref={trigger} id={id + '-trigger'} type="button" className="rail-tool pdf-anchors-trigger" aria-label={t('Anchors')} title={t('Anchors')} aria-haspopup="dialog" aria-expanded={open} aria-controls={id} popoverTarget={native ? id : undefined}
+    <button ref={trigger} id={id + '-trigger'} type="button" className="rail-tool pdf-anchors-trigger" aria-label={t('Anchors')} title={native ? undefined : t('Anchors')} aria-haspopup="dialog" aria-expanded={open} aria-controls={id} popoverTarget={native ? id : undefined}
       onPointerDown={() => { if (!open) prepare(); }} onClick={event => { event.preventDefault(); if (open) close(); else show(); }} onKeyDown={event => {
         if (!open) prepare();
         if (['ArrowDown', 'ArrowUp', 'ArrowRight'].includes(event.key)) { event.preventDefault(); show(); }
@@ -224,10 +248,10 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
     }}>
       {anchors.map((anchor, index) => {
         const target = available(anchor), label = `${index + 1}. ${anchor.name}`;
-        const description = !ready || targetOf(anchor) === undefined ? t('Finding the source…') : !target ? resolve ? t('Source unavailable') : t('Page unavailable') : t('Page {page}', { page: target.page });
+        const description = descriptionOf(anchor);
         const active = anchors.some(item => item.id === tabAnchor?.id) ? anchor.id === tabAnchor?.id : index === 0;
         return <div key={anchor.id} className="pdf-anchor-item">
-        <button id={id + '-slot-' + anchor.id} type="button" className="rail-tool pdf-anchor-slot" aria-label={label} aria-description={description} aria-disabled={!target} title={label + ' · ' + description}
+        <button id={id + '-slot-' + anchor.id} type="button" className="rail-tool pdf-anchor-slot" aria-label={label} aria-description={description} aria-disabled={!target} title={native ? undefined : label + ' · ' + description}
           tabIndex={nativeFocus ? undefined : active && !tabAnchor?.remove ? 0 : -1}
           onFocus={() => setTabAnchor({ id: anchor.id })} onClick={() => visit(anchor)}>
           <span>{index + 1}</span><span className="rail-tip" popover="manual" aria-hidden="true"><span className="rail-tip-title">{anchor.name}</span><span>{description}</span></span>
@@ -238,7 +262,7 @@ export const PdfAnchors = forwardRef<PdfAnchorsHandle, {
         </div>;
       })}
     </div>
-    <button id={id + '-quick-add'} type="button" className="rail-tool pdf-anchor-quick-add" aria-label={t('Add anchor')} aria-keyshortcuts="Shift+B" title={t('Add anchor') + ' (Shift+B)'} aria-disabled={!ready || saving}
+    <button id={id + '-quick-add'} type="button" className="rail-tool pdf-anchor-quick-add" aria-label={t('Add anchor')} aria-keyshortcuts="Shift+B" title={native ? undefined : t('Add anchor') + ' (Shift+B)'} aria-disabled={!ready || saving}
       onPointerDown={prepare} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') prepare(); }} onClick={() => void add()}><Icon name="plus" size={17}/><span className="rail-tip" popover="manual" aria-hidden="true"><span className="rail-tip-title">{t('Add anchor')}<kbd>Shift+B</kbd></span></span></button>
   </div>;
 });

@@ -1595,5 +1595,6 @@
   "PhiTeX {version} rebuilds only what each edit changes. LuaLaTeX papers keep using latexmk.": "PhiTeX {version} 僅會重新編譯每次編輯變更的部分。LuaLaTeX 論文仍會繼續使用 latexmk。",
   "Commit-message agent": "提交訊息代理",
   "Follow current conversation": "跟隨目前對話",
-  "Use the conversation’s model and reasoning effort, or the new-task settings if none. An explicit choice applies only to commit messages and is saved in this browser.": "使用目前對話的模型和推理強度；沒有對話時使用新任務設定。明確選擇僅用於提交訊息，並儲存在此瀏覽器中。"
+  "Use the conversation’s model and reasoning effort, or the new-task settings if none. An explicit choice applies only to commit messages and is saved in this browser.": "使用目前對話的模型和推理強度；沒有對話時使用新任務設定。明確選擇僅用於提交訊息，並儲存在此瀏覽器中。",
+  "Saved page {page}": "上次位置 · 第 {page} 頁"
 }

@@ -14,6 +14,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
+- Keep PDF anchors usable at their saved positions while source relocation is pending or fails, with a retry for failed lookups. Avoid overlapping native and custom anchor tooltips.
 - Let successful Antigravity turns proceed to review when the CLI repeats an earlier model-capacity error after switching models. New errors and unfinished replies still report failure.
 - Preserve the full five-stripe Papilot logo at every size in the app, including the sidebar and Settings navigation. ([#226](https://github.com/PapilotAI/papilot/issues/226))
 - Keep successful task statuses green, including **Completed** answers without manuscript changes. Use gray for current results applied or committed to the manuscript. ([#227](https://github.com/PapilotAI/papilot/issues/227))
