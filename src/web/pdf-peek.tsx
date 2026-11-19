@@ -44,8 +44,8 @@ export function PdfPeek({ container, document: pdf, disabled }: {
     };
     const within = (node: EventTarget | null) => node instanceof Node && (active?.contains(node) || panel.current?.contains(node));
     const out = (event: PointerEvent) => {
-      if (!active || within(event.relatedTarget)) return;
-      clearTimeout(timer);
+      if (!active || !within(event.target) || within(event.relatedTarget)) return;
+      clearTimeout(timer); clearTimeout(leaving);
       // A small bridge lets the pointer enter the preview without flicker.
       leaving = setTimeout(close, 100);
     };

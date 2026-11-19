@@ -163,6 +163,10 @@ Beta & 96.1 & 18 \\\hline
     await expect(peek.locator('canvas')).toBeVisible(); await expect(pageNumber).toHaveValue('1');
     await page.keyboard.press('Escape'); await expect(peek).toBeHidden();
     await links.nth(0).hover(); await expect(peek.locator('canvas')).toBeVisible();
+    // Multiple departures along the bridge must not leave old close timers
+    // behind when the pointer reaches the preview or another reference.
+    await links.nth(0).dispatchEvent('pointerout', { pointerType: 'mouse', relatedTarget: null });
+    await f.text.dispatchEvent('pointerout', { pointerType: 'mouse', relatedTarget: null });
     await peek.hover(); await page.waitForTimeout(200); await expect(peek).toBeVisible();
     await page.mouse.move(20, 20); await expect(peek).toBeHidden();
     // A focused link offers the same preview and Enter still follows it.
