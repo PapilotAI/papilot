@@ -173,11 +173,14 @@ test('Antigravity turns finish when agy recovers from a failed model request', a
 // A real macOS conversation had its 503 at step 49. Resumed turns starting
 // at 51 and 68 ended with replies at 67 and 76, but agy returned that old 503
 // again without streaming the historical error_message step.
-for (const scenario of ['recovered', 'new-error', 'no-reply', 'unfinished-tool', 'unfinished-reply', 'quota', 'transport', 'fresh'] as const) {
-  test(`Antigravity resumed conversation with a historical API error: ${scenario}`, async () => {
+for (const apiError of [
+  'API error (attempt 1): UNAVAILABLE (code 503): The service is currently unavailable.',
+  'UNAVAILABLE (code 503): No capacity available for model gemini-4-argon-high on the server',
+  'Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gemini-4-argon-high on the server)',
+]) for (const scenario of ['recovered', 'new-error', 'no-reply', 'unfinished-tool', 'unfinished-reply', 'quota', 'transport', 'fresh'] as const) {
+  test(`Antigravity resumed conversation with a historical ${apiError.split(':')[0]}: ${scenario}`, async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agy-history-'));
     const file = path.join(dir, 'conversations.json');
-    const apiError = 'API error (attempt 1): UNAVAILABLE (code 503): The service is currently unavailable.';
     const error = scenario === 'quota' ? 'Quota exceeded' : scenario === 'transport' ? 'stream reading error: unexpected EOF' : apiError;
     const step = (step_index: number, step_type: string, more: Record<string, unknown> = {}) => JSON.stringify({ event: 'step_update', step_update: { step_index, step_type, state: 'DONE', ...more } });
     const lines = [step(68, 'user_input'), step(71, 'tool', { tool_name: 'read_file', tool_info: { parameters: { Path: '/work/main.tex' } } })];
@@ -202,6 +205,45 @@ for (const scenario of ['recovered', 'new-error', 'no-reply', 'unfinished-tool',
     } finally { agent.close(); fs.rmSync(dir, { recursive: true, force: true }); }
   });
 }
+
+test('Antigravity switches models and efforts on existing conversations without reviving a historical capacity failure', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agy-model-switch-'));
+  const file = path.join(dir, 'conversations.json');
+  const error = 'Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gemini-4-argon-high on the server)';
+  const step = (step_index: number, step_type: string, text_delta?: string) => JSON.stringify({ event: 'step_update', step_update: { step_index, step_type, state: 'DONE', text_delta } });
+  const result = JSON.stringify({ event: 'result', result: { status: 'ERROR', error } });
+  const fake = fakeAgy([
+    [JSON.stringify({ event: 'init', conversation_id: 'saved-conversation' }), step(55, 'user_input'), step(65, 'error_message'), result],
+    // The last actual error is 65. agy repeats its friendly message after
+    // successfully completing the new model's turn at 91, then again at 96.
+    [step(66, 'user_input'), step(91, 'agent_response', 'Edits are ready.'), result],
+    [step(92, 'user_input'), step(96, 'agent_response', 'Confirmed.'), result],
+  ]);
+  const catalog = groupModels('gemini-4-argon-high\tGemini 4 Argon (High)\ngemini-4-neon-medium\tGemini 4 Neon (Medium)\ngemini-4-neon-high\tGemini 4 Neon (High)\n');
+  let agent = new AntigravityAgent('agy', file, fake.launch as any);
+  (agent as any).catalog = catalog;
+  try {
+    const { thread } = await agent.request('thread/start', { cwd: '/work', model: 'gemini-4-argon', developerInstructions: 'Edit only this worktree.' });
+    const run = async (model: string, effort: string) => {
+      const seen = events(agent);
+      await agent.request('turn/start', { threadId: thread.id, model, effort, input: [{ type: 'text', text: 'Continue.' }] });
+      return completed(seen);
+    };
+    assert.equal((await run('gemini-4-argon', 'high')).status, 'failed');
+    assert.equal((await run('gemini-4-neon', 'high')).status, 'completed');
+    agent.close();
+    agent = new AntigravityAgent('agy', file, fake.launch as any);
+    (agent as any).catalog = catalog;
+    await agent.request('thread/resume', { threadId: thread.id, cwd: '/work', model: 'gemini-4-neon' });
+    assert.equal((await run('gemini-4-neon', 'medium')).status, 'completed');
+    assert.equal(fake.launches.length, 3, 'Recovery never resends the prompt or repeats edits');
+    assert.deepEqual(fake.launches.map(({ args }) => args[args.indexOf('--model') + 1]), ['gemini-4-argon-high', 'gemini-4-neon-high', 'gemini-4-neon-medium']);
+    for (const launch of fake.launches.slice(1)) {
+      assert.deepEqual(launch.args.slice(-2), ['--conversation', 'saved-conversation']);
+      assert.equal(JSON.parse(launch.stdin).message.content, 'Continue.', 'Keep the existing conversation context');
+    }
+  } finally { agent.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('Antigravity grants only selected images read access for the current turn', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agy-images-'));

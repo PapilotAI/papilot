@@ -673,7 +673,10 @@ export class AntigravityAgent extends Adapter {
       // error step. In either case require a finished reply as the final step;
       // a new error, unfinished work, or an unrelated result-only failure stays
       // failed. Do not resend the prompt: its edits have already happened.
-      const historicalApiError = conversation && lastError < 0 && /^API error \(attempt \d+\):/.test(result?.error || '');
+      // Exhausted capacity retries use a friendly message instead of the
+      // "API error (attempt N)" prefix (agy 1.5.12). That historical 503 can
+      // survive a model switch and successful replies in the same conversation.
+      const historicalApiError = conversation && lastError < 0 && /^(?:API error \(attempt \d+\):|(?:Our servers are experiencing high traffic right now, please try again in a minute\. \()?UNAVAILABLE \(code 503\):)/.test(result?.error || '');
       const recovered = result?.status === 'ERROR' && (lastError >= 0 || historicalApiError) && lastReply > lastError && lastReply === lastStep;
       if (result?.status === 'SUCCESS' || recovered) this.finish(turn, 'completed');
       else this.finish(turn, 'failed', result?.error || stderr.trim().split('\n').filter(line => !line.startsWith('{')).slice(-3).join(' ') || 'Antigravity stopped without a result.');
