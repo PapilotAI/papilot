@@ -5945,7 +5945,7 @@
     "model": "gemini-4-argon-medium"
   },
   "{agent} is writing a commit message…": {
-    "revision": "4579e54afb3c9ed52acb213aa43e42c2a0589bd177afef25c354f45974a8189b",
+    "revision": "f316a11a2370c4557d7b00f1c79b32f6bf10d62dc6727603595ba68f5929c8f5",
     "textHash": "c39374a1c0ee2ebfcc1951e71b159c0c7da2421d789dd4fd8b6cc210938d4e56",
     "model": "gemini-4-argon-medium"
   },

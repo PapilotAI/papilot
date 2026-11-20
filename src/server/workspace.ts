@@ -1874,7 +1874,6 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       throw new Error('Wait for the task and review actions to finish before applying changes.');
     const result = await this.exclusiveCommit(project.id, async () => {
       const retry = Boolean(commit && commit.message === undefined);
-      if (retry && (task.delivery?.mode !== 'commit' || !task.delivery.pending)) throw new Error('Commit message is required.');
       this.reviewWrites.add(taskId);
       try {
         const client = await this.connectReview(project.path);

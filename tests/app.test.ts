@@ -1627,6 +1627,21 @@ test('task commits refresh only after a completed manuscript delivery, even with
   } finally { await f.close(); }
 });
 
+test('a task commit can omit its message only when retrying a pending commit', async () => {
+  const f = await fixture();
+  try {
+    const request = () => f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers: { ...LOCAL, 'x-papilot-token': 'local-csrf' }, payload: { mode: 'commit' } });
+    const calls: unknown[] = [];
+    f.workspace.applyTask = async (_id, _keepCurrent, commit) => { calls.push(commit); return {} as any; };
+    assert.equal((await request()).statusCode, 400);
+    assert.deepEqual(calls, []);
+    f.store.updateTask('thesis-task', { delivery: { mode: 'commit', accepted: 'accepted', pending: true } });
+    const retry = await request();
+    assert.equal(retry.statusCode, 200, retry.body);
+    assert.deepEqual(calls, [{ message: undefined }]);
+  } finally { await f.close(); }
+});
+
 test('review decisions avoid manuscript refreshes until the task is applied', async () => {
   const f = await fixture();
   try {
