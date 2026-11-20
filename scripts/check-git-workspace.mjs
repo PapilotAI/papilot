@@ -39,6 +39,7 @@ const handleApi = async route => {
   if (url.pathname.endsWith('/git/message') || url.pathname.endsWith('/commit-message')) {
     const body = route.request().postDataJSON(); messageRequests.push(body);
     if (messageGate) await messageGate;
+    if (url.pathname.endsWith('/commit-message') && !messageError && body.language === 'en' && body.agent === 'claude') return json({ message: body.fresh ? 'Rewrite the opening' : 'Clarify the introduction', agent: body.agent });
     return messageError ? route.fulfill({ status: 400, json: { error: messageError } }) : json({ message: body.language === 'auto' ? '改进引言' : `Written by ${body.agent}`, agent: body.agent });
   }
   if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
@@ -79,6 +80,7 @@ const handleApi = async route => {
     return json({ git, commit: 'def5678' });
   }
   if (url.pathname.endsWith('/git/push')) { actions.push(['push']); git.ahead = 0; return json({ git }); }
+  if (url.pathname.endsWith('/apply')) { const body = route.request().postDataJSON(); actions.push(['apply', body]); return json({}); }
   if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792], [612, 792]] }, annotations: [note] });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
@@ -169,16 +171,75 @@ try {
 
   // A task's inline commit step also uses English, despite its Chinese title.
   Object.assign(task, { title: '改进引言', status: 'reviewing', deferred: true, review: { state: 'done', round: 1, counts: { accepted: 1 }, files: ['main.tex'] } });
-  await page.reload();
-  await page.locator(`.task-row[data-task="${task.id}"] .task-link`).click();
-  await page.getByRole('group', { name: 'Workspace view', exact: true }).getByRole('button', { name: 'Chat', exact: true }).click();
+  const taskLink = page.locator(`.task-row[data-task="${task.id}"] .task-link`);
+  const taskView = name => page.getByRole('group', { name: 'Workspace view', exact: true }).getByRole('button', { name, exact: true });
+  const reloadTaskChat = async () => { await page.reload(); await taskLink.click(); await taskView('Chat').click(); };
+  await reloadTaskChat();
   const taskCommit = page.locator('.task-apply');
-  await taskCommit.getByRole('button', { name: 'Generate commit message', exact: true }).click();
-  await expect(taskCommit.getByRole('textbox', { name: 'Commit message', exact: true })).toHaveValue(/^Written by /);
+  const taskMessage = taskCommit.getByRole('textbox', { name: 'Commit message', exact: true });
+  const generateTaskMessage = taskCommit.getByRole('button', { name: 'Generate commit message', exact: true });
+  const commitTask = taskCommit.getByRole('button', { name: 'Commit to manuscript', exact: true });
+  await expect(taskMessage).toHaveValue('Clarify the introduction');
   assert.equal(messageRequests.at(-1).language, 'en');
-  assert.equal(messageRequests.at(-1).fresh, true);
+  assert.equal(messageRequests.at(-1).fresh, false);
   assert.equal(messageRequests.at(-1).agent, task.agent);
-  Object.assign(task, { title: 'Clarify the introduction', status: 'idle', deferred: false, review: null });
+  await page.screenshot({ path: 'test-results/task-commit-initial-language.png', animations: 'disabled' });
+  await commitTask.click();
+  await expect.poll(() => actions.at(-1)).toEqual(['apply', { mode: 'commit', message: 'Clarify the introduction', keepCurrent: false }]);
+
+  let releaseInitial;
+  messageGate = new Promise(resolve => { releaseInitial = resolve; });
+  const beforeManual = messageRequests.length;
+  await reloadTaskChat();
+  await expect.poll(() => messageRequests.length).toBe(beforeManual + 1);
+  await expect(taskCommit.getByRole('progressbar', { name: /is writing a commit message/ })).toBeAttached();
+  await expect(taskCommit.getByRole('button', { name: 'Apply to workspace' })).toBeEnabled();
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(taskMessage).toBeVisible();
+  await page.screenshot({ path: 'test-results/task-commit-loading-mobile-dark.png', animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'no-preference' });
+  await taskMessage.fill('My handwritten task draft');
+  const initialResponse = page.waitForResponse(response => response.url().endsWith('/commit-message'));
+  messageGate = null; releaseInitial(); await (await initialResponse).finished(); await afterRender(page);
+  await expect(taskMessage).toHaveValue('My handwritten task draft');
+  await generateTaskMessage.click();
+  await expect(taskMessage).toHaveValue('Rewrite the opening');
+  assert.equal(messageRequests.at(-1).fresh, true);
+  const beforeCleared = messageRequests.length;
+  await taskMessage.fill('');
+  await taskView('Split').click();
+  await taskView('Chat').click();
+  await expect(taskMessage).toHaveValue('');
+  assert.equal(messageRequests.length, beforeCleared);
+
+  messageError = 'The commit-message agent is unavailable.';
+  await reloadTaskChat();
+  await expect(taskCommit.getByRole('alert')).toHaveText(messageError);
+  await expect(commitTask).toBeDisabled();
+  await taskMessage.fill('Commit the reviewed introduction');
+  await expect(commitTask).toBeEnabled();
+  await page.screenshot({ path: 'test-results/task-commit-error-recovery.png', animations: 'disabled' });
+  messageError = null;
+
+  task.delivery = { mode: 'commit', accepted: 'accepted', branch: 'main', commit: 'approved', pending: true };
+  task.review.files = [];
+  const beforeCommitRetry = messageRequests.length;
+  await reloadTaskChat();
+  await expect(taskMessage).toHaveCount(0);
+  await commitTask.click();
+  await expect.poll(() => actions.at(-1)).toEqual(['apply', { mode: 'commit', keepCurrent: false }]);
+  assert.equal(messageRequests.length, beforeCommitRetry, 'Retrying a pending commit reuses its recorded message');
+  task.delivery = null;
+  task.review.files = ['main.tex'];
+
+  task.reconciliation = { id: 'merge', round: 1, files: ['main.tex'], ready: true, intent: { mode: 'commit', message: '保留和解提交消息' } };
+  const beforeMerge = messageRequests.length;
+  await reloadTaskChat();
+  await expect(taskMessage).toHaveValue('保留和解提交消息');
+  assert.equal(messageRequests.length, beforeMerge, 'A preserved reconciliation message needs no generation');
+  Object.assign(task, { title: 'Clarify the introduction', status: 'idle', deferred: false, review: null, reconciliation: null });
   await openGit();
   await message.fill('Keep this commit draft');
   // Same status and line counts must not leave an outdated working-tree diff.
@@ -271,7 +332,7 @@ try {
   await expect(details.getByRole('region', { name: 'Changes in main.tex', exact: true })).toBeVisible();
   await toolbar.getByRole('button', { name: 'Push', exact: true }).click();
   await expect(toolbar.getByRole('button', { name: 'Push', exact: true })).toBeDisabled();
-  assert.deepEqual(actions, [['stage', { paths: ['references.bib'], stage: true }], ['commit', { message: 'Add references', staged: true }], ['push']]);
+  assert.deepEqual(actions, [['apply', { mode: 'commit', message: 'Clarify the introduction', keepCurrent: false }], ['apply', { mode: 'commit', keepCurrent: false }], ['stage', { paths: ['references.bib'], stage: true }], ['commit', { message: 'Add references', staged: true }], ['push']]);
   await page.screenshot({ path: 'test-results/git-workspace-desktop.png' });
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

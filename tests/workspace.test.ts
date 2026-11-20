@@ -2239,6 +2239,15 @@ test('commit-message language overrides Chinese context and separates pending an
     assert.match(calls[2].instructions, /Write the subject and body in 繁體中文 \(zh-Hant\)/);
     await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { language: 'en', fresh: true });
     assert.equal(calls.length, 4, 'regeneration still bypasses the selected language cache');
+
+    git('add', 'main.tex');
+    git('update-ref', `refs/papilot/${f.task.name}/base`, 'HEAD');
+    git('update-ref', `refs/papilot/${f.task.name}/accepted`, git('write-tree').trim());
+    assert.equal((await f.workspace.commitMessage(f.task.projectId, ['main.tex'], { taskId: f.task.id, fresh: true })).message, '精简引言');
+    const taskCall = calls.at(-1);
+    assert.match(taskCall.instructions, /Follow the style and language of the recent commit subjects/);
+    assert.match(taskCall.prompt, /Recent commit subjects in this repository:\n- 撰写引言/);
+    assert.match(taskCall.prompt, /\+Tighter opening/);
   } finally { f.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 

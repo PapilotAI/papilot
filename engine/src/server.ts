@@ -497,10 +497,10 @@ export function createServer(app: App) {
       { schema: { body: { ...objectSchema, additionalProperties: false, properties: { locations: { type: "array", items: { type: "string", maxLength: 1000 } }, pages: { type: "array", items: { type: "string", maxLength: 40 } }, accepted: { type: "boolean" }, check: { type: "boolean" }, full: { type: "boolean" } } } } },
       (request) => view(app, request.params.name, request.body),
     );
-    server.post<{ Params: { name: string }; Body: { keepCurrent?: boolean; mode?: "workspace" | "commit"; message?: string; confirmation?: string } }>(
+    server.post<{ Params: { name: string }; Body: { keepCurrent?: boolean; mode?: "workspace" | "commit"; message?: string; confirmation?: string; retry?: boolean } }>(
       "/api/tasks/:name/apply",
-      { schema: { body: { ...objectSchema, additionalProperties: false, properties: { confirmation: { type: "string", maxLength: 100 }, keepCurrent: { type: "boolean" }, mode: { enum: ["workspace", "commit"] }, message: { type: "string", maxLength: 5000 } } } } },
-      request => app.delivery.apply(request.params.name, request.body.keepCurrent === true, request.body.mode, request.body.message, request.body.confirmation),
+      { schema: { body: { ...objectSchema, additionalProperties: false, properties: { confirmation: { type: "string", maxLength: 100 }, keepCurrent: { type: "boolean" }, mode: { enum: ["workspace", "commit"] }, message: { type: "string", maxLength: 5000 }, retry: { type: "boolean" } } } } },
+      request => app.delivery.apply(request.params.name, request.body.keepCurrent === true, request.body.mode, request.body.message, request.body.confirmation, request.body.retry),
     );
     // A speculative build of the manuscript compiles what applying the task
     // would write, so its PDF is ready when the author applies it.

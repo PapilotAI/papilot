@@ -154,7 +154,7 @@ From a source checkout, use `npm run doctor -- --data .papilot` (or `node bin/pa
 
 Choose **Settings → Git → Commit message language → English** to generate English commit messages even when task titles and recent commits are in another language. You can also select any of the other listed languages. The choice is saved in this browser or desktop app and applies to Version Management, the staged-commit dialog and task commits, independently of the interface language.
 
-**Auto** (the default) follows recent commit subjects and uses English when none are supplied. Changing the setting affects the next generation; existing drafts and manually written messages stay as they are. Use **Generate commit message** to replace a draft in the selected language.
+**Auto** (the default) follows recent commit subjects and uses English when the repository has none. After you finish reviewing a task, Papilot prepares a suggestion in the selected language. You can enter your own message or apply the changes while the suggestion is being written. Changing the language affects the next generation. Use **Generate commit message** to replace an existing draft.
 
 ## Reading with anchors
 

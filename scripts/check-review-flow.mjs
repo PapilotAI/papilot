@@ -536,7 +536,6 @@ try {
   const applyButton = () => card.getByRole('button', { name: 'Apply to workspace', exact: true });
   const commitButton = () => card.getByRole('button', { name: 'Commit to manuscript', exact: true });
   await expect.poll(() => predictRequests.length).toBeGreaterThan(0);
-  const messageBefore = messageRequests.length;
   await expect(applyButton()).toBeVisible();
   await expect(commitButton()).toBeEnabled();
   await expect(card.getByRole('button', { name: 'Archive task', exact: true })).toHaveCount(0);
@@ -549,6 +548,8 @@ try {
   await expect(applyButton()).toBeEnabled();
   await expect(commitButton()).toBeEnabled();
   await expect(taskStatus).toHaveText('Paused');
+  await expect(card.getByRole('textbox', { name: 'Commit message' })).toHaveValue('Explain the method');
+  const messageBefore = messageRequests.length;
   await card.getByRole('textbox', { name: 'Commit message' }).fill('My reviewed task');
   await expect(card.getByText('Choose how to save the accepted changes to your manuscript.', { exact: true })).toBeHidden();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
@@ -556,7 +557,7 @@ try {
   await expect(page.getByRole('textbox', { name: 'Commit message' })).toHaveValue('My reviewed task');
   await page.getByRole('button', { name: 'Split', exact: true }).click();
   await expect(applyButton()).toBeVisible();
-  assert.equal(messageRequests.length, messageBefore, 'Applying needs no agent-written commit message');
+  assert.equal(messageRequests.length, messageBefore, 'Switching views reuses the initial commit draft');
   assert.equal(await card.evaluate(el => el.parentElement.firstElementChild === el), true);
   await viewer().locator('.document').evaluate(el => { el.style.minHeight = '1800px'; });
   // The commit step floats at the top of the review instead of a jump back to it.

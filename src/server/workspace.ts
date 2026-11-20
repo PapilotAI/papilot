@@ -41,7 +41,7 @@ import { taskCaptionFrom, taskCaptionInstructions } from '../task-caption.ts';
 import { noteOptionsSummary, preparedNoteOptionsInstructions, readPreparedNoteOptions, savePreparedNoteOptions, prepareNoteComparisons } from './prepared-note-options.ts';
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
-import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress } from './manuscript.ts';
+import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
 import { AGENT_IDS, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
 import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
@@ -1859,10 +1859,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const after = `${REFS}${task.name}/accepted`;
     const paths = await acceptedFiles(root, task.name, delivered);
     if (!paths.length) throw new Error('This task has no accepted changes left to commit.');
-    const { stdout: patch } = await execute('git', ['-C', root, 'diff', '--no-ext-diff', '--no-textconv', before, after, '--'], { maxBuffer: 8 * 1024 * 1024 });
-    return { files: paths.map(path => ({ path, status: 'M', from: undefined })), patch, recent: [] as string[] };
+    const [{ stdout: patch }, recent] = await Promise.all([
+      execute('git', ['-C', root, 'diff', '--no-ext-diff', '--no-textconv', before, after, '--'], { maxBuffer: 8 * 1024 * 1024 }),
+      recentCommitSubjects(root),
+    ]);
+    return { files: paths.map(path => ({ path, status: 'M', from: undefined })), patch, recent };
   }
-  async applyTask(taskId: string, keepCurrent = false, commit?: { message: string; confirmation?: string }) {
+  async applyTask(taskId: string, keepCurrent = false, commit?: { message?: string; confirmation?: string }) {
     const task = this.store.task(taskId), project = this.store.project(task.projectId);
     if (task.mode === 'review') throw new Error('AI review has no manuscript changes to apply.');
     if (!task.deferred) throw new Error('Accepted changes are already in the manuscript.');
@@ -1870,10 +1873,12 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (!['reviewing', 'interrupted'].includes(task.status) || pausedMerge || this.active.has(taskId) || this.publishing.has(taskId) || task.pendingReview || this.store.runs().some(run => run.taskId === taskId && run.status === 'queued'))
       throw new Error('Wait for the task and review actions to finish before applying changes.');
     const result = await this.exclusiveCommit(project.id, async () => {
+      const retry = Boolean(commit && commit.message === undefined);
+      if (retry && (task.delivery?.mode !== 'commit' || !task.delivery.pending)) throw new Error('Commit message is required.');
       this.reviewWrites.add(taskId);
       try {
         const client = await this.connectReview(project.path);
-        const result = await client.post<{ delivery?: NonNullable<Task['delivery']>; reconciliation?: TaskReconciliation; commitReview?: TaskCommitReview }>(`${taskRoute(task.name)}/apply`, { keepCurrent, mode: commit ? 'commit' : 'workspace', ...(commit ? { message: commit.message, confirmation: commit.confirmation } : {}) });
+        const result = await client.post<{ delivery?: NonNullable<Task['delivery']>; reconciliation?: TaskReconciliation; commitReview?: TaskCommitReview }>(`${taskRoute(task.name)}/apply`, { keepCurrent, mode: commit ? 'commit' : 'workspace', ...(commit ? { message: commit.message, confirmation: commit.confirmation } : {}), ...(retry ? { retry } : {}) });
         if (result.delivery) this.store.updateTask(taskId, { delivery: result.delivery, reconciliation: null });
         if (result.reconciliation) this.store.updateTask(taskId, { reconciliation: result.reconciliation });
         return { ...result, git: await gitStatus(project.path) };

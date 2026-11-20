@@ -161,6 +161,12 @@ for (const race of ['branch', 'head', 'index', 'lock']) test(`task commit preser
     if (race === 'lock') { assert.equal(fs.readFileSync(lock, 'utf8'), 'Other operation'); fs.rmSync(lock); }
     assert.equal(disk.repo.text(['write-tree']), expectedIndex);
     assert.equal(disk.read(METHOD), original);
+    if (race === 'lock') {
+      const retry = await app.delivery.apply(task.name, false, 'commit', undefined, undefined, true);
+      assert.equal(retry.delivery?.commit, disk.repo.rev('HEAD'));
+      assert.equal(disk.repo.text(['log', '-1', '--format=%s']), 'Task');
+      assert.equal(disk.repo.rev('HEAD^'), expectedHead);
+    }
   } finally { await disk.close(); }
 });
 

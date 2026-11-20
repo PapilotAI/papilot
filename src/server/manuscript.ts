@@ -157,8 +157,11 @@ export async function commitChanges(root: string, paths: string[], staged = fals
   if (!files.length) throw new Error(staged ? 'Stage at least one change.' : 'Select at least one changed file.');
   let patch = '';
   for (const file of files) patch += await fileDiff(root, file, staged ? 'staged' : 'all');
-  const recent = (await git(root, ['log', '-8', '--format=%s']).catch(() => '')).split('\n').filter(Boolean);
-  return { files, patch, recent };
+  return { files, patch, recent: await recentCommitSubjects(root) };
+}
+
+export async function recentCommitSubjects(root: string) {
+  return (await git(root, ['log', '-8', '--format=%s']).catch(() => '')).split('\n').filter(Boolean);
 }
 
 // Adds the patterns for the chosen untracked build files to the repository's

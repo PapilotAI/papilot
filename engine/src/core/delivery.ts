@@ -71,16 +71,21 @@ export class Deliveries {
   }
   /** Applies the task to the manuscript, with or without a commit. Runs
    *  after every other write of the review engine, never beside one. */
-  apply(name: string, keepCurrent = false, mode?: "workspace" | "commit", message?: string, confirmation?: string) {
-    return this.app.exclusive(() => this.applyNow(name, keepCurrent, mode, message, confirmation));
+  apply(name: string, keepCurrent = false, mode?: "workspace" | "commit", message?: string, confirmation?: string, retry = false) {
+    return this.app.exclusive(() => this.applyNow(name, keepCurrent, mode, message, confirmation, retry));
   }
-  private async applyNow(name: string, keepCurrent = false, mode?: "workspace" | "commit", message?: string, confirmation?: string) {
+  private async applyNow(name: string, keepCurrent: boolean, mode: "workspace" | "commit" | undefined, message: string | undefined, confirmation: string | undefined, retry: boolean) {
+    const last = this.get(name);
+    // Retrying a recorded commit finishes its exact saved result, including its message.
+    if (retry) {
+      if (mode !== "commit" || last?.mode !== "commit" || last.accepted !== this.app.tasks.get(name).accepted) throw new Error("There is no matching task commit to retry.");
+      return { delivery: last.done ? this.result(last) : await this.finish(name, last) };
+    }
     const active = this.app.reconciliation.get(name);
     mode ??= active?.intent?.mode ?? "workspace";
     message ??= active?.intent?.message ?? "";
     if (mode !== "workspace" && mode !== "commit") throw new Error("Choose a task commit or apply without committing.");
     if (mode === "commit" && (!message.trim() || message.length > 5000)) throw new Error("Write a commit message (at most 5,000 characters).");
-    const last = this.get(name);
     if (last && !last.done) {
       const delivery = await this.finish(name, last);
       if (last.mode !== "branch") return { delivery };

@@ -1206,7 +1206,7 @@ function App() {
   const [openingFolder, setOpeningFolder] = useState(false), [mainChoice, setMainChoice] = useState<{ path: string; name: string; candidates: string[] } | null>(null);
   const folderRequest = useRef(false);
   // Commit drafts survive switching tasks or moving between review and chat.
-  const applyStates = useRef(new Map<string, TaskApplyState>());
+  const applyStates = useRef(new Map<string, { key: string; draft: TaskApplyState }>());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
   const [newSkill, setNewSkill] = useState<Skill | null>(null);
@@ -2038,8 +2038,15 @@ function App() {
   const mergeWaiting = Boolean(merging && (!merging.ready || (task?.review?.round ?? 0) <= merging.round));
   const deliveryReady = !asksRevision && task?.deferred && (task.status === 'reviewing' || task.status === 'interrupted' && !mergeWaiting) && !task.pendingReview && task.review?.state === 'done' && !task.review.counts.pending
     && (Boolean(task.review.files?.length) || task.delivery?.mode === 'branch' || task.delivery?.pending || merging);
-  const applyKey = task?.id || '';
-  if (deliveryReady && !applyStates.current.has(applyKey)) applyStates.current.set(applyKey, new TaskApplyState(merging?.intent?.message || task!.title));
+  const delivery = task?.delivery;
+  const pendingDelivery = delivery?.pending && delivery.mode !== 'branch' ? delivery.mode : undefined;
+  const preservedMessage = merging?.intent?.message;
+  const applyKey = JSON.stringify([task?.id, delivery?.mode !== 'branch' && !delivery?.pending ? delivery?.accepted : null, preservedMessage ? merging?.id : null]);
+  let applyEntry = task ? applyStates.current.get(task.id) : undefined;
+  if (task && deliveryReady && (!applyEntry || (!pendingDelivery && applyEntry.key !== applyKey))) {
+    applyEntry = { key: applyKey, draft: new TaskApplyState(preservedMessage || (isPlayground ? task.title : '')) };
+    applyStates.current.set(task.id, applyEntry);
+  }
   const saveTask = async (mode: 'workspace' | 'commit', message?: string, confirmation?: string) => {
     if (!task) return;
     const result = await api<{ git?: GitStatus; commitReview?: TaskCommitReview }>(`/tasks/${task.id}/apply`, { mode, message, confirmation, keepCurrent: mergeWaiting && merging?.ready });
@@ -2047,11 +2054,11 @@ function App() {
     await refresh(true);
     return result;
   };
-  const applicationStep = task && (deliveryReady ? <TaskApply key={applyKey} draft={applyStates.current.get(applyKey)!} merging={Boolean(merging)} keepCurrent={mergeWaiting && merging?.ready} disabled={taskActionBusy}
+  const applicationStep = task && (deliveryReady && applyEntry ? <TaskApply key={applyEntry.key} draft={applyEntry.draft} merging={Boolean(merging)} keepCurrent={mergeWaiting && merging?.ready} disabled={taskActionBusy}
     branch={projectGit?.branch ?? null} canCommit={Boolean(task.review?.files?.length || task.delivery?.mode === 'branch' || task.delivery?.pending)} preferred={merging?.intent?.mode}
-    pending={task.delivery?.pending && task.delivery.mode !== 'branch' ? task.delivery.mode : undefined}
+    pending={pendingDelivery} autoGenerate={!isPlayground && online}
     apply={() => saveTask('workspace')} commit={(message, confirmation) => saveTask('commit', message, confirmation)}
-    agent={agentLabel(commitWriter.agent)} generate={() => api<{ message: string }>(`/tasks/${task.id}/commit-message`, { ...commitWriter, fresh: true, language: commitMessageLanguage() }).then(result => result.message)}
+    agent={agentLabel(commitWriter.agent)} generate={fresh => api<{ message: string }>(`/tasks/${task.id}/commit-message`, { ...commitWriter, fresh, language: commitMessageLanguage() }).then(result => result.message)}
     shown={isPlayground ? undefined : () => void api(`/tasks/${task.id}/predict`, {}).catch(() => undefined)}/>
     : merging ? <TaskConflict status={task.status} waiting={mergeWaiting} onChat={() => selectLayout('conversation')}/>
     : saved === 'committed' && task.delivery ? savedResult(t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' }))

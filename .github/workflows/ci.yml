@@ -360,6 +360,7 @@ jobs:
             test-results/import-*.png
             test-results/overleaf-*.png
             test-results/task-restart-*.png
+            test-results/task-commit-*.png
             test-results/section-comments-*.png
             test-results/anchors-*.png
             test-results/bulk-tasks-*.png

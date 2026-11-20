@@ -26,6 +26,7 @@
 .task-commit button:disabled{opacity:.45;cursor:default}
 .task-commit .task-commit-hint{margin:0;padding-inline:2px;color:var(--text-2);font-size:12px;line-height:1.5}
 .task-commit-error{margin:0;padding-inline:2px;color:var(--red);font-size:12px;overflow-wrap:anywhere}
+.task-commit-progress{position:absolute;width:1px;height:1px;clip-path:inset(50%)}
 .task-commit-spinner{display:inline-block;box-sizing:border-box;flex-shrink:0;width:14px;height:14px;border:1.5px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;animation:task-commit-spin .8s linear infinite}
 @keyframes task-commit-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.task-commit-spinner{animation:none}.task-commit-compose,.task-commit button{transition:none}}

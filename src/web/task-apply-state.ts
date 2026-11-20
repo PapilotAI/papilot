@@ -12,6 +12,9 @@ export class TaskApplyState {
   getSnapshot = () => this.state;
   private update(value: Partial<State>) { this.state = { ...this.state, ...value }; for (const listener of this.listeners) listener(); }
   edit(message: string) { this.revision++; this.update({ message }); }
+  prepare(generate: () => Promise<string>, agent?: string) {
+    if (!this.revision && !this.generation && !this.state.message) void this.write(generate, agent);
+  }
   async write(generate: () => Promise<string>, agent?: string) {
     if (this.state.busy || this.state.writing) return;
     const generation = ++this.generation, revision = this.revision;
