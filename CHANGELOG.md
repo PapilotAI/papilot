@@ -4,9 +4,13 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-20
+
+Keep the mouse in place while finishing a Typeless PDF note. See the [release notes](docs/releases/0.12.1/release-notes.md) for the workflow and update instructions.
+
 ### Changed
 
-- Keep the Typeless microphone at the mouse's release point when creating a PDF note. Once the draft has text, its quote arrow uses the same position, so stopping dictation and confirming the note need no mouse movement. Transcription still requires explicit confirmation; touch and keyboard entry retain the regular controls. See [Typeless voice notes](docs/typeless.md).
+- Keep the Typeless microphone at the mouse's release point when creating a PDF note. Once the draft has text, its quote arrow uses the same position, so stopping dictation and confirming the note need no mouse movement. Long drafts scroll beside the action without covering it; further-dictation controls stay in place during shortcut delivery. Transcription still requires explicit confirmation; touch and keyboard entry retain the regular controls. See [Typeless voice notes](docs/typeless.md). ([#253](https://github.com/PapilotAI/papilot/pull/253))
 
 ## [0.12.0] - 2026-11-20
 
@@ -669,7 +673,8 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/PapilotAI/papilot/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/PapilotAI/papilot/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/PapilotAI/papilot/compare/v0.10.4...v0.11.0
 [0.10.4]: https://github.com/PapilotAI/papilot/compare/v0.10.3...v0.10.4
