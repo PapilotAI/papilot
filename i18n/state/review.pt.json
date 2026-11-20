@@ -1273,5 +1273,10 @@
     "revision": "8bb60901e076c8a71a395574218a929c390d232cc4015e9cb90bea994aeb17e6",
     "textHash": "e63b3fdb2b1868ec3c601c863df330c5a109f91b45a9a6e3aa325e36f620b70c",
     "model": "gemini-4-argon-medium"
+  },
+  "Full document": {
+    "revision": "bd019fdabbd2d183e5d608d6bd18fe0c5aa0c679c615e934bb093dda01ff5c46",
+    "textHash": "18828a8c81ce9ea39f809e55efc5f58068e518c644b7da1b4f54578e4a65650e",
+    "model": "manual"
   }
 }

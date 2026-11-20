@@ -193,7 +193,7 @@ export const zhCN: Record<string, string> = {
   "Choose different files": "重新选择文件",
   "Continue later": "稍后继续",
 
-  'Open reviews on': '审阅默认显示', 'Changes shows only the changed sections and opens fastest. PDF shows each change in place in the whole paper and takes longer for long papers. The switch in a review changes only that review.': '「改动」只显示改动所在的部分，打开最快；「PDF」在全文中原位显示每处改动，篇幅较长时会慢一些。审阅工具栏里的切换只对当前审阅有效。', 'Edit {name}': '编辑 {name}', 'Edit paper': '编辑论文', 'Remove paper': '移除论文', 'Location': '位置', 'Change…': '更改…',
+  'Open reviews on': '审阅默认显示', 'Changes shows the diff. Choose Full document to include unchanged pages. PDF shows your accepted changes.': '“改动”视图显示差异。选择“完整文档”可包含未修改的页面。PDF 视图显示已接受的修改。', 'Edit {name}': '编辑 {name}', 'Edit paper': '编辑论文', 'Remove paper': '移除论文', 'Location': '位置', 'Change…': '更改…',
   'Remove paper?': '移除论文？', 'Remove from Papilot': '从 Papilot 移除',
   'Paper name': '论文名称', 'Removing…': '正在移除…',
   'Remove this paper and its tasks, conversations and notes from Papilot?': '从 Papilot 移除这篇论文及其任务、对话和批注记录？',

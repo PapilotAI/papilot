@@ -584,11 +584,6 @@
     "textHash": "5eb3035aebbd8a8df14bf30354184f54a7317a9d3b46e3f2d20fefbb15707b5f",
     "model": "gemini-4-argon-medium"
   },
-  "Changes shows only the changed sections and opens fastest. PDF shows each change in place in the whole paper and takes longer for long papers. The switch in a review changes only that review.": {
-    "revision": "d49fcbfaa1b33ccde6823ee43b195018c92bb5e7e519eb4d62d2e90149b34e5f",
-    "textHash": "78adac579285322181eaae6dbc476ba7148d0aa3cb2cbee4c28c61b6ec0a8d7a",
-    "model": "gemini-4-argon-medium"
-  },
   "Change…": {
     "revision": "87ba5dc6246c31cf2be8f627380248021988672715f0e2e4367981f50f7d2fed",
     "textHash": "5e8d7fabab820c083ce9126e56b4184d60a30a43e89f1a5bf7e6d8ca00309052",
@@ -6627,6 +6622,11 @@
   "Saved page {page}": {
     "revision": "e54984c9539e8f03cadbc2e4030031be3fd9fe23171426e2d0c28565d33829fa",
     "textHash": "bde3b72e0ea927d946650ad34798d1ac76c8c9286449c587ffa91b109460da01",
+    "model": "manual"
+  },
+  "Changes shows the diff. Choose Full document to include unchanged pages. PDF shows your accepted changes.": {
+    "revision": "e096bbd8bd12bbe6554cd0de35a6be54652a4610c3b76c22a3039042970482dc",
+    "textHash": "b0e89e3471d7136e156b61549ebd1953c69c64499a7b22f078d0bb9733478a38",
     "model": "manual"
   }
 }

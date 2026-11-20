@@ -267,21 +267,38 @@ try {
   await expect(page.locator('.toast')).toContainText('Changes are ready');
   console.log('PASS: a comment written while a newer round arrives is sent on the round it was written on');
 
-  // The same flow by touch on a phone.
-  const phone = await browser.newPage({ locale: 'en-US', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  phone.on('pageerror', error => errors.push(error.message));
-  reset(); await open(phone); hold = true;
-  for (const next of ['1', '2']) {
-    await current(phone).locator('button.accept').tap();
-    await expect(current(phone)).toHaveAttribute('data-stop', next);
+  // The same flow by touch on a phone, with and without PDF context.
+  const sourceBlocks = detail.loose;
+  for (const mode of ['source', 'source-only', 'changes', 'full']) {
+    const pdf = mode === 'changes' || mode === 'full';
+    detail.pdf = mode === 'source' ? undefined : '/phone-fixture/full.pdf';
+    detail.sourceOnly = mode === 'source-only';
+    const strip = index => ({ src: 'paragraph.svg', clean: 'paragraph.svg', width: 612, height: 35, page: 1, label: '1', top: 100 + index * 80, left: 0 });
+    detail.loose = pdf ? ids.map((id, index) => ({ kind: 'change', units: [id], identical: false, before: [strip(index)], after: [strip(index)] })) : sourceBlocks;
+    const phone = await browser.newPage({ locale: 'en-US', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    phone.on('pageerror', error => errors.push(error.message));
+    await phone.route('**/phone-fixture/full.pdf', route => route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') }));
+    await phone.route('**/paragraph.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 612 35"><text x="60" y="22">A revised paragraph.</text></svg>' }));
+    reset(); await open(phone); hold = true;
+    const fullDocument = phone.getByRole('button', { name: 'Full document', exact: true });
+    await expect(fullDocument).toHaveCount(pdf ? 1 : 0);
+    if (mode === 'full') {
+      await fullDocument.click();
+      await expect(phone.locator('.paper-page')).toHaveCount(2);
+    }
+    for (const next of ['1', '2']) {
+      await current(phone).locator('button.accept').tap();
+      await expect(current(phone)).toHaveAttribute('data-stop', next);
+    }
+    await expect(current(phone).locator('button.accept')).toBeInViewport();
+    await phone.screenshot({ path: `test-results/fast-decisions-phone-${mode}.png` });
+    while (held.length || decides().length < 2) { if (held.length) held.shift()(); await new Promise(resolve => setTimeout(resolve, 50)); }
+    await expect.poll(() => decisions.c2).toBe('accepted');
+    const width = await phone.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+    assert.ok(width[0] <= width[1], `No horizontal scroll at phone width (${width})`);
+    console.log(`PASS: on a 390×844 phone (${mode}), taps advance at once and the next change's controls stay in view`);
+    await phone.close();
   }
-  await expect(current(phone).locator('button.accept')).toBeInViewport();
-  await phone.screenshot({ path: 'test-results/fast-decisions-phone.png' });
-  while (held.length || decides().length < 2) { if (held.length) held.shift()(); await new Promise(resolve => setTimeout(resolve, 50)); }
-  await expect.poll(() => decisions.c2).toBe('accepted');
-  const width = await phone.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
-  assert.ok(width[0] <= width[1], `No horizontal scroll at phone width (${width})`);
-  console.log('PASS: on a 390×844 phone, taps advance at once and the next change\'s controls stay in view');
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();
