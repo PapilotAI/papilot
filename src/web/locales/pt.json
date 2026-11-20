@@ -154,7 +154,6 @@
   "Changelog": "Histórico de alterações",
   "Changes": "Alterações",
   "Changes in {path}": "Alterações em {path}",
-  "Changes shows only the changed sections and opens fastest. PDF shows each change in place in the whole paper and takes longer for long papers. The switch in a review changes only that review.": "Alterações mostra apenas as seções alteradas e abre mais rápido. PDF mostra cada alteração no local em todo o artigo e demora mais para artigos longos. O seletor em uma revisão altera apenas essa revisão.",
   "Change…": "Alterar…",
   "Chart": "Gráfico",
   "Chat": "Chat",
@@ -1610,5 +1609,6 @@
   "Check your Typeless shortcut.": "Confira seu atalho do Typeless.",
   "Shortcut: {shortcut}": "Atalho: {shortcut}",
   "Typeless voice notes": "Notas de voz com Typeless",
-  "Saved page {page}": "Página salva {page}"
+  "Saved page {page}": "Página salva {page}",
+  "Changes shows the diff. Choose Full document to include unchanged pages. PDF shows your accepted changes.": "Alterações mostra as diferenças. Escolha Documento completo para incluir as páginas sem alterações. PDF mostra as alterações aceitas."
 }

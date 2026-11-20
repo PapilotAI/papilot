@@ -280,6 +280,7 @@ export function ReviewApp({
   }, []);
   // Where each review was left; a host's uncommitted changes are kept per paper.
   const placeKey = `papilot:review:${location.pathname}:${changes ? 'changes' : task}`;
+  const [showFullDocument, setShowFullDocument] = useState(() => readStorage(`${placeKey}:all-sections`, false));
   const [shortcuts, setShortcuts] = useState(readShortcuts);
   // The whole paper with the changes in place, or the changed sections only.
   // A host may fix the view in the address (Papilot's manuscript chooses its
@@ -541,14 +542,14 @@ export function ReviewApp({
     if (!root) return;
     const index = Number(article.dataset.stop), back = returning.current;
     let offset = 0;
-    if (back && back.index === index && back.paper === paperView) { offset = back.offset; returning.current = null; }
+    if (back && back.index === index && back.paper === wholePaper) { offset = back.offset; returning.current = null; }
     root.scrollTo({ top: root.scrollTop - past(article) + offset, behavior });
   }
   // The place within the current change is kept as the author reads on.
   function remember(index: number) {
     const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${index}"]`);
     if (!article || !stops[index]) return;
-    store(placeKey, { round: detail?.round, stop: stops[index].key, offset: Math.round(past(article)), paper: paperView });
+    store(placeKey, { round: detail?.round, stop: stops[index].key, offset: Math.round(past(article)), paper: wholePaper });
   }
   // Reading into the next change makes it current, which resizes its header;
   // measure the place again once it has, unless a reveal is on its way.
@@ -649,7 +650,7 @@ export function ReviewApp({
     const saved = (event: Event) => {
       const { state: next, file, line } = (event as CustomEvent<SourceSaved>).detail;
       const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${current}"]`);
-      editedPlace.current = { file, line: line + 1, offset: article ? past(article) : 0, paper: paperView, inline: false };
+      editedPlace.current = { file, line: line + 1, offset: article ? past(article) : 0, paper: wholePaper, inline: false };
       epoch.current++; setState(next);
     };
     window.addEventListener(SOURCE_SAVED_EVENT, saved);
@@ -802,7 +803,7 @@ export function ReviewApp({
     };
   }, [task, pinned, transport]);
   useEffect(() => {
-    if (paperView) return;
+    if (wholePaper) return;
     if (detail && current >= 0)
       requestAnimationFrame(() => {
         const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${current}"]`);
@@ -1652,7 +1653,7 @@ export function ReviewApp({
                   onOpen={() => offerSource([unit])}
                   onSaved={next => {
                     const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${index}"]`);
-                    editedPlace.current = { file: unit.file, line: unit.new_start, offset: article ? past(article) : 0, paper: paperView, inline: true };
+                    editedPlace.current = { file: unit.file, line: unit.new_start, offset: article ? past(article) : 0, paper: wholePaper, inline: true };
                     epoch.current++; setState(next);
                   }}
                   title={<span className="source-location" title={unit.file}>
@@ -1725,7 +1726,11 @@ export function ReviewApp({
   // decision: switching to it never starts a compilation.
   const appliedPaper = compileDecisions && Boolean(state?.deferred ?? state?.workspace?.deferred) && !changes && Boolean(detail),
     fullPaper = !pinnedView && (appliedPaper || (Boolean(detail?.pdf) && placeable(placed))),
-    paperView = fullPaper && view === "paper";
+    paperView = fullPaper && view === "paper",
+    // Alternative previews can contain only the affected chapters.
+    fullDiffAvailable = Boolean(detail?.pdf) && !detail?.sourceOnly && (!previewing || Boolean(detail?.build?.targets.includes("full"))),
+    fullDiff = !paperView && showFullDocument && fullDiffAvailable,
+    wholePaper = paperView || fullDiff;
   const applied = useApplied(appliedPaper && paperView, api);
   // The comparisons of the next few undecided changes are fetched and decoded
   // ahead, so the next one is on screen the moment a decision moves on. A
@@ -1780,21 +1785,25 @@ export function ReviewApp({
     } else delete root.dataset.papilotRound;
   }, [detail?.round]);
   // Keep the selected change in view when the view changes, from here or the host.
-  const shownView = useRef(paperView);
+  const shownView = useRef(wholePaper);
   useEffect(() => {
-    if (shownView.current === paperView) return;
-    shownView.current = paperView;
+    if (shownView.current === wholePaper) return;
+    shownView.current = wholePaper;
     // FullPaper restores its own reading position after its pages are sized.
-    if (paperView) return;
+    if (wholePaper) return;
     requestAnimationFrame(() => {
       const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${snapshot.current.current}"]`);
       if (article) reveal(article);
     });
-  }, [paperView]);
+  }, [wholePaper]);
   // The switch changes this review only; the default is a Papilot setting.
   function chooseView(next: ReviewView) {
     setView(next);
     window.dispatchEvent(new CustomEvent(VIEW_CHOSEN_EVENT, { detail: next }));
+  }
+  function chooseFullDocument(full: boolean) {
+    setShowFullDocument(full);
+    store(`${placeKey}:all-sections`, full);
   }
   let index = 0;
   return (
@@ -1810,6 +1819,23 @@ export function ReviewApp({
                 : ""}
           </span>
         </div>
+        {detail?.pdf && !detail.sourceOnly && !paperView && (
+          <button
+            type="button"
+            className="ghost review-context"
+            aria-label={t("Full document")}
+            title={t("Full document")}
+            aria-pressed={fullDiff}
+            disabled={!fullDiff && (!fullDiffAvailable || Boolean(detail.rendering))}
+            onClick={() => chooseFullDocument(!fullDiff)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="7" y="5" width="10" height="14" rx="1"/>
+              <path d="M5 2H2v3M19 2h3v3M22 19v3h-3M5 22H2v-3"/>
+            </svg>
+            <span>{t("Full document")}</span>
+          </button>
+        )}
         <ReviewProgress
           value={changes ? count.accepted : count.decided}
           total={changes ? count.accepted + count.pending : count.total}
@@ -2171,7 +2197,7 @@ export function ReviewApp({
               </details>
             </div>
           ) : null}
-          {detail?.revisedErrors?.length && (!paperView || appliedPaper) ? (
+          {detail?.revisedErrors?.length && (!wholePaper || (paperView && appliedPaper)) ? (
             <CompilationErrors title={t("The revised text has compilation errors.")} errors={detail.revisedErrors} />
           ) : null}
           {detail?.baselineErrors?.length ? (
@@ -2204,7 +2230,7 @@ export function ReviewApp({
                 onRetry={references.retry}
               />
             )}
-          <div className="document">
+          <div className="document" data-full-diff={fullDiff || undefined}>
             {detail && paperView && appliedPaper ? (
               <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
                 {applied?.shown ? (
@@ -2223,7 +2249,7 @@ export function ReviewApp({
                   </div>
                 )}
               </Suspense>
-            ) : detail && paperView ? (
+            ) : detail && wholePaper ? (
               <>
                 <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
                 <FullPaper
@@ -2235,7 +2261,7 @@ export function ReviewApp({
                   render={(block, at) => change(block, at, true)}
                   scrollRoot={paper}
                   place={`${placeKey}:pdf:${detail.round}`}
-                  restorePlace={linkedChange < 0}
+                  restorePlace={!fullDiff && linkedChange < 0}
                   onReady={restored => {
                     if (restored) return;
                     const article = paper.current?.querySelector<HTMLElement>(
@@ -2243,7 +2269,7 @@ export function ReviewApp({
                     );
                     if (article) reveal(article);
                   }}
-                  onUnavailable={() => chooseView("changes")}
+                  onUnavailable={() => { chooseFullDocument(false); chooseView("changes"); }}
                 />
                 </Suspense>
                 {!stops.length && !changes && (

@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- Add a **Full document** toggle to the toolbar in task and manuscript Changes views. Read the whole paper with before/after comparisons in place, or switch back to changed sections.
+
 ## [0.12.0] - 2026-11-20
 
 Turn feedback into PDF notes, keep track of passages being revised, and preview references without leaving the page. See the [release notes](docs/releases/0.12.0/release-notes.md) for setup and update instructions.

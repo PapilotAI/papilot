@@ -149,7 +149,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         {page === 'review' && <section className="settings-card">
           <NoteOptionSettings/>
           <div className="settings-row settings-choice">
-            <div className="settings-text"><span className="settings-name">{t('Open reviews on')}</span><p>{t('Changes shows only the changed sections and opens fastest. PDF shows each change in place in the whole paper and takes longer for long papers. The switch in a review changes only that review.')}</p></div>
+            <div className="settings-text"><span className="settings-name">{t('Open reviews on')}</span><p>{t('Changes shows the diff. Choose Full document to include unchanged pages. PDF shows your accepted changes.')}</p></div>
             <ModeSwitch labeled label={t('Open reviews on')} changesTitle={t('Changes')} mode={reviewView === 'paper' ? 'pdf' : 'changes'} onMode={mode => saveDefaultReviewView(mode === 'pdf' ? 'paper' : 'changes')}/>
           </div>
           <div className="settings-row settings-toggle">

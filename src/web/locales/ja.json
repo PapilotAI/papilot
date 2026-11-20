@@ -154,7 +154,6 @@
   "Changelog": "変更履歴",
   "Changes": "変更",
   "Changes in {path}": "{path} の変更",
-  "Changes shows only the changed sections and opens fastest. PDF shows each change in place in the whole paper and takes longer for long papers. The switch in a review changes only that review.": "「変更箇所」は変更されたセクションのみを表示し、最も速く開きます。「PDF」は論文全体の該当箇所に各変更を表示するため、長い論文では時間がかかります。レビュー内の切り替えは、そのレビューにのみ適用されます。",
   "Change…": "変更…",
   "Chart": "チャート",
   "Chat": "チャット",
@@ -1610,5 +1609,6 @@
   "Check your Typeless shortcut.": "Typeless のショートカットを確認してください。",
   "Shortcut: {shortcut}": "ショートカット：{shortcut}",
   "Typeless voice notes": "Typeless 音声注釈",
-  "Saved page {page}": "保存時のページ {page}"
+  "Saved page {page}": "保存時のページ {page}",
+  "Changes shows the diff. Choose Full document to include unchanged pages. PDF shows your accepted changes.": "変更ビューには差分が表示されます。「文書全体」を選ぶと、変更のないページも表示されます。PDF には承認した変更が表示されます。"
 }

@@ -58,7 +58,7 @@ try {
     units: [{ id: 'edit', file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: 1, old_end: 1, new_start: 1, new_end: 1, old_text: 'Original paragraph', new_text: 'Revised paragraph', truncated: false }] };
   let appliedKey = 'applied-v1';
   let appliedErrors, appliedFailure, delayedPdf, releasePdf;
-  let appliedBuilding = false, appliedCurrent = true;
+  let appliedBuilding = false, appliedCurrent = true, failFullPdf = false;
   await page.addInitScript(() => {
     localStorage.setItem('papilot:task', '');
     localStorage.setItem('papilot:project', 'paper');
@@ -93,6 +93,7 @@ try {
     if (relative === '/') return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(fs.readFileSync('engine/dist/web/index.html', 'utf8'), prefix) });
     if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('engine/dist/web' + relative), contentType: /\.m?js$/.test(relative) ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'application/octet-stream' });
     if (relative.endsWith('.pdf')) {
+      if (failFullPdf && relative === '/files/full.pdf') return route.fulfill({ status: 404, json: { error: 'PDF unavailable' } });
       report.pdfRequests.push(url.pathname + url.search);
       if (delayedPdf && relative.endsWith(`/${delayedPdf}.pdf`)) await new Promise(resolve => { releasePdf = resolve; });
       return route.fulfill({ contentType: 'application/pdf', body: relative.includes('applied-tall') ? tallerPdf : relative.includes('applied-v2') ? revisedPdf : pdf });
@@ -128,6 +129,59 @@ try {
   await page.locator('.task-link').filter({ hasText: task.title }).click();
   const frame = page.frameLocator('.review-frame');
   await expect(frame.locator('.change.current')).toBeVisible();
+  const fullDocument = frame.getByRole('button', { name: 'Full document', exact: true });
+  await expect(fullDocument).toHaveAttribute('aria-pressed', 'false');
+  delayedPdf = 'full';
+  await fullDocument.focus(); await page.keyboard.press('Space');
+  await expect(fullDocument).toHaveAttribute('aria-pressed', 'true');
+  await expect(frame.getByText('Preparing the full PDF…')).toBeVisible();
+  await expect(fullDocument).toBeVisible();
+  await expect.poll(() => Boolean(releasePdf)).toBe(true);
+  delayedPdf = null; releasePdf(); releasePdf = null;
+  await expect(frame.locator('.paper-page')).toHaveCount(2);
+  await expect(frame.locator('.paper .change')).toHaveCount(1);
+  await expect(frame.locator('.applied-paper')).toHaveCount(0);
+  for (const rendering of ['pending', 'failed']) {
+    await frame.locator('html').evaluate((root, { detail, rendering }) => root.ownerDocument.defaultView.dispatchEvent(new CustomEvent('papilot:option-preview', { detail: { round: 1, detail: { ...detail, rendering, build: { key: 'full', targets: ['full'] } } } })), { detail, rendering });
+    await expect(fullDocument).toHaveAttribute('aria-pressed', 'true');
+    await fullDocument.click();
+    await expect(frame.locator('.paper-page')).toHaveCount(0);
+    await expect(fullDocument).toBeDisabled();
+    await frame.locator('html').evaluate(root => root.ownerDocument.defaultView.dispatchEvent(new CustomEvent('papilot:option-preview', { detail: null })));
+    await fullDocument.click();
+  }
+  // A chapter-only alternative is not a full document. Closing it restores
+  // the view preference and the published comparison.
+  await frame.locator('html').evaluate((root, detail) => root.ownerDocument.defaultView.dispatchEvent(new CustomEvent('papilot:option-preview', { detail: { round: 1, detail: { ...detail, build: { key: 'chapter', targets: ['intro'] } } } })), detail);
+  await expect(fullDocument).toBeDisabled();
+  await expect(frame.locator('.paper-page')).toHaveCount(0);
+  await frame.locator('html').evaluate(root => root.ownerDocument.defaultView.dispatchEvent(new CustomEvent('papilot:option-preview', { detail: null })));
+  await expect(fullDocument).toHaveAttribute('aria-pressed', 'true');
+  await expect(frame.locator('.paper-page')).toHaveCount(2);
+  for (const width of [1600, 390]) for (const colorScheme of ['light', 'dark']) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ colorScheme });
+    if (width === 390) await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
+    await frame.locator('#paper').evaluate(root => root.scrollTop = root.scrollHeight);
+    await expect(fullDocument).toBeInViewport();
+    await frame.locator('#paper').evaluate(root => root.scrollTop = 0);
+    const bounds = await fullDocument.boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width);
+    await page.screenshot({ path: path.join(output, `show-all-${width}-${colorScheme}.png`) });
+  }
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await fullDocument.click();
+  await expect(frame.locator('.paper-page')).toHaveCount(0);
+  await expect(frame.locator('.change.current')).toBeInViewport();
+  failFullPdf = true;
+  await fullDocument.click();
+  await expect(frame.getByRole('alert')).toContainText('The full PDF could not be loaded.');
+  await frame.locator('.paper-status').getByRole('button', { name: 'Changes', exact: true }).click();
+  await expect(fullDocument).toHaveAttribute('aria-pressed', 'false');
+  await expect(frame.locator('.change.current')).toBeInViewport();
+  failFullPdf = false;
+  report.checks.push({ label: 'Full context in deferred task Changes preserves diff, supports keyboard/themes, excludes chapter-only alternatives and recovers from failed loads' });
   await page.locator('.review-host-bar').getByRole('button', { name: 'PDF', exact: true }).click();
   const reviewBar = page.locator('.review-host-bar');
   const readable = async (pages = 2) => {
@@ -273,6 +327,18 @@ try {
   await expect(frame.locator('.paper-page')).toHaveCount(2);
   await expect(summary).toHaveCount(0);
   report.checks.push({ label: 'FullPaper static diagnostics support keyboard disclosure, desktop/mobile themes, and clear after repair' });
+  await page.locator('.manuscript-link').click();
+  await page.locator('.manuscript .pdf-toolbar').getByRole('button', { name: 'Changes', exact: true }).click();
+  await expect(fullDocument).toHaveAttribute('aria-pressed', 'false');
+  await fullDocument.click();
+  await expect(frame.locator('.paper-page')).toHaveCount(2);
+  await expect(frame.locator('.paper .change')).toHaveCount(1);
+  await page.reload();
+  await expect(fullDocument).toHaveAttribute('aria-pressed', 'true');
+  await expect(frame.locator('.paper-page')).toHaveCount(2);
+  await fullDocument.click();
+  await expect(frame.locator('.paper-page')).toHaveCount(0);
+  report.checks.push({ label: 'Manuscript pinned Changes supports full context and remembers its view separately' });
   assert.deepEqual(report.errors, []);
   report.passed = true;
   console.log('PASS: Applied PDF contents, page count, navigation, zoom, search, replacement and reopening; manuscript and FullPaper controls.');

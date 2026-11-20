@@ -7,7 +7,7 @@ import { renderDocument, Strips } from "../../src/render/inline.ts";
 import type { Build } from "../../src/render/locate.ts";
 import type { ChangeBlock, Rect, RoundDetail } from "../../src/types.ts";
 
-test("full-paper review preserves unchanged ink beside a column change", async ({
+test("full document preserves unchanged pages and ink beside a column change", async ({
   page,
 }) => {
   const folder = fs.mkdtempSync(
@@ -31,6 +31,8 @@ test("full-paper review preserves unchanged ink beside a column change", async (
   );
   raw.insertPage(-1, sheet);
   sheet.destroy();
+  const untouched = raw.addPage([0, 0, 600, 600], 0, { Font: { F1: resource } }, "BT /F1 12 Tf 35 530 Td (UNCHANGED SECOND PAGE) Tj ET");
+  raw.insertPage(-1, untouched); untouched.destroy();
   const bytes = raw.saveToBuffer("");
   fs.writeFileSync(path.join(folder, "paper.pdf"), bytes.asUint8Array());
   const document = new PdfDocument(bytes.asUint8Array());
@@ -38,36 +40,33 @@ test("full-paper review preserves unchanged ink beside a column change", async (
   resource.destroy();
   font.destroy();
   raw.destroy();
-  let block: ChangeBlock, unchanged: Rect;
+  let blocks: ChangeBlock[], unchanged: Rect;
   try {
     expect(document.page(0).twoColumns).toBe(true);
     const rect = document.page(0).search("LEFT ROW 05")[0];
     unchanged = document.page(0).search("RIGHT ROW 05")[0];
     const build = { document, outline: [] } as unknown as Build;
-    block = renderDocument(
+    blocks = renderDocument(
       build,
       build,
-      [
-        {
-          id: "fixture",
-          file: "paper.tex",
-          comparison: "text",
-          aligned: true,
-          pairs: [
-            {
-              old: { page: 0, clip: rect, label: "1" },
-              new: { page: 0, clip: rect, label: "1" },
-              group: 0,
-              before_marks: [],
-              after_marks: [{ kind: "added", rect }],
-            },
-          ],
-        },
-      ],
+      [rect, document.page(0).search("LEFT ROW 11")[0]].map((clip, index) => ({
+        id: `fixture-${index}`,
+        file: "paper.tex",
+        comparison: "text" as const,
+        aligned: true,
+        pairs: [{
+          old: { page: 0, clip, label: "1" },
+          new: { page: 0, clip, label: "1" },
+          group: 0,
+          before_marks: [],
+          after_marks: [{ kind: "added" as const, rect: clip }],
+        }],
+      })),
       new Strips(folder),
       () => false,
-    ).loose[0];
-    expect(block.after[0].width).toBeLessThan(300);
+    ).loose;
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].after[0].width).toBeLessThan(300);
   } finally {
     document.close();
   }
@@ -86,17 +85,13 @@ test("full-paper review preserves unchanged ink beside a column change", async (
       async (route) => {
         const response = await route.fetch(),
           detail = (await response.json()) as RoundDetail;
-        const unit = {
-          ...detail.units[0],
-          visual: "text" as const,
-          effects: undefined,
-        };
+        const units = detail.units.slice(0, 2).map(unit => ({ ...unit, visual: "text" as const, effects: undefined }));
         await route.fulfill({
           json: {
             ...detail,
-            units: [unit],
+            units,
             sections: [],
-            loose: [{ ...block, units: [unit.id] }],
+            loose: blocks.map((block, index) => ({ ...block, units: [units[index].id] })),
             pdf: "/column-fixture/paper.pdf",
             files: "/column-fixture/",
             passes: undefined,
@@ -106,8 +101,12 @@ test("full-paper review preserves unchanged ink beside a column change", async (
       },
     );
     await page.goto("/?task=tighten-design");
-    await page.getByRole("button", { name: "PDF", exact: true }).click();
-    await expect(page.locator(".paper .change")).toBeVisible();
+    const fullDocument = page.getByRole("button", { name: "Full document", exact: true });
+    await expect(fullDocument).toHaveAttribute("aria-pressed", "false");
+    await fullDocument.focus(); await page.keyboard.press("Space");
+    await expect(fullDocument).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".paper-page")).toHaveCount(2);
+    await expect(page.locator(".paper .change")).toHaveCount(2);
     await expect
       .poll(() =>
         page
@@ -181,6 +180,17 @@ test("full-paper review preserves unchanged ink beside a column change", async (
         path: `.cache/browser-paper-columns-${width}.png`,
       });
     }
+    await page.getByRole("navigation", { name: "Change map" }).getByRole("button").last().click();
+    await expect(page.locator(".change.current")).toHaveAttribute("data-stop", "1");
+    // The toolbar toggle stays reachable without scrolling away from the change.
+    await fullDocument.click();
+    await expect(page.locator(".paper-page")).toHaveCount(0);
+    await expect(page.locator(".change.current")).toHaveAttribute("data-stop", "1");
+    await expect(page.locator(".change.current")).toBeInViewport();
+    await fullDocument.click();
+    await expect(page.locator(".paper-page")).toHaveCount(2);
+    await expect(page.locator(".change.current")).toHaveAttribute("data-stop", "1");
+    await expect(page.locator(".change.current")).toBeInViewport();
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }

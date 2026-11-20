@@ -154,7 +154,6 @@
   "Changelog": "更新日誌",
   "Changes": "變更",
   "Changes in {path}": "{path} 中的變更",
-  "Changes shows only the changed sections and opens fastest. PDF shows each change in place in the whole paper and takes longer for long papers. The switch in a review changes only that review.": "「變更」僅顯示已變更的章節，開啟速度最快。「PDF」則會在整篇論文的對應位置顯示每項變更，對於篇幅較長的論文需要較多時間。審閱中的切換開關僅會變更該次審閱。",
   "Change…": "變更…",
   "Chart": "圖表",
   "Chat": "對話",
@@ -1610,5 +1609,6 @@
   "Check your Typeless shortcut.": "請檢查 Typeless 快速鍵。",
   "Shortcut: {shortcut}": "快速鍵：{shortcut}",
   "Typeless voice notes": "Typeless 語音註解",
-  "Saved page {page}": "上次位置 · 第 {page} 頁"
+  "Saved page {page}": "上次位置 · 第 {page} 頁",
+  "Changes shows the diff. Choose Full document to include unchanged pages. PDF shows your accepted changes.": "「變更」檢視顯示差異。選擇「完整文件」可包含未修改的頁面。PDF 檢視顯示已接受的修改。"
 }

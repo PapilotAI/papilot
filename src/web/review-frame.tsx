@@ -67,9 +67,11 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       --scroll-thumb:rgb(0 0 0/.12);--scroll-hover:rgb(0 0 0/.2);--scroll-active:rgb(0 0 0/.34);
     }
     .review-body{margin-left:var(--papilot-rail,0px)}
-    .bar{display:flex;align-items:center;height:var(--papilot-bar-height,44px);min-height:var(--papilot-bar-height,44px);padding:0 max(12px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + 12px);gap:8px;flex-wrap:nowrap;overflow:hidden}
+    .bar{display:flex;align-items:center;height:var(--papilot-bar-height,44px);min-height:var(--papilot-bar-height,44px);padding:0 max(12px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + var(--papilot-context,0px) + 12px);gap:8px;flex-wrap:nowrap;overflow:hidden}
     .bar .identity h1,.bar .identity span{display:none}
     .bar .identity{flex:1;min-width:0;flex-direction:row;gap:6px}
+    .bar .review-context{position:absolute;left:calc(var(--papilot-lead,0px) + 12px);top:calc((var(--papilot-bar-height,44px) - var(--papilot-button-size,28px)) / 2);height:var(--papilot-button-size,28px);min-height:0}
+    :root[data-papilot-phone] .bar .review-context{width:32px;height:32px;top:calc((var(--papilot-bar-height,44px) - 32px) / 2);border-radius:8px;padding:0}
     .bar .meter{display:flex;order:initial;width:auto}
     .bar .bar-end{margin-left:0;gap:8px;flex-wrap:wrap;justify-content:flex-end;min-width:0}
     .bar .ghost.round{display:none}
@@ -130,9 +132,9 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     /* Only the host window, never an iframe's width, selects the phone
        layout. Navigation and position stay alongside the decisions. */
     :root[data-papilot-phone]{
-      .bar{gap:6px;min-height:var(--papilot-bar-height,42px);padding:0 max(8px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + 10px)}
+      .bar{gap:6px;min-height:var(--papilot-bar-height,42px);padding:0 max(8px,calc(var(--papilot-tools,0px) + 4px)) 0 calc(var(--papilot-lead,0px) + var(--papilot-context,0px) + 10px)}
       .bar .meter{font-size:13px;font-weight:500}
-      .bar .ghost:not(.history){height:36px;padding:0 10px;font-size:13px}
+      .bar .ghost:not(.history,.review-context){height:36px;padding:0 10px;font-size:13px}
       .review-body>#paper{--paper-top:12px;padding:12px 18px calc(136px + var(--papilot-bottom-rail,0px)) 10px}
       .sheet{overflow:hidden}
       .change-map{right:3px;width:10px}
@@ -190,7 +192,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .bar .history::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-history) center/contain no-repeat;mask:var(--icon-history) center/contain no-repeat}
     /* Reserve the outer tools' row when there is too little room. Keep
        progress, batch counts and history; shorten only the batch labels. */
-    .bar{container:review-bar/inline-size;height:auto;gap:8px}
+    .bar{position:relative;container:review-bar/inline-size;height:auto;gap:8px}
     /* The host's compile button already shows build activity. Keep the phase
        available to screen readers without pushing decisions into another row. */
     :root[data-papilot-build-indicator] .bar .status[data-state="building"]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%)}
@@ -485,7 +487,9 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
       root.style.setProperty('--papilot-bottom-rail', `${mobileRail && mobileRail.offsetHeight > 0 ? mobileRail.offsetHeight + 8 : 0}px`);
       root.style.setProperty('--papilot-lead', `${leadWidth}px`);
       root.style.setProperty('--papilot-bar-height', `${host.offsetHeight}px`);
-      root.toggleAttribute('data-papilot-toolbar-stacked', box.clientWidth - reserve - leadWidth < (phone.matches ? 185 : 220));
+      const contextWidth = bar?.querySelector<HTMLElement>('.review-context')?.offsetWidth || 0;
+      root.style.setProperty('--papilot-context', `${contextWidth ? contextWidth + 8 : 0}px`);
+      root.toggleAttribute('data-papilot-toolbar-stacked', box.clientWidth - reserve - leadWidth - contextWidth < (phone.matches ? 185 : 220));
       // Hidden controls (a collapsed group picker) measure 0px; size the viewer's buttons from a visible one.
       const button = [...toolbar.current?.querySelectorAll<HTMLElement>('.icon-button') ?? []].find(item => item.offsetWidth > 0);
       if (button) root.style.setProperty('--papilot-button-size', `${button.offsetWidth}px`);
@@ -497,7 +501,8 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     };
     const observer = new ResizeObserver(sync);
     observer.observe(box); observer.observe(host);
-    if (bar) observer.observe(bar);
+    const controls = new MutationObserver(sync);
+    if (bar) { observer.observe(bar); controls.observe(bar, { childList: true, subtree: true }); }
     let observedRail: HTMLElement | null = null;
     const watchRail = () => {
       const next = railSlot?.querySelector<HTMLElement>('.pdf-rail') || null;
@@ -515,7 +520,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
       railWatcher.observe(railSlot, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-collapsed', 'data-suspended'] });
     }
     phone.addEventListener('change', sync); watchRail();
-    return () => { observer.disconnect(); railWatcher?.disconnect(); phone.removeEventListener('change', sync); };
+    return () => { observer.disconnect(); controls.disconnect(); railWatcher?.disconnect(); phone.removeEventListener('change', sync); };
   }, [reserve, leadWidth, document, railSlot, readingPdf]);
   function loaded() {
     observer.current?.disconnect();
@@ -551,6 +556,9 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
         const paper = doc.getElementById('paper');
         if (!paper) return;
         setDisplayedRound(Number(doc.documentElement.dataset.papilotRound) || undefined);
+        // Full context can compile or fail independently of the comparison.
+        // Keep the toggle and inline recovery visible while that happens.
+        if (paper.querySelector('.document[data-full-diff]')) { setPhase('ready'); return; }
         if (!changesOf && keepPdfRef.current && !doc.querySelector('.review-mode') && paper.querySelector('.comparison-waiting[data-state="failed"]') && !paper.querySelector('.pdf-strip img[src],.paper-page,.applied-page,.comparison-notice,.bib-entry')) {
           setPhase('error'); return;
         }

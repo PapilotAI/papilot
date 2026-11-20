@@ -154,7 +154,6 @@
   "Changelog": "Ändringslogg",
   "Changes": "Ändringar",
   "Changes in {path}": "Ändringar i {path}",
-  "Changes shows only the changed sections and opens fastest. PDF shows each change in place in the whole paper and takes longer for long papers. The switch in a review changes only that review.": "Ändringar visar endast de ändrade avsnitten och öppnas snabbast. PDF visar varje ändring på plats i hela artikeln och tar längre tid för långa artiklar. Växeln i en granskning ändrar endast den granskningen.",
   "Change…": "Ändra…",
   "Chart": "Diagram",
   "Chat": "Chatt",
@@ -1610,5 +1609,6 @@
   "Check your Typeless shortcut.": "Kontrollera ditt Typeless-kortkommando.",
   "Shortcut: {shortcut}": "Kortkommando: {shortcut}",
   "Typeless voice notes": "Typeless-röstanteckningar",
-  "Saved page {page}": "Sparad sida {page}"
+  "Saved page {page}": "Sparad sida {page}",
+  "Changes shows the diff. Choose Full document to include unchanged pages. PDF shows your accepted changes.": "Ändringar visar skillnaderna. Välj Hela dokumentet för att även visa oförändrade sidor. PDF visar dina accepterade ändringar."
 }

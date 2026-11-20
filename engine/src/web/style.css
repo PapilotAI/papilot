@@ -241,7 +241,8 @@ kbd {
   gap: 4px;
 }
 .batch-decisions .accept-all,
-.batch-decisions .reject-all {
+.batch-decisions .reject-all,
+.review-context {
   min-height: 28px;
   padding: 0 8px;
   border: 1px solid var(--line-strong);
@@ -249,7 +250,8 @@ kbd {
   background: var(--bg);
   color: var(--text);
 }
-.batch-decisions > button:hover:not(:disabled) {
+.batch-decisions > button:hover:not(:disabled),
+.review-context:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--line-hover);
 }
@@ -1633,6 +1635,13 @@ dialog > button:last-child {
   .bar-end {
     gap: 4px;
   }
+  .bar:has(.review-context) {
+    grid-template-columns: auto 1fr;
+  }
+  .bar:has(.review-context) .bar-end {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
   .side {
     min-height: 20px;
   }
@@ -2064,3 +2073,18 @@ body {
 .pdf-focus-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply; }
 
 .change[data-note-focus] .side { background: transparent; }
+
+.review-context { flex: none; white-space: nowrap; }
+.review-context svg { flex: none; }
+.review-context[aria-pressed="true"], .review-context[aria-pressed="true"]:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-active);
+}
+@media (pointer: coarse) { .review-context { min-height: 44px; } }
+@media (max-width: 720px) {
+  .review-context { width: 36px; padding: 0; }
+  .review-context span { display: none; }
+}
+@media (forced-colors: active) {
+  .review-context[aria-pressed="true"] { outline: 1px solid Highlight; outline-offset: -1px; }
+}
