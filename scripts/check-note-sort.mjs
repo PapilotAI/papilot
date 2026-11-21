@@ -127,10 +127,13 @@ try {
 
       const sortTrigger = header.getByRole('button', { name: /^Sort notes:/ });
       await expect(sortTrigger).toBeVisible();
+      await expect(sortTrigger).toHaveAttribute('data-sort', 'original');
       await expect(sortTrigger).toHaveAttribute('aria-label', 'Sort notes: Original order');
-      await expect(sortTrigger).toHaveAttribute('aria-haspopup', 'menu');
-      await expect(sortTrigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(sortTrigger).toHaveAttribute('title', 'Sort notes: Original order');
+      await expect(sortTrigger).not.toHaveAttribute('aria-haspopup');
       await expect(sortTrigger).not.toHaveClass(/\bactive\b/);
+      const iconMarkup = () => sortTrigger.locator('svg').innerHTML();
+      const originalIcon = await iconMarkup();
 
       // All header actions stay cleanly inside the viewport without overlapping.
       const clearButton = header.getByRole('button', { name: 'Clear all annotations…', exact: true });
@@ -154,24 +157,19 @@ try {
       assert.deepEqual(originalOrders.grouped.map(n => n.id), ['y-p2', 'y-stale', 'y-p1']);
       assert.deepEqual(originalOrders.individual.map(n => n.id), ['i-p2', 'i-p1-right', 'i-stale', 'i-p1-left']);
       await verifyPdfMarkersMatch(page, originalOrders);
+      await page.screenshot({ path: `test-results/note-sort-original-${variant.name}.png`, animations: 'disabled' });
 
-      // Open sort menu and verify options + screenshot
+      // 2. Single click cycles directly to PDF position (no dropdown menu)
       await sortTrigger.click();
-      const sortMenu = page.getByRole('menu', { name: /^Sort notes:/ });
-      await expect(sortMenu).toBeVisible();
-      await expect(sortTrigger).toHaveAttribute('aria-expanded', 'true');
-      await expect(sortMenu.getByRole('menuitemradio', { name: 'Original order', exact: true })).toHaveAttribute('aria-checked', 'true');
-      await expect(sortMenu.getByRole('menuitemradio', { name: 'PDF position', exact: true })).toHaveAttribute('aria-checked', 'false');
-      await expect(sortMenu.getByRole('menuitemradio', { name: 'Newest first', exact: true })).toHaveAttribute('aria-checked', 'false');
-      await page.screenshot({ path: `test-results/note-sort-menu-${variant.name}.png`, animations: 'disabled' });
-
-      // 2. Switch to PDF position
-      await sortMenu.getByRole('menuitemradio', { name: 'PDF position', exact: true }).click();
-      await expect(sortMenu).toBeHidden();
+      await expect(page.getByRole('menu', { name: /^Sort notes:/ })).toHaveCount(0);
       await expect(sortTrigger).toBeFocused();
+      await expect(sortTrigger).toHaveAttribute('data-sort', 'position');
       await expect(sortTrigger).toHaveAttribute('aria-label', 'Sort notes: PDF position');
+      await expect(sortTrigger).toHaveAttribute('title', 'Sort notes: PDF position');
       await expect(sortTrigger).toHaveClass(/\bactive\b/);
       await expect(library.locator('p.sr-only[role="status"]')).toHaveText('Notes sorted by PDF position.');
+      const positionIcon = await iconMarkup();
+      assert.notEqual(positionIcon, originalIcon, 'PDF position mode should show a distinct icon');
 
       const positionOrders = await readOrders(library);
       assert.deepEqual(positionOrders.grouped.map(n => n.id), ['y-p1', 'y-p2', 'y-stale']);
@@ -179,34 +177,28 @@ try {
       await verifyPdfMarkersMatch(page, positionOrders);
       await page.screenshot({ path: `test-results/note-sort-position-${variant.name}.png`, animations: 'disabled' });
 
-      // 3. Keyboard navigation: ArrowDown opens menu, ArrowDown moves to Newest first, Enter selects
+      // 3. Keyboard Enter (desktop) or tap (mobile) cycles directly to Newest first
       if (!variant.mobile) {
         await sortTrigger.focus();
-        await page.keyboard.press('ArrowDown');
-        await expect(sortMenu).toBeVisible();
-        await expect(sortMenu.getByRole('menuitemradio', { name: 'PDF position', exact: true })).toBeFocused();
-        await page.keyboard.press('ArrowDown');
-        await expect(sortMenu.getByRole('menuitemradio', { name: 'Newest first', exact: true })).toBeFocused();
-        await page.keyboard.press('Escape');
-        await expect(sortMenu).toBeHidden();
-        await expect(sortTrigger).toBeFocused();
-
-        await page.keyboard.press('ArrowDown');
-        await page.keyboard.press('ArrowDown');
         await page.keyboard.press('Enter');
       } else {
         await sortTrigger.click();
-        await sortMenu.getByRole('menuitemradio', { name: 'Newest first', exact: true }).click();
       }
 
-      await expect(sortMenu).toBeHidden();
+      await expect(sortTrigger).toHaveAttribute('data-sort', 'newest');
       await expect(sortTrigger).toHaveAttribute('aria-label', 'Sort notes: Newest first');
+      await expect(sortTrigger).toHaveAttribute('title', 'Sort notes: Newest first');
+      await expect(sortTrigger).toHaveClass(/\bactive\b/);
       await expect(library.locator('p.sr-only[role="status"]')).toHaveText('Notes sorted by Newest first.');
+      const newestIcon = await iconMarkup();
+      assert.notEqual(newestIcon, originalIcon, 'Newest first mode should show a distinct icon');
+      assert.notEqual(newestIcon, positionIcon, 'Newest first and PDF position icons should differ');
 
       const newestOrders = await readOrders(library);
       assert.deepEqual(newestOrders.grouped.map(n => n.id), ['y-stale', 'y-p1', 'y-p2']);
       assert.deepEqual(newestOrders.individual.map(n => n.id), ['i-stale', 'i-p1-right', 'i-p1-left', 'i-p2']);
       await verifyPdfMarkersMatch(page, newestOrders);
+      await page.screenshot({ path: `test-results/note-sort-newest-${variant.name}.png`, animations: 'disabled' });
 
       // 4. Reload persists the chosen sort preference
       await page.reload();
@@ -214,16 +206,19 @@ try {
         await page.getByRole('group', { name: 'Manuscript view' }).getByRole('button', { name: 'PDF', exact: true }).click();
       }
       await page.getByRole('button', { name: /^My notes(?: · .+)?$/ }).click();
-      await expect(header.getByRole('button', { name: 'Sort notes: Newest first', exact: true })).toBeVisible();
+      const reloadedTrigger = header.getByRole('button', { name: 'Sort notes: Newest first', exact: true });
+      await expect(reloadedTrigger).toBeVisible();
+      await expect(reloadedTrigger).toHaveAttribute('data-sort', 'newest');
       const persistedOrders = await readOrders(library);
       assert.deepEqual(persistedOrders.grouped.map(n => n.id), ['y-stale', 'y-p1', 'y-p2']);
       assert.deepEqual(persistedOrders.individual.map(n => n.id), ['i-stale', 'i-p1-right', 'i-p1-left', 'i-p2']);
 
-      // 5. Switch back to Original order
-      await header.getByRole('button', { name: 'Sort notes: Newest first', exact: true }).click();
-      await sortMenu.getByRole('menuitemradio', { name: 'Original order', exact: true }).click();
+      // 5. One more click cycles back to Original order
+      await reloadedTrigger.click();
+      await expect(sortTrigger).toHaveAttribute('data-sort', 'original');
       await expect(sortTrigger).toHaveAttribute('aria-label', 'Sort notes: Original order');
       await expect(sortTrigger).not.toHaveClass(/\bactive\b/);
+      assert.equal(await iconMarkup(), originalIcon);
       const restoredOrders = await readOrders(library);
       assert.deepEqual(restoredOrders.grouped.map(n => n.id), ['y-p2', 'y-stale', 'y-p1']);
       assert.deepEqual(restoredOrders.individual.map(n => n.id), ['i-p2', 'i-p1-right', 'i-stale', 'i-p1-left']);

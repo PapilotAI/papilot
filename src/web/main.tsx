@@ -4,7 +4,7 @@ import { requestApi, requestState } from './api.ts';
 import { agentLabel, agentsSettled, chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { annotationGroupState, canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
-import { groupNoteEntries, isNoteSortMode, sortNoteEntries, type NoteSortMode } from '../note-sort.ts';
+import { NOTE_SORT_MODES, groupNoteEntries, isNoteSortMode, sortNoteEntries, type NoteSortMode } from '../note-sort.ts';
 import { GroupCard, GroupInstruction, GroupPicker } from './note-groups.tsx';
 import { SectionNotePicker } from './section-note-picker.tsx';
 import { useNoteSelection } from './note-selection.tsx';
@@ -1013,6 +1013,9 @@ function NotesPanel({ notes, sections = [], pageLayouts, currentKey, active, act
     else browserStorage.setItem(NOTE_SORT_STORAGE, next);
     if (changed) setSortAnnouncement(t('Notes sorted by {order}.', { order: noteSortLabel(next) }));
   };
+  const nextSort = NOTE_SORT_MODES[(NOTE_SORT_MODES.indexOf(sortMode) + 1) % NOTE_SORT_MODES.length];
+  const sortIcon = sortMode === 'position' ? 'sortPosition' : sortMode === 'newest' ? 'clock' : 'sort';
+  const sortLabel = t('Sort notes: {order}', { order: noteSortLabel(sortMode) });
   const indexed = notes.map((note, index) => ({ note, index }));
   const ownNotes = notes.filter(note => !note.aiReview);
   const groups = groupNoteEntries(indexed.filter(({ note }) => !isTaskReviewNote(note)), sortMode, currentKey, pageLayouts);
@@ -1026,14 +1029,9 @@ function NotesPanel({ notes, sections = [], pageLayouts, currentKey, active, act
     <div className="pdf-reading-notes-head">
       <strong>{t('My notes')}</strong>
       <div className="pdf-reading-notes-actions">
-        <ActionMenu label={t('Sort notes: {order}', { order: noteSortLabel(sortMode) })}
-          className={'icon-button notes-sort-trigger' + (sortMode !== 'original' ? ' active' : '')}
-          menuClassName="notes-sort-menu"
-          actions={[
-            { id: 'original', label: t('Original order'), checked: sortMode === 'original', select: () => chooseSort('original') },
-            { id: 'position', label: t('PDF position'), checked: sortMode === 'position', select: () => chooseSort('position') },
-            { id: 'newest', label: t('Newest first'), checked: sortMode === 'newest', select: () => chooseSort('newest') },
-          ]}><Icon name="sort" size={16}/></ActionMenu>
+        <button type="button" className={'icon-button notes-sort-trigger' + (sortMode !== 'original' ? ' active' : '')}
+          data-sort={sortMode} aria-label={sortLabel} title={sortLabel}
+          onClick={() => chooseSort(nextSort)}><Icon name={sortIcon} size={16}/></button>
         {batch && <button type="button" className="icon-button notes-clear-trigger" aria-label={clearLabel} title={clearLabel}
           aria-disabled={clearDisabled} aria-haspopup="dialog" onClick={() => {
             if (!clearDisabled) setClearTarget(batch.uncertain || { document: batch.document, batch: uuid(), ids: clearable.map(note => note.id) });

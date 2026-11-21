@@ -32,6 +32,7 @@ const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode
   stop: <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>,
   updown: <path d="m7 15 5 5 5-5M7 9l5-5 5 5"/>,
   sort: <path d="m4 8.5 3.5-3.5L11 8.5M7.5 5v14M13 15.5 16.5 19 20 15.5M16.5 19V5"/>,
+  sortPosition: <><path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M8 9h4M8 13h3M18 8v11m-3-3 3 3 3-3"/></>,
   more: <><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></>,
   external: <><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></>,
   share: <><path d="M12 3v12M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></>,
