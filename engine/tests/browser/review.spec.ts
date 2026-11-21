@@ -1157,3 +1157,220 @@ test("top-bar change navigator steps between changes and re-centers the current 
   await expect(page.getByRole("button", { name: "Previous change", exact: true })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Next change", exact: true })).toHaveCount(1);
 });
+
+test("clicking individual highlights in a multi-unit card lets you accept one edit and reject another directly on the PDF", async ({ page }) => {
+  const svg = (label: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="40" viewBox="0 0 500 40"><rect width="500" height="40" fill="#fff"/><text x="16" y="25" font-size="14" fill="#111">${label}</text></svg>`;
+  const decisions: Record<string, "pending" | "accepted" | "rejected" | "commented"> = {
+    u1: "pending",
+    u2: "pending",
+  };
+  const decideCalls: { action: string; changes: string[] }[] = [];
+  await page.route("**/files/before.svg", (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: svg("Old first and old second.") }),
+  );
+  await page.route("**/files/before-clean.svg", (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: svg("Old first and old second.") }),
+  );
+  await page.route("**/files/after.svg", (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: svg("New first and new second.") }),
+  );
+  await page.route("**/files/after-clean.svg", (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: svg("New first and new second.") }),
+  );
+  await page.route("**/mixed-files/unit-pick/1/k1/mixed.svg", (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: svg("New first and old second.") }),
+  );
+  const mixedCalls: Array<{ units: string[]; accepted: string[] }> = [];
+  await page.route("**/rounds/1/mixed", async (route) => {
+    const body = route.request().postDataJSON() as { units: string[]; accepted: string[] };
+    mixedCalls.push(body);
+    await route.fulfill({
+      json: {
+        files: "/mixed-files/unit-pick/1/k1/",
+        strips: [
+          {
+            src: "mixed.svg",
+            clean: "mixed.svg",
+            width: 500,
+            height: 40,
+            page: 1,
+            label: "1",
+            top: 100,
+          },
+        ],
+      },
+    });
+  });
+  const statePayload = (extra: Record<string, unknown> = {}) => ({
+    task: "unit-pick",
+    title: "Per-unit PDF decisions",
+    state: "reviewing",
+    latest: 1,
+    round: 1,
+    closed: false,
+    decisions: { ...decisions },
+    comments: {},
+    csrf: "tok",
+    undo: decideCalls.length
+      ? { id: `d-${decideCalls.length}`, kind: decideCalls.at(-1)!.action, changes: decideCalls.at(-1)!.changes }
+      : null,
+    history: [{ number: 1, created: 1700000000 }],
+    ...extra,
+  });
+  await page.route("**/state**", (route) => route.fulfill({ json: statePayload() }));
+  await page.route("**/rounds/1", (route) =>
+    route.fulfill({
+      json: {
+        task: "unit-pick",
+        round: 1,
+        before: "b",
+        after: "a",
+        files: "/files/",
+        warnings: [],
+        units: [
+          {
+            id: "u1",
+            file: "main.tex",
+            status: "modified",
+            kind: "text",
+            whole_file: false,
+            truncated: false,
+            old_start: 10,
+            old_end: 10,
+            new_start: 10,
+            new_end: 10,
+            old_text: "Old first",
+            new_text: "New first",
+            ops: [],
+          },
+          {
+            id: "u2",
+            file: "main.tex",
+            status: "modified",
+            kind: "text",
+            whole_file: false,
+            truncated: false,
+            old_start: 10,
+            old_end: 10,
+            new_start: 10,
+            new_end: 10,
+            old_text: "old second",
+            new_text: "new second",
+            ops: [],
+          },
+        ],
+        sections: [
+          {
+            node: "intro",
+            number: "1",
+            title: "Intro",
+            blocks: [
+              {
+                kind: "change",
+                units: ["u1", "u2"],
+                identical: false,
+                before: [
+                  {
+                    src: "before.svg",
+                    clean: "before-clean.svg",
+                    width: 500,
+                    height: 40,
+                    page: 1,
+                    label: "1",
+                    top: 100,
+                    marks: [
+                      { unit: "u1", kind: "removed", rect: [16, 10, 90, 28] },
+                      { unit: "u2", kind: "removed", rect: [140, 10, 230, 28] },
+                    ],
+                  },
+                ],
+                after: [
+                  {
+                    src: "after.svg",
+                    clean: "after-clean.svg",
+                    width: 500,
+                    height: 40,
+                    page: 1,
+                    label: "1",
+                    top: 100,
+                    marks: [
+                      { unit: "u1", kind: "added", rect: [16, 10, 90, 28] },
+                      { unit: "u2", kind: "added", rect: [140, 10, 230, 28] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        loose: [],
+      },
+    }),
+  );
+  await page.route("**/decide", async (route) => {
+    const body = route.request().postDataJSON() as { action: "accept" | "reject" | "comment"; changes: string[] };
+    decideCalls.push({ action: body.action, changes: body.changes });
+    const nextState = body.action === "accept" ? "accepted" : body.action === "reject" ? "rejected" : "commented";
+    for (const id of body.changes) decisions[id] = nextState;
+    await route.fulfill({ json: statePayload() });
+  });
+
+  await page.route("**/undo", async (route) => {
+    const last = decideCalls.pop();
+    if (last) for (const id of last.changes) decisions[id] = "pending";
+    await route.fulfill({ json: statePayload({ restored: last?.changes ?? [] }) });
+  });
+
+  await page.goto("/?task=unit-pick");
+  const card = page.locator('.change[data-stop="0"]');
+  await expect(card).toBeVisible();
+  // Explicit multi-edit mode: no manual click needed, and only ONE Accept/Reject
+  // control layer inside the card (bound directly to 1 / 2).
+  const group = card.locator(".change-head .unit-focus-group");
+  await expect(group).toBeVisible();
+  await expect(group.locator(".unit-focus-pos")).toHaveText("1 / 2");
+  await expect(card.locator('.pdf-unit-marks g[data-unit="u1"][data-active="true"]')).toHaveCount(2);
+  await expect(card.locator(".block-batch-actions")).toHaveCount(0);
+  await expect(card.locator(".change-head").getByRole("button", { name: "Accept", exact: true })).toHaveCount(1);
+  await page.screenshot({ path: ".cache/plan-b-explicit-multi.png" });
+
+  // Clicking u2 directly on the PDF jumps focus to 2/2; stepping back returns to 1/2.
+  const afterStrip = card.locator(".side.after .pdf-strip");
+  const box = (await afterStrip.boundingBox())!;
+  await page.mouse.move(box.x + (185 / 500) * box.width, box.y + (19 / 40) * box.height);
+  await expect(afterStrip).toHaveAttribute("data-unit-hover", "true");
+  await page.mouse.click(box.x + (185 / 500) * box.width, box.y + (19 / 40) * box.height);
+  await expect(group.locator(".unit-focus-pos")).toHaveText("2 / 2");
+  await group.locator(".unit-focus-step").first().click();
+  await expect(group.locator(".unit-focus-pos")).toHaveText("1 / 2");
+
+  // Accept ONLY u1 inside the 1/2 pill; auto-advances to 2/2.
+  await group.getByRole("button", { name: "Accept", exact: true }).click();
+  await expect.poll(() => decideCalls.length).toBe(1);
+  expect(decideCalls[0]).toEqual({ action: "accept", changes: ["u1"] });
+  expect(mixedCalls).toHaveLength(0);
+  await expect(group.locator(".unit-focus-pos")).toHaveText("2 / 2");
+  await expect(card.locator('.pdf-unit-marks g[data-unit="u1"][data-state="accepted"]')).toHaveCount(2);
+  await expect(card.locator('.pdf-unit-marks g[data-unit="u2"][data-active="true"]')).toHaveCount(2);
+
+  // Reject ONLY u2; block finishes with mixed decisions and triggers ONE mixed compile.
+  await group.getByRole("button", { name: "Reject", exact: true }).click();
+  await expect.poll(() => decideCalls.length).toBe(2);
+  expect(decideCalls[1]).toEqual({ action: "reject", changes: ["u2"] });
+  await expect(group).toHaveCount(0);
+  await expect.poll(() => mixedCalls.length).toBe(1);
+  expect(mixedCalls[0]).toEqual({ units: ["u1", "u2"], accepted: ["u1"] });
+  await expect(card).toHaveAttribute("data-state", "mixed");
+  await expect(card).toHaveAttribute("data-resolved", "mixed");
+  await expect(card.locator(".side.after.mixed-resolved")).toBeVisible();
+  await expect(card.locator(".side.before")).toBeHidden();
+  await expect(card.locator(".side.after:not(.mixed-resolved)")).toBeHidden();
+
+  // Undo restores the Before/After strips immediately.
+  const undoKey = process.platform === "darwin" ? "Meta+z" : "Control+z";
+  await page.keyboard.press(undoKey);
+  await expect(card).not.toHaveAttribute("data-resolved", "mixed");
+  await expect(card.locator(".side.before")).toBeVisible();
+  await expect(card.locator(".side.after:not(.mixed-resolved)")).toBeVisible();
+});

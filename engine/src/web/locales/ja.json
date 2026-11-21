@@ -250,6 +250,7 @@
   "{n} could not be checked": "{n} 件確認不可",
   "{n} differ from their records": "{n} 件がレコードと不一致",
   "{n} differs from its record": "{n} 件がレコードと不一致",
+  "{n} edits": "{n} 件の編集",
   "{n} edits · LaTeX": "{n} 件の編集 · LaTeX",
   "{n} entries changed": "{n} 件のエントリが変更されました",
   "{n} entry changed": "{n} 件のエントリが変更されました",

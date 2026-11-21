@@ -187,6 +187,22 @@ export function sourceComparison(units: Unit[]): RenderedRound {
   };
 }
 
+export async function renderMixed(
+  output: string,
+  request: {
+    main: string;
+    source_dir: string;
+    figures: string[];
+    old: BuildInfo;
+    new: BuildInfo;
+    mixed: { page: number; top: number; height: number; left?: number; width: number }[];
+  },
+  priority: () => BuildPriority = () => "background",
+  signal?: AbortSignal,
+) {
+  await work(output, { ...request, units: [], indirect: false }, priority, signal);
+}
+
 export async function render(
   output: string,
   request: RenderRequest,

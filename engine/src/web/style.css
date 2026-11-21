@@ -646,7 +646,8 @@ kbd {
   color: var(--accent);
 }
 .change[data-resolved="after"] .side.before,
-.change[data-resolved="before"] .side.after:not(.identical) {
+.change[data-resolved="before"] .side.after:not(.identical),
+.change[data-resolved="mixed"] .side:not(.mixed-resolved) {
   display: none;
 }
 .change[data-resolved] .side {
@@ -2067,6 +2068,123 @@ body {
   }
 }
 
-.pdf-focus-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply; }
+.pdf-focus-marks,
+.pdf-unit-marks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+.pdf-strip[data-unit-hover],
+.pdf-strip[data-unit-hover] .pdf-text {
+  cursor: pointer;
+}
+/* Flat, borderless per-edit controls inside the change card header:
+   no white box over the header tint. */
+.unit-focus-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 12px/1 var(--sans);
+}
+.unit-focus-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 3px;
+  background: var(--line-strong, var(--line));
+  flex: none;
+}
+.unit-focus-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+}
+.unit-focus-step:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+.unit-focus-step:disabled {
+  opacity: 0.35;
+}
+.unit-focus-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.unit-focus-pos {
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+.unit-focus-state {
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.unit-focus-state[data-state="accepted"] {
+  color: var(--green);
+}
+.unit-focus-state[data-state="rejected"] {
+  color: var(--red);
+}
+.unit-focus-state[data-state="commented"] {
+  color: var(--accent);
+}
+.unit-focus-group button:is(.accept, .reject, .comment, .unstage) {
+  height: 24px;
+  min-width: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+}
+.change-multi-count {
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
+  flex: none;
+}
+.mixed-compiling {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+@media (pointer: coarse) {
+  .unit-focus-group {
+    height: 36px;
+    padding: 0 3px;
+  }
+  .unit-focus-step {
+    width: 32px;
+    height: 32px;
+  }
+}
 
 .change[data-note-focus] .side { background: transparent; }

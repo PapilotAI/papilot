@@ -59,6 +59,7 @@ export const zhCN: Record<string, string> = {
   "Reject all ({n})": "全部拒绝（{n}）",
   "Accept all": "全部接受",
   "Reject all": "全部拒绝",
+  "{n} edits": "{n} 处修改",
   "Accept {n} undecided change": "接受 {n} 处待定修改",
   "Accept {n} undecided changes": "接受 {n} 处待定修改",
   "Reject {n} undecided change": "拒绝 {n} 处待定修改",

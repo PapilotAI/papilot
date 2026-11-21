@@ -10,7 +10,7 @@ import themeStyles from './theme.css?inline';
 import { syncAppearance } from './appearance.ts';
 import { desktopWindow } from './desktop-chrome.tsx';
 import { language, t, useLanguage } from './i18n.ts';
-import { NoteReviewControls, NoteReviewScope, useNoteResults } from './note-results.tsx';
+import { NoteLinkError, useNoteResults } from './note-results.tsx';
 import { ReviewNoteConnections } from './review-note-connections.tsx';
 import { SHORTCUT_EVENT, useShortcuts } from './shortcuts.ts';
 import { connectWorkspaceKeys } from './workspace-switch.ts';
@@ -52,6 +52,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
        The surrounding toolbar and workspace keep the application's theme. */
     .document{--pdf-filter:var(--review-filter);--pdf-page:var(--review-page);--before:var(--review-before);--after:var(--review-after)}
     .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}
+    :root[data-theme="dark"]:not([data-review-theme="light"]) :is(.pdf-focus-marks,.pdf-unit-marks){mix-blend-mode:screen}
     :root[data-theme="dark"][data-review-theme="light"] :is(.sheet,.paper-page,.document .change){
       color-scheme:light;--bg:#ffffff;--bg-subtle:#fafafa;--bg-muted:#f5f5f5;--bg-hover:#f0f0f0;--bg-active:#e6e6e6;--canvas:#f5f5f5;--raised:#ffffff;
       --text:#1e1e1e;--text-2:#5e5e5e;--text-3:#8f8f8f;
@@ -86,7 +87,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     [data-mode=changes] .change-head .actions .reject{--icon:var(--icon-revert)}
     /* Each edit's own decisions in the LaTeX view use the change bar's icons. */
     .unit-actions button:is(.accept,.reject,.comment,.unstage){display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:5px;background:transparent;color:var(--text);font-size:0;flex:none;transition:background-color .15s}
-    .unit-actions button:is(.accept,.reject,.comment,.unstage)::before{content:"";flex:none;width:16px;height:16px;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
+    .unit-actions button:is(.accept,.reject,.comment,.unstage)::before{content:"";flex:none;width:16px;height:16px;forced-color-adjust:none;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
     .unit-actions .accept{--icon:var(--icon-check)}.unit-actions .reject{--icon:var(--icon-cross)}.unit-actions .comment{--icon:var(--icon-comment)}.unit-actions .unstage{--icon:var(--icon-minus)}
     [data-mode=changes] .unit-actions .reject{--icon:var(--icon-revert)}
     .unit-actions .accept::before{background:var(--green)}.unit-actions .reject::before{background:var(--red)}.unit-actions .comment::before{background:var(--accent)}.unit-actions .unstage::before{background:var(--text-2)}
@@ -101,17 +102,24 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .change-head .actions>.nav:first-child{order:1}.change-head .change-number{order:2}.change-head .actions>.nav:not(:first-child){order:3}
     .change-head .change-number{flex:0 0 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
     .change-head .change-where{order:4;flex:1 1 0;min-width:0;margin-left:4px}
-    .change-head .change-kind,.change-head .badge{order:5;min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+    .change-head .change-kind,.change-head .badge,.change-head .change-multi-count{order:5;min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+    .change-head .change-multi-count{flex:none}
     .change-head .actions>*{order:6}
     .change-head .link{order:7}
+    .change-head .unit-focus-group button:is(.accept,.reject,.comment,.unstage){width:28px;height:28px}
     :root:not([data-papilot-phone]) .change-head .position,:root:not([data-papilot-phone]) .change-head .complete{display:none}
     .change-head .actions .undo:disabled{display:none}
     .change-head .actions .nav{flex:none}
     .change-head .copy-reference{width:28px;padding:0;justify-content:center;font-size:0}
     .change-head .copy-reference::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-copy) center/contain no-repeat;mask:var(--icon-copy) center/contain no-repeat}
+    @container change-tools (max-width:520px){
+      .change-head:has(.unit-focus-group){flex-wrap:wrap;row-gap:4px;padding-block:4px}
+      .change-head:has(.unit-focus-group) .change-kind{display:none}
+    }
     @container change-tools (max-width:360px){
       .change-number-full{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
       .change-number-short{display:inline}
+      .change-head .unit-focus-state{display:none}
     }
     @container change-tools (max-width:280px){
       .change-head{gap:0;padding-inline:2px}
@@ -141,6 +149,10 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       .comparison-action{min-block-size:36px;padding-inline:12px;font-size:13px}
       .change-head .dock{display:flex;position:fixed;z-index:6;left:50%;right:auto;transform:translateX(-50%);width:min(352px,calc(100% - 20px));bottom:calc(max(10px,env(safe-area-inset-bottom)) + var(--papilot-bottom-rail,0px));margin:0;transition:bottom .16s cubic-bezier(.2,0,0,1)}
       .change-head .actions{display:flex;width:100%;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:4px;padding:4px;border-radius:12px;background:var(--raised);box-shadow:var(--shadow-sm)}
+      .change-head .actions:has(.unit-focus-group){flex-wrap:wrap;justify-content:center}
+      .change-head .unit-focus-group{flex:1 1 auto;justify-content:center;height:40px;padding:0 4px}
+      .change-head .unit-focus-step{width:32px;height:36px}
+      .change-head .unit-focus-group button:is(.accept,.reject,.comment,.unstage){width:38px;height:36px;flex:0 0 auto}
       .change-head .actions>*{order:initial!important}
       .change-head .actions button{flex:1 1 auto;min-width:0;height:40px;gap:6px;padding:0 8px;font-size:13px}
       .change-head .actions .nav{display:inline-flex;flex:0 0 36px;width:36px;min-width:36px;height:40px;padding:0}
@@ -208,9 +220,6 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     :root[data-papilot-reader] .paper{--pdf-crop-scale:1;--pdf-crop-shift:0}
     :root[data-papilot-reader][data-papilot-phone] .review-body>#paper{--paper-top:10px;padding:10px 0 132px}
     :root[data-papilot-reader][data-papilot-phone] .paper-page{margin-bottom:10px}
-    /* Extra scroll room keeps even the final edit above the note drawer.
-       The PDF width, pages and line geometry remain untouched. */
-    :root[data-papilot-note-drawer] .review-body>#paper{padding-bottom:calc(90px + var(--papilot-note-inset));scroll-padding-bottom:calc(16px + var(--papilot-note-inset))}
     @container review-bar (max-width:340px){.bar .batch-count{display:none}.bar :is(.accept-all,.reject-all){padding:0 7px}.bar .bar-end{gap:4px}}
   `;
   syncAppearance(window.document.documentElement, doc.documentElement);
@@ -642,9 +651,9 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   }} className={'review-viewport' + (ready ? '' : ' review-pending') + (keepPdf ? ' keeps-pdf' : '')} aria-busy={!ready} aria-hidden={!ready && keepPdf && phase === 'loading' ? true : undefined}>
     <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}:${focusSequence || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound, linkedChange) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
-    {task && ready && <NoteReviewControls doc={document}/>}
+    {task && ready && <NoteLinkError/>}
     <div ref={hostBar} className={'review-host-bar' + (readingPdf ? ' pdf-toolbar' : '')} role={readingPdf ? 'toolbar' : undefined} aria-label={readingPdf ? t('PDF controls') : undefined}>
-      {(lead || readingPdf || noteLinks?.focus) && <div ref={leading} className="review-lead">{lead}{task && ready && <NoteReviewScope/>}{readingPdf && <PdfContents outline={reader?.outline || []} section={reader?.section ?? -1} ready={Boolean(reader)} onSelect={item => readerCommand({ type: 'outline', index: reader!.outline.indexOf(item) })}/>}</div>}
+      {(lead || readingPdf) && <div ref={leading} className="review-lead">{lead}{readingPdf && <PdfContents outline={reader?.outline || []} section={reader?.section ?? -1} ready={Boolean(reader)} onSelect={item => readerCommand({ type: 'outline', index: reader!.outline.indexOf(item) })}/>}</div>}
       <div ref={toolbar} className="review-tools">
         {readingPdf && <PdfPageControls page={reader?.page || 1} pages={reader?.pages || 0} zoom={reader?.zoom || { value: 'page-width', scale: 1 }} onPage={page => readerCommand({ type: 'page', page })} onZoom={value => readerCommand({ type: 'zoom', value })} onZoomBy={factor => readerCommand({ type: 'zoomBy', factor })}/>}
         {readingPdf && <PdfFindButton open={findOpen} onClick={() => findOpen ? closeFind() : setFindOpen(true)}/>}

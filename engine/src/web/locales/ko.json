@@ -250,6 +250,7 @@
   "{n} could not be checked": "{n}개 확인할 수 없음",
   "{n} differ from their records": "{n}개가 기록과 다름",
   "{n} differs from its record": "{n}개가 기록과 다름",
+  "{n} edits": "편집 {n}개",
   "{n} edits · LaTeX": "수정 {n}건 · LaTeX",
   "{n} entries changed": "항목 {n}개 변경됨",
   "{n} entry changed": "항목 {n}개 변경됨",
