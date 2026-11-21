@@ -782,7 +782,8 @@ body.resizing iframe{pointer-events:none}
 .pdf-zoom{padding:0 2px}
 .pdf-toolbar .icon-button{width:28px;height:28px}
 .pdf-toolbar .icon-button.active,.pdf-find .icon-button.active{background:var(--bg-active);color:var(--text)}
-@container (max-width:760px){.pdf-toolbar .pdf-zoom{display:none}}
+@container (max-width:1120px){.review-host-bar.pdf-toolbar .pdf-zoom>.icon-button{display:none}}
+@container (max-width:760px){.pdf-toolbar .pdf-zoom,.review-host-bar.pdf-toolbar .pdf-pager>.icon-button{display:none}}
 @container (max-width:620px){.pdf-pager>.icon-button{display:none}}
 @container (max-width:400px){.pdf-toolbar .pdf-modes>button{padding:0 6px}.pdf-pages{min-width:24px;padding-left:2px}}
 .pdf-find{display:flex;align-items:center;gap:6px;height:40px;padding:0 8px 0 14px;border-bottom:1px solid var(--line);background:var(--bg);flex-shrink:0}

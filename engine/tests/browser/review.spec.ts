@@ -475,7 +475,8 @@ test("a decided change offers no decisions, only the way to the next undecided o
   const first = page.locator(".change.current");
   await first.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(page.getByRole("progressbar", { name: `1 of ${total} decided`, exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "History", exact: true }).click();
+  await expect(page.locator(".bar .history")).toHaveCount(0);
+  await page.goto(`${page.url()}&history=1`);
   const accepted = page.locator('.change[data-state="accepted"]');
   await accepted.click();
   await expect(accepted).toHaveClass(/current/);

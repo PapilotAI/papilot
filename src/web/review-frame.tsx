@@ -127,7 +127,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       .bar .change-nav{display:none}
       .bar .bar-end{flex:1;justify-content:flex-end}
       .bar .meter{margin-right:auto;font-size:13px;font-weight:500}
-      .bar .ghost:not(.history){height:36px;padding:0 10px;font-size:13px}
+      .bar .ghost{height:36px;padding:0 10px;font-size:13px}
       .review-body>#paper{--paper-top:12px;padding:12px 18px calc(136px + var(--papilot-bottom-rail,0px)) 10px}
       .sheet{overflow:hidden}
       .change-map{right:3px;width:10px}
@@ -177,22 +177,22 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .change-head .source-toggle::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-source) center/contain no-repeat;mask:var(--icon-source) center/contain no-repeat}
     :root[data-papilot-phone] .change-head .actions button:is(.accept,.reject,.comment,.unstage,.skip){width:44px;flex:1 1 auto}
     :root[data-papilot-phone] .change-head .actions button:is(.accept,.reject,.comment,.unstage,.skip)::before{width:18px;height:18px}
-    /* History shares the PDF tools' size, at least an icon button's. Shortcut
-       settings live in Papilot. */
-    .bar .ghost.history{width:var(--papilot-button-size,28px);height:var(--papilot-button-size,28px);min-height:0;padding:0;font-size:0;color:var(--text)}
-    .bar .history::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-history) center/contain no-repeat;mask:var(--icon-history) center/contain no-repeat}
     /* Reserve the outer tools' row when there is too little room. Keep
-       progress, navigation, batch counts and history; shorten labels first,
-       then stack cleanly to a second row on narrow panes. */
+       progress, navigation and explicit batch-action labels; drop only the
+       redundant batch count first, then stack cleanly to a second row. */
     .bar{container:review-bar/inline-size;height:auto;gap:8px}
     /* The host's compile button already shows build activity. Keep the phase
        available to screen readers without pushing decisions into another row. */
     :root[data-papilot-build-indicator] .bar .status[data-state="building"]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%)}
-    .bar .accept-all,.bar .reject-all{flex-shrink:0;white-space:nowrap}
-    :root[data-papilot-compact-batch] .bar .batch-label{display:none}
-    :root[data-papilot-compact-batch] .bar .accept-all,:root[data-papilot-compact-batch] .bar .reject-all{padding:0 7px}
-    :root[data-papilot-compact-batch] .bar .bar-end{gap:4px}
-    :root[data-papilot-compact-nav] .bar{gap:6px;padding-left:calc(var(--papilot-lead,0px) + 8px)}
+    .bar .batch-decisions{gap:2px}
+    .bar :is(.accept-all,.reject-all){flex-shrink:0;white-space:nowrap;border-color:transparent;background:transparent;padding:0 8px;gap:5px}
+    .bar :is(.accept-all,.reject-all)::before{width:14px;height:14px;forced-color-adjust:none}
+    .bar .accept-all:hover:not(:disabled){background:var(--green-soft);border-color:transparent}
+    .bar .reject-all:hover:not(:disabled){background:var(--red-soft);border-color:transparent}
+    :root[data-papilot-compact-batch] .bar .batch-count{display:none}
+    :root[data-papilot-compact-batch] .bar :is(.accept-all,.reject-all){padding:0 7px}
+    :root[data-papilot-compact-batch] .bar .bar-end{gap:6px}
+    :root[data-papilot-compact-nav] .bar{gap:6px;padding-left:calc(var(--papilot-lead,0px) + 6px)}
     :root[data-papilot-compact-nav] .bar .change-nav-full{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
     :root[data-papilot-compact-nav] .bar .change-nav-short{display:inline}
     :root[data-papilot-toolbar-stacked] .bar{padding:calc(var(--papilot-bar-height,44px) + var(--papilot-find-height,0px) + 4px) 8px 4px;min-height:calc(var(--papilot-bar-height,44px) + var(--papilot-find-height,0px) + 44px);margin-bottom:0;background:linear-gradient(to bottom,transparent calc(var(--papilot-bar-height,44px) - 1px),var(--line) calc(var(--papilot-bar-height,44px) - 1px),var(--line) var(--papilot-bar-height,44px),transparent var(--papilot-bar-height,44px)),var(--bg)}
@@ -211,8 +211,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     /* Extra scroll room keeps even the final edit above the note drawer.
        The PDF width, pages and line geometry remain untouched. */
     :root[data-papilot-note-drawer] .review-body>#paper{padding-bottom:calc(90px + var(--papilot-note-inset));scroll-padding-bottom:calc(16px + var(--papilot-note-inset))}
-    @container review-bar (max-width:340px){.bar .batch-label{display:none}.bar .accept-all,.bar .reject-all{padding:0 7px}.bar .bar-end{gap:4px}}
-    :root{--icon-history:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12a9 9 0 1 0 2.6-6.4L3 8'/><path d='M3 3v5h5M12 7v5l3 2'/></svg>")}
+    @container review-bar (max-width:340px){.bar .batch-count{display:none}.bar :is(.accept-all,.reject-all){padding:0 7px}.bar .bar-end{gap:4px}}
   `;
   syncAppearance(window.document.documentElement, doc.documentElement);
   style.textContent += taskCommitStyles;
@@ -480,11 +479,11 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
       const extraWidth = undoWidth + statusWidth;
       // Keep stacking independent of transient batch-button visibility so
       // starting a rebuild never jumps the toolbar between one and two rows.
-      const stacked = free - extraWidth < (phone.matches ? 250 : 285);
+      const stacked = free - extraWidth < (phone.matches ? 265 : changesOf ? 245 : 335);
       const available = (stacked ? box.clientWidth : free) - extraWidth;
       root.toggleAttribute('data-papilot-toolbar-stacked', stacked);
-      root.toggleAttribute('data-papilot-compact-batch', available < (phone.matches ? 360 : changesOf ? 370 : 500));
-      root.toggleAttribute('data-papilot-compact-nav', available < 380);
+      root.toggleAttribute('data-papilot-compact-batch', available < (phone.matches ? 420 : changesOf ? 420 : 560));
+      root.toggleAttribute('data-papilot-compact-nav', available < 410);
       host.toggleAttribute('data-toolbar-stacked', stacked);
       // Hidden controls (a collapsed group picker) measure 0px; size the viewer's buttons from a visible one.
       const button = [...toolbar.current?.querySelectorAll<HTMLElement>('.icon-button') ?? []].find(item => item.offsetWidth > 0);

@@ -35,3 +35,49 @@ it('retains paragraph changes, whitespace-sensitive source and formatting withou
   const alone = fixture(old, old, [at, at + 1, '\n', ' ']); alone.sections = [];
   expect(groupFormattingChanges(alone, () => old).loose).toHaveLength(1);
 });
+
+it('folds located identical multi-unit whitespace blocks from sections into context while respecting \\item boundaries', () => {
+  const old = '\\item The first\nword is fast and\nstable.\n\\item Second\nitem stays.\n';
+  const wordAt = old.indexOf('fast'), s1 = old.indexOf('\n'), s2 = old.indexOf('\n', wordAt), s3 = old.indexOf('\n', old.indexOf('Second'));
+  const makeUnit = (id: string, start: number, end: number, old_text: string, new_text: string) => ({
+    id, file: 'main.tex', status: 'modified' as const, kind: 'text' as const, whole_file: false, truncated: false,
+    old_start: 1, old_end: 2, new_start: 1, new_end: 2, old_text, new_text, ops: [],
+    text_ops: [['replace', start, end, start, start + new_text.length] as ['replace', number, number, number, number]],
+  });
+  const strip = {
+    src: 's1-marked.svg',
+    clean: 's1.svg',
+    width: 600,
+    height: 20,
+    page: 1,
+    label: '1',
+    top: 100,
+    marks: [{ unit: 'w1', kind: 'moved' as const, rect: [0, 0, 10, 10] as [number, number, number, number] }],
+  };
+  const detail: RoundDetail = {
+    task: 'task', round: 1, before: old, after: old, files: '', warnings: [],
+    units: [
+      makeUnit('word', wordAt, wordAt + 4, 'fast', 'efficient'),
+      makeUnit('w1', s1, s1 + 1, '\n', ' '),
+      makeUnit('w2', s2, s2 + 1, '\n', ' '),
+      makeUnit('otherItem', s3, s3 + 1, '\n', ' '),
+    ],
+    sections: [{
+      node: 'intro', number: '1', title: 'Intro',
+      blocks: [
+        { kind: 'change', units: ['w1', 'w2'], identical: true, before: [], after: [strip] },
+        { kind: 'change', units: ['word'], identical: false, before: [], after: [] },
+        { kind: 'change', units: ['otherItem'], identical: true, before: [], after: [] },
+      ],
+    }],
+    loose: [],
+  };
+  const grouped = groupFormattingChanges(detail, () => old);
+  expect(grouped.sections[0].blocks[0]).toEqual({
+    kind: 'context',
+    image: { ...strip, src: 's1.svg', marks: undefined },
+  });
+  expect((grouped.sections[0].blocks[1] as ChangeBlock).units).toEqual(['word', 'w1', 'w2']);
+  // The wrap in the next \item stays separate instead of crossing an item boundary.
+  expect((grouped.sections[0].blocks[2] as ChangeBlock).units).toEqual(['otherItem']);
+});

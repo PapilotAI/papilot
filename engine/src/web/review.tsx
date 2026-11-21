@@ -1983,21 +1983,6 @@ export function ReviewApp({
               {t("Undo revert")}
             </button>
           )}
-          {/* History is a toolbar action; its own row appears only while
-              browsing earlier decisions. */}
-          {detail && !history && !changes && (
-            <button
-              type="button"
-              className="ghost history"
-              title={t("Review history")}
-              onClick={() => {
-                setHistory(true);
-                if (current < 0 && stops.length) setCurrent(0);
-              }}
-            >
-              {t("History")}
-            </button>
-          )}
           <button
             type="button"
             className="ghost round"
@@ -2141,6 +2126,17 @@ export function ReviewApp({
                 )}
               </span>
               {/* A host such as Papilot puts its next step here, for example a commit. */}
+              <button
+                type="button"
+                className="ghost history"
+                title={t("Review history")}
+                onClick={() => {
+                  setHistory(true);
+                  if (current < 0 && stops.length) setCurrent(0);
+                }}
+              >
+                {t("History")}
+              </button>
               <div className="review-complete-actions" />
             </div>
           )}

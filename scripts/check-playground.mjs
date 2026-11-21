@@ -469,8 +469,9 @@ try {
     await expect(comparison.locator('.change')).toHaveCount(mathBlocks);
     await clarity.locator('.task-link').click();
     await expect(comparison.locator('.reviewed-change')).toHaveCount(1);
-    await comparison.getByRole('button', { name: 'History', exact: true }).click();
-    await comparison.locator('button.undo').click();
+    await expect(comparison.locator('.bar .history')).toHaveCount(0);
+    await comparison.locator('#paper').focus();
+    await tab.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
     await expect(clarity.locator('.task-badge')).toHaveText('2');
     await temporary.close();
   }

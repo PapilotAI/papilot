@@ -140,8 +140,76 @@ function wordEdits(before: string, after: string): Op[] {
   }
   const left = offsets(a),
     right = offsets(b),
-    ops = opcodesWithin(a, b, 100);
-  if (!ops) return [["replace", 0, before.length, 0, after.length]];
+    hasInteriorNewline = (s: string) => /\S[\s\S]*\n[\s\S]*\S/.test(s);
+  let ops: Op[];
+  if (hasInteriorNewline(before) || hasInteriorNewline(after)) {
+    // Keep blank-line paragraph breaks (\n\n / \r\n\r\n) anchored as non-space
+    // tokens so edits in separate paragraphs or headings never merge across them.
+    const isSpace = (token: string) =>
+        /^\s+$/.test(token) && !/\r?\n[ \t]*\r?\n/.test(token),
+      aWords: number[] = [],
+      bWords: number[] = [];
+    a.forEach((token, index) => { if (!isSpace(token)) aWords.push(index); });
+    b.forEach((token, index) => { if (!isSpace(token)) bWords.push(index); });
+    // Match non-whitespace tokens first when a changed region spans multiple
+    // lines so prose line rewrapping (" " <-> "\n") alongside a real edit never
+    // turns unchanged words into delete+insert pairs.
+    const wordOps = opcodesWithin(
+      aWords.map((index) => a[index]),
+      bWords.map((index) => b[index]),
+      100,
+    );
+    if (!wordOps) return [["replace", 0, before.length, 0, after.length]];
+    ops = [];
+    const pushOp = (tag: Op[0], i: number, j: number, x: number, y: number) => {
+      if (i === j && x === y) return;
+      const prev = ops.at(-1);
+      if (tag === "equal" && prev?.[0] === "equal" && prev[2] === i && prev[4] === x) {
+        prev[2] = j;
+        prev[4] = y;
+        return;
+      }
+      if (tag !== "equal" && prev && prev[0] !== "equal" && prev[2] === i && prev[4] === x) {
+        prev[2] = j;
+        prev[4] = y;
+        prev[0] = prev[1] < prev[2] && prev[3] < prev[4] ? "replace" : prev[1] < prev[2] ? "delete" : "insert";
+        return;
+      }
+      ops.push([tag, i, j, x, y]);
+    };
+    const emitSpan = (i: number, j: number, x: number, y: number) => {
+      while (i < j && x < y && a[i] === b[x]) {
+        pushOp("equal", i, i + 1, x, x + 1);
+        i++;
+        x++;
+      }
+      let tail = 0;
+      while (j - tail > i && y - tail > x && a[j - 1 - tail] === b[y - 1 - tail]) tail++;
+      const endI = j - tail,
+        endY = y - tail;
+      if (i < endI || x < endY)
+        pushOp(i === endI ? "insert" : x === endY ? "delete" : "replace", i, endI, x, endY);
+      if (tail) pushOp("equal", endI, j, endY, y);
+    };
+    let ai = 0,
+      bi = 0;
+    for (const [tag, wi, wj, wx, wy] of wordOps) {
+      if (tag !== "equal") continue;
+      for (let k = 0; k < wj - wi; k++) {
+        const ta = aWords[wi + k],
+          tb = bWords[wx + k];
+        emitSpan(ai, ta, bi, tb);
+        pushOp("equal", ta, ta + 1, tb, tb + 1);
+        ai = ta + 1;
+        bi = tb + 1;
+      }
+    }
+    emitSpan(ai, a.length, bi, b.length);
+  } else {
+    const rawOps = opcodesWithin(a, b, 100);
+    if (!rawOps) return [["replace", 0, before.length, 0, after.length]];
+    ops = rawOps;
+  }
   const meaningful = (tokens: string[], from: number, to: number) => {
     let count = 0;
     for (let k = from; k < to; k++) if (/[\p{L}\p{N}\\{}$]/u.test(tokens[k])) count++;

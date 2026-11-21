@@ -159,7 +159,7 @@ try {
   const dragRegions = () => desktop.evaluate(() => {
     const host = document.querySelector('.review-host-bar'), frame = document.querySelector('.review-frame'), offset = frame.getBoundingClientRect();
     const holes = [...host.querySelectorAll('.review-bar-hole')].filter(hole => getComputedStyle(hole).getPropertyValue('-webkit-app-region') === 'no-drag').map(hole => hole.getBoundingClientRect());
-    const controls = [...frame.contentDocument.querySelectorAll('.bar :is(.accept-all,.reject-all,.history)')].map(control => {
+    const controls = [...frame.contentDocument.querySelectorAll('.bar :is(.accept-all,.reject-all)')].map(control => {
       const box = control.getBoundingClientRect(), left = offset.left + box.left, top = offset.top + box.top, right = offset.left + box.right, bottom = offset.top + box.bottom;
       const covered = holes.some(hole => hole.left <= left && hole.right >= right && hole.top <= top && hole.bottom >= bottom);
       // The holes take no clicks: the button under each still gets them.
@@ -168,7 +168,8 @@ try {
     });
     return `${getComputedStyle(host).getPropertyValue('-webkit-app-region')}: ${controls.join(' · ')}`;
   });
-  await expect.poll(dragRegions).toBe('drag: Accept all (4) · Reject all (4) · History');
+  await expect.poll(dragRegions).toBe('drag: Accept all (4) · Reject all (4)');
+  await expect(desktop.frameLocator('.review-frame').locator('.bar .history')).toHaveCount(0);
   await desktop.close();
   // Ordinary edits fold their knock-on changes; source-only and visually
   // unchanged definitions retain the PDF evidence needed to review them.
@@ -253,11 +254,17 @@ try {
     await viewer().locator('.change.current button.' + decision).click();
     await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '1');
     await sync(); await wheelReview();
-    await viewer().getByRole('button', { name: 'History', exact: true }).click();
     if (decision === 'reject') {
       await page.locator('.review-host-bar button:visible:enabled').first().press('Control+z');
       await expect.poll(() => rounds[1].first).toBe('pending');
-    } else await viewer().getByRole('button', { name: 'Undo last decision', exact: true }).click();
+    } else {
+      await viewer().locator('body').evaluate(() => {
+        const url = new URL(location.href);
+        url.searchParams.set('history', '1');
+        location.href = url.toString();
+      });
+      await viewer().getByRole('button', { name: 'Undo last decision', exact: true }).click();
+    }
     await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '0');
   }
   // The review scrolls natively: nothing in it cancels wheel events, which
@@ -387,18 +394,18 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await expect(viewer().locator('.change.current button.accept')).toHaveAttribute('aria-keyshortcuts', 'a');
   console.log('PASS: Shortcut settings, conflicts, reassignment, persistence, typing and selection guards, help navigation, reset, and mobile layout');
-  // Accept all and Reject all stay on one line and clear of Papilot's PDF
-  // tools; a narrow split pane shows each icon with its count.
+  // Accept all and Reject all stay on one line, keep their explicit labels
+  // visible, and remain clear of Papilot's PDF tools.
   const batch = () => viewer().locator('.bar').evaluate(bar => {
     const room = bar.getBoundingClientRect().right - parseFloat(getComputedStyle(bar).paddingRight);
-    return [...bar.querySelectorAll('.accept-all,.reject-all,.history')].map(button => {
+    return [...bar.querySelectorAll('.accept-all,.reject-all')].map(button => {
       const box = button.getBoundingClientRect(), label = button.querySelector('.batch-label');
       return `${button.getAttribute('aria-label') || button.textContent}${box.height <= 36 ? '' : ' wraps'}${box.right <= room + 0.5 ? '' : ' under the tools'}${label && getComputedStyle(label).display === 'none' ? ' icon' : ''}`;
     }).join(' · ');
   });
   for (const width of [1440, 1100, 1000, 900]) {
     await page.setViewportSize({ width, height: 1000 });
-    await expect.poll(batch).toMatch(/^Accept all \(4\)(?: icon)? · Reject all \(4\)(?: icon)? · History$/);
+    await expect.poll(batch).toBe('Accept all (4) · Reject all (4)');
     await expect(viewer().getByRole('progressbar')).toBeInViewport();
     await expect.poll(() => viewer().locator('.change.current .dock').evaluate(el => getComputedStyle(el).position)).not.toBe('fixed');
   }
@@ -448,7 +455,7 @@ try {
     await expect(viewer().getByRole('progressbar')).toBeInViewport();
     await expect(viewer().getByRole('button', { name: 'Previous change', exact: true })).toBeInViewport();
     await expect(viewer().getByRole('button', { name: 'Next change', exact: true })).toBeInViewport();
-    await expect(viewer().getByRole('button', { name: 'History', exact: true })).toBeInViewport();
+    await expect(viewer().locator('.bar .history')).toHaveCount(0);
     await expect(page.locator('.review-tools .review-rebuild')).toBeInViewport();
     await expect.poll(() => viewer().locator('.change.current .dock').evaluate(el => getComputedStyle(el).position)).toBe('fixed');
     assert.equal(await viewer().locator('#paper').evaluate(el => el.scrollWidth > el.clientWidth + 1), false);
@@ -512,7 +519,7 @@ try {
   await expect(viewer().locator('.change-head:visible')).toHaveCount(0);
   await viewer().getByRole('button', { name: 'History', exact: true }).click();
   await viewer().getByRole('button', { name: 'Undo last decision', exact: true }).click();
-  await expect(viewer().getByRole('button', { name: 'History', exact: true })).toBeVisible();
+  await expect(viewer().locator('.bar .history')).toHaveCount(0);
   await expect(viewer().locator('.change-head:visible')).toHaveCount(1);
   await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '2');
   // Mixed decisions cannot be shown as an entirely accepted or rejected PDF strip.
@@ -723,7 +730,7 @@ try {
   await expect(taskStatus).toHaveText('Ready for review');
   assert.doesNotMatch(await viewer().locator('body').innerText(), /Round \d+/);
   await expect(viewer().locator('.change-head:visible')).toHaveCount(1);
-  await viewer().getByRole('button', { name: 'History', exact: true }).click();
+  await viewer().locator('body').evaluate(() => { location.href = '?task=flow&round=2&history=1'; });
   assert.doesNotMatch(await viewer().getByLabel('Review history').innerText(), /Round \d+/);
   await expect(viewer().getByLabel('Review history').locator('option[value="1"]')).toContainText('2026');
   await viewer().getByLabel('Review history').selectOption('1');

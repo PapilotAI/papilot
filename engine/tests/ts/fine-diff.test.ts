@@ -73,6 +73,57 @@ it("keeps prose line rewrapping together without exposing unchanged words as del
   expect(revertUnits(Buffer.from(old), Buffer.from(next), units)?.toString()).toBe(old);
 });
 
+it("does not turn unchanged words into delete+insert edits when prose rewraps next to a substantive edit", () => {
+  const old = [
+    "\\item {\\bfseries A declarative bidirectional type system} with predicative implicit",
+    "bounded quantification and impredicative explicit",
+    "type applications. The declarative type system guesses monotypes.",
+    "Monotypes are unconventional in that they require a non-syntactic",
+    "formulation due to the presence of \\mbox{bounds in type variables.}",
+    "",
+  ].join("\n");
+  const next = [
+    "\\item {\\bfseries A declarative bidirectional type system} with predicative",
+    "implicit bounded quantification and impredicative explicit type",
+    "applications. The declarative type system guesses monotypes using a",
+    "non-syntactic formulation that depends on type-variable bounds.",
+    "",
+  ].join("\n");
+  f.write(METHOD, old);
+  const before = f.repo.snapshot(["paper"]);
+  f.write(METHOD, next);
+  const after = f.repo.snapshot(["paper"]),
+    units = diffUnits(f.repo, before, after),
+    substantive = units.filter((u) => !(/^[\t \r\n]+$/.test(u.old_text) && /^[\t \r\n]+$/.test(u.new_text)));
+  // Only the rewritten clauses around unchanged "a non-syntactic formulation"
+  // are substantive; rewrapped "implicit" and "type" stay untouched.
+  expect(substantive).toHaveLength(2);
+  for (const unit of substantive) {
+    expect(unit.old_text).not.toContain("implicit");
+    expect(unit.new_text).not.toContain("implicit");
+    expect(unit.old_text).not.toContain("applications");
+    expect(unit.new_text).not.toContain("applications");
+  }
+  expect(applyUnits(Buffer.from(old), Buffer.from(next), units)?.toString()).toBe(next);
+  expect(revertUnits(Buffer.from(old), Buffer.from(next), units)?.toString()).toBe(old);
+
+  // Blank-line paragraph boundaries stay anchored even when adjacent tokens on both sides change.
+  const headingAndPara = textEdits(
+    "\\section{Old Title}\n\nFirst sentence stays.\n",
+    "\\section{New Title}\n\nSecond sentence stays.\n",
+  );
+  expect(headingAndPara).toHaveLength(2);
+  const crlfAdj = textEdits(
+    "First alpha beta\r\n\r\nSecond gamma delta.\r\n",
+    "First one two\r\n\r\nThird three four.\r\n",
+  );
+  expect(crlfAdj).toHaveLength(2);
+  // A single line followed by a trailing blank line stays a single-line diff.
+  expect(
+    textEdits("Method sentence 2.\n\n", "Accepted manuscript sentence.\n\n"),
+  ).toHaveLength(1);
+});
+
 it("applies insertions and deletions precisely, while older line-based units still work", () => {
   const old = "A quick model is very useful.\r\nUnchanged.\r\n",
     next = "A new quick model is useful.\r\nUnchanged.\r\n";

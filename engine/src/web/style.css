@@ -197,19 +197,17 @@ kbd {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  height: 28px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
-  overflow: hidden;
+  gap: 2px;
 }
 .change-nav .ghost {
-  height: 26px;
+  min-block-size: 28px;
+  height: 28px;
   border: 0;
-  border-radius: 0;
+  border-radius: 5px;
   color: var(--text-2);
 }
 .change-nav .nav {
+  min-inline-size: 26px;
   width: 26px;
   padding: 0;
 }
@@ -227,13 +225,13 @@ kbd {
   stroke-linejoin: round;
 }
 .change-nav .change-nav-position {
-  padding: 0 7px;
+  min-inline-size: 28px;
+  padding: 0 6px;
   gap: 0;
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-  border-inline: 1px solid var(--line);
 }
 .change-nav-short {
   display: none;
