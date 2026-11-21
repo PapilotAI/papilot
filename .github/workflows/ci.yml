@@ -385,6 +385,8 @@ jobs:
             test-results/anchors-*.png
             test-results/bulk-tasks-*.png
             test-results/task-pins-*.png
+            test-results/note-groups-*.png
+            test-results/note-return-*.png
             test-results/pdf-tools-note-open.png
             test-results/typeless-*.png
             test-results/in-flight-marks/*.png

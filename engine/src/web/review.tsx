@@ -904,7 +904,7 @@ export function ReviewApp({
       setState(next);
       setQueued(remaining);
       // The host refreshes what depends on the decision, such as Git status.
-      window.dispatchEvent(new CustomEvent("papilot:review:decided", { detail: { noteReturns: (next as PageState & { noteReturns?: unknown }).noteReturns } }));
+      window.dispatchEvent(new CustomEvent("papilot:review:decided", { detail: { decision: entry.id, noteReturns: (next as PageState & { noteReturns?: unknown }).noteReturns } }));
       if (entry.draft) store(entry.draft, "");
       if (!remaining.length) {
         if (entry.done) setToast(entry.done);
@@ -962,7 +962,7 @@ export function ReviewApp({
         id: last.id,
       });
       setState(next);
-      window.dispatchEvent(new CustomEvent("papilot:review:decided", { detail: { noteReturns: next.noteReturns } }));
+      window.dispatchEvent(new CustomEvent("papilot:review:decided", { detail: { undone: last.id, noteReturns: next.noteReturns } }));
       // An undo of an earlier round's accept inserted the next round.
       if (next.latest !== snapshot.current.detail?.round) pollNow.current();
       const target = stops.findIndex((s) =>

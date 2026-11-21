@@ -446,7 +446,7 @@ try {
   assert.deepEqual(await flights(), [outward]);
   failUndo = false;
   await toggle(controls()).focus();
-  await page.keyboard.press('Space');
+  await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(flights).toEqual([outward, ['reverse', ...card]]);
   await expect(toggle(controls())).toHaveAccessibleName('Note 2 · Return to manuscript');
   await expect(toggle(controls()).locator('svg:visible path').last()).toHaveAttribute('d', check);
@@ -454,7 +454,8 @@ try {
   await expect(controls().getByRole('alert')).toHaveCount(0);
   await expect(count()).toHaveText('0');
   await page.screenshot({ path: 'test-results/note-return-mobile.png', animations: 'disabled' });
-  await takeBack(controls());
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect(count()).toHaveText('1');
   assert.equal(taskWrites.length, 0, 'Returning a note leaves the task unsent');
   await page.evaluate(() => localStorage.setItem('papilot:selected-notes', JSON.stringify({ paper: ['returned-rejected'] })));
   await page.reload();

@@ -20,6 +20,14 @@ export function regroupAnnotation<T extends { group?: NoteGroup; groupInstructio
   }
   return next;
 }
+export function sameAnnotationGroup(note: { group?: NoteGroup | null; groupInstruction?: string }, other: { group?: NoteGroup | null; groupInstruction?: string }) {
+  return (note.group ? canonicalGroup(note.group) : null) === (other.group ? canonicalGroup(other.group) : null)
+    && (note.groupInstruction || '') === (other.groupInstruction || '');
+}
+export function annotationGroupState(note: { id: string; createdAt: number; group?: NoteGroup; groupInstruction?: string }) {
+  const { id, createdAt, group, groupInstruction } = note;
+  return { id, createdAt, group: group ?? null, groupInstruction };
+}
 export function parseGroupInstructions(value: unknown): GroupInstructions {
   if (value === undefined) return {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Use valid instructions for each color group.');

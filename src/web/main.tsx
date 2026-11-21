@@ -3,12 +3,12 @@ import { TaskDocument } from './task-document.tsx';
 import { requestApi, requestState } from './api.ts';
 import { agentLabel, agentsSettled, chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
-import { canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
+import { annotationGroupState, canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { GroupCard, GroupInstruction, GroupPicker } from './note-groups.tsx';
 import { SectionNotePicker } from './section-note-picker.tsx';
 import { useNoteSelection } from './note-selection.tsx';
 import { ClearAnnotationsDialog } from './clear-annotations-dialog.tsx';
-import { useGroupInstructions } from './group-instructions.ts';
+import { useGroupInstructions, type GroupDraftChange } from './group-instructions.ts';
 import { markText, NoteQuote, SubmittedNoteContent } from './note-content.tsx';
 import { NoteAttachButton, NoteEditButton, PdfNoteCard, TaskRemoveButton } from './pdf-suggestion.tsx';
 import { StrictMode, Suspense, lazy, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -18,14 +18,14 @@ import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { aiReviewSummary, isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
 import { AGENT_IDS, isAgentId, isTaskReviewNote, taskFinished } from '../shared.ts';
-import type { TaskCommitReview, CompilerChoice, LatexInstallation, AgentId, Annotation, AnnotationBatch, AnnotationBatchResult, NoteSection, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
+import type { TaskCommitReview, CompilerChoice, LatexInstallation, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { reviewDraft, useReviewDraft, reviewNoteSummary, reviewSubmission } from './review-draft.ts';
 import { ReviewDraftCards } from './review-draft-cards.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, pendingReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
 import { AttachmentDraft, attachmentDrafts, type UploadAttachment } from './attachment-draft.ts';
-import type { Attachment, CollaborationSettings as CollaborationSettingsState, NoteReturnReceipt, NoteReturnState, RemovedNoteReturn } from '../shared.ts';
+import type { Attachment, CollaborationSettings as CollaborationSettingsState, NoteResult, NoteReturnReceipt, NoteReturnState, RemovedNoteReturn } from '../shared.ts';
 import { noteLocation } from './note-location.ts';
 import { ReadRequest, canStreamUpdates, mergeTimeline, visibleTimeline } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -90,7 +90,7 @@ import { TaskFlight, type TaskFlightData } from './task-flight.tsx';
 import { returnNotes } from './note-flight.ts';
 import { UsageSummary, type RefreshUsage } from './usage.tsx';
 import { useNoteUndo } from './use-note-undo.ts';
-import { NoteResultsProvider, NoteReturnAction, NoteReturnError, useNoteResults } from './note-results.tsx';
+import { NOTE_RETURN_HISTORY, NoteResultsProvider, NoteReturnAction, NoteReturnError, useNoteResults } from './note-results.tsx';
 import { usePanelWidth } from './panel-width.tsx';
 import { RepositoryFilesMenu } from './repository-files.tsx';
 import { OverleafLinkDialog, OverleafPanel, OverleafRow } from './overleaf.tsx';
@@ -828,7 +828,21 @@ const manuscriptDocument = (data: Manuscript | null) => data?.document ?? data?.
 
 type NoteChange = { note: Annotation; selected?: boolean } & ({ kind: 'add' | 'remove' } | { kind: 'edit'; comment: string } | { kind: 'group'; group: NoteGroup | null });
 type ClearedNotes = { kind: 'clear'; target: AnnotationBatch; selected: string[] };
-type AnnotationChange = NoteChange | ClearedNotes;
+type RegroupedNotes = { kind: 'groups'; before: AnnotationGroupState[]; after: AnnotationGroupState[]; draft?: GroupDraftChange };
+type ReturnedNoteChange = { kind: 'return'; taskId: string; original: NoteResult; copyId: string; createdAt: number; time: number; replay?: string };
+type AnnotationChange = NoteChange | ClearedNotes | RegroupedNotes | ReturnedNoteChange;
+function keepAnnotationChange(entry: AnnotationChange, removed: Set<string>) {
+  if (entry.kind === 'groups') {
+    entry.before = entry.before.filter(edit => !removed.has(edit.id));
+    entry.after = entry.after.filter(edit => !removed.has(edit.id));
+    return entry.before.length > 0;
+  }
+  if (entry.kind === 'return') return !removed.has(entry.copyId);
+  if (entry.kind !== 'clear') return !removed.has(entry.note.id);
+  entry.target.ids = entry.target.ids.filter(id => !removed.has(id));
+  entry.selected = entry.selected.filter(id => !removed.has(id));
+  return entry.target.ids.length > 0;
+}
 interface NoteActions {
   history?: PdfHistoryActions;
   batch?: {
@@ -847,6 +861,7 @@ interface NoteActions {
   add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup, options?: { reveal?: boolean; quote?: boolean; kind?: MarkKind; stamp?: string; key?: string }) => Promise<void>;
   edit: (note: Annotation, comment: string) => Promise<void>;
   regroup: (note: Annotation, group: NoteGroup | null) => Promise<void>;
+  regroupMany: (notes: Annotation[], group: NoteGroup | null) => Promise<void>;
   remove: (note: Annotation) => Promise<void>;
   restore: (note: Annotation) => Promise<void>;
   onEditing: (editing: boolean) => void;
@@ -936,6 +951,16 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
       if (document.activeElement === document.body) panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(note.id)}"] .group-select`)?.focus({ preventScroll: true });
     });
   }
+  async function regroupMany(members: Annotation[], group: NoteGroup | null) {
+    const panel = document.activeElement?.closest('.notes-panel, .task-notes-panel');
+    await change(members[0], () => actions.regroupMany(members, group));
+    if (panel) requestAnimationFrame(() => {
+      if (document.activeElement !== document.body) return;
+      const row = panel.querySelector(`[data-note="${CSS.escape(members[0].id)}"]`);
+      (row?.closest('.annotation-group')?.querySelector<HTMLButtonElement>('.group-header .group-select') ||
+        row?.querySelector<HTMLButtonElement>('.group-select'))?.focus({ preventScroll: true });
+    });
+  }
   const card = (note: Annotation, index: number, { currentKey, active, inTask, onShow, onToggle }: { currentKey?: string; active?: string; inTask?: boolean; onShow: (note: Annotation) => void; onToggle: () => void }) => <li key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} className={(note.aiReview ? 'review-suggestion ' : '') + (active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
     <PdfNoteCard inline inTask={inTask} note={note} number={index + 1} index={0} total={1} selected={actions.selection.has(note.id)} busy={actions.sending || busyNotes.some(item => item.id === note.id)} error={errors[note.id] || ''}
       draft={drafts[note.id]?.value ?? null} onDraftChange={value => { draft(note.id, value); if (value !== null && drafts[note.id] === undefined) clearError(note.id); }}
@@ -945,7 +970,7 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
       {note.key !== currentKey && <NotePlacementWarning/>}
     </PdfNoteCard>
   </li>;
-  return { editing, busy, errors, dismissed, saveAll, remove, regroup, undo, drafts, editGrouped, forget: () => setDismissed(current => current && inProject(current) ? null : current), card };
+  return { editing, busy, errors, dismissed, saveAll, remove, regroup, regroupMany, undo, drafts, editGrouped, forget: () => setDismissed(current => current && inProject(current) ? null : current), card };
 }
 
 function useSaveNotesOnLeave(save: () => Promise<boolean>) {
@@ -993,14 +1018,16 @@ function NotesPanel({ notes, sections = [], currentKey, active, actions, onShow,
     {(ownNotes.length > 0 || groups.length > 0) && <section className="note-section" aria-label={t('My notes')}>
     {groups.map(({ group, entries }) => {
       const count = entries.filter(({ note }) => actions.selection.has(note.id)).length;
-      return <GroupCard key={group} group={group} count={entries.length} active={actions.group === group || entries.some(({ note }) => note.id === active)} selection={{ count, disabled: selectionLocked, toggle: () => actions.selection.set(entries.map(({ note }) => note.id), count !== entries.length) }}>
+      return <GroupCard key={group} group={group} count={entries.length} onRegroup={next => void cards.regroupMany(entries.map(({ note }) => note), next)} regroupDisabled={selectionLocked} active={actions.group === group || entries.some(({ note }) => note.id === active)} selection={{ count, disabled: selectionLocked, toggle: () => actions.selection.set(entries.map(({ note }) => note.id), count !== entries.length) }}>
       <ol className="group-references">{entries.map(({ note, index }) => cards.drafts[note.id] ? renderNote(note, index) : <li className={'group-location note-card' + (note.id === active ? ' active' : '')} key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)}>
         <button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button>
         <div className="group-location-target"><blockquote>{note.quote || t('Marked region')}</blockquote>{(note.comment || note.kind === 'delete') && <p className="task-note-comment">{markText(note)}</p>}<span>{noteWhere(note)}</span>{note.key !== currentKey && <NotePlacementWarning/>}</div>
-        <NoteEditButton grouped number={index + 1} disabled={selectionLocked} onEdit={event => cards.editGrouped(note, event.currentTarget)}/>
-        <GroupPicker forNote value={note.group ?? null} onChange={next => void cards.regroup(note, next)} disabled={selectionLocked}/>
-        <button type="button" className="icon-button group-location-remove" aria-label={t('Delete note {n}', { n: index + 1 })} disabled={locked} onClick={() => void cards.remove(note)}><Icon name="trash" size={14}/></button>
-        {selectCard(note, index)}
+        <div className="group-note-tools">
+          <GroupPicker forNote value={note.group ?? null} onChange={next => void cards.regroup(note, next)} disabled={selectionLocked}/>
+          <NoteEditButton grouped number={index + 1} disabled={selectionLocked} onEdit={event => cards.editGrouped(note, event.currentTarget)}/>
+          <button type="button" className="icon-button group-location-remove" aria-label={t('Delete note {n}', { n: index + 1 })} disabled={locked} onClick={() => void cards.remove(note)}><Icon name="trash" size={14}/></button>
+          {selectCard(note, index)}
+        </div>
       </li>)}</ol>
     </GroupCard>; })}
     <ol className="note-list">{notes.map((note, index) => !note.aiReview && !note.group && renderNote(note, index))}</ol>
@@ -1036,8 +1063,8 @@ function TaskNotes({ notes, currentKey, actions, onShow, controller, cards, head
   // Show each selected passage with its individual comment and group context.
   const reference = (note: Annotation, index: number) => cards.drafts[note.id] ? cards.card(note, index, { currentKey, inTask: true, onShow, onToggle: () => putBack([note]) }) : <li key={note.id} data-note={note.id} className="task-note-reference">
     <div className="note-head"><button type="button" className="note-number" aria-label={note.aiReview ? t('Show suggestion {n} on the page', { n: index + 1 }) : t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}</span>{!isTaskReviewNote(note) && <>
-      <NoteEditButton grouped number={index + 1} disabled={selectionLocked} onEdit={event => cards.editGrouped(note, event.currentTarget)}/>
       <GroupPicker forNote value={note.group ?? null} disabled={selectionLocked} onChange={next => void cards.regroup(note, next)}/>
+      <NoteEditButton grouped number={index + 1} disabled={selectionLocked} onEdit={event => cards.editGrouped(note, event.currentTarget)}/>
     </>}<TaskRemoveButton number={index + 1} ai={Boolean(note.aiReview)} disabled={selectionLocked} onClick={() => putBack([note])}/></div>
     <NoteQuote text={note.quote} kind={note.kind}/>
     {(note.comment || note.kind === 'delete' || note.stamp) && <p className="task-note-comment">{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{markText(note)}</p>}
@@ -1051,7 +1078,7 @@ function TaskNotes({ notes, currentKey, actions, onShow, controller, cards, head
     {noteGroups(notes).map(({ group, entries }) => {
       const selected = entries.filter(({ note }) => actions.selection.has(note.id));
       const selectedNotes = selected.map(({ note }) => note);
-      return selected.length > 0 && <GroupCard key={group} group={group} count={selected.length}>
+      return selected.length > 0 && <GroupCard key={group} group={group} count={selected.length} onRegroup={selectedNotes.every(note => !isTaskReviewNote(note)) ? next => void cards.regroupMany(selectedNotes, next) : undefined} regroupDisabled={selectionLocked}>
         <GroupInstruction group={group} value={actions.instructions.get(group, selectedNotes)} disabled={actions.sending} onChange={value => actions.instructions.set(group, value, selectedNotes)}/>
         <ol className="task-note-list">{selected.map(({ note, index }) => reference(note, index))}</ol>
       </GroupCard>;
@@ -1342,6 +1369,7 @@ function App() {
   const [activeNote, setActiveNote] = useState('');
   const lastReturned = useRef(new Map<string, Annotation>());
   const seenReturns = useRef(new Map<string, number>());
+  const returnClicks = useRef(new Map<string, string>());
   function rememberReturn(copy: Annotation) {
     if ((seenReturns.current.get(copy.id) ?? -1) >= copy.createdAt) return false;
     seenReturns.current.set(copy.id, copy.createdAt);
@@ -1357,10 +1385,18 @@ function App() {
   const annotationHistory = useRef({ projectId, undo: [] as AnnotationChange[], redo: [] as AnnotationChange[], busy: false, uncertain: new Map<string | null, AnnotationBatch>() });
   if (annotationHistory.current.projectId !== projectId) annotationHistory.current = { projectId, undo: [], redo: [], busy: false, uncertain: new Map() };
   const history = annotationHistory.current;
+  const reviewUndoOrder = useRef(new Map<string, Map<string, number>>());
+  function recordReviewOperation(decision?: string, undone?: string) {
+    if (!task || (!decision && !undone)) return;
+    const actions = reviewUndoOrder.current.get(task.id) ?? new Map<string, number>();
+    if (decision && !actions.has(decision)) actions.set(decision, Date.now());
+    if (undone) actions.delete(undone);
+    reviewUndoOrder.current.set(task.id, actions);
+  }
   const [, refreshHistory] = useState(0);
   const historyChanged = () => { if (annotationHistory.current === history) refreshHistory(value => value + 1); };
-  const recordAnnotation = (entry: NoteChange) => {
-    if (annotationHistory.current !== history || entry.note.projectId !== history.projectId) return;
+  const recordAnnotation = (entry: AnnotationChange) => {
+    if (annotationHistory.current !== history) return;
     history.undo.push(entry); history.redo = []; historyChanged();
   };
   const noteEditVersion = useRef(0), noteWrites = useRef(new Map<string, { saved: Annotation; tail: Promise<void> }>());
@@ -1737,9 +1773,9 @@ function App() {
       // A later Undo may restore a deleted annotation, but its inclusion belonged
       // to the submitted draft. It must not attach itself to the next task.
       for (const direction of ['undo', 'redo'] as const) history[direction] = history[direction]
-        .filter(entry => entry.kind === 'clear' || !submittedNotes.has(entry.note.id))
+        .filter(entry => keepAnnotationChange(entry, submittedNotes))
         .map(entry => reviewing ? entry : entry.kind === 'clear' ? { ...entry, selected: [] }
-          : entry.note.projectId === target ? { ...entry, selected: false } : entry);
+          : 'note' in entry && entry.note.projectId === target ? { ...entry, selected: false } : entry);
       historyChanged();
       if (restoreFocus && input?.isConnected && (document.activeElement === document.body || input.closest('form')?.contains(document.activeElement))) input.focus({ preventScroll: true });
       // Reload pending notes from the server: a retry may have returned an
@@ -2035,6 +2071,14 @@ function App() {
       if (noteWrites.current.get(note.id) === queue && queue.tail === tail) noteWrites.current.delete(note.id);
     }
   }
+  async function writeGroups(id: string, edits: AnnotationGroupEdit[]) {
+    const result = await api<{ annotations: Annotation[] }>(`/projects/${id}/annotations/regroup`, edits);
+    if (annotationHistory.current === history) {
+      const updated = new Map(result.annotations.map(note => [note.id, note]));
+      withNotes(list => list.map(note => updated.get(note.id) ?? note));
+    }
+    return result;
+  }
   const noteActions: NoteActions = {
     selection: { ...noteSelection, set(ids, checked) {
       // Every deselection entry point (PDF, library and task) waits for the
@@ -2076,6 +2120,28 @@ function App() {
       }
     },
     regroup: (note, group) => writeNote(note, { group }),
+    async regroupMany(members, group) {
+      const source = members[0]?.group;
+      if (!project || !source || (group && canonicalGroup(source) === canonicalGroup(group))) return;
+      if (historyDisabled || history.busy || noteWrites.current.size) throw new Error(t('Wait for the annotations to finish saving.'));
+      const target = group ? notes.filter(note => note.group && canonicalGroup(note.group) === canonicalGroup(group)) : [];
+      const targetSelected = target.filter(note => noteSelection.has(note.id));
+      const selectedMembers = members.filter(note => noteSelection.has(note.id));
+      const direction = group ? target.length ? groupDrafts.get(group, targetSelected.length ? targetSelected : target) : groupDrafts.get(source, selectedMembers.length ? selectedMembers : members) : '';
+      const before = members.map(annotationGroupState);
+      history.busy = true; historyChanged();
+      try {
+        const result = await writeGroups(project.id, before.map((from, index) => ({
+          id: from.id, createdAt: from.createdAt, from, group,
+          groupInstruction: group ? direction.trim() || (!target.length ? members[index].groupInstruction : undefined) : undefined,
+        })));
+        if (annotationHistory.current !== history) return;
+        const after = result.annotations.map(annotationGroupState);
+        const merged = [...targetSelected, ...result.annotations.filter(note => noteSelection.has(note.id))];
+        const draft = group && selectedMembers.length ? groupDrafts.regroup(group, direction, merged) : undefined;
+        recordAnnotation({ kind: 'groups', before, after, draft });
+      } finally { history.busy = false; historyChanged(); }
+    },
     async remove(note) {
       const selected = noteSelection.has(note.id);
       await api(`/projects/${note.projectId}/annotations/${note.id}/delete`, {});
@@ -2094,7 +2160,7 @@ function App() {
       if (deletion) history.redo.push(deletion);
       historyChanged();
       withNotes(() => restored.annotations); setActiveNote(note.id);
-      if (deletion?.selected) noteSelection.set([note.id], true);
+      if (deletion && 'selected' in deletion && deletion.selected) noteSelection.set([note.id], true);
     },
     onEditing: setNoteEditing,
     onReviewBusy: setReviewNoteBusy,
@@ -2162,7 +2228,11 @@ function App() {
   };
   const replayAnnotation = (direction: 'undo' | 'redo') => {
     const entry = history[direction].at(-1);
-    if (!manuscriptOpen || !entry) return false;
+    if (!entry || (entry.kind !== 'return' ? !manuscriptOpen : !manuscriptOpen && entry.taskId !== task?.id)) return false;
+    if (entry.kind === 'return' && !manuscriptOpen) {
+      const actions = reviewUndoOrder.current.get(entry.taskId);
+      if ((actions && [...actions.values()].some(time => time > entry.time)) || reviewDraft(entry.taskId).newestUndo() > entry.time) return false;
+    }
     if (historyDisabled) return true;
     if (entry.kind === 'clear') {
       if (direction !== 'undo' || entry.target.document !== batchDocument || uncertain) return false;
@@ -2171,28 +2241,47 @@ function App() {
     }
     history.busy = true; historyChanged();
     setError('');
-    const { note } = entry;
     void (async () => {
       try {
-        if (entry.kind === 'edit' || entry.kind === 'group') {
-          const edit = entry.kind === 'edit' ? direction === 'undo' ? { comment: note.comment, ...(!note.comment && !note.group ? { group: null } : {}) } : { comment: entry.comment }
-            : direction === 'undo' ? { group: note.group ?? null, groupInstruction: note.groupInstruction } : { group: entry.group };
-          const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, edit);
-          if (annotationHistory.current !== history) return;
-          withNotes(list => list.map(item => item.id === note.id ? saved : item));
-        } else if ((entry.kind === 'add') === (direction === 'undo')) {
-          const selected = noteSelection.has(note.id);
-          await api(`/projects/${note.projectId}/annotations/${note.id}/delete`, {});
-          if (annotationHistory.current !== history) return;
-          withNotes(list => list.filter(item => item.id !== note.id));
-          entry.selected = selected; noteSelection.set([note.id], false); setActiveNote(id => id === note.id ? '' : id);
+        if (entry.kind === 'groups') {
+          const [from, to] = direction === 'undo' ? [entry.after, entry.before] : [entry.before, entry.after];
+          const byId = new Map(from.map(edit => [edit.id, edit]));
+          await writeGroups(history.projectId, to.map(edit => ({ ...edit, from: byId.get(edit.id)! })));
+          if (entry.draft && annotationHistory.current === history) groupDrafts.apply(entry.draft, direction);
+        } else if (entry.kind === 'return') {
+          const redo = direction === 'redo' ? { replay: entry.replay ??= uuid(), expected: entry.createdAt } : undefined;
+          const result = await changeReturnedNote(entry.taskId, entry.original.note.id!, direction === 'undo' ? entry.createdAt : undefined, undefined, redo);
+          if (result.returned !== (direction === 'redo') || (result.returned && result.undoReturnAt === undefined)) {
+            // A newer generation or a submitted copy can no longer be undone.
+            history[direction] = history[direction].filter(item => item !== entry);
+            throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
+          }
+          entry.createdAt = result.undoReturnAt ?? entry.createdAt;
+          if (direction === 'redo') { entry.time = Date.now(); entry.replay = undefined; }
+          window.dispatchEvent(new CustomEvent(NOTE_RETURN_HISTORY, { detail: { taskId: entry.taskId, receipt: { ...result, key: entry.original.key, moved: true } } }));
         } else {
-          const restored = await api<{ annotations: Annotation[] }>(`/projects/${note.projectId}/annotations/${note.id}/restore`, {});
-          if (annotationHistory.current !== history) return;
-          withNotes(() => restored.annotations);
-          if (entry.selected) noteSelection.set([note.id], true);
-          if (entry.kind === 'remove') setActiveNote(note.id);
+          const { note } = entry;
+          if (entry.kind === 'edit' || entry.kind === 'group') {
+            const edit = entry.kind === 'edit' ? direction === 'undo' ? { comment: note.comment, ...(!note.comment && !note.group ? { group: null } : {}) } : { comment: entry.comment }
+              : direction === 'undo' ? { group: note.group ?? null, groupInstruction: note.groupInstruction } : { group: entry.group };
+            const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, edit);
+            if (annotationHistory.current !== history) return;
+            withNotes(list => list.map(item => item.id === note.id ? saved : item));
+          } else if ((entry.kind === 'add') === (direction === 'undo')) {
+            const selected = noteSelection.has(note.id);
+            await api(`/projects/${note.projectId}/annotations/${note.id}/delete`, {});
+            if (annotationHistory.current !== history) return;
+            withNotes(list => list.filter(item => item.id !== note.id));
+            entry.selected = selected; noteSelection.set([note.id], false); setActiveNote(id => id === note.id ? '' : id);
+          } else {
+            const restored = await api<{ annotations: Annotation[] }>(`/projects/${note.projectId}/annotations/${note.id}/restore`, {});
+            if (annotationHistory.current !== history) return;
+            withNotes(() => restored.annotations);
+            if (entry.selected) noteSelection.set([note.id], true);
+            if (entry.kind === 'remove') setActiveNote(note.id);
+          }
         }
+        if (annotationHistory.current !== history) return;
         history[direction] = history[direction].filter(item => item !== entry);
         history[direction === 'undo' ? 'redo' : 'undo'].push(entry);
       } catch (error) { reportError(error); }
@@ -2406,12 +2495,8 @@ function App() {
     if (annotationHistory.current === history && projectId === history.projectId) {
       // Discard history entries and draft selections for this return generation.
       noteSelection.set([id], false);
-      const keep = (entry: AnnotationChange) => {
-        if (entry.kind !== 'clear') return entry.note.id !== id;
-        entry.target.ids = entry.target.ids.filter(note => note !== id);
-        entry.selected = entry.selected.filter(note => note !== id);
-        return entry.target.ids.length > 0;
-      };
+      const ids = new Set([id]);
+      const keep = (entry: AnnotationChange) => entry.kind === 'return' || keepAnnotationChange(entry, ids);
       history.undo = history.undo.filter(keep);
       history.redo = history.redo.filter(keep);
       historyChanged();
@@ -2429,17 +2514,22 @@ function App() {
     if (affected.size) window.dispatchEvent(new Event('papilot:manuscript'));
     return affected;
   }
-  return <NoteResultsProvider onDecisionReturns={receipts => {
-    const fresh = task ? applyReviewReturns(task.id, receipts) : new Set<string>();
-    if (fresh.size) void refresh(true);
-    return fresh;
-  }} task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} returnRequest={isPlayground ? undefined : async (id, note, undoReturnAt) => {
+  async function changeReturnedNote(id: string, note: string, undoReturnAt?: number, clicked?: NoteResult, redo?: { replay: string; expected: number }) {
     const route = `/tasks/${id}/notes/${encodeURIComponent(note)}`;
     let result: NoteReturnState | undefined;
     if (undoReturnAt === undefined) {
-      const copy = await api<Annotation>(route + '/return', {});
+      const replay = clicked ? returnClicks.current.get(route) ?? uuid() : undefined;
+      if (replay) returnClicks.current.set(route, replay);
+      const input = { receipt: true, replay, ...redo };
+      const save = () => api<Annotation & { moved?: boolean }>(route + '/return', input);
+      const copy = await save().catch(error => {
+        if (error instanceof TypeError && input.replay) return save();
+        throw error;
+      });
+      if (replay) returnClicks.current.delete(route);
       result = copy.deletedAt === undefined ? { returned: true, undoReturnAt: copy.taskId ? undefined : copy.createdAt } : { returned: false };
-      if (result.undoReturnAt !== undefined) rememberReturn(copy);
+      if (result.undoReturnAt !== undefined && rememberReturn(copy) && clicked && copy.moved !== false)
+        recordAnnotation({ kind: 'return', taskId: id, original: clicked, copyId: copy.id, createdAt: copy.createdAt, time: Date.now() });
     } else {
       const { removed, ...state } = await api<NoteReturnState & { removed?: string }>(route + '/undo-return', { createdAt: undoReturnAt });
       if (removed && project && !forgetReturnedNote(id, {
@@ -2450,12 +2540,21 @@ function App() {
         const newer = Math.max(seenReturns.current.get(removed) ?? -1, displayed?.createdAt ?? -1, last?.id === removed ? last.createdAt : -1);
         if (newer > undoReturnAt) result = { returned: true, undoReturnAt: newer };
       }
+      if (removed && clicked && annotationHistory.current === history) {
+        const keep = (entry: AnnotationChange) => entry.kind !== 'return' || entry.copyId !== removed || entry.createdAt !== undoReturnAt;
+        history.undo = history.undo.filter(keep); history.redo = history.redo.filter(keep); historyChanged();
+      }
       result ??= state;
     }
     void refresh(true);
     window.dispatchEvent(new Event('papilot:manuscript'));
     return result;
-  }} optionsRequest={(id, key, body) => body ? api(`/tasks/${id}/note-options`, { key, ...body }) : api(`/tasks/${id}/note-options?key=${encodeURIComponent(key)}`)} previewRequest={(id, key, round, option, retry, version, background) => api(`/tasks/${id}/note-options/preview?key=${encodeURIComponent(key)}&round=${round}&option=${encodeURIComponent(option)}${retry ? '&retry=1' : ''}${background ? '&background=1' : ''}${version ? '&comparison=' + encodeURIComponent(version) : ''}`, undefined, undefined, undefined, background ? 'low' : 'auto')} openReview={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} openChat={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
+  }
+  return <NoteResultsProvider reviewOperation={recordReviewOperation} replayReturn={direction => history[direction].at(-1)?.kind === 'return' && replayAnnotation(direction)} onDecisionReturns={receipts => {
+    const fresh = task ? applyReviewReturns(task.id, receipts) : new Set<string>();
+    if (fresh.size) void refresh(true);
+    return fresh;
+  }} task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} returnRequest={isPlayground ? undefined : changeReturnedNote} optionsRequest={(id, key, body) => body ? api(`/tasks/${id}/note-options`, { key, ...body }) : api(`/tasks/${id}/note-options?key=${encodeURIComponent(key)}`)} previewRequest={(id, key, round, option, retry, version, background) => api(`/tasks/${id}/note-options/preview?key=${encodeURIComponent(key)}&round=${round}&option=${encodeURIComponent(option)}${retry ? '&retry=1' : ''}${background ? '&background=1' : ''}${version ? '&comparison=' + encodeURIComponent(version) : ''}`, undefined, undefined, undefined, background ? 'low' : 'auto')} openReview={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} openChat={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
     <DesktopWindowChrome/>
     {project && <WorkspaceSwitcher key={project.id} active={task?.id ?? (manuscriptOpen ? '' : null)}
       items={[{ id: '', title: t('Manuscript') }, ...[...tasks].reverse().filter(item => item.status !== 'deleting' && (!item.archivedAt || item.id === task?.id)).map(item => ({ id: item.id, title: item.title }))]}

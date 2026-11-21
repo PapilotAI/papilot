@@ -528,6 +528,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
         if (frame.current?.contentDocument !== doc) return;
         decided.current?.();
         const links = linksRef.current, detail = (event as CustomEvent).detail;
+        links?.reviewOperation?.(detail?.decision, detail?.undone);
         if (!links || !Array.isArray(detail?.noteReturns) || !detail.noteReturns.length) { links?.reload(); return; }
         links.confirmReturns(detail.noteReturns, frame.current);
       });

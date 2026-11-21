@@ -46,6 +46,12 @@ const routeApi = async route => {
   if (url.pathname.endsWith('/restore')) {
     const id = url.pathname.split('/').at(-2); notes.push(deleted.find(note => note.id === id)); notes.sort((a, b) => a.createdAt - b.createdAt); return json({ annotations: notes });
   }
+  if (url.pathname.endsWith('/annotations/regroup')) {
+    const edits = route.request().postDataJSON();
+    const updated = edits.map(edit => regroupAnnotation(notes.find(note => note.id === edit.id), edit.group, edit.groupInstruction));
+    notes = notes.map(note => updated.find(next => next.id === note.id) || note);
+    return json({ annotations: updated });
+  }
   if (/\/annotations\/[^/]+$/.test(url.pathname)) {
     const index = notes.findIndex(note => note.id === url.pathname.split('/').at(-1));
     const edit = route.request().postDataJSON();
@@ -235,9 +241,40 @@ try {
   await row.locator('.group-select').click();
   await page.getByRole('menuitemradio', { name: 'Yellow' }).click();
   await expect(row.locator('.group-select')).toHaveAttribute('data-group', 'yellow');
+  const header = color => page.locator(`.notes-panel .group-header .group-color-picker .group-select[data-group="${color}"]`);
+  const hits = notes.filter(note => note.group === 'yellow').map(note => note.id);
+  assert.equal(hits.length, 2);
+  await header('yellow').click();
+  await page.getByRole('menuitemradio', { name: 'Green' }).click();
+  await expect(header('green')).toHaveCount(1);
+  assert.deepEqual(notes.filter(note => note.group === 'green').map(note => note.id), hits);
+  await header('green').click();
+  await page.getByRole('menuitemradio', { name: 'Individual notes' }).click();
+  await expect(header('green')).toHaveCount(0);
+  await expect(row).toContainText('Edited in the color group.');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(header('green')).toHaveCount(1);
+  assert.deepEqual(notes.filter(note => note.group === 'green').map(note => note.id), hits);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(header('yellow')).toHaveCount(1);
+  assert.deepEqual(notes.filter(note => note.group === 'yellow').map(note => note.id), hits);
+  await expect(row).toContainText('Edited in the color group.');
+
   await page.getByRole('button', { name: 'Select all notes for this task', exact: true }).click();
   await page.getByRole('button', { name: 'Close notes', exact: true }).click();
   await page.getByRole('tab', { name: 'New task', exact: true }).click();
+  const yellowInstruction = page.getByRole('textbox', { name: 'Instructions for Yellow notes' });
+  const purpleInstruction = page.getByRole('textbox', { name: 'Instructions for Purple notes' });
+  await yellowInstruction.fill('Retain the examples.');
+  await purpleInstruction.fill('Shorten the explanations.');
+  await page.locator('.task-notes-panel .group-header .group-color-picker button[data-group="yellow"]').click();
+  await page.getByRole('menuitemradio', { name: 'Purple' }).click();
+  await expect(yellowInstruction).toHaveCount(0);
+  await expect(purpleInstruction).toHaveValue('Shorten the explanations.');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(yellowInstruction).toHaveValue('Retain the examples.');
+  await expect(purpleInstruction).toHaveValue('Shorten the explanations.');
+  await yellowInstruction.clear(); await purpleInstruction.clear();
   await page.getByRole('textbox', { name: 'Describe the revision' }).fill('Explain yellow selections. Shorten purple selections.');
   await page.screenshot({ path: 'test-results/note-groups-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Start task', exact: true }).click();

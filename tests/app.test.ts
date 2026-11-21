@@ -889,6 +889,26 @@ test('return unresolved task annotations without changing the original submissio
     assert.equal(single.comment, rejected.comment);
     assert.equal((await recolor(returned.id, 'purple', returned.groupInstruction)).json().groupInstruction, returned.groupInstruction);
     const unplaced = (await returns('missed')).json() as Annotation;
+    const batchRegroup = (payload: object[]) => f.local.inject({
+      method: 'POST', url: '/api/projects/thesis/annotations/regroup', headers: f.as, payload,
+    });
+    const before = [returned, unplaced].map(({ id, createdAt, group, groupInstruction }) => ({ id, createdAt, group: group ?? null, groupInstruction }));
+    const edits = before.map(from => ({ id: from.id, createdAt: from.createdAt, group: 'orange', from }));
+    assert.equal((await batchRegroup([edits[0], { ...edits[1], createdAt: -1 }])).statusCode, 400);
+    assert.equal(f.store.annotation(projectId, returned.id).group, 'purple', 'Validate every note before saving the first');
+    const regrouped = await batchRegroup(edits);
+    assert.equal(regrouped.statusCode, 200, regrouped.body);
+    assert.deepEqual(regrouped.json().annotations.map((note: Annotation) => [note.group, note.comment]), [['orange', returned.comment], ['orange', unplaced.comment]]);
+    assert.equal((await batchRegroup(edits)).statusCode, 200, 'The same group change can be safely retried');
+    const undo = before.map(note => ({ ...note, from: { group: 'orange' } }));
+    assert.equal((await recolor(unplaced.id, 'green')).statusCode, 200);
+    assert.equal((await batchRegroup(undo)).statusCode, 400, 'Undo refuses to overwrite a newer color on any member');
+    assert.equal(f.store.annotation(projectId, returned.id).group, 'orange');
+    await recolor(unplaced.id, 'orange');
+    const reverted = await batchRegroup(undo);
+    assert.equal(reverted.statusCode, 200, reverted.body);
+    assert.equal(reverted.json().annotations[0].groupInstruction, returned.groupInstruction);
+
     assert.deepEqual((await results()).json().notes.map((result: any) => [result.returned, result.undoReturnAt]), [
       [false, undefined], [true, returned.createdAt], [true, unplaced.createdAt],
     ]);
@@ -912,7 +932,16 @@ test('return unresolved task annotations without changing the original submissio
     assert.deepEqual((await get(manuscript)).json().annotations.map((note: Annotation) => note.id), ['unsent', unplaced.id]);
 
     assert.equal(await count(), 2, 'Undo removes a copy from the count');
-    const again = (await returns('rejected')).json() as Annotation;
+    const redoReturn = (replay: string) => f.local.inject({
+      method: 'POST', url: `/api/tasks/${taskId}/notes/rejected/return`, headers: f.as,
+      payload: { receipt: true, replay, expected: returned.createdAt },
+    });
+    const retriedReturn = await redoReturn('replay-return');
+    assert.equal(retriedReturn.statusCode, 200, retriedReturn.body);
+    assert.equal(retriedReturn.json().moved, true);
+    assert.deepEqual((await redoReturn('replay-return')).json(), retriedReturn.json());
+    assert.equal((await redoReturn('different-action')).statusCode, 400, 'Redo cannot claim a return from another action');
+    const again = retriedReturn.json() as Annotation;
     const staleRoot = { ...again, document: 'renamed-root.tex' };
     f.store.saveAnnotation(staleRoot);
     const openNote = await f.local.inject({ method: 'POST', url: `/api/projects/${projectId}/document`, headers: f.as, payload: { annotation: again.id } });

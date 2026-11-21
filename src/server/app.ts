@@ -1,5 +1,5 @@
 import { PaperTools } from './paper-tools.ts';
-import { canonicalGroup, isNoteGroup, regroupAnnotation } from '../note-groups.ts';
+import { canonicalGroup, isNoteGroup, regroupAnnotation, sameAnnotationGroup } from '../note-groups.ts';
 import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
 import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validRoutes, taskFinished, type InFlightMark } from '../shared.ts';
 import Fastify from 'fastify';
@@ -583,11 +583,11 @@ export async function buildApp(options: AppOptions) {
     }
     return { notes };
   });
-  function returnCopy(task: Task, noteId: string, decision?: { id: string; key: string }) {
+  function returnCopy(task: Task, noteId: string, decision?: { id: string; key: string }): Annotation | undefined {
     const note = submittedAnnotation(task, noteId);
     const snapshot = store.items(task.id).find(item => item.type === 'user' && item.meta?.notes?.some(summary => summary.id === noteId && !summary.anchor?.round));
     if (!note || !snapshot) return;
-    const { taskId: _, context: _context, groupInstruction: _oldInstruction, aiReview: _adoption, returnDecisions: _decisions, returnAction: _action, ...copy } = note;
+    const { taskId: _, context: _context, groupInstruction: _oldInstruction, aiReview: _adoption, returnDecisions: _decisions, returnAction: _action, returnReplay: _replay, ...copy } = note;
     const document = note.document ?? manuscripts.documentOf(note.projectId, note.key) ?? task.document;
     const groupInstruction = note.group && (snapshot.meta?.groupInstructions?.[canonicalGroup(note.group)] ?? note.groupInstruction);
     return { ...copy, id: returnedAnnotationId(task.id, noteId), ...(decision ? { returnAction: { ...decision, taskId: task.id, originalId: noteId } } : {}), createdAt: Date.now(), ...(document ? { document } : {}), ...(groupInstruction ? { groupInstruction } : {}) };
@@ -598,10 +598,18 @@ export async function buildApp(options: AppOptions) {
     if (!copy || copy.taskId || copy.deletedAt !== undefined) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
     return copy;
   });
-  app.post<{ Params: { id: string; note: string } }>('/api/tasks/:id/notes/:note/return', task, request => {
+  app.post<{ Params: { id: string; note: string }; Body: { receipt?: boolean; replay?: string; expected?: number } }>('/api/tasks/:id/notes/:note/return', task, request => {
     const copy = returnCopy(store.task(request.params.id), request.params.note);
     if (!copy) throw new Error('Only submitted manuscript annotations can be returned.');
-    return store.returnAnnotation(copy);
+    const prior = store.findAnnotation(copy.projectId, copy.id), replay = request.body?.replay;
+    if (replay !== undefined) {
+      if (prior?.returnReplay === replay && !prior.taskId && prior.deletedAt === undefined) return { ...prior, moved: true };
+      if (request.body.expected !== undefined && (prior?.deletedAt === undefined || prior.createdAt !== request.body.expected))
+        throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
+      copy.returnReplay = string(replay, 'Review action ID', 80);
+    }
+    const saved = store.returnAnnotation(copy);
+    return request.body?.receipt ? { ...saved, moved: !prior || (prior.deletedAt !== undefined && saved.deletedAt === undefined) } : saved;
   });
   app.post<{ Params: { id: string; note: string }; Body: { createdAt: number } }>('/api/tasks/:id/notes/:note/undo-return', task, request => {
     const task = store.task(request.params.id), noteId = request.params.note;
@@ -1070,12 +1078,34 @@ export async function buildApp(options: AppOptions) {
     }
     return note;
   });
-  app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note', project(), request => {
-    const note = store.annotation(request.params.id, request.params.note);
+  function editableAnnotation(project: string, id: string) {
+    const note = store.annotation(project, id);
     if (isTaskReviewNote(note)) throw new Error('Manage this suggestion in its AI review task, or copy it to the manuscript first.');
     if (workspace.annotationSending(note.id)) throw new Error('This note is being sent. Wait for the task to finish creating.');
     if (note.taskId) throw new Error('This note has already been sent.');
     if (note.deletedAt !== undefined) throw new Error('This note has been deleted. Undo the deletion first.');
+    return note;
+  }
+  app.post<{ Params: { id: string } }>('/api/projects/:id/annotations/regroup', project(), request => {
+    const changes = request.body;
+    if (!Array.isArray(changes) || !changes.length) throw new Error('Select at least one note.');
+    const ids = new Set<string>();
+    const edits = changes.map(edit => {
+      if (!edit || typeof edit.id !== 'string' || ids.has(edit.id) || !edit.from || (edit.from.group !== null && !isNoteGroup(edit.from.group)))
+        throw new Error('Invalid annotation group.');
+      ids.add(edit.id);
+      const note = editableAnnotation(request.params.id, edit.id);
+      const instruction = optional(edit.groupInstruction, 'Group instruction');
+      const next = regroupAnnotation(note, edit.group, instruction);
+      const target = { group: edit.group, groupInstruction: instruction };
+      if (note.createdAt !== edit.createdAt || (!sameAnnotationGroup(note, edit.from) && !sameAnnotationGroup(note, target)))
+        throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
+      return { note, next };
+    });
+    return store.transaction(() => ({ annotations: edits.map(({ note, next }) => next === note ? note : store.saveAnnotation(next)) }));
+  });
+  app.post<{ Params: { id: string; note: string } }>('/api/projects/:id/annotations/:note', project(), request => {
+    const note = editableAnnotation(request.params.id, request.params.note);
     const edit = request.body as { comment?: string; group?: unknown; groupInstruction?: string } | undefined;
     const next = edit?.group === undefined ? note : regroupAnnotation(note, edit.group, optional(edit.groupInstruction, 'Group instruction'));
     if (edit?.group !== undefined && edit.comment === undefined) return store.saveAnnotation(next);

@@ -158,7 +158,7 @@ export class Store extends EventEmitter {
     if (existing && (existing.taskId || (decision && existing.returnDecisions?.includes(decision)))) return existing;
     if (existing && existing.deletedAt === undefined && !decision) return existing;
     const note = existing ?? copy;
-    return this.restoreAnnotation({ ...note, returnAction: existing && existing.deletedAt === undefined ? existing.returnAction : copy.returnAction, createdAt: existing?.deletedAt !== undefined ? Math.max(copy.createdAt, existing.createdAt + 1) : note.createdAt,
+    return this.restoreAnnotation({ ...note, returnAction: existing && existing.deletedAt === undefined ? existing.returnAction : copy.returnAction, returnReplay: existing && existing.deletedAt === undefined ? existing.returnReplay : copy.returnReplay, createdAt: existing?.deletedAt !== undefined ? Math.max(copy.createdAt, existing.createdAt + 1) : note.createdAt,
       ...(decision ? { returnDecisions: [...(note.returnDecisions ?? []), decision] } : {}) });
   }
   reviewReturns(projectId: string, taskId: string, action: string) {

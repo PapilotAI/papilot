@@ -28,7 +28,7 @@ const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(ne
 export class ReviewDraft {
   private value: Snapshot;
   private listeners = new Set<() => void>();
-  private history: { action: 'add' | 'remove'; note: ReviewNote; index: number }[] = [];
+  private history: { action: 'add' | 'remove'; note: ReviewNote; index: number; time?: number }[] = [];
   private future: typeof this.history = [];
   private sequence = 0;
   private stored: string | null = null;
@@ -82,7 +82,7 @@ export class ReviewDraft {
       : mark.whole && note.whole && note.stop === mark.stop));
     if (existing) { if (focus) this.focus(existing.id); return existing.id; }
     const note = { ...mark, id: uuid(), comment };
-    this.history.push({ action: 'add', note, index: this.value.notes.length }); this.future = [];
+    this.history.push({ action: 'add', note, index: this.value.notes.length, time: Date.now() }); this.future = [];
     this.update({ notes: [...this.value.notes, note], ...(focus ? { editing: { id: note.id, sequence: ++this.sequence } } : {}) });
     return note.id;
   }
@@ -102,7 +102,7 @@ export class ReviewDraft {
     if (this.value.busy) return;
     const index = this.value.notes.findIndex(note => note.id === id);
     if (index < 0) return;
-    this.history.push({ action: 'remove', note: this.value.notes[index], index }); this.future = [];
+    this.history.push({ action: 'remove', note: this.value.notes[index], index, time: Date.now() }); this.future = [];
     this.update({ notes: this.value.notes.filter(note => note.id !== id), ...(this.value.reveal?.note.id === id ? { reveal: undefined } : {}) });
   }
   forgetReturn(original: string, createdAt: number) {
@@ -124,8 +124,10 @@ export class ReviewDraft {
     } else {
       notes.splice(entry.index, 0, entry.note); to.push({ ...entry, action: 'add' });
     }
+    if (to === this.history) to.at(-1)!.time = Date.now();
     this.update({ notes, reveal: undefined }); return true;
   }
+  newestUndo() { return this.history.at(-1)?.time ?? 0; }
   undo() { return this.travel(this.history, this.future); }
   redo() { return this.travel(this.future, this.history); }
   setBusy(busy: boolean) { if (this.value.busy !== busy) this.update({ busy }); }

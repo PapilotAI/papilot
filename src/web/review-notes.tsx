@@ -15,6 +15,7 @@ import { loadStamps, useStamps, type Stamp } from './stamps.ts';
 import { StampWheel } from './stamp-wheel.tsx';
 import { useReviewToolKeys } from './review-tool-keys.ts';
 import { useNoteUndo } from './use-note-undo.ts';
+import { useNoteResults } from './note-results.tsx';
 
 import { reviewCommentMark, reviewDraft, useReviewDraft, type ReviewComment, type ReviewMark as Mark } from './review-draft.ts';
 
@@ -132,7 +133,9 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
   const touch = useRef<ReturnType<typeof touchSelection> | null>(null);
   // The review drawer has its own decisions. Keep draft undo in the PDF
   // marking tools and composer when those controls have focus.
-  useNoteUndo(() => !document.activeElement?.closest('.review-note-controls') && !busy && store.undo(), doc, () => !busy && store.redo());
+  const replayReturn = useNoteResults()?.replayReturn;
+  useNoteUndo(() => replayReturn?.('undo') || (!document.activeElement?.closest('.review-note-controls') && !busy && store.undo()),
+    doc, () => replayReturn?.('redo') || (!busy && store.redo()));
   useEffect(() => {
     if (!region || !doc) return;
     const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); chooseTool('select'); setDrag(null); origin.current = null; } };

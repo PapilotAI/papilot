@@ -1,5 +1,5 @@
-import { regroupAnnotation } from '../../note-groups.ts';
-import type { Annotation, AnnotationBatch, AnnotationBatchResult, GitStatus, Manuscript, Snapshot, Task, TimelineItem, AgentId, Skill, NoteSummary, NoteResult, NoteOptions } from '../../shared.ts';
+import { regroupAnnotation, sameAnnotationGroup } from '../../note-groups.ts';
+import type { Annotation, AnnotationGroupEdit, AnnotationBatch, AnnotationBatchResult, GitStatus, Manuscript, Snapshot, Task, TimelineItem, AgentId, Skill, NoteSummary, NoteResult, NoteOptions } from '../../shared.ts';
 import type { ActionKind, Decision, PageState, RoundDetail } from '../../../engine/src/types.ts';
 import plans from '../../../examples/playground-paper/edits.json';
 import seededNotes from '../../../examples/playground-paper/preview/notes.json';
@@ -230,6 +230,18 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
       }
       persist();
       return { changed, restoredIds, failed, annotations: local.annotations.filter(note => !note.deletedAt) } satisfies AnnotationBatchResult;
+    }
+    if (path === `${base}/annotations/regroup` && Array.isArray(body)) {
+      const edits = (body as AnnotationGroupEdit[]).map(edit => {
+        const note = local.annotations.find(note => note.id === edit.id && note.createdAt === edit.createdAt && note.deletedAt === undefined);
+        if (!note || (!sameAnnotationGroup(note, edit.from) && !sameAnnotationGroup(note, edit)))
+          throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
+        return { note, next: regroupAnnotation(note, edit.group, edit.groupInstruction) };
+      });
+      const byId = new Map(edits.map(({ next }) => [next.id, next]));
+      local.annotations = local.annotations.map(note => byId.get(note.id) ?? note);
+      persist();
+      return { annotations: edits.map(({ next }) => next) };
     }
     if (path.startsWith(`${base}/annotations/`) && body !== undefined) {
       const [id, action] = path.slice(`${base}/annotations/`.length).split('/');

@@ -13,8 +13,9 @@ export function GroupAction({ group }: { group?: NoteGroup | null }) {
 // picker, like an image editor's brush: its icon shows the color, the first
 // click picks the tool and a click on the chosen tool opens the colors beside it.
 export interface PickerTool { label: string; pressed: boolean; keys: string; content: ReactNode; onPress: () => boolean }
-export function GroupPicker({ value, onChange, disabled, tool, forNote }: { value: NoteGroup | null; onChange: (value: NoteGroup | null) => void; disabled?: boolean; tool?: PickerTool; forNote?: boolean }) {
+export function GroupPicker({ value, onChange, disabled, tool, forNote, wholeGroup }: { value: NoteGroup | null; onChange: (value: NoteGroup | null) => void; disabled?: boolean; tool?: PickerTool; forNote?: boolean; wholeGroup?: boolean }) {
   const rail = Boolean(tool);
+  const label = wholeGroup && value ? `${groupName(value)} · ${t('Annotation group color')}` : t('Annotation group color');
   const id = useId(), trigger = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => { if (disabled) menu.current?.hidePopover(); }, [disabled]);
@@ -37,8 +38,8 @@ export function GroupPicker({ value, onChange, disabled, tool, forNote }: { valu
   function choose(next: NoteGroup | null) {
     menu.current?.hidePopover(); trigger.current?.focus(); onChange(next);
   }
-  return <div className={'group-picker' + (rail ? ' rail' : forNote ? ' note-color-picker' : '')} style={groupStyle(value || undefined)}>
-    <button ref={trigger} type="button" className={tool ? 'rail-tool group-select has-menu' : 'icon-button group-select'} data-group={value || undefined} aria-label={tool ? tool.label : t('Annotation group color')} title={tool ? undefined : t('Annotation groups')}
+  return <div className={'group-picker' + (rail ? ' rail' : forNote ? ' note-color-picker' + (wholeGroup ? ' group-color-picker' : '') : '')} style={groupStyle(value || undefined)}>
+    <button ref={trigger} type="button" className={tool ? 'rail-tool group-select has-menu' : 'icon-button group-select'} data-group={value || undefined} aria-label={tool?.label ?? label} title={tool ? undefined : t('Annotation groups')}
       aria-pressed={tool?.pressed} aria-keyshortcuts={tool?.keys} aria-haspopup="menu" aria-expanded={open} popoverTarget={id} disabled={disabled} onClick={event => {
       event.preventDefault();
       if (menu.current?.matches(':popover-open')) menu.current.hidePopover(); else if (!tool || tool.onPress()) show();
@@ -47,7 +48,7 @@ export function GroupPicker({ value, onChange, disabled, tool, forNote }: { valu
     }}>
       {tool ? tool.content : forNote ? <span className="note-color-swatch" aria-hidden="true"/> : <span className="group-highlight" aria-hidden="true"><Icon name="pen" size={18}/></span>}
     </button>
-    <div ref={menu} id={id} popover="auto" role="menu" aria-label={t('Annotation group color')} className="group-palette" onToggle={event => setOpen((event.nativeEvent as ToggleEvent).newState === 'open')} onKeyDown={event => {
+    <div ref={menu} id={id} popover="auto" role="menu" aria-label={label} className="group-palette" onToggle={event => setOpen((event.nativeEvent as ToggleEvent).newState === 'open')} onKeyDown={event => {
       if (event.key === 'Tab') { menu.current?.hidePopover(); trigger.current?.focus(); return; }
       event.stopPropagation();
       if (event.key === 'Escape') { event.preventDefault(); menu.current?.hidePopover(); trigger.current?.focus(); }
@@ -89,15 +90,16 @@ export function GroupInstruction({ group, value, disabled, onChange }: { group: 
   </div>;
 }
 
-export function GroupCard({ group, count, active, selection, children }: { group: NoteGroup; count: number; active?: boolean; selection?: { count: number; disabled: boolean; toggle: () => void }; children: ReactNode }) {
+export function GroupCard({ group, count, active, selection, children, onRegroup, regroupDisabled }: { group: NoteGroup; count: number; active?: boolean; selection?: { count: number; disabled: boolean; toggle: () => void }; children: ReactNode; onRegroup?: (group: NoteGroup | null) => void; regroupDisabled?: boolean }) {
   const [open, setOpen] = useState(true);
   const selectionId = useId(), locationsId = useId();
   const pressed = selection ? selection.count === count ? true : selection.count ? 'mixed' : false : undefined;
   const label = selection ? t('{selected} / {total} locations selected', { selected: selection.count, total: count }) : tn(count, '{n} location', '{n} locations');
   useEffect(() => { if (active) setOpen(true); }, [active]);
   return <div className={'annotation-group' + (active ? ' active' : '')} role="group" aria-label={`${groupName(group)} · ${label}`} data-selected={pressed} style={groupStyle(group)}>
-    <div className="group-header">
-      {selection ? <button type="button" className="group-selection-toggle" aria-label={t('Select all {group} notes for this task', { group: groupName(group) })} aria-describedby={selectionId} aria-pressed={pressed} disabled={selection.disabled} onClick={selection.toggle}><span className="group-dot" aria-hidden="true"/><strong id={selectionId}>{label}</strong></button> : <div className="group-heading"><span className="group-dot" aria-hidden="true"/><strong>{label}</strong></div>}
+    <div className="group-header" data-regroup={Boolean(onRegroup)}>
+      {onRegroup && <GroupPicker forNote wholeGroup value={group} onChange={onRegroup} disabled={regroupDisabled}/>}
+      {selection ? <button type="button" className="group-selection-toggle" aria-label={t('Select all {group} notes for this task', { group: groupName(group) })} aria-describedby={selectionId} aria-pressed={pressed} disabled={selection.disabled} onClick={selection.toggle}>{!onRegroup && <span className="group-dot" aria-hidden="true"/>}<strong id={selectionId}>{label}</strong></button> : <div className="group-heading">{!onRegroup && <span className="group-dot" aria-hidden="true"/>}<strong>{label}</strong></div>}
       <button type="button" className="group-disclosure" aria-label={open ? t('Collapse {group} notes', { group: groupName(group) }) : t('Expand {group} notes', { group: groupName(group) })} aria-expanded={open} aria-controls={locationsId} onClick={() => setOpen(value => !value)}><Icon name="chevronDown" size={12}/></button>
     </div>
     <div id={locationsId} className="group-locations" hidden={!open}>{children}</div>

@@ -29,6 +29,7 @@ function groupDraftScope(projectId: string, selected: Annotation[]) {
     : projectId;
 }
 
+export interface GroupDraftChange { scope: string; group: keyof GroupInstructions; before?: string; after: string }
 export function useGroupInstructions(projectId: string) {
   const [drafts, setDrafts] = useState(saved);
   useEffect(() => {
@@ -43,8 +44,25 @@ export function useGroupInstructions(projectId: string) {
     // when all selected marks already agree on it.
     return inherited.size === 1 ? selected[0].groupInstruction || '' : '';
   }
+  function apply(change: GroupDraftChange, direction: 'undo' | 'redo') {
+    const value = direction === 'redo' ? change.after : change.before;
+    setDrafts(current => {
+      const expected = direction === 'undo' ? change.after : change.before;
+      if (current[change.scope]?.[change.group] !== expected) return current;
+      const groups = { ...current[change.scope] };
+      if (value === undefined) delete groups[change.group]; else groups[change.group] = value;
+      return { ...current, [change.scope]: groups };
+    });
+  }
   return {
-    get,
+    get, apply,
+    regroup(group: NoteGroup, text: string, selected: Annotation[]) {
+      const scope = groupDraftScope(projectId, selected), name = canonicalGroup(group);
+      const change = { scope, group: name, before: drafts[scope]?.[name], after: text };
+      if (change.before === text) return;
+      apply(change, 'redo');
+      return change;
+    },
     set(group: NoteGroup, text: string, selected: Annotation[]) {
       const scope = groupDraftScope(projectId, selected);
       setDrafts(current => ({ ...current, [scope]: { ...current[scope], [canonicalGroup(group)]: text } }));

@@ -15,7 +15,8 @@ type OptionsRequest = (id: string, key: string, body?: { round: number; option?:
 type Preview = { key: string; round: number; option: string; version?: string; detail?: RoundDetail } | null;
 type Advance = { key: string; round: number; units: string[] };
 type PreviewRequest = (id: string, key: string, round: number, option: string, retry?: boolean, version?: string, background?: boolean) => Promise<RoundDetail>;
-type ReturnRequest = (task: string, note: string, undoReturnAt?: number) => Promise<NoteReturnState>;
+export const NOTE_RETURN_HISTORY = "papilot:note-return-history";
+type ReturnRequest = (task: string, note: string, undoReturnAt?: number, clicked?: NoteResult) => Promise<NoteReturnState>;
 const previewKey = (id: string, key: string, round: number, option: string, version?: string) => JSON.stringify([id, key, round, option, version]);
 const comparisonCache = new NotePreviewCache<RoundDetail>();
 const optionCache = new Map<string, NoteOptions>();
@@ -87,15 +88,17 @@ interface Links {
   focusNote: (key: string) => void;
   returns: Record<string, { pending: boolean; error?: string }>;
   returnNote?: (key: string, source: HTMLElement) => void;
+  reviewOperation?: (decision?: string, undone?: string) => void;
+  replayReturn?: (direction: 'undo' | 'redo') => boolean;
   confirmReturns: (receipts: NoteReturnReceipt[], source?: HTMLElement | null) => void;
   showChange: (key: string, change: NoteChange) => void; showNote: (key: string) => void;
 }
 const Context = createContext<Links | null>(null);
 export const useNoteResults = () => useContext(Context);
 
-export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, onDecisionReturns, openReview, openChat, children }: {
+export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, replayReturn, reviewOperation, onDecisionReturns, openReview, openChat, children }: {
   task?: Task; items: TimelineItem[]; read: (id: string) => Promise<{ notes: NoteResult[] }>;
-  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; onDecisionReturns?: (receipts: NoteReturnReceipt[]) => Set<string>; openReview: () => void; openChat: () => void; children: ReactNode;
+  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; replayReturn?: Links['replayReturn']; reviewOperation?: Links['reviewOperation']; onDecisionReturns?: (receipts: NoteReturnReceipt[]) => Set<string>; openReview: () => void; openChat: () => void; children: ReactNode;
 }) {
   const [notes, setNotes] = useState<NoteResult[]>([]), [error, setError] = useState(false), [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(''), [focus, setFocus] = useState<NoteFocus | null>(null);
@@ -214,12 +217,29 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     }));
     reload();
   }
+  useEffect(() => {
+    const replayed = (event: Event) => {
+      const { taskId, receipt } = (event as CustomEvent<{ taskId: string; receipt: NoteReturnReceipt }>).detail;
+      if (taskId !== id) return;
+      setReturns(current => {
+        if (!current[receipt.key]?.error) return current;
+        const next = { ...current }; delete next[receipt.key]; return next;
+      });
+      const key = CSS.escape(receipt.key);
+      const drawer = document.querySelector<HTMLElement>(`.review-note-controls[data-open="true"] .review-note-pager[data-note-key="${key}"]`);
+      const frame = [...document.querySelectorAll<HTMLIFrameElement>('.review-frame')].find(frame => frame.getBoundingClientRect().height);
+      const row = document.querySelector<HTMLElement>(`[data-note-result="${key}"]`);
+      confirmReturns([receipt], drawer || frame || row);
+    };
+    window.addEventListener(NOTE_RETURN_HISTORY, replayed);
+    return () => window.removeEventListener(NOTE_RETURN_HISTORY, replayed);
+  });
   function returnNote(key: string, source: HTMLElement) {
     const note = notes.find(note => note.key === key);
     if (!returnRequest || !id || !note?.note.id || note.returned === undefined || (note.returned && note.undoReturnAt === undefined) || runningReturns.current.has(key)) return;
     runningReturns.current.add(key);
     setReturns(current => ({ ...current, [key]: { pending: true } }));
-    void returnRequest(id, note.note.id, note.returned ? note.undoReturnAt : undefined).then(result => {
+    void returnRequest(id, note.note.id, note.returned ? note.undoReturnAt : undefined, note).then(result => {
       setReturns(current => { const next = { ...current }; delete next[key]; return next; });
       confirmReturns([{ ...result, key }], source);
     }, error => {
@@ -233,7 +253,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     background ? () => { void previewRequest(id, key, round, option, retry, version, false).catch(() => {}); } : undefined)), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
     alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
-    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, confirmReturns, returnNote: returnRequest && returnNote };
+    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, confirmReturns, replayReturn, reviewOperation, returnNote: returnRequest && returnNote };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
@@ -472,13 +492,14 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
         requestId.current = { option: option.id, action, id: crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), byte => byte.toString(16).padStart(2, '0')).join('') };
       // Rejection restores the original edit and never waits for an option PDF.
       if (action === 'accept') await links.previewRequest(task.id, note.key, data.round, option.id, false, data.comparisonKey);
-      const result = await request(task.id, note.key, { round: data.round, option: option.id, id: requestId.current.id, ...(action === 'accept' ? { accept: true } : { reject: true }) });
+      const actionId = requestId.current.id;
+      const result = await request(task.id, note.key, { round: data.round, option: option.id, id: actionId, ...(action === 'accept' ? { accept: true } : { reject: true }) });
       // Only an unconfirmed request may be retried with its ID. The drawer
       // stays open through undo, so its next decision needs a new one.
       requestId.current = null;
       const rejected = optionFeedback(option.id, 'reject'); if (rejected) draft.remove(rejected.id);
       browserStorage.removeItem(storageKey);
-      if ('options' in result) { setData(result); setSelected(result.selected || 'current'); setApplying(false); }
+      if ('options' in result) { links.reviewOperation?.(actionId); setData(result); setSelected(result.selected || 'current'); setApplying(false); }
       if ('noteReturn' in result && result.noteReturn) links.confirmReturns([{ ...result.noteReturn, key: note.key }], container.current?.querySelector('.review-note-pager'));
       else if (action === 'reject') links.reload();
       else links.decisionSaved({ key: note.key, round: data.round, units: option.edits.map(edit => edit.unit) });

@@ -2,6 +2,11 @@
 .note-color-picker>.group-select,.group-note-edit{width:24px;height:24px;flex:none;color:var(--text-2)}
 .note-color-swatch{box-sizing:border-box;width:8px;height:8px;border-radius:50%;border:1px solid currentColor;background:transparent}
 .group-references{list-style:none;margin:0;padding:0}
+.group-note-tools{display:flex;align-items:center;gap:0;flex:none}
+.group-note-tools .icon-button{width:26px;height:26px}
+.group-header[data-regroup=true]{padding-left:0;gap:1px}
+.group-header[data-regroup=true]>:is(.group-heading,.group-selection-toggle){padding-left:3px}
+@media(pointer:coarse){.group-note-tools .icon-button{width:36px;height:36px}.group-note-tools .note-color-picker>.group-select{width:36px}}
 @media(pointer:coarse){.group-picker.note-color-picker>.group-select,.group-note-edit,.note-head .group-note-edit,.note-head .note-color-picker>.group-select{width:36px;height:36px}}
 .group-select[data-group] .note-color-swatch{background:var(--note-color);border-color:var(--note-color)}
 .group-highlight{position:relative;display:flex;justify-content:center;width:20px;height:22px}
@@ -64,7 +69,7 @@
 .notes-panel .group-selection-toggle:hover:not(:disabled){background:var(--bg-muted)}
 .notes-panel .group-locations{max-height:none;padding:0 0 4px;overflow:visible}
 .group-references{display:grid;gap:2px}
-.notes-panel .group-location.note-card{gap:8px;align-items:flex-start;margin:0;padding:6px 4px 6px 8px;border:0;border-radius:5px;background:transparent}
+.notes-panel .group-location.note-card{gap:6px;align-items:flex-start;margin:0;padding:6px 4px 6px 8px;border:0;border-radius:5px;background:transparent}
 .notes-panel .group-location.note-card:hover{background:var(--bg-muted)}
 .notes-panel .group-location.note-card[data-selected=true]{background:color-mix(in srgb,var(--note-color) 14%,transparent)}
 .notes-panel .group-location.note-card[data-selected=true]:hover{background:color-mix(in srgb,var(--note-color) 20%,transparent)}
@@ -73,9 +78,8 @@
 .notes-panel .group-location .note-number:hover:not(:disabled){background:var(--line-strong);color:var(--text)}
 .notes-panel .group-location-target blockquote{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;margin:0 0 2px;white-space:normal;overflow-wrap:anywhere;color:var(--text);font-size:12px;line-height:1.45}
 .notes-panel .group-location-target>span{display:block;color:var(--text-3);font-size:11px;line-height:1.45;overflow-wrap:anywhere}
-.notes-panel .group-location-remove{width:24px;height:24px;color:var(--text-2);opacity:0;transition:opacity .15s}
-.group-location:hover>.group-location-remove,.group-location:focus-within>.group-location-remove{opacity:1}
-@media(pointer:coarse){.notes-panel .group-disclosure{width:44px;height:44px}.notes-panel .group-location-remove{width:36px;height:36px;opacity:1}.notes-panel .group-location .note-number{min-width:32px;height:36px}}
+.notes-panel .group-location-remove{width:24px;height:24px;color:var(--text-2)}
+@media(pointer:coarse){.notes-panel .group-disclosure{width:44px;height:44px}.notes-panel .group-location-remove{width:36px;height:36px}.notes-panel .group-location .note-number{min-width:32px;height:36px}}
 .note-mark[data-group]{background:color-mix(in srgb,var(--note-color) 26%,transparent)}
 .note-mark[data-group].active{background:color-mix(in srgb,var(--note-color) 42%,transparent)}
 .note-box[data-group]{border-color:var(--note-color);background:color-mix(in srgb,var(--note-color) 12%,transparent)}
