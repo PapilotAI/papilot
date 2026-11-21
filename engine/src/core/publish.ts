@@ -281,8 +281,7 @@ export class Publisher {
   attend() {
     reprioritize();
   }
-  // What the author reads in each task's review page, as the page reports
-  // it: its changes or the paper as decided so far.
+  // What the author reads in each task's review page, as the page reports it.
   private looking = new Map<string, "changes" | "pdf">();
   /** The review page shows `mode` of the task. */
   look(task: string, mode: "changes" | "pdf") {

@@ -271,7 +271,6 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .pdf-modes>button[aria-pressed=true]>svg{color:var(--text)}
 .pdf-modes>button:focus-visible{position:relative;outline-offset:1px}
 @container (max-width:620px){.pdf-modes>button{width:32px;padding:0}.pdf-modes>button>span{display:none}}
-.pdf-modes.labeled>button{width:auto;padding:0 10px}.pdf-modes.labeled>button>span{display:inline}
 .review-lead{min-height:var(--toolbar-height);display:flex;align-items:center;gap:4px;padding-left:8px;flex-shrink:0}
 /* Before the first PDF exists, use the same toolbar sizing and responsive
    modes as the viewer. Only the toolbar spacer grows, never the icon gaps. */
@@ -1174,9 +1173,6 @@ body.resizing iframe{pointer-events:none}
   .pdf-modes{border:0;padding:2px;border-radius:8px;background:var(--bg-muted)}
   .pdf-modes>button{width:30px;height:28px;padding:0;border-radius:6px}
   .pdf-modes>button>span{display:none}
-  .pdf-modes.labeled{padding:3px;border-radius:var(--r-md)}
-  .pdf-modes.labeled>button{width:auto;height:30px;padding:0 12px;border-radius:8px}
-  .pdf-modes.labeled>button>span{display:inline}
   .pdf-toolbar .icon-button{width:36px;height:36px;border-radius:var(--r-md)}
   .pdf-toolbar [data-notes-home] .notes-count,.pdf-toolbar .notes-received::after{top:2px;right:1px;min-width:15px;height:15px;padding:0 3.5px;font-size:9.5px;line-height:15px}
   .pdf-pager{height:30px;padding:0 7px 0 3px;border-radius:8px;background:var(--bg-muted);gap:1px}

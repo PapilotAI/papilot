@@ -61,7 +61,6 @@ import { useSystemRequirements, missingTools, RequirementsBanner } from './syste
 import { connectStamps } from './stamps.ts';
 import { connectIndirectChanges } from './effect-preferences.ts';
 import { connectNoteAlternatives } from './note-option-preferences.ts';
-import { connectNoteLocation } from './review-notes.tsx';
 import type { DiagnosticReport, SystemRequirements } from '../shared.ts';
 import { CommitDialog } from './commit-dialog.tsx';
 import { TaskConflict } from './task-conflict.tsx';
@@ -114,7 +113,6 @@ connectStamps(api);
 const refreshUsage: RefreshUsage = async agent => import.meta.env.MODE === 'playground' ? null : (await api(`/runtime/${agent}/usage`, {})).usage;
 connectIndirectChanges(api);
 connectNoteAlternatives(api);
-connectNoteLocation(api);
 const uploadAttachment = (projectId: string, file: File, signal: AbortSignal) => api<Attachment>(`/projects/${projectId}/attachments`, file, signal);
 const detectLatexInstallation = (signal: AbortSignal) => api<LatexInstallation | null>('/runtime/latex', undefined, signal);
 const chooseCompiler = (compiler?: CompilerChoice['compiler']) => api<CompilerChoice>('/runtime/compiler', compiler ? { compiler } : undefined);

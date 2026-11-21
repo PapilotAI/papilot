@@ -16,8 +16,6 @@ import type { CommitMessageChoice } from './commit-agent-preferences.ts';
 import type { RefreshUsage } from './usage.tsx';
 import { saveAdvancedGit, useAdvancedGit, saveCommitMessageLanguage, useCommitMessageLanguage } from './git-preferences.ts';
 import type { CommitMessageLanguage } from '../commit.ts';
-import { saveDefaultReviewView, useDefaultReviewView } from './review-view.ts';
-import { ModeSwitch } from './mode-switch.tsx';
 import { AppearanceSettings, type AppearanceSettingsProps } from './appearance-settings.tsx';
 import { ShortcutSettings } from './shortcut-settings.tsx';
 import { QuickNoteSettings } from './quick-note-settings.tsx';
@@ -46,7 +44,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
   const skillControls = useRef<SkillLibraryControls>(null);
   const focusConflictAgent = useRef(initialPage === 'git-conflicts');
   const { choice } = useLanguage();
-  const indirectChanges = useIndirectChanges(), reviewView = useDefaultReviewView();
+  const indirectChanges = useIndirectChanges();
   const advancedGit = useAdvancedGit();
   const gitAgents = diagnostics ? offeredAgents(diagnostics.runtimes).map(value => ({ value, label: agentLabel(value), runtime: diagnostics.runtimes[value] })) : modelDefaults.agents;
   const commitLanguage = useCommitMessageLanguage();
@@ -92,7 +90,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
       { page: 'general', label: t('General'), icon: 'settings', keywords: `${t('Language')} ${t('Default model')} ${t('Default reasoning effort')}` },
       { page: 'appearance', label: t('Appearance'), icon: 'sun', keywords: `${t('Light')} ${t('Dark')} ${t('System')} ${t('Theme')} ${t('Accent')} ${t('Background')} ${t('Foreground')}` },
       { page: 'notifications', label: t('Notifications'), icon: 'bell' },
-      { page: 'review', label: t('Review preferences'), icon: 'diff', keywords: `${t('Open reviews on')} ${t('Check references online')} ${t('Track indirect changes')} ${t('Prepare alternatives for PDF notes')}` },
+      { page: 'review', label: t('Review preferences'), icon: 'diff', keywords: `${t('Check references online')} ${t('Track indirect changes')} ${t('Prepare alternatives for PDF notes')}` },
       { page: 'quickNotes', label: t('Quick notes'), icon: 'toolMagic', keywords: `${t('Magic pen')} ${t('Polish')} ${t('Shorten')} ${t('Runt')} ${t('Connect')} ${t('Verify')}` },
       { page: 'shortcuts', label: t('Keyboard shortcuts'), icon: 'keyboard' },
     ] },
@@ -155,10 +153,6 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         {page === 'appearance' && <AppearanceSettings theme={theme} onTheme={onTheme} resolved={resolved} appearance={appearance} onAppearance={onAppearance}/>}
         {page === 'review' && <section className="settings-card">
           <NoteOptionSettings/>
-          <div className="settings-row settings-choice">
-            <div className="settings-text"><span className="settings-name">{t('Open reviews on')}</span><p>{t('Changes shows only the changed sections and opens fastest. PDF shows each change in place in the whole paper and takes longer for long papers. The switch in a review changes only that review.')}</p></div>
-            <ModeSwitch labeled label={t('Open reviews on')} changesTitle={t('Changes')} mode={reviewView === 'paper' ? 'pdf' : 'changes'} onMode={mode => saveDefaultReviewView(mode === 'pdf' ? 'paper' : 'changes')}/>
-          </div>
           <div className="settings-row settings-toggle">
             <div className="settings-text">
               <label className="settings-name" htmlFor="settings-references">{t('Check references online')}</label>

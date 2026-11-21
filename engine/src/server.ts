@@ -17,7 +17,6 @@ import { SourceEdits } from "./core/source-edit.ts";
 import { Reconciliations } from "./core/reconcile.ts";
 import { Deliveries } from "./core/delivery.ts";
 import { more, PublishError, Publisher } from "./core/publish.ts";
-import { Applied } from "./core/applied.ts";
 import { view, type ViewRequest } from "./core/view.ts";
 import { acquireLock, now, readJson, realPath, writeJson } from "./core/files.ts";
 import { stopAll } from "./core/process.ts";
@@ -38,7 +37,6 @@ export class App {
   delivery: Deliveries;
   reconciliation: Reconciliations;
   publisher: Publisher;
-  applied: Applied;
   references: ReferenceChecker;
   confirmations: Confirmations;
   private cachedProject?: Project;
@@ -59,7 +57,6 @@ export class App {
     this.delivery = new Deliveries(this);
     this.reconciliation = new Reconciliations(this);
     this.publisher = new Publisher(this);
-    this.applied = new Applied(this);
     this.references = new ReferenceChecker(
       path.join(this.state, "references.json"),
     );
@@ -73,8 +70,6 @@ export class App {
       await this.reconciliation.recover();
       await this.publisher.recover();
     });
-    // Decisions made before a restart compile now; that never blocks a write.
-    void this.ready.then(() => this.applied.recover(), () => undefined);
   }
   /** Settles once writes interrupted by a restart are finished. */
   ready: Promise<void>;
@@ -161,8 +156,7 @@ export class App {
   }
   async close() {
     this.publisher.stop();
-    this.applied.stop();
-    await Promise.all([this.publisher.join(), this.applied.join()]);
+    await this.publisher.join();
     this.store.close();
   }
 }
@@ -259,19 +253,6 @@ export function createServer(app: App) {
         return { ok: true };
       },
     );
-    // The paper as decided so far: every accepted change, no other.
-    server.get<{ Params: { name: string } }>("/api/tasks/:name/applied", async (request) => {
-      const name = app.tasks.get(request.params.name, false).name, state = await app.applied.state(name);
-      return { ...state, shown: state.shown && { ...state.shown, pdf: `/applied/${name}/${state.shown.key}.pdf` } };
-    });
-    server.get<{ Params: { name: string; key: string } }>("/applied/:name/:key", async (request, reply) => {
-      const { name, key } = request.params, match = /^([0-9a-f]{32})\.pdf$/.exec(key);
-      app.tasks.get(name, false);
-      const pdf = match ? await app.applied.pdf(name, match[1]) : null;
-      if (!pdf) return reply.code(404).send({ error: "No such file" });
-      reply.header("Cache-Control", "private, max-age=31536000, immutable").type("application/pdf");
-      return fs.createReadStream(pdf);
-    });
     server.get<{ Params: { name: string }; Querystring: { round: number; change: string } }>(
       "/api/tasks/:name/source",
       { schema: { querystring: { type: "object", required: ["round", "change"], properties: { round: { type: "integer", minimum: 1 }, change: { type: "string", pattern: "^c[0-9]+$" } } } } },

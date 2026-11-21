@@ -4,9 +4,7 @@ import type { NoteGroup } from '../note-groups.ts';
 import type { Rect } from './note-geometry.ts';
 import type { OutlineItem, PdfComment, PdfHandle, Target } from './pdf-view.tsx';
 import { reviewDraft, useReviewDraft } from './review-draft.ts';
-import { ModeSwitch } from './mode-switch.tsx';
 import { ReviewFrame } from './review-frame.tsx';
-import { useTaskReviewView } from './review-view.ts';
 import { isPlayground, pdfAsset } from './playground-mode.ts';
 import { useNoteUndo } from './use-note-undo.ts';
 import { t } from './i18n.ts';
@@ -21,7 +19,6 @@ export function TaskDocument({ task, projectId, manuscript, placeholder, ...revi
   task: Task; projectId: string; manuscript: Manuscript | null; placeholder: ReactNode;
 }) {
   const [ready, setReady] = useState(false), [lastRound, setLastRound] = useState<number>();
-  const [view, chooseView] = useTaskReviewView(task.id), [fullPaper, setFullPaper] = useState(false);
   const [outline, setOutline] = useState<OutlineItem[]>([]), [section, setSection] = useState(-1);
   const hasReview = Boolean(!task.preparation && task.review?.round);
   const failed = task.review?.state === 'build_failed' || task.review?.job?.status === 'failed';
@@ -34,7 +31,6 @@ export function TaskDocument({ task, projectId, manuscript, placeholder, ...revi
     // the completed publication, and do not replace it with a historical round.
     if (value && round && round === completedRound) setLastRound(round);
   }, [completedRound]);
-  const modes = hasReview && fullPaper ? <ModeSwitch mode={view === 'paper' ? 'pdf' : 'changes'} onMode={mode => chooseView(mode === 'pdf' ? 'paper' : 'changes')} changesTitle={t('Changes')}/> : null;
   const key = manuscript?.build.key;
   // A comment written beside a passage goes into the chat's unsent message
   // with it, and the passage stays marked on its page until that message is
@@ -89,12 +85,12 @@ export function TaskDocument({ task, projectId, manuscript, placeholder, ...revi
         {markable ? <PdfView ref={reader} pdfKey={lastRound ? undefined : key} keyedNotes={!lastRound} place={'task-pdf:' + task.id} url={url} sourceInfo={lastRound && !isPlayground ? `${url}&metadata=1` : undefined} notes={marks} active={draft.editing?.id ?? ''} region={region} setRegion={setRegion}
           group={group} onGroupChange={setGroup} markingDisabled={busy} onCreate={mark} onSelect={note => { reviewDraft(task.id).focus(note.id); review.onComment?.(); }}
           history={{ canUndo: !busy && draft.canUndo, canRedo: !busy && draft.canRedo, undo: () => { reviewDraft(task.id).undo(); }, redo: () => { reviewDraft(task.id).redo(); } }}
-          outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={(review.lead || modes) ? <>{review.lead}{modes}</> : undefined} tools={review.tools}/>
+          outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={review.lead} tools={review.tools}/>
         : <PdfView ref={reader} readOnly onComment={review.onComment ? comment : undefined} comments={comments} pdfKey={lastRound ? undefined : key} suspended={visibleReview} place={'task-pdf:' + task.id} url={url} sourceInfo={lastRound && !isPlayground ? `${url}&metadata=1` : undefined} notes={[]} active="" region={false} setRegion={nothing} onCreate={async () => {}} onSelect={nothing}
-          outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={visibleReview ? undefined : (review.lead || modes) ? <>{review.lead}{modes}</> : undefined} tools={visibleReview ? undefined : review.tools}/>}
+          outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={visibleReview ? undefined : review.lead} tools={visibleReview ? undefined : review.tools}/>}
       </Suspense> : !hasReview && <>{(review.lead || review.tools) && <div className="review-placeholder-toolbar">{review.lead}<div className="panel-tools">{review.tools}</div></div>}{placeholder}</>}
     </div>
-    {hasReview && <ReviewFrame {...review} view={view} onViewChange={chooseView} onFullPaperChange={setFullPaper} lead={visibleReview || !url ? review.lead : undefined} tools={visibleReview || !url ? review.tools : undefined} task={task} keepPdf={Boolean(url)} onReadyChange={onReadyChange}/>}
+    {hasReview && <ReviewFrame {...review} lead={visibleReview || !url ? review.lead : undefined} tools={visibleReview || !url ? review.tools : undefined} task={task} keepPdf={Boolean(url)} onReadyChange={onReadyChange}/>}
     </div>
   </>;
 }

@@ -300,11 +300,10 @@ try {
   await expect(review.locator('.change.current .source-code')).toBeVisible();
   await review.locator('.change.current').getByRole('button', { name: 'LaTeX', exact: true }).click();
   await expect.poll(toolbarLines).toBe('44');
-  await page.getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(page.locator('.review-host-bar .pdf-modes')).toHaveCount(0);
+  await expect(review.locator('.view-switch')).toHaveCount(0);
   await expect(review.locator('.paper-page')).toHaveCount(2);
   await expect(review.locator('.paper-slice canvas').first()).toBeVisible();
-  await expect.poll(toolbarLines).toBe('44');
-  await page.getByRole('button', { name: 'Changes', exact: true }).click();
   await review.locator('.change.current button.accept').click();
   await expect(page.locator('[data-task="example-clarity"] .task-badge')).toHaveText('1');
   await review.locator('.change.current button.reject').click();

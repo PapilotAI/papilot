@@ -311,12 +311,7 @@ export const zhCN: Record<string, string> = {
   "You checked this entry yourself.": "你已人工确认过这个条目。",
   "I checked it myself": "我已人工确认",
   "{n} checked by you": "{n} 个已人工确认",
-  "Compiling your decisions…": "正在编译你的决定…",
-  "Your accepted changes do not compile together.": "已接受的修改合在一起无法编译。",
   "This PDF has compilation errors.": "此 PDF 有编译错误。",
-  "Details": "详情",
-  "Updating with your latest decisions…": "正在按你最新的决定更新…",
-  "PDF page {page}": "PDF 第 {page} 页",
   "Rejected; reverted when the agent stops": "已拒绝；智能体停下后撤回",
   "Rejected · reverted when the agent stops": "已拒绝 · 智能体停下后撤回",
 };

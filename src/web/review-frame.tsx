@@ -16,19 +16,14 @@ import { SHORTCUT_EVENT, useShortcuts } from './shortcuts.ts';
 import { connectWorkspaceKeys } from './workspace-switch.ts';
 import { installReviewScroll } from './review-scroll.ts';
 import { EFFECTS_EVENT, loadIndirectChanges, useIndirectChanges } from './effect-preferences.ts';
-import { useTaskReviewView, VIEW_EVENT, type ReviewView } from './review-view.ts';
-import { ModeSwitch } from './mode-switch.tsx';
 import { PdfContents, PdfPageControls, PdfFind, PdfFindButton } from './pdf-controls.tsx';
 import { PDF_READER_COMMAND, PDF_READER_STATE, type PdfReaderCommand, type PdfReaderState } from '../../engine/src/web/pdf-reader.ts';
-import { VIEW_CHOSEN_EVENT } from '../../engine/src/web/view-preferences.ts';
 import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, UNDO_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SourceSaved } from '../../engine/src/web/review-events.ts';
 
 // The viewer reads the interface language from its address.
 export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number, change?: number) => `${isPlayground ? import.meta.env.BASE_URL + 'src/web/playground/review.html' : `/review/${task.projectId}/`}?task=${task.name}${round ? `&round=${round}${change === undefined ? '&history=1' : `&change=${change}`}` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
-// The same viewer shows a paper's uncommitted changes against its last commit.
-// The manuscript's own PDF / Changes switch chooses its PDF; its review of the
-// changes shows them alone.
-export const changesUrl = (projectId: string) => `/review/${projectId}/?changes=1&view=changes${language() === 'en' ? '' : `&lang=${language()}`}`;
+// The same viewer shows a paper's uncommitted changes in place on its full PDF.
+export const changesUrl = (projectId: string) => `/review/${projectId}/?changes=1${language() === 'en' ? '' : `&lang=${language()}`}`;
 
 // The embedded viewer shares our origin. Keep its decision controls, but remove
 // navigation and the task title that the workspace already provides. Its bar
@@ -184,8 +179,6 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     :root[data-papilot-phone] .change-head .actions button:is(.accept,.reject,.comment,.unstage,.skip)::before{width:18px;height:18px}
     /* History shares the PDF tools' size, at least an icon button's. Shortcut
        settings live in Papilot. */
-    /* Papilot shows the full paper switch with its own controls. */
-    .view-switch{display:none}
     .bar .ghost.history{width:var(--papilot-button-size,28px);height:var(--papilot-button-size,28px);min-height:0;padding:0;font-size:0;color:var(--text)}
     .bar .history::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-history) center/contain no-repeat;mask:var(--icon-history) center/contain no-repeat}
     /* Reserve the outer tools' row when there is too little room. Keep
@@ -289,7 +282,7 @@ function useDragHoles(host: RefObject<HTMLElement | null>, frame: RefObject<HTML
 // onCurrentChange follows the viewer's current change; sources asks the
 // viewer for the change at a line of a file.
 export interface ReviewSources { select: (file: string, line: number) => void; saved: (state: unknown, file: string, line: number) => void; decide: (round: number, changes: string[], action: string) => void }
-export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided, onReadyChange, onFullPaperChange, view: controlledView, onViewChange, keepPdf, onCurrentChange, sources, onOpenSource, onRetryComparison, retryBusy, onChanges }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void; onReadyChange?: (ready: boolean, round?: number) => void; onFullPaperChange?: (available: boolean) => void; view?: ReviewView; onViewChange?: (value: ReviewView) => void; keepPdf?: boolean;
+export function ReviewFrame({ task, changesOf, tools, lead, completion, onComment, onDecided, onReadyChange, keepPdf, onCurrentChange, sources, onOpenSource, onRetryComparison, retryBusy, onChanges }: { task?: Task; changesOf?: string; tools?: ReactNode; lead?: ReactNode; completion?: ReactNode; onComment?: () => void; onDecided?: () => void; onReadyChange?: (ready: boolean, round?: number) => void; keepPdf?: boolean;
   onCurrentChange?: (change: CurrentChange) => void; sources?: Ref<ReviewSources>;
   /** Opens a change's source in the workspace's editor; false leaves it to the viewer's own. */
   onOpenSource?: (request: OpenSource) => boolean;
@@ -304,11 +297,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   const shortcuts = useShortcuts();
   const expandedEffects = useIndirectChanges();
   useEffect(loadIndirectChanges, []);
-  const [uncontrolledView, setUncontrolledView] = useTaskReviewView(task?.id);
-  const view = controlledView ?? uncontrolledView, chooseView = onViewChange ?? setUncontrolledView;
   const [fullPaper, setFullPaper] = useState(false);
-  // A task's review offers the whole paper as PDF, where the manuscript has its PDF.
-  const modes = task && fullPaper ? <ModeSwitch mode={view === 'paper' ? 'pdf' : 'changes'} onMode={mode => chooseView(mode === 'pdf' ? 'paper' : 'changes')} changesTitle={t('Changes')}/> : null;
   const noteLinks = useNoteResults(), linksRef = useRef(noteLinks); linksRef.current = noteLinks;
   // Current changes open in the usual review; only older results need history.
   const linkedRound = quoteFocus?.note.round ?? (task && noteLinks?.focus?.historical ? noteLinks.focus.change.round : undefined);
@@ -319,11 +308,12 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   const [findOpen, setFindOpen] = useState(false), [query, setQuery] = useState('');
   const findInput = useRef<HTMLInputElement>(null);
   const currentFind = useRef({ open: findOpen, query }); currentFind.current = { open: findOpen, query };
-  const readingPdf = fullPaper && view === 'paper';
+  const readingPdf = fullPaper;
   const readerCommand = (detail: PdfReaderCommand) => document?.defaultView?.dispatchEvent(new CustomEvent(PDF_READER_COMMAND, { detail }));
   const closeFind = () => { setFindOpen(false); setQuery(''); readerCommand({ type: 'closeFind' }); };
   useEffect(() => { if (!readingPdf) { setFindOpen(false); setQuery(''); } }, [readingPdf]);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'slow' | 'error'>('loading');
+  const [paperError, setPaperError] = useState(false);
   const ready = phase === 'ready';
   useEffect(() => {
     if (!readingPdf || !ready) return;
@@ -414,21 +404,11 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     document?.defaultView?.dispatchEvent(new CustomEvent(EFFECTS_EVENT, { detail: expandedEffects }));
   }, [document, expandedEffects]);
   useEffect(() => {
-    document?.defaultView?.dispatchEvent(new CustomEvent(VIEW_EVENT, { detail: view }));
-  }, [document, view]);
-  useEffect(() => {
     // Manuscript comparisons have their own build. Hide the duplicate phase
     // only while the task's host toolbar is showing its compilation spinner.
     document?.documentElement.toggleAttribute('data-papilot-build-indicator', task?.status === 'building');
   }, [document, task?.status]);
-  useEffect(() => {
-    const target = document?.defaultView;
-    if (!target) return;
-    const chosen = (event: Event) => chooseView((event as CustomEvent).detail === 'paper' ? 'paper' : 'changes');
-    target.addEventListener(VIEW_CHOSEN_EVENT, chosen);
-    return () => target.removeEventListener(VIEW_CHOSEN_EVENT, chosen);
-  }, [document, chooseView]);
-  // The review marks when its round can be shown in the whole paper.
+  // The review marks when its round is shown in the whole paper.
   useEffect(() => {
     if (!document) { setFullPaper(false); return; }
     const root = document.documentElement, update = () => setFullPaper(root.dataset.fullPaper === 'available');
@@ -437,9 +417,6 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     watcher.observe(root, { attributes: true, attributeFilter: ['data-full-paper'] });
     return () => watcher.disconnect();
   }, [document]);
-  const fullPaperCallback = useRef(onFullPaperChange); fullPaperCallback.current = onFullPaperChange;
-  useEffect(() => { onFullPaperChange?.(fullPaper); }, [fullPaper, onFullPaperChange]);
-  useEffect(() => () => { fullPaperCallback.current?.(false); }, []);
   useEffect(() => {
     const view = document?.defaultView;
     if (!view) return;
@@ -449,7 +426,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   }, [document]);
   const taskBuilding = Boolean(task && (task.status === 'building' || task.pendingBuild || task.review?.state === 'building'));
   useEffect(() => {
-    setPhase('loading'); setDisplayedRound(undefined);
+    setPhase('loading'); setPaperError(false); setDisplayedRound(undefined);
     return () => { observer.current?.disconnect(); cropper.current?.disconnect(); };
   }, [attempt, shown, linkedRound, focusSequence]);
   useEffect(() => {
@@ -467,7 +444,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     const element = leading.current; if (!element) { setLeadWidth(0); return; }
     const observer = new ResizeObserver(() => setLeadWidth(Math.ceil(element.offsetWidth)));
     observer.observe(element); return () => observer.disconnect();
-  }, [Boolean(lead || modes)]);
+  }, [Boolean(lead || readingPdf || noteLinks?.focus)]);
   useEffect(() => {
     if (!document || !frame.current || !hostBar.current) return;
     const root = document.documentElement, bar = document.querySelector<HTMLElement>('.bar');
@@ -558,12 +535,17 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
         const paper = doc.getElementById('paper');
         if (!paper) return;
         setDisplayedRound(Number(doc.documentElement.dataset.papilotRound) || undefined);
-        if (!changesOf && keepPdfRef.current && !doc.querySelector('.review-mode') && paper.querySelector('.comparison-waiting[data-state="failed"]') && !paper.querySelector('.pdf-strip img[src],.paper-page,.applied-page,.comparison-notice,.bib-entry')) {
-          setPhase('error'); return;
+        if (!changesOf && keepPdfRef.current && !doc.querySelector('.review-mode') && paper.querySelector('.comparison-waiting[data-state="failed"]') && !paper.querySelector('.pdf-strip img[src],.paper-page,.comparison-notice,.bib-entry')) {
+          setPaperError(false); setPhase('error'); return;
         }
         // An inline edit/annotation error must not hide an otherwise usable
         // review. Only the viewer's unavailable-document states need fallback.
-        if (paper.querySelector('.empty[role="alert"],.paper-status[role="alert"]')) { setPhase('error'); return; }
+        const alert = paper.querySelector('.empty[role="alert"],.paper-status[role="alert"]');
+        if (alert) {
+          setPaperError(Boolean(alert.matches('.paper-status[role="alert"]') && alert.querySelector('button')));
+          setPhase('error'); return;
+        }
+        setPaperError(false);
         if (changesOf || !paper.querySelector('.waiting,.paper-status[role="status"]')) { setPhase('ready'); if (!onReadyChange) observer.current?.disconnect(); }
         else setPhase(value => value === 'error' || value === 'ready' ? 'loading' : value);
       };
@@ -634,7 +616,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
     {task && ready && <NoteReviewControls doc={document}/>}
     <div ref={hostBar} className={'review-host-bar' + (readingPdf ? ' pdf-toolbar' : '')} role={readingPdf ? 'toolbar' : undefined} aria-label={readingPdf ? t('PDF controls') : undefined}>
-      {(lead || modes || noteLinks?.focus) && <div ref={leading} className="review-lead">{lead}{modes}{task && ready && <NoteReviewScope/>}{readingPdf && <PdfContents outline={reader?.outline || []} section={reader?.section ?? -1} ready={Boolean(reader)} onSelect={item => readerCommand({ type: 'outline', index: reader!.outline.indexOf(item) })}/>}</div>}
+      {(lead || readingPdf || noteLinks?.focus) && <div ref={leading} className="review-lead">{lead}{task && ready && <NoteReviewScope/>}{readingPdf && <PdfContents outline={reader?.outline || []} section={reader?.section ?? -1} ready={Boolean(reader)} onSelect={item => readerCommand({ type: 'outline', index: reader!.outline.indexOf(item) })}/>}</div>}
       {readingPdf && <><div className="pdf-toolbar-spacer"/><PdfPageControls page={reader?.page || 1} pages={reader?.pages || 0} zoom={reader?.zoom || { value: 'page-width', scale: 1 }} onPage={page => readerCommand({ type: 'page', page })} onZoom={value => readerCommand({ type: 'zoom', value })} onZoomBy={factor => readerCommand({ type: 'zoomBy', factor })}/></>}
       {readingPdf && <PdfFindButton open={findOpen} onClick={() => findOpen ? closeFind() : setFindOpen(true)}/>}
       <div ref={toolbar} className="review-tools">{task && onComment && <ReviewNotes railSlot={railSlot} doc={ready && !noteLinks?.preview ? document : null} task={task} onComment={onComment}/>}{tools}</div>
@@ -643,6 +625,6 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     </div>
     {task && onComment && <div ref={setRailSlot} className="review-marking-rail"/>}
     {slot && completion ? createPortal(completion, slot) : null}
-    {!ready && (!keepPdf || phase !== 'loading') && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{keepPdf && readingPdf && <button className="button secondary" onClick={() => chooseView('changes')}>{t('Changes')}</button>}{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}
+    {!ready && (!keepPdf || phase !== 'loading') && <div className="review-loading"><p role={phase === 'error' ? 'alert' : 'status'}>{phase === 'error' ? t('The PDF review could not be loaded.') : phase === 'slow' ? t('The PDF review is taking longer than expected.') : t('Loading PDF review…')}</p>{paperError && <button className="button secondary" onClick={() => document?.querySelector<HTMLButtonElement>('.paper-status[role="alert"] button')?.click()}>{t('Changes')}</button>}{phase !== 'loading' && <button className="button secondary" onClick={() => { setPhase('loading'); setAttempt(value => value + 1); }}>{t('Reload review')}</button>}</div>}
   </div>;
 }

@@ -191,15 +191,7 @@ try {
   const settings = () => page.locator('dialog').filter({ has: page.locator('.settings-dialog') });
   await settings().getByRole('button', { name: 'Review preferences', exact: true }).click();
   const expandEffects = () => settings().getByRole('switch', { name: 'Track indirect changes', exact: true });
-  // Reviews open on the changed sections unless the whole paper is chosen here.
-  const openOn = settings().getByRole('group', { name: 'Open reviews on', exact: true });
-  await expect(openOn.getByRole('button', { name: 'Changes', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await openOn.getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(openOn.getByRole('button', { name: 'PDF', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:review:default-view')), 'paper');
-  await openOn.screenshot({ path: 'test-results/review-default-view-setting.png' });
-  await openOn.getByRole('button', { name: 'Changes', exact: true }).click();
-  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:review:default-view')), 'changes');
+  await expect(settings().getByRole('group', { name: 'Open reviews on', exact: true })).toHaveCount(0);
   await expect(expandEffects()).not.toBeChecked();
   await expandEffects().check();
   await expect(indirect().locator('.place')).toHaveCount(2);

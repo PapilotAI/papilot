@@ -42,7 +42,6 @@ test("full-paper diagnostics follow the pinned PDF through chapter, raw pass and
   const summary = page.locator('summary').filter({ hasText: 'This PDF has compilation errors.' });
   const diagnostics = page.getByRole('region', { name: 'This PDF has compilation errors.' });
   await page.reload();
-  await page.getByRole('group', { name: 'Review view' }).getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(summary).toBeVisible();
   await summary.focus(); await page.keyboard.press('Enter');
   await expect(diagnostics).toHaveText(chapter);
@@ -71,7 +70,6 @@ test("full-paper diagnostics follow the pinned PDF through chapter, raw pass and
   }
   repaired = true;
   await page.reload();
-  await page.getByRole('group', { name: 'Review view' }).getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(page.locator('.paper-page')).toHaveCount(2);
   await expect(page.locator('.paper-updating')).toHaveCount(0);
   await expect(summary).toHaveCount(0);
@@ -95,7 +93,6 @@ test("full-paper load failure does not attach completed diagnostics to a partial
     ? route.fulfill({ contentType: 'application/pdf', body: pdf })
     : route.fulfill({ status: 404, json: { error: 'Build no longer exists' } }));
   await page.reload();
-  await page.getByRole('group', { name: 'Review view' }).getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(page.locator('.paper-page')).toHaveCount(2);
   release();
   await expect(page.getByRole('alert')).toContainText('The full PDF could not be loaded.');

@@ -954,9 +954,6 @@ export class Review {
         `${REFS}${action.task}/accepted`,
         accepted!,
       );
-      // The paper as decided compiles at once, replacing the compilation
-      // of the decisions before this one.
-      app.applied.refresh(action.task);
       app.publisher.refollow(action.task);
     }
   }
