@@ -7,6 +7,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Added
 
 - Sort annotations in **My notes** by **Original order**, **PDF position**, or **Newest first** across color groups and individual notes. Notes whose positions need confirmation stay visible at the end in PDF position order, and note numbers continue matching their PDF markers. ([#291](https://github.com/PapilotAI/papilot/issues/291))
+- Support optional color `group` (`yellow`, `green`, `purple`, `orange`, `red`) and quick-note `stamp` labels in the agent `annotation_create` and `annotation_update` tools, including setting, changing, or clearing (`null`) either field without resending `comment`, and show stamps on grouped notes in **My notes** and colored marks on the PDF. ([#292](https://github.com/PapilotAI/papilot/issues/292))
 - Prepare automatic signed APT distribution for stable amd64 desktop releases. Debian packages use system-managed app upgrades and retain agent setup. ([#268](https://github.com/PapilotAI/papilot/issues/268))
 - Add an Arch Linux package recipe for the official x86_64 desktop build and automate validation and publication from stable releases after maintainer setup. ([#267](https://github.com/PapilotAI/papilot/issues/267))
 - Choose a dedicated agent in **Settings → Git** for conflict resolution, with the current conversation as the default. Review the resolution before committing the merge. ([#269](https://github.com/PapilotAI/papilot/issues/269))

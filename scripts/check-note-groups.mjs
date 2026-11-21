@@ -301,6 +301,49 @@ try {
   await page.locator('.pdf-reading-notes').evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
   await page.screenshot({ path: 'test-results/note-groups-mobile.png', fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
+  // Agent-created annotations with both group and stamp, and individual stamped notes,
+  // render stamps in My notes (grouped & individual), keep group color on PDF marks/tags,
+  // and display both stamp and color picker in the PDF popover.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  notes = [
+    { id: 'agent-grouped-stamped', projectId: 'paper', key: 'pdf', page: 0, rect: [0.12, 0.14, 0.45, 0.17], rects: [[0.12, 0.14, 0.45, 0.17]], quote: 'Grouped stamped passage', comment: 'Verify this assumption.', group: 'green', stamp: 'Verify', source: null, createdAt: 100 },
+    { id: 'agent-grouped-stamp-only', projectId: 'paper', key: 'pdf', page: 0, rect: [0.12, 0.22, 0.45, 0.25], rects: [[0.12, 0.22, 0.45, 0.25]], quote: 'Grouped highlight with stamp', comment: '', group: 'green', stamp: 'Check', source: null, createdAt: 101 },
+    { id: 'agent-individual-stamped', projectId: 'paper', key: 'pdf', page: 0, rect: [0.12, 0.30, 0.45, 0.33], rects: [[0.12, 0.30, 0.45, 0.33]], quote: 'Individual stamped passage', comment: 'Tighten this wording.', stamp: 'Polish', source: null, createdAt: 102 },
+  ];
+  await page.reload();
+  await page.locator('.page[data-page-number="1"] .textLayer span').first().waitFor();
+  const groupedTag = page.locator('.note-tag[data-note="agent-grouped-stamped"]');
+  const individualTag = page.locator('.note-tag[data-note="agent-individual-stamped"]');
+  await expect(groupedTag).toContainText('Verify');
+  await expect(individualTag).toContainText('Polish');
+  const colors = await page.evaluate(() => ({
+    groupedBg: getComputedStyle(document.querySelector('.note-tag[data-note="agent-grouped-stamped"]')).backgroundColor,
+    individualBg: getComputedStyle(document.querySelector('.note-tag[data-note="agent-individual-stamped"]')).backgroundColor,
+  }));
+  assert.equal(colors.groupedBg, 'rgb(20, 163, 90)', 'Grouped+stamped tag must keep its green group color');
+  assert.notEqual(colors.individualBg, colors.groupedBg, 'Individual stamped tag keeps its stamp color');
+  await groupedTag.click();
+  const stampedPopover = page.locator('.pdf-personal-note[role="dialog"]');
+  await expect(stampedPopover).toBeVisible();
+  await expect(stampedPopover.locator('.pdf-note-stamp')).toHaveText('Verify');
+  await expect(stampedPopover.locator('.group-select')).toHaveAttribute('data-group', 'green');
+  await stampedPopover.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+  await page.screenshot({ path: 'test-results/note-groups-stamp-popover.png', fullPage: true });
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /^My notes(?: · .+)?$/ }).click();
+  const groupedRow = page.locator('.notes-panel [data-note="agent-grouped-stamped"]');
+  const groupedEmptyRow = page.locator('.notes-panel [data-note="agent-grouped-stamp-only"]');
+  const individualRow = page.locator('.notes-panel [data-note="agent-individual-stamped"]');
+  await expect(groupedRow.locator('.pdf-note-stamp')).toHaveText('Verify');
+  await expect(groupedRow).toContainText('Verify this assumption.');
+  await expect(groupedEmptyRow.locator('.pdf-note-stamp')).toHaveText('Check');
+  await expect(individualRow.locator('.pdf-note-stamp')).toHaveText('Polish');
+  await expect(individualRow).toContainText('Tighten this wording.');
+  await page.locator('.pdf-reading-notes').evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+  await page.screenshot({ path: 'test-results/note-groups-stamps-panel.png', fullPage: true });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.screenshot({ path: 'test-results/note-groups-stamps-dark.png', fullPage: true });
+  await page.emulateMedia({ colorScheme: 'light' });
   assert.deepEqual(errors, []);
-  console.log('PASS: Continuous marking, groups, undo, persistence, direct text/region note selection, text dragging through highlights, grouped messages, and mobile marking.');
+  console.log('PASS: Continuous marking, groups, undo, persistence, direct text/region note selection, text dragging through highlights, grouped messages, grouped/individual stamps, and mobile marking.');
 } finally { await browser.close(); await server.close(); }

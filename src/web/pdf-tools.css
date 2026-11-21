@@ -103,17 +103,18 @@
 .note-mark[data-kind=delete]{mix-blend-mode:normal;background:linear-gradient(to bottom,transparent calc(54% - .75px),var(--delete) calc(54% - .75px),var(--delete) calc(54% + .75px),transparent calc(54% + .75px))}
 .note-mark[data-kind=delete].active{background:linear-gradient(to bottom,transparent calc(54% - 1.25px),var(--delete) calc(54% - 1.25px),var(--delete) calc(54% + 1.25px),transparent calc(54% + 1.25px))}
 .note-tag[data-kind=delete]{background:var(--delete);color:#fff}
-.note-mark[data-stamp]{background:color-mix(in srgb,var(--stamp) 15%,transparent)}
-.note-mark[data-stamp].active{background:color-mix(in srgb,var(--stamp) 28%,transparent)}
-.note-box[data-stamp]{border-color:var(--stamp);background:color-mix(in srgb,var(--stamp) 6%,transparent)}
-.note-tag[data-stamp]{display:inline-flex;align-items:center;gap:4px;background:var(--stamp);color:#fff}
+.note-mark[data-stamp]:not([data-group]){background:color-mix(in srgb,var(--stamp) 15%,transparent)}
+.note-mark[data-stamp]:not([data-group]).active{background:color-mix(in srgb,var(--stamp) 28%,transparent)}
+.note-box[data-stamp]:not([data-group]){border-color:var(--stamp);background:color-mix(in srgb,var(--stamp) 6%,transparent)}
+.note-tag[data-stamp]{display:inline-flex;align-items:center;gap:4px}
+.note-tag[data-stamp]:not([data-group]){background:var(--stamp);color:#fff}
 .note-tag-stamp{font-weight:500}
 /* Keep quick-note markers in the page margin on narrow pages. The note's
    label and full instruction remain available when its numbered marker opens. */
 .note-tag-stamp[hidden]{display:none}
 .note-point{position:absolute;width:2px;height:18px;margin:-9px 0 0 -1px;border-radius:1px;background:var(--accent);pointer-events:none}
 .note-point::before{content:"";position:absolute;left:-4px;top:-7px;width:10px;height:10px;border-radius:50%;background:inherit;box-shadow:0 0 0 2px var(--pdf-page,#fff)}
-.note-point[data-stamp]{background:var(--stamp)}
+.note-point[data-stamp]:not([data-group]){background:var(--stamp)}
 .note-point.active::before{box-shadow:0 0 0 2px var(--pdf-page,#fff),0 0 0 4px var(--accent)}
 .note-point.draft{opacity:.65}
 

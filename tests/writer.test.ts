@@ -15,6 +15,7 @@ import { claudeSubscription, WriterCredentials } from '../src/server/writer/auth
 import { contextBreakdown, COMPACTION_RESERVE } from '../src/server/writer/context.ts';
 import { fileEdit } from '../src/server/writer/edits.ts';
 import { killTree } from '../bin/agent-paths.mjs';
+import { validateToolArguments } from '@mariozechner/pi-ai';
 
 function paper() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot writer 中文 '));
@@ -480,7 +481,37 @@ on 3 birds.`), 8, 'A citation counts as one word, as it reads: [cite]');
 test('Writer uses the common annotation tools without entering shell mode', async () => {
   const received: unknown[] = [];
   const h = host('/unused', { papilot: async (tool, args) => { received.push([tool, args]); return { success: true, text: '{"saved":true}' }; } });
-  assert.equal(await call(writerTools(h), 'annotation_create', { key: 'pdf', start: 'p1-l1', end: 'p1-l1', comment: 'Clarify.', requestId: 'one' }), '{"saved":true}');
-  assert.equal(received.length, 1); assert.equal(h.approvals.length, 0);
+  const tools = writerTools(h);
+  assert.equal(await call(tools, 'annotation_create', { key: 'pdf', start: 'p1-l1', end: 'p1-l1', comment: 'Clarify.', group: 'green', stamp: 'Verify', requestId: 'one' }), '{"saved":true}');
+  assert.equal(await call(tools, 'annotation_update', { id: 'note-1', revision: 'rev-1', group: null, stamp: 'Polish' }), '{"saved":true}');
+  assert.deepEqual(received, [
+    ['annotation_create', { key: 'pdf', start: 'p1-l1', end: 'p1-l1', comment: 'Clarify.', group: 'green', stamp: 'Verify', requestId: 'one' }],
+    ['annotation_update', { id: 'note-1', revision: 'rev-1', group: null, stamp: 'Polish' }],
+  ]);
+  const createTool = tools.find(tool => tool.name === 'annotation_create')!;
+  const updateTool = tools.find(tool => tool.name === 'annotation_update')!;
+  for (const args of [
+    { key: 'pdf', start: 'p1-l1', end: 'p1-l1', comment: 'Clarify.', group: 'green', stamp: 'Verify', requestId: 'one' },
+    { key: 'pdf', start: 'p1-l1', end: 'p1-l1', group: 'yellow', requestId: 'two' },
+  ]) {
+    assert.deepEqual(validateToolArguments(createTool, { type: 'toolCall', id: 'c', name: 'annotation_create', arguments: args }), args);
+  }
+  for (const args of [
+    { id: 'note-1', revision: 'rev-1', group: 'red', stamp: 'Check' },
+    { id: 'note-1', revision: 'rev-1', group: null, stamp: null },
+  ]) {
+    assert.deepEqual(validateToolArguments(updateTool, { type: 'toolCall', id: 'u', name: 'annotation_update', arguments: args }), args);
+  }
+  for (const [tool, bad] of [
+    [createTool, { key: 'pdf', start: 'p1-l1', end: 'p1-l1', comment: 'Hi', group: 'blue', requestId: 'bad-1' }],
+    [createTool, { key: 'pdf', start: 'p1-l1', end: 'p1-l1', comment: 'Hi', group: '', requestId: 'bad-2' }],
+    [createTool, { key: 'pdf', start: 'p1-l1', end: 'p1-l1', comment: 'Hi', stamp: 'a'.repeat(41), requestId: 'bad-3' }],
+    [updateTool, { id: 'note-1', revision: 'rev-1', group: 'blue' }],
+    [updateTool, { id: 'note-1', revision: 'rev-1', group: '' }],
+    [updateTool, { id: 'note-1', revision: 'rev-1', stamp: 'a'.repeat(41) }],
+  ] as const) {
+    assert.throws(() => validateToolArguments(tool, { type: 'toolCall', id: 'bad', name: tool.name, arguments: bad }), /Validation failed/);
+  }
+  assert.equal(h.approvals.length, 0);
   assert.equal(writerTools(host('/unused', { mode: () => 'read-only' })).some(tool => tool.name === 'annotation_create'), false);
 });
