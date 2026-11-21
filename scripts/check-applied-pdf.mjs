@@ -45,11 +45,19 @@ try {
   const task = { id: 'issue-178', projectId: 'paper', agent: 'codex', name: 'issue-178', title: 'Revise the introduction', instructions: '', worktree: '/tmp/issue-178', deferred: true, status: 'running', createdAt: 1, updatedAt: 1, review: { state: 'editing', round: null, counts: {} } };
   const snapshot = { version: '0.10.4', csrf: 'fixture', projects: [{ id: 'paper', name: 'Issue 178 reproduction', path: '/tmp/issue-178', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
   const manuscript = { git: { branch: 'main', files: [] }, annotations: [], build: { status: 'ready', key: 'baseline', current: true, pages: [[612, 792], [612, 792]] } };
-  const strip = name => ({ src: `${name}.svg`, clean: `${name}.svg`, width: 612, height: 35, page: 1, label: '1', top: 100, left: 0, text: [{ chars: [{ text: `${name} paragraph`, rect: [60, 12, 250, 26] }] }] });
+  const strip = (name, page = 1, top = 100) => ({ src: `${name}.svg`, clean: `${name}.svg`, width: 612, height: 35, page, label: String(page), top, left: 0, text: [{ chars: [{ text: `${name} paragraph`, rect: [60, 12, 250, 26] }] }] });
   const makeDetail = (round = 1, pdfUrl = `${prefix}/files/full-v1.pdf`) => ({
     task: task.name, round, before: 'before', after: 'after', warnings: [], files: `${prefix}/files/`, pdf: pdfUrl, loose: [],
-    sections: [{ node: 'intro', title: 'Introduction', number: '1', blocks: [{ kind: 'change', units: ['edit'], identical: false, before: [strip('Original')], after: [strip('Revised')] }] }],
-    units: [{ id: 'edit', file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: 1, old_end: 1, new_start: 1, new_end: 1, old_text: 'Original paragraph', new_text: 'Revised paragraph', truncated: false }],
+    sections: [{
+      node: 'intro', title: 'Introduction', number: '1', blocks: [
+        { kind: 'change', units: ['edit'], identical: false, before: [strip('Original', 1, 100)], after: [strip('Revised', 1, 100)] },
+        { kind: 'change', units: ['edit-2'], identical: false, before: [strip('Original-2', 1, 260)], after: [strip('Revised-2', 1, 260)] },
+      ],
+    }],
+    units: [
+      { id: 'edit', file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: 1, old_end: 1, new_start: 1, new_end: 1, old_text: 'Original paragraph', new_text: 'Revised paragraph', truncated: false },
+      { id: 'edit-2', file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: 5, old_end: 5, new_start: 5, new_end: 5, old_text: 'Second paragraph', new_text: 'Updated second paragraph', truncated: false },
+    ],
   });
   let detail = makeDetail(1, `${prefix}/files/full-v1.pdf`);
   let changesDetail = { ...makeDetail(1, `${prefix}/changes/pdf/1`), task: 'changes' };
@@ -92,10 +100,10 @@ try {
     }
     if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 612 35"><rect width="612" height="35" fill="white"/><text x="60" y="24" font-size="12">Revised paragraph.</text></svg>' });
     if (relative.startsWith('/api/changes/rounds/')) return route.fulfill({ json: changesDetail });
-    if (relative.startsWith('/api/changes/state')) return route.fulfill({ json: { task: 'changes', title: 'Uncommitted changes', csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, round: 1, revision: 'after', decisions: { edit: 'pending' }, comments: {}, undo: null, job: null } });
+    if (relative.startsWith('/api/changes/state')) return route.fulfill({ json: { task: 'changes', title: 'Uncommitted changes', csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, round: 1, revision: 'after', decisions: { edit: 'pending', 'edit-2': 'pending' }, comments: {}, undo: null, job: null } });
     if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail });
     if (relative.endsWith('/look')) return route.fulfill({ json: { ok: true } });
-    if (relative.endsWith('/state')) return route.fulfill({ json: annotateReviewState({ task: task.name, title: task.title, csrf: 'fixture', closed: false, state: 'reviewing', latest: detail.round, history: [{ number: detail.round, created: 1 }], round: detail.round, revision: 'after', deferred: task.deferred, decisions: { edit: 'pending' }, comments: {}, undo: null, job: null }, [task]) });
+    if (relative.endsWith('/state')) return route.fulfill({ json: annotateReviewState({ task: task.name, title: task.title, csrf: 'fixture', closed: false, state: 'reviewing', latest: detail.round, history: [{ number: detail.round, created: 1 }], round: detail.round, revision: 'after', deferred: task.deferred, decisions: { edit: 'pending', 'edit-2': 'pending' }, comments: {}, undo: null, job: null }, [task]) });
     throw Error(`Unexpected review request: ${relative}`);
   });
   const sync = () => page.evaluate(() => window.dispatchEvent(new Event('focus')));
@@ -138,6 +146,32 @@ try {
   await expect(frame.locator('.change.current')).toBeVisible();
   await expect(reviewBar.locator('.pdf-modes')).toHaveCount(0);
   await expect(frame.locator('.view-switch')).toHaveCount(0);
+  // Review decisions, change navigator and PDF controls share ONE top toolbar row,
+  // and the change-map scrollbar remains visible in FullPaper.
+  await expect(frame.locator('.change-map')).toBeVisible();
+  await expect(frame.locator('.change-map-mark')).toHaveCount(2);
+  await expect.poll(() => page.evaluate(() => {
+    const host = document.querySelector('.review-host-bar').getBoundingClientRect();
+    const frameEl = document.querySelector('.review-frame');
+    const frameBox = frameEl.getBoundingClientRect();
+    const bar = frameEl.contentDocument.querySelector('.bar').getBoundingClientRect();
+    const barEnd = frameEl.contentDocument.querySelector('.bar .bar-end').getBoundingClientRect();
+    const tools = document.querySelector('.review-tools').getBoundingClientRect();
+    const nav = frameEl.contentDocument.querySelector('.bar .change-nav').getBoundingClientRect();
+    const lead = document.querySelector('.review-lead').getBoundingClientRect();
+    return Math.abs(host.height - 44) <= 2 &&
+      Math.abs((frameBox.top + bar.bottom) - host.bottom) <= 2 &&
+      frameBox.left + nav.left >= lead.right - 1 &&
+      frameBox.left + barEnd.right <= tools.left + 1;
+  })).toBe(true);
+  await expect(frame.locator('.bar .change-nav-position')).toContainText('1 / 2');
+  await expect(frame.getByRole('button', { name: 'Previous change', exact: true })).toBeDisabled();
+  await frame.getByRole('button', { name: 'Next change', exact: true }).click();
+  await expect(frame.locator('.change.current')).toHaveAttribute('data-stop', '1');
+  await expect(frame.locator('.bar .change-nav-position')).toContainText('2 / 2');
+  await expect(frame.getByRole('button', { name: 'Next change', exact: true })).toBeDisabled();
+  await frame.getByRole('button', { name: 'Previous change', exact: true }).click();
+  await expect(frame.locator('.change.current')).toHaveAttribute('data-stop', '0');
   await healthy(reviewBar, 'Deferred task opens directly in FullPaper');
   const chooseZoom = async label => {
     await reviewBar.getByRole('combobox', { name: 'Zoom', exact: true }).click();
@@ -157,6 +191,13 @@ try {
   await search.fill('Method');
   await expect(page.locator('.pdf-find-count')).toHaveText(/\d+ of [1-9]\d*/);
   await expect(frame.locator('.paper-find-mark.selected').first()).toBeVisible();
+  // Find bar sits directly below the single-row toolbar without covering it.
+  await expect.poll(() => page.evaluate(() => {
+    const findBox = document.querySelector('.review-host-bar .pdf-find').getBoundingClientRect();
+    const frameEl = document.querySelector('.review-frame');
+    const bar = frameEl.contentDocument.querySelector('.bar').getBoundingClientRect();
+    return findBox.top >= frameEl.getBoundingClientRect().top + bar.bottom - 1;
+  })).toBe(true);
   // A newer round with a replacement PDF updates pages/bookmarks and replays the open search query.
   detail = makeDetail(2, `${prefix}/files/full-v2.pdf`);
   task.review = { state: 'reviewing', round: 2, counts: { pending: 1 }, unsent: 0 }; task.updatedAt++;

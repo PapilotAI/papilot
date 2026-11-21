@@ -894,3 +894,43 @@ it("does not highlight unchanged interior letters when only surrounding delimite
     .join("");
   expect(markedChars).toBe("()");
 });
+
+it("merges consecutive changed words across justified gaps without bridging unchanged words", async () => {
+  const { mergeMarks } = await import("../../src/render/pdfdiff.ts");
+  // Simulate a justified LaTeX line with 5pt inter-word gaps (wider than the 4pt default).
+  const words = [
+    { rect: [100, 20, 150, 31] as [number, number, number, number] }, // guarantees (changed)
+    { rect: [155, 20, 190, 31] as [number, number, number, number] }, // general (changed)
+    { rect: [195, 20, 275, 31] as [number, number, number, number] }, // order-irrelevance (changed)
+    { rect: [280, 20, 285, 31] as [number, number, number, number] }, // a (unchanged narrow word!)
+    { rect: [290, 20, 340, 31] as [number, number, number, number] }, // supporting (changed)
+  ];
+  const merged = mergeMarks(
+    [
+      { kind: "added", rect: words[0].rect },
+      { kind: "added", rect: words[1].rect },
+      { kind: "added", rect: words[2].rect },
+      { kind: "added", rect: words[4].rect },
+    ],
+    words,
+  );
+  // First 3 consecutive changed words merge into 1 smooth bar; unchanged "a" stays unbridged.
+  expect(merged).toEqual([
+    { kind: "added", rect: [100, 20, 275, 31] },
+    { kind: "added", rect: [290, 20, 340, 31] },
+  ]);
+  // Intra-word delimiter edits (e.g. "(" and ")" in "function(bar)") never bridge across unchanged interior letters.
+  const intraWord = [{ rect: [100, 20, 161, 31] as [number, number, number, number] }];
+  expect(
+    mergeMarks(
+      [
+        { kind: "removed", rect: [140, 20, 143, 31] },
+        { kind: "removed", rect: [158, 20, 161, 31] },
+      ],
+      intraWord,
+    ),
+  ).toEqual([
+    { kind: "removed", rect: [140, 20, 143, 31] },
+    { kind: "removed", rect: [158, 20, 161, 31] },
+  ]);
+});

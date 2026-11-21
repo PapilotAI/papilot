@@ -40,7 +40,7 @@ const toolbarLines = () => page.evaluate(() => {
   const add = (element, offset = 0) => { const box = element?.getBoundingClientRect(); if (box?.height) lines.add(Math.round(box.bottom + offset - top)); };
   document.querySelectorAll('.main :is(.pdf-toolbar,.panel-heading,.manuscript-side-header,.workspace-navigation,.review-placeholder-toolbar,.git-toolbar,.git-details-toolbar,.git-diff-toolbar)').forEach(element => add(element));
   const frame = document.querySelector('.review-frame'), viewer = frame?.contentDocument;
-  if (viewer && !viewer.documentElement.hasAttribute('data-papilot-reader')) add(viewer.querySelector('.bar'), frame.getBoundingClientRect().top);
+  if (viewer && !viewer.documentElement.hasAttribute('data-papilot-toolbar-stacked')) add(viewer.querySelector('.bar'), frame.getBoundingClientRect().top);
   return [...lines].join(' ');
 });
 const markersFit = () => page.locator('.note-tag').evaluateAll(elements => {

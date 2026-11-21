@@ -541,7 +541,10 @@ export class Strips {
     // that words moved here or away unchanged (see `drawn`).
     // Keep unchanged context readable in the PDF's original colours, even
     // when reflow makes it appear both in a crop and the surrounding text.
-    marks = mergeMarks(marks.filter((mark) => mark.kind !== "context"));
+    marks = mergeMarks(
+      marks.filter((mark) => mark.kind !== "context"),
+      page.words,
+    );
     const svg = page.svg(top, bottom, left, right),
       digest = createHash("sha256")
         .update(svg)

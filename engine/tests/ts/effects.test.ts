@@ -300,3 +300,58 @@ it("absorbs stray coincidental words inside a rewritten sentence and keeps hyphe
   expect(oldHyphen.join(" ")).toContain("order-irrelevant");
   expect(newHyphen.join(" ")).toContain("order-irrelevance");
 });
+
+it("does not falsely mark an unchanged split word when a neighbouring inserted word shares its suffix", () => {
+  function pdf(lines: string[]) {
+    const raw = new mupdf.PDFDocument();
+    const font = new mupdf.Font("Helvetica");
+    const ref = raw.addSimpleFont(font);
+    const ops = lines.map(
+      (line, i) => `BT /F 11 Tf 72 ${700 - 16 * i} Td (${line}) Tj ET`,
+    );
+    const page = raw.addPage([0, 0, 600, 792], 0, { Font: { F: ref } }, ops.join("\n"));
+    raw.insertPage(-1, page);
+    const buffer = raw.saveToBuffer("");
+    const doc = new PdfDocument(buffer.asUint8Array());
+    buffer.destroy();
+    page.destroy();
+    ref.destroy();
+    font.destroy();
+    raw.destroy();
+    return doc;
+  }
+  // Elsewhere in the document, hyphenation breaks "program-s" and "call-s"
+  // so sharedWords splits both "programs" and "calls" at the trailing "s".
+  const old = pdf([
+      "Earlier note on program-",
+      "s and call-",
+      "s in passing.",
+      "To our knowledge, we present the first local type inference that is order-",
+      "irrelevant yet still accepts common higher-order programs.",
+    ]),
+    next = pdf([
+      "Earlier note on program-",
+      "s and call-",
+      "s in passing.",
+      "To our knowledge, this is the first local type inference algorithm that",
+      "guarantees general order-irrelevance while supporting higher-order",
+      "programs with compound arguments and curried calls.",
+    ]);
+  try {
+    const comparison = compareDocuments({ document: old } as Build, { document: next } as Build);
+    const changed = (side: "old" | "new") =>
+      comparison.changes
+        .flatMap((effect) =>
+          comparison[side].tokens.slice(...effect[side]).map((token) => token.text),
+        )
+        .join(" ");
+    expect(changed("old")).not.toContain("program");
+    expect(changed("new")).not.toContain("program");
+    expect(changed("old")).not.toContain("higher");
+    expect(changed("new")).not.toContain("higher");
+    expect(changed("new")).toContain("with compound argument s and curried call s");
+  } finally {
+    old.close();
+    next.close();
+  }
+});

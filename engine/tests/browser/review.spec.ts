@@ -1120,3 +1120,39 @@ test("baseline-failed sourceOnly and failed-comparison states show recovery acti
   await expect(page.locator(".pdf-strip img").first()).toBeVisible({ timeout: 10000 });
   await expect(page.locator(".change .source")).toHaveCount(0);
 });
+
+test("top-bar change navigator steps between changes and re-centers the current one", async ({ page }) => {
+  const nav = page.locator(".bar .change-nav");
+  await expect(nav).toBeVisible();
+  const prev = nav.getByRole("button", { name: "Previous change", exact: true });
+  const next = nav.getByRole("button", { name: "Next change", exact: true });
+  const pos = nav.locator(".change-nav-position");
+  const total = await page.locator("article.change").count();
+  expect(total).toBeGreaterThan(1);
+  // Only one visible Previous/Next change control exists at a time.
+  await expect(page.getByRole("button", { name: "Previous change", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Next change", exact: true })).toHaveCount(1);
+  await expect(prev).toBeDisabled();
+  await expect(next).toBeEnabled();
+  await expect(pos).toHaveAccessibleName(`Change 1 / ${total}`);
+  expect(await pos.innerText()).toBe(`Change 1 / ${total}`);
+  await next.click();
+  await expect(page.locator(".change.current")).toHaveAttribute("data-stop", "1");
+  await expect(prev).toBeEnabled();
+  await expect(pos).toHaveAccessibleName(`Change 2 / ${total}`);
+  expect(await pos.innerText()).toBe(`Change 2 / ${total}`);
+  await prev.click();
+  await expect(page.locator(".change.current")).toHaveAttribute("data-stop", "0");
+  await expect(prev).toBeDisabled();
+  await expect(pos).toHaveAccessibleName(`Change 1 / ${total}`);
+  // Scrolling away and clicking the counter re-centers Change 1.
+  await page.locator("#paper").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await pos.click();
+  await expect(page.locator('.change[data-stop="0"]')).toBeInViewport();
+  // Switching to phone dock hands prev/next off cleanly without duplicating buttons.
+  await page.evaluate(() => document.documentElement.setAttribute("data-papilot-phone", ""));
+  await expect(page.locator(".bar .change-nav")).toHaveCount(0);
+  await expect(page.locator(".change.current .dock .nav")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Previous change", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Next change", exact: true })).toHaveCount(1);
+});

@@ -275,6 +275,17 @@ export function ReviewApp({
   // Where each review was left; a host's uncommitted changes are kept per paper.
   const placeKey = `papilot:review:${location.pathname}:${changes ? 'changes' : task}`;
   const [shortcuts, setShortcuts] = useState(readShortcuts);
+  const [phoneDock, setPhoneDock] = useState(
+    () => typeof document !== "undefined" && document.documentElement.hasAttribute("data-papilot-phone"),
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setPhoneDock(root.hasAttribute("data-papilot-phone"));
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-papilot-phone"] });
+    return () => observer.disconnect();
+  }, []);
   // Changes are shown in place on the full PDF whenever it is available;
   // fall back to the changed sections only when the full PDF cannot be loaded.
   const [paperUnavailable, setPaperUnavailable] = useState(false);
@@ -1139,9 +1150,10 @@ export function ReviewApp({
     return (
       <div className="dock">
         <nav className="actions" aria-label={t("Review the current change")}>
-          {navigation.length > 1 && (
+          {phoneDock && navigation.length > 1 && (
             <>
               <button
+                type="button"
                 className="nav"
                 aria-label={t("Previous change")}
                 aria-keyshortcuts={shortcuts.previous.join(' ')}
@@ -1209,8 +1221,9 @@ export function ReviewApp({
                   : t("Earlier changes")}
             </span>
           )}
-          {navigation.length > 1 && (
+          {phoneDock && navigation.length > 1 && (
             <button
+              type="button"
               className="nav"
               aria-label={t("Next change")}
               aria-keyshortcuts={shortcuts.next.join(' ')}
@@ -1780,6 +1793,11 @@ export function ReviewApp({
       if (article) reveal(article);
     });
   }, [paperView]);
+  const navIndex = navigation.indexOf(current),
+    activeStop = navIndex >= 0 ? current : (navigation[0] ?? -1),
+    navPos = navIndex >= 0 ? navIndex + 1 : 1,
+    prevStop = navIndex >= 0 ? adjacent(current, -1) : -1,
+    nextStop = navIndex >= 0 ? adjacent(current, 1) : (navigation[1] ?? -1);
   let index = 0;
   return (
     <>
@@ -1794,20 +1812,62 @@ export function ReviewApp({
                 : ""}
           </span>
         </div>
-        <ReviewProgress
-          value={changes ? count.accepted : count.decided}
-          total={changes ? count.accepted + count.pending : count.total}
-          label={changes
-            ? t("{staged} of {total} staged", {
-                staged: count.accepted,
-                total: count.accepted + count.pending,
-              })
-            : t("{decided} of {total} decided", {
-                decided: count.decided,
-                total: count.total,
-              })}
-        />
+        {!phoneDock && navigation.length > 0 && (
+          <div className="change-nav" role="group" aria-label={t("Change map")}>
+            <button
+              type="button"
+              className="ghost nav change-nav-prev"
+              aria-label={t("Previous change")}
+              aria-keyshortcuts={shortcuts.previous.join(' ')}
+              title={[t('Previous change'), shortcuts.previous.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
+              disabled={prevStop < 0}
+              onClick={() => select(prevStop)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="ghost change-nav-position"
+              title={t("Change {n}", { n: activeStop + 1 })}
+              onClick={() => select(activeStop)}
+            >
+              <span>
+                <span className="change-nav-full">{t("Change {n}", { n: navPos })}</span>
+                <span className="change-nav-short" aria-hidden="true">{navPos}</span>
+                <span className="change-nav-total"> / {navigation.length}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="ghost nav change-nav-next"
+              aria-label={t("Next change")}
+              aria-keyshortcuts={shortcuts.next.join(' ')}
+              title={[t('Next change'), shortcuts.next.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
+              disabled={nextStop < 0}
+              onClick={() => select(nextStop)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          </div>
+        )}
         <div className="bar-end">
+          <ReviewProgress
+            value={changes ? count.accepted : count.decided}
+            total={changes ? count.accepted + count.pending : count.total}
+            label={changes
+              ? t("{staged} of {total} staged", {
+                  staged: count.accepted,
+                  total: count.accepted + count.pending,
+                })
+              : t("{decided} of {total} decided", {
+                  decided: count.decided,
+                  total: count.total,
+                })}
+          />
           {/* Batch decisions cover only undecided changes; accepted,
               rejected and commented changes keep their state. A single
               undecided change is decided from its own bar. */}
@@ -1815,6 +1875,7 @@ export function ReviewApp({
             <div className="batch-decisions">
               {batch.length > 0 && (
                 <button
+                  type="button"
                   className="ghost accept accept-all"
                   disabled={
                     busy ||
@@ -1863,6 +1924,7 @@ export function ReviewApp({
               )}
               {!changes && (
                 <button
+                  type="button"
                   className="ghost reject reject-all"
                   disabled={
                     busy ||
@@ -1911,6 +1973,7 @@ export function ReviewApp({
           {/* Changes keep no history; the last revert can be undone. */}
           {changes && state?.undo && (
             <button
+              type="button"
               className="ghost undo"
               disabled={!latest || busy || Boolean(lockOf(state, undoKind(state)))}
               title={actionLock(undoKind(state)) || [t('Undo revert'), shortcuts.undo.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
@@ -1924,6 +1987,7 @@ export function ReviewApp({
               browsing earlier decisions. */}
           {detail && !history && !changes && (
             <button
+              type="button"
               className="ghost history"
               title={t("Review history")}
               onClick={() => {
@@ -1935,6 +1999,7 @@ export function ReviewApp({
             </button>
           )}
           <button
+            type="button"
             className="ghost round"
             aria-label={t("Keyboard shortcuts")}
             onClick={showHelp}

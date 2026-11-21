@@ -192,6 +192,60 @@ kbd {
   align-items: center;
   gap: 8px;
 }
+/* Change navigator in the top bar: jump directly between changes and recenter the active one. */
+.change-nav {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.change-nav .ghost {
+  height: 26px;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-2);
+}
+.change-nav .nav {
+  width: 26px;
+  padding: 0;
+}
+.change-nav .nav:disabled {
+  color: var(--text-3);
+  opacity: 0.45;
+}
+.change-nav .nav svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.change-nav .change-nav-position {
+  padding: 0 7px;
+  gap: 0;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  border-inline: 1px solid var(--line);
+}
+.change-nav-short {
+  display: none;
+}
+.change-nav-total {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.change-nav .ghost:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .status:empty {
   display: none;
 }
@@ -1575,7 +1629,7 @@ dialog > button:last-child {
 @media (max-width: 720px) {
   .bar {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr;
     gap: 8px;
     padding: 8px 12px;
   }
@@ -1583,10 +1637,8 @@ dialog > button:last-child {
     grid-column: 1 / -1;
     grid-row: 1;
   }
-  .bar .meter {
-    justify-self: center;
-  }
   .bar-end {
+    justify-self: end;
     gap: 4px;
   }
   .side {

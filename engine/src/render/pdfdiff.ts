@@ -115,7 +115,32 @@ export function tokens(glyphs: Glyph[]) {
   });
   return result;
 }
-export function mergeRects(rects: Rect[]): Rect[] {
+export function mergeRects(
+  rects: Rect[],
+  words?: readonly { rect: Rect }[],
+): Rect[] {
+  const hasWordBetween = (a: Rect, b: Rect) => {
+    if (!words?.length) return true;
+    const left = a[0] <= b[0] ? a : b,
+      right = left === a ? b : a,
+      gap = right[0] - left[2];
+    if (gap <= 4) return false;
+    const height = Math.max(left[3] - left[1], right[3] - right[1], 1);
+    if (gap > height * 2.5) return true;
+    const bandTop = Math.min(left[1], right[1]),
+      bandBottom = Math.max(left[3], right[3]);
+    for (const word of words) {
+      const r = word.rect;
+      if (
+        r[2] > left[2] + 0.5 &&
+        r[0] < right[0] - 0.5 &&
+        r[3] > bandTop &&
+        r[1] < bandBottom
+      )
+        return true;
+    }
+    return false;
+  };
   const canMerge = (a: Rect, b: Rect) => {
     const overlapsX = a[0] < b[2] && b[0] < a[2],
       verticalOverlap = Math.min(a[3], b[3]) - Math.max(a[1], b[1]),
@@ -123,7 +148,8 @@ export function mergeRects(rects: Rect[]): Rect[] {
         (Math.abs(a[1] - b[1]) < 1.7 && Math.abs(a[3] - b[3]) < 2) ||
         (overlapsX &&
           verticalOverlap > 0.5 * Math.min(a[3] - a[1], b[3] - b[1]));
-    return sameBand && a[0] <= b[2] + 4 && b[0] <= a[2] + 4;
+    if (!sameBand) return false;
+    return (a[0] <= b[2] + 4 && b[0] <= a[2] + 4) || !hasWordBetween(a, b);
   };
   const result: Rect[] = [];
   for (const rect of [...rects].sort(
@@ -168,11 +194,14 @@ export function wordMarks(
   glyphRects.forEach((rect, index) => {
     if (!covered.has(index)) boxes.push(rect);
   });
-  return mergeRects(boxes).map((rect) => ({ kind, rect }));
+  return mergeRects(boxes, words).map((rect) => ({ kind, rect }));
 }
 /** Merge overlapping/adjacent marks of the same kind so translucent overlays
  *  never double-darken when multiple edits share one rendered strip. */
-export function mergeMarks(list: Mark[]): Mark[] {
+export function mergeMarks(
+  list: Mark[],
+  words?: readonly { rect: Rect }[],
+): Mark[] {
   const byKind = new Map<Mark["kind"], Rect[]>();
   for (const mark of list) {
     const rects = byKind.get(mark.kind) ?? [];
@@ -180,7 +209,7 @@ export function mergeMarks(list: Mark[]): Mark[] {
     byKind.set(mark.kind, rects);
   }
   return [...byKind].flatMap(([kind, rects]) =>
-    mergeRects(rects).map((rect): Mark => ({ kind, rect })),
+    mergeRects(rects, words).map((rect): Mark => ({ kind, rect })),
   );
 }
 function marks(
