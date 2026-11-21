@@ -158,12 +158,13 @@ try {
 
   // An earlier round keeps its inline LaTeX: the editor shows the files as
   // they are now, with the latest round's changes.
-  await viewer.locator('body').evaluate((round) => {
+  await viewer.locator('body').evaluate((_el, round) => {
     const url = new URL(location.href);
     url.searchParams.set('round', String(round));
     url.searchParams.set('history', '1');
     location.href = url.toString();
   }, round);
+  await expect(viewer.locator('.banner').filter({ hasText: 'Viewing earlier changes.' })).toBeVisible({ timeout: 60000 });
   await expect(viewer.locator('.change.current')).toBeVisible({ timeout: 60000 });
   await viewer.locator('.change.current .source-toggle').click();
   await expect(viewer.locator('.change.current .source'), 'an earlier round shows its LaTeX in the card').toBeVisible();

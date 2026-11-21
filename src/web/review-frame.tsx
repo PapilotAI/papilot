@@ -479,7 +479,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
       const extraWidth = undoWidth + statusWidth;
       // Keep stacking independent of transient batch-button visibility so
       // starting a rebuild never jumps the toolbar between one and two rows.
-      const stacked = free - extraWidth < (phone.matches ? 265 : changesOf ? 245 : 335);
+      const stacked = free - extraWidth < (phone.matches ? 265 : changesOf ? 245 : 295);
       const available = (stacked ? box.clientWidth : free) - extraWidth;
       root.toggleAttribute('data-papilot-toolbar-stacked', stacked);
       root.toggleAttribute('data-papilot-compact-batch', available < (phone.matches ? 420 : changesOf ? 420 : 560));

@@ -140,9 +140,13 @@ function wordEdits(before: string, after: string): Op[] {
   }
   const left = offsets(a),
     right = offsets(b),
-    hasInteriorNewline = (s: string) => /\S[\s\S]*\n[\s\S]*\S/.test(s);
+    hasInteriorNewline = (s: string) => /\S[\s\S]*\n[\s\S]*\S/.test(s),
+    sharesWord = () => {
+      const bSet = new Set(b.filter((t) => /[\p{L}\p{N}]/u.test(t)));
+      return a.some((t) => /[\p{L}\p{N}]/u.test(t) && bSet.has(t));
+    };
   let ops: Op[];
-  if (hasInteriorNewline(before) || hasInteriorNewline(after)) {
+  if ((hasInteriorNewline(before) || hasInteriorNewline(after)) && sharesWord()) {
     // Keep blank-line paragraph breaks (\n\n / \r\n\r\n) anchored as non-space
     // tokens so edits in separate paragraphs or headings never merge across them.
     const isSpace = (token: string) =>
