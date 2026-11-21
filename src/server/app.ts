@@ -587,7 +587,7 @@ export async function buildApp(options: AppOptions) {
     const note = submittedAnnotation(task, noteId);
     const snapshot = store.items(task.id).find(item => item.type === 'user' && item.meta?.notes?.some(summary => summary.id === noteId && !summary.anchor?.round));
     if (!note || !snapshot) return;
-    const { taskId: _, context: _context, groupInstruction: _oldInstruction, aiReview: _adoption, returnDecisions: _decisions, returnAction: _action, returnReplay: _replay, ...copy } = note;
+    const { taskId: _, context: _context, groupInstruction: _oldInstruction, aiReview: _adoption, returnDecisions: _decisions, returnAction: _action, returnReplay: _replay, returnReplays: _replays, ...copy } = note;
     const document = note.document ?? manuscripts.documentOf(note.projectId, note.key) ?? task.document;
     const groupInstruction = note.group && (snapshot.meta?.groupInstructions?.[canonicalGroup(note.group)] ?? note.groupInstruction);
     return { ...copy, id: returnedAnnotationId(task.id, noteId), ...(decision ? { returnAction: { ...decision, taskId: task.id, originalId: noteId } } : {}), createdAt: Date.now(), ...(document ? { document } : {}), ...(groupInstruction ? { groupInstruction } : {}) };
@@ -603,7 +603,8 @@ export async function buildApp(options: AppOptions) {
     if (!copy) throw new Error('Only submitted manuscript annotations can be returned.');
     const prior = store.findAnnotation(copy.projectId, copy.id), replay = request.body?.replay;
     if (replay !== undefined) {
-      if (prior?.returnReplay === replay && !prior.taskId && prior.deletedAt === undefined) return { ...prior, moved: true };
+      if (prior && (prior.returnReplay === replay || prior.returnReplays?.includes(replay)))
+        return { ...prior, moved: prior.returnReplay === replay && !prior.taskId && prior.deletedAt === undefined };
       if (request.body.expected !== undefined && (prior?.deletedAt === undefined || prior.createdAt !== request.body.expected))
         throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
       copy.returnReplay = string(replay, 'Review action ID', 80);

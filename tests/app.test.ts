@@ -975,6 +975,19 @@ test('return unresolved task annotations without changing the original submissio
     assert.deepEqual(originals.map(note => f.store.annotation(projectId, note.id)), originals);
     // Sending a returned annotation in the same session claims it together
     // with the new message. A stale draft cannot claim another return.
+    const replayAccepted = (replay: string) => f.local.inject({
+      method: 'POST', url: `/api/tasks/${taskId}/notes/accepted/return`, headers: f.as, payload: { receipt: true, replay },
+    });
+    const firstClick = (await replayAccepted('first-click')).json();
+    assert.equal(firstClick.moved, true);
+    assert.equal((await replayAccepted('duplicate-tab')).json().moved, false, 'A second tab cannot own the same return');
+    assert.equal((await undoReturn('accepted', firstClick.createdAt)).json().returned, false);
+    assert.equal((await replayAccepted('first-click')).json().moved, false, 'A delayed response retry must not reopen an undone return');
+    const nextClick = (await replayAccepted('next-click')).json();
+    assert.equal(nextClick.moved, true);
+    assert.equal((await undoReturn('accepted', nextClick.createdAt)).json().returned, false);
+    assert.equal((await replayAccepted('first-click')).json().moved, false, 'Older clicks remain retired across later returns');
+    assert.equal((await replayAccepted('duplicate-tab')).json().moved, false, 'An earlier no-op stays a no-op on retry');
     const copy = (await returns('accepted')).json() as Annotation;
     const messages = (generation: number) => f.local.inject({ method: 'POST', url: `/api/tasks/${taskId}/messages`, headers: f.as,
       payload: { text: '', requestKey: 'continue-here', notes: [{ ...summarizeNotes([accepted])[0], comment: 'Try a shorter wording.', returnedFrom: { original: accepted.id, createdAt: generation } }] } });

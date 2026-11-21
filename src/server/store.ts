@@ -154,11 +154,17 @@ export class Store extends EventEmitter {
   }
   saveAnnotation(a: Annotation) { this.db.prepare('INSERT INTO annotations VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(a.id, a.projectId, JSON.stringify(a)); this.emit('change'); return a; }
   returnAnnotation(copy: Annotation, decision?: string) {
-    const existing = this.findAnnotation(copy.projectId, copy.id);
-    if (existing && (existing.taskId || (decision && existing.returnDecisions?.includes(decision)))) return existing;
-    if (existing && existing.deletedAt === undefined && !decision) return existing;
-    const note = existing ?? copy;
-    return this.restoreAnnotation({ ...note, returnAction: existing && existing.deletedAt === undefined ? existing.returnAction : copy.returnAction, returnReplay: existing && existing.deletedAt === undefined ? existing.returnReplay : copy.returnReplay, createdAt: existing?.deletedAt !== undefined ? Math.max(copy.createdAt, existing.createdAt + 1) : note.createdAt,
+    const existing = this.findAnnotation(copy.projectId, copy.id), replay = copy.returnReplay;
+    if (existing && ((decision && existing.returnDecisions?.includes(decision)) || (replay && existing.returnReplays?.includes(replay)))) return existing;
+    const returnReplays = replay ? [...(existing?.returnReplays ?? []), replay] : existing?.returnReplays;
+    if (existing && (existing.taskId || (existing.deletedAt === undefined && !decision))) {
+      return replay ? this.saveAnnotation({ ...existing, returnReplays }) : existing;
+    }
+    const note = existing ?? copy, active = existing && existing.deletedAt === undefined;
+    return this.restoreAnnotation({ ...note, returnReplays,
+      returnAction: active ? existing.returnAction : copy.returnAction,
+      returnReplay: active ? existing.returnReplay : replay,
+      createdAt: existing?.deletedAt !== undefined ? Math.max(copy.createdAt, existing.createdAt + 1) : note.createdAt,
       ...(decision ? { returnDecisions: [...(note.returnDecisions ?? []), decision] } : {}) });
   }
   reviewReturns(projectId: string, taskId: string, action: string) {

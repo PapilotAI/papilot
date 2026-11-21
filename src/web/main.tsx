@@ -2530,6 +2530,7 @@ function App() {
         throw error;
       });
       if (replay) returnClicks.current.delete(route);
+      if (redo && copy.moved === false) return { returned: false };
       result = copy.deletedAt === undefined ? { returned: true, undoReturnAt: copy.taskId ? undefined : copy.createdAt } : { returned: false };
       if (result.undoReturnAt !== undefined && rememberReturn(copy) && clicked && copy.moved !== false)
         recordAnnotation({ kind: 'return', taskId: id, original: clicked, copyId: copy.id, createdAt: copy.createdAt, time: Date.now() });
