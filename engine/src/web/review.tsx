@@ -10,7 +10,6 @@ import {
 } from "react";
 import type {
   ActionKind,
-  AppliedView,
   ChangeBlock,
   PageState,
   PlaceView,
@@ -27,7 +26,6 @@ import { sourceActionLabel, unavailableComparisonMessage, type UnavailableCompar
 import { placeable, type PlacedChange } from "./paper.ts";
 // pdf.js loads only when the full paper is shown.
 const FullPaper = lazy(() => import("./FullPaper.tsx").then((module) => ({ default: module.FullPaper })));
-const AppliedPaper = lazy(() => import("./AppliedPaper.tsx").then((module) => ({ default: module.AppliedPaper })));
 // A hidden tab or a locked phone still polls; the server then knows nobody reads it.
 const stateRoute = (round?: number | null) => {
   const query = new URLSearchParams();
@@ -37,7 +35,6 @@ const stateRoute = (round?: number | null) => {
   return `/state${text ? `?${text}` : ""}`;
 };
 import { EFFECTS_EVENT, EFFECTS_STORAGE, readExpandedEffects } from "./effect-preferences.ts";
-import { readView, VIEW_EVENT, VIEW_CHOSEN_EVENT, VIEW_STORAGE, type ReviewView } from "./view-preferences.ts";
 import { language, locale, t, tn, withLanguage } from "./i18n.ts";
 import {
   ConfirmReferences,
@@ -164,15 +161,12 @@ export function ReviewApp({
   pinned,
   changes = false,
   transport,
-  compileDecisions = true,
 }: {
   task: string;
   pinned: number | null;
   changes?: boolean;
   /** A host can provide local review data without running the HTTP server. */
   transport?: <T>(route: string, body?: unknown) => Promise<T>;
-  /** Static hosts use prepared comparisons without a compiler for decisions. */
-  compileDecisions?: boolean;
 }) {
   const [state, setState] = useState<PageState | null>(null),
     [publishedDetail, setDetail] = useState<RoundDetail | null>(null),
@@ -281,22 +275,21 @@ export function ReviewApp({
   // Where each review was left; a host's uncommitted changes are kept per paper.
   const placeKey = `papilot:review:${location.pathname}:${changes ? 'changes' : task}`;
   const [shortcuts, setShortcuts] = useState(readShortcuts);
-  // The whole paper with the changes in place, or the changed sections only.
-  // A host may fix the view in the address (Papilot's manuscript chooses its
-  // PDF with its own switch); otherwise it opens on the stored default.
-  const [pinnedView] = useState<ReviewView | null>(() => {
-    const value = new URLSearchParams(location.search).get("view");
-    return value === "paper" || value === "changes" ? value : null;
-  });
-  const [view, setView] = useState<ReviewView>(() => pinnedView ?? readView());
+  const [phoneDock, setPhoneDock] = useState(
+    () => typeof document !== "undefined" && document.documentElement.hasAttribute("data-papilot-phone"),
+  );
   useEffect(() => {
-    if (pinnedView) return;
-    const chosen = (event: Event) => setView((event as CustomEvent).detail === "changes" ? "changes" : "paper");
-    const stored = (event: StorageEvent) => { if (event.key === VIEW_STORAGE || event.key === null) setView(readView()); };
-    window.addEventListener(VIEW_EVENT, chosen);
-    window.addEventListener("storage", stored);
-    return () => { window.removeEventListener(VIEW_EVENT, chosen); window.removeEventListener("storage", stored); };
-  }, [pinnedView]);
+    const root = document.documentElement;
+    const sync = () => setPhoneDock(root.hasAttribute("data-papilot-phone"));
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-papilot-phone"] });
+    return () => observer.disconnect();
+  }, []);
+  // Changes are shown in place on the full PDF whenever it is available;
+  // fall back to the changed sections only when the full PDF cannot be loaded.
+  const [paperUnavailable, setPaperUnavailable] = useState(false);
+  useEffect(() => { setPaperUnavailable(false); }, [detail?.round, detail?.pdf, detail?.renderJob]);
   const [expandedEffects, setExpandedEffects] = useState(readExpandedEffects);
   // Per-edit disclosure is temporary and scoped to its round. Changing the
   // global preference resets those overrides without reloading the review.
@@ -1157,9 +1150,10 @@ export function ReviewApp({
     return (
       <div className="dock">
         <nav className="actions" aria-label={t("Review the current change")}>
-          {navigation.length > 1 && (
+          {phoneDock && navigation.length > 1 && (
             <>
               <button
+                type="button"
                 className="nav"
                 aria-label={t("Previous change")}
                 aria-keyshortcuts={shortcuts.previous.join(' ')}
@@ -1227,8 +1221,9 @@ export function ReviewApp({
                   : t("Earlier changes")}
             </span>
           )}
-          {navigation.length > 1 && (
+          {phoneDock && navigation.length > 1 && (
             <button
+              type="button"
               className="nav"
               aria-label={t("Next change")}
               aria-keyshortcuts={shortcuts.next.join(' ')}
@@ -1732,12 +1727,8 @@ export function ReviewApp({
       </article>
     );
   }
-  // A deferred task's PDF is the paper as decided so far, compiled after each
-  // decision: switching to it never starts a compilation.
-  const appliedPaper = compileDecisions && Boolean(state?.deferred ?? state?.workspace?.deferred) && !changes && Boolean(detail),
-    fullPaper = !pinnedView && (appliedPaper || (Boolean(detail?.pdf) && placeable(placed))),
-    paperView = fullPaper && view === "paper";
-  const applied = useApplied(appliedPaper && paperView, api);
+  const fullPaper = Boolean(detail?.pdf) && !detail?.sourceOnly && !detail?.rendering && placeable(placed),
+    paperView = fullPaper && !paperUnavailable;
   // The comparisons of the next few undecided changes are fetched and decoded
   // ahead, so the next one is on screen the moment a decision moves on. A
   // small window keeps a phone's memory free.
@@ -1777,12 +1768,12 @@ export function ReviewApp({
     document.addEventListener("visibilitychange", look);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", look); };
   }, [task, paperView, changes, Boolean(state?.csrf)]);
-  // A host shows its own switch while the whole paper can be shown.
+  // A host shows its PDF navigation controls while the whole paper is shown.
   useEffect(() => {
     const root = document.documentElement;
-    if (fullPaper) root.dataset.fullPaper = "available";
+    if (paperView) root.dataset.fullPaper = "available";
     else delete root.dataset.fullPaper;
-  }, [fullPaper]);
+  }, [paperView]);
   useEffect(() => {
     const root = document.documentElement;
     if (detail?.round) {
@@ -1790,7 +1781,7 @@ export function ReviewApp({
       window.dispatchEvent(new Event("papilot:round"));
     } else delete root.dataset.papilotRound;
   }, [detail?.round]);
-  // Keep the selected change in view when the view changes, from here or the host.
+  // Keep the selected change in view when falling back from the full paper.
   const shownView = useRef(paperView);
   useEffect(() => {
     if (shownView.current === paperView) return;
@@ -1802,11 +1793,11 @@ export function ReviewApp({
       if (article) reveal(article);
     });
   }, [paperView]);
-  // The switch changes this review only; the default is a Papilot setting.
-  function chooseView(next: ReviewView) {
-    setView(next);
-    window.dispatchEvent(new CustomEvent(VIEW_CHOSEN_EVENT, { detail: next }));
-  }
+  const navIndex = navigation.indexOf(current),
+    activeStop = navIndex >= 0 ? current : (navigation[0] ?? -1),
+    navPos = navIndex >= 0 ? navIndex + 1 : 1,
+    prevStop = navIndex >= 0 ? adjacent(current, -1) : -1,
+    nextStop = navIndex >= 0 ? adjacent(current, 1) : (navigation[1] ?? -1);
   let index = 0;
   return (
     <>
@@ -1821,20 +1812,62 @@ export function ReviewApp({
                 : ""}
           </span>
         </div>
-        <ReviewProgress
-          value={changes ? count.accepted : count.decided}
-          total={changes ? count.accepted + count.pending : count.total}
-          label={changes
-            ? t("{staged} of {total} staged", {
-                staged: count.accepted,
-                total: count.accepted + count.pending,
-              })
-            : t("{decided} of {total} decided", {
-                decided: count.decided,
-                total: count.total,
-              })}
-        />
+        {!phoneDock && navigation.length > 0 && (
+          <div className="change-nav" role="group" aria-label={t("Change map")}>
+            <button
+              type="button"
+              className="ghost nav change-nav-prev"
+              aria-label={t("Previous change")}
+              aria-keyshortcuts={shortcuts.previous.join(' ')}
+              title={[t('Previous change'), shortcuts.previous.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
+              disabled={prevStop < 0}
+              onClick={() => select(prevStop)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="ghost change-nav-position"
+              title={t("Change {n}", { n: activeStop + 1 })}
+              onClick={() => select(activeStop)}
+            >
+              <span>
+                <span className="change-nav-full">{t("Change {n}", { n: navPos })}</span>
+                <span className="change-nav-short" aria-hidden="true">{navPos}</span>
+                <span className="change-nav-total"> / {navigation.length}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="ghost nav change-nav-next"
+              aria-label={t("Next change")}
+              aria-keyshortcuts={shortcuts.next.join(' ')}
+              title={[t('Next change'), shortcuts.next.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
+              disabled={nextStop < 0}
+              onClick={() => select(nextStop)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          </div>
+        )}
         <div className="bar-end">
+          <ReviewProgress
+            value={changes ? count.accepted : count.decided}
+            total={changes ? count.accepted + count.pending : count.total}
+            label={changes
+              ? t("{staged} of {total} staged", {
+                  staged: count.accepted,
+                  total: count.accepted + count.pending,
+                })
+              : t("{decided} of {total} decided", {
+                  decided: count.decided,
+                  total: count.total,
+                })}
+          />
           {/* Batch decisions cover only undecided changes; accepted,
               rejected and commented changes keep their state. A single
               undecided change is decided from its own bar. */}
@@ -1842,6 +1875,7 @@ export function ReviewApp({
             <div className="batch-decisions">
               {batch.length > 0 && (
                 <button
+                  type="button"
                   className="ghost accept accept-all"
                   disabled={
                     busy ||
@@ -1890,6 +1924,7 @@ export function ReviewApp({
               )}
               {!changes && (
                 <button
+                  type="button"
                   className="ghost reject reject-all"
                   disabled={
                     busy ||
@@ -1938,6 +1973,7 @@ export function ReviewApp({
           {/* Changes keep no history; the last revert can be undone. */}
           {changes && state?.undo && (
             <button
+              type="button"
               className="ghost undo"
               disabled={!latest || busy || Boolean(lockOf(state, undoKind(state)))}
               title={actionLock(undoKind(state)) || [t('Undo revert'), shortcuts.undo.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')}
@@ -1947,39 +1983,8 @@ export function ReviewApp({
               {t("Undo revert")}
             </button>
           )}
-          {fullPaper && (
-            <div className="view-switch" role="group" aria-label={t("Review view")}>
-              <button
-                className={`ghost${view === "paper" ? " active" : ""}`}
-                aria-pressed={view === "paper"}
-                onClick={() => chooseView("paper")}
-              >
-                PDF
-              </button>
-              <button
-                className={`ghost${view === "changes" ? " active" : ""}`}
-                aria-pressed={view === "changes"}
-                onClick={() => chooseView("changes")}
-              >
-                {t("Changes")}
-              </button>
-            </div>
-          )}
-          {/* History is a toolbar action; its own row appears only while
-              browsing earlier decisions. */}
-          {detail && !history && !changes && (
-            <button
-              className="ghost history"
-              title={t("Review history")}
-              onClick={() => {
-                setHistory(true);
-                if (current < 0 && stops.length) setCurrent(0);
-              }}
-            >
-              {t("History")}
-            </button>
-          )}
           <button
+            type="button"
             className="ghost round"
             aria-label={t("Keyboard shortcuts")}
             onClick={showHelp}
@@ -2121,6 +2126,17 @@ export function ReviewApp({
                 )}
               </span>
               {/* A host such as Papilot puts its next step here, for example a commit. */}
+              <button
+                type="button"
+                className="ghost history"
+                title={t("Review history")}
+                onClick={() => {
+                  setHistory(true);
+                  if (current < 0 && stops.length) setCurrent(0);
+                }}
+              >
+                {t("History")}
+              </button>
               <div className="review-complete-actions" />
             </div>
           )}
@@ -2182,7 +2198,7 @@ export function ReviewApp({
               </details>
             </div>
           ) : null}
-          {detail?.revisedErrors?.length && (!paperView || appliedPaper) ? (
+          {detail?.revisedErrors?.length && !paperView ? (
             <CompilationErrors title={t("The revised text has compilation errors.")} errors={detail.revisedErrors} />
           ) : null}
           {detail?.baselineErrors?.length ? (
@@ -2216,25 +2232,7 @@ export function ReviewApp({
               />
             )}
           <div className="document">
-            {detail && paperView && appliedPaper ? (
-              <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
-                {applied?.shown ? (
-                  <AppliedPaper
-                    key={`${placeKey}:applied`}
-                    url={applied.shown.pdf}
-                    buildKey={applied.shown.key}
-                    errors={applied.shown.errors}
-                    scrollRoot={paper}
-                    place={`${placeKey}:applied`}
-                    status={<AppliedStatus applied={applied} />}
-                  />
-                ) : (
-                  <div className="paper-status" role={applied?.error ? "alert" : "status"}>
-                    {applied?.error ? <AppliedStatus applied={applied} /> : <><div className="pulse" /><p>{t("Compiling your decisions…")}</p></>}
-                  </div>
-                )}
-              </Suspense>
-            ) : detail && paperView ? (
+            {detail && paperView ? (
               <>
                 <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
                 <FullPaper
@@ -2254,7 +2252,7 @@ export function ReviewApp({
                     );
                     if (article) reveal(article);
                   }}
-                  onUnavailable={() => chooseView("changes")}
+                  onUnavailable={() => setPaperUnavailable(true)}
                 />
                 </Suspense>
                 {!stops.length && !changes && (
@@ -2463,45 +2461,5 @@ export function ReviewApp({
         </div>
       )}
     </>
-  );
-}
-
-// The paper as decided so far, polled while it is on screen.
-function useApplied(active: boolean, api: <T>(route: string, body?: unknown) => Promise<T>) {
-  const [applied, setApplied] = useState<AppliedView | null>(null), request = useRef(api);
-  request.current = api;
-  useEffect(() => {
-    if (!active) return;
-    let live = true, timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
-        const next = await request.current<AppliedView>("/applied");
-        if (live) setApplied((previous) => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
-      } catch { /* The next poll tries again. */ }
-      if (live) timer = setTimeout(poll, document.hidden ? 10000 : 1500);
-    };
-    void poll();
-    return () => { live = false; clearTimeout(timer); };
-  }, [active]);
-  return applied;
-}
-// Beside the pages while they are not the current decisions: updating, or
-// why the accepted changes did not compile together.
-function AppliedStatus({ applied }: { applied: AppliedView }) {
-  const [open, setOpen] = useState(false);
-  if (applied.error && !applied.building)
-    return (
-      <div className="paper-updating applied-error" role="alert">
-        <span>{t("Your accepted changes do not compile together.")}</span>
-        <button type="button" className="ghost" onClick={() => setOpen(!open)}>{t("Details")}</button>
-        {open && <pre className="applied-details">{[applied.error.message, ...applied.error.details].join("\n")}</pre>}
-      </div>
-    );
-  if (applied.shown?.current && !applied.building) return null;
-  return (
-    <div className="paper-updating" role="status">
-      <span className="pulse" />
-      <span>{t("Updating with your latest decisions…")}</span>
-    </div>
   );
 }

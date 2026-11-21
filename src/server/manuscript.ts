@@ -1081,17 +1081,6 @@ export class Manuscripts extends EventEmitter {
       return typeof info.pdf === 'string' && fs.existsSync(info.pdf) ? info.pdf as string : null;
     } catch { return null; }
   }
-  /** Where a mark on a page of any build of the paper is in the source, in
-   *  `working`'s files: a task's PDF of its decisions, located in its worktree. */
-  async locateBuild(root: string, key: string, page: number, rect: Rect, rects: Rect[], selected: string, working: string, document?: string) {
-    if (!/^[0-9a-f]{32}$/.test(key)) throw Object.assign(new Error('Unknown PDF.'), { statusCode: 404 });
-    const project = (await engine()).config.projectFor(root, document);
-    let info: { pdf?: unknown; root?: unknown };
-    try { info = JSON.parse(await fs.promises.readFile(path.join(project.state, 'cache/builds', key, 'result.json'), 'utf8')); }
-    catch { throw Object.assign(new Error('This PDF is no longer available.'), { statusCode: 404 }); }
-    if (typeof info.pdf !== 'string' || typeof info.root !== 'string') throw Object.assign(new Error('This PDF is no longer available.'), { statusCode: 404 });
-    return this.pdfReader.locate({ pdf: info.pdf, page, rect, rects, selected, root: info.root, sourceDir: project.source_dir || '', working });
-  }
   /** Where a mark on a manuscript preview PDF is, followed into `working`'s files. */
   async locateShown(projectId: string, key: string, page: number, rect: Rect, rects: Rect[], selected: string, working: string) {
     const { pdf, root, sourceDir } = this.compiled(projectId, key);

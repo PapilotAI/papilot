@@ -437,6 +437,265 @@ function compare(a: Words, b: Words): Comparison {
           tokenMatch[previousA + k] = previousB + r + k - p;
     [previousA, previousB] = [i + 1, j + 1];
   }
+  // Suffix/prefix trimming in tokenDiff can steal a trailing/leading fragment
+  // (such as "-s") from an unchanged split word onto an inserted/deleted
+  // neighbour that ends with the same fragment. Repair those displaced parts
+  // back onto their own intact counterpart word before grouping and validation.
+  const inside = (w: Words, left: number, right: number) =>
+      !!w.tokens[left]?.part &&
+      w.tokens[left].part!.word === w.tokens[right]?.part?.word,
+    repairSplitWordPairs = (
+      map: Int32Array,
+      mirror?: Int32Array,
+    ) => {
+      const rev = new Int32Array(tb.length).fill(-1);
+      map.forEach((j, i) => {
+        if (j >= 0) rev[j] = i;
+      });
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 1; i < ta.length; i++) {
+          const prevB = map[i - 1],
+            curB = map[i],
+            targetB = prevB + 1;
+          if (
+            prevB >= 0 &&
+            inside(a, i - 1, i) &&
+            curB >= 0 &&
+            !inside(b, prevB, curB) &&
+            targetB < tb.length &&
+            inside(b, prevB, targetB) &&
+            rev[targetB] < 0 &&
+            ta[i] === tb[targetB]
+          ) {
+            rev[curB] = -1;
+            map[i] = targetB;
+            rev[targetB] = i;
+            if (mirror && mirror[i] === curB) mirror[i] = targetB;
+          }
+        }
+        for (let i = ta.length - 2; i >= 0; i--) {
+          const nextB = map[i + 1],
+            curB = map[i],
+            targetB = nextB - 1;
+          if (
+            nextB >= 0 &&
+            inside(a, i, i + 1) &&
+            curB >= 0 &&
+            !inside(b, curB, nextB) &&
+            targetB >= 0 &&
+            inside(b, targetB, nextB) &&
+            rev[targetB] < 0 &&
+            ta[i] === tb[targetB]
+          ) {
+            rev[curB] = -1;
+            map[i] = targetB;
+            rev[targetB] = i;
+            if (mirror && mirror[i] === curB) mirror[i] = targetB;
+          }
+        }
+        for (let j = 1; j < tb.length; j++) {
+          const prevA = rev[j - 1],
+            curA = rev[j],
+            targetA = prevA + 1;
+          if (
+            prevA >= 0 &&
+            inside(b, j - 1, j) &&
+            curA >= 0 &&
+            !inside(a, prevA, curA) &&
+            targetA < ta.length &&
+            inside(a, prevA, targetA) &&
+            map[targetA] < 0 &&
+            ta[targetA] === tb[j]
+          ) {
+            map[curA] = -1;
+            if (mirror && mirror[curA] === j) mirror[curA] = -1;
+            map[targetA] = j;
+            rev[j] = targetA;
+            if (mirror && mirror[prevA] === j - 1) mirror[targetA] = j;
+          }
+        }
+        for (let j = tb.length - 2; j >= 0; j--) {
+          const nextA = rev[j + 1],
+            curA = rev[j],
+            targetA = nextA - 1;
+          if (
+            nextA >= 0 &&
+            inside(b, j, j + 1) &&
+            curA >= 0 &&
+            !inside(a, curA, nextA) &&
+            targetA >= 0 &&
+            inside(a, targetA, nextA) &&
+            map[targetA] < 0 &&
+            ta[targetA] === tb[j]
+          ) {
+            map[curA] = -1;
+            if (mirror && mirror[curA] === j) mirror[curA] = -1;
+            map[targetA] = j;
+            rev[j] = targetA;
+            if (mirror && mirror[nextA] === j + 1) mirror[targetA] = j;
+          }
+        }
+      }
+      return rev;
+    };
+  repairSplitWordPairs(tokenMatch);
+  // Keep hyphenated and line-split words atomic: if part of a word changed,
+  // dissolve any match on its remaining pieces so a word is never half-marked.
+  const wordGroups = (w: Words) => {
+    const group = new Int32Array(w.tokens.length).fill(-1),
+      members: number[][] = [],
+      continuesOnNextLine = (hyphenTok: Token, nextTok: Token) => {
+        if (!hyphenTok.hyphen || !nextTok.afterHyphen || !/^\p{Ll}/u.test(nextTok.text))
+          return false;
+        const g1 = w.glyphs[hyphenTok.start],
+          g2 = w.glyphs[nextTok.start];
+        if (!g1 || !g2 || g1.page !== g2.page) return false;
+        const height = Math.max(g1.rect[3] - g1.rect[1], g2.rect[3] - g2.rect[1], 1);
+        return g2.rect[1] - g1.rect[3] <= 1.2 * height;
+      };
+    for (const flow of ["body", "edge"] as const) {
+      const ids = w.tokens.flatMap((t, i) => ((t.flow ?? "body") === flow ? [i] : []));
+      let current = -1;
+      for (let p = 0; p < ids.length; p++) {
+        const i = ids[p],
+          prev = p > 0 ? ids[p - 1] : -1,
+          next = p + 1 < ids.length ? ids[p + 1] : -1,
+          tok = w.tokens[i],
+          prevTok = prev >= 0 ? w.tokens[prev] : undefined,
+          nextTok = next >= 0 ? w.tokens[next] : undefined;
+        const samePart = Boolean(
+            prevTok?.part && tok.part && prevTok.part.word === tok.part.word,
+          ),
+          sameLineHyphen = (h: Token, n: Token) =>
+            !w.glyphs[h.start]?.space && !w.glyphs[n.start]?.space,
+          hyphenBridge =
+            tok.text === "-" &&
+            prevTok &&
+            nextTok &&
+            /\p{L}$/u.test(prevTok.text) &&
+            /^\p{L}/u.test(nextTok.text) &&
+            (sameLineHyphen(tok, nextTok) || continuesOnNextLine(tok, nextTok)),
+          afterBridge =
+            prevTok?.text === "-" &&
+            p >= 2 &&
+            group[prev] === group[ids[p - 2]] &&
+            /\p{L}$/u.test(w.tokens[ids[p - 2]].text) &&
+            /^\p{L}/u.test(tok.text) &&
+            (sameLineHyphen(prevTok, tok) || continuesOnNextLine(prevTok, tok));
+        if (current >= 0 && (samePart || hyphenBridge || afterBridge)) {
+          group[i] = current;
+          members[current].push(i);
+        } else {
+          current = members.length;
+          group[i] = current;
+          members.push([i]);
+        }
+      }
+    }
+    return { group, members };
+  };
+  const groupsA = wordGroups(a),
+    groupsB = wordGroups(b);
+  // Absorb short coincidental matches (like stray "and" or "local") trapped
+  // inside a multi-word rewrite between primary anchors.
+  const lineOfA = new Int32Array(ta.length),
+    lineOfB = new Int32Array(tb.length);
+  a.lines.forEach(([s, e], line) => lineOfA.fill(line, s, e));
+  b.lines.forEach(([s, e], line) => lineOfB.fill(line, s, e));
+  const fullLine = (w: Words, lineOf: Int32Array, from: number, to: number) => {
+      for (let k = from; k < to; k++) {
+        const [ls, le] = w.lines[lineOf[k]];
+        if (from <= ls && le <= to) return true;
+      }
+      return false;
+    },
+    crossesBreak = (w: Words, from: number, to: number) => {
+      for (let k = from; k + 1 < to; k++) {
+        const g1 = w.glyphs[w.tokens[k].start],
+          g2 = w.glyphs[w.tokens[k + 1].start];
+        if (!g1 || !g2) continue;
+        if (g1.page !== g2.page) return true;
+        if (g1.pair !== g2.pair) {
+          const height = Math.max(g1.rect[3] - g1.rect[1], g2.rect[3] - g2.rect[1], 1);
+          if (g2.rect[1] - g1.rect[3] > 0.9 * height) return true;
+        }
+      }
+      return false;
+    },
+    wordCount = (w: Words, groupOf: Int32Array, from: number, to: number) => {
+      const seen = new Set<number>();
+      for (let k = from; k < to; k++)
+        if (/[\p{L}\p{N}]/u.test(w.tokens[k].text)) seen.add(groupOf[k]);
+      return seen.size;
+    },
+    anchored = primary.filter(([i]) => tokenMatch[i] >= 0);
+  previousA = previousB = 0;
+  for (const [endA, endB] of [...anchored, [ta.length, tb.length]]) {
+    const segments: { equal: boolean; i: number; j: number; x: number; y: number }[] = [];
+    let curA = previousA,
+      curB = previousB;
+    for (let k = previousA; k <= endA; k++) {
+      const m = k < endA ? tokenMatch[k] : endB;
+      if (m < 0) continue;
+      if (k > curA || m > curB)
+        segments.push({ equal: false, i: curA, j: k, x: curB, y: m });
+      if (k < endA) {
+        const last = segments.at(-1);
+        if (last?.equal && last.j === k && last.y === m) {
+          last.j++;
+          last.y++;
+        } else segments.push({ equal: true, i: k, j: k + 1, x: m, y: m + 1 });
+      }
+      curA = k + 1;
+      curB = m + 1;
+    }
+    for (let dirty = true; dirty;) {
+      dirty = false;
+      for (let k = 1; k + 1 < segments.length; k++) {
+        const eq = segments[k],
+          prev = segments[k - 1],
+          next = segments[k + 1];
+        if (!eq.equal || prev.equal || next.equal) continue;
+        let hasEdge = false;
+        for (let t = eq.i; t < eq.j && !hasEdge; t++)
+          if (a.tokens[t].flow === "edge") hasEdge = true;
+        for (let t = eq.x; t < eq.y && !hasEdge; t++)
+          if (b.tokens[t].flow === "edge") hasEdge = true;
+        if (
+          hasEdge ||
+          fullLine(a, lineOfA, eq.i, eq.j) ||
+          fullLine(b, lineOfB, eq.x, eq.y) ||
+          crossesBreak(a, Math.max(prev.i, eq.i - 1), Math.min(next.j, eq.j + 1)) ||
+          crossesBreak(b, Math.max(prev.x, eq.x - 1), Math.min(next.y, eq.y + 1))
+        )
+          continue;
+        const q = wordCount(a, groupsA.group, eq.i, eq.j),
+          bothReplace =
+            prev.j > prev.i &&
+            prev.y > prev.x &&
+            next.j > next.i &&
+            next.y > next.x,
+          leftSize = Math.max(
+            wordCount(a, groupsA.group, prev.i, prev.j),
+            wordCount(b, groupsB.group, prev.x, prev.y),
+          ),
+          rightSize = Math.max(
+            wordCount(a, groupsA.group, next.i, next.j),
+            wordCount(b, groupsB.group, next.x, next.y),
+          ),
+          minSize = Math.min(leftSize, rightSize);
+        if ((q === 0 && minSize >= 2) || (bothReplace && q >= 1 && q <= 2 && minSize >= 2 * q)) {
+          for (let t = eq.i; t < eq.j; t++) tokenMatch[t] = -1;
+          prev.j = next.j;
+          prev.y = next.y;
+          segments.splice(k, 2);
+          dirty = true;
+          k--;
+        }
+      }
+    }
+    [previousA, previousB] = [endA + 1, endB + 1];
+  }
   previousA = previousB = 0;
   for (const [i, j] of [
     ...Array.from(tokenMatch).flatMap((j, i) => (j >= 0 ? [[i, j]] : [])),
@@ -692,10 +951,7 @@ function compare(a: Words, b: Words): Comparison {
   paired.forEach((j, i) => {
     if (j >= 0) back[j] = i;
   });
-  const inside = (w: Words, left: number, right: number) =>
-      !!w.tokens[left]?.part &&
-      w.tokens[left].part!.word === w.tokens[right]?.part?.word,
-    hyphenAfter = (w: Words, index: number) => {
+  const hyphenAfter = (w: Words, index: number) => {
       const glyphs = tokenGlyphs(w.tokens[index]),
         last = glyphs.at(-1);
       return (
@@ -723,6 +979,39 @@ function compare(a: Words, b: Words): Comparison {
     )
       bad.add(i);
   });
+  // After movement and continuation recovery, dissolve any remaining partial
+  // match of a hyphenated or split word so a changed word is never half-marked.
+  const remainingPaired = paired.slice(),
+    remainingBack = back.slice();
+  for (const i of bad) {
+    const j = remainingPaired[i];
+    if (j >= 0) remainingBack[j] = -1;
+    remainingPaired[i] = -1;
+  }
+  for (let dirty = true; dirty;) {
+    dirty = false;
+    for (const [w, members, map, rev, isOld] of [
+      [a, groupsA.members, remainingPaired, remainingBack, true],
+      [b, groupsB.members, remainingBack, remainingPaired, false],
+    ] as const) {
+      for (const group of members) {
+        if (group.length < 2) continue;
+        const lexical = group.filter((t) => /[\p{L}\p{N}]/u.test(w.tokens[t].text));
+        if (lexical.length < 2) continue;
+        const matched = lexical.some((t) => map[t] >= 0),
+          unmatched = lexical.some((t) => map[t] < 0);
+        if (!matched || !unmatched) continue;
+        for (const t of group) {
+          const other = map[t];
+          if (other < 0) continue;
+          bad.add(isOld ? t : other);
+          rev[other] = -1;
+          map[t] = -1;
+          dirty = true;
+        }
+      }
+    }
+  }
   const boundaries: Effect[] = [...bad].map((i) => {
     const j = paired[i];
     paired[i] = tokenMatch[i] = -1;

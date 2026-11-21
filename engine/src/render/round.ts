@@ -7,6 +7,7 @@ import { referenceChanges } from "../core/bib.ts";
 import { changesOf, placesOf, renderPlace } from "./effects.ts";
 import {
   alignedCrops,
+  alignedSpanCrops,
   alignment,
   marksIn,
   type Mine,
@@ -25,6 +26,7 @@ import type {
   Place,
   Position,
   PlaceView,
+  Rect,
   RenderedRound,
   RenderRequest,
   SourceBox,
@@ -135,7 +137,8 @@ export function classify(
   if (precise) {
     // Exact source spans retain their own marks, but a deletion paired with an
     // insertion elsewhere is movement. Use the document alignment to classify
-    // those same glyphs without borrowing marks from neighboring edits.
+    // those same glyphs without borrowing marks from neighboring edits, and to
+    // align crop edges when paragraph reflow shifts line breaks.
     for (const pair of precise) {
       for (const [side, at, marks] of [
         ['old', pair.old, pair.before_marks],
@@ -147,9 +150,37 @@ export function classify(
           if (sourceMoved || moved.some(match => containsCenter(match.rect, mark.rect))) mark.kind = 'moved';
       }
     }
+    let pairs = precise;
+    if (al) {
+      const oldPositions = precise.map(p => p.old).filter((p): p is Position => p !== null),
+        newPositions = precise.map(p => p.new).filter((p): p is Position => p !== null),
+        group = alignedSpanCrops(al, oldPositions, newPositions, mine);
+      if (group && (group.left.length || group.right.length)) {
+        const beforeByPage = (page: number, clip: Rect) =>
+            precise.flatMap(p => p.old?.page === page ? p.before_marks.filter(m => containsCenter(clip, m.rect)) : []),
+          afterByPage = (page: number, clip: Rect) =>
+            precise.flatMap(p => p.new?.page === page ? p.after_marks.filter(m => containsCenter(clip, m.rect)) : []);
+        pairs = Array.from({ length: Math.max(group.left.length, group.right.length) }, (_, k) => {
+          const oldAt = group.left[k] ?? null,
+            newAt = group.right[k] ?? null,
+            context: Mark[] = oldAt
+              ? (group.faded ?? [])
+                  .filter(f => f.page === oldAt.page && containsCenter(oldAt.clip, f.rect))
+                  .map(f => ({ kind: "context", rect: f.rect }))
+              : [];
+          return {
+            old: oldAt,
+            new: newAt,
+            before_marks: oldAt ? [...beforeByPage(oldAt.page, oldAt.clip), ...context] : [],
+            after_marks: newAt ? afterByPage(newAt.page, newAt.clip) : [],
+            group: 0,
+          };
+        });
+      }
+    }
     return {
-      pairs: precise,
-      comparison: precise.some(pair => [...pair.before_marks, ...pair.after_marks].some(mark => mark.kind !== 'moved')) ? "text" : "position",
+      pairs,
+      comparison: pairs.some(pair => [...pair.before_marks, ...pair.after_marks].some(mark => mark.kind !== 'moved' && mark.kind !== 'context')) ? "text" : "position",
       aligned: true,
       independent: true,
     };

@@ -116,12 +116,44 @@ export function visibleStop(
     : (visible[0]?.index ?? current);
 }
 export function wordDiff(before: string, after: string) {
-  const token = /\\[A-Za-z@]+\*?|[\p{L}\p{N}_]+|\s+|[^\s]/gu,
+  const token = /\\[A-Za-z@]+\*?|[\p{L}\p{N}_]+(?:-[\p{L}\p{N}_]+)*|\s+|[^\s]/gu,
     a = before.match(token) ?? [],
     b = after.match(token) ?? [],
-    parts: { type: "equal" | "del" | "ins"; text: string }[] = [];
-  for (const [tag, i, j, x, y] of opcodes(a, b)) {
-    if (tag === "equal")
+    meaningful = (tokens: string[], from: number, to: number) => {
+      let count = 0;
+      for (let k = from; k < to; k++) if (/[\p{L}\p{N}\\{}$]/u.test(tokens[k])) count++;
+      return count;
+    },
+    segments = opcodes(a, b).map(([tag, i, j, x, y]) => ({ equal: tag === "equal", i, j, x, y }));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let k = 1; k + 1 < segments.length; k++) {
+      const eq = segments[k], prev = segments[k - 1], next = segments[k + 1];
+      if (!eq.equal || prev.equal || next.equal) continue;
+      const text = a.slice(eq.i, eq.j).join(""),
+        q = meaningful(a, eq.i, eq.j),
+        spanSize = Math.min(
+          Math.max(meaningful(a, prev.i, prev.j), meaningful(b, prev.x, prev.y)),
+          Math.max(meaningful(a, next.i, next.j), meaningful(b, next.x, next.y)),
+        );
+      const absorb =
+        q === 0
+          ? !/\r?\n[ \t]*\r?\n|[%\\{}$]|[.!?]\s*\r?\n/u.test(text) &&
+            (!/\n/.test(text) || spanSize >= 2)
+          : q <= 2 &&
+            !/\r?\n[ \t]*\r?\n|[%\\{}$]|[.!?]\s*\r?\n/u.test(text) &&
+            spanSize >= 2 * q;
+      if (!absorb) continue;
+      prev.j = next.j;
+      prev.y = next.y;
+      segments.splice(k, 2);
+      changed = true;
+      k--;
+    }
+  }
+  const parts: { type: "equal" | "del" | "ins"; text: string }[] = [];
+  for (const { equal, i, j, x, y } of segments) {
+    if (equal)
       parts.push({ type: "equal", text: a.slice(i, j).join("") });
     else {
       if (i < j) parts.push({ type: "del", text: a.slice(i, j).join("") });
@@ -131,7 +163,7 @@ export function wordDiff(before: string, after: string) {
   for (let i = 1; i < parts.length - 1; i++)
     if (
       parts[i].type === "equal" &&
-      /^\s+$/.test(parts[i].text) &&
+      /^[ \t]+$/.test(parts[i].text) &&
       parts[i - 1].type !== "equal" &&
       parts[i + 1].type !== "equal"
     ) {

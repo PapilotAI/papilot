@@ -57,53 +57,73 @@ export function ChangeMap({
       });
       if (!needsMeasure) return;
       needsMeasure = false;
-      const origin = root.getBoundingClientRect().top + root.clientTop;
-      setRegions(
-        [...root.querySelectorAll<HTMLElement>("[data-stop]")].map(
-          (article) => {
-            const box = article.getBoundingClientRect(),
-              top = Math.max(
-                0,
-                ((box.top - origin + root.scrollTop) / extent) * trackHeight,
-              );
-            return {
-              top,
-              height: Math.max(
-                0,
-                Math.min(
-                  trackHeight - top,
-                  Math.max(4, (box.height / extent) * trackHeight),
-                ),
-              ),
-            };
-          },
-        ),
-      );
+      const origin = root.getBoundingClientRect().top + root.clientTop,
+        next: (Region | undefined)[] = new Array(stops.length);
+      for (const article of root.querySelectorAll<HTMLElement>("[data-stop]")) {
+        const stopIndex = Number(article.dataset.stop);
+        if (!Number.isFinite(stopIndex) || stopIndex < 0 || stopIndex >= stops.length) continue;
+        const box = article.getBoundingClientRect(),
+          top = Math.max(
+            0,
+            ((box.top - origin + root.scrollTop) / extent) * trackHeight,
+          );
+        next[stopIndex] = {
+          top,
+          height: Math.max(
+            0,
+            Math.min(
+              trackHeight - top,
+              Math.max(4, (box.height / extent) * trackHeight),
+            ),
+          ),
+        };
+      }
+      setRegions(next as Region[]);
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(update);
     };
+    const observed = new Set<Element>(),
+      watch = (el: Element) => {
+        if (observed.has(el)) return;
+        observed.add(el);
+        observer.observe(el);
+      },
+      unwatch = (el: Element) => {
+        if (!observed.delete(el)) return;
+        observer.unobserve(el);
+      };
     const observer = new ResizeObserver(() => {
       needsMeasure = true;
       schedule();
     });
-    observer.observe(root);
-    observer.observe(track);
-    for (const child of root.children) observer.observe(child);
-    for (const article of root.querySelectorAll("[data-stop]"))
-      observer.observe(article);
-    // Banners can move the document without changing its own dimensions.
+    watch(root);
+    watch(track);
+    for (const child of root.children) watch(child);
+    for (const article of root.querySelectorAll("[data-stop]")) watch(article);
+    // Banners and FullPaper pages mount/resize asynchronously inside #paper.
     const mutations = new MutationObserver((records) => {
+      let relevant = false;
       for (const record of records) {
-        for (const child of record.removedNodes)
-          if (child instanceof Element) observer.unobserve(child);
-        for (const child of record.addedNodes)
-          if (child instanceof Element) observer.observe(child);
+        if ((record.target as Element).closest?.(".pdf-text,.paper-slice,.paper-find-marks,.latex-highlight")) continue;
+        for (const child of record.removedNodes) {
+          if (!(child instanceof Element)) continue;
+          unwatch(child);
+          for (const article of child.querySelectorAll("[data-stop]")) unwatch(article);
+          relevant = true;
+        }
+        for (const child of record.addedNodes) {
+          if (!(child instanceof Element)) continue;
+          if (child.parentElement === root || child.matches("[data-stop],.paper,.paper-page")) watch(child);
+          for (const article of child.querySelectorAll("[data-stop]")) watch(article);
+          relevant = true;
+        }
       }
+      if (!relevant) return;
       needsMeasure = true;
       schedule();
     });
-    mutations.observe(root, { childList: true });
+    mutations.observe(root, { childList: true, subtree: true });
     root.addEventListener("scroll", schedule, { passive: true });
     schedule();
     return () => {

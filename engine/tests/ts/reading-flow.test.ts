@@ -133,16 +133,16 @@ it("retains a real edit to a continuation after a floating block", () => {
       ],
     ]),
     result = compareDocuments(old, next);
-  expect(
-    result.changes.flatMap((e) =>
+  const oldTokens = result.changes.flatMap((e) =>
       result.old.tokens.slice(...e.old).map((t) => t.text),
     ),
-  ).toContain("operability");
-  expect(
-    result.changes.flatMap((e) =>
+    newTokens = result.changes.flatMap((e) =>
       result.new.tokens.slice(...e.new).map((t) => t.text),
-    ),
-  ).toContain("operationality");
+    );
+  expect(oldTokens).toContain("operability");
+  expect(newTokens).toContain("operationality");
+  expect(oldTokens).not.toContain("Long");
+  expect(newTokens).not.toContain("Long");
 });
 it("does not erase an unmatched literal line-end hyphen because another word shares its prefix", () => {
   const old = build([

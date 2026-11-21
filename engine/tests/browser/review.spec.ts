@@ -42,7 +42,6 @@ test("full-paper diagnostics follow the pinned PDF through chapter, raw pass and
   const summary = page.locator('summary').filter({ hasText: 'This PDF has compilation errors.' });
   const diagnostics = page.getByRole('region', { name: 'This PDF has compilation errors.' });
   await page.reload();
-  await page.getByRole('group', { name: 'Review view' }).getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(summary).toBeVisible();
   await summary.focus(); await page.keyboard.press('Enter');
   await expect(diagnostics).toHaveText(chapter);
@@ -71,7 +70,6 @@ test("full-paper diagnostics follow the pinned PDF through chapter, raw pass and
   }
   repaired = true;
   await page.reload();
-  await page.getByRole('group', { name: 'Review view' }).getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(page.locator('.paper-page')).toHaveCount(2);
   await expect(page.locator('.paper-updating')).toHaveCount(0);
   await expect(summary).toHaveCount(0);
@@ -95,7 +93,6 @@ test("full-paper load failure does not attach completed diagnostics to a partial
     ? route.fulfill({ contentType: 'application/pdf', body: pdf })
     : route.fulfill({ status: 404, json: { error: 'Build no longer exists' } }));
   await page.reload();
-  await page.getByRole('group', { name: 'Review view' }).getByRole('button', { name: 'PDF', exact: true }).click();
   await expect(page.locator('.paper-page')).toHaveCount(2);
   release();
   await expect(page.getByRole('alert')).toContainText('The full PDF could not be loaded.');
@@ -478,7 +475,8 @@ test("a decided change offers no decisions, only the way to the next undecided o
   const first = page.locator(".change.current");
   await first.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(page.getByRole("progressbar", { name: `1 of ${total} decided`, exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "History", exact: true }).click();
+  await expect(page.locator(".bar .history")).toHaveCount(0);
+  await page.goto(`${page.url()}&history=1`);
   const accepted = page.locator('.change[data-state="accepted"]');
   await accepted.click();
   await expect(accepted).toHaveClass(/current/);
@@ -1122,4 +1120,40 @@ test("baseline-failed sourceOnly and failed-comparison states show recovery acti
   await expect.poll(() => publishRequests).toBe(2);
   await expect(page.locator(".pdf-strip img").first()).toBeVisible({ timeout: 10000 });
   await expect(page.locator(".change .source")).toHaveCount(0);
+});
+
+test("top-bar change navigator steps between changes and re-centers the current one", async ({ page }) => {
+  const nav = page.locator(".bar .change-nav");
+  await expect(nav).toBeVisible();
+  const prev = nav.getByRole("button", { name: "Previous change", exact: true });
+  const next = nav.getByRole("button", { name: "Next change", exact: true });
+  const pos = nav.locator(".change-nav-position");
+  const total = await page.locator("article.change").count();
+  expect(total).toBeGreaterThan(1);
+  // Only one visible Previous/Next change control exists at a time.
+  await expect(page.getByRole("button", { name: "Previous change", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Next change", exact: true })).toHaveCount(1);
+  await expect(prev).toBeDisabled();
+  await expect(next).toBeEnabled();
+  await expect(pos).toHaveAccessibleName(`Change 1 / ${total}`);
+  expect(await pos.innerText()).toBe(`Change 1 / ${total}`);
+  await next.click();
+  await expect(page.locator(".change.current")).toHaveAttribute("data-stop", "1");
+  await expect(prev).toBeEnabled();
+  await expect(pos).toHaveAccessibleName(`Change 2 / ${total}`);
+  expect(await pos.innerText()).toBe(`Change 2 / ${total}`);
+  await prev.click();
+  await expect(page.locator(".change.current")).toHaveAttribute("data-stop", "0");
+  await expect(prev).toBeDisabled();
+  await expect(pos).toHaveAccessibleName(`Change 1 / ${total}`);
+  // Scrolling away and clicking the counter re-centers Change 1.
+  await page.locator("#paper").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await pos.click();
+  await expect(page.locator('.change[data-stop="0"]')).toBeInViewport();
+  // Switching to phone dock hands prev/next off cleanly without duplicating buttons.
+  await page.evaluate(() => document.documentElement.setAttribute("data-papilot-phone", ""));
+  await expect(page.locator(".bar .change-nav")).toHaveCount(0);
+  await expect(page.locator(".change.current .dock .nav")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Previous change", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Next change", exact: true })).toHaveCount(1);
 });

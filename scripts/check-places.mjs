@@ -187,10 +187,11 @@ try {
   for (const [index, block] of detail.sections[0].blocks.entries()) {
     for (const strip of [...block.before, ...block.after]) Object.assign(strip, { page: 1, label: '1', top: 100 + index * 55, left: 0, width: 612, height: 35, text: [{ chars: [{ text: 'A paragraph in the review PDF.', rect: [60, 12, 250, 26] }] }] });
   }
-  await page.evaluate(() => { localStorage.setItem('papilot:review:default-view', 'paper'); localStorage.removeItem('papilot:pdf-zoom'); });
+  await page.evaluate(() => { localStorage.removeItem('papilot:pdf-zoom'); });
   await page.reload();
   const full = page.frameLocator('.review-frame');
   await expect(full.locator('.paper-page')).toHaveCount(2);
+  await expect(page.locator('.review-lead .pdf-modes')).toHaveCount(0);
   await expect(page.locator('.review-host-bar .pdf-pages')).toHaveText('/ 2');
   await expect.poll(() => full.locator('#paper').evaluate(root => Math.abs(root.querySelector('.paper-page').getBoundingClientRect().width - root.clientWidth))).toBeLessThan(2);
   await page.getByRole('button', { name: 'Contents', exact: true }).click();
@@ -235,12 +236,6 @@ try {
   await expect(page.getByRole('combobox', { name: 'Zoom', exact: true })).toHaveText('125%');
   near(await secondPageOffset(), fullOffset, 'two tasks keep separate reading places', 6);
 
-
-  await page.locator('.review-lead .pdf-modes').getByRole('button', { name: 'Changes', exact: true }).click();
-  await expect(full.locator('.paper-page')).toHaveCount(0);
-  await page.locator('.review-lead .pdf-modes').getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(full.locator('.paper-page')).toHaveCount(2);
-  near(await secondPageOffset(), fullOffset, 'full PDF reading position after Changes', 6);
   await page.reload();
   await expect(full.locator('.paper-page')).toHaveCount(2);
   await expect.poll(() => scrollOf(paper())).toBeGreaterThan(500);

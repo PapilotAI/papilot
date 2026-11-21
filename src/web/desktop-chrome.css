@@ -38,6 +38,7 @@
 [data-desktop="win32"] .manuscript:not(.panel-collapsed)>.manuscript-pages,
 [data-desktop="win32"] .task-grid.layout-split>.review-panel{--desktop-window-space:0px}
 [data-desktop="win32"] :is(.pdf-toolbar,.workspace-navigation,.review-placeholder-toolbar,.panel-heading,.manuscript-side-header,.git-details-toolbar,.git-diff-toolbar,.review-tools){padding-right:calc(8px + var(--desktop-window-space,0px))}
+[data-desktop="win32"] .review-host-bar.pdf-toolbar{padding-right:0}
 [data-desktop="win32"] .git-workspace .git-panel{--desktop-window-space:0px}
 @media(max-width:680px){
   [data-desktop="win32"] .git-workspace .git-panel{--desktop-window-space:138px}

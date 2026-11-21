@@ -40,7 +40,7 @@ const toolbarLines = () => page.evaluate(() => {
   const add = (element, offset = 0) => { const box = element?.getBoundingClientRect(); if (box?.height) lines.add(Math.round(box.bottom + offset - top)); };
   document.querySelectorAll('.main :is(.pdf-toolbar,.panel-heading,.manuscript-side-header,.workspace-navigation,.review-placeholder-toolbar,.git-toolbar,.git-details-toolbar,.git-diff-toolbar)').forEach(element => add(element));
   const frame = document.querySelector('.review-frame'), viewer = frame?.contentDocument;
-  if (viewer && !viewer.documentElement.hasAttribute('data-papilot-reader')) add(viewer.querySelector('.bar'), frame.getBoundingClientRect().top);
+  if (viewer && !viewer.documentElement.hasAttribute('data-papilot-toolbar-stacked')) add(viewer.querySelector('.bar'), frame.getBoundingClientRect().top);
   return [...lines].join(' ');
 });
 const markersFit = () => page.locator('.note-tag').evaluateAll(elements => {
@@ -300,11 +300,10 @@ try {
   await expect(review.locator('.change.current .source-code')).toBeVisible();
   await review.locator('.change.current').getByRole('button', { name: 'LaTeX', exact: true }).click();
   await expect.poll(toolbarLines).toBe('44');
-  await page.getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(page.locator('.review-host-bar .pdf-modes')).toHaveCount(0);
+  await expect(review.locator('.view-switch')).toHaveCount(0);
   await expect(review.locator('.paper-page')).toHaveCount(2);
   await expect(review.locator('.paper-slice canvas').first()).toBeVisible();
-  await expect.poll(toolbarLines).toBe('44');
-  await page.getByRole('button', { name: 'Changes', exact: true }).click();
   await review.locator('.change.current button.accept').click();
   await expect(page.locator('[data-task="example-clarity"] .task-badge')).toHaveText('1');
   await review.locator('.change.current button.reject').click();
@@ -470,8 +469,9 @@ try {
     await expect(comparison.locator('.change')).toHaveCount(mathBlocks);
     await clarity.locator('.task-link').click();
     await expect(comparison.locator('.reviewed-change')).toHaveCount(1);
-    await comparison.getByRole('button', { name: 'History', exact: true }).click();
-    await comparison.locator('button.undo').click();
+    await expect(comparison.locator('.bar .history')).toHaveCount(0);
+    await comparison.locator('#paper').focus();
+    await tab.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
     await expect(clarity.locator('.task-badge')).toHaveText('2');
     await temporary.close();
   }

@@ -61,7 +61,7 @@ await page.route('**/api/**', async route => {
   }
   throw new Error(`Unexpected request: ${url.pathname}`);
 });
-await page.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: brokenReview ? '<html><body>Unavailable</body></html>' : '<html><body><div id="root"><main id="paper"><div class="waiting">Building</div></main></div><script>window.addEventListener("papilot:review:view-changed", event => { document.documentElement.dataset.view = event.detail; });</script></body></html>' }));
+await page.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: brokenReview ? '<html><body>Unavailable</body></html>' : '<html><body><div id="root"><main id="paper"><div class="waiting">Building</div></main></div></body></html>' }));
 const preview = page.locator('.task-document-preview');
 const canvas = preview.locator('.pdfViewer canvas').first();
 const pdfPage = preview.locator('.pdfViewer .page').first();
@@ -166,7 +166,6 @@ try {
   // successful round so a later frame error brings the task's own PDF back.
   task.status = 'reviewing'; task.review.state = 'reviewing'; await sync();
   const frame = page.frameLocator('.review-frame');
-  await expect(frame.locator('html')).toHaveAttribute('data-view', 'changes');
   await frame.locator('#paper').evaluate(el => { el.innerHTML = '<p class="comparison-waiting" data-state="pending">Comparing</p>'; });
   await expect(page.locator('.task-document')).toHaveClass(/has-review/);
   await frame.locator('.comparison-waiting').evaluate(el => el.setAttribute('data-state', 'failed'));
@@ -179,8 +178,7 @@ try {
   });
   await expect(page.locator('.task-document')).toHaveClass(/has-review/);
   await expect.poll(() => requests.some(url => url.includes('/tasks/task/pdf?round=1&retained=1'))).toBe(true);
-  await page.locator('.review-host-bar').getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(frame.locator('html')).toHaveAttribute('data-view', 'paper');
+  await expect(page.locator('.review-host-bar .pdf-modes')).toHaveCount(0);
   await frame.locator('#paper').evaluate(el => { el.innerHTML = '<div class="paper-status" role="status">Preparing the full PDF…</div>'; });
   await readable();
   const problems = preview.locator('.pdf-compilation-problems');
@@ -216,18 +214,17 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 }); await page.emulateMedia({ colorScheme: 'light' });
   await problems.locator('summary').focus(); await page.keyboard.press(' ');
   await expect(problems).not.toHaveAttribute('open');
-  await expect(preview.locator('.pdf-toolbar').getByRole('button', { name: 'Changes', exact: true })).toBeVisible();
-  await preview.locator('.pdf-toolbar').getByRole('button', { name: 'Changes', exact: true }).click();
-  await expect(frame.locator('html')).toHaveAttribute('data-view', 'changes');
-  await frame.locator('#paper').evaluate(el => { el.innerHTML = '<p>Changes are ready</p>'; });
-  await expect(page.locator('.task-document')).toHaveClass(/has-review/);
-  await page.locator('.review-host-bar').getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(frame.locator('html')).toHaveAttribute('data-view', 'paper');
-  await frame.locator('#paper').evaluate(el => { el.innerHTML = '<div class="paper-status" role="alert">Full PDF unavailable</div>'; });
+  await expect(preview.locator('.pdf-toolbar .pdf-modes')).toHaveCount(0);
+  await frame.locator('#paper').evaluate(el => {
+    el.innerHTML = '<div class="paper-status" role="alert"><p>Full PDF unavailable</p><button type="button">Changes</button></div>';
+    el.querySelector('button').addEventListener('click', () => {
+      delete document.documentElement.dataset.fullPaper;
+      el.innerHTML = '<p>Changes are ready</p>';
+    });
+  });
   await readable();
+  await expect(page.locator('.keeps-pdf > .review-loading').getByRole('button', { name: 'Reload review', exact: true })).toBeVisible();
   await page.locator('.keeps-pdf > .review-loading').getByRole('button', { name: 'Changes', exact: true }).click();
-  await expect(frame.locator('html')).toHaveAttribute('data-view', 'changes');
-  await frame.locator('#paper').evaluate(el => { el.innerHTML = '<p>Changes are ready</p>'; });
   await expect(page.locator('.task-document')).toHaveClass(/has-review/);
   await frame.locator('#paper').evaluate(el => { el.insertAdjacentHTML('beforeend', '<p class="inline-error" role="alert">Could not save note</p>'); });
   await expect(page.locator('.task-document')).toHaveClass(/has-review/);

@@ -68,7 +68,7 @@ export function textTokens(text: string): string[] {
       const token = text
         .slice(i)
         .match(
-          /^(?:[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[\p{L}\p{N}_]+|\s+|[^])/u,
+          /^(?:[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[\p{L}\p{N}_]+(?:-[\p{L}\p{N}_]+)*|\s+|[^])/u,
         )![0];
       i += token.length;
     }
@@ -140,31 +140,121 @@ function wordEdits(before: string, after: string): Op[] {
   }
   const left = offsets(a),
     right = offsets(b),
-    ops = opcodesWithin(a, b, 100);
-  if (!ops) return [["replace", 0, before.length, 0, after.length]];
-  const result: Op[] = [];
-  let join = false;
-  for (const [tag, i, j, x, y] of ops) {
-    if (tag === "equal") {
-      const equal = a.slice(i, j).join("");
-      join = !/[\p{L}\p{N}\n\\{}$]/u.test(equal);
-      continue;
+    hasInteriorNewline = (s: string) => /\S[\s\S]*\n[\s\S]*\S/.test(s),
+    sharesWord = () => {
+      const bSet = new Set(b.filter((t) => /[\p{L}\p{N}]/u.test(t)));
+      return a.some((t) => /[\p{L}\p{N}]/u.test(t) && bSet.has(t));
+    };
+  let ops: Op[];
+  if ((hasInteriorNewline(before) || hasInteriorNewline(after)) && sharesWord()) {
+    // Keep blank-line paragraph breaks (\n\n / \r\n\r\n) anchored as non-space
+    // tokens so edits in separate paragraphs or headings never merge across them.
+    const isSpace = (token: string) =>
+        /^\s+$/.test(token) && !/\r?\n[ \t]*\r?\n/.test(token),
+      aWords: number[] = [],
+      bWords: number[] = [];
+    a.forEach((token, index) => { if (!isSpace(token)) aWords.push(index); });
+    b.forEach((token, index) => { if (!isSpace(token)) bWords.push(index); });
+    // Match non-whitespace tokens first when a changed region spans multiple
+    // lines so prose line rewrapping (" " <-> "\n") alongside a real edit never
+    // turns unchanged words into delete+insert pairs.
+    const wordOps = opcodesWithin(
+      aWords.map((index) => a[index]),
+      bWords.map((index) => b[index]),
+      100,
+    );
+    if (!wordOps) return [["replace", 0, before.length, 0, after.length]];
+    ops = [];
+    const pushOp = (tag: Op[0], i: number, j: number, x: number, y: number) => {
+      if (i === j && x === y) return;
+      const prev = ops.at(-1);
+      if (tag === "equal" && prev?.[0] === "equal" && prev[2] === i && prev[4] === x) {
+        prev[2] = j;
+        prev[4] = y;
+        return;
+      }
+      if (tag !== "equal" && prev && prev[0] !== "equal" && prev[2] === i && prev[4] === x) {
+        prev[2] = j;
+        prev[4] = y;
+        prev[0] = prev[1] < prev[2] && prev[3] < prev[4] ? "replace" : prev[1] < prev[2] ? "delete" : "insert";
+        return;
+      }
+      ops.push([tag, i, j, x, y]);
+    };
+    const emitSpan = (i: number, j: number, x: number, y: number) => {
+      while (i < j && x < y && a[i] === b[x]) {
+        pushOp("equal", i, i + 1, x, x + 1);
+        i++;
+        x++;
+      }
+      let tail = 0;
+      while (j - tail > i && y - tail > x && a[j - 1 - tail] === b[y - 1 - tail]) tail++;
+      const endI = j - tail,
+        endY = y - tail;
+      if (i < endI || x < endY)
+        pushOp(i === endI ? "insert" : x === endY ? "delete" : "replace", i, endI, x, endY);
+      if (tail) pushOp("equal", endI, j, endY, y);
+    };
+    let ai = 0,
+      bi = 0;
+    for (const [tag, wi, wj, wx, wy] of wordOps) {
+      if (tag !== "equal") continue;
+      for (let k = 0; k < wj - wi; k++) {
+        const ta = aWords[wi + k],
+          tb = bWords[wx + k];
+        emitSpan(ai, ta, bi, tb);
+        pushOp("equal", ta, ta + 1, tb, tb + 1);
+        ai = ta + 1;
+        bi = tb + 1;
+      }
     }
-    const edit: Op = [tag, left[i], left[j], right[x], right[y]],
-      prior = result.at(-1);
-    if (join && prior) {
-      prior[2] = edit[2];
-      prior[4] = edit[4];
-      prior[0] =
-        prior[1] === prior[2]
-          ? "insert"
-          : prior[3] === prior[4]
-            ? "delete"
-            : "replace";
-    } else result.push(edit);
-    join = false;
+    emitSpan(ai, a.length, bi, b.length);
+  } else {
+    const rawOps = opcodesWithin(a, b, 100);
+    if (!rawOps) return [["replace", 0, before.length, 0, after.length]];
+    ops = rawOps;
   }
-  return result;
+  const meaningful = (tokens: string[], from: number, to: number) => {
+    let count = 0;
+    for (let k = from; k < to; k++) if (/[\p{L}\p{N}\\{}$]/u.test(tokens[k])) count++;
+    return count;
+  };
+  const segments = ops.map(([tag, i, j, x, y]) => ({ equal: tag === "equal", i, j, x, y }));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let k = 1; k + 1 < segments.length; k++) {
+      const eq = segments[k], prev = segments[k - 1], next = segments[k + 1];
+      if (!eq.equal || prev.equal || next.equal) continue;
+      const text = a.slice(eq.i, eq.j).join(""),
+        q = meaningful(a, eq.i, eq.j),
+        spanSize = Math.min(
+          Math.max(meaningful(a, prev.i, prev.j), meaningful(b, prev.x, prev.y)),
+          Math.max(meaningful(a, next.i, next.j), meaningful(b, next.x, next.y)),
+        );
+      const absorb =
+        q === 0
+          ? !/\r?\n[ \t]*\r?\n|[%\\{}$]|[.!?]\s*\r?\n/u.test(text) &&
+            (!/\n/.test(text) || spanSize >= 2)
+          : q <= 2 &&
+            !/\r?\n[ \t]*\r?\n|[%\\{}$]|[.!?]\s*\r?\n/u.test(text) &&
+            spanSize >= 2 * q;
+      if (!absorb) continue;
+      prev.j = next.j;
+      prev.y = next.y;
+      segments.splice(k, 2);
+      changed = true;
+      k--;
+    }
+  }
+  return segments
+    .filter((segment) => !segment.equal)
+    .map((segment): Op => {
+      const i = left[segment.i],
+        j = left[segment.j],
+        x = right[segment.x],
+        y = right[segment.y];
+      return [i === j ? "insert" : x === y ? "delete" : "replace", i, j, x, y];
+    });
 }
 
 /** Merge disjoint word edits when Git's line merge cannot. A shared insertion

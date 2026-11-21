@@ -46,7 +46,7 @@ const compiles = () => fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').tri
 }) : [];
 const count = () => compiles().length;
 fs.mkdirSync('test-results', { recursive: true });
-const report = { decisions: 0, intermediateHostCompiles: 0, finalPredictionCompiles: 0, applicationCompiles: 0, appliedPreviewCompiles: 0, refreshes: 0, predictions: 0, errors: [] };
+const report = { decisions: 0, intermediateCompiles: 0, finalPredictionCompiles: 0, applicationCompiles: 0, refreshes: 0, predictions: 0, errors: [] };
 // Observe real builds without replacing any compilation, snapshot or cache.
 // A count of every latexmk would conflate the engine's per-decision PDF with
 // the host's manuscript preview. Associate each invocation with its build key.
@@ -153,9 +153,9 @@ try {
     if (!response.ok) throw new Error('Could not read settled review state');
     await response.json();
   });
-  await engine.applied.join(); await settledBuilds();
-  report.intermediateHostCompiles = countKeys(compiles().slice(start), keysFor(['host-state', 'host-refresh', 'prediction']));
-  assert.equal(report.intermediateHostCompiles, 0, 'intermediate decisions never compile the manuscript');
+  await settledBuilds();
+  report.intermediateCompiles = count() - start;
+  assert.equal(report.intermediateCompiles, 0, 'intermediate decisions never compile the paper');
   assert.equal(report.refreshes, refreshStart, 'intermediate decisions never refresh the manuscript');
   assert.equal(report.predictions, predictionStart, 'unfinished choices never predict a manuscript');
 
@@ -163,7 +163,7 @@ try {
   const apply = () => viewer().getByRole('button', { name: 'Apply to workspace', exact: true });
   await expect(apply()).toBeEnabled();
   await expect.poll(() => observedBuilds.some(build => build.owner === 'prediction' && build.status === 'ready'), { timeout: 60000 }).toBe(true);
-  await engine.applied.join(); await settledBuilds();
+  await settledBuilds();
   const finalKeys = keysFor(['prediction']);
   assert.equal(finalKeys.size, 1, 'all final-selection predictions share one build key');
   report.finalPredictionCompiles = countKeys(compiles().slice(start), finalKeys);
@@ -171,24 +171,15 @@ try {
   assert.equal(report.refreshes, refreshStart, 'preparing the final selection does not rewrite or refresh the manuscript');
   for (const name of ['first', 'second', 'third']) assert.match(f.read(`paper/${name}.tex`), /Original/);
 
-  // The engine's PDF of accepted decisions is a separate dated build. It may
-  // compile intermediate choices; its work must not be counted as host work.
-  const applied = await engine.applied.state(proposal.name);
-  assert.equal(applied.shown?.current, true);
-  assert.equal(applied.building, false);
-  assert.ok(!finalKeys.has(applied.shown.key), 'the applied-paper preview and manuscript prediction have independent keys');
-  report.appliedPreviewCompiles = countKeys(compiles().slice(start), keysFor(['engine']));
-  assert.ok(report.appliedPreviewCompiles > 0, 'real applied-paper previews were exercised');
-
   // Reopening the Apply controls requests another prediction, but its real
   // compiler result must be reused. Do not require exactly one HTTP request.
   const predictionsBeforeReload = report.predictions, compilesBeforeReload = count();
   const requestedPrediction = page.waitForResponse(response => new URL(response.url()).pathname === '/api/tasks/batching/predict' && response.ok());
   await page.reload(); await expect(apply()).toBeEnabled(); await requestedPrediction;
   await expect.poll(() => report.predictions).toBeGreaterThan(predictionsBeforeReload);
-  await engine.applied.join(); await settledBuilds();
+  await settledBuilds();
   assert.deepEqual([...keysFor(['prediction'])], [...finalKeys]);
-  assert.equal(count(), compilesBeforeReload, 'reload reuses the final prediction and applied-paper caches');
+  assert.equal(count(), compilesBeforeReload, 'reload reuses the final prediction cache');
   assert.equal(engine.review.latestRound(proposal.name).number, round);
   await page.screenshot({ path: 'test-results/review-application-before-apply.png' });
 
@@ -197,7 +188,7 @@ try {
   await expect.poll(() => store.task('batching').delivery?.mode).toBe('workspace');
   await expect.poll(() => report.refreshes - refreshStart).toBe(1);
   assert.equal((await settle()).status, 'ready');
-  await engine.applied.join(); await settledBuilds();
+  await settledBuilds();
   report.applicationCompiles = count() - beforeApply;
   assert.equal(report.applicationCompiles, 0, 'Apply reuses the final prediction without another latexmk invocation');
   assert.equal(report.refreshes - refreshStart, 1, 'the actual manuscript write refreshes its displayed state once');
@@ -205,7 +196,7 @@ try {
   assert.match(f.read('paper/first.tex'), /Revised first/);
   assert.match(f.read('paper/second.tex'), /Revised second/);
   assert.match(f.read('paper/third.tex'), /Revised third/);
-  console.log('PASS: intermediate decisions avoid host builds; the final selection compiles once; reload and Apply reuse it; applied-paper previews are counted separately.');
+  console.log('PASS: intermediate decisions avoid compilations; the final selection compiles once; reload and Apply reuse it.');
 
   // A new task exercises a real in-flight comparison, compiler failure and retry.
   f.repo.run(['add', '.']); f.repo.run(['commit', '-qm', 'Applied selection']);

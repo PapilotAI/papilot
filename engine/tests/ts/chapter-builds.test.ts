@@ -198,8 +198,6 @@ it.skipIf(!tex)("chapter reviews recover persistent auxiliary errors after a cle
     expect(first.summary.baselineErrors).toBeUndefined();
     expect((await new Builder(app.project, app.repo).completed(first.summary.builds.at(-1)!))?.seedRetried).toBe(true);
     await app.review.decide(task.name, { action: "accept", round: first.number, changes: first.units.map(unit => unit.id) });
-    await app.applied.join();
-    expect((await app.applied.state(task.name)).shown?.errors?.join("\n")).toContain("Undefined control sequence");
 
     // Strict mode still recovers the broken accepted baseline while showing
     // a repair, even though the task's original full seed compiles cleanly.
@@ -238,8 +236,6 @@ it.skipIf(!tex).each(["seed", "accepted"])("chapter reviews retain errors outsid
       f.edit(task, "paper/chapters/b.tex", "Original chapter b.", `Original chapter b. ${problem}`);
       const first = await publish();
       await app.review.decide(task.name, { action: "accept", round: first.number, changes: first.units.map(unit => unit.id) });
-      await app.applied.join();
-      expect((await app.applied.state(task.name)).shown?.errors?.join("\n")).toContain("Other chapter diagnostic");
     }
     f.edit(task, "paper/chapters/a.tex", "Original", "Revised");
     const checked = await view(app, task.name, { check: true, locations: ["paper/chapters/a.tex:2"] });
@@ -265,10 +261,6 @@ it.skipIf(!tex).each(["seed", "accepted"])("chapter reviews retain errors outsid
     expect(option.baselineErrors?.join("\n")).toContain("Other chapter diagnostic");
     expect(option.revisedErrors?.join("\n")).toContain("Other chapter diagnostic");
     await app.review.decide(task.name, { action: "accept", round: round.number, changes: [selected.id] });
-    await app.applied.join();
-    const accepted = (await app.applied.state(task.name)).shown;
-    expect(accepted?.errors?.join("\n")).toContain("Other chapter diagnostic");
-    expect(accepted?.targets).toEqual(checked.targets);
     f.edit(task, "paper/chapters/b.tex", problem, "");
     const repaired = await publish();
     expect(repaired.summary.baselineErrors?.join("\n")).toContain("Other chapter diagnostic");

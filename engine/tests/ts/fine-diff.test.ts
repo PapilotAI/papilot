@@ -3,6 +3,7 @@ import { Fixture, METHOD, fakeRound } from "./helpers.ts";
 import { applyUnits, diffUnits, revertUnits } from "../../src/core/changes.ts";
 import { merge3Async } from "../../src/core/git.ts";
 import { textEdits, textTokens } from "../../src/core/text-edits.ts";
+import { wordDiff } from "../../src/web/model.ts";
 let f: Fixture;
 beforeEach(() => {
   f = new Fixture();
@@ -70,6 +71,57 @@ it("keeps prose line rewrapping together without exposing unchanged words as del
   expect(units[0].old_text.replace(/\s+/g, ' ').trim()).toBe(units[0].new_text.replace(/\s+/g, ' ').trim());
   expect(applyUnits(Buffer.from(old), Buffer.from(next), units)?.toString()).toBe(next);
   expect(revertUnits(Buffer.from(old), Buffer.from(next), units)?.toString()).toBe(old);
+});
+
+it("does not turn unchanged words into delete+insert edits when prose rewraps next to a substantive edit", () => {
+  const old = [
+    "\\item {\\bfseries A declarative bidirectional type system} with predicative implicit",
+    "bounded quantification and impredicative explicit",
+    "type applications. The declarative type system guesses monotypes.",
+    "Monotypes are unconventional in that they require a non-syntactic",
+    "formulation due to the presence of \\mbox{bounds in type variables.}",
+    "",
+  ].join("\n");
+  const next = [
+    "\\item {\\bfseries A declarative bidirectional type system} with predicative",
+    "implicit bounded quantification and impredicative explicit type",
+    "applications. The declarative type system guesses monotypes using a",
+    "non-syntactic formulation that depends on type-variable bounds.",
+    "",
+  ].join("\n");
+  f.write(METHOD, old);
+  const before = f.repo.snapshot(["paper"]);
+  f.write(METHOD, next);
+  const after = f.repo.snapshot(["paper"]),
+    units = diffUnits(f.repo, before, after),
+    substantive = units.filter((u) => !(/^[\t \r\n]+$/.test(u.old_text) && /^[\t \r\n]+$/.test(u.new_text)));
+  // Only the rewritten clauses around unchanged "a non-syntactic formulation"
+  // are substantive; rewrapped "implicit" and "type" stay untouched.
+  expect(substantive).toHaveLength(2);
+  for (const unit of substantive) {
+    expect(unit.old_text).not.toContain("implicit");
+    expect(unit.new_text).not.toContain("implicit");
+    expect(unit.old_text).not.toContain("applications");
+    expect(unit.new_text).not.toContain("applications");
+  }
+  expect(applyUnits(Buffer.from(old), Buffer.from(next), units)?.toString()).toBe(next);
+  expect(revertUnits(Buffer.from(old), Buffer.from(next), units)?.toString()).toBe(old);
+
+  // Blank-line paragraph boundaries stay anchored even when adjacent tokens on both sides change.
+  const headingAndPara = textEdits(
+    "\\section{Old Title}\n\nFirst sentence stays.\n",
+    "\\section{New Title}\n\nSecond sentence stays.\n",
+  );
+  expect(headingAndPara).toHaveLength(2);
+  const crlfAdj = textEdits(
+    "First alpha beta\r\n\r\nSecond gamma delta.\r\n",
+    "First one two\r\n\r\nThird three four.\r\n",
+  );
+  expect(crlfAdj).toHaveLength(2);
+  // A single line followed by a trailing blank line stays a single-line diff.
+  expect(
+    textEdits("Method sentence 2.\n\n", "Accepted manuscript sentence.\n\n"),
+  ).toHaveLength(1);
 });
 
 it("applies insertions and deletions precisely, while older line-based units still work", () => {
@@ -282,4 +334,43 @@ it("merges disjoint same-line edits but preserves real overlap conflicts", async
       )
     )[1],
   ).toBe(true);
+});
+
+it("keeps a rewritten sentence intact instead of splitting on stray common words or hyphens", () => {
+  const old =
+      "This concise mechanism lets local type inference use type information from\n" +
+      "arguments in any order without backtracking,\n" +
+      "resolving a fundamental\n" +
+      "tradeoff between order-irrelevance and higher-order expressiveness that\n" +
+      "has persisted since \\citet{pierce-2000-local-type-inference} introduced\n" +
+      "local type inference more than 25 years ago.\n" +
+      "Moreover, because inference\n",
+    next =
+      "This concise mechanism lets local type inference use type information from\n" +
+      "arguments in any order without backtracking. While prior contextual LTI\n" +
+      "calculi and languages such as Scala, Java, and TypeScript already handle\n" +
+      "many higher-order calls through left-to-right propagation or syntactic\n" +
+      "deferral of bare lambdas, inference closures provide a general\n" +
+      "order-irrelevance guarantee within a local, matching-based calculus even\n" +
+      "for compound argument expressions and curried calls. Moreover, because inference\n";
+  const edits = textEdits(old, next);
+  expect(edits).toHaveLength(1);
+  expect(old.slice(edits[0][1], edits[0][2])).toContain("and higher-order");
+  expect(old.slice(edits[0][1], edits[0][2])).toContain("local type inference");
+  expect(next.slice(edits[0][3], edits[0][4])).toContain("and TypeScript");
+  expect(next.slice(edits[0][3], edits[0][4])).toContain("within a local");
+  expect(wordDiff(old, next).filter((part) => part.type === "del")).toHaveLength(1);
+  expect(wordDiff(old, next).filter((part) => part.type === "ins")).toHaveLength(1);
+
+  const hyphen = textEdits("that is order-irrelevant yet", "that is order-irrelevance yet");
+  expect(hyphen).toHaveLength(1);
+  expect("that is order-irrelevant yet".slice(hyphen[0][1], hyphen[0][2])).toBe("order-irrelevant");
+  expect("that is order-irrelevance yet".slice(hyphen[0][3], hyphen[0][4])).toBe("order-irrelevance");
+
+  // CRLF paragraph breaks must never be absorbed across separate paragraphs.
+  const crlf = textEdits(
+    "First alpha beta.\r\n\r\nSecond gamma delta.\r\n",
+    "First one two.\r\n\r\nSecond three four.\r\n",
+  );
+  expect(crlf).toHaveLength(2);
 });

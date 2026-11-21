@@ -106,7 +106,6 @@ test("full-paper review preserves unchanged ink beside a column change", async (
       },
     );
     await page.goto("/?task=tighten-design");
-    await page.getByRole("button", { name: "PDF", exact: true }).click();
     await expect(page.locator(".paper .change")).toBeVisible();
     await expect
       .poll(() =>

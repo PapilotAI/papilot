@@ -192,6 +192,58 @@ kbd {
   align-items: center;
   gap: 8px;
 }
+/* Change navigator in the top bar: jump directly between changes and recenter the active one. */
+.change-nav {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.change-nav .ghost {
+  min-block-size: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-2);
+}
+.change-nav .nav {
+  min-inline-size: 26px;
+  width: 26px;
+  padding: 0;
+}
+.change-nav .nav:disabled {
+  color: var(--text-3);
+  opacity: 0.45;
+}
+.change-nav .nav svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.change-nav .change-nav-position {
+  min-inline-size: 28px;
+  padding: 0 6px;
+  gap: 0;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.change-nav-short {
+  display: none;
+}
+.change-nav-total {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.change-nav .ghost:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .status:empty {
   display: none;
 }
@@ -263,31 +315,6 @@ kbd {
 .ghost.round {
   width: 28px;
   padding: 0;
-}
-
-/* Full paper or changes only, as one segmented control (a host such as
-   Papilot shows its own instead). */
-.view-switch {
-  display: inline-grid;
-  grid-template-columns: repeat(2, 1fr);
-  flex: none;
-  gap: 0;
-  padding: 2px;
-  border-radius: 6px;
-  background: var(--bg-muted);
-}
-.view-switch .ghost {
-  height: 24px;
-  padding: 0 10px;
-  border: 0;
-}
-.view-switch .ghost:hover:not(:disabled) {
-  background: transparent;
-}
-.view-switch .ghost.active {
-  color: var(--text);
-  background: var(--raised);
-  box-shadow: 0 0 0 1px var(--line);
 }
 
 /* Document */
@@ -1102,16 +1129,6 @@ kbd {
   box-shadow: var(--page-shadow);
   margin-bottom: 16px;
 }
-/* The paper as decided: plain pages, each painted at the screen's pixel
-   density into a canvas that fills it, under its selectable text. */
-.applied-page canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  filter: var(--pdf-filter, none);
-}
 .paper-context {
   line-height: 0;
 }
@@ -1176,15 +1193,6 @@ kbd {
   width: 6px;
   height: 6px;
   margin: 0;
-}
-.applied-details {
-  flex-basis: 100%;
-  margin: 0 8px 8px 0;
-  padding: 8px 10px;
-  border-radius: 5px;
-  background: var(--bg-muted);
-  font: 11px/1.5 var(--mono);
-  white-space: pre-wrap;
 }
 .waiting p {
   margin: 6px 0;
@@ -1619,7 +1627,7 @@ dialog > button:last-child {
 @media (max-width: 720px) {
   .bar {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr;
     gap: 8px;
     padding: 8px 12px;
   }
@@ -1627,10 +1635,8 @@ dialog > button:last-child {
     grid-column: 1 / -1;
     grid-row: 1;
   }
-  .bar .meter {
-    justify-self: center;
-  }
   .bar-end {
+    justify-self: end;
     gap: 4px;
   }
   .side {

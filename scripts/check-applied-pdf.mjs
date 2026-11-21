@@ -1,4 +1,4 @@
-// Regression for https://github.com/PapilotAI/papilot/issues/178.
+// Regression for unified full-PDF reviews (deferred and non-deferred tasks, plus manuscript Changes).
 // Node >= 22.22; first build both frontends, then run:
 // node --import tsx scripts/check-applied-pdf.mjs
 // Uses the real app, review UI and PDF.js with fixture API responses. No agent
@@ -23,7 +23,7 @@ let browser;
 const report = {
   commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   platform: process.platform, node: process.version,
-  scope: 'Real frontend and PDF.js; fixture API simulates agent completion and a replacement PDF build. No live agent, compiler or Windows environment.',
+  scope: 'Real frontend and PDF.js; fixture API simulates unified FullPaper review for deferred/non-deferred tasks and manuscript Changes. No live agent or compiler.',
   checks: [], errors: [], pdfRequests: [],
 };
 try {
@@ -41,24 +41,26 @@ try {
   const bytes = replacement.saveToBuffer('');
   const revisedPdf = Buffer.from(bytes.asUint8Array());
   bytes.destroy(); replacement.destroy();
-  const taller = new mupdf.PDFDocument(pdf);
-  for (let index = 0; index < taller.countPages(); index++) {
-    taller.findPage(index).put('MediaBox', [0, 0, 612, 1200]);
-    taller.findPage(index).put('CropBox', [0, 0, 612, 1200]);
-  }
-  const tallerBytes = taller.saveToBuffer(''), tallerPdf = Buffer.from(tallerBytes.asUint8Array());
-  tallerBytes.destroy(); taller.destroy();
   const words = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
   const task = { id: 'issue-178', projectId: 'paper', agent: 'codex', name: 'issue-178', title: 'Revise the introduction', instructions: '', worktree: '/tmp/issue-178', deferred: true, status: 'running', createdAt: 1, updatedAt: 1, review: { state: 'editing', round: null, counts: {} } };
   const snapshot = { version: '0.10.4', csrf: 'fixture', projects: [{ id: 'paper', name: 'Issue 178 reproduction', path: '/tmp/issue-178', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
   const manuscript = { git: { branch: 'main', files: [] }, annotations: [], build: { status: 'ready', key: 'baseline', current: true, pages: [[612, 792], [612, 792]] } };
-  const strip = name => ({ src: `${name}.svg`, clean: `${name}.svg`, width: 612, height: 35, page: 1, label: '1', top: 100, left: 0, text: [{ chars: [{ text: `${name} paragraph`, rect: [60, 12, 250, 26] }] }] });
-  const detail = { task: task.name, round: 1, before: 'before', after: 'after', warnings: [], files: `${prefix}/files/`, pdf: `${prefix}/files/full.pdf`, loose: [],
-    sections: [{ node: 'intro', title: 'Introduction', number: '1', blocks: [{ kind: 'change', units: ['edit'], identical: false, before: [strip('Original')], after: [strip('Revised')] }] }],
-    units: [{ id: 'edit', file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: 1, old_end: 1, new_start: 1, new_end: 1, old_text: 'Original paragraph', new_text: 'Revised paragraph', truncated: false }] };
-  let appliedKey = 'applied-v1';
-  let appliedErrors, appliedFailure, delayedPdf, releasePdf;
-  let appliedBuilding = false, appliedCurrent = true;
+  const strip = (name, page = 1, top = 100) => ({ src: `${name}.svg`, clean: `${name}.svg`, width: 612, height: 35, page, label: String(page), top, left: 0, text: [{ chars: [{ text: `${name} paragraph`, rect: [60, 12, 250, 26] }] }] });
+  const makeDetail = (round = 1, pdfUrl = `${prefix}/files/full-v1.pdf`) => ({
+    task: task.name, round, before: 'before', after: 'after', warnings: [], files: `${prefix}/files/`, pdf: pdfUrl, loose: [],
+    sections: [{
+      node: 'intro', title: 'Introduction', number: '1', blocks: [
+        { kind: 'change', units: ['edit'], identical: false, before: [strip('Original', 1, 100)], after: [strip('Revised', 1, 100)] },
+        { kind: 'change', units: ['edit-2'], identical: false, before: [strip('Original-2', 1, 260)], after: [strip('Revised-2', 1, 260)] },
+      ],
+    }],
+    units: [
+      { id: 'edit', file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: 1, old_end: 1, new_start: 1, new_end: 1, old_text: 'Original paragraph', new_text: 'Revised paragraph', truncated: false },
+      { id: 'edit-2', file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, ops: [], old_start: 5, old_end: 5, new_start: 5, new_end: 5, old_text: 'Second paragraph', new_text: 'Updated second paragraph', truncated: false },
+    ],
+  });
+  let detail = makeDetail(1, `${prefix}/files/full-v1.pdf`);
+  let changesDetail = { ...makeDetail(1, `${prefix}/changes/pdf/1`), task: 'changes' };
   await page.addInitScript(() => {
     localStorage.setItem('papilot:task', '');
     localStorage.setItem('papilot:project', 'paper');
@@ -92,16 +94,16 @@ try {
     const url = new URL(route.request().url()), relative = url.pathname.slice(prefix.length);
     if (relative === '/') return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(fs.readFileSync('engine/dist/web/index.html', 'utf8'), prefix) });
     if (relative.startsWith('/assets/')) return route.fulfill({ path: path.resolve('engine/dist/web' + relative), contentType: /\.m?js$/.test(relative) ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : 'application/octet-stream' });
-    if (relative.endsWith('.pdf')) {
+    if (relative.endsWith('.pdf') || relative.startsWith('/changes/pdf/')) {
       report.pdfRequests.push(url.pathname + url.search);
-      if (delayedPdf && relative.endsWith(`/${delayedPdf}.pdf`)) await new Promise(resolve => { releasePdf = resolve; });
-      return route.fulfill({ contentType: 'application/pdf', body: relative.includes('applied-tall') ? tallerPdf : relative.includes('applied-v2') ? revisedPdf : pdf });
+      return route.fulfill({ contentType: 'application/pdf', body: relative.includes('full-v2') ? revisedPdf : pdf });
     }
     if (relative.startsWith('/files/')) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 612 35"><rect width="612" height="35" fill="white"/><text x="60" y="24" font-size="12">Revised paragraph.</text></svg>' });
+    if (relative.startsWith('/api/changes/rounds/')) return route.fulfill({ json: changesDetail });
+    if (relative.startsWith('/api/changes/state')) return route.fulfill({ json: { task: 'changes', title: 'Uncommitted changes', csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, round: 1, revision: 'after', decisions: { edit: 'pending', 'edit-2': 'pending' }, comments: {}, undo: null, job: null } });
     if (/\/rounds\/\d+$/.test(relative)) return route.fulfill({ json: detail });
-    if (relative.endsWith('/applied')) return route.fulfill({ json: { accepted: 'accepted', building: appliedBuilding, error: appliedFailure, shown: { accepted: 'accepted', key: appliedKey, targets: ['main'], round: 1, at: 1, current: appliedCurrent, errors: appliedErrors, pdf: `${prefix}/applied/${task.name}/${appliedKey}.pdf` } } });
     if (relative.endsWith('/look')) return route.fulfill({ json: { ok: true } });
-    if (relative.endsWith('/state')) return route.fulfill({ json: annotateReviewState({ task: task.name, title: task.title, csrf: 'fixture', closed: false, state: 'reviewing', latest: 1, history: [{ number: 1, created: 1 }], round: 1, revision: 'after', deferred: task.deferred, decisions: { edit: 'pending' }, comments: {}, undo: null, job: null }, [task]) });
+    if (relative.endsWith('/state')) return route.fulfill({ json: annotateReviewState({ task: task.name, title: task.title, csrf: 'fixture', closed: false, state: 'reviewing', latest: detail.round, history: [{ number: detail.round, created: 1 }], round: detail.round, revision: 'after', deferred: task.deferred, decisions: { edit: 'pending', 'edit-2': 'pending' }, comments: {}, undo: null, job: null }, [task]) });
     throw Error(`Unexpected review request: ${relative}`);
   });
   const sync = () => page.evaluate(() => window.dispatchEvent(new Event('focus')));
@@ -123,136 +125,113 @@ try {
   await healthy(manuscriptBar, 'Manuscript after replacement PDF load');
   await page.screenshot({ path: path.join(output, '01-manuscript-working.png') });
 
+  // Manuscript keeps its PDF | Changes switch, and Changes displays uncommitted diffs directly on the full PDF.
+  await manuscriptBar.locator('.pdf-modes').getByRole('button', { name: 'Changes', exact: true }).click();
+  const manuscriptFrame = page.frameLocator('.manuscript .review-frame');
+  await expect(manuscriptFrame.locator('.paper-page')).toHaveCount(2);
+  await expect(manuscriptFrame.locator('.change.current')).toBeVisible();
+  await expect(page.locator('.manuscript .review-host-bar .pdf-modes')).toBeVisible();
+  await healthy(page.locator('.manuscript .review-host-bar'), 'Manuscript uncommitted Changes on FullPaper');
+  await page.screenshot({ path: path.join(output, '02-manuscript-changes-full-pdf.png') });
+  await page.locator('.manuscript .review-host-bar .pdf-modes').getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(page.locator('.manuscript .pdf-view')).toBeVisible();
+
+  // Deferred task opens directly on FullPaper with changes in place and no PDF | Changes switch.
   task.status = 'reviewing'; task.review = { state: 'reviewing', round: 1, counts: { pending: 1 }, unsent: 0 }; task.updatedAt++;
   await sync();
   await page.locator('.task-link').filter({ hasText: task.title }).click();
   const frame = page.frameLocator('.review-frame');
-  await expect(frame.locator('.change.current')).toBeVisible();
-  await page.locator('.review-host-bar').getByRole('button', { name: 'PDF', exact: true }).click();
   const reviewBar = page.locator('.review-host-bar');
-  const readable = async (pages = 2) => {
-    await expect(frame.locator('.applied-paper')).toHaveAttribute('data-build', appliedKey);
-    await expect(frame.locator('.applied-page')).toHaveCount(pages);
-    await expect(frame.locator('.applied-page canvas').first()).toBeVisible();
-    await expect(frame.locator('.applied-page .pdf-glyph').first()).toBeVisible();
-  };
+  await expect(frame.locator('.paper-page')).toHaveCount(2);
+  await expect(frame.locator('.change.current')).toBeVisible();
+  await expect(reviewBar.locator('.pdf-modes')).toHaveCount(0);
+  await expect(frame.locator('.view-switch')).toHaveCount(0);
+  // Review decisions, change navigator and PDF controls share ONE top toolbar row,
+  // and the change-map scrollbar remains visible in FullPaper.
+  await expect(frame.locator('.change-map')).toBeVisible();
+  await expect(frame.locator('.change-map-mark')).toHaveCount(2);
+  await expect.poll(() => page.evaluate(() => {
+    const host = document.querySelector('.review-host-bar').getBoundingClientRect();
+    const frameEl = document.querySelector('.review-frame');
+    const frameBox = frameEl.getBoundingClientRect();
+    const bar = frameEl.contentDocument.querySelector('.bar').getBoundingClientRect();
+    const barEnd = frameEl.contentDocument.querySelector('.bar .bar-end').getBoundingClientRect();
+    const tools = document.querySelector('.review-tools').getBoundingClientRect();
+    const nav = frameEl.contentDocument.querySelector('.bar .change-nav').getBoundingClientRect();
+    const lead = document.querySelector('.review-lead').getBoundingClientRect();
+    return Math.abs(host.height - 44) <= 2 &&
+      Math.abs((frameBox.top + bar.bottom) - host.bottom) <= 2 &&
+      frameBox.left + nav.left >= lead.right - 1 &&
+      frameBox.left + barEnd.right <= tools.left + 1;
+  })).toBe(true);
+  await expect(frame.locator('.bar .change-nav-position')).toContainText('1 / 2');
+  await expect(frame.getByRole('button', { name: 'Previous change', exact: true })).toBeDisabled();
+  await frame.getByRole('button', { name: 'Next change', exact: true }).click();
+  await expect(frame.locator('.change.current')).toHaveAttribute('data-stop', '1');
+  await expect(frame.locator('.bar .change-nav-position')).toContainText('2 / 2');
+  await expect(frame.getByRole('button', { name: 'Next change', exact: true })).toBeDisabled();
+  await frame.getByRole('button', { name: 'Previous change', exact: true }).click();
+  await expect(frame.locator('.change.current')).toHaveAttribute('data-stop', '0');
+  await healthy(reviewBar, 'Deferred task opens directly in FullPaper');
   const chooseZoom = async label => {
     await reviewBar.getByRole('combobox', { name: 'Zoom', exact: true }).click();
     await page.getByRole('option', { name: label, exact: true }).click();
   };
   const pageNumber = reviewBar.getByRole('textbox', { name: 'Page number', exact: true });
   const jump = async number => { await pageNumber.fill(String(number)); await pageNumber.press('Enter'); await expect(pageNumber).toHaveValue(String(number)); };
-  await readable();
-  await healthy(reviewBar, 'AppliedPaper initial PDF');
   await chooseZoom('125%');
-  await expect.poll(() => frame.locator('.applied-page').first().evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(1020);
-  await expect.poll(() => frame.locator('.applied-page canvas').first().evaluate(el => el.width)).toBe(1020);
+  await expect.poll(() => frame.locator('.paper-page').first().evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(1020);
   await jump(1);
   await reviewBar.getByRole('button', { name: 'Next page', exact: true }).click();
   await expect(pageNumber).toHaveValue('2');
   await reviewBar.getByRole('button', { name: 'Previous page', exact: true }).click();
   await expect(pageNumber).toHaveValue('1');
-  await jump(2);
-  await frame.locator('#paper').evaluate(root => {
-    const sheet = root.querySelector('.applied-page[data-index="1"]');
-    root.scrollTop += sheet.getBoundingClientRect().top - root.getBoundingClientRect().top + 180;
-  });
-  const offset = () => frame.locator('#paper').evaluate(root => Math.round(root.querySelector('.applied-page[data-index="1"]').getBoundingClientRect().top - root.getBoundingClientRect().top));
-  await expect.poll(offset).toBe(-180);
-  appliedKey = 'applied-v1b';
-  await readable();
-  await expect(pageNumber).toHaveValue('2');
-  await expect.poll(offset).toBe(-180);
-  await expect(reviewBar.getByRole('combobox', { name: 'Zoom', exact: true })).toHaveText('125%');
-  // Preserve the fractional place on page two when preceding pages also grow.
-  // Reading the DOM during effect cleanup sees the new geometry too late.
-  appliedKey = 'applied-tall';
-  await readable();
-  await expect(pageNumber).toHaveValue('2');
-  await expect.poll(async () => Math.abs(await offset() + 180 * 1200 / 792)).toBeLessThan(2);
-  appliedKey = 'applied-v1c';
-  await readable();
-  await expect(pageNumber).toHaveValue('2');
-  await expect.poll(async () => Math.abs(await offset() + 180)).toBeLessThan(2);
   await reviewBar.getByRole('button', { name: 'Find in PDF', exact: true }).click();
   const search = page.getByRole('textbox', { name: 'Search the PDF', exact: true });
-  await search.fill('review');
+  await search.fill('Method');
   await expect(page.locator('.pdf-find-count')).toHaveText(/\d+ of [1-9]\d*/);
   await expect(frame.locator('.paper-find-mark.selected').first()).toBeVisible();
-  // Replacing the PDF replays an open query into the new reader.
-  appliedKey = 'applied-v2';
-  await readable(3);
-  await expect(search).toHaveValue('review');
+  // Find bar sits directly below the single-row toolbar without covering it.
+  await expect.poll(() => page.evaluate(() => {
+    const findBox = document.querySelector('.review-host-bar .pdf-find').getBoundingClientRect();
+    const frameEl = document.querySelector('.review-frame');
+    const bar = frameEl.contentDocument.querySelector('.bar').getBoundingClientRect();
+    return findBox.top >= frameEl.getBoundingClientRect().top + bar.bottom - 1;
+  })).toBe(true);
+  // A newer round with a replacement PDF updates pages/bookmarks and replays the open search query.
+  detail = makeDetail(2, `${prefix}/files/full-v2.pdf`);
+  task.review = { state: 'reviewing', round: 2, counts: { pending: 1 }, unsent: 0 }; task.updatedAt++;
+  await sync();
+  await expect(frame.locator('.paper-page')).toHaveCount(3);
+  await expect(search).toHaveValue('Method');
   await expect(page.locator('.pdf-find-count')).toHaveText(/\d+ of [1-9]\d*/);
-  await expect(frame.locator('.paper-find-mark.selected').first()).toBeVisible();
   await page.getByRole('button', { name: 'Close search', exact: true }).click();
-  await healthy(reviewBar, 'AppliedPaper after replacement PDF', 3, 'Updated introduction');
+  await healthy(reviewBar, 'Deferred FullPaper after replacement round PDF', 3, 'Updated introduction');
   await expect(reviewBar.getByRole('combobox', { name: 'Zoom', exact: true })).toHaveText('125%');
-  assert.ok(report.pdfRequests.some(url => url.endsWith('/applied-v2.pdf')));
+  assert.ok(report.pdfRequests.some(url => url.endsWith('/full-v2.pdf')));
   await jump(3);
   await expect(reviewBar.getByRole('button', { name: 'Next page', exact: true })).toBeDisabled();
   // Returning to this task restores its place and reconnects navigation.
   await page.locator('.manuscript-link').click();
   await page.locator('.task-link').filter({ hasText: task.title }).click();
-  await readable(3);
+  await expect(frame.locator('.paper-page')).toHaveCount(3);
   await expect(pageNumber).toHaveValue('3');
-  await healthy(reviewBar, 'AppliedPaper after reopening', 3, 'Updated introduction');
+  await healthy(reviewBar, 'Deferred FullPaper after reopening', 3, 'Updated introduction');
   await chooseZoom('Fit width');
-  await reviewBar.getByRole('button', { name: 'Contents', exact: true }).click();
-  await page.screenshot({ path: path.join(output, '02-applied-pdf-working.png') });
-  await page.keyboard.press('Escape');
+  await page.screenshot({ path: path.join(output, '03-deferred-full-paper.png') });
 
-  // A partial decision can compile with errors even when the full proposal
-  // is valid. Diagnostics belong to the PDF, including while its replacement loads.
-  appliedErrors = ['main.tex:12: Undefined control sequence.'];
-  appliedKey = 'applied-errors';
-  await readable();
-  const summary = frame.locator('summary').filter({ hasText: 'This PDF has compilation errors.' });
-  const diagnostics = frame.getByRole('region', { name: 'This PDF has compilation errors.' });
-  await expect(summary).toBeVisible();
-  await expect(diagnostics).toBeHidden();
-  await summary.focus(); await page.keyboard.press('Enter');
-  await expect(diagnostics).toHaveText(appliedErrors[0]);
-  for (const width of [1600, 390]) for (const colorScheme of ['light', 'dark']) {
-    await page.setViewportSize({ width, height: 900 });
-    await page.emulateMedia({ colorScheme });
-    if (width === 390) await page.getByRole('button', { name: /^Review(?:,|$)/ }).click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme);
-    await expect(frame.locator('html')).toHaveAttribute('data-theme', colorScheme);
-    await diagnostics.scrollIntoViewIfNeeded();
-    const bounds = await diagnostics.boundingBox();
-    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width);
-    await expect(frame.locator('.applied-page canvas').first()).toBeVisible();
-    await page.screenshot({ path: path.join(output, `03-errors-${width}-${colorScheme}.png`) });
-  }
-  appliedCurrent = false; appliedBuilding = true;
-  await expect(frame.getByText('Updating with your latest decisions…')).toBeVisible();
-  await expect(diagnostics).toHaveText(appliedErrors[0]);
-  appliedBuilding = false; appliedFailure = { message: 'LaTeX failed to compile.', details: ['Fatal error'] };
-  await expect(frame.getByText('Your accepted changes do not compile together.')).toBeVisible();
-  await expect(diagnostics).toHaveText(appliedErrors[0]);
-  appliedFailure = undefined; appliedCurrent = true;
-  delayedPdf = 'applied-repaired'; appliedErrors = undefined; appliedKey = delayedPdf;
-  await expect.poll(() => Boolean(releasePdf)).toBe(true);
-  await expect(frame.locator('.applied-paper')).toHaveAttribute('data-build', 'applied-errors');
-  await expect(diagnostics).toContainText('Undefined control sequence');
-  releasePdf();
-  await readable();
-  await expect(summary).toHaveCount(0);
-  report.checks.push({ label: 'Recovered diagnostics stay with the displayed PDF, coexist with update/failure status, and clear after repair' });
-  await page.setViewportSize({ width: 1600, height: 1000 });
-  await page.emulateMedia({ colorScheme: 'light' });
-
-  // The same PDF through FullPaper has its bookmarks and page count. This
-  // isolates the failure to AppliedPaper, independently of PDF contents.
+  // Non-deferred FullPaper with diagnostics across desktop/mobile and light/dark themes.
   task.deferred = false;
-  detail.revisedErrors = ['main.tex:12: Undefined control sequence.'];
+  detail = { ...makeDetail(2, `${prefix}/files/full-v1.pdf`), revisedErrors: ['main.tex:12: Undefined control sequence.'] };
   await page.locator('.manuscript-link').click();
   await sync();
   await page.locator('.task-link').filter({ hasText: task.title }).click();
   await expect(frame.locator('.paper-page')).toHaveCount(2);
+  await expect(reviewBar.locator('.pdf-modes')).toHaveCount(0);
   await healthy(reviewBar, 'Non-deferred FullPaper control with the same PDF');
   await page.screenshot({ path: path.join(output, '04-full-paper-working.png') });
+  const summary = frame.locator('summary').filter({ hasText: 'This PDF has compilation errors.' });
+  const diagnostics = frame.getByRole('region', { name: 'This PDF has compilation errors.' });
   await expect(summary).toBeVisible();
   await summary.focus(); await page.keyboard.press('Enter');
   await expect(diagnostics).toHaveText(detail.revisedErrors[0]);
@@ -268,6 +247,7 @@ try {
   }
   detail.revisedErrors = undefined;
   await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.emulateMedia({ colorScheme: 'light' });
   await page.reload();
   await page.locator('.task-link').filter({ hasText: task.title }).click();
   await expect(frame.locator('.paper-page')).toHaveCount(2);
@@ -275,7 +255,7 @@ try {
   report.checks.push({ label: 'FullPaper static diagnostics support keyboard disclosure, desktop/mobile themes, and clear after repair' });
   assert.deepEqual(report.errors, []);
   report.passed = true;
-  console.log('PASS: Applied PDF contents, page count, navigation, zoom, search, replacement and reopening; manuscript and FullPaper controls.');
+  console.log('PASS: Unified FullPaper review works for deferred/non-deferred tasks and manuscript Changes without PDF/Changes toggle.');
   console.log(`Evidence: ${output}`);
 } finally {
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');

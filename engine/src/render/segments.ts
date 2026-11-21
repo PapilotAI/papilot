@@ -167,6 +167,7 @@ export function sharedWords(...documents: Words[]): Words[] {
           glyphs,
           semanticGlyphs: semantic.slice(cuts[i], cuts[i + 1]),
           flow: token.flow,
+          ...(i === 0 && token.afterHyphen ? { afterHyphen: true } : {}),
           part: { word, index: i, total: cuts.length - 1 },
         });
       }

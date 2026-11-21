@@ -569,11 +569,6 @@
     "textHash": "b80ebdba8fcaaeb828f94b13654493eae4ba16ffc79a891b256949803302e7eb",
     "model": "gemini-4-argon-medium"
   },
-  "Mark text on a page first.": {
-    "revision": "cbc214288492fed32d92123bab31b6d816df2710b6b1966bf22102a2b890b060",
-    "textHash": "5e6deb66634d769b7c5127d0a6711a70949bb0acdbc9fc32204f4837ac4afda5",
-    "model": "gemini-4-argon-medium"
-  },
   "Missing update restart job.": {
     "revision": "e9764d702a3eda4fdd5d6a74b31b346f2ed54ec2a43c845d4cd3e8bde4415814",
     "textHash": "b2c358b6e8c617a781fc5e48c7c0300389beda68fbf071655a2e49b752fae9ae",
@@ -1354,11 +1349,6 @@
     "textHash": "581bc538afe505590186b4c34f8f6e7592d7ea6ecff1c8500b0f5cd27f90c886",
     "model": "gemini-4-argon-medium"
   },
-  "This PDF is no longer available.": {
-    "revision": "7bdb4706f41279060ce85c2af36fd4e4b18b54c21ba0b3a5a64f3a66f78d61a6",
-    "textHash": "db7e1bf226f70d6b780cef477f3baa8af94938651b07a9c9a6f9085e0c640a40",
-    "model": "gemini-4-argon-medium"
-  },
   "This PDF is out of date. Refresh it and try again.": {
     "revision": "7a0d480c47a15bfc2d5c591b3ac50b887d8e803ae2b553208e8e2275b57ec2e6",
     "textHash": "dfc29a419262b321f2c474cfd525cdbdcca8076d60de0981ac8b223671aa8809",
@@ -1637,11 +1627,6 @@
   "Unknown Git action.": {
     "revision": "6dd3d073e29a5f86cb0cc7db464ba1fc7471c48b37f50d2a1daa0c8831494072",
     "textHash": "4a3b49eed4ef854f14080d3177e1912aa181900329413718344b5719d2251e62",
-    "model": "gemini-4-argon-medium"
-  },
-  "Unknown PDF.": {
-    "revision": "311c0684850328a431ddfa8329f981c14880c1140920c7a1d8786130e5af1f90",
-    "textHash": "3a41dedaee9f35441ac021b31a698aa43d1490112c2662bbf7c4fa1b01e2b493",
     "model": "gemini-4-argon-medium"
   },
   "Unknown agent.": {

@@ -20,9 +20,6 @@ import { useNoteResults } from './note-results.tsx';
 import { reviewCommentMark, reviewDraft, useReviewDraft, type ReviewComment, type ReviewMark as Mark } from './review-draft.ts';
 
 type Layer = { strip: HTMLElement; element: HTMLElement; key: string; round: number };
-// The host's API, for finding a mark's source on a page of the paper as decided.
-let request: (<T>(route: string, body?: unknown) => Promise<T>) | null = null;
-export function connectNoteLocation(api: <T>(route: string, body?: unknown) => Promise<T>) { request = api; }
 // A touch selection's ends: the edge of its first and last glyph, with that line's top and bottom.
 type Handles = { from: [number, number, number]; to: [number, number, number] };
 type Selected = Mark & { handles?: Handles };
@@ -31,7 +28,7 @@ const percent = ([x, y, right, bottom]: Rect) => ({ left: `${x * 100}%`, top: `$
 const elementAt = (node: Node | null) => node?.nodeType === 1 ? node as Element : node?.parentElement;
 function mark(layer: Layer, rects: Rect[], quote: string, region: boolean): Mark {
   const change = layer.strip.closest('.change');
-  const side = layer.strip.classList.contains('applied-page') ? 'Paper as decided' : layer.strip.closest('.before') ? 'Before' : layer.strip.closest('.after') ? 'After' : 'Unchanged text';
+  const side = layer.strip.closest('.before') ? 'Before' : layer.strip.closest('.after') ? 'After' : 'Unchanged text';
   // The viewer may be in Chinese; the agent reads the English copies in data-change and data-location.
   const number = change?.querySelector<HTMLElement>('.change-number'), place = change?.querySelector<HTMLElement>('.change-where');
   const where = [`Round ${layer.round}`, `PDF page ${layer.strip.dataset.page || '?'}`, side,
@@ -166,10 +163,8 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
       strips.forEach((strip, index) => {
         const src = strip.querySelector('img')?.getAttribute('src') || '';
         const round = Number(src.match(/\/files\/[^/]+\/(\d+)\//)?.[1] || task.review?.round || 0);
-        // The strip's image names it in either view of the review; its index
-        // differs between the full paper and the changes view.
-        // A page of the paper as decided names its build and page instead.
-        const key = strip.dataset.noteKey || `${round}:${(src.split('/').pop() || String(index)).replace(/-clean(?=\.)/, '')}`;
+        // The strip's image names it consistently in both full-paper and fallback views.
+        const key = `${round}:${(src.split('/').pop() || String(index)).replace(/-clean(?=\.)/, '')}`;
         const previous = mounted.get(strip);
         if (previous?.key === key) return;
         previous?.element.remove();
@@ -268,26 +263,8 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
   function addGrouped(mark: Mark, comment = '', focus = true) {
     if (current.current.busy) return;
     const grouped = !mark.kind && !mark.stamp && ['note', 'region'].includes(current.current.tool) && activeGroup.current;
-    // A page of the paper as decided is a whole page of a build, so the agent can be shown it.
-    const [, build, page] = /^applied:([0-9a-f]{32}):(\d+)$/.exec(mark.strip) ?? [];
-    const paper = build && mark.rects.length ? { paper: { page: Number(page), rects: mark.rects, build } } : {};
-    const id = store.add({ ...mark, ...paper, ...(grouped ? { group: grouped } : {}) }, focus && !grouped, comment);
+    store.add({ ...mark, ...(grouped ? { group: grouped } : {}) }, focus && !grouped, comment);
     touch.current?.reset(); setSelection(null); doc?.getSelection()?.removeAllRanges();
-    if (id) locate(id, mark);
-  }
-  // A mark on the paper as decided has no change to name its source: its
-  // build's SyncTeX finds the lines, followed into the task's current files,
-  // also when newer decisions replaced those pages meanwhile.
-  function locate(id: string, mark: Mark) {
-    const [, key, page] = /^applied:([0-9a-f]{32}):(\d+)$/.exec(mark.strip) ?? [];
-    if (!key || !request) return;
-    const rect = mark.rects.length ? [Math.min(...mark.rects.map(r => r[0])), Math.min(...mark.rects.map(r => r[1])), Math.max(...mark.rects.map(r => r[2])), Math.max(...mark.rects.map(r => r[3]))] : [0, 0, 1, 1];
-    void request<{ source: { file: string; lines: [number, number] } | null }>(`/tasks/${task.id}/locate`, { key, page: Number(page), rect, rects: mark.rects, quote: mark.quote })
-      .then(({ source }) => {
-        if (!source) return;
-        const [start, end] = source.lines;
-        store.place(id, `${mark.where} · ${source.file}:${start === end ? start : `${start}–${end}`}`);
-      }, () => undefined);
   }
   function markSelection({ handles: _, ...mark }: Selected, x?: number, y?: number) {
     if (current.current.busy) return;

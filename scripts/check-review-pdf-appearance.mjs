@@ -113,7 +113,12 @@ try {
   decisions = { first: 'accepted', second: 'accepted', third: 'pending' };
   await page.reload();
   await expect(frame.locator('.change.current')).toBeVisible();
-  await frame.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(frame.locator('.bar .history')).toHaveCount(0);
+  await frame.locator('body').evaluate(() => {
+    const url = new URL(location.href);
+    url.searchParams.set('history', '1');
+    location.href = url.toString();
+  });
   await frame.locator('.change-map-mark').first().click();
   await expect(frame.getByRole('button', { name: 'Next undecided', exact: true })).toBeVisible();
   const checkWidths = async () => {

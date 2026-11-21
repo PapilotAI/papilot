@@ -580,18 +580,13 @@
     "model": "gemini-4-argon-medium"
   },
   "Changes": {
-    "revision": "600894f69a720aa2cc80d53ace7ea3268e89647e2fd46ab7975f2ffd01381f9b",
+    "revision": "2df6db79ecabb295b25bae7b2f840f3b97291860f001a15daa5526b0d56f5436",
     "textHash": "52f74c781b76eb9563c27cafd076d827c5c426c32f75704e7641519c2dc58b9a",
     "model": "gemini-4-argon-medium"
   },
   "Changes in {path}": {
     "revision": "a4cb1df3c8762fafb48b2fdd81444ee9b2c1105802b3206736be0494886c9bac",
     "textHash": "4c385959776a3c192109fca6fcbe0a03cc96adaf3be4685ef3bc629717dd34ae",
-    "model": "gemini-4-argon-medium"
-  },
-  "Changes shows only the changed sections and opens fastest. PDF shows each change in place in the whole paper and takes longer for long papers. The switch in a review changes only that review.": {
-    "revision": "6571b11f4da8cf096c962d7cc9b46d26b7bce53035e70ec5a00295898cc4562a",
-    "textHash": "1d45365caa7b3655085ccc17883ac7391b6878922a53d755ddb9e57950f20fd5",
     "model": "gemini-4-argon-medium"
   },
   "Change…": {
@@ -3127,11 +3122,6 @@
   "Open review": {
     "revision": "f0670e1a4d841d4402993671b6a726b00c750ec54807b3e01ae509e63320072f",
     "textHash": "c6a82973d3706d74ffa60659de7698b9979fc68a7ec3a8d1c2831d73ae6f97e9",
-    "model": "gemini-4-argon-medium"
-  },
-  "Open reviews on": {
-    "revision": "695f054e4e755de714f745fec3614d6be2177b578dfd43a36a50806259b6c0cf",
-    "textHash": "c9e3cc4b457b9790c6a088050161a97bc1a76aaef4fdb4caf9babafdf3293b35",
     "model": "gemini-4-argon-medium"
   },
   "Open task: {title}": {
