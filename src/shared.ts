@@ -26,7 +26,7 @@ export interface ReviewSummary { ready?: number; state: string; round: number | 
 export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
 // previousStatus and previousError are where Check status returns the task
 // once the engine confirms the action.
-export interface PendingReview { returnNote?: Annotation; route: string; body: Record<string, unknown>; previousStatus: TaskStatus; previousError?: string | null }
+export interface PendingReview { route: string; body: Record<string, unknown>; previousStatus: TaskStatus; previousError?: string | null }
 // A task is saved with its first message queued before its manuscript copy
 // exists, and prepared in the background: the review engine checks out the
 // copy, and an AI review also compiles its PDF. A failed preparation keeps
@@ -118,7 +118,7 @@ export const noteAlternativeRange = (value: unknown): NoteAlternativeRange => ty
 export const MAX_NOTE_ALTERNATIVES = 6;
 // Prepared by the editing agent in the same turn, before review-unit IDs exist.
 export interface PreparedNoteOptions { note: number; current: { label: string; reason: string }; options: { label: string; reason: string; edits: { file: string; find: string; replace: string }[] }[] }
-export interface NoteOptions { noteReturn?: NoteReturnState; before?: Record<string, string>; round: number; key: string; options: NoteOption[]; selected?: string; locked?: string; comparisonKey?: string }
+export interface NoteOptions { before?: Record<string, string>; round: number; key: string; options: NoteOption[]; selected?: string; locked?: string; comparisonKey?: string }
 // request: the author's own overall request sent with notes, which the prompt otherwise only embeds.
 export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; request?: string; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
 // Historical attribution on messages and notes from older shared workspaces.

@@ -67,7 +67,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true } });
   if (url.pathname.endsWith('/manuscript')) return route.fulfill({ json: {
-    annotations: [...returned.values()], build: enableReturns ? { status: 'ready', key: 'current', pages: [[612, 792], [612, 792]] } : { status: 'idle' }, git: { files: [] },
+    annotations: [...returned.values()].filter(note => !note.taskId), build: enableReturns ? { status: 'ready', key: 'current', pages: [[612, 792], [612, 792]] } : { status: 'idle' }, git: { files: [] },
   } });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return route.fulfill({ status: 404, json: { error: 'Use PDF text' } });
@@ -96,15 +96,11 @@ await page.route('**/api/**', async route => {
     }
     return route.fulfill({ json: returned.get(id) });
   }
-  if (url.pathname === '/api/projects/paper/annotations/returned-rejected' && route.request().method() === 'POST') {
-    const copy = returned.get('rejected');
-    copy.comment = route.request().postDataJSON().comment;
-    return route.fulfill({ json: copy });
-  }
   if (url.pathname === '/api/tasks') {
     const body = route.request().postDataJSON();
     taskWrites.push(body);
     const created = { ...task, ...body, id: body.id, title: 'Follow up', review: null, status: 'queued' };
+    for (const copy of returned.values()) if (body.annotations?.includes(copy.id)) copy.taskId = created.id;
     snapshot.tasks.push(created);
     return route.fulfill({ json: created });
   }
@@ -120,7 +116,7 @@ await page.route('**/api/**', async route => {
     if (enableReturns) for (const note of notes) if (note.note.id) {
       const copy = returned.get(note.note.id);
       note.returned = Boolean(copy);
-      note.undoReturnAt = copy?.createdAt;
+      note.undoReturnAt = copy?.taskId ? undefined : copy?.createdAt;
     }
     return route.fulfill({ json: { notes } });
   }
@@ -395,40 +391,39 @@ try {
   await page.reload();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
   const originalRow = index => page.locator(`[data-note-result="request-1:${index}"]`);
-  const menu = container => container.locator('.note-disposition button[aria-haspopup="menu"]');
-  const chooseAction = async (container, name) => {
-    await menu(container).click();
-    await container.getByRole('menuitem', { name, exact: true }).click();
-  };
-  const takeBack = container => chooseAction(container, 'Return to My notes');
-  const undoReturn = container => chooseAction(container, 'Undo return to My notes');
-  await expect(originalRow(1).getByRole('button', { name: 'Return to My notes' })).toHaveCount(0);
+  const toggle = container => container.locator('.note-return-toggle');
+  const takeBack = container => container.getByRole('button', { name: 'Return to My notes', exact: true }).click();
+  const undoReturn = container => container.getByRole('button', { name: 'Undo return to My notes', exact: true }).click();
+  await expect(toggle(originalRow(1))).toHaveText('');
+  await expect(originalRow(1).locator('[aria-haspopup]')).toHaveCount(0);
   failReturn = true;
   await takeBack(originalRow(1));
   await expect(originalRow(1).getByRole('alert')).toHaveText('Retry the return.');
   await expect(originalRow(1)).not.toHaveAttribute('data-returned', 'true');
   failReturn = false;
   await originalRow(1).click();
-  await expect(menu(controls())).toBeVisible();
+  await expect(toggle(controls())).toBeVisible();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await takeBack(controls());
+  await toggle(controls()).focus();
+  await page.keyboard.press('Enter');
   await expect(page.locator('.submitted-note-flight')).toHaveText(originals[1].quote);
   await expect(page.locator('[data-notes-home="library"].notes-received')).toBeVisible();
-  await expect(controls().locator('.note-next-task')).toBeVisible();
+  await expect(toggle(controls())).toHaveAccessibleName('Undo return to My notes');
+  await expect(toggle(controls())).toBeFocused();
+  await expect(toggle(controls())).toHaveText('');
   await page.screenshot({ path: 'test-results/note-return-undo-mobile.png', animations: 'disabled' });
   failUndo = true;
   await undoReturn(controls());
   await expect(controls().getByRole('alert')).toHaveText('Retry the undo.');
   failUndo = false;
-  await undoReturn(controls());
-  await expect(controls().locator('.note-next-task')).toHaveCount(0);
+  await toggle(controls()).focus();
+  await page.keyboard.press('Space');
+  await expect(toggle(controls())).toHaveAccessibleName('Return to My notes');
+  await expect(toggle(controls())).toBeFocused();
   await expect(controls().getByRole('alert')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/note-return-mobile.png', animations: 'disabled' });
   await takeBack(controls());
-  await controls().getByRole('button', { name: 'Continue in this task' }).click();
-  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveValue('');
-  await expect(page.locator('.review-draft-note .group-instruction-sent')).toContainText('Clarify the contribution.');
-  assert.equal(taskWrites.length, 0, 'Continuing here prepares an editable draft');
+  assert.equal(taskWrites.length, 0, 'Returning a note leaves the task unsent');
   await page.evaluate(() => localStorage.setItem('papilot:selected-notes', JSON.stringify({ paper: ['returned-rejected'] })));
   await page.reload();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
@@ -444,10 +439,10 @@ try {
   await page.reload();
   await expect(originalRow(1)).toHaveAttribute('data-returned', 'true');
   await takeBack(originalRow(2));
-  await expect(menu(originalRow(2))).toBeDisabled();
+  await expect(toggle(originalRow(2))).toBeDisabled();
   await page.locator('.manuscript-link').click();
   await page.getByRole('button', { name: /^Revise the introduction/ }).click();
-  await expect(menu(originalRow(2))).toBeDisabled();
+  await expect(toggle(originalRow(2))).toBeDisabled();
   releaseMissed();
   await expect(originalRow(2)).toHaveAttribute('data-returned', 'true');
   await expect(page.locator('.submitted-note-flight')).toHaveCount(0);
@@ -459,21 +454,11 @@ try {
   assert.deepEqual(decisions, preserved);
   assert.equal(optionWrites.length, 2, 'Returning a note sends no review decision');
   await page.screenshot({ path: 'test-results/note-return-desktop.png', animations: 'disabled' });
-  snapshot.tasks.push({ ...task, id: 'other-session', name: 'other-session', title: 'Separate wording pass', status: 'idle', review: null });
-  await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await originalRow(1).click();
-  const destinations = controls().locator('.note-next-task');
-  await expect(destinations.getByRole('button')).toHaveText(['Continue in this task', 'New task']);
-  await page.screenshot({ path: 'test-results/note-return-destinations.png', animations: 'disabled' });
-  await destinations.getByRole('button', { name: 'Continue in this task' }).click();
-  const draftComment = page.getByRole('textbox', { name: 'Comment 1', exact: true });
-  await draftComment.fill('Keep my follow-up wording.');
-  await chooseAction(originalRow(1), 'New task');
-  await expect(page.locator('.task-notes-panel')).toContainText('Keep my follow-up wording.');
-  await expect(page.locator('.task-notes-panel')).toContainText('Clarify the contribution.');
-  assert.equal(taskWrites.length, 0, 'Opening the new task keeps it as a draft');
-  await page.getByRole('button', { name: /^My notes/ }).click();
+  await page.getByRole('button', { name: 'My notes', exact: true }).click();
   const library = page.getByRole('complementary', { name: 'PDF note library' });
+  const copy = library.locator('[data-note="returned-rejected"]');
+  await expect(copy).toHaveAttribute('data-selected', 'false');
+  await copy.getByRole('button', { name: /^Include note/ }).click();
   await expect(library.locator('[data-note="returned-missed"]')).toContainText('Position needs confirmation');
   await expect(library.locator('[data-note="returned-accepted"]')).toHaveCount(0);
   await library.locator('[data-note="returned-missed"]').getByRole('button', { name: /^Include note/ }).click();
@@ -484,6 +469,10 @@ try {
   await expect.poll(() => taskWrites.length).toBe(1);
   assert.deepEqual(taskWrites[0].annotations, ['returned-rejected', 'returned-missed']);
   assert.deepEqual(taskWrites[0].groupInstructions, { yellow: 'Clarify the contribution.' });
+  await page.getByRole('button', { name: /^Revise the introduction/ }).click();
+  await expect(originalRow(1)).toHaveAttribute('data-returned', 'true');
+  await expect(toggle(originalRow(1))).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveCount(0);
   assert.deepEqual(errors, []);
   console.log('PASS: Original messages preserved; PDF note controls; load retry; selected candidate PDF/LaTeX comparisons; no writes on option switches; responsive mobile actions; return, undo and resubmit original notes');
 } finally { releaseBriefPreview(); releaseMissed(); await browser.close(); await server.close(); }

@@ -904,7 +904,7 @@ export function ReviewApp({
       setState(next);
       setQueued(remaining);
       // The host refreshes what depends on the decision, such as Git status.
-      window.dispatchEvent(new CustomEvent("papilot:review:decided", { detail: { key: entry.noteKey, noteReturn: (next as PageState & { noteReturn?: unknown }).noteReturn } }));
+      window.dispatchEvent(new CustomEvent("papilot:review:decided"));
       if (entry.draft) store(entry.draft, "");
       if (!remaining.length) {
         if (entry.done) setToast(entry.done);

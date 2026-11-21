@@ -38,8 +38,7 @@ try {
     const baselineGate = new Promise(resolve => { releaseBaseline = resolve; });
     const alternativeGate = new Promise(resolve => { releaseAlternative = resolve; });
     const changed = () => { task.updatedAt++; task.review.counts.pending = Object.values(decisions).filter(state => state === 'pending').length; };
-    const returned = new Set();
-    const notes = () => noteUnits.map((unit, index) => ({ key: `run:${index}`, itemId: 'run', index, note: annotations[index], round: task.review.round, state: 'matched', returned: returned.has(index), undoReturnAt: returned.has(index) ? 1 : undefined, changes: [{ round: task.review.round, stop: ['a', 'b', 'c'].indexOf(unit), units: [unit], state: decisions[unit], match: 'source' }] }));
+    const notes = () => noteUnits.map((unit, index) => ({ key: `run:${index}`, itemId: 'run', index, note: annotations[index], round: task.review.round, state: 'matched', returned: false, changes: [{ round: task.review.round, stop: ['a', 'b', 'c'].indexOf(unit), units: [unit], state: decisions[unit], match: 'source' }] }));
     const detail = (unit, option) => ({ task: 'flow', round: task.review.round, before: 'before', after: `${unit}-${option}-v${version}`, files: '', warnings: [], sections: [],
       units: ['a', 'b', 'c'].map((id, index) => ({ id, file: 'main.tex', kind: 'text', old_start: index + 1, old_end: index + 1, new_start: index + 1, new_end: index + 1, old_text: `Old ${id}`, new_text: `${id === unit ? option : selected[id]} ${id}` })),
       loose: ['a', 'b', 'c'].map(id => ({ kind: 'change', units: [id], before: [strip(id, `Old ${id}`)], after: [strip(id, `${id === unit ? option : selected[id]} ${id}`)] })) });
@@ -84,8 +83,7 @@ try {
         if (saveFails) return route.fulfill({ status: 400, json: { error: 'The source changed. Try again.' } });
         if (body.accept && body.option !== selected[unit]) { pendingBuild = { unit, option: body.option }; task.status = 'building'; changed(); return json({ building: true }); }
         decisions[unit] = body.accept ? 'accepted' : 'rejected'; changed();
-        if (body.reject) returned.add(Number(body.key.split(':')[1]));
-        return json({ ...options(body.key), ...(body.reject ? { noteReturn: { returned: true, undoReturnAt: 1 } } : {}) });
+        return json(options(body.key));
       }
       if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
       if (url.pathname.endsWith('/skills')) return json({ skills: [] });
@@ -122,7 +120,8 @@ try {
       releaseBaseline();
       await expect(comparison('a-current-v1')).toBeVisible();
       const toolbar = drawer.locator('.note-option-navigation');
-      await expect(toolbar.getByRole('button', { name: 'Return to My notes', exact: true })).toHaveCount(0);
+      await expect(toolbar.getByRole('button', { name: 'Return to My notes', exact: true })).toHaveText('');
+      await expect(toolbar.locator('.note-disposition [aria-haspopup]')).toHaveCount(0);
       const pager = await toolbar.locator('.review-note-pager').boundingBox();
       const choices = await toolbar.locator('.note-option-actions').boundingBox();
       const header = await toolbar.boundingBox();
@@ -225,10 +224,15 @@ try {
       saveFails = false;
       await drawer.getByRole('button', { name: 'Reject Original c', exact: true }).click();
       await expect.poll(() => decisions.c).toBe('rejected');
-      await expect(drawer.getByRole('button', { name: 'Continue in this task' })).toBeVisible();
-      await expect(drawer.getByRole('button', { name: 'New task', exact: true })).toBeVisible();
-      await expect(page.locator('[data-note-result="run:3"]')).toHaveAttribute('data-returned', 'true');
-      assert.deepEqual([...returned], [3]);
+      await expect(drawer.getByRole('button', { name: 'Return to My notes' })).toBeEnabled();
+      await expect(drawer.getByRole('button', { name: 'Continue in this task' })).toHaveCount(0);
+      await expect(drawer.getByRole('button', { name: 'New task', exact: true })).toHaveCount(0);
+      await expect(page.locator('[data-note-result="run:3"]')).not.toHaveAttribute('data-returned', 'true');
+      await expect(page.locator('.submitted-note-flight')).toHaveCount(0);
+      await drawer.getByRole('button', { name: 'Comment on Original c' }).click();
+      const followUp = drawer.getByRole('textbox', { name: 'Comment on Original c' });
+      await followUp.fill('Keep working on this sentence here.');
+      await followUp.press('Escape');
       await expect(drawer.locator('.review-note-position')).toHaveText('Note 4 / 4');
       await expect(drawer.getByRole('button', { name: 'Accept Original c', exact: true })).toBeDisabled();
       assert.equal(writes.at(-1).id, writes.at(-2).id, 'a failed decision keeps its retry identity');

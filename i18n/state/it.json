@@ -1179,11 +1179,6 @@
     "textHash": "5f4dbb9123cb4673d4e21c7363d94431e87c12a320f3caed8d541027ed52adc4",
     "model": "gemini-4-argon-medium"
   },
-  "Continue in this task": {
-    "revision": "487e35d475b182cd7bf9a671e095696483d65408004ae5cb966f71eda43c89a6",
-    "textHash": "efe7bbcbe6d20443021e024b89bd119f8b1e5be4339b9b88c772520293278538",
-    "model": "codex"
-  },
   "Continue later": {
     "revision": "e9042688eee1fe37ded45a0aa26ccad39b8a030d88c4f01a72ef6e08ed05b422",
     "textHash": "f702d7fedaca7d0cdef5c103a9b7b43c7d82748c230b1c01480778c24ffaf6b3",
@@ -2640,7 +2635,7 @@
     "model": "gemini-4-argon-medium"
   },
   "New task": {
-    "revision": "a5c41273c727487291bf5a1c480147b54a31198821341c6e1bb76ebb6e853d75",
+    "revision": "60fc2b5a334c8c8a7e72d0af3c2e54dd8fc37cea08e0d92dffb511f10e93a01d",
     "textHash": "0233fb2cf045a5770c1fc48c45b6b1aba2cd8fb1428c68bb3f75e65ef7835f98",
     "model": "gemini-4-argon-medium"
   },

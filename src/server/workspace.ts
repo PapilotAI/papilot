@@ -1373,7 +1373,6 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         const going = this.active.has(task.id) || (this.publishing.has(task.id) && current.status === 'building');
         const status = going ? current.status : this.store.runs().some(r => r.taskId === task.id && r.status === 'queued') ? 'queued' : reached.previousStatus;
         this.store.updateTask(task.id, { pendingReview: null, status, error: !response.ok ? value.error || 'Check the review result before continuing.' : going ? null : reached.previousError ?? null });
-        if (response.ok && pending.returnNote) this.store.returnAnnotation(pending.returnNote, String(pending.body.id));
         if (sourceBuild) this.rememberSourceBuild(task.id, value, pending);
       });
       // So does the build held after the agent's turn for this action, and a
@@ -1417,7 +1416,6 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const result = await operation();
       const sourceBuild = Boolean(pending && startsBuild(pending.route, result)) && confirmedReviewResponse(200, result, task.name);
       this.store.transaction(() => {
-        if (pending?.returnNote && confirmedReviewResponse(200, result, task.name)) this.store.returnAnnotation(pending.returnNote, String(pending.body.id));
         if (pending) this.store.updateTask(taskId, { pendingReview: null });
         if (sourceBuild) this.rememberSourceBuild(taskId, result, pending);
       });

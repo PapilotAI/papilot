@@ -25,7 +25,7 @@ import { ReviewDraftCards } from './review-draft-cards.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, pendingReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
 import { AttachmentDraft, attachmentDrafts, type UploadAttachment } from './attachment-draft.ts';
-import type { Attachment, CollaborationSettings as CollaborationSettingsState, NoteResult, NoteReturnState } from '../shared.ts';
+import type { Attachment, CollaborationSettings as CollaborationSettingsState, NoteReturnState } from '../shared.ts';
 import { noteLocation } from './note-location.ts';
 import { ReadRequest, canStreamUpdates, mergeTimeline, visibleTimeline } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -2327,46 +2327,9 @@ function App() {
     </div>
   </section>;
 
-  async function resumeReturnedNote(result: NoteResult, destination: 'current' | 'new') {
-    if (!task || !result.note.id) return;
-    const context = switchContext.current;
-    let copy: Annotation;
-    try {
-      copy = await api<Annotation>(`/tasks/${task.id}/notes/${encodeURIComponent(result.note.id)}/return`);
-      if (copy.createdAt !== result.undoReturnAt) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
-      if (context !== switchContext.current) return;
-      if (destination === 'new' && copy.document && copy.document !== manuscriptDocument(manuscriptData.data)) {
-        await api(`/projects/${task.projectId}/document`, { main: copy.document });
-        if (context !== switchContext.current) return;
-        await loadManuscript(task.projectId);
-      }
-    } catch (error) { reportError(error); return; }
-    if (context !== switchContext.current) return;
-    const original = result.note.id;
-    const draft = reviewDraft(task.id).refreshFromStorage();
-    if (draft.getSnapshot().busy) return;
-    if (destination === 'new') {
-      const staged = draft.getSnapshot().notes.find(note => note.returned?.original === original && note.returned.createdAt === copy.createdAt);
-      if (staged && staged.comment !== copy.comment) {
-        try { await noteActions.edit(copy, staged.comment); } catch (error) { reportError(error); return; }
-        if (context !== switchContext.current) return;
-      }
-      draft.forgetReturn(original, copy.createdAt);
-      setNewSkill(current => current?.output === 'annotations' ? null : current);
-      noteSelection.set([copy.id], true);
-      setSelected(''); setPage('manuscript'); setManuscriptView('task'); setManuscriptCollapsed(false);
-    } else {
-      noteSelection.set([copy.id], false);
-      draft.add({ returned: { original, createdAt: copy.createdAt, groupInstruction: copy.groupInstruction, anchor: result.note.anchor }, strip: '', round: 0,
-        group: copy.group, stamp: copy.stamp, kind: copy.kind, where: result.note.where, quote: copy.quote, rects: [], region: false },
-        true, copy.comment);
-      setMobileTab('conversation'); setTaskSide('chat'); setLayout(current => current === 'review' ? 'split' : current);
-    }
-  }
-
   return <NoteResultsProvider task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} openLibrary={() => {
     setSelected(''); setPage('manuscript'); setManuscriptView('pdf'); setLibraryRequest(value => value + 1);
-  }} resumeNote={resumeReturnedNote} returnRequest={isPlayground ? undefined : async (id, note, undoReturnAt) => {
+  }} returnRequest={isPlayground ? undefined : async (id, note, undoReturnAt) => {
     const route = `/tasks/${id}/notes/${encodeURIComponent(note)}`;
     let result: NoteReturnState;
     if (undoReturnAt === undefined) {

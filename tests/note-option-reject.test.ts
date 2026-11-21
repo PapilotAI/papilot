@@ -63,18 +63,13 @@ test('note decisions announce the final selection only at its boundary, and neve
       const response = await choose({ id: `final-${action}`, [action]: true });
       assert.equal(response.statusCode, 200, response.body);
       const copies = () => store.annotations('paper').filter(note => !note.taskId);
-      assert.deepEqual(copies().map(note => note.comment), action === 'reject' ? ['original'] : []);
+      assert.deepEqual(copies(), [], 'Deciding a revision leaves its annotations in the current task');
       if (action === 'reject') {
+        const replay = await choose({ id: 'final-reject', reject: true });
+        assert.equal(replay.statusCode, 200, replay.body);
         const siblingReplay = await choose({ key: 'run:1', id: 'final-reject', reject: true });
         assert.equal(siblingReplay.statusCode, 400, 'An action ID is bound to the selected annotation, even when the edits match');
-        assert.equal(copies().length, 1);
-        const copy = copies()[0];
-        assert.equal(response.json().noteReturn.undoReturnAt, copy.createdAt);
-        // Separate decisions on a note's individual changes can be replayed in any order.
-        store.returnAnnotation(copy, 'second-scoped-rejection');
-        store.deleteAnnotation('paper', copy.id);
-        assert.equal((await choose({ id: 'final-reject', reject: true })).json().noteReturn.returned, false);
-        assert.deepEqual(copies(), [], 'A retried decision preserves an explicit undo of the return');
+        assert.deepEqual(copies(), [], 'Retrying a rejection never returns a note');
       }
       assert.equal(store.task('task').review?.counts.pending, 0);
       assert.equal(announced, index + 1, 'the confirmed final drawer decision completes the selection');
@@ -100,8 +95,7 @@ test('note decisions announce the final selection only at its boundary, and neve
     assert.equal((await proxy('decide', { ...scoped, changes: [earlier.id] })).statusCode, 400);
     const scopedResult = await proxy('decide', scoped);
     assert.equal(scopedResult.statusCode, 200, scopedResult.body);
-    assert.equal(scopedResult.json().noteReturn?.returned, true);
-    assert.deepEqual(store.annotations('paper').filter(copy => !copy.taskId).map(copy => copy.comment), ['shared']);
+    assert.deepEqual(store.annotations('paper').filter(copy => !copy.taskId), [], 'A rejection in the embedded viewer also keeps the note here');
     assert.equal((await proxy('undo', { id: scoped.id })).statusCode, 200);
   } finally { releaseBuild(); await local.close(); workspace.close(); store.close(); await server.close(); await f.close(); }
 });

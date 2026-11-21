@@ -295,7 +295,6 @@
   "Contents will appear when the PDF is ready.": "PDF 準備就緒後將顯示目錄。",
   "Context": "上下文",
   "Context {percent}% full: {tokens} of {window} tokens": "上下文已用 {percent}%：{window} 個 token 中的 {tokens} 個",
-  "Continue in this task": "在目前的任務中繼續",
   "Continue later": "稍後繼續",
   "Contribute": "參與貢獻",
   "Contribute an integration": "貢獻整合項目",

@@ -524,14 +524,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
       if (!doc || (!doc.getElementById('root') && !doc.getElementById('paper'))) { setPhase('error'); return; }
       compactReviewFrame(doc, reserve, leadWidth, Boolean(changesOf));
       setDocument(doc);
-      frame.current?.contentWindow?.addEventListener('papilot:review:decided', event => {
-        decided.current?.();
-        const links = linksRef.current, detail = (event as CustomEvent).detail;
-        const note = links?.notes.find(note => note.key === detail?.key);
-        if (note && detail.noteReturn) links!.confirmReturn(note, detail.noteReturn,
-          links!.focus?.key === note.key ? window.document.querySelector('.review-note-controls[data-open="true"] .review-note-pager') : null);
-        else links?.reload();
-      });
+      frame.current?.contentWindow?.addEventListener('papilot:review:decided', () => { decided.current?.(); linksRef.current?.reload(); });
       // The viewer scrolls only its paper. Revealing or focusing something can
       // scroll its document or #root too, overflow hidden or not, which slides
       // the viewer's bar out from under our tools and the paper in; put them back.
