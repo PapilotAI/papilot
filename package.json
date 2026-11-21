@@ -111,7 +111,7 @@
     "mupdf": "^1.28.1",
     "parse5": "^8.1.1",
     "proper-lockfile": "^4.1.2",
-    "proxy-from-env": "^1.1.0",
+    "proxy-from-env": "^2.1.0",
     "tar-stream": "^3.2.2",
     "tsx": "^4.23.15",
     "ws": "^8.23.0",
