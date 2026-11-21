@@ -2233,7 +2233,10 @@ function App() {
       const actions = reviewUndoOrder.current.get(entry.taskId);
       if ((actions && [...actions.values()].some(time => time > entry.time)) || reviewDraft(entry.taskId).newestUndo() > entry.time) return false;
     }
-    if (historyDisabled) return true;
+    // The note panel can still be releasing focus after moving its rows.
+    // Its group transaction has already unlocked the shared history.
+    if (history.busy || creating || marking || reviewNoteBusy || noteWrites.current.size ||
+        (noteEditing && entry.kind !== 'groups' && entry.kind !== 'return')) return true;
     if (entry.kind === 'clear') {
       if (direction !== 'undo' || entry.target.document !== batchDocument || uncertain) return false;
       undoClear(entry);
