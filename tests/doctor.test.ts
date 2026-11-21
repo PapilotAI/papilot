@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { findExecutable } from '../bin/agent-paths.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
+const testedCodexVersion = String(JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).devDependencies['@openai/codex']).replace(/^[^\d]*/, '');
 interface Check { id: string; ok: boolean; severity: string; detail: string; fix: string | null }
 interface Report { ok: boolean; checks: Check[]; error?: string }
 function fixture() {
@@ -181,7 +182,7 @@ test('doctor uses the supported managed Codex and never leaks login output or kn
     f.baseTools();
     f.tool('codex', 'console.log("codex-cli 0.1.0");');
     const managed = path.join(f.data, 'agents/node_modules/.bin'); fs.mkdirSync(managed, { recursive: true });
-    const file = f.tool('managed-codex', 'if (process.argv.includes("--version")) console.log("codex-cli 0.164.0"); else console.error("Logged in using API key: top-secret-login");');
+    const file = f.tool('managed-codex', `if (process.argv.includes("--version")) console.log("codex-cli ${testedCodexVersion}"); else console.error("Logged in using API key: top-secret-login");`);
     if (process.platform === 'win32') fs.copyFileSync(file, path.join(managed, 'codex.cmd'));
     else fs.symlinkSync(file, path.join(managed, 'codex'));
     const result = await f.run(['--json'], { ANTHROPIC_API_KEY: 'secret-anthropic-value' });
@@ -190,7 +191,7 @@ test('doctor uses the supported managed Codex and never leaks login output or kn
     assert.match(item(result.report, 'agent.codex').detail, /managed|agents/);
     assert.doesNotMatch(result.stdout + result.stderr, /top-secret-login|secret-anthropic-value/);
     assert.equal(fs.existsSync(path.join(f.data, 'papilot.sqlite')), false);
-    const signedOut = f.tool('signed-out', 'if (process.argv.includes("--version")) console.log("codex-cli 0.164.0"); else { console.error("Not logged in top-secret-login"); process.exitCode = 1; }');
+    const signedOut = f.tool('signed-out', `if (process.argv.includes("--version")) console.log("codex-cli ${testedCodexVersion}"); else { console.error("Not logged in top-secret-login"); process.exitCode = 1; }`);
     const unavailable = await f.run(['--json'], { PAPILOT_CODEX_BIN: signedOut });
     assert.equal(item(unavailable.report, 'agent.codex').ok, false);
     assert.match(item(unavailable.report, 'agent.codex').fix!, /papilot codex login/);
