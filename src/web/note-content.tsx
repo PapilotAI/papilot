@@ -27,7 +27,7 @@ export function SubmittedNoteContent({ note, index, children }: { note: NoteSumm
       {children}
     </div>
     {note.quote ? <blockquote data-kind={note.kind}>{note.quote}</blockquote> : <span className="sent-note-region">{t('Marked region')}</span>}
-    {(note.comment || note.kind === 'delete') && <p>{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{markText(note)}</p>}
+    {(note.comment || note.kind === 'delete' || note.stamp) && <p>{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{markText(note)}</p>}
   </>;
 }
 

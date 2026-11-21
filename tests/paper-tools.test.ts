@@ -268,3 +268,158 @@ test('annotation reads retain deletion/replacement semantics and protect changes
     assert.equal(current.kind, 'point'); assert.equal(current.stamp, 'Check');
   } finally { f.store.close(); }
 });
+
+test('annotation_create and annotation_update support optional color groups and quick-note stamps', async () => {
+  const f = fixture();
+  try {
+    const createTool = PAPER_TOOLS.find(tool => tool.name === 'annotation_create')!;
+    const updateTool = PAPER_TOOLS.find(tool => tool.name === 'annotation_update')!;
+    assert.deepEqual((createTool.inputSchema.properties as any).group.enum, ['yellow', 'green', 'purple', 'orange', 'red']);
+    assert.deepEqual((updateTool.inputSchema.properties as any).group.enum, ['yellow', 'green', 'purple', 'orange', 'red', null]);
+    assert.equal((createTool.inputSchema.properties as any).stamp.maxLength, 40);
+    assert.equal((updateTool.inputSchema.properties as any).stamp.maxLength, 40);
+
+    // Create with group + stamp (including sanitization of middle dot and newline).
+    const groupedArgs = { key: snapshot.key, start: 'p1-l1', end: 'p1-l2', comment: 'Check this derivation.', group: 'green', stamp: '  Verify·\nclaim  ', requestId: 'grouped-1' };
+    const created = await f.call('annotation_create', groupedArgs);
+    assert.equal(created.group, 'green');
+    assert.equal(created.stamp, 'Verify  claim');
+    assert.equal(created.comment, 'Check this derivation.');
+    const stored = f.store.annotation('paper', created.id);
+    assert.equal(stored.group, 'green');
+    assert.equal(stored.stamp, 'Verify  claim');
+
+    // Create grouped highlight without comment (omitted or empty).
+    const highlight = await f.call('annotation_create', { key: snapshot.key, start: 'p1-l1', end: 'p1-l1', group: 'yellow', requestId: 'highlight-1' });
+    assert.equal(highlight.group, 'yellow');
+    assert.equal(highlight.stamp, null);
+    assert.equal(highlight.comment, '');
+    assert.equal((await f.call('annotation_create', { key: snapshot.key, start: 'p1-l1', end: 'p1-l1', group: 'yellow', comment: '', requestId: 'highlight-1' })).id, highlight.id);
+
+    // Retry idempotency includes group and stamp.
+    assert.equal((await f.call('annotation_create', { ...groupedArgs, stamp: 'Verify  claim' })).id, created.id);
+    for (const mutated of [
+      { ...groupedArgs, group: 'red' },
+      { key: snapshot.key, start: 'p1-l1', end: 'p1-l2', comment: 'Check this derivation.', stamp: 'Verify  claim', requestId: 'grouped-1' },
+      { ...groupedArgs, stamp: 'Polish' },
+      { key: snapshot.key, start: 'p1-l1', end: 'p1-l2', comment: 'Check this derivation.', group: 'green', requestId: 'grouped-1' },
+    ]) {
+      await assert.rejects(f.call('annotation_create', mutated), /already used/);
+    }
+    // Plain note retry rejects adding group or stamp with the same requestId.
+    const plain = await f.call('annotation_create', { ...create, requestId: 'plain-1' });
+    await assert.rejects(f.call('annotation_create', { ...create, requestId: 'plain-1', group: 'purple' }), /already used/);
+    await assert.rejects(f.call('annotation_create', { ...create, requestId: 'plain-1', stamp: 'Polish' }), /already used/);
+
+    // annotations_list and annotation_read expose group and stamp.
+    const listed = await f.call('annotations_list', {});
+    const listedGrouped = listed.annotations.find((item: any) => item.id === created.id);
+    assert.equal(listedGrouped.group, 'green');
+    assert.equal(listedGrouped.stamp, 'Verify  claim');
+    const read = await f.call('annotation_read', { id: created.id });
+    assert.equal(read.group, 'green');
+    assert.equal(read.stamp, 'Verify  claim');
+
+    // Validation errors on create save nothing.
+    const countBefore = f.store.annotations('paper').length;
+    for (const bad of [
+      { ...create, requestId: 'bad-group-blue', group: 'blue' },
+      { ...create, requestId: 'bad-group-cyan', group: 'cyan' },
+      { ...create, requestId: 'bad-group-null', group: null },
+      { ...create, requestId: 'bad-group-num', group: 42 },
+      { ...create, requestId: 'bad-stamp-empty', stamp: '' },
+      { ...create, requestId: 'bad-stamp-space', stamp: '   ' },
+      { ...create, requestId: 'bad-stamp-dots', stamp: '···\n' },
+      { ...create, requestId: 'bad-stamp-null', stamp: null },
+      { ...create, requestId: 'bad-stamp-long', stamp: 'a'.repeat(41) },
+      { key: snapshot.key, start: 'p1-l1', end: 'p1-l1', stamp: 'Polish', comment: '', requestId: 'bad-stamp-empty-comment' },
+      { key: snapshot.key, start: 'p1-l1', end: 'p1-l1', group: 'orange', comment: '   ', requestId: 'bad-group-blank-comment' },
+    ]) {
+      await assert.rejects(f.call('annotation_create', bad));
+    }
+    assert.equal(f.store.annotations('paper').length, countBefore);
+
+    // Update group without resending comment; clears groupInstruction and changes revision.
+    f.store.saveAnnotation({ ...f.store.annotation('paper', created.id), groupInstruction: 'Check all green notes.' });
+    const withInstructionRev = annotationRevision(f.store.annotation('paper', created.id));
+    assert.notEqual(withInstructionRev, created.revision);
+    await assert.rejects(f.call('annotation_update', { id: created.id, revision: created.revision, group: 'orange' }), /changed/);
+    const recolored = await f.call('annotation_update', { id: created.id, revision: withInstructionRev, group: 'orange' });
+    assert.equal(recolored.group, 'orange');
+    assert.equal(recolored.stamp, 'Verify  claim');
+    assert.equal(recolored.comment, 'Check this derivation.');
+    assert.notEqual(recolored.revision, withInstructionRev);
+    assert.equal(f.store.annotation('paper', created.id).groupInstruction, undefined);
+
+    // Update stamp without resending comment; changes revision and keeps group + comment.
+    const restamped = await f.call('annotation_update', { id: created.id, revision: recolored.revision, stamp: 'Tight·en\r\n' });
+    assert.equal(restamped.group, 'orange');
+    assert.equal(restamped.stamp, 'Tight en');
+    assert.equal(restamped.comment, 'Check this derivation.');
+    assert.notEqual(restamped.revision, recolored.revision);
+    await assert.rejects(f.call('annotation_update', { id: created.id, revision: recolored.revision, stamp: 'Other' }), /changed/);
+
+    // Clear stamp with null without resending comment.
+    const noStamp = await f.call('annotation_update', { id: created.id, revision: restamped.revision, stamp: null });
+    assert.equal(noStamp.group, 'orange');
+    assert.equal(noStamp.stamp, null);
+    assert.equal(noStamp.comment, 'Check this derivation.');
+    assert.equal(f.store.annotation('paper', created.id).stamp, undefined);
+
+    // Clear group with null without resending comment.
+    const noGroup = await f.call('annotation_update', { id: created.id, revision: noStamp.revision, group: null });
+    assert.equal(noGroup.group, null);
+    assert.equal(noGroup.stamp, null);
+    assert.equal(noGroup.comment, 'Check this derivation.');
+    assert.equal(f.store.annotation('paper', created.id).group, undefined);
+
+    // Update comment only preserves group and stamp; setting group allows empty comment, clearing group rejects empty comment.
+    const setBoth = await f.call('annotation_update', { id: plain.id, revision: plain.revision, group: 'purple', stamp: 'Polish' });
+    assert.equal(setBoth.group, 'purple');
+    assert.equal(setBoth.stamp, 'Polish');
+    const commentOnly = await f.call('annotation_update', { id: plain.id, revision: setBoth.revision, comment: '' });
+    assert.equal(commentOnly.comment, '');
+    assert.equal(commentOnly.group, 'purple');
+    assert.equal(commentOnly.stamp, 'Polish');
+    await assert.rejects(f.call('annotation_update', { id: plain.id, revision: commentOnly.revision, group: null, comment: '' }), /nonempty comment/);
+    // Clearing group on a grouped highlight without a comment requires a nonempty comment unless kind === 'delete'.
+    await assert.rejects(f.call('annotation_update', { id: highlight.id, revision: highlight.revision, group: null }), /nonempty comment/);
+    assert.equal(f.store.annotation('paper', highlight.id).group, 'yellow');
+    const ungroupedHighlight = await f.call('annotation_update', { id: highlight.id, revision: highlight.revision, group: null, comment: 'Now individual.' });
+    assert.equal(ungroupedHighlight.group, null);
+    assert.equal(ungroupedHighlight.comment, 'Now individual.');
+    const groupedDelete = f.store.saveAnnotation({ ...f.store.annotation('paper', highlight.id), kind: 'delete', group: 'red', comment: '' });
+    const ungroupedDelete = await f.call('annotation_update', { id: groupedDelete.id, revision: annotationRevision(groupedDelete), group: null });
+    assert.equal(ungroupedDelete.group, null);
+    assert.equal(ungroupedDelete.kind, 'delete');
+    assert.equal(ungroupedDelete.comment, '');
+
+    // Update requires at least one updatable field and rejects unknown/invalid fields without mutation.
+    await assert.rejects(f.call('annotation_update', { id: noGroup.id, revision: noGroup.revision }), /comment, group, or stamp/);
+    await assert.rejects(f.call('annotation_update', { id: noGroup.id, revision: noGroup.revision, extra: true }), /Unknown argument/);
+    for (const bad of [{ group: 'blue' }, { group: 'invalid' }, { stamp: '' }, { stamp: '···' }, { stamp: 'x'.repeat(41) }, { comment: null }]) {
+      await assert.rejects(f.call('annotation_update', { id: noGroup.id, revision: noGroup.revision, ...bad }));
+    }
+    assert.equal(annotationRevision(f.store.annotation('paper', noGroup.id)), noGroup.revision);
+
+    // Legacy blue annotations report canonical yellow and can be regrouped or cleared.
+    f.store.saveAnnotation({ ...f.store.annotation('paper', noGroup.id), group: 'blue', groupInstruction: 'Legacy instruction' });
+    const legacy = await f.call('annotation_read', { id: noGroup.id });
+    assert.equal(legacy.group, 'yellow');
+    const keptYellow = await f.call('annotation_update', { id: noGroup.id, revision: legacy.revision, group: 'yellow' });
+    assert.equal(keptYellow.group, 'yellow');
+    assert.equal(f.store.annotation('paper', noGroup.id).groupInstruction, 'Legacy instruction');
+    const clearedLegacy = await f.call('annotation_update', { id: noGroup.id, revision: keptYellow.revision, group: null });
+    assert.equal(clearedLegacy.group, null);
+    assert.equal(f.store.annotation('paper', noGroup.id).groupInstruction, undefined);
+
+    // Delete + restore preserves group and stamp.
+    await f.call('annotation_delete', { id: plain.id, revision: commentOnly.revision });
+    const deletedItem = (await f.call('annotations_list', { includeDeleted: true })).annotations.find((item: any) => item.id === plain.id);
+    assert.equal(deletedItem.group, 'purple');
+    assert.equal(deletedItem.stamp, 'Polish');
+    const restored = await f.call('annotation_restore', { id: deletedItem.id, revision: deletedItem.revision });
+    assert.equal(restored.group, 'purple');
+    assert.equal(restored.stamp, 'Polish');
+  } finally { f.store.close(); }
+});
