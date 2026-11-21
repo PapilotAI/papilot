@@ -14,7 +14,9 @@ updates:
           - "*"
 
   - package-ecosystem: npm
-    directory: /
+    directories:
+      - /
+      - /engine
     schedule:
       interval: weekly
       day: monday
@@ -22,23 +24,14 @@ updates:
       - dependencies
       - javascript
     open-pull-requests-limit: 5
+    ignore:
+      # Papilot targets Node.js >=22.22.0 and tests on Node 22 + 24; keep
+      # @types/node aligned with the minimum supported Node major.
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
     groups:
       minor-and-patch:
-        update-types:
-          - minor
-          - patch
-
-  - package-ecosystem: npm
-    directory: /engine
-    schedule:
-      interval: weekly
-      day: monday
-    labels:
-      - dependencies
-      - javascript
-    open-pull-requests-limit: 3
-    groups:
-      engine-minor-and-patch:
         update-types:
           - minor
           - patch
