@@ -3,8 +3,8 @@
 .pdf-note-card{position:absolute;z-index:5;display:flex;flex-direction:column;gap:8px;box-sizing:border-box;width:280px;padding:10px 8px 8px 12px;border:0;border-radius:12px;background:var(--raised);color:var(--text);box-shadow:var(--float);font:13px/1.6 var(--sans);pointer-events:auto;text-align:left;outline:none}
 .pdf-note-content{display:flex;align-items:stretch;gap:4px;min-height:0}
 .pdf-note-card .typeless-note-status{margin:0;color:var(--text-3);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
-.pdf-suggestion-body{flex:1;min-width:0;min-height:0;max-height:inherit;overflow:auto;overscroll-behavior:contain;-webkit-user-select:text;user-select:text}
-.pdf-container .pdf-suggestion-body{overscroll-behavior-y:auto}
+.pdf-suggestion-body{flex:1;min-width:0;min-height:0;-webkit-user-select:text;user-select:text}
+.pdf-note-card:not(.pdf-note-inline) .pdf-suggestion-body{max-height:inherit;overflow:auto;overscroll-behavior:contain}
 .pdf-suggestion-body p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 var(--sans)}
 .pdf-note-text{cursor:text;border-radius:5px;outline:none}
 .pdf-note-text:hover{background:var(--bg-muted)}

@@ -102,35 +102,84 @@ async function switchPaper(name) {
 }
 try {
   await page.goto(origin);
-  const pdf = page.getByLabel('PDF pages', { exact: true });
-  const pdfTop = () => pdf.evaluate(el => el.scrollTop);
-  const wheelPdfFrom = async target => {
-    await target.hover({ position: { x: 4, y: 8 } });
-    const top = await pdfTop();
+  // In My notes and Notes in this task, wheel scrolling over inline note cards
+  // and focused editors scrolls the annotations list without leaking overscroll
+  // to the PDF behind the panel.
+  {
+    const pdf = page.getByLabel('PDF pages', { exact: true });
+    const pdfTop = () => pdf.evaluate(el => el.scrollTop);
+    // A floating PDF note popover keeps wheel scrolling contained instead of
+    // scrolling the PDF underneath it.
+    await pdf.locator('.note-tag[data-note="n1"]').click();
+    const popover = page.getByRole('dialog', { name: 'PDF note 1', exact: true });
+    const popoverText = popover.getByText('Revise n1.', { exact: true });
+    await popoverText.hover({ position: { x: 4, y: 8 } });
+    const pdfBeforePopoverWheel = await pdfTop();
+    await page.mouse.wheel(0, 120);
+    await page.waitForTimeout(150);
+    assert.equal(await pdfTop(), pdfBeforePopoverWheel, 'wheel over a floating PDF note popover should not scroll the PDF');
+    await page.keyboard.press('Escape');
+    await expect(popover).toBeHidden();
+
+    await page.setViewportSize({ width: 1440, height: 340 });
+    await notesReady();
+    const wheelScrollerFrom = async (scroller, target, deltaY) => {
+      await target.scrollIntoViewIfNeeded();
+      await target.hover({ position: { x: 8, y: 8 } });
+      const top = await scroller.evaluate(el => el.scrollTop);
+      const step = deltaY ?? (await scroller.evaluate(el => (el.scrollTop + el.clientHeight < el.scrollHeight - 2 ? 120 : -120)));
+      await page.mouse.wheel(0, step);
+      if (step > 0) await expect.poll(() => scroller.evaluate(el => el.scrollTop)).toBeGreaterThan(top);
+      else await expect.poll(() => scroller.evaluate(el => el.scrollTop)).toBeLessThan(top);
+    };
+    const notesPanel = page.locator('.notes-panel');
+    assert.ok(await notesPanel.evaluate(el => el.scrollHeight > el.clientHeight), 'My notes should overflow in the compact viewport');
+    const libraryText = notesPanel.locator('[data-note="n1"] .pdf-note-text');
+    await wheelScrollerFrom(notesPanel, libraryText);
+    await libraryText.click();
+    const editor = notesPanel.locator('[data-note="n1"] .pdf-note-input');
+    await expect(editor).toBeFocused();
+    await wheelScrollerFrom(notesPanel, editor);
+    await editor.fill('A line in a long note.\n'.repeat(30));
+    await editor.scrollIntoViewIfNeeded();
+    await editor.evaluate(el => { el.scrollTop = 0; });
+    await editor.hover({ position: { x: 8, y: 8 } });
+    const listBeforeLongEditor = await notesPanel.evaluate(el => el.scrollTop);
     await page.mouse.wheel(0, 64);
-    await expect.poll(pdfTop).toBeGreaterThan(top);
-    await pdf.evaluate((el, position) => { el.scrollTop = position; }, top);
-  };
-  await pdf.locator('.note-tag[data-note="n1"]').click();
-  const popover = page.getByRole('dialog', { name: 'PDF note 1', exact: true });
-  const noteText = popover.getByText('Revise n1.', { exact: true });
-  await wheelPdfFrom(noteText);
-  await noteText.click();
-  const noteEditor = popover.getByRole('textbox', { name: 'Edit note 1', exact: true });
-  await expect(noteEditor).toBeFocused();
-  await wheelPdfFrom(noteEditor);
-  await noteEditor.fill('A line in a long note.\n'.repeat(50));
-  await noteEditor.hover({ position: { x: 4, y: 8 } });
-  await noteEditor.evaluate(el => { el.scrollTop = 0; });
-  const beforeNoteScroll = await pdfTop();
-  await page.mouse.wheel(0, 64);
-  await expect.poll(() => noteEditor.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
-  assert.equal(await pdfTop(), beforeNoteScroll);
-  await noteEditor.evaluate(el => { el.scrollTop = el.scrollHeight; });
-  await wheelPdfFrom(noteEditor);
-  await noteEditor.fill('Revise n1.');
-  await noteEditor.press('Escape');
-  await expect(popover).toBeHidden();
+    await expect.poll(() => editor.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+    assert.equal(await notesPanel.evaluate(el => el.scrollTop), listBeforeLongEditor);
+    // At the editor's scroll boundary, wheeling chains to My notes.
+    await editor.evaluate(el => { el.scrollTop = 0; });
+    await wheelScrollerFrom(notesPanel, editor, -120);
+    await editor.fill('Revise n1.');
+    await editor.press('Escape');
+    await expect(editor).toHaveCount(0);
+    // Overscrolling past the end of My notes stays contained instead of scrolling the PDF.
+    await notesPanel.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    const pdfBeforeListOverscroll = await pdfTop();
+    await notesPanel.locator('[data-note="n5"] .pdf-note-text').hover({ position: { x: 8, y: 8 } });
+    await page.mouse.wheel(0, 160);
+    await page.waitForTimeout(150);
+    assert.equal(await pdfTop(), pdfBeforeListOverscroll, 'overscrolling My notes should not scroll the PDF behind it');
+
+    await setSelection(check('n1'), true);
+    await setSelection(check('n5'), true);
+    const taskNotesPanel = page.locator('.task-notes-panel');
+    await expect(taskNotesPanel).toBeVisible();
+    assert.ok(await taskNotesPanel.evaluate(el => el.scrollHeight > el.clientHeight), 'Notes in this task should overflow in the compact viewport');
+    const taskNoteText = taskNotesPanel.locator('[data-note="n1"] .pdf-note-text');
+    await wheelScrollerFrom(taskNotesPanel, taskNoteText, 120);
+    await taskNoteText.click();
+    const taskNoteEditor = taskNotesPanel.locator('[data-note="n1"] .pdf-note-input');
+    await expect(taskNoteEditor).toBeFocused();
+    await taskNotesPanel.evaluate(el => { el.scrollTop = 0; });
+    await wheelScrollerFrom(taskNotesPanel, taskNoteEditor, 120);
+    await taskNoteEditor.press('Escape');
+    await expect(taskNoteEditor).toHaveCount(0);
+    await setSelection(check('n5'), false);
+    await setSelection(check('n1'), false);
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
 
   // A task's notes are the same cards as My notes, except that × replaces
   // "Included ×": it keeps the annotation; trash deletes it everywhere, and ⌘Z
