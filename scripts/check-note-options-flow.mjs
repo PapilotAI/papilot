@@ -26,7 +26,7 @@ try {
     await page.addInitScript(() => { localStorage.setItem('papilot:language', 'en'); localStorage.setItem('papilot:task', 'task'); });
     const task = { id: 'task', projectId: 'paper', name: 'flow', title: 'Review note choices', status: 'reviewing', createdAt: 1, updatedAt: 1, review: { round: 1, state: 'reviewing', counts: { pending: 3 } } };
     const noteUnits = ['a', 'a', 'b', 'c'];
-    const annotations = noteUnits.map((unit, index) => ({ where: `main.tex line ${index + 1}`, quote: `Old ${unit}`, comment: `Improve note ${index + 1}.` }));
+    const annotations = noteUnits.map((unit, index) => ({ id: `note-${index}`, where: `main.tex line ${index + 1}`, quote: `Old ${unit}`, comment: `Improve note ${index + 1}.` }));
     const items = [{ id: 'run', taskId: 'task', type: 'user', text: '', createdAt: 1, meta: { notes: annotations } }];
     const decisions = { a: 'pending', b: 'pending', c: 'pending' }, selected = { a: 'current', b: 'current', c: 'current' };
     const strip = (unit, text) => {
@@ -38,7 +38,7 @@ try {
     const baselineGate = new Promise(resolve => { releaseBaseline = resolve; });
     const alternativeGate = new Promise(resolve => { releaseAlternative = resolve; });
     const changed = () => { task.updatedAt++; task.review.counts.pending = Object.values(decisions).filter(state => state === 'pending').length; };
-    const notes = () => noteUnits.map((unit, index) => ({ key: `run:${index}`, itemId: 'run', index, note: annotations[index], round: task.review.round, state: 'matched', changes: [{ round: task.review.round, stop: ['a', 'b', 'c'].indexOf(unit), units: [unit], state: decisions[unit], match: 'source' }] }));
+    const notes = () => noteUnits.map((unit, index) => ({ key: `run:${index}`, itemId: 'run', index, note: annotations[index], round: task.review.round, state: 'matched', returned: false, changes: [{ round: task.review.round, stop: ['a', 'b', 'c'].indexOf(unit), units: [unit], state: decisions[unit], match: 'source' }] }));
     const detail = (unit, option) => ({ task: 'flow', round: task.review.round, before: 'before', after: `${unit}-${option}-v${version}`, files: '', warnings: [], sections: [],
       units: ['a', 'b', 'c'].map((id, index) => ({ id, file: 'main.tex', kind: 'text', old_start: index + 1, old_end: index + 1, new_start: index + 1, new_end: index + 1, old_text: `Old ${id}`, new_text: `${id === unit ? option : selected[id]} ${id}` })),
       loose: ['a', 'b', 'c'].map(id => ({ kind: 'change', units: [id], before: [strip(id, `Old ${id}`)], after: [strip(id, `${id === unit ? option : selected[id]} ${id}`)] })) });
@@ -118,6 +118,19 @@ try {
       assert.equal(previews.filter(request => request.background).length, 1, 'Only one of six alternatives occupies a connection');
       releaseBaseline();
       await expect(comparison('a-current-v1')).toBeVisible();
+      const toolbar = drawer.locator('.note-option-navigation');
+      const returnNote = toolbar.getByRole('button', { name: 'Return to My notes', exact: true });
+      await expect(returnNote).toBeVisible();
+      const targetSize = width <= 390 ? 36 : 24;
+      const [action, tabs, pager, choices, header] = await Promise.all([
+        returnNote.boundingBox(), toolbar.getByRole('tablist').boundingBox(),
+        toolbar.locator('.review-note-pager').boundingBox(), toolbar.locator('.note-option-actions').boundingBox(), toolbar.boundingBox(),
+      ]);
+      const center = rect => rect.y + rect.height / 2;
+      assert.ok(action.width >= targetSize && action.height >= targetSize, 'the inline action keeps its input target size');
+      assert.ok(Math.abs(center(tabs) - center(action)) < 1, 'the return icon shares an existing toolbar row');
+      assert.ok(Math.abs(center(pager) - center(choices)) < 1, 'the pager and review actions share a row');
+      assert.ok(choices.x + choices.width <= header.x + header.width, 'review actions stay inside the toolbar');
       // Selected segments must rise above their groove in both themes, including
       // the host's scope switch beside the embedded viewer's controls.
       for (const colorScheme of ['dark', 'light']) {

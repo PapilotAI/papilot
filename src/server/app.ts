@@ -30,7 +30,7 @@ import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
-import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type AnnotationBatch, type AnnotationBatchResult, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
+import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
 import type { SourceFileRead } from '../../engine/src/types.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
 import { noteOptionContext, noteOptionsKey } from './note-options.ts';
@@ -551,6 +551,10 @@ export async function buildApp(options: AppOptions) {
     const note = store.findAnnotation(task.projectId, id);
     return note?.taskId === task.id && note.deletedAt === undefined && !isTaskReviewNote(note) ? note : undefined;
   };
+  const noteReturnState = (copy: Annotation | undefined): NoteReturnState => {
+    if (!copy || copy.deletedAt !== undefined) return { returned: false };
+    return { returned: true, undoReturnAt: copy.taskId ? undefined : copy.createdAt };
+  };
   app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {
     const task = store.task(request.params.id), client = await connectReview(store.project(task.projectId).path);
     const notes = await taskNoteResults(task, store.items(task.id), store.runs().filter(run => run.taskId === task.id), client);
@@ -558,7 +562,7 @@ export async function buildApp(options: AppOptions) {
     for (const result of notes) {
       const id = result.note.id;
       if (id && !result.note.anchor?.round && submittedAnnotation(current, id))
-        result.returned = Boolean(store.findAnnotation(task.projectId, returnedAnnotationId(task.id, id)));
+        Object.assign(result, noteReturnState(store.findAnnotation(task.projectId, returnedAnnotationId(task.id, id))));
     }
     return { notes };
   });
@@ -568,13 +572,26 @@ export async function buildApp(options: AppOptions) {
     const snapshot = store.items(task.id).find(item => item.type === 'user' && item.meta?.notes?.some(summary => summary.id === noteId && !summary.anchor?.round));
     if (!note || !snapshot) throw new Error('Only submitted manuscript annotations can be returned.');
     const id = returnedAnnotationId(task.id, noteId), existing = store.findAnnotation(task.projectId, id);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.deletedAt === undefined || existing.taskId) return existing;
+      // Keep any edits to the copy. A new timestamp fences off a late undo
+      // of the previous return, including when both happen in the same tick.
+      return store.restoreAnnotation({ ...existing, createdAt: Math.max(Date.now(), existing.createdAt + 1) });
+    }
     // Only the copy belongs to My notes. Keep its original PDF key so the
     // manuscript read can place it safely or show the existing location warning.
     const { taskId: _, context: _context, groupInstruction: _oldInstruction, aiReview: _adoption, ...copy } = note;
     const document = note.document ?? manuscripts.documentOf(note.projectId, note.key) ?? task.document;
     const groupInstruction = note.group && snapshot.meta?.groupInstructions?.[canonicalGroup(note.group)];
     return store.saveAnnotation({ ...copy, id, createdAt: Date.now(), ...(document ? { document } : {}), ...(groupInstruction ? { groupInstruction } : {}) });
+  });
+  app.post<{ Params: { id: string; note: string }; Body: { createdAt: number } }>('/api/tasks/:id/notes/:note/undo-return', task, request => {
+    const task = store.task(request.params.id), noteId = request.params.note;
+    if (!submittedAnnotation(task, noteId)) throw new Error('Note not found.');
+    const copy = store.findAnnotation(task.projectId, returnedAnnotationId(task.id, noteId));
+    if (!copy || copy.taskId || copy.createdAt !== request.body?.createdAt) return noteReturnState(copy);
+    if (copy.deletedAt === undefined) store.deleteAnnotation(copy.projectId, copy.id);
+    return { returned: false, removed: copy.id };
   });
   // A task's file in the editor beside its review. The review engine reads
   // it from the task's worktree and reviews a save in a new round; a save

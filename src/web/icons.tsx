@@ -1,6 +1,7 @@
 import { editorIcons } from '../../engine/src/web/editor-icons.tsx';
 import type { SkillIcon } from '../skill-icons.ts';
 
+const listAction = 'M4 6h16M4 12h8M4 18h7';
 const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode> = {
   ...editorIcons,
   crop: <><path d="M6 3v13a2 2 0 0 0 2 2h13M3 6h13a2 2 0 0 1 2 2v13"/></>,
@@ -14,8 +15,8 @@ const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode
   grip: <><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></>,
   attachment: <path d="m21 11-8 8a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8-8"/>,
   archive: <><rect x="3" y="3" width="18" height="4" rx="1"/><path d="M5 7v13h14V7M10 11h4"/></>,
-  pin: <path d="m16 3 5 5-3 1-4 4v3l-2 2-6-6 2-2h3l4-4 1-3ZM3 21l6-6"/>,
-  unpin: <path d="m16 3 5 5-3 1-3 3M9 10H8l-2 2 6 6 2-2v-1M3 21l6-6M3 3l18 18"/>,
+  pin: <><path d="M9 4h6v5l3 4v2H6v-2l3-4Z"/><path d="M12 15v6"/></>,
+  unpin: <><path d="M9 6V4h6v5l3 4v1M8 11l-2 2v2h6v6"/><path d="m3 3 18 18"/></>,
   folder: <path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>,
   restore: <><path d="M3 10a9 9 0 1 1 2 9M3 4v6h6M12 7v5l3 2"/></>,
   bolt: <path d="m13 2-9 12h7l-1 8 10-12h-7Z"/>,
@@ -49,6 +50,10 @@ const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode
   search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>,
   region: <><path d="M5 3a2 2 0 0 0-2 2m16-2a2 2 0 0 1 2 2M5 21a2 2 0 0 1-2-2M9 3h1m4 0h1M9 21h2M3 9v1m18-1v2M3 14v1"/><path d="M12.5 12.5 21 15.8l-3.6 1.3-1.3 3.6Z"/></>,
   list: <path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>,
+  listPlus: <path d={listAction + 'M14 16h8m-4-4v8'}/>,
+  listMinus: <path d={listAction + 'M14 16h8'}/>,
+  listReturn: <path d={listAction + 'M21 11v3a3 3 0 0 1-3 3h-4m3-3-3 3 3 3'}/>,
+  listX: <path d={listAction + 'M15 13l6 6m0-6-6 6'}/>,
   chevronDown: <path d="m6 9 6 6 6-6"/>,
   chevronUp: <path d="m18 15-6-6-6 6"/>,
   chevronLeft: <path d="m15 18-6-6 6-6"/>,

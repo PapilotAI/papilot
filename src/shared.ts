@@ -108,7 +108,8 @@ export interface NoteAnchor { sources: { file: string; lines: [number, number] }
 // shown to the agent; context: what the agent is told beyond its location.
 export interface NoteSummary { group?: NoteGroup; kind?: MarkKind; stamp?: string; where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor; context?: string[]; paper?: { page: number; rects: [number, number, number, number][]; round?: number; key?: string; build?: string } }
 export interface NoteChange { round: number; stop: number; units: string[]; state: 'pending' | 'accepted' | 'rejected' | 'commented' | 'mixed'; match: 'source' | 'quote' }
-export interface NoteResult { key: string; itemId: string; index: number; note: NoteSummary; returned?: boolean; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
+export interface NoteReturnState { returned: boolean; undoReturnAt?: number }
+export interface NoteResult extends Partial<NoteReturnState> { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
 export interface NoteOption { id: string; label: string; reason?: string; previewError?: string; edits: { unit: string; text: string }[] }
 export const NOTE_ALTERNATIVE_RANGES = { few: [1, 2], balanced: [2, 3], many: [3, 5] } as const;
 export type NoteAlternativeRange = keyof typeof NOTE_ALTERNATIVE_RANGES;

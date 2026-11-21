@@ -38,8 +38,8 @@ const units = { 1: [unit('c1', 10, 'The original technical sentence.', 'A shorte
 const rounds = Object.fromEntries([1, 2].map(round => [round, { round, units: units[round], sections: [], loose: units[round].map(unit => ({ kind: 'change', units: [unit.id], before: [{ text: [{ text: unit.old_text }] }] })) }]));
 const decisions = { 1: { c1: 'pending', c2: 'rejected', c3: 'accepted' }, 2: { c1: 'pending' } };
 const client = { get: async route => route.includes('/rounds/') ? rounds[Number(new URL(route, origin).pathname.split('/').at(-1))] : { decisions: decisions[Number(new URL(route, origin).searchParams.get('round'))] } };
-let failResults = true, enableReturns = false, failReturn = false;
-const returned = new Map(), returnWrites = [], taskWrites = [];
+let failResults = true, enableReturns = false, failReturn = false, failUndo = false;
+const returned = new Map(), returnWrites = [], undoWrites = [], taskWrites = [];
 let releaseMissed;
 const missedGate = new Promise(resolve => { releaseMissed = resolve; });
 const optionWrites = [], optionReads = [], previewReads = [];
@@ -72,9 +72,18 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return route.fulfill({ status: 404, json: { error: 'Use PDF text' } });
   if (url.pathname === '/api/quick-notes') return route.fulfill({ json: { quickNotes: null } });
-  const returning = url.pathname.match(/\/tasks\/[^/]+\/notes\/([^/]+)\/return$/);
+  const returning = url.pathname.match(/\/tasks\/[^/]+\/notes\/([^/]+)\/(return|undo-return)$/);
   if (returning) {
-    const id = returning[1];
+    const [, id, operation] = returning;
+    if (operation === 'undo-return') {
+      const { createdAt } = route.request().postDataJSON();
+      undoWrites.push({ id, createdAt });
+      if (failUndo) return route.fulfill({ status: 503, json: { error: 'Retry the undo.' } });
+      const copy = returned.get(id);
+      assert.equal(createdAt, copy?.createdAt);
+      returned.delete(id);
+      return route.fulfill({ json: { returned: false, removed: copy.id } });
+    }
     returnWrites.push(id);
     if (failReturn) return route.fulfill({ status: 503, json: { error: 'Retry the return.' } });
     if (id === 'missed') await missedGate;
@@ -82,7 +91,7 @@ await page.route('**/api/**', async route => {
     assert.ok(original);
     if (!returned.has(id)) {
       returned.set(id, { ...original, id: 'returned-' + id, projectId: 'paper', key: id === 'missed' ? 'old' : 'current', page: 0, rect: [0.12, 0.2, 0.25, 0.22],
-        source: null, createdAt: 1, ...(original.group ? { groupInstruction: items[0].meta.groupInstructions[original.group] } : {}) });
+        source: null, createdAt: returnWrites.length, ...(original.group ? { groupInstruction: items[0].meta.groupInstructions[original.group] } : {}) });
     }
     return route.fulfill({ json: returned.get(id) });
   }
@@ -102,7 +111,11 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/note-results')) {
     if (failResults) return route.fulfill({ status: 503, json: { error: 'Temporary failure' } });
     const notes = await taskNoteResults(task, items, runs, client);
-    if (enableReturns) for (const note of notes) if (note.note.id) note.returned = returned.has(note.note.id);
+    if (enableReturns) for (const note of notes) if (note.note.id) {
+      const copy = returned.get(note.note.id);
+      note.returned = Boolean(copy);
+      note.undoReturnAt = copy?.createdAt;
+    }
     return route.fulfill({ json: { notes } });
   }
   if (url.pathname.endsWith('/note-options/preview')) {
@@ -377,21 +390,46 @@ try {
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
   const originalRow = index => page.locator(`[data-note-result="request-1:${index}"]`);
   const returnButton = container => container.getByRole('button', { name: 'Return to My notes', exact: true });
-  await expect(returnButton(originalRow(1))).toBeVisible();
+  const undoButton = container => container.getByRole('button', { name: 'Undo return to My notes', exact: true });
+  await expect(returnButton(originalRow(1).locator('.sent-note-heading'))).toHaveText('');
+  await expect(returnButton(originalRow(1))).toHaveAttribute('title', 'Return to My notes');
   failReturn = true;
   await returnButton(originalRow(1)).click();
   await expect(originalRow(1).getByRole('alert')).toHaveText('Retry the return.');
   failReturn = false;
   await originalRow(1).click();
-  await expect(returnButton(controls())).toBeVisible();
+  await expect(returnButton(controls().locator('.note-option-navigation'))).toBeVisible();
+  await expect(controls().getByText('Loading PDF comparison…', { exact: true })).toHaveCount(0);
+  await returnButton(controls()).click();
+  await expect(undoButton(controls())).toBeFocused();
+  await expect(undoButton(controls())).toHaveText('');
+  await page.screenshot({ path: 'test-results/note-return-undo-mobile.png', animations: 'disabled' });
+  failUndo = true;
+  await undoButton(controls()).click();
+  await expect(controls().getByRole('alert')).toHaveText('Retry the undo.');
+  failUndo = false;
+  await undoButton(controls()).click();
+  await expect(returnButton(controls())).toBeFocused();
+  await expect(controls().getByRole('alert')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/note-return-mobile.png', animations: 'disabled' });
   await returnButton(controls()).click();
-  await expect(controls().getByRole('button', { name: 'Returned to My notes', exact: true })).toBeDisabled();
+  await expect(undoButton(controls())).toBeEnabled();
+
+  // A previously added copy also leaves the task draft when the return is undone.
+  await page.evaluate(() => localStorage.setItem('papilot:selected-notes', JSON.stringify({ paper: ['returned-rejected'] })));
+  await page.reload();
+  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await expect(undoButton(originalRow(1))).toBeEnabled();
+  await undoButton(originalRow(1)).press('Enter');
+  await expect(returnButton(originalRow(1))).toBeFocused();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('papilot:selected-notes'))).toBeNull();
+  await returnButton(originalRow(1)).click();
+  await expect(undoButton(originalRow(1))).toBeEnabled();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.evaluate(() => localStorage.setItem('papilot:group-instructions', JSON.stringify({ paper: { yellow: 'An unrelated draft.' } })));
   await page.reload();
-  await expect(originalRow(1).getByRole('button', { name: 'Returned to My notes', exact: true })).toBeDisabled();
+  await expect(undoButton(originalRow(1).locator('.sent-note-heading'))).toBeEnabled();
   await returnButton(originalRow(2)).click();
   const returning = originalRow(2).getByRole('button', { name: 'Returning…', exact: true });
   await expect(returning).toBeDisabled();
@@ -399,9 +437,12 @@ try {
   await page.getByRole('button', { name: /^Revise the introduction/ }).click();
   await expect(returning).toBeDisabled();
   releaseMissed();
-  await expect(originalRow(2).getByRole('button', { name: 'Returned to My notes', exact: true })).toBeDisabled();
+  await expect(undoButton(originalRow(2))).toBeEnabled();
   await expect(returnButton(originalRow(0))).toBeEnabled();
-  assert.deepEqual(returnWrites, ['rejected', 'rejected', 'missed']);
+  assert.deepEqual(returnWrites, ['rejected', 'rejected', 'rejected', 'rejected', 'missed']);
+  assert.deepEqual(undoWrites, [
+    { id: 'rejected', createdAt: 2 }, { id: 'rejected', createdAt: 2 }, { id: 'rejected', createdAt: 3 },
+  ]);
   assert.deepEqual(decisions, preserved);
   assert.equal(optionWrites.length, 2, 'Returning a note sends no review decision');
   await page.screenshot({ path: 'test-results/note-return-desktop.png', animations: 'disabled' });
@@ -420,5 +461,5 @@ try {
   assert.deepEqual(taskWrites[0].annotations, ['returned-rejected', 'returned-missed']);
   assert.deepEqual(taskWrites[0].groupInstructions, { yellow: 'Clarify the contribution.' });
   assert.deepEqual(errors, []);
-  console.log('PASS: Original messages preserved; PDF note controls; load retry; selected candidate PDF/LaTeX comparisons; no writes on option switches; responsive mobile actions; return and resubmit original notes');
+  console.log('PASS: Original messages preserved; PDF note controls; load retry; selected candidate PDF/LaTeX comparisons; no writes on option switches; responsive mobile actions; return, undo and resubmit original notes');
 } finally { releaseBriefPreview(); releaseMissed(); await browser.close(); await server.close(); }

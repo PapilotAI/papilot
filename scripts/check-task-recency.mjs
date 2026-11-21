@@ -92,7 +92,7 @@ try {
       const item = client.getByRole('menuitem', { name, exact: true });
       if (tap) await item.tap(); else await item.click();
     };
-    const pinIcon = (client, row) => client.locator(`[data-task="${row.id}"]`).getByRole('img', { name: 'Pinned task' });
+    const pin = (client, row) => client.locator(`[data-task="${row.id}"]`).getByRole('button', { name: 'Pin task', exact: true });
 
     // The existing menu keeps keyboard focus through the pin and row move.
     async function chooseWithKeyboard(row, label) {
@@ -106,8 +106,13 @@ try {
     await chooseWithKeyboard(older, 'Pin task');
     await expect(titles).toHaveText([earlierTitle, newerTitle]);
     await expect(action(page, older)).toBeFocused();
-    await choose(page, newer, 'Pin task');
-    await expect(pinIcon(page, newer)).toBeVisible();
+    await expect(pin(page, older)).toHaveAttribute('aria-pressed', 'true');
+    await expect(pin(page, newer)).toHaveCSS('opacity', '0');
+    await page.locator('[data-task="newer"] .task-title').hover();
+    await expect(pin(page, newer)).toHaveCSS('opacity', '1');
+    await expect(pin(page, newer)).toHaveAccessibleDescription(newerTitle);
+    await pin(page, newer).click();
+    await expect(pin(page, newer)).toHaveAttribute('aria-pressed', 'true');
 
     const added = { ...task('added', now + 2000), title: 'Recent addition' };
     snapshot.tasks.push(added);
@@ -120,7 +125,7 @@ try {
     await expect(titles).toHaveText([earlierTitle, newerTitle, added.title]);
     await page.getByRole('searchbox', { name: 'Search tasks', exact: true }).fill('Newer');
     await expect(titles).toHaveText([newerTitle]);
-    await expect(pinIcon(page, older)).toHaveCount(0);
+    await expect(pin(page, older)).toHaveCount(0);
     await page.getByRole('button', { name: 'Clear task search' }).click();
     await page.screenshot({ animations: 'disabled', path: 'test-results/task-pins-desktop.png' });
 
@@ -131,23 +136,36 @@ try {
       await phone.goto(page.url());
       await phone.getByRole('button', { name: 'Show task list' }).tap();
       await expect(phone.locator('.task-list .task-title')).toHaveText([earlierTitle, newerTitle, added.title]);
+      await expect(pin(phone, added)).toHaveCSS('opacity', '1');
+      const touchTarget = await pin(phone, older).boundingBox();
+      assert.ok(touchTarget?.width >= 40 && touchTarget?.height >= 40, 'the pin has a touch-sized hit area');
+      await phone.screenshot({ animations: 'disabled', path: 'test-results/task-pins-mobile.png' });
       await action(phone, older).tap();
       await expect(phone.getByRole('menuitem', { name: 'Unpin task', exact: true })).toBeVisible();
-      await phone.screenshot({ animations: 'disabled', path: 'test-results/task-pins-mobile.png' });
-      await phone.getByRole('menuitem', { name: 'Unpin task', exact: true }).tap();
+      await phone.screenshot({ animations: 'disabled', path: 'test-results/task-pins-menu.png' });
+      await phone.keyboard.press('Escape');
+      await pin(phone, older).tap();
       await expect(phone.locator('.task-list .task-title')).toHaveText([newerTitle, added.title, earlierTitle]);
       await expect(titles).toHaveText([newerTitle, added.title, earlierTitle]);
+      await expect(pin(phone, older)).toHaveAttribute('aria-pressed', 'false');
     } finally { await phone.close(); }
 
     const selected = page.locator('[data-task="newer"] .task-link');
     await selected.click();
     await expect(selected).toHaveAttribute('aria-current', 'page');
     timelineWait = new Promise(resolve => { releaseTimeline = resolve; });
-    await chooseWithKeyboard(newer, 'Unpin task');
+    await pin(page, newer).focus();
+    await page.keyboard.press('Space');
     await expect.poll(() => timelineHeld).toBeGreaterThan(0);
     await expect(titles).toHaveText([added.title, newerTitle, earlierTitle]);
-    await expect(action(page, newer)).toBeFocused();
+    await expect(pin(page, newer)).toBeFocused();
+    await expect(pin(page, newer)).toHaveAttribute('aria-pressed', 'false');
+    await expect(pin(page, newer)).toBeDisabled();
+    const writesWhilePending = pinWrites.length;
+    await page.keyboard.press('Enter');
+    assert.equal(pinWrites.length, writesWhilePending);
     timelineWait = undefined; releaseTimeline();
+    await expect(pin(page, newer)).toBeEnabled();
     await choose(page, newer, 'Pin task');
     await expect(titles).toHaveText([newerTitle, added.title, earlierTitle]);
 
@@ -155,9 +173,10 @@ try {
     await expect(titles).toHaveText([added.title, earlierTitle]);
     await page.getByRole('button', { name: 'Show archived tasks' }).click();
     await expect(titles).toHaveText([newerTitle]);
+    await expect(pin(page, newer)).toHaveCount(0);
     await choose(page, newer, 'Restore task');
     await expect(titles).toHaveText([newerTitle, added.title, earlierTitle]);
-    await expect(pinIcon(page, newer)).toBeVisible();
+    await expect(pin(page, newer)).toHaveAttribute('aria-pressed', 'true');
 
     snapshot.projects.push({ id: 'other', name: 'Second paper', path: '/tmp/second-paper' });
     const other = { ...task('other', now), projectId: 'other', title: 'Second paper task' };
@@ -167,7 +186,7 @@ try {
     await page.getByRole('menuitemradio', { name: 'Second paper', exact: true }).click();
     await expect(titles).toHaveText([other.title]);
     await choose(page, other, 'Pin task');
-    await expect(pinIcon(page, other)).toBeVisible();
+    await expect(pin(page, other)).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Paper: Second paper' }).click();
     await page.getByRole('menuitemradio', { name: 'Example paper', exact: true }).click();
     await expect(titles).toHaveText([newerTitle, added.title, earlierTitle]);

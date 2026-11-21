@@ -1,6 +1,6 @@
 import type { RoundDetail } from '../../engine/src/types.ts';
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { NoteChange, NoteResult, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
+import type { NoteChange, NoteResult, NoteReturnState, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
 import { readNotesInstructions } from '../notes.ts';
 import { NoteOptionDiff, NoteOptionSource } from './note-option-diff.tsx';
 import { Icon } from './icons.tsx';
@@ -14,7 +14,7 @@ type OptionsRequest = (id: string, key: string, body?: { round: number; option?:
 type Preview = { key: string; round: number; option: string; version?: string; detail?: RoundDetail } | null;
 type Advance = { key: string; round: number; units: string[] };
 type PreviewRequest = (id: string, key: string, round: number, option: string, retry?: boolean, version?: string, background?: boolean) => Promise<RoundDetail>;
-type ReturnRequest = (task: string, note: string) => Promise<void>;
+type ReturnRequest = (task: string, note: string, undoReturnAt?: number) => Promise<NoteReturnState>;
 const previewKey = (id: string, key: string, round: number, option: string, version?: string) => JSON.stringify([id, key, round, option, version]);
 const comparisonCache = new NotePreviewCache<RoundDetail>();
 const optionCache = new Map<string, NoteOptions>();
@@ -188,13 +188,13 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
   }, [id, task?.status, task?.review?.round, task?.updatedAt, decisions, noteSignature]);
   function returnNote(key: string) {
     const note = notes.find(note => note.key === key);
-    if (!returnRequest || !id || !note?.note.id || note.returned !== false || runningReturns.current.has(key)) return;
+    if (!returnRequest || !id || !note?.note.id || note.returned === undefined || (note.returned && note.undoReturnAt === undefined) || runningReturns.current.has(key)) return;
     runningReturns.current.add(key);
     setReturns(current => ({ ...current, [key]: { pending: true } }));
-    void returnRequest(id, note.note.id).then(() => {
+    void returnRequest(id, note.note.id, note.returned ? note.undoReturnAt : undefined).then(result => {
       setReturns(current => { const next = { ...current }; delete next[key]; return next; });
       if (activeTask.current !== id) return;
-      setNotes(current => current.map(result => result.note.id === note.note.id ? { ...result, returned: true } : result));
+      setNotes(current => current.map(item => item.note.id === note.note.id ? { ...item, returned: result.returned, undoReturnAt: result.undoReturnAt } : item));
       reload();
     }, error => {
       setReturns(current => ({ ...current, [key]: { pending: false, error: optionError(error instanceof Error ? error.message : String(error)) } }));
@@ -217,13 +217,22 @@ export function NoteReturnAction({ noteKey }: { noteKey: string }) {
   const note = links?.notes.find(note => note.key === noteKey);
   if (!links?.returnNote || note?.returned === undefined) return null;
   const state = links.returns[noteKey];
-  const disabled = note.returned || Boolean(state?.pending);
-  return <div className="note-return-action">
-    <button type="button" className="note-link" aria-disabled={disabled} onClick={() => { if (!disabled) links.returnNote!(noteKey); }}>
-      <span aria-live="polite">{note.returned ? t('Returned to My notes') : state?.pending ? t('Returning…') : t('Return to My notes')}</span>
+  const canUndo = note.undoReturnAt !== undefined;
+  const disabled = Boolean(state?.pending || (note.returned && !canUndo));
+  const label = note.returned
+    ? canUndo ? t('Undo return to My notes') : t('Returned to My notes')
+    : state?.pending ? t('Returning…') : t('Return to My notes');
+  return <>
+    <button type="button" className="icon-button note-return-action" aria-label={label} title={label} aria-disabled={disabled} onClick={() => { if (!disabled) links.returnNote!(noteKey); }}>
+      <Icon name={state?.pending ? 'refresh' : note.returned ? canUndo ? 'undo' : 'check' : 'listReturn'}/>
     </button>
-    {state?.error && <span className="inline-error" role="alert">{state.error}</span>}
-  </div>;
+    <span className="sr-only" role="status">{note.returned ? t('Returned to My notes') : ''}</span>
+  </>;
+}
+
+export function NoteReturnError({ noteKey }: { noteKey: string }) {
+  const error = useNoteResults()?.returns[noteKey]?.error;
+  return error ? <span className="inline-error note-return-error" role="alert">{error}</span> : null;
 }
 
 // The display scope is a global viewer control. It does not discard the
@@ -317,10 +326,10 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     <span className="review-note-position" aria-live="polite" aria-atomic="true" aria-label={t('Note {n} of {total}', { n: index + 1, total: siblings.length })}>{t('Note {n}', { n: index + 1 })}<span aria-hidden="true"> / </span>{siblings.length}</span>
     <button type="button" className="icon-button" data-direction="next" aria-label={t('Next note')} title={t('Next note')} disabled={index >= siblings.length - 1} onClick={() => move(1)}><Icon name="chevronRight" size={14}/></button>
   </nav>;
-  const emptyHeader = <div className="note-option-navigation">{navigation}</div>;
+  const emptyHeader = <div className="note-option-navigation">{navigation}<NoteReturnAction noteKey={displayed.key}/></div>;
   return <section ref={panel} className="review-note-controls" data-open={Boolean(note)} inert={!note} aria-label={t('Options for this note')}>
     {links.error ? <>{emptyHeader}<button type="button" className="note-result-retry" onClick={links.reload}><Icon name="refresh" size={12}/>{t('Retry linking changes')}</button></> : displayed.changes.length > 0 ? <NoteAlternatives key={displayed.key} note={displayed} navigation={navigation}/> : <>{emptyHeader}<p className="note-option-hint">{displayed.state === 'waiting' ? t('Awaiting changes') : t('No linked change')}</p></>}
-    <NoteReturnAction noteKey={displayed.key}/>
+    <NoteReturnError noteKey={displayed.key}/>
   </section>;
 }
 
@@ -467,6 +476,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const multiple = (data?.options.length || 0) > 1;
   return <div className="note-options" onClick={event => event.stopPropagation()}>
     <div className="note-option-navigation">
+    <div className="note-option-choice">
     {data ? (multiple ? <div ref={tabs} className="note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
       {data.options.map((option, index) => {
         const name = label(option.id, option.label);
@@ -479,6 +489,8 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
         }}><span className="note-option-label">{name}{selected === option.id && previewBusy && <span className="spinner"/>}</span></button>;
       })}
     </div> : <span className="note-option-title" id={active ? `${tabsId}-${active.id}` : undefined} title={name}>{name}</span>) : <span className="note-option-title note-option-loading" role="status"><span className="spinner"/><span className="sr-only">{t('Loading PDF comparison…')}</span></span>}
+    <NoteReturnAction noteKey={note.key}/>
+    </div>
     {navigation}
     {active && <div className="note-option-actions" role="group" aria-label={t('Review {label}', { label: name })}>
       <button type="button" className="icon-button accept" aria-label={t('Accept {label}', { label: name })} title={t('Accept')} disabled={saving || Boolean(locked) || busy || !comparison} onClick={() => void decide(active, 'accept')}>{saving && actingOption === active.id && actingKind === 'accept' ? <span className="spinner"/> : <Icon name="check" size={18}/>}</button>

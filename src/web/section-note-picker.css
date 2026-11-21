@@ -1,11 +1,5 @@
-/* A ghost button in the note library's header. */
-.note-select-all.section-note-trigger{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%;height:24px;padding:0 6px 0 8px;border-radius:5px;color:var(--text);font-size:12px}
-.section-note-trigger>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.section-note-trigger>svg{flex:none;color:var(--text-2)}
-.note-select-all.section-note-trigger:hover:not(:disabled){background:var(--bg-muted);color:var(--text)}
-.note-select-all.section-note-trigger[aria-expanded=true]{background:var(--bg-active)}
 .action-menu.section-note-menu{width:280px;max-height:min(420px,calc(100dvh - 32px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .section-note-menu>button{flex-shrink:0;align-items:baseline;font-size:12px;line-height:1.45}
 .section-note-menu .menu-label{white-space:normal;overflow-wrap:anywhere}
 .section-note-menu .menu-hint{flex-shrink:0;font-variant-numeric:tabular-nums}
-@media(max-width:680px){.note-select-all.section-note-trigger{height:36px;font-size:13px}.action-menu.section-note-menu{width:auto}.section-note-menu>button{font-size:16px}}
+@media(max-width:680px){.action-menu.section-note-menu{width:auto}.section-note-menu>button{font-size:16px}}

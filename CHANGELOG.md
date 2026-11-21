@@ -18,6 +18,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- Pin and unpin tasks directly from the task list with a pushpin button. The **My notes** header uses matching icons for clearing annotations and adding them to a task. **Undo** appears below the header after clearing.
+- Return a task annotation with the list-and-arrow icon beside its location in Chat or in the PDF note drawer toolbar. Use the undo icon to remove the returned copy while it is still in **My notes**.
 - Store new task worktrees under `~/.papilot/worktrees` by default. Existing tasks retain their stored paths, and project-specific overrides still apply. ([#273](https://github.com/PapilotAI/papilot/issues/273))
 
 - Refresh the website's GitHub star count with a 15-minute edge cache. Keep the last successful count during GitHub failures and show the deployment-time count without JavaScript. ([#257](https://github.com/PapilotAI/papilot/issues/257))

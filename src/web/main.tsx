@@ -25,7 +25,7 @@ import { ReviewDraftCards } from './review-draft-cards.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, pendingReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
 import { AttachmentDraft, attachmentDrafts, type UploadAttachment } from './attachment-draft.ts';
-import type { Attachment, CollaborationSettings as CollaborationSettingsState } from '../shared.ts';
+import type { Attachment, CollaborationSettings as CollaborationSettingsState, NoteReturnState } from '../shared.ts';
 import { noteLocation } from './note-location.ts';
 import { ReadRequest, canStreamUpdates, mergeTimeline, visibleTimeline } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -90,7 +90,7 @@ import { TaskFlight, type TaskFlightData } from './task-flight.tsx';
 import { returnNotes } from './note-flight.ts';
 import { UsageSummary, type RefreshUsage } from './usage.tsx';
 import { useNoteUndo } from './use-note-undo.ts';
-import { NoteResultsProvider, NoteReturnAction, useNoteResults } from './note-results.tsx';
+import { NoteResultsProvider, NoteReturnAction, NoteReturnError, useNoteResults } from './note-results.tsx';
 import { usePanelWidth } from './panel-width.tsx';
 import { RepositoryFilesMenu } from './repository-files.tsx';
 import { OverleafLinkDialog, OverleafPanel, OverleafRow } from './overleaf.tsx';
@@ -249,10 +249,13 @@ function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[
   const renderNote = (note: NoteSummary, index: number) => <li key={index} data-note-result={`${item.id}:${index}`} tabIndex={0}
     onClick={event => { if (!(event.target as Element).closest('button, input, textarea, a, [role="radiogroup"]')) results?.focusNote(`${item.id}:${index}`); }}
     onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); results?.focusNote(`${item.id}:${index}`); } }} className={results?.selected === `${item.id}:${index}` ? 'linked-note-selected' : ''}>
-      <span className="sent-note-where"><span className="sent-note-number" aria-hidden="true">{index + 1}</span><span className="sent-note-location">{noteLocation(note.where)}</span></span>
+      <div className="sent-note-heading">
+        <span className="sent-note-where"><span className="sent-note-number" aria-hidden="true">{index + 1}</span><span className="sent-note-location">{noteLocation(note.where)}</span></span>
+        <NoteReturnAction noteKey={`${item.id}:${index}`}/>
+      </div>
       {note.quote ? <blockquote data-kind={note.kind}>{note.quote}</blockquote> : <span className="sent-note-region">{t('Marked region')}</span>}
       {(note.comment || note.kind === 'delete') && <p>{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{markText(note)}</p>}
-      <NoteReturnAction noteKey={`${item.id}:${index}`}/>
+      <NoteReturnError noteKey={`${item.id}:${index}`}/>
     </li>;
   return <article className="message user notes-message" aria-label={senderLabel(sender, item.createdAt)}><SenderName sender={sender}/><div className="message-body" title={time(item.createdAt)}>
     {item.meta?.skill && <SkillChip skill={item.meta.skill}/>}
@@ -948,25 +951,26 @@ function NotesPanel({ notes, sections = [], currentKey, active, actions, onShow,
   const ownNotes = notes.filter(note => !note.aiReview);
   const clearable = notes.filter(note => !isTaskReviewNote(note));
   const batch = actions.batch, clearDisabled = !batch || batch.disabled || selectionLocked || (!batch.uncertain && !clearable.length);
+  const clearLabel = batch?.uncertain ? t('Retry clearing annotations…') : t('Clear all annotations…');
   const unplacedSuggestions = notes.filter(note => note.aiReview && note.key !== currentKey);
   const renderNote = (note: Annotation, index: number) => cards.card(note, index, { currentKey, active, onShow, onToggle: () => toggle(note) });
   return <>
     <div className="pdf-reading-notes-head">
       <strong>{t('My notes')}</strong>
       <div className="pdf-reading-notes-actions">
+        {batch && <button type="button" className="icon-button notes-clear-trigger" aria-label={clearLabel} title={clearLabel}
+          aria-disabled={clearDisabled} aria-haspopup="dialog" onClick={() => {
+            if (!clearDisabled) setClearTarget(batch.uncertain || { document: batch.document, batch: uuid(), ids: clearable.map(note => note.id) });
+          }}><Icon name={batch.uncertain ? 'refresh' : 'listX'}/></button>}
         <SectionNotePicker key={currentKey} sections={sections.map(section => ({ ...section, notes: section.notes.filter(id => notes.some(note => note.id === id)) }))} notes={ownNotes.map(note => note.id)} disabled={selectionLocked} has={actions.selection.has} select={actions.selection.set} onAdded={onAdded}/>
         <button type="button" className="icon-button" aria-label={t('Close notes')} onClick={onClose}><Icon name="close" size={16}/></button>
       </div>
     </div>
-    <section ref={list} className="notes-panel" aria-label={t('PDF notes')}>
-    {batch && <div className="notes-clear">
-      <button type="button" className="button ghost compact" aria-disabled={clearDisabled} aria-haspopup="dialog" onClick={() => {
-        if (!clearDisabled) setClearTarget(batch.uncertain || { document: batch.document, batch: uuid(), ids: clearable.map(note => note.id) });
-      }}><Icon name="trash" size={14}/>{batch.uncertain ? t('Retry clearing annotations…') : t('Clear all annotations…')}</button>
-      {batch.clearedCount > 0 && <div className="note-dismissed" role="status">
-        {tn(batch.clearedCount, '{n} annotation cleared.', '{n} annotations cleared.')} <button type="button" disabled={batch.disabled || selectionLocked || Boolean(batch.uncertain)} onClick={batch.undo}>{t('Undo')}</button>
-      </div>}
+    {batch && batch.clearedCount > 0 && <div className="notes-clear-status">
+      <span role="status">{tn(batch.clearedCount, '{n} annotation cleared.', '{n} annotations cleared.')}</span>
+      <button type="button" className="button ghost compact" disabled={batch.disabled || selectionLocked || Boolean(batch.uncertain)} onClick={batch.undo}>{t('Undo')}</button>
     </div>}
+    <section ref={list} className="notes-panel" aria-label={t('PDF notes')}>
     {currentKey && notes.some(note => note.key !== currentKey) && <p className="note-placement-summary" role="status">{t('Some note positions need confirmation. Their original text and comments are kept.')}</p>}
     {ownNotes.length > 0 && <section className="note-section" aria-label={t('My notes')}>
     {noteGroups(notes).map(({ group, entries }) => {
@@ -1721,12 +1725,14 @@ function App() {
   async function deleteSavedTask(target: Task) {
     if (await action('/tasks/' + target.id + '/delete', { confirm: true }, false)) taskDeleted(target.id);
   }
-  async function pinTask(target: Task) {
+  async function pinTask(target: Task, button?: HTMLButtonElement) {
+    const taskRoute = '/tasks/' + target.id;
+    if (actionRequests.current.has(taskRoute)) return;
     const pinned = !pinOrder.has(target.id);
-    const trigger = sidebarRef.current?.querySelector<HTMLButtonElement>(`[data-task="${CSS.escape(target.id)}"] .more-button`) || null;
+    const trigger = button ?? sidebarRef.current?.querySelector<HTMLButtonElement>(`[data-task="${CSS.escape(target.id)}"] .more-button`) ?? null;
     const focus = { id: target.id, pinned, trigger };
     pinFocus.current = focus;
-    if (!await action('/tasks/' + target.id + '/pin', { pinned }) && pinFocus.current === focus) pinFocus.current = null;
+    if (!await action(taskRoute + '/pin', { pinned }) && pinFocus.current === focus) pinFocus.current = null;
   }
   async function archiveTask(target: Task) {
     const archived = !target.archivedAt;
@@ -2320,9 +2326,36 @@ function App() {
     </div>
   </section>;
 
-  return <NoteResultsProvider task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} returnRequest={isPlayground ? undefined : async (id, note) => {
-    await api(`/tasks/${id}/notes/${encodeURIComponent(note)}/return`, {});
+  return <NoteResultsProvider task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} returnRequest={isPlayground ? undefined : async (id, note, undoReturnAt) => {
+    const route = `/tasks/${id}/notes/${encodeURIComponent(note)}`;
+    let result: NoteReturnState;
+    if (undoReturnAt === undefined) {
+      const copy = await api<Annotation>(route + '/return', {});
+      result = copy.deletedAt === undefined ? { returned: true, undoReturnAt: copy.taskId ? undefined : copy.createdAt } : { returned: false };
+    } else {
+      const response = await api<NoteReturnState & { removed?: string }>(route + '/undo-return', { createdAt: undoReturnAt });
+      if (response.removed) {
+        const removed = response.removed;
+        noteSelection.set([removed], false);
+        if (annotationHistory.current === history) {
+          // A retired copy must not leave a PDF history entry that can no longer be replayed.
+          const keep = (entry: AnnotationChange) => {
+            if (entry.kind !== 'clear') return entry.note.id !== removed;
+            entry.target.ids = entry.target.ids.filter(id => id !== removed);
+            entry.selected = entry.selected.filter(id => id !== removed);
+            return entry.target.ids.length > 0;
+          };
+          history.undo = history.undo.filter(keep);
+          history.redo = history.redo.filter(keep);
+          historyChanged();
+          withNotes(list => list.filter(note => note.id !== removed));
+          setActiveNote(current => current === removed ? '' : current);
+        }
+      }
+      result = response;
+    }
     window.dispatchEvent(new Event('papilot:manuscript'));
+    return result;
   }} optionsRequest={(id, key, body) => body ? api(`/tasks/${id}/note-options`, { key, ...body }) : api(`/tasks/${id}/note-options?key=${encodeURIComponent(key)}`)} previewRequest={(id, key, round, option, retry, version, background) => api(`/tasks/${id}/note-options/preview?key=${encodeURIComponent(key)}&round=${round}&option=${encodeURIComponent(option)}${retry ? '&retry=1' : ''}${background ? '&background=1' : ''}${version ? '&comparison=' + encodeURIComponent(version) : ''}`, undefined, undefined, undefined, background ? 'low' : 'auto')} openReview={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} openChat={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
     <DesktopWindowChrome/>
     {project && <WorkspaceSwitcher key={project.id} active={task?.id ?? (manuscriptOpen ? '' : null)}
@@ -2358,28 +2391,35 @@ function App() {
           { label: showArchived ? t('Delete all archived tasks…') : t('Delete all current tasks…'), icon: 'trash', danger: true, select: () => openBulkAction('delete') },
         ]}/>
       </div>
-      <nav className="task-list" aria-label={t('Task list')}>{visibleTasks.length ? visibleTasks.map(row => <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '') + (row.id === flyingTask?.id ? ' task-arriving' : '') + (row.id === addedTask?.id ? ' task-added' : '')}>
-        {renaming === row.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); refocus.current = row.id; e.currentTarget.querySelector('input')?.blur(); }}>
-          <input name="title" aria-label={t('Rename {name}', { name: row.title })} defaultValue={row.title} maxLength={120} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void rename(row, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocus.current = row.id; e.currentTarget.value = row.title; e.currentTarget.blur(); } }}/>
-        </form>
-        : <button aria-current={row.id === selected ? 'page' : undefined} className={'task-link ' + (row.id === selected ? 'active' : '')} onClick={() => { setSelected(row.id); setSidebar(false); }} onDoubleClick={() => { if (row.status !== 'deleting') setRenaming(row.id); }}><span className="task-title-line"><span className="task-title" title={row.title}>{row.title}</span>
-          {!showArchived && pinOrder.has(row.id) && <span className="task-pin" role="img" aria-label={t('Pinned task')} title={t('Pinned task')}><Icon name="pin" size={12}/></span>}</span><span className="task-meta"><Status task={row}/><span className="task-time">{ago(row.updatedAt)}</span></span></button>}
-        <div className="task-row-actions">
-          {row.review?.counts?.pending ? <span className="task-badge" title={tn(row.review.counts.pending, '{n} change to decide', '{n} changes to decide')}>{row.review.counts.pending}</span> : null}
-          <ActionMenu label={t('Task actions for {title}', { title: row.title })} actions={[
-            ...(row.status === 'deleting' ? [] : [{ label: t('Rename…'), icon: 'pencil', select: () => setRenaming(row.id) }]),
-            ...(row.status === 'deleting' ? [] : [{ label: row.titleGeneration === 'pending' ? t('Generating task title…') : row.titleGeneration === 'failed' ? t('Retry title generation') : t('Generate task title'), icon: 'spark', disabled: row.titleGeneration === 'pending' || pendingActions.has('/tasks/' + row.id), select: () => void action('/tasks/' + row.id + '/title') }]),
-            ...(!isPlayground && !row.archivedAt && row.status !== 'deleting' ? [{
-              label: pinOrder.has(row.id) ? t('Unpin task') : t('Pin task'), icon: pinOrder.has(row.id) ? 'unpin' : 'pin',
-              disabled: !online || pendingActions.has('/tasks/' + row.id), select: () => void pinTask(row),
-            }] : []),
-            ...(row.status === 'deleting' ? [] : [{ label: row.archivedAt ? t('Restore task') : t('Archive task'), icon: row.archivedAt ? 'restore' : 'archive', disabled: pendingActions.has('/tasks/' + row.id), select: () => void archiveTask(row) }]),
-            ...(ACTIVE.includes(row.status) ? [{ label: t('Pause task'), icon: 'pause', disabled: pendingActions.has('/tasks/' + row.id), select: () => void action('/tasks/' + row.id + '/interrupt') }] : []),
-            ...(row.status === 'uncertain' ? [{ label: t('Check status'), icon: 'refresh', disabled: pendingActions.has('/tasks/' + row.id), select: () => void action('/tasks/' + row.id + '/reconcile') }] : []),
-            { label: row.status === 'deleting' ? t('Retry deletion…') : t('Delete task…'), icon: 'trash', danger: true, select: () => setDeleteTarget(row) },
-          ]}/>
-        </div>
-      </div>) : <div className="task-list-empty" role="status">{searchTerms.length ? t('No matching tasks') : showArchived ? t('No archived tasks') : t('No tasks yet')}</div>}</nav>
+      <nav className="task-list" aria-label={t('Task list')}>{visibleTasks.length ? visibleTasks.map(row => {
+        const canPin = !isPlayground && !row.archivedAt && row.status !== 'deleting';
+        const pinned = pinOrder.has(row.id);
+        const pinDisabled = !online || pendingActions.has('/tasks/' + row.id);
+        const pinLabel = pinned ? t('Unpin task') : t('Pin task');
+        return <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '') + (row.id === flyingTask?.id ? ' task-arriving' : '') + (row.id === addedTask?.id ? ' task-added' : '')}>
+          {renaming === row.id ? <form className="task-rename" onSubmit={e => { e.preventDefault(); refocus.current = row.id; e.currentTarget.querySelector('input')?.blur(); }}>
+            <input name="title" aria-label={t('Rename {name}', { name: row.title })} defaultValue={row.title} maxLength={120} autoFocus onFocus={e => e.currentTarget.select()} onBlur={e => void rename(row, e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); refocus.current = row.id; e.currentTarget.value = row.title; e.currentTarget.blur(); } }}/>
+          </form>
+          : <button aria-current={row.id === selected ? 'page' : undefined} className={'task-link ' + (row.id === selected ? 'active' : '')} onClick={() => { setSelected(row.id); setSidebar(false); }} onDoubleClick={() => { if (row.status !== 'deleting') setRenaming(row.id); }}><span className="task-title" id={'task-title-' + row.id} title={row.title}>{row.title}</span><span className="task-meta"><Status task={row}/><span className="task-time">{ago(row.updatedAt)}</span></span></button>}
+          {canPin && <button type="button" className="icon-button task-pin"
+            aria-label={t('Pin task')} aria-describedby={renaming === row.id ? undefined : 'task-title-' + row.id}
+            aria-pressed={pinned} aria-disabled={pinDisabled}
+            title={pinLabel}
+            onClick={event => { if (!pinDisabled) void pinTask(row, event.currentTarget); }}><Icon name="pin"/></button>}
+          <div className="task-row-actions">
+            {row.review?.counts?.pending ? <span className="task-badge" title={tn(row.review.counts.pending, '{n} change to decide', '{n} changes to decide')}>{row.review.counts.pending}</span> : null}
+            <ActionMenu label={t('Task actions for {title}', { title: row.title })} actions={[
+              ...(row.status === 'deleting' ? [] : [{ label: t('Rename…'), icon: 'pencil', select: () => setRenaming(row.id) }]),
+              ...(row.status === 'deleting' ? [] : [{ label: row.titleGeneration === 'pending' ? t('Generating task title…') : row.titleGeneration === 'failed' ? t('Retry title generation') : t('Generate task title'), icon: 'spark', disabled: row.titleGeneration === 'pending' || pendingActions.has('/tasks/' + row.id), select: () => void action('/tasks/' + row.id + '/title') }]),
+              ...(canPin ? [{ label: pinLabel, icon: pinned ? 'unpin' : 'pin', disabled: pinDisabled, select: () => void pinTask(row) }] : []),
+              ...(row.status === 'deleting' ? [] : [{ label: row.archivedAt ? t('Restore task') : t('Archive task'), icon: row.archivedAt ? 'restore' : 'archive', disabled: pendingActions.has('/tasks/' + row.id), select: () => void archiveTask(row) }]),
+              ...(ACTIVE.includes(row.status) ? [{ label: t('Pause task'), icon: 'pause', disabled: pendingActions.has('/tasks/' + row.id), select: () => void action('/tasks/' + row.id + '/interrupt') }] : []),
+              ...(row.status === 'uncertain' ? [{ label: t('Check status'), icon: 'refresh', disabled: pendingActions.has('/tasks/' + row.id), select: () => void action('/tasks/' + row.id + '/reconcile') }] : []),
+              { label: row.status === 'deleting' ? t('Retry deletion…') : t('Delete task…'), icon: 'trash', danger: true, select: () => setDeleteTarget(row) },
+            ]}/>
+          </div>
+        </div>;
+      }) : <div className="task-list-empty" role="status">{searchTerms.length ? t('No matching tasks') : showArchived ? t('No archived tasks') : t('No tasks yet')}</div>}</nav>
       <div className="sidebar-footer">
         <div className="sidebar-status">
           {state && (!online || running > 0) && <div className={'host-status' + (online ? '' : ' reconnecting')} role="status" title={online ? t('Connected') : t('Reconnecting')}>
