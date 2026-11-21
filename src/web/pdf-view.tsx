@@ -204,7 +204,7 @@ export const PdfView = forwardRef<PdfHandle, {
   /** `notes` span builds, each naming the build it was made on in `key`;
    *  the reader shows those of the build on screen, also while a replacement
    *  downloads or after it fails. */
-  keyedNotes?: boolean;
+  keyedNotes?: boolean; revealNote?: string; onNoteShown?: (id: string) => void;
   /** Source binding is available for a live manuscript; task PDFs are immutable snapshots. */
   anchorApi?: (action: 'capture' | 'resolve', body: unknown) => Promise<any>;
   onCreate: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup, options?: { reveal?: boolean; quote?: boolean; kind?: MarkKind; stamp?: string; key?: string }) => Promise<void>;
@@ -462,6 +462,11 @@ export const PdfView = forwardRef<PdfHandle, {
       setFlash({ page, rect, id: Date.now() });
     },
   }), []);
+  useEffect(() => {
+    if (!props.revealNote || props.active !== props.revealNote || !anchorsReady || loading || shown.url !== props.url) return;
+    const note = notes.find(entry => entry.note.id === props.revealNote && entry.note.key === props.pdfKey)?.note;
+    if (note && handle.current) { handle.current.showPlace(note.page, note.rect); props.onNoteShown?.(note.id); }
+  }, [props.revealNote, props.onNoteShown, props.active, props.pdfKey, props.url, shown.url, notes, anchorsReady, loading]);
   useEffect(() => {
     if (!flash) return;
     const timer = setTimeout(() => setFlash(current => current?.id === flash.id ? null : current), 2400);

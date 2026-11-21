@@ -19,7 +19,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Changed
 
 - Pin and unpin tasks directly from the task list with a pushpin button. The **My notes** header labels **Add to task** and uses a trash icon for clearing annotations. **Undo** appears below the header after clearing.
-- Rejecting a revision keeps its annotation in the current task for follow-up. Use the arrow on the annotation to return it to **My notes** for a new task. The card dims and flies back to the list. Click the outward arrow to undo.
+- Rejecting a revision keeps its annotation in the current task for follow-up. Use the arrow into the page to return the annotation to the manuscript, or the outward arrow to undo. The annotation flies to **Manuscript**, which shows the number of available annotations.
 - Store new task worktrees under `~/.papilot/worktrees` by default. Existing tasks retain their stored paths, and project-specific overrides still apply. ([#273](https://github.com/PapilotAI/papilot/issues/273))
 
 - Refresh the website's GitHub star count with a 15-minute edge cache. Keep the last successful count during GitHub failures and show the deployment-time count without JavaScript. ([#257](https://github.com/PapilotAI/papilot/issues/257))

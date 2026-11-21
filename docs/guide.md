@@ -224,7 +224,7 @@ The current review shows action bars and map markers only for pending changes. A
 
 Rejecting a proposed change keeps its annotation in the current task. Use the comment bubble beside the change to explain what to try next, then send the feedback in Chat.
 
-To work on an annotation in a new task, click the arrow pointing into the note bubble on its original Chat card or in the PDF note drawer. The card dims and the annotation flies to **My notes**, where you can add it to a new task whenever you’re ready. The outward arrow undoes the return before the note is sent. Returned annotations keep their mark, comment and group instructions. My notes flags positions that need confirmation on the current PDF.
+To return an annotation to the manuscript, click the icon with an arrow entering a document on its Chat card or in the PDF note drawer. The annotation flies to **Manuscript**, the count increases, and its original card dims. Click the outward arrow to undo before the note is sent. The count includes available annotations across the paper’s root documents. Open **Manuscript** after a return to see the annotation on the PDF. If its position needs confirmation, the original comment and passage are preserved. From the manuscript you can add it to a new task.
 
 Reviews open on **Changes**, the changed sections only, which show fastest. **PDF** in the review toolbar shows the whole paper with each change in place, for that review only; to open every review that way, choose **PDF** under **Settings → Review preferences → Open reviews on**. Once every change is decided, the card at the top of the review holds the next step, such as committing, and stays at the top while you keep reading.
 

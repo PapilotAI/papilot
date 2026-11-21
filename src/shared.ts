@@ -199,7 +199,7 @@ export interface DiagnosticReport {
   version: string; checkedAt: number; platform: string; arch: string; node: string;
   ok: boolean; checks: DiagnosticCheck[];
 }
-export interface Snapshot { projects: Project[]; tasks: Task[]; pinnedTaskIds?: string[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; gitAvailable?: boolean; overleaf?: OverleafState }
+export interface Snapshot { projects: Project[]; manuscriptNoteCounts?: Record<string, number>; tasks: Task[]; pinnedTaskIds?: string[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; gitAvailable?: boolean; overleaf?: OverleafState }
 // Live synchronization of a paper folder with an Overleaf project. A conflict
 // is a passage (or whole file) both sides changed while Papilot was away:
 // Overleaf's version stayed, and the author's can be put back.

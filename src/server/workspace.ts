@@ -299,7 +299,7 @@ export class Workspace extends EventEmitter {
     if (usesCodex(id)) this.loaded.clear();
     this.emit('change');
   }
-  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
+  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
   /** Loads the SDKs of the agents this host has before the server answers
    *  requests. Evaluating one blocks for up to a few hundred milliseconds,
    *  which would otherwise hold up whatever the app asked for while the

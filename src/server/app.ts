@@ -942,7 +942,16 @@ export async function buildApp(options: AppOptions) {
   // reads and writes the settings and the documents compiled before.
   app.post<{ Params: { id: string } }>('/api/projects/:id/document', project(), request => serialGit(request.params.id, async () => {
     const project = store.project(request.params.id), previous = await manuscripts.document(project.id, project.path);
-    const main = await checkDocument(project.path, (request.body as { main?: unknown } | null)?.main);
+    const body = request.body as { main?: unknown; annotation?: unknown } | null;
+    let target = body?.main;
+    if (body?.annotation !== undefined) {
+      const note = store.findAnnotation(project.id, string(body.annotation, 'Note ID', 100));
+      // A removed root document's notes already belong to the currently compiled paper.
+      const inCurrent = await noteDocumentFilter(project.path, previous);
+      if (!note || note.taskId || note.deletedAt !== undefined || isTaskReviewNote(note) || inCurrent(note)) return { document: previous ?? null };
+      target = note.document;
+    }
+    const main = await checkDocument(project.path, target);
     if (previous && main !== previous) {
       // Notes and tasks from before a paper could compile several documents
       // are on the one it compiled until now; the review engine marks its

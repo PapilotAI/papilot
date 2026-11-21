@@ -87,15 +87,14 @@ interface Links {
   focusNote: (key: string) => void;
   returns: Record<string, { pending: boolean; error?: string }>;
   returnNote?: (key: string, source: HTMLElement) => void;
-  openLibrary: () => void;
   showChange: (key: string, change: NoteChange) => void; showNote: (key: string) => void;
 }
 const Context = createContext<Links | null>(null);
 export const useNoteResults = () => useContext(Context);
 
-export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, openLibrary, openReview, openChat, children }: {
+export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, openReview, openChat, children }: {
   task?: Task; items: TimelineItem[]; read: (id: string) => Promise<{ notes: NoteResult[] }>;
-  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; openLibrary: () => void; openReview: () => void; openChat: () => void; children: ReactNode;
+  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; openReview: () => void; openChat: () => void; children: ReactNode;
 }) {
   const [notes, setNotes] = useState<NoteResult[]>([]), [error, setError] = useState(false), [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(''), [focus, setFocus] = useState<NoteFocus | null>(null);
@@ -192,7 +191,6 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     if (activeTask.current !== id) return;
     if (result.returned && !note.returned && source?.isConnected) returnSubmittedNote(source, note.note.quote || note.note.comment || note.note.where);
     setNotes(current => current.map(item => item.note.id === note.note.id ? { ...item, returned: result.returned, undoReturnAt: result.undoReturnAt } : item));
-    window.dispatchEvent(new Event('papilot:manuscript'));
     reload();
   }
   function returnNote(key: string, source: HTMLElement) {
@@ -214,30 +212,24 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     background ? () => { void previewRequest(id, key, round, option, retry, version, false).catch(() => {}); } : undefined)), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
     alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
-    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, openLibrary, returnNote: returnRequest && returnNote };
+    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, returnNote: returnRequest && returnNote };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
-}
-
-export function NoteLibraryLink() {
-  const links = useNoteResults();
-  if (!links?.returnNote || !links.notes.some(note => note.returned !== undefined)) return null;
-  return <button type="button" className="icon-button" data-notes-home="library" title={t('My notes')} aria-label={t('My notes')} onClick={links.openLibrary}><Icon name="notes" size={16}/></button>;
 }
 
 export function NoteReturnAction({ noteKey }: { noteKey: string }) {
   const links = useNoteResults();
   const note = links?.notes.find(note => note.key === noteKey);
-  if (!links?.returnNote || note?.returned === undefined) return null;
+  if (!links?.returnNote || note?.returned === undefined || (note.returned && note.undoReturnAt === undefined)) return null;
   const pending = links.returns[noteKey]?.pending;
-  const canChange = !note.returned || note.undoReturnAt !== undefined;
+  const label = note.returned ? t('Undo return to manuscript') : t('Return to manuscript');
   return <span className="note-disposition">
-    <span className="sr-only" role="status">{pending && !note.returned ? t('Returning…') : note.returned ? t('Returned to My notes') : ''}</span>
-    {canChange && <button type="button" className="icon-button note-return-toggle" aria-disabled={pending || undefined} aria-busy={pending || undefined}
-      aria-label={note.returned ? t('Undo return to My notes') : t('Return to My notes')} onClick={event => {
+    <span className="sr-only" role="status">{pending && !note.returned ? t('Returning…') : note.returned ? t('Returned to manuscript') : ''}</span>
+    <button type="button" className="icon-button note-return-toggle" data-returned={note.returned || undefined} aria-disabled={pending || undefined} aria-busy={pending || undefined} aria-label={`${t('Note {n}', { n: note.index + 1 })} · ${label}`} title={label}
+      onClick={event => {
         const source = event.currentTarget.closest<HTMLElement>('[data-note-result], .review-note-pager');
         if (source && !pending) links.returnNote!(noteKey, source);
-      }}><Icon name={note.returned ? 'noteOut' : 'noteIn'} size={18}/></button>}
+      }}><Icon name={note.returned ? 'fileOutput' : 'fileInput'} size={18}/></button>
   </span>;
 }
 

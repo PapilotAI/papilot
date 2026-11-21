@@ -116,7 +116,7 @@ export function returnNotes(cards: HTMLElement[]) {
 // The review drawer has no copy of the original card. Carry the passage
 // itself from the note pager so the flight still identifies the annotation.
 export function returnSubmittedNote(source: HTMLElement, passage: string) {
-  const target = home();
+  const target = [...document.querySelectorAll<HTMLElement>('[data-notes-home="manuscript"]')].find(visible);
   if (!target || !visible(source)) return;
   if (still()) { receive(target, 1); return; }
   const card = document.createElement('div');

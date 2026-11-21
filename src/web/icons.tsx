@@ -1,8 +1,7 @@
 import { editorIcons } from '../../engine/src/web/editor-icons.tsx';
 import type { SkillIcon } from '../skill-icons.ts';
 
-// The opening in the My notes bubble lets the arrow cross its edge in either direction.
-const noteTransferOutline = <path d="M18 7V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v15l4-4h9a2 2 0 0 0 2-2"/>;
+const transferPage = <path d="M18 8l-5-5H4.5A1.5 1.5 0 0 0 3 4.5v15A1.5 1.5 0 0 0 4.5 21h12a1.5 1.5 0 0 0 1.5-1.5V17M13 3v5h5"/>;
 const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode> = {
   ...editorIcons,
   crop: <><path d="M6 3v13a2 2 0 0 0 2 2h13M3 6h13a2 2 0 0 1 2 2v13"/></>,
@@ -36,6 +35,8 @@ const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode
   external: <><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></>,
   share: <><path d="M12 3v12M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></>,
   download: <><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></>,
+  fileInput: <>{transferPage}<path d="M23 12.5H10m4-4-4 4 4 4"/></>,
+  fileOutput: <>{transferPage}<path d="M10 12.5h13m-4-4 4 4-4 4"/></>,
   paper: <><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5M16 13H8M16 17H8M10 9H8"/></>,
   compile: <path d="M6 3.5 21 12 6 20.5Z" fill="currentColor" stroke="none"/>,
   pdf: <><path d="M4 9V4a2 2 0 0 1 2-2h9l5 5v2M14 2v5h6M4 20a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2"/><path strokeWidth="1.5" d="M2.5 18v-6h2a2 2 0 0 1 0 4h-2M9.5 12v6h1.5a3 3 0 0 0 0-6ZM17 18v-6h4m-4 3h3"/></>,
@@ -51,8 +52,6 @@ const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode
   search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>,
   region: <><path d="M5 3a2 2 0 0 0-2 2m16-2a2 2 0 0 1 2 2M5 21a2 2 0 0 1-2-2M9 3h1m4 0h1M9 21h2M3 9v1m18-1v2M3 14v1"/><path d="M12.5 12.5 21 15.8l-3.6 1.3-1.3 3.6Z"/></>,
   list: <path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>,
-  noteIn: <>{noteTransferOutline}<path d="M22 11H10m4-4-4 4 4 4"/></>,
-  noteOut: <>{noteTransferOutline}<path d="M10 11h12m-4-4 4 4-4 4"/></>,
   chevronDown: <path d="m6 9 6 6 6-6"/>,
   chevronUp: <path d="m18 15-6-6-6 6"/>,
   chevronLeft: <path d="m15 18-6-6 6-6"/>,

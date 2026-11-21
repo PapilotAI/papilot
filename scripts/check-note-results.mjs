@@ -38,6 +38,7 @@ const units = { 1: [unit('c1', 10, 'The original technical sentence.', 'A shorte
 const rounds = Object.fromEntries([1, 2].map(round => [round, { round, units: units[round], sections: [], loose: units[round].map(unit => ({ kind: 'change', units: [unit.id], before: [{ text: [{ text: unit.old_text }] }] })) }]));
 const decisions = { 1: { c1: 'pending', c2: 'rejected', c3: 'accepted' }, 2: { c1: 'pending' } };
 const client = { get: async route => route.includes('/rounds/') ? rounds[Number(new URL(route, origin).pathname.split('/').at(-1))] : { decisions: decisions[Number(new URL(route, origin).searchParams.get('round'))] } };
+let documentName = 'main.tex';
 let failResults = true, enableReturns = false, failReturn = false, failUndo = false;
 const returned = new Map(), returnWrites = [], undoWrites = [], taskWrites = [];
 let releaseMissed;
@@ -66,8 +67,9 @@ await page.route('**/api/**', async route => {
   if (url.pathname === '/api/updates') return route.fulfill({ json: { currentVersion: snapshot.version, latestVersion: null, phase: 'idle', checkedAt: 1, error: null, canUpdate: true } });
   if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
   if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true } });
+  if (url.pathname === '/api/projects/paper/document') { const body = route.request().postDataJSON(); documentName = [...returned.values()].find(note => note.id === body.annotation)?.document || body.main || documentName; return route.fulfill({ json: { document: documentName } }); }
   if (url.pathname.endsWith('/manuscript')) return route.fulfill({ json: {
-    annotations: [...returned.values()].filter(note => !note.taskId), build: enableReturns ? { status: 'ready', key: 'current', pages: [[612, 792], [612, 792]] } : { status: 'idle' }, git: { files: [] },
+    document: documentName, annotations: [...returned.values()].filter(note => !note.taskId && note.document === documentName), build: enableReturns ? { status: 'ready', key: 'current', pages: [[612, 792], [612, 792]] } : { status: 'idle' }, git: { files: [] },
   } });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return route.fulfill({ status: 404, json: { error: 'Use PDF text' } });
@@ -91,7 +93,7 @@ await page.route('**/api/**', async route => {
     const original = items[0].meta.notes.find(note => note.id === id);
     assert.ok(original);
     if (!returned.has(id)) {
-      returned.set(id, { ...original, id: 'returned-' + id, projectId: 'paper', key: id === 'missed' ? 'old' : 'current', page: 0, rect: [0.12, 0.2, 0.25, 0.22],
+      returned.set(id, { ...original, id: 'returned-' + id, projectId: 'paper', document: 'appendix.tex', key: id === 'missed' ? 'old' : 'current', page: id === 'rejected' ? 1 : 0, rect: [0.12, 0.2, 0.25, 0.22],
         source: null, createdAt: returnWrites.length, ...(original.group ? { groupInstruction: items[0].meta.groupInstructions[original.group] } : {}) });
     }
     return route.fulfill({ json: returned.get(id) });
@@ -108,7 +110,7 @@ await page.route('**/api/**', async route => {
     if (url.searchParams.get('metadata') === '1') return route.fulfill({ json: { url: `${url.pathname}?round=${url.searchParams.get('round')}&build=fixture` } });
     return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   }
-  if (url.pathname === '/api/state') return route.fulfill({ json: snapshot });
+  if (url.pathname === '/api/state') return route.fulfill({ json: { ...snapshot, manuscriptNoteCounts: { paper: [...returned.values()].filter(note => !note.taskId).length } } });
   if (url.pathname.endsWith('/items')) return route.fulfill({ json: { items } });
   if (url.pathname.endsWith('/note-results')) {
     if (failResults) return route.fulfill({ status: 503, json: { error: 'Temporary failure' } });
@@ -392,9 +394,12 @@ try {
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
   const originalRow = index => page.locator(`[data-note-result="request-1:${index}"]`);
   const toggle = container => container.locator('.note-return-toggle');
-  const takeBack = container => container.getByRole('button', { name: 'Return to My notes', exact: true }).click();
-  const undoReturn = container => container.getByRole('button', { name: 'Undo return to My notes', exact: true }).click();
+  const count = () => page.locator('[data-notes-home="manuscript"]:visible .manuscript-note-count').first();
+  await expect(count()).toHaveText('0');
+  const takeBack = container => container.getByRole('button', { name: / · Return to manuscript$/ }).click();
+  const undoReturn = container => container.getByRole('button', { name: / · Undo return to manuscript$/ }).click();
   await expect(toggle(originalRow(1))).toHaveText('');
+  const arrowIn = await toggle(originalRow(1)).locator('svg path').last().getAttribute('d');
   await expect(originalRow(1).locator('[aria-haspopup]')).toHaveCount(0);
   failReturn = true;
   await takeBack(originalRow(1));
@@ -407,20 +412,23 @@ try {
   await toggle(controls()).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('.submitted-note-flight')).toHaveText(originals[1].quote);
-  await expect(page.locator('[data-notes-home="library"].notes-received')).toBeVisible();
-  await expect(toggle(controls())).toHaveAccessibleName('Undo return to My notes');
+  await expect(page.locator('[data-notes-home="manuscript"].notes-received')).toBeVisible();
+  await expect(toggle(controls())).toHaveAccessibleName('Note 2 · Undo return to manuscript');
   await expect(toggle(controls())).toBeFocused();
   await expect(toggle(controls())).toHaveText('');
+  await expect(toggle(controls()).locator('svg path').last()).not.toHaveAttribute('d', arrowIn);
   await page.screenshot({ path: 'test-results/note-return-undo-mobile.png', animations: 'disabled' });
+  await expect(count()).toHaveText('1');
   failUndo = true;
   await undoReturn(controls());
   await expect(controls().getByRole('alert')).toHaveText('Retry the undo.');
   failUndo = false;
   await toggle(controls()).focus();
   await page.keyboard.press('Space');
-  await expect(toggle(controls())).toHaveAccessibleName('Return to My notes');
+  await expect(toggle(controls())).toHaveAccessibleName('Note 2 · Return to manuscript');
   await expect(toggle(controls())).toBeFocused();
   await expect(controls().getByRole('alert')).toHaveCount(0);
+  await expect(count()).toHaveText('0');
   await page.screenshot({ path: 'test-results/note-return-mobile.png', animations: 'disabled' });
   await takeBack(controls());
   assert.equal(taskWrites.length, 0, 'Returning a note leaves the task unsent');
@@ -434,6 +442,11 @@ try {
   await takeBack(originalRow(1));
   await expect(originalRow(1)).toHaveAttribute('data-returned', 'true');
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator('.manuscript-link').click();
+  const placed = page.locator('.page[data-page-number="2"] .note-tag[data-note="returned-rejected"]');
+  await expect(placed).toHaveAttribute('aria-expanded', 'true');
+  await expect(placed).toBeInViewport();
+  await page.getByRole('button', { name: /^Revise the introduction/ }).click();
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
   await page.evaluate(() => localStorage.setItem('papilot:group-instructions', JSON.stringify({ paper: { yellow: 'An unrelated draft.' } })));
   await page.reload();
@@ -454,7 +467,12 @@ try {
   assert.deepEqual(decisions, preserved);
   assert.equal(optionWrites.length, 2, 'Returning a note sends no review decision');
   await page.screenshot({ path: 'test-results/note-return-desktop.png', animations: 'disabled' });
-  await page.getByRole('button', { name: 'My notes', exact: true }).click();
+  await page.locator('.manuscript-link').click();
+  await expect.poll(() => documentName).toBe('appendix.tex');
+  await expect(count()).toHaveText('2');
+  await expect(page.locator('.manuscript-note .note-placement-warning')).toHaveText('Position needs confirmation');
+  await expect(page.getByRole('complementary', { name: 'PDF note library' })).toHaveCount(0);
+  await page.getByRole('button', { name: /^My notes/ }).click();
   const library = page.getByRole('complementary', { name: 'PDF note library' });
   const copy = library.locator('[data-note="returned-rejected"]');
   await expect(copy).toHaveAttribute('data-selected', 'false');

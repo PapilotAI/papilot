@@ -120,7 +120,7 @@ try {
       releaseBaseline();
       await expect(comparison('a-current-v1')).toBeVisible();
       const toolbar = drawer.locator('.note-option-navigation');
-      await expect(toolbar.getByRole('button', { name: 'Return to My notes', exact: true })).toHaveText('');
+      await expect(toolbar.getByRole('button', { name: / · Return to manuscript$/ })).toBeVisible();
       await expect(toolbar.locator('.note-disposition [aria-haspopup]')).toHaveCount(0);
       const pager = await toolbar.locator('.review-note-pager').boundingBox();
       const choices = await toolbar.locator('.note-option-actions').boundingBox();
@@ -224,7 +224,7 @@ try {
       saveFails = false;
       await drawer.getByRole('button', { name: 'Reject Original c', exact: true }).click();
       await expect.poll(() => decisions.c).toBe('rejected');
-      await expect(drawer.getByRole('button', { name: 'Return to My notes' })).toBeEnabled();
+      await expect(drawer.getByRole('button', { name: 'Return to manuscript' })).toBeEnabled();
       await expect(drawer.getByRole('button', { name: 'Continue in this task' })).toHaveCount(0);
       await expect(drawer.getByRole('button', { name: 'New task', exact: true })).toHaveCount(0);
       await expect(page.locator('[data-note-result="run:3"]')).not.toHaveAttribute('data-returned', 'true');
