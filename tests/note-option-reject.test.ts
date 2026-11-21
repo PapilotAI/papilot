@@ -38,6 +38,8 @@ test('note decisions announce the final selection only at its boundary, and neve
   const store = new Store(':memory:'), workspace = new Workspace(store, new Agent() as unknown as Codex, async () => client);
   const manuscripts = new Manuscripts(); let refreshes = 0, announced = 0;
   manuscripts.refresh = async () => { refreshes++; };
+  manuscripts.predict = async () => {};
+  manuscripts.document = async () => 'main.tex';
   // A completed selection is announced; the app then predicts what applying writes.
   workspace.on('decided', () => { announced++; });
   store.saveProject({ id: 'paper', name: 'Paper', path: f.root, createdAt: 1 });
