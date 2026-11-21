@@ -102,6 +102,36 @@ async function switchPaper(name) {
 }
 try {
   await page.goto(origin);
+  const pdf = page.getByLabel('PDF pages', { exact: true });
+  const pdfTop = () => pdf.evaluate(el => el.scrollTop);
+  const wheelPdfFrom = async target => {
+    await target.hover({ position: { x: 4, y: 8 } });
+    const top = await pdfTop();
+    await page.mouse.wheel(0, 64);
+    await expect.poll(pdfTop).toBeGreaterThan(top);
+    await pdf.evaluate((el, position) => { el.scrollTop = position; }, top);
+  };
+  await pdf.locator('.note-tag[data-note="n1"]').click();
+  const popover = page.getByRole('dialog', { name: 'PDF note 1', exact: true });
+  const noteText = popover.getByText('Revise n1.', { exact: true });
+  await wheelPdfFrom(noteText);
+  await noteText.click();
+  const noteEditor = popover.getByRole('textbox', { name: 'Edit note 1', exact: true });
+  await expect(noteEditor).toBeFocused();
+  await wheelPdfFrom(noteEditor);
+  await noteEditor.fill('A line in a long note.\n'.repeat(50));
+  await noteEditor.hover({ position: { x: 4, y: 8 } });
+  await noteEditor.evaluate(el => { el.scrollTop = 0; });
+  const beforeNoteScroll = await pdfTop();
+  await page.mouse.wheel(0, 64);
+  await expect.poll(() => noteEditor.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  assert.equal(await pdfTop(), beforeNoteScroll);
+  await noteEditor.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await wheelPdfFrom(noteEditor);
+  await noteEditor.fill('Revise n1.');
+  await noteEditor.press('Escape');
+  await expect(popover).toBeHidden();
+
   // A task's notes are the same cards as My notes, except that × replaces
   // "Included ×": it keeps the annotation; trash deletes it everywhere, and ⌘Z
   // brings it back into the task.

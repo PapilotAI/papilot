@@ -6,6 +6,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
+- Let the uncropped manuscript PDF scroll from an open note when the note reaches its scroll boundary. ([#293](https://github.com/PapilotAI/papilot/issues/293))
+
 - Keep internal note-alternative data out of live and saved Chat replies, including plain follow-ups and alternatives sent as bare JSON or ordinary JSON code blocks. ([#271](https://github.com/PapilotAI/papilot/issues/271))
 
 - Link PDF annotations through citations, inline math, hyperlinks, headings and captions. Follow-up notes on pending proposals link to the revised change when the original source range can still be identified. ([#270](https://github.com/PapilotAI/papilot/issues/270))
