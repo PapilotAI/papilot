@@ -1029,7 +1029,7 @@ function NotesPanel({ notes, sections = [], pageLayouts, currentKey, active, act
     <div className="pdf-reading-notes-head">
       <strong>{t('My notes')}</strong>
       <div className="pdf-reading-notes-actions">
-        <button type="button" className={'icon-button notes-sort-trigger' + (sortMode !== 'original' ? ' active' : '')}
+        <button type="button" className="icon-button notes-sort-trigger"
           data-sort={sortMode} aria-label={sortLabel} title={sortLabel}
           onClick={() => chooseSort(nextSort)}><Icon name={sortIcon} size={16}/></button>
         {batch && <button type="button" className="icon-button notes-clear-trigger" aria-label={clearLabel} title={clearLabel}

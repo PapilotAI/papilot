@@ -166,7 +166,7 @@ try {
       await expect(sortTrigger).toHaveAttribute('data-sort', 'position');
       await expect(sortTrigger).toHaveAttribute('aria-label', 'Sort notes: PDF position');
       await expect(sortTrigger).toHaveAttribute('title', 'Sort notes: PDF position');
-      await expect(sortTrigger).toHaveClass(/\bactive\b/);
+      await expect(sortTrigger).not.toHaveClass(/\bactive\b/);
       await expect(library.locator('p.sr-only[role="status"]')).toHaveText('Notes sorted by PDF position.');
       const positionIcon = await iconMarkup();
       assert.notEqual(positionIcon, originalIcon, 'PDF position mode should show a distinct icon');
@@ -188,7 +188,7 @@ try {
       await expect(sortTrigger).toHaveAttribute('data-sort', 'newest');
       await expect(sortTrigger).toHaveAttribute('aria-label', 'Sort notes: Newest first');
       await expect(sortTrigger).toHaveAttribute('title', 'Sort notes: Newest first');
-      await expect(sortTrigger).toHaveClass(/\bactive\b/);
+      await expect(sortTrigger).not.toHaveClass(/\bactive\b/);
       await expect(library.locator('p.sr-only[role="status"]')).toHaveText('Notes sorted by Newest first.');
       const newestIcon = await iconMarkup();
       assert.notEqual(newestIcon, originalIcon, 'Newest first mode should show a distinct icon');
