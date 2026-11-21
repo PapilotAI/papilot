@@ -6,7 +6,7 @@ import {
 } from "./effects.ts";
 import { textBounds, type Build } from "./locate.ts";
 import { containsCenter, union } from "./pdf.ts";
-import { mergeRects, pixelDifference, tokenGlyphs } from "./pdfdiff.ts";
+import { mergeRects, pixelDifference, tokenGlyphs, wordMarks } from "./pdfdiff.ts";
 import type { Mark, Position, Rect, SourceBox } from "../types.ts";
 // One comparison of the whole documents decides everything a review shows.
 // A word is marked when that comparison changed it, never because of where
@@ -258,23 +258,12 @@ function build(
 // The changed and the moved words of a crop, as marks over whole words.
 export function marksIn(al: Alignment, name: SideName, at: Position): Mark[] {
   const side = al[name],
+    words = side.build.document.page(at.page).words,
     marks = (glyphs: number[], kind: Mark["kind"]): Mark[] => {
       const rects = glyphs
         .map((g) => side.words.glyphs[g].rect)
         .filter((rect) => containsCenter(at.clip, rect));
-      if (!rects.length) return [];
-      const boxes = side.build.document
-        .page(at.page)
-        .words.filter(
-          (w) =>
-            containsCenter(at.clip, w.rect) &&
-            rects.some((r) => containsCenter(w.rect, r)),
-        )
-        .map((w) => w.rect);
-      return mergeRects(boxes.length ? boxes : rects).map((rect) => ({
-        kind,
-        rect,
-      }));
+      return wordMarks(words, at.clip, rects, kind);
     };
   return [
     ...marks(
@@ -784,6 +773,15 @@ function completeCrops(
           break;
         }
       }
+    // Never start or end a crop halfway through a line-end hyphenated word.
+    if (lo > 0 && sameLane(side, lo - 1, lo) && hyphenContinued(side, lo - 1))
+      lo--;
+    if (
+      hi + 1 < side.lines.length &&
+      sameLane(side, hi, hi + 1) &&
+      hyphenContinued(side, hi)
+    )
+      hi++;
     if (lo === first && hi === last) return { crops, shown, first, last };
     [first, last] = [lo, hi];
   }
@@ -798,6 +796,186 @@ function completeCrops(
 // crop reads as its whole document. Its first and last lines may also hold
 // words the context strips show; record that overlap separately from the
 // changed words. The rest of a rewrapped paragraph stays in the context.
+// Whether `line` ends with a word broken across a line break onto `line + 1`.
+function hyphenContinued(side: Side, line: number): boolean {
+  const range = side.words.lines[line],
+    next = side.words.lines[line + 1];
+  if (!range || !next) return false;
+  const last = side.words.tokens[range[1] - 1],
+    firstNext = side.words.tokens[next[0]];
+  if (!last || !firstNext || last.flow === "edge" || firstNext.flow === "edge")
+    return false;
+  const g1 = side.words.glyphs[last.start],
+    g2 = side.words.glyphs[firstNext.start];
+  if (!g1 || !g2 || g1.page !== g2.page) return false;
+  const height = Math.max(g1.rect[3] - g1.rect[1], g2.rect[3] - g2.rect[1], 1);
+  if (g2.rect[1] - g1.rect[3] > 1.2 * height) return false;
+  if (last.hyphen) return true;
+  return Boolean(
+    last.part && firstNext.part && last.part.word === firstNext.part.word,
+  );
+}
+const sameLane = (side: Side, a: number, b: number) =>
+  side.lines[a].page === side.lines[b].page &&
+  side.lines[a].column === side.lines[b].column;
+function cutLines(
+  al: Alignment,
+  first: number,
+  last: number,
+  mine: Mine,
+  minOld?: number,
+  maxOld?: number,
+): Group | null {
+  const count = {
+      old: al.old.words.tokens.length,
+      new: al.new.words.tokens.length,
+    },
+    equal = (name: SideName, t: number, step: 1 | -1) => {
+      const map = al.tokens[name];
+      for (let k = t + step; k >= 0 && k < count[name]; k += step)
+        if (map[k] >= 0) return map[k];
+      return step < 0 ? -1 : count[name === "old" ? "new" : "old"];
+    },
+    lines = al.new.words.lines,
+    oldLines = al.old.words.lines;
+  // Close the footprint over whole words before selecting its counterpart.
+  // A continuation row may share another word that continues in turn.
+  let next = completeCrops(al, "new", first, last);
+  if (!next.shown.size) return null;
+  const bounds = (current: typeof next) => {
+    const above = equal("new", Math.min(...current.shown), -1),
+      below = equal("new", Math.max(...current.shown), 1);
+    if (below - above < 2) return null;
+    const firstTok = equal("new", lines[current.first][0], -1) + 1,
+      lastTok = equal("new", lines[current.last][1] - 1, 1) - 1;
+    let oldFirst = al.old.tokenLine[firstTok],
+      oldLast = al.old.tokenLine[lastTok];
+    if (oldFirst === undefined || oldLast === undefined) return null;
+    if (minOld !== undefined) oldFirst = Math.min(oldFirst, minOld);
+    if (maxOld !== undefined) oldLast = Math.max(oldLast, maxOld);
+    const claimed = (line: number) => {
+      const [s, e] = oldLines[line];
+      for (let t = s; t < e; t++) {
+        const other = al.tokens.old[t];
+        if (other >= 0 && current.shown.has(other)) return true;
+      }
+      return false;
+    };
+    while (oldFirst < oldLast && !kept(al, "old", oldFirst, mine) && !claimed(oldFirst)) oldFirst++;
+    while (oldLast > oldFirst && !kept(al, "old", oldLast, mine) && !claimed(oldLast)) oldLast--;
+    while (
+      oldFirst > 0 &&
+      sameLane(al.old, oldFirst - 1, oldFirst) &&
+      hyphenContinued(al.old, oldFirst - 1)
+    )
+      oldFirst--;
+    while (
+      oldLast + 1 < al.old.lines.length &&
+      sameLane(al.old, oldLast, oldLast + 1) &&
+      hyphenContinued(al.old, oldLast)
+    )
+      oldLast++;
+    return { above, below, oldFirst, oldLast };
+  };
+  let span = bounds(next);
+  if (!span) return null;
+  // When a hyphenated word at the edge of the old crop pulls in the line
+  // above (or below), and the adjacent new line starts (or ends) on the exact
+  // same token, include that single line on the new side too so neither side
+  // breaks the word or repeats that line from the surrounding context.
+  if (
+    next.first > 0 &&
+    sameLane(al.new, next.first - 1, next.first) &&
+    oldLines[span.oldFirst][0] < span.above + 1 &&
+    hyphenContinued(al.old, span.oldFirst) &&
+    al.tokens.old[oldLines[span.oldFirst][0]] === lines[next.first - 1][0]
+  ) {
+    const expanded = completeCrops(al, "new", next.first - 1, next.last),
+      updated = expanded.shown.size ? bounds(expanded) : null;
+    if (updated) {
+      next = expanded;
+      span = updated;
+    }
+  }
+  if (
+    next.last + 1 < al.new.lines.length &&
+    sameLane(al.new, next.last, next.last + 1) &&
+    oldLines[span.oldLast][1] - 1 > span.below - 1 &&
+    span.oldLast > 0 &&
+    hyphenContinued(al.old, span.oldLast - 1) &&
+    al.tokens.old[oldLines[span.oldLast][1] - 1] === lines[next.last + 1][1] - 1
+  ) {
+    const expanded = completeCrops(al, "new", next.first, next.last + 1),
+      updated = expanded.shown.size ? bounds(expanded) : null;
+    if (updated) {
+      next = expanded;
+      span = updated;
+    }
+  }
+  const { above, below, oldFirst, oldLast } = span,
+    right = next.crops,
+    shownNew = next.shown;
+  // The old crop shows its lines whole, and with them whatever prints on
+  // the same rows, as the pieces of an inline formula. A word of it before
+  // or after the change that equals a word the context strips show, outside
+  // the new crop, fades: the context strips show it. Any other word is
+  // read in the old crop.
+  const w = al.old.words,
+    needed = Array.from(
+      { length: below - above - 1 },
+      (_, i) => above + 1 + i,
+    ).filter(
+      (t) =>
+        kept(al, "old", al.old.tokenLine[t], mine) ||
+        (al.tokens.old[t] >= 0 && shownNew.has(al.tokens.old[t])),
+    ),
+    left = completeCrops(al, "old", oldFirst, oldLast, needed).crops,
+    faded = new Map<number, Rect[]>();
+  for (const at of left)
+    for (const line of al.old.byPage.get(at.page) ?? []) {
+      const [i, j] = w.lines[line];
+      for (let t = i; t < j; t++) {
+        const other = al.tokens.old[t];
+        if ((t > above && t < below) || other < 0 || shownNew.has(other))
+          continue;
+        for (const g of tokenGlyphs(w.tokens[t])) {
+          const { page, rect } = w.glyphs[g];
+          if (page === at.page && containsCenter(at.clip, rect))
+            faded.set(page, [...(faded.get(page) ?? []), rect]);
+        }
+      }
+    }
+  return {
+    left,
+    right,
+    faded: [...faded].flatMap(([page, rects]) =>
+      mergeRects(rects).map((rect) => ({ page, rect })),
+    ),
+  };
+}
+/** Align exact source-span crops to the whole-document word alignment so the
+ *  old crop never truncates a hyphenated word or drops rewrapped trailing text. */
+export function alignedSpanCrops(
+  al: Alignment,
+  oldCrops: Position[],
+  newCrops: Position[],
+  mine: Mine = everything,
+): Group | null {
+  const range = (name: SideName, crops: Position[]): [number, number] | null => {
+    const spans = touched(al, name, crops)
+      .map(([lo, hi]): [number, number] => [Math.ceil(lo), Math.floor(hi)])
+      .filter(([lo, hi]) => lo <= hi);
+    if (!spans.length) return null;
+    return [
+      Math.min(...spans.map(([lo]) => lo)),
+      Math.max(...spans.map(([, hi]) => hi)),
+    ];
+  };
+  const next = range("new", newCrops);
+  if (!next) return null;
+  const old = range("old", oldCrops);
+  return cutLines(al, next[0], next[1], mine, old?.[0], old?.[1]);
+}
 function cut(al: Alignment, region: Region, mine: Mine): Group | null {
   const words = (name: SideName, touch: Touch | null) => {
       const side = al[name],
@@ -844,54 +1022,7 @@ function cut(al: Alignment, region: Region, mine: Mine): Group | null {
     [first, last] = [gap.new[0] + 1, gap.new[1] - 1];
     if (first > last) return null;
   }
-  // Close the footprint over whole words before selecting its counterpart.
-  // A continuation row may share another word that continues in turn.
-  const next = completeCrops(al, "new", first, last),
-    right = next.crops,
-    shownNew = next.shown;
-  if (!shownNew.size) return null;
-  const lines = al.new.words.lines,
-    above = equal("new", Math.min(...shownNew), -1),
-    below = equal("new", Math.max(...shownNew), 1);
-
-  if (below - above < 2) return null;
-  let oldFirst = al.old.tokenLine[equal("new", lines[next.first][0], -1) + 1],
-    oldLast = al.old.tokenLine[equal("new", lines[next.last][1] - 1, 1) - 1];
-  while (oldFirst < oldLast && !kept(al, "old", oldFirst, mine)) oldFirst++;
-  while (oldLast > oldFirst && !kept(al, "old", oldLast, mine)) oldLast--;
-  // The old crop shows its lines whole, and with them whatever prints on
-  // the same rows, as the pieces of an inline formula. A word of it before
-  // or after the change that equals a word the context strips show, outside
-  // the new crop, fades: the context strips show it. Any other word is
-  // read in the old crop.
-  const w = al.old.words,
-    needed = Array.from(
-      { length: below - above - 1 },
-      (_, i) => above + 1 + i,
-    ).filter((t) => kept(al, "old", al.old.tokenLine[t], mine)),
-    left = completeCrops(al, "old", oldFirst, oldLast, needed).crops,
-    faded = new Map<number, Rect[]>();
-  for (const at of left)
-    for (const line of al.old.byPage.get(at.page) ?? []) {
-      const [i, j] = w.lines[line];
-      for (let t = i; t < j; t++) {
-        const other = al.tokens.old[t];
-        if ((t > above && t < below) || other < 0 || shownNew.has(other))
-          continue;
-        for (const g of tokenGlyphs(w.tokens[t])) {
-          const { page, rect } = w.glyphs[g];
-          if (page === at.page && containsCenter(at.clip, rect))
-            faded.set(page, [...(faded.get(page) ?? []), rect]);
-        }
-      }
-    }
-  return {
-    left,
-    right,
-    faded: [...faded].flatMap(([page, rects]) =>
-      mergeRects(rects).map((rect) => ({ page, rect })),
-    ),
-  };
+  return cutLines(al, first, last, mine);
 }
 // An edit's crops, one group per region, cut at its words (above). A
 // figure, where the picture matters as much as the words, is cut at the same

@@ -37,7 +37,7 @@ import {
   PdfDocument,
   type Raster,
 } from "./pdf.ts";
-import { textChanges } from "./pdfdiff.ts";
+import { mergeMarks, textChanges } from "./pdfdiff.ts";
 import { partition, regions } from "./plan.ts";
 const RUN_GAP = 3,
   MARGIN = 900;
@@ -541,7 +541,7 @@ export class Strips {
     // that words moved here or away unchanged (see `drawn`).
     // Keep unchanged context readable in the PDF's original colours, even
     // when reflow makes it appear both in a crop and the surrounding text.
-    marks = marks.filter((mark) => mark.kind !== "context");
+    marks = mergeMarks(marks.filter((mark) => mark.kind !== "context"));
     const svg = page.svg(top, bottom, left, right),
       digest = createHash("sha256")
         .update(svg)

@@ -116,27 +116,72 @@ export function tokens(glyphs: Glyph[]) {
   return result;
 }
 export function mergeRects(rects: Rect[]): Rect[] {
+  const canMerge = (a: Rect, b: Rect) => {
+    const overlapsX = a[0] < b[2] && b[0] < a[2],
+      verticalOverlap = Math.min(a[3], b[3]) - Math.max(a[1], b[1]),
+      sameBand =
+        (Math.abs(a[1] - b[1]) < 1.7 && Math.abs(a[3] - b[3]) < 2) ||
+        (overlapsX &&
+          verticalOverlap > 0.5 * Math.min(a[3] - a[1], b[3] - b[1]));
+    return sameBand && a[0] <= b[2] + 4 && b[0] <= a[2] + 4;
+  };
   const result: Rect[] = [];
   for (const rect of [...rects].sort(
-    (a, b) => Math.round(a[1] / 2) - Math.round(b[1] / 2) || a[0] - b[0],
+    (a, b) => Math.round((a[1] + a[3]) / 4) - Math.round((b[1] + b[3]) / 4) || a[0] - b[0],
   )) {
-    let merged = false;
-    for (let i = result.length - 1; i >= Math.max(0, result.length - 12); i--) {
-      const previous = result[i];
-      if (
-        Math.abs(previous[1] - rect[1]) < 1.7 &&
-        Math.abs(previous[3] - rect[3]) < 2 &&
-        rect[0] - previous[2] >= -1 &&
-        rect[0] - previous[2] < 4
-      ) {
-        result[i] = union(previous, rect);
-        merged = true;
-        break;
+    let current: Rect = [...rect];
+    for (let dirty = true; dirty;) {
+      dirty = false;
+      for (let i = result.length - 1; i >= 0; i--) {
+        if (!canMerge(result[i], current)) continue;
+        current = union(result[i], current);
+        result.splice(i, 1);
+        dirty = true;
       }
     }
-    if (!merged) result.push([...rect]);
+    result.push(current);
   }
-  return result;
+  return result.sort(
+    (a, b) => Math.round((a[1] + a[3]) / 4) - Math.round((b[1] + b[3]) / 4) || a[0] - b[0],
+  );
+}
+/** Snap changed glyph rects to uniform word height over each changed glyph's
+ *  horizontal span so punctuation-only or delimiter edits do not highlight an
+ *  unchanged neighbouring word. */
+export function wordMarks(
+  words: { rect: Rect }[],
+  clip: Rect,
+  glyphRects: Rect[],
+  kind: Mark["kind"],
+): Mark[] {
+  if (!glyphRects.length) return [];
+  const covered = new Set<number>(),
+    boxes: Rect[] = [];
+  for (const word of words) {
+    if (!containsCenter(clip, word.rect)) continue;
+    glyphRects.forEach((rect, index) => {
+      if (!containsCenter(word.rect, rect)) return;
+      covered.add(index);
+      boxes.push([rect[0], word.rect[1], rect[2], word.rect[3]]);
+    });
+  }
+  glyphRects.forEach((rect, index) => {
+    if (!covered.has(index)) boxes.push(rect);
+  });
+  return mergeRects(boxes).map((rect) => ({ kind, rect }));
+}
+/** Merge overlapping/adjacent marks of the same kind so translucent overlays
+ *  never double-darken when multiple edits share one rendered strip. */
+export function mergeMarks(list: Mark[]): Mark[] {
+  const byKind = new Map<Mark["kind"], Rect[]>();
+  for (const mark of list) {
+    const rects = byKind.get(mark.kind) ?? [];
+    rects.push(mark.rect);
+    byKind.set(mark.kind, rects);
+  }
+  return [...byKind].flatMap(([kind, rects]) =>
+    mergeRects(rects).map((rect): Mark => ({ kind, rect })),
+  );
 }
 function marks(
   glyphs: Glyph[],

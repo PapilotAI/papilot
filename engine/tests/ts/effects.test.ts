@@ -271,3 +271,32 @@ it("gives every build of a day the date of that day", () => {
     SOURCE_DATE_EPOCH: "42",
   });
 });
+
+it("absorbs stray coincidental words inside a rewritten sentence and keeps hyphenated words whole", () => {
+  const beforeAnchor = "This concise mechanism lets local type inference use type information from arguments in any order without backtracking",
+    afterAnchor = "Moreover, because inference closures build on local matching, they retain support for higher-rank polymorphism.",
+    a = words(
+      `${beforeAnchor}, resolving a fundamental tradeoff between order-irrelevance and higher-order expressiveness that has persisted since Pierce and Turner introduced local type inference more than 25 years ago. ${afterAnchor}`,
+    ),
+    b = words(
+      `${beforeAnchor}. While prior contextual LTI calculi and languages such as Scala, Java, and TypeScript already handle many higher-order calls through left-to-right propagation or syntactic deferral of bare lambdas, inference closures provide a general order-irrelevance guarantee within a local, matching-based calculus even for compound argument expressions and curried calls. ${afterAnchor}`,
+    );
+  const oldChanged = differences(a, b)
+      .flatMap((e) => a.tokens.slice(...e.old).map((t) => t.text))
+      .join(" "),
+    newChanged = differences(a, b)
+      .flatMap((e) => b.tokens.slice(...e.new).map((t) => t.text))
+      .join(" ");
+  expect(oldChanged).toContain("and higher-order");
+  expect(oldChanged).toContain("local type inference");
+  expect(newChanged).toContain("and TypeScript");
+  expect(newChanged).toContain("many higher-order");
+  expect(newChanged).toContain("within a local");
+
+  const c = words("To our knowledge, we present the first local type inference that is order-irrelevant yet still accepts common higher-order programs."),
+    d = words("To our knowledge, this is the first local type inference that guarantees order-irrelevance for arbitrary higher-order programs."),
+    oldHyphen = differences(c, d).flatMap((e) => c.tokens.slice(...e.old).map((t) => t.text)),
+    newHyphen = differences(c, d).flatMap((e) => d.tokens.slice(...e.new).map((t) => t.text));
+  expect(oldHyphen.join(" ")).toContain("order-irrelevant");
+  expect(newHyphen.join(" ")).toContain("order-irrelevance");
+});

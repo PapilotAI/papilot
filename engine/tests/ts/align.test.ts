@@ -2,6 +2,7 @@ import { afterEach, expect, it } from "vitest";
 import { mupdf, PdfDocument, containsCenter } from "../../src/render/pdf.ts";
 import {
   alignedCrops,
+  alignedSpanCrops,
   alignment,
   marksIn,
   printers,
@@ -921,4 +922,137 @@ it("does not move running heads or reach crops to them when pages turn elsewhere
     expect(text(al[side].moved)).toBe("");
     expect(text(al[side].unpaired)).not.toContain("Page");
   }
+});
+
+it("aligns span crops across hyphenated line breaks and rewrapped tails without losing text", () => {
+  const old = pdf([
+      "This concise mechanism lets local type inference use type information from argu-",
+      "ments in any order without backtracking, resolving a fundamental tradeoff.",
+      "Moreover, because inference closures build on local matching, they retain",
+      "support for higher-rank polymorphism, where functions accept polymorphic args.",
+    ]),
+    next = pdf([
+      "This concise mechanism lets local type inference use type information from",
+      "arguments in any order without backtracking. While prior contextual LTI calculi",
+      "calls. Moreover, because inference closures build on local matching, they retain",
+      "support for higher-rank polymorphism, where functions accept polymorphic args.",
+    ]),
+    al = alignment(build(old), build(next)),
+    lineCrop = (doc: PdfDocument, from: string, to: string): Position[] => {
+      const a = doc.page(0).search(from)[0],
+        b = doc.page(0).search(to)[0];
+      return [{ page: 0, clip: [0, a[1] - 1, 600, b[3] + 1], label: "1" }];
+    },
+    group = alignedSpanCrops(
+      al,
+      lineCrop(old, "resolving", "tradeoff"),
+      lineCrop(next, "While", "calls."),
+    )!;
+  expect(group).not.toBeNull();
+  const textIn = (doc: PdfDocument, crops: Position[]) =>
+    printed(doc)
+      .filter((w) => inside(w, crops))
+      .map((w) => w.text)
+      .join(" ");
+  // The old crop keeps the full hyphenated word ("argu-" + "ments") and the
+  // trailing line ("because inference closures ... they retain") that reflowed
+  // onto the new crop's closing line; the top line snaps symmetrically on both sides.
+  expect(textIn(old, group.left)).toContain("argu- ments");
+  expect(textIn(old, group.left)).toContain("Moreover, because inference closures build on local matching, they retain");
+  expect(textIn(next, group.right)).toContain("This concise mechanism");
+  expect(textIn(next, group.right)).toContain("arguments in any order");
+  expect(group.faded ?? []).toEqual([]);
+});
+
+it("marks only changed punctuation without highlighting an unchanged neighbouring word", () => {
+  const old = pdf([
+      "The opening anchor sentence stays unchanged across versions here.",
+      "Inference closures provide a general guarantee within a local calculus.",
+      "The closing anchor sentence stays unchanged across versions here.",
+    ]),
+    next = pdf([
+      "The opening anchor sentence stays unchanged across versions here.",
+      "Inference closures provide a general guarantee within a local, calculus.",
+      "The closing anchor sentence stays unchanged across versions here.",
+    ]),
+    al = alignment(build(old), build(next)),
+    crop: Position = { page: 0, clip: [0, 0, 600, 600], label: "1" },
+    marks = marksIn(al, "new", crop);
+  expect(marks).toHaveLength(1);
+  const hitChars = next
+    .page(0)
+    .lines.flatMap((line) => line.chars)
+    .filter((char) => marks.some((m) => containsCenter(m.rect, char.rect)))
+    .map((char) => char.text)
+    .join("");
+  expect(hitChars).toBe(",");
+});
+
+it("marks an entire hyphenated word across a line break when its suffix changes", () => {
+  const old = pdf([
+      "The opening anchor sentence stays completely unchanged across both builds.",
+      "To our knowledge, we present the first local type inference that is order-",
+      "irrelevant yet still accepts common higher-order programs.",
+      "The closing anchor sentence stays completely unchanged across both builds.",
+    ]),
+    next = pdf([
+      "The opening anchor sentence stays completely unchanged across both builds.",
+      "To our knowledge, this is the first local type inference that guarantees",
+      "order-irrelevance for arbitrary higher-order programs.",
+      "The closing anchor sentence stays completely unchanged across both builds.",
+    ]),
+    al = alignment(build(old), build(next)),
+    crop: Position = { page: 0, clip: [0, 0, 600, 600], label: "1" },
+    marked = (doc: PdfDocument, side: "old" | "new") =>
+      printed(doc)
+        .filter((w) =>
+          marksIn(al, side, crop).some((m) => containsCenter(m.rect, w.rect)),
+        )
+        .map((w) => w.text);
+  expect(marked(old, "old")).toContain("order-");
+  expect(marked(old, "old")).toContain("irrelevant");
+  expect(marked(next, "new")).toContain("order-irrelevance");
+  expect(marked(old, "old")).not.toContain("higher-order");
+  expect(marked(next, "new")).not.toContain("higher-order");
+});
+
+it("never cuts crops mid-hyphen or drops unchanged tail lines claimed by the new crop", () => {
+  const old = pdf([
+      "This concise mechanism lets local type inference use type info from argu-",
+      "ments without backtracking, resolving a tradeoff. Moreover, be-",
+      "cause inference closures build on local matching, they retain support.",
+      "The closing anchor sentence stays unchanged across both versions.",
+    ]),
+    next = pdf([
+      "This concise mechanism lets local type inference use type info from arguments",
+      "without backtracking. While prior LTI calculi handle calls. Moreover, because inference",
+      "closures build on local matching, they retain support.",
+      "The closing anchor sentence stays unchanged across both versions.",
+    ]),
+    al = alignment(build(old), build(next)),
+    at = (doc: PdfDocument, text: string): Position[] => {
+      const r = doc.page(0).search(text)[0];
+      return [{ page: 0, clip: [0, r[1] - 1, 600, r[3] + 1], label: "1" }];
+    },
+    // Simulate another edit sharing the same source line as old line 2 ("cause inference...").
+    groups = alignedCrops(
+      al,
+      at(old, "resolving"),
+      at(next, "While"),
+      false,
+      {
+        old: (line) => (line === 2 ? false : true),
+        new: () => true,
+      },
+    )!,
+    textIn = (doc: PdfDocument, crops: Position[]) =>
+      printed(doc)
+        .filter((w) => inside(w, crops))
+        .map((w) => w.text)
+        .join(" ");
+  expect(groups).toHaveLength(1);
+  expect(textIn(old, groups[0].left)).toContain("argu- ments");
+  expect(textIn(old, groups[0].left)).toContain("be- cause inference");
+  expect(textIn(next, groups[0].right)).toContain("This concise mechanism");
+  expect(textIn(next, groups[0].right)).toContain("Moreover, because inference");
 });

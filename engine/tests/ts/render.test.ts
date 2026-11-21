@@ -832,3 +832,65 @@ it("never repeats a block of the same edits and says why an edit is in several",
   expect(macro.map((b) => b.units)).toEqual([["macro", "word"], ["macro"]]);
   for (const block of macro) expect(block.linked).toEqual([{ unit: "macro", reason: "places" }]);
 });
+
+it("merges overlapping same-kind highlight rects from multiple units into uniform SVG overlays", () => {
+  const line = "resolving a fundamental tradeoff between order-irrelevance and expressiveness",
+    doc = document([line]),
+    build = sectioned(doc, [0]),
+    phrase = doc.page(0).search("order-irrelevance")[0],
+    sub = doc.page(0).search("irrelevance")[0],
+    crop: Position = { page: 0, clip: [0, phrase[1] - 2, 600, phrase[3] + 2], label: "1" },
+    cards: Card[] = [
+      {
+        id: "u1",
+        file: "paper.tex",
+        context_node: "0",
+        comparison: "text",
+        aligned: true,
+        pairs: [{ old: crop, new: crop, group: 0, before_marks: [{ kind: "removed", rect: phrase }], after_marks: [{ kind: "added", rect: phrase }] }],
+      },
+      {
+        id: "u2",
+        file: "paper.tex",
+        context_node: "0",
+        comparison: "text",
+        aligned: true,
+        pairs: [{ old: crop, new: crop, group: 0, before_marks: [{ kind: "removed", rect: sub }], after_marks: [{ kind: "added", rect: sub }] }],
+      },
+    ],
+    folder = fs.mkdtempSync(path.join(os.tmpdir(), "review-overlap-marks-"));
+  folders.push(folder);
+  const result = renderDocument(build, build, cards, new Strips(folder), () => false),
+    change = [...result.sections.flatMap((s) => s.blocks), ...result.loose].find((b) => b.kind === "change")!;
+  const beforeSvg = fs.readFileSync(path.join(folder, change.before[0].src), "utf8"),
+    afterSvg = fs.readFileSync(path.join(folder, change.after[0].src), "utf8");
+  expect(beforeSvg.match(/fill="#c72938"/g)).toHaveLength(1);
+  expect(afterSvg.match(/fill="#1f8c52"/g)).toHaveLength(1);
+});
+
+it("does not highlight unchanged interior letters when only surrounding delimiters change", () => {
+  const a = "Evaluate (fast) expressions here.",
+    b = "Evaluate [fast] expressions here.",
+    old = sectioned(document([a]), [0]),
+    next = sectioned(document([b]), [0]);
+  old.read = () => a;
+  next.read = () => b;
+  const edits = textEdits(a, b);
+  expect(edits.length).toBeGreaterThanOrEqual(1);
+  const marks = edits.flatMap((op) => {
+    const pairs = sourcePairs(
+      old,
+      next,
+      { file: "paper.tex", text_ops: [op] } as Unit,
+      positions(old.document),
+      positions(next.document),
+    );
+    return pairs ? pairs.flatMap((p) => p.before_marks) : [];
+  });
+  const markedChars = old.document
+    .page(0)
+    .lines[0].chars.filter((c) => marks.some((m) => containsCenter(m.rect, c.rect)))
+    .map((c) => c.text)
+    .join("");
+  expect(markedChars).toBe("()");
+});

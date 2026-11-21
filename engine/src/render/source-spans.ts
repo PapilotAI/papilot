@@ -1,7 +1,7 @@
 import type { Mark, Pair, Position, Rect, Unit } from "../types.ts";
 import type { Build } from "./locate.ts";
-import { extract, normalize } from "./pdfdiff.ts";
-import { union } from "./pdf.ts";
+import { extract, normalize, wordMarks } from "./pdfdiff.ts";
+import { containsCenter, union } from "./pdf.ts";
 
 const compact = (text: string) => normalize(text).replace(/\s/gu, "");
 
@@ -43,20 +43,30 @@ function locate(
     const positions: { at: Position; marks: Mark[] }[] = [];
     for (const page of new Set(nearby.map((g) => g.page))) {
       const onPage = nearby.filter((g) => g.page === page),
-        rect = onPage.map((g) => g.rect).reduce(union),
+        pageObj = build.document.page(page),
+        linesHit = pageObj.lines.filter((line) =>
+          onPage.some((g) => containsCenter(line.rect, g.rect)),
+        ),
+        rect = (
+          linesHit.length ? linesHit.map((l) => l.rect) : onPage.map((g) => g.rect)
+        ).reduce(union),
         crop = crops.find(
           (p) =>
             p.page === page && p.clip[0] <= rect[0] && p.clip[2] >= rect[2],
         );
       if (!crop) return null;
+      const clip: Rect = [crop.clip[0], rect[1] - 1, crop.clip[2], rect[3] + 1];
       positions.push({
         at: {
           ...crop,
-          clip: [crop.clip[0], rect[1] - 1, crop.clip[2], rect[3] + 1] as Rect,
+          clip,
         },
-        marks: changed
-          .filter((g) => g.page === page)
-          .map((g) => ({ kind, rect: g.rect })),
+        marks: wordMarks(
+          pageObj.words,
+          clip,
+          changed.filter((g) => g.page === page).map((g) => g.rect),
+          kind,
+        ),
       });
     }
     if (positions.length) return positions;
