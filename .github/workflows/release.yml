@@ -16,18 +16,54 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Catch mismatched release metadata or off-main tags before spending time on
+  # CI and native desktop builds.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Verify release tag ancestry and metadata
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on main. Merge the release preparation PR into main before tagging."
+            exit 1
+          fi
+          if [ "$(node -p 'require("./package.json").version')" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version."; exit 1
+          fi
+          if [ "$(node -p 'const l = require("./package-lock.json"); l.version === l.packages?.[""]?.version ? l.version : ""')" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package-lock.json version fields."; exit 1
+          fi
+          notes="$(awk -v heading="## [$version]" 'index($0, heading) == 1 { p = 1; next } /^## \[/ { p = 0 } p' CHANGELOG.md | sed '/./,$!d')"
+          if [ -z "$notes" ]; then
+            echo "::error::CHANGELOG.md has no [$version] section."; exit 1
+          fi
+          if ! grep -Fq "[$version]: https://github.com/PapilotAI/papilot/compare/" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md is missing a compare link for [$version]."; exit 1
+          fi
+          release_notes="docs/releases/$version/release-notes.md"
+          if [ -f "$release_notes" ] && [ -z "$(sed '1{/^# /d;}' "$release_notes" | sed '/./,$!d')" ]; then
+            echo "::error::$release_notes is empty."; exit 1
+          fi
+
   # CI's checks on both supported Node versions; a tag pushed without a pull
   # request gets them here.
   ci:
+    needs: [verify]
     uses: ./.github/workflows/ci.yml
 
   desktop:
+    needs: [verify]
     uses: ./.github/workflows/desktop.yml
     secrets: inherit
 
   release:
-    # Publish only after CI and every native installer have passed.
-    needs: [ci, desktop]
+    # Publish only after verification, CI and every native installer have passed.
+    needs: [verify, ci, desktop]
     runs-on: ubuntu-latest
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
