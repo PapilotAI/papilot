@@ -35,11 +35,11 @@ jobs:
     timeout-minutes: 5
     steps:
       # Never check out the triggering PR/head SHA or download its artifacts.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: node --test tests/discord-community.test.mjs

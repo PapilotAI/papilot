@@ -21,7 +21,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Verify release tag ancestry and metadata
@@ -71,8 +71,8 @@ jobs:
       contents: write # the GitHub release
       id-token: write # npm trusted publishing
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -105,7 +105,7 @@ jobs:
       - run: npm ci
       - run: npm run setup:review
       - name: Download tested desktop installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: Papilot-*
           merge-multiple: true

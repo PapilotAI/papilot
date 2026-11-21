@@ -35,8 +35,8 @@ jobs:
       matrix:
         node: [22, 24]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -86,7 +86,7 @@ jobs:
           PAPILOT_BROWSER_CHANNEL: chromium
       - name: Keep star counter screenshots
         if: matrix.node == 22 && !cancelled()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: website-stars
           path: test-results/site/stars-*.png
@@ -105,8 +105,8 @@ jobs:
     steps:
       - name: Isolate test worktrees
         run: echo "PAPILOT_WORKTREES=$RUNNER_TEMP/papilot-worktrees" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -151,7 +151,7 @@ jobs:
           PAPILOT_BROWSER_CHANNEL: chromium
       - name: Keep review screenshots and timings
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: review-browser-results
           path: test-results/
@@ -170,8 +170,8 @@ jobs:
     steps:
       - name: Isolate test worktrees
         run: echo "PAPILOT_WORKTREES=$RUNNER_TEMP/papilot-worktrees" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -271,7 +271,7 @@ jobs:
         run: node --import tsx scripts/check-pdf-peek.mjs
       - name: Keep floating control screenshots
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pdf-floating-links
           path: |
@@ -372,7 +372,7 @@ jobs:
         run: node --import tsx scripts/check-workspace-switcher.mjs
       - name: Keep paper workflow screenshots
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: paper-workflows
           path: |
@@ -394,7 +394,7 @@ jobs:
           retention-days: 7
       - name: Keep screenshots of a failed check
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: interface-results
           path: test-results/
@@ -408,8 +408,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -432,11 +432,11 @@ jobs:
     outputs:
       desktop: ${{ steps.scope.outputs.desktop }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # A pull request's merge commit and the base it merges into.
           fetch-depth: 2
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - id: scope
@@ -466,7 +466,7 @@ jobs:
     needs: [check, review, interface, windows, changes, desktop]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Require explicit success from every required job
         env:
           CHECK_RESULT: ${{ needs.check.result }}

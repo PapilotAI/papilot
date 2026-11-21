@@ -37,7 +37,7 @@ jobs:
     steps:
       - name: Install build and desktop test tools
         run: pacman -Syu --needed --noconfirm git github-cli nodejs jq desktop-file-utils scrot xdotool xorg-server-xvfb xorg-xauth
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Test publication against disposable Git repository
         run: bash scripts/check-aur-publish.sh
       - name: Prepare and validate the versioned recipe
@@ -56,7 +56,7 @@ jobs:
             node scripts/prepare-aur.mts "$RELEASE_TAG" "$RUNNER_TEMP/aur-release.json" "$RUNNER_TEMP/desktop.json" "$PWD/aur-recipe"
             bash scripts/build-aur.sh "$PWD/aur-recipe" "$PWD/aur-output" true "$PWD/packaging/aur"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: papilot-aur-recipe
           path: aur-output/
@@ -77,8 +77,8 @@ jobs:
     steps:
       - name: Install publishing tools
         run: pacman -Syu --needed --noconfirm git openssh
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: papilot-aur-recipe
           path: aur-output

@@ -44,8 +44,8 @@ jobs:
         # leave them to full builds.
         target: ${{ fromJSON(inputs.quick && '["mac-arm64","linux-x64","win-x64"]' || '["mac-arm64","mac-x64","linux-x64","win-x64"]') }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -55,7 +55,7 @@ jobs:
       # Electron and electron-builder fetch their binaries from GitHub releases
       # on every build, and a 504 or reset connection there failed the build.
       - name: Cache Electron downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/electron
@@ -84,7 +84,7 @@ jobs:
           echo "key=desktop-debs-v1-$ImageOS-$ImageVersion-$(uname -m)-$(sha256sum <<< "${missing[*]}" | cut -c1-16)" >> "$GITHUB_OUTPUT"
       - id: desktop-cache
         if: runner.os == 'Linux' && steps.desktop-packages.outputs.list != ''
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ${{ steps.desktop-packages.outputs.dir }}
           key: ${{ steps.desktop-packages.outputs.key }}
@@ -110,7 +110,7 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" "$DIR"
       # Only main saves, as for TeX: pull requests restore its cache.
       - if: github.ref == 'refs/heads/main' && steps.desktop-download.outcome == 'success'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ${{ steps.desktop-packages.outputs.dir }}
           key: ${{ steps.desktop-packages.outputs.key }}
@@ -163,7 +163,7 @@ jobs:
         run: xvfb-run -a -s '-screen 0 1600x1000x24' bash scripts/check-desktop-linux.sh${{ inputs.quick && ' --dir' || '' }}
       - name: Save installers
         if: ${{ !inputs.quick }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Papilot-${{ matrix.target }}
           path: |
@@ -176,7 +176,7 @@ jobs:
           retention-days: 7
       - name: Save the update layer
         if: ${{ !inputs.quick && matrix.target == 'linux-x64' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Papilot-app
           path: |
@@ -186,7 +186,7 @@ jobs:
           retention-days: 7
       - name: Save desktop screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-check-${{ matrix.target }}
           path: |
