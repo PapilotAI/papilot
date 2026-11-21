@@ -2,13 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { shownBy } from "./effects.ts";
 import { Build } from "./locate.ts";
-import { renderMore, renderRound } from "./round.ts";
+import { renderMixed, renderMore, renderRound, type MixedCropSpec } from "./round.ts";
 import type { DocumentEffect, RenderRequest } from "../types.ts";
 const file = process.argv[2];
 if (!file) throw new Error("Expected a renderer request file.");
 const request = JSON.parse(fs.readFileSync(file, "utf8")) as RenderRequest & {
   effects?: DocumentEffect[];
   more?: string;
+  mixed?: MixedCropSpec[];
 };
 const out = path.dirname(file);
 if (request.effects) {
@@ -27,4 +28,5 @@ if (request.effects) {
     final.close();
   }
 } else if (request.more) renderMore(out, request.more);
+else if (request.mixed) renderMixed({ ...request, mixed: request.mixed }, out);
 else renderRound(request, out);

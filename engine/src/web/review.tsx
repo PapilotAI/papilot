@@ -11,6 +11,7 @@ import {
 import type {
   ActionKind,
   ChangeBlock,
+  Decision,
   PageState,
   PlaceView,
   RoundDetail,
@@ -170,7 +171,7 @@ export function ReviewApp({
 }) {
   const [state, setState] = useState<PageState | null>(null),
     [publishedDetail, setDetail] = useState<RoundDetail | null>(null),
-    [optionPreview, setOptionPreview] = useState<{ round: number; detail?: RoundDetail } | null>(null),
+    [optionPreview, setOptionPreview] = useState<{ key?: string; round: number; units?: string[]; detail?: RoundDetail; busy?: boolean } | null>(null),
     [current, setCurrent] = useState(-1),
     [busy, setBusy] = useState(false),
     // Decisions not confirmed yet, and whether the state shown predates them.
@@ -199,6 +200,15 @@ export function ReviewApp({
     } | null>(null),
     [draft, setDraft] = useState(""),
     [help, setHelp] = useState(false),
+    [hoveredUnit, setHoveredUnit] = useState<{ stop: number; unit: string } | null>(null),
+    [selectedUnit, setSelectedUnit] = useState<{
+      stop: number;
+      unit: string;
+      side?: "before" | "after";
+    } | null>(null),
+    [mixedPreviews, setMixedPreviews] = useState<
+      Record<string, { status: "loading" | "ready" | "error"; files?: string; strips?: Strip[] }>
+    >({}),
     // A note can reveal a decided change without opening the history controls.
     [linkedChange] = useState(() => {
       const value = Number(new URLSearchParams(location.search).get("change") ?? -1);
@@ -208,7 +218,7 @@ export function ReviewApp({
       (Boolean(pinned) && linkedChange < 0) || new URLSearchParams(location.search).has("history"),
     );
   const previewing = Boolean(optionPreview && optionPreview.round === publishedDetail?.round);
-  const detail = previewing && optionPreview?.detail ? optionPreview.detail : publishedDetail;
+  const detail = publishedDetail;
   const previewNow = useRef(previewing); previewNow.current = previewing;
   const paper = useRef<HTMLElement>(null),
     editedPlace = useRef<{ file: string; line: number; offset: number; paper: boolean; inline: boolean } | null>(null),
@@ -309,6 +319,7 @@ export function ReviewApp({
     window.addEventListener('storage', stored);
     return () => { window.removeEventListener(SHORTCUT_EVENT, changed); window.removeEventListener('storage', stored); };
   }, []);
+  const selectUnitHandler = useRef<(stop: number, unit?: string) => void>(() => {});
   useEffect(() => {
     const changed = (event: Event) => setNoteFocus((event as CustomEvent).detail || null);
     const preview = (event: Event) => {
@@ -320,10 +331,19 @@ export function ReviewApp({
       // source editor or dialog the author just opened outside the drawer.
       if (transition) { setComposer(null); setConfirm(null); setOpenSource(new Set()); }
     };
+    const pickUnit = (event: Event) => {
+      const detail = (event as CustomEvent<{ stop: number; unit?: string }>).detail;
+      if (detail && Number.isInteger(detail.stop)) selectUnitHandler.current(detail.stop, detail.unit);
+    };
     window.addEventListener("papilot:option-preview", preview);
     window.addEventListener("papilot:note-focus", changed);
+    window.addEventListener("papilot:select-unit", pickUnit);
     window.dispatchEvent(new Event("papilot:note-focus-ready"));
-    return () => { window.removeEventListener("papilot:note-focus", changed); window.removeEventListener("papilot:option-preview", preview); };
+    return () => {
+      window.removeEventListener("papilot:note-focus", changed);
+      window.removeEventListener("papilot:option-preview", preview);
+      window.removeEventListener("papilot:select-unit", pickUnit);
+    };
   }, []);
   const focused = noteFocus?.round === detail?.round ? noteFocus?.units ?? undefined : undefined;
   const inFocus = (id: string) => !focused || focused.includes(id);
@@ -837,12 +857,197 @@ export function ReviewApp({
     if (composer) store(composer.key, sent ? "" : draft);
     setComposer(null);
   }
+  // Keep per-unit PDF selection scoped to the active change, detail, and focus.
+  useEffect(() => {
+    if (selectedUnit && selectedUnit.stop !== current) setSelectedUnit(null);
+  }, [current, selectedUnit?.stop]);
+  useEffect(() => {
+    setSelectedUnit(null);
+    setHoveredUnit(null);
+  }, [detail, history, noteFocus]);
+  const substantiveUnits = (blockUnits: string[]) => {
+    const visible = blockUnits.filter((id) => inFocus(id) && !units.get(id)?.formattingFor);
+    return visible.length ? visible : blockUnits.filter(inFocus);
+  };
+  const unitGroup = (blockUnits: string[], unitId: string) => [
+    unitId,
+    ...blockUnits.filter((id) => units.get(id)?.formattingFor === unitId && inFocus(id)),
+  ];
+  const blockUnitStatic = useMemo(() => {
+    const map = new Map<
+      number,
+      {
+        subUnits: string[];
+        selectableSet: ReadonlySet<string>;
+      }
+    >();
+    placed.forEach(({ block, index }) => {
+      const markedIds = new Set(
+        [...block.before, ...block.after].flatMap((strip) => (strip.marks ?? []).map((mark) => mark.unit)),
+      );
+      const subUnits = substantiveUnits(block.units).filter((id) => markedIds.has(id));
+      if (subUnits.length <= 1) return;
+      map.set(index, {
+        subUnits,
+        selectableSet: new Set(subUnits),
+      });
+    });
+    return map;
+  }, [placed, units, focused]);
+  // Preserve per-block unitStates object identity across polls and unrelated
+  // decisions so React.memo(PdfStrip) does not re-render unaffected strips.
+  const blockUnitStatesCache = useRef(new Map<number, Record<string, Decision>>());
+  const blockUnitStates = useMemo(() => {
+    const next = new Map<number, Record<string, Decision>>();
+    const prev = blockUnitStatesCache.current;
+    placed.forEach(({ block, index }) => {
+      if (!blockUnitStatic.has(index)) return;
+      const existing = prev.get(index);
+      if (
+        existing &&
+        Object.keys(existing).length === block.units.length &&
+        block.units.every((id) => existing[id] === (decisions[id] ?? "pending"))
+      ) {
+        next.set(index, existing);
+      } else {
+        next.set(index, Object.fromEntries(block.units.map((id) => [id, decisions[id] ?? "pending"])));
+      }
+    });
+    blockUnitStatesCache.current = next;
+    return next;
+  }, [placed, blockUnitStatic, decisions]);
+  // Recompile a block's mixed PDF once after all edits in that block have
+  // finished deciding (exclusively accepted/rejected, with some of each).
+  const mixedRequested = useRef(new Set<string>());
+  const mixedGen = useRef(0);
+  useEffect(() => {
+    mixedGen.current++;
+    mixedRequested.current.clear();
+    setMixedPreviews({});
+    return () => {
+      mixedGen.current++;
+    };
+  }, [detail?.round, detail?.before, detail?.after]);
+  useEffect(() => {
+    if (!detail || changes || history || transport || previewing || detail.sourceOnly || detail.rendering) return;
+    const gen = mixedGen.current;
+    for (const { block, index } of placed) {
+      if (block.units.length < 2) continue;
+      if (pendingUnits(stops[index], decisions).length) continue;
+      if (!block.units.every((id) => decisions[id] === "accepted" || decisions[id] === "rejected")) continue;
+      const accepted = block.units.filter((id) => decisions[id] === "accepted").sort();
+      const rejected = block.units.filter((id) => decisions[id] === "rejected");
+      if (!accepted.length || !rejected.length) continue;
+      const key = `${detail.round}:${index}:${accepted.join(",")}`;
+      if (mixedRequested.current.has(key)) continue;
+      mixedRequested.current.add(key);
+      setMixedPreviews((prev) => ({ ...prev, [key]: { status: "loading" } }));
+      void api<{ files: string; strips: Strip[]; unavailable?: boolean }>(
+        `/rounds/${detail.round}/mixed`,
+        { units: block.units, accepted },
+      )
+        .then((res) => {
+          if (mixedGen.current !== gen) return;
+          if (res?.strips?.length && res.files && !res.unavailable) {
+            setMixedPreviews((prev) => ({
+              ...prev,
+              [key]: { status: "ready", files: res.files, strips: res.strips },
+            }));
+          } else {
+            setMixedPreviews((prev) => ({ ...prev, [key]: { status: "error" } }));
+          }
+        })
+        .catch(() => {
+          if (mixedGen.current !== gen) return;
+          setMixedPreviews((prev) => ({ ...prev, [key]: { status: "error" } }));
+        });
+    }
+  }, [detail, placed, stops, decisions, changes, history, transport, previewing]);
+  // Clear stale selectedUnit if its unit disappeared or its block resolved.
+  const multiUnitAt = (index: number) => {
+    const meta = blockUnitStatic.get(index),
+      block = placed[index]?.block,
+      stop = stops[index];
+    if (!meta || !block || !stop || block.waiting || focused) return null;
+    const status = stopState(block.units, decisions),
+      reviewed = !pendingUnits(stop, decisions).length,
+      expanded = browsing || index === linkedChange || block.units.some((id) => again.has(id)),
+      resolved = history || index === linkedChange
+        ? undefined
+        : changes
+          ? (status === "rejected" ? "before" : undefined)
+          : resolvedSide(block.units, decisions) || (status === "commented" ? "after" : undefined);
+    if (resolved || (reviewed && !expanded)) return null;
+    return meta;
+  };
+  const focusedUnitAt = (index: number): string | null => {
+    const meta = multiUnitAt(index);
+    if (!meta || index !== current) return null;
+    if (selectedUnit?.stop === index && meta.subUnits.includes(selectedUnit.unit)) {
+      return selectedUnit.unit;
+    }
+    return meta.subUnits.find((id) => decisions[id] === "pending") ?? meta.subUnits[0] ?? null;
+  };
+  useEffect(() => {
+    if (!selectedUnit) return;
+    const meta = multiUnitAt(selectedUnit.stop);
+    if (!meta || !meta.subUnits.includes(selectedUnit.unit)) {
+      setSelectedUnit(null);
+    }
+  }, [selectedUnit, blockUnitStatic, stops, decisions, changes, history, linkedChange]);
+  const unitActionRefs = useRef({ current, composer, select });
+  unitActionRefs.current = { current, composer, select };
+  selectUnitHandler.current = (stop, unit) => {
+    if (stop < 0 || stop >= stops.length) return;
+    reached.current = "pick";
+    select(stop, true);
+    const meta = blockUnitStatic.get(stop);
+    if (unit && meta?.subUnits.includes(unit)) {
+      setSelectedUnit({ stop, unit });
+    }
+  };
+  const handleHoverUnit = useMemo(
+    () => (stop: number, unit: string | null) =>
+      setHoveredUnit((prev) =>
+        unit
+          ? prev?.stop === stop && prev.unit === unit
+            ? prev
+            : { stop, unit }
+          : prev?.stop === stop
+            ? null
+            : prev,
+      ),
+    [],
+  );
+  const handleSelectUnit = useMemo(
+    () => (stop: number, unit: string | null, side?: "before" | "after") => {
+      const live = unitActionRefs.current;
+      if (live.composer) return;
+      if (!unit) {
+        setSelectedUnit((prev) => (prev?.stop === stop ? null : prev));
+        return;
+      }
+      if (stop !== live.current) {
+        reached.current = "pick";
+        live.select(stop, false);
+      }
+      setSelectedUnit({ stop, unit, side });
+    },
+    [],
+  );
+  async function decideUnit(kind: Kind, stopIndex: number, unitId: string, _subUnits: string[]) {
+    const stopUnits = stops[stopIndex]?.units ?? [];
+    const group = unitGroup(stopUnits, unitId);
+    const chosen = targets(group, kind);
+    if (!chosen.length) return;
+    await decide(kind, chosen);
+  }
   async function decide(
     kind: Kind,
     chosen = targets(stops[current]?.units ?? [], kind),
     body = "",
     confirmed = false,
-  ) {
+  ): Promise<boolean> {
     // A comment written while a newer round arrived goes out on the round it
     // was written on: the server carries it to the same change there.
     const sendable = latest || (kind === "comment" && Boolean(detail && state && !state.closed && !previewing));
@@ -853,12 +1058,12 @@ export function ReviewApp({
       !detail ||
       blocked(kind)
     )
-      return;
+      return false;
     if (kind === "accept" && !confirmed) {
       const items = chosen.flatMap((id) => hazardsNow.current.get(id) ?? []);
       if (items.length) {
         setConfirm({ kind, chosen, body, items });
-        return;
+        return false;
       }
     }
     // The review moves on at once; the server confirms decisions in order.
@@ -878,8 +1083,19 @@ export function ReviewApp({
     queue.current!.push(entry);
     setQueued(queue.current!.pending);
     setSettling(true);
+    const activeUnit = focusedUnitAt(current);
+    if (!changes && activeUnit && chosen.includes(activeUnit)) {
+      const sub = blockUnitStatic.get(current)?.subUnits ?? [];
+      const pos = sub.indexOf(activeUnit);
+      const nextUnit = [
+        ...sub.slice(pos + 1),
+        ...sub.slice(0, Math.max(0, pos)),
+      ].find((id) => id !== activeUnit && after[id] === "pending");
+      setSelectedUnit(nextUnit ? { stop: current, unit: nextUnit } : null);
+    }
     if (target >= 0 && target !== current) select(target);
     if (target < 0 && !browsing) setCurrent(-1);
+    return true;
   }
   settle.current = {
     send: (entry) =>
@@ -1096,16 +1312,57 @@ export function ReviewApp({
         return;
       }
       if (composer) return;
+      const currentMeta = multiUnitAt(current);
+      const focusedUnit = focusedUnitAt(current);
+      if (
+        focusedUnit &&
+        currentMeta &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        (event.key === "ArrowLeft" || event.key === "ArrowRight")
+      ) {
+        const pos = currentMeta.subUnits.indexOf(focusedUnit);
+        if (pos >= 0 && currentMeta.subUnits.length > 1) {
+          const nextPos = pos + (event.key === "ArrowRight" ? 1 : -1);
+          if (nextPos >= 0 && nextPos < currentMeta.subUnits.length) {
+            event.preventDefault();
+            setSelectedUnit({ stop: current, unit: currentMeta.subUnits[nextPos] });
+            return;
+          }
+        }
+      }
       const action = shortcutAction(event, shortcuts);
       if (!action || (changes && action === 'comment')) return;
       event.preventDefault();
-      const waits = !changes && (stops[current]?.units ?? []).some((id) => waiting.has(id) && decisions[id] === "pending");
-      if ((action === 'accept' || action === 'reject') && waits && !targets(stops[current]?.units ?? [], "accept").length)
+      const activeUnitGroup = focusedUnit
+        ? unitGroup(stops[current]?.units ?? [], focusedUnit)
+        : null;
+      const optionActive = Boolean(
+        previewing &&
+          optionPreview?.key &&
+          (activeUnitGroup ?? stops[current]?.units ?? []).some((id) =>
+            !optionPreview.units?.length || optionPreview.units.includes(id),
+          ),
+      );
+      if (optionActive && (action === "accept" || action === "reject" || action === "comment")) {
+        if (optionPreview?.busy || (action === "accept" && !optionPreview?.detail)) return;
+        window.dispatchEvent(new CustomEvent("papilot:option-action", { detail: { key: optionPreview!.key, action } }));
+        return;
+      }
+      const waits = !changes && (activeUnitGroup ?? stops[current]?.units ?? []).some((id) => waiting.has(id) && decisions[id] === "pending");
+      if ((action === 'accept' || action === 'reject') && waits && !targets(activeUnitGroup ?? stops[current]?.units ?? [], "accept").length)
         setToast(waitingLabel());
-      else if (action === 'accept')
-        void decide(kinds(stops[current]?.units ?? [])[0] ?? "accept");
-      else if (action === 'reject') void decide("reject");
-      else if (action === 'comment') beginComposer();
+      else if (action === 'accept') {
+        if (activeUnitGroup && focusedUnit && currentMeta) {
+          const kind = kinds(activeUnitGroup)[0] ?? "accept";
+          void decideUnit(kind, current, focusedUnit, currentMeta.subUnits);
+        } else void decide(kinds(stops[current]?.units ?? [])[0] ?? "accept");
+      } else if (action === 'reject') {
+        if (activeUnitGroup && focusedUnit && currentMeta)
+          void decideUnit("reject", current, focusedUnit, currentMeta.subUnits);
+        else void decide("reject");
+      } else if (action === 'comment') beginComposer(activeUnitGroup ? targets(activeUnitGroup, "comment") : undefined);
       else if (action === 'next')
         select(adjacent(current, 1));
       else if (action === 'previous')
@@ -1117,7 +1374,7 @@ export function ReviewApp({
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [state, queued, detail, current, busy, composer, draft, help, confirm, history, shortcuts, noteFocus]);
+  }, [state, queued, detail, current, busy, composer, draft, help, confirm, history, shortcuts, noteFocus, selectedUnit]);
   function onScroll() {
     if (
       !paper.current ||
@@ -1143,10 +1400,73 @@ export function ReviewApp({
   }
   const actionBar = (index: number) => {
     if (index !== current || !state) return null;
-    const units = stops[index].units.filter(inFocus),
+    const meta = multiUnitAt(index),
+      focusedUnit = focusedUnitAt(index),
+      unitPos = meta && focusedUnit ? meta.subUnits.indexOf(focusedUnit) : -1,
+      blockUnits = stops[index].units.filter(inFocus),
+      units = focusedUnit
+        ? unitGroup(stops[index].units, focusedUnit)
+        : blockUnits,
       available = kinds(units),
       remaining = nextPending(stops, decisions, current, focused),
-      waits = !changes && units.some((id) => waiting.has(id) && decisions[id] === "pending");
+      waits = !changes && units.some((id) => waiting.has(id) && decisions[id] === "pending"),
+      unitStatus = focusedUnit ? stopState(units, decisions) : "pending",
+      optionActive = Boolean(
+        previewing &&
+          optionPreview?.key &&
+          units.some((id) => !optionPreview.units?.length || optionPreview.units.includes(id)),
+      );
+    const renderDecisionButtons = (list: Kind[]) =>
+      list.map((kind) => {
+        const keys = shortcuts[kind === "unstage" ? "accept" : kind],
+          count = targets(units, kind).length,
+          rawHostLock = lockOf(state, kind),
+          lock = optionActive ? (rawHostLock ? t(rawHostLock) : null) : actionLock(kind),
+          optionDisabled = optionActive
+            ? Boolean(
+                optionPreview?.busy ||
+                  (kind === "accept" && !optionPreview?.detail) ||
+                  Boolean(lock),
+              )
+            : busy || !latest || Boolean(lock);
+        return (
+          <button
+            className={kind}
+            key={kind}
+            aria-keyshortcuts={keys.join(" ")}
+            title={
+              lock ||
+              [
+                label(kind) + (!focusedUnit && count > 1 && kind !== "comment" ? ` (${count})` : ""),
+                keys.map(bindingLabel).join(" / "),
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            }
+            aria-describedby={lock ? "review-lock" : undefined}
+            disabled={optionDisabled}
+            // The next change's bar takes this one's place at once;
+            // a double click decides only the change it began on.
+            onClick={(event) => {
+              event.stopPropagation();
+              if (optionActive && (kind === "accept" || kind === "reject" || kind === "comment")) {
+                if (event.detail < 2) {
+                  window.dispatchEvent(new CustomEvent("papilot:option-action", { detail: { key: optionPreview!.key, action: kind } }));
+                }
+                return;
+              }
+              if (focusedUnit && meta) {
+                if (kind === "comment") beginComposer(targets(units, "comment"));
+                else if (event.detail < 2) void decideUnit(kind, index, focusedUnit, meta.subUnits);
+              } else if (kind === "comment") beginComposer();
+              else if (event.detail < 2) void decide(kind);
+            }}
+          >
+            {label(kind)}
+            {!focusedUnit && count > 1 && kind !== "comment" ? ` (${count})` : ""}
+          </button>
+        );
+      });
     return (
       <div className="dock">
         <nav className="actions" aria-label={t("Review the current change")}>
@@ -1168,35 +1488,54 @@ export function ReviewApp({
               </span>
             </>
           )}
-          {available.length ? (
+          {meta && focusedUnit && unitPos >= 0 ? (
             <>
-              {available.map((kind) => {
-                const keys = shortcuts[kind === 'unstage' ? 'accept' : kind],
-                  count = targets(units, kind).length;
-                return (
-                  <button
-                    className={kind}
-                    key={kind}
-                    aria-keyshortcuts={keys.join(' ')}
-                    title={
-                      actionLock(kind) ||
-                      [label(kind) + (count > 1 && kind !== "comment" ? ` (${count})` : ""), keys.map(bindingLabel).join(' / ')].filter(Boolean).join(' · ')
-                    }
-                    aria-describedby={
-                      actionLock(kind) ? "review-lock" : undefined
-                    }
-                    disabled={busy || !latest || Boolean(actionLock(kind))}
-                    // The next change's bar takes this one's place at once;
-                    // a double click decides only the change it began on.
-                    onClick={(event) =>
-                      kind === "comment" ? beginComposer() : event.detail < 2 && void decide(kind)
-                    }
-                  >
-                    {label(kind)}
-                    {count > 1 && kind !== "comment" ? ` (${count})` : ""}
-                  </button>
-                );
-              })}
+              <div
+                className="unit-focus-group"
+                role="group"
+                aria-label={t("Review the current change")}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="unit-focus-step"
+                  aria-label={`${t("Previous change")} (${Math.max(1, unitPos)}/${meta.subUnits.length})`}
+                  title={t("Previous change")}
+                  disabled={unitPos <= 0}
+                  onClick={() => setSelectedUnit({ stop: index, unit: meta.subUnits[unitPos - 1] })}
+                >
+                  ‹
+                </button>
+                <span className="unit-focus-pos">
+                  {unitPos + 1} / {meta.subUnits.length}
+                </span>
+                <button
+                  type="button"
+                  className="unit-focus-step"
+                  aria-label={`${t("Next change")} (${Math.min(meta.subUnits.length, unitPos + 2)}/${meta.subUnits.length})`}
+                  title={t("Next change")}
+                  disabled={unitPos >= meta.subUnits.length - 1}
+                  onClick={() => setSelectedUnit({ stop: index, unit: meta.subUnits[unitPos + 1] })}
+                >
+                  ›
+                </button>
+                <span className="unit-focus-sep" aria-hidden="true" />
+                {unitStatus !== "pending" && (
+                  <span className="unit-focus-state" data-state={unitStatus}>
+                    {stateLabel(unitStatus)}
+                  </span>
+                )}
+                {renderDecisionButtons(available)}
+              </div>
+              {waits && (
+                <span className="comparison-pending" data-state={detail?.rendering ?? "pending"} role="status">
+                  {waitingLabel()}
+                </span>
+              )}
+            </>
+          ) : available.length ? (
+            <>
+              {renderDecisionButtons(available)}
               {waits && (
                 <span className="comparison-pending" data-state={detail?.rendering ?? "pending"} role="status">
                   {waitingLabel()}
@@ -1347,7 +1686,31 @@ export function ReviewApp({
     index: number,
     inline: boolean,
   ): ReactNode {
-    const known = block.units.map((id) => units.get(id)!).filter(Boolean),
+    const blockOptionPreview =
+      previewing &&
+      optionPreview?.detail &&
+      (!optionPreview.units?.length || block.units.some((id) => optionPreview.units!.includes(id)))
+        ? optionPreview.detail
+        : null;
+    const previewBlock = blockOptionPreview
+      ? ([
+          ...blockOptionPreview.sections.flatMap((s) =>
+            s.blocks.filter((b): b is ChangeBlock => b.kind === "change"),
+          ),
+          ...blockOptionPreview.loose,
+        ].find((b) =>
+          optionPreview?.units?.length
+            ? b.units.some((id) => optionPreview.units!.includes(id))
+            : b.units.some((id) => block.units.includes(id)),
+        ) ?? null)
+      : null;
+    const displayBefore = previewBlock ? previewBlock.before : block.before,
+      displayAfter = previewBlock ? previewBlock.after : block.after,
+      stripBase = previewBlock && blockOptionPreview ? blockOptionPreview.files : detail!.files;
+    const known = (blockOptionPreview
+      ? block.units.map((id) => blockOptionPreview.units.find((u) => u.id === id) ?? units.get(id)!)
+      : block.units.map((id) => units.get(id)!)
+    ).filter(Boolean),
       // A .bib edit is shown entry by entry, every field, rather than as
       // the bibliography's typeset lines alone.
       bib = detail!.references?.entries.filter((e) => (e.units ?? [e.unit]).some((id) => block.units.includes(id))) ?? [],
@@ -1363,6 +1726,15 @@ export function ReviewApp({
       expanded = focusedBlock || browsing || index === linkedChange || reviewAgain,
       // A reverted change shows the text that is back on disk; staged and
       // unstaged ones keep their before and after.
+      acceptedMixed =
+        !changes && !history && reviewed && block.units.every((id) => decisions[id] === "accepted" || decisions[id] === "rejected")
+          ? block.units.filter((id) => decisions[id] === "accepted").sort()
+          : [],
+      mixedKey =
+        acceptedMixed.length > 0 && acceptedMixed.length < block.units.length
+          ? `${detail!.round}:${index}:${acceptedMixed.join(",")}`
+          : null,
+      mixedPreview = mixedKey ? mixedPreviews[mixedKey] : undefined,
       resolved = focusedBlock || history || index === linkedChange
         ? undefined
         : changes
@@ -1370,7 +1742,11 @@ export function ReviewApp({
             ? "before"
             : undefined
           : resolvedSide(block.units, decisions) ||
-            (status === "commented" ? "after" : undefined),
+            (status === "commented"
+              ? "after"
+              : mixedPreview?.status === "ready" && mixedPreview.strips?.length
+                ? "mixed"
+                : undefined),
       source = openSource.has(index),
       hasStrips = block.before.length > 0 || block.after.length > 0,
       blockEffects = known.filter((u) => u.effects && firstStop.get(u.id) === index),
@@ -1407,6 +1783,14 @@ export function ReviewApp({
         : changeKinds(known)
             .map((kind) => t(KIND[kind]))
             .join(", ");
+    const meta = blockUnitStatic.get(index),
+      subUnits = meta?.subUnits ?? [],
+      multiUnit = Boolean(meta && !block.waiting && !focused && !resolved && (!reviewed || expanded)),
+      selectableSet = multiUnit ? meta!.selectableSet : undefined,
+      activeUnit = multiUnit ? focusedUnitAt(index) : null,
+      decidedInBlock = multiUnit ? subUnits.filter((id) => decisions[id] !== "pending").length : 0,
+      blockHoveredUnit = multiUnit && hoveredUnit?.stop === index ? hoveredUnit.unit : null,
+      blockUnitStatesMap = multiUnit ? blockUnitStates.get(index) : undefined;
     const images = (items: Strip[], side: "before" | "after") => (
       <div
         className={`side ${side}${block.identical ? " identical" : ""}`}
@@ -1414,12 +1798,20 @@ export function ReviewApp({
       >
         {items.map((image) => (
           <PdfStrip
-            key={image.src}
+            key={`${stripBase}${image.src}`}
             image={image}
-            base={detail!.files}
+            base={stripBase}
             label={side === "before" ? t("Before") : t("After")}
             clean={Boolean(resolved)}
             focus={focused}
+            stopIndex={multiUnit ? index : undefined}
+            side={side}
+            unitStates={blockUnitStatesMap}
+            activeUnit={activeUnit}
+            hoveredUnit={blockHoveredUnit}
+            selectableUnits={selectableSet}
+            onHoverUnit={multiUnit ? handleHoverUnit : undefined}
+            onSelectUnit={multiUnit ? handleSelectUnit : undefined}
           />
         ))}
       </div>
@@ -1431,6 +1823,7 @@ export function ReviewApp({
         data-note-focus={focused ? "true" : undefined}
         data-stop={index}
         data-units={block.units.join(" ")}
+        data-active-unit={activeUnit || undefined}
         data-option-preview={previewing ? "true" : undefined}
         data-state={status}
         data-resolved={resolved}
@@ -1444,15 +1837,19 @@ export function ReviewApp({
       >
         {reviewed && !expanded && !resolved && (
           <p className="reviewed-placeholder">
-            <button
-              className="link"
-              onClick={() => {
-                setHistory(true);
-                select(index, false);
-              }}
-            >
-              {t("Reviewed changes · View in History")}
-            </button>
+            {mixedPreview?.status === "loading" ? (
+              <span className="mixed-compiling" role="status">{t("Updating changes…")}</span>
+            ) : (
+              <button
+                className="link"
+                onClick={() => {
+                  setHistory(true);
+                  select(index, false);
+                }}
+              >
+                {t("Reviewed changes · View in History")}
+              </button>
+            )}
           </p>
         )}
         <header className="change-head">
@@ -1469,6 +1866,13 @@ export function ReviewApp({
           >
             {shortLocation(known, t)}
           </span>
+          {multiUnit && current !== index && (
+            <span className="change-multi-count">
+              {decidedInBlock > 0
+                ? `${decidedInBlock}/${subUnits.length}`
+                : t("{n} edits", { n: subUnits.length })}
+            </span>
+          )}
           {actionBar(index)}
           {kindLabel && !block.waiting && <span className="change-kind" title={kindLabel}>{kindLabel}</span>}
           {(() => {
@@ -1589,9 +1993,22 @@ export function ReviewApp({
         )}
         {!block.identical &&
           !block.reflow &&
-          block.before.length > 0 &&
-          images(block.before, "before")}
-        {block.after.length > 0 && images(block.after, "after")}
+          displayBefore.length > 0 &&
+          images(displayBefore, "before")}
+        {displayAfter.length > 0 && images(displayAfter, "after")}
+        {resolved === "mixed" && mixedPreview?.strips?.length && mixedPreview.files && (
+          <div className="side after mixed-resolved" aria-label={t("After")}>
+            {mixedPreview.strips.map((image) => (
+              <PdfStrip
+                key={image.src}
+                image={image}
+                base={mixedPreview.files!}
+                label={t("After")}
+                clean
+              />
+            ))}
+          </div>
+        )}
         {unavailableNotice && (
           <div className="comparison-notice" data-reason={unavailableNotice.reason}>
             <p className="comparison-notice-text">{unavailableNotice.message}</p>

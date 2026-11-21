@@ -4,6 +4,7 @@ import { applyUnits, diffUnits, revertUnits } from "../../src/core/changes.ts";
 import { merge3Async } from "../../src/core/git.ts";
 import { textEdits, textTokens } from "../../src/core/text-edits.ts";
 import { wordDiff } from "../../src/web/model.ts";
+import { mergeUnitMarks } from "../../src/web/PdfStrip.tsx";
 let f: Fixture;
 beforeEach(() => {
   f = new Fixture();
@@ -373,4 +374,19 @@ it("keeps a rewritten sentence intact instead of splitting on stray common words
     "First one two.\r\n\r\nSecond three four.\r\n",
   );
   expect(crlf).toHaveLength(2);
+});
+
+it("merges adjacent same-line marks per unit without merging across different units", () => {
+  const merged = mergeUnitMarks([
+    { unit: "u1", kind: "added", rect: [10, 12, 40, 22] },
+    // Taller word on the same line (smaller y0) after a lowercase word must still merge.
+    { unit: "u1", kind: "added", rect: [44, 9, 80, 22] },
+    { unit: "u2", kind: "added", rect: [84, 10, 120, 22] },
+    { unit: "u1", kind: "added", rect: [10, 28, 50, 40] },
+  ]);
+  expect(merged).toEqual([
+    { unit: "u1", kind: "added", rect: [10, 9, 80, 22] },
+    { unit: "u1", kind: "added", rect: [10, 28, 50, 40] },
+    { unit: "u2", kind: "added", rect: [84, 10, 120, 22] },
+  ]);
 });

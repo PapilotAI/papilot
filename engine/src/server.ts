@@ -13,6 +13,7 @@ import { Tasks } from "./core/tasks.ts";
 import { Review } from "./core/review.ts";
 import { useNoteOption, type OptionInput } from "./core/note-options.ts";
 import { previewNoteOption } from "./core/option-preview.ts";
+import { previewMixedBlock, type MixedPreviewInput } from "./core/mixed-preview.ts";
 import { SourceEdits } from "./core/source-edit.ts";
 import { Reconciliations } from "./core/reconcile.ts";
 import { Deliveries } from "./core/delivery.ts";
@@ -303,6 +304,41 @@ export function createServer(app: App) {
         reply.header("Cache-Control", "private, max-age=31536000, immutable").type(file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".pdf") ? "application/pdf" : "image/png");
         return fs.createReadStream(target);
       });
+    server.post<{ Params: { name: string; number: string }; Body: MixedPreviewInput }>(
+      "/api/tasks/:name/rounds/:number/mixed",
+      {
+        schema: {
+          body: {
+            ...{ type: "object" as const },
+            required: ["units", "accepted"],
+            properties: {
+              units: { type: "array", items: { type: "string" } },
+              accepted: { type: "array", items: { type: "string" } },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        const { name, number } = request.params;
+        if (!/^\d+$/.test(number)) return reply.code(404).send({ error: "No such round" });
+        return previewMixedBlock(app, app.tasks.get(name, false).name, Number(number), request.body);
+      },
+    );
+    server.get<{ Params: { name: string; number: string; key: string; file: string } }>(
+      "/mixed-files/:name/:number/:key/:file",
+      (request, reply) => {
+        const { name, number, key, file } = request.params;
+        const task = app.tasks.get(name, false);
+        if (!/^\d+$/.test(number) || !/^[a-f0-9]{64}$/.test(key) || !/^[\w.-]+\.(svg|png)$/.test(file))
+          return reply.code(404).send({ error: "No such file" });
+        const root = path.resolve(app.state, "cache/mixed-previews");
+        const target = path.resolve(root, task.name, String(Number(number)), key, file);
+        if (!target.startsWith(root + path.sep)) return reply.code(404).send({ error: "No such file" });
+        if (!fs.existsSync(target)) return reply.code(404).send({ error: "No such file" });
+        reply.header("Cache-Control", "private, max-age=31536000, immutable").type(file.endsWith(".svg") ? "image/svg+xml" : "image/png");
+        return fs.createReadStream(target);
+      },
+    );
     server.post<{ Params: { name: string }; Body: OptionInput }>("/api/tasks/:name/source/options",
       request => useNoteOption(app, app.tasks.get(request.params.name).name, request.body));
     server.get<{ Params: { name: string; number: string }; Querystring: { proposedFor?: string } }>(

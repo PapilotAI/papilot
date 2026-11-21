@@ -97,6 +97,25 @@ it("serves note preview assets only inside the cache for a recorded task", async
     expect((await server.inject({ method: "POST", url: `/api/tasks/${task.name}${suffix}`, headers: { host: "127.0.0.1:9" }, payload: {} })).statusCode).toBe(403);
     expect((await server.inject({ method: "POST", url: `/api/tasks/..%2Foutside${suffix}`, headers: headers(), payload: {} })).statusCode).toBe(400);
   }
+  // Mixed-block preview assets share the same cache containment and CSRF protections.
+  const mixedDir = path.join(app.state, "cache/mixed-previews", task.name, "1", key);
+  fs.mkdirSync(mixedDir, { recursive: true });
+  fs.writeFileSync(path.join(mixedDir, "strip.svg"), "<svg>mixed</svg>");
+  const mixedBase = `/mixed-files/${task.name}/1/${key}/`;
+  const mixedOk = await server.inject({ url: mixedBase + "strip.svg", headers: headers() });
+  expect(mixedOk.statusCode).toBe(200);
+  expect(mixedOk.body).toBe("<svg>mixed</svg>");
+  for (const url of [
+    mixedBase + "..%2F..%2F..%2F..%2Foutside.svg",
+    mixedBase.replace("/options/", "/unknown/") + "strip.svg",
+    mixedBase.replace(key, "a".repeat(63)) + "strip.svg",
+  ]) {
+    const response = await server.inject({ url, headers: headers() });
+    expect(response.statusCode, url).toBeGreaterThanOrEqual(400);
+    expect(response.body, url).not.toContain("outside-secret");
+  }
+  expect((await server.inject({ method: "POST", url: `/api/tasks/${task.name}/rounds/1/mixed`, headers: { host: "127.0.0.1:9" }, payload: {} })).statusCode).toBe(403);
+  expect((await server.inject({ method: "POST", url: `/api/tasks/..%2Foutside/rounds/1/mixed`, headers: headers(), payload: {} })).statusCode).toBe(400);
   expect(fs.readFileSync(outside, "utf8")).toBe("outside-secret");
 });
 it("validates action schemas and serves immutable compressed vectors", async () => {

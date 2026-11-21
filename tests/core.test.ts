@@ -78,6 +78,14 @@ test('review proxy only exposes review routes and keeps assets on the remote ori
   assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/references', 'POST'), false);
   assert.ok(allowedReviewRoute('/api/tasks/p-test/rounds/1/references/confirm', 'POST'));
   assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/references/confirm', 'GET'), false);
+  assert.ok(allowedReviewRoute('/api/tasks/p-test/rounds/1/mixed', 'POST'));
+  assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/mixed', 'GET'), false);
+  const mixedKey = 'a'.repeat(64);
+  assert.ok(allowedReviewRoute(`/mixed-files/p-test/1/${mixedKey}/strip.svg`, 'GET'));
+  assert.equal(allowedReviewRoute(`/mixed-files/p-test/1/${mixedKey}/strip.svg`, 'POST'), false);
+  assert.equal(allowedReviewRoute('/mixed-files/p-test/1/abc123def456/strip.svg', 'GET'), false);
+  assert.equal(allowedReviewRoute(`/mixed-files/p-test/1/${mixedKey}/secret.sqlite`, 'GET'), false);
+  assert.equal(allowedReviewRoute('/mixed-files/p-test/1/../secret.svg', 'GET'), false);
   assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/effects/../x', 'GET'), false);
   assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/effects/c001', 'POST'), false);
   assert.equal(allowedReviewRoute('/api/shutdown', 'POST'), false);
@@ -88,8 +96,9 @@ test('review proxy only exposes review routes and keeps assets on the remote ori
   // What the review page looks at, so its PDF builds first.
   assert.ok(allowedReviewRoute('/api/tasks/p-test/look', 'POST'));
   assert.equal(allowedReviewRoute('/api/tasks/p-test/look', 'GET'), false);
-  const value = rewriteReviewJson({ files: '/files/p-test/1/', url: 'http://127.0.0.1:1234/?task=p-test', body: 'Keep my text' }, '/review/project');
+  const value = rewriteReviewJson({ files: '/files/p-test/1/', mixed: '/mixed-files/p-test/1/abc123def456/', url: 'http://127.0.0.1:1234/?task=p-test', body: 'Keep my text' }, '/review/project');
   assert.equal(value.files, '/review/project/files/p-test/1/');
+  assert.equal(value.mixed, '/review/project/mixed-files/p-test/1/abc123def456/');
   assert.equal(value.url, '/review/project/?task=p-test');
   assert.equal(value.body, 'Keep my text');
   const html = rewriteReviewHtml('<html><head><script src="/assets/app.js"></script><link href="/assets/app.css"></head></html>', '/review/project');

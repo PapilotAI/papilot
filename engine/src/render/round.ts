@@ -30,6 +30,7 @@ import type {
   RenderedRound,
   RenderRequest,
   SourceBox,
+  Strip,
   Unit,
 } from "../types.ts";
 export function typesetWords(text: string) {
@@ -475,6 +476,147 @@ export function renderMore(out: string, unit: string): PlaceView[] {
     return views;
   } finally {
     old.close();
+    next.close();
+  }
+}
+
+export interface MixedCropSpec {
+  page: number;
+  top: number;
+  height: number;
+  left?: number;
+  width: number;
+}
+
+/** Crop a single change block's full span from `request.new` (a mixed-decision
+ *  build) by aligning `request.old`'s reference strips to `request.new`. Keeps
+ *  accepted edits, rejected original lines, and any intervening unchanged lines
+ *  intact without pulling in unrelated regions elsewhere in the document. */
+export function renderMixed(
+  request: Pick<RenderRequest, "main" | "source_dir" | "old" | "new"> & {
+    mixed: MixedCropSpec[];
+  },
+  out: string,
+): Strip[] {
+  const ref = new Build(request.old, request.main, request.source_dir),
+    next = new Build(request.new, request.main, request.source_dir);
+  try {
+    const al = alignment(ref, next),
+      boxes: { page: number; top: number; bottom: number; left: number; right: number }[] = [];
+    for (const s of request.mixed) {
+      // Strip.page is 1-based while Alignment and PdfDocument use 0-based page indices.
+      const sPage = s.page - 1,
+        sBottom = s.top + s.height,
+        sRight = s.left !== undefined ? s.left + s.width : undefined;
+      const lines: number[] = [];
+      for (let i = 0; i < al.old.parts.length; i++) {
+        const hit = al.old.parts[i].some((part) => {
+          if (part.page !== sPage) return false;
+          const midY = (part.rect[1] + part.rect[3]) / 2;
+          if (midY < s.top - 1 || midY > sBottom + 1) return false;
+          if (s.left !== undefined && sRight !== undefined) {
+            const midX = (part.rect[0] + part.rect[2]) / 2;
+            if (midX < s.left - 1 || midX > sRight + 1) return false;
+          }
+          return true;
+        });
+        if (hit) lines.push(i);
+      }
+      if (!lines.length) {
+        if (sPage >= 0 && sPage < next.document.length) {
+          boxes.push({
+            page: sPage,
+            top: s.top,
+            bottom: sBottom,
+            left: s.left ?? 0,
+            right: sRight ?? next.document.page(sPage).width,
+          });
+        }
+        continue;
+      }
+      const lo = lines[0],
+        hi = lines[lines.length - 1];
+      let newLo = al.match[lo];
+      if (newLo < 0) {
+        let p = lo - 1;
+        while (p >= 0 && al.match[p] < 0) p--;
+        newLo = p >= 0 ? al.match[p] + 1 : 0;
+      }
+      let newHi = al.match[hi];
+      if (newHi < 0) {
+        let q = hi + 1;
+        while (q < al.old.lines.length && al.match[q] < 0) q++;
+        newHi = q < al.old.lines.length ? al.match[q] - 1 : al.new.lines.length - 1;
+      }
+      newLo = Math.max(0, newLo);
+      newHi = Math.min(al.new.lines.length - 1, newHi);
+      if (newLo > newHi) continue;
+      const groups = new Map<string, { page: number; column: number; top: number; bottom: number }>();
+      for (let k = newLo; k <= newHi; k++) {
+        for (const part of al.new.parts[k]) {
+          const gk = `${part.page}:${part.column}`,
+            existing = groups.get(gk);
+          if (existing) {
+            existing.top = Math.min(existing.top, part.rect[1]);
+            existing.bottom = Math.max(existing.bottom, part.rect[3]);
+          } else {
+            groups.set(gk, {
+              page: part.page,
+              column: part.column,
+              top: part.rect[1],
+              bottom: part.rect[3],
+            });
+          }
+        }
+      }
+      const prevParts = newLo > 0 ? al.new.parts[newLo - 1] : [],
+        nextParts = newHi + 1 < al.new.parts.length ? al.new.parts[newHi + 1] : [];
+      for (const group of groups.values()) {
+        let top = group.top - 2,
+          bottom = group.bottom + 2;
+        const prevSame = prevParts.find((p) => p.page === group.page && p.column === group.column);
+        if (prevSame && prevSame.rect[3] <= group.top) {
+          top = Math.max(top, (prevSame.rect[3] + group.top) / 2);
+        }
+        const nextSame = nextParts.find((p) => p.page === group.page && p.column === group.column);
+        if (nextSame && nextSame.rect[1] >= group.bottom) {
+          bottom = Math.min(bottom, (group.bottom + nextSame.rect[1]) / 2);
+        }
+        boxes.push({
+          page: group.page,
+          top,
+          bottom,
+          left: s.left ?? 0,
+          right: sRight ?? next.document.page(group.page).width,
+        });
+      }
+    }
+    boxes.sort((a, b) => a.page - b.page || a.left - b.left || a.top - b.top);
+    const merged: typeof boxes = [];
+    for (const box of boxes) {
+      const prev = merged.at(-1);
+      if (
+        prev &&
+        prev.page === box.page &&
+        Math.abs(prev.left - box.left) < 1 &&
+        Math.abs(prev.right - box.right) < 1 &&
+        box.top <= prev.bottom + 1
+      ) {
+        prev.bottom = Math.max(prev.bottom, box.bottom);
+      } else {
+        merged.push({ ...box });
+      }
+    }
+    const strips = new Strips(out),
+      written: Strip[] = [];
+    for (const box of merged) {
+      const strip = strips.write(next.document, box.page, box.top, box.bottom, [], "", [box.left, box.right]);
+      if (strip) written.push(strip);
+    }
+    writeJson(path.join(out, "mixed.json"), { strips: written });
+    return written;
+  } finally {
+    ref.close();
     next.close();
   }
 }
