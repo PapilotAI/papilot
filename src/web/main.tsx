@@ -9,7 +9,7 @@ import { SectionNotePicker } from './section-note-picker.tsx';
 import { useNoteSelection } from './note-selection.tsx';
 import { ClearAnnotationsDialog } from './clear-annotations-dialog.tsx';
 import { useGroupInstructions } from './group-instructions.ts';
-import { markText, NoteQuote } from './note-content.tsx';
+import { markText, NoteQuote, SubmittedNoteContent } from './note-content.tsx';
 import { NoteAttachButton, PdfNoteCard, TaskRemoveButton } from './pdf-suggestion.tsx';
 import { StrictMode, Suspense, lazy, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -249,12 +249,7 @@ function NotesMessage({ item, notes }: { item: TimelineItem; notes: NoteSummary[
   const renderNote = (note: NoteSummary, index: number) => <li key={index} data-note-result={`${item.id}:${index}`} tabIndex={0} data-returned={results?.notes.find(result => result.key === `${item.id}:${index}`)?.returned || undefined}
     onClick={event => { if (!(event.target as Element).closest('button, input, textarea, a, [role="radiogroup"]')) results?.focusNote(`${item.id}:${index}`); }}
     onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); results?.focusNote(`${item.id}:${index}`); } }} className={results?.selected === `${item.id}:${index}` ? 'linked-note-selected' : ''}>
-      <div className="sent-note-heading">
-        <span className="sent-note-where"><span className="sent-note-number" aria-hidden="true">{index + 1}</span><span className="sent-note-location">{noteLocation(note.where)}</span></span>
-        <NoteReturnAction noteKey={`${item.id}:${index}`}/>
-      </div>
-      {note.quote ? <blockquote data-kind={note.kind}>{note.quote}</blockquote> : <span className="sent-note-region">{t('Marked region')}</span>}
-      {(note.comment || note.kind === 'delete') && <p>{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{markText(note)}</p>}
+      <SubmittedNoteContent note={note} index={index}><NoteReturnAction noteKey={`${item.id}:${index}`}/></SubmittedNoteContent>
       <NoteReturnError noteKey={`${item.id}:${index}`}/>
     </li>;
   return <article className="message user notes-message" aria-label={senderLabel(sender, item.createdAt)}><SenderName sender={sender}/><div className="message-body" title={time(item.createdAt)}>

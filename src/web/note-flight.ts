@@ -29,7 +29,7 @@ function fly(ghost: HTMLElement, box: DOMRect, destination: DOMRect, delay = 0, 
   ghost.setAttribute('aria-hidden', 'true'); ghost.inert = true;
   // A popover's copy keeps its placement and entrance; the flight sets both.
   Object.assign(ghost.style, { left: '0', top: '0', width: `${box.width}px`, height: `${box.height}px`, maxHeight: 'none', visibility: 'visible', animation: 'none' });
-  document.body.append(ghost);
+  if (!ghost.isConnected) document.body.append(ghost);
   const scale = Math.min(destination.width / box.width, destination.height / box.height);
   const start = { x: box.left, y: box.top };
   const end = { x: destination.left + (destination.width - box.width * scale) / 2, y: destination.top + (destination.height - box.height * scale) / 2 };
@@ -115,29 +115,47 @@ export function returnNotes(cards: HTMLElement[]) {
 
 const submittedFlights = new Map<string, Animation>();
 
-// Both directions carry the annotation icon between the original note
-// and the manuscript count, including when the review drawer shows the note.
+// Chat scrolls independently of the window. A row behind its composer can
+// still have on-screen coordinates even though none of its content is visible.
+function visibleChatBox(row: HTMLElement) {
+  const rect = row.getBoundingClientRect();
+  const pane = row.closest('.messages')?.getBoundingClientRect();
+  const left = Math.max(0, rect.left, pane?.left ?? 0), right = Math.min(innerWidth, rect.right, pane?.right ?? innerWidth);
+  const top = Math.max(0, rect.top, pane?.top ?? 0), bottom = Math.min(innerHeight, rect.bottom, pane?.bottom ?? innerHeight);
+  if (right <= left || bottom <= top || !row.contains(document.elementFromPoint((left + right) / 2, (top + bottom) / 2))) return;
+  return new DOMRect(left, top, right - left, bottom - top);
+}
+
+// The review drawer can be open while Chat and its original card are offscreen.
 export function animateSubmittedNote(key: string, source: HTMLElement, returned: boolean) {
   submittedFlights.get(key)?.cancel();
   const target = [...document.querySelectorAll<HTMLElement>('[data-notes-home="manuscript"]')].find(visible);
   if (!target || !visible(source)) return;
   if (still()) { if (returned) receive(target, 1); return; }
-  const symbol = source.querySelector('.note-return-symbol');
-  const icon = symbol?.querySelector(returned ? 'svg:first-child' : 'svg:last-child');
-  if (!symbol || !icon) return;
+
+  const original = document.querySelector<HTMLElement>(`[data-note-result="${CSS.escape(key)}"]`);
+  const contents = original ?? source.querySelector('.submitted-note-source');
+  if (!contents) return;
   const card = document.createElement('div');
-  card.className = 'submitted-note-flight';
+  card.className = 'sent-notes note-flight submitted-note-flight';
   card.dataset.noteKey = key;
-  card.append(icon.cloneNode(true));
-  const rect = symbol.getBoundingClientRect();
-  const box = new DOMRect(rect.left - 5, rect.top - 5, rect.width + 10, rect.height + 10);
+  card.inert = true;
+  card.setAttribute('aria-hidden', 'true');
+  for (const child of contents.children) card.append(child.cloneNode(true));
+  card.querySelectorAll('.note-disposition, .note-return-error').forEach(control => control.remove());
+
+  const chatBox = original && visibleChatBox(original);
+  const rect = chatBox || source.getBoundingClientRect();
+  const width = Math.min(innerWidth - 16, chatBox ? rect.width : 300);
+  card.style.width = `${width}px`;
+  document.body.append(card);
+  const height = card.offsetHeight;
+  const left = Math.max(8, Math.min(rect.left, innerWidth - width - 8));
+  const top = Math.max(4, Math.min(chatBox ? rect.top : rect.top - height, innerHeight - height - 4));
   const count = target.querySelector('.manuscript-note-count') ?? target;
-  const flight = fly(card, box, count.getBoundingClientRect(), 0, returned ? 'normal' : 'reverse');
-  // Reveal the updated icon in its place when the moving copy arrives.
-  const inTransit = symbol.animate({ opacity: [0, 0] }, { duration: flight.effect!.getTiming().duration });
+  const flight = fly(card, new DOMRect(left, top, width, height), count.getBoundingClientRect(), 0, returned ? 'normal' : 'reverse');
   submittedFlights.set(key, flight);
   void flight.finished.then(() => { if (returned && target.isConnected) receive(target, 1); }, () => {}).finally(() => {
-    inTransit.cancel();
     if (submittedFlights.get(key) === flight) submittedFlights.delete(key);
   });
 }

@@ -230,6 +230,21 @@ try {
       assert.equal(decisions.c, 'pending');
       assert.deepEqual([...returned], []);
       saveFails = false;
+      // The split view can keep a Chat row mounted with its contents clipped.
+      const clipped = width === 1440 ? await page.addStyleTag({ content: '.messages { clip-path: inset(100% 0 0); }' }) : null;
+      await page.evaluate(() => {
+        window.noteCards = [];
+        window.cardStart = null;
+        new MutationObserver(records => {
+          for (const record of records) for (const el of record.addedNodes) {
+            if (el instanceof HTMLElement && el.matches('.submitted-note-flight')) {
+              const first = el.getAnimations()[0].effect.getKeyframes()[0];
+              window.cardStart = new DOMMatrix(first.transform).m41;
+              window.noteCards.push([el.querySelector('blockquote')?.textContent, el.querySelector('p')?.textContent, el.querySelector('button') === null]);
+            }
+          }
+        }).observe(document.body, { childList: true });
+      });
       await drawer.getByRole('button', { name: 'Reject Original c', exact: true }).click();
       await expect.poll(() => decisions.c).toBe('rejected');
       const undoReturn = drawer.getByRole('button', { name: 'Note 4 · Undo return to manuscript' });
@@ -237,7 +252,16 @@ try {
       await expect(undoReturn).toHaveText('');
       await expect(page.locator('[data-note-result="run:3"]')).toHaveAttribute('data-returned', 'true');
       assert.deepEqual([...returned], [3]);
+      const contents = [annotations[3].quote, annotations[3].comment, true];
+      await expect.poll(() => page.evaluate(() => window.noteCards)).toEqual([contents]);
       await undoReturn.click();
+      await expect.poll(() => page.evaluate(() => window.noteCards)).toEqual([contents, contents]);
+      if (clipped) {
+        const pager = await drawer.locator('.review-note-pager').boundingBox();
+        const start = await page.evaluate(() => window.cardStart);
+        assert.ok(Math.abs(start - pager.x) < 2, 'The note flies from and to the visible drawer when Chat is clipped');
+        await clipped.evaluate(el => el.remove());
+      }
       await expect(drawer.getByRole('button', { name: 'Note 4 · Return to manuscript' })).toBeEnabled();
       await expect(drawer.getByRole('button', { name: 'Continue in this task' })).toHaveCount(0);
       await expect(drawer.getByRole('button', { name: 'New task', exact: true })).toHaveCount(0);

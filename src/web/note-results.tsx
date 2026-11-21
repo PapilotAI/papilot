@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffe
 import type { Annotation, NoteChange, NoteResult, NoteReturnState, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
 import { readNotesInstructions } from '../notes.ts';
 import { NoteOptionDiff, NoteOptionSource } from './note-option-diff.tsx';
+import { SubmittedNoteContent } from './note-content.tsx';
 import { animateSubmittedNote } from './note-flight.ts';
 import { Icon } from './icons.tsx';
 import { errorText, t } from './i18n.ts';
@@ -236,7 +237,7 @@ export function NoteReturnAction({ noteKey }: { noteKey: string }) {
       onClick={event => {
         const source = event.currentTarget.closest<HTMLElement>('[data-note-result], .review-note-pager');
         if (source && !pending) links.returnNote!(noteKey, source);
-      }}><span className="note-return-symbol"><Icon name="checkedManuscriptNote"/><Icon name="manuscriptNote"/></span></button>
+      }}><Icon name={note.returned ? 'manuscriptNote' : 'checkedManuscriptNote'}/></button>
   </span>;
 }
 
@@ -337,6 +338,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     <span className="review-note-position" aria-live="polite" aria-atomic="true" aria-label={t('Note {n} of {total}', { n: index + 1, total: siblings.length })}>{t('Note {n}', { n: index + 1 })}<span aria-hidden="true"> / </span>{siblings.length}</span>
     <button type="button" className="icon-button" data-direction="next" aria-label={t('Next note')} title={t('Next note')} disabled={index >= siblings.length - 1} onClick={() => move(1)}><Icon name="chevronRight" size={14}/></button>
     <NoteReturnAction noteKey={displayed.key}/>
+    <div hidden className="submitted-note-source"><SubmittedNoteContent note={displayed.note} index={displayed.index}/></div>
   </nav>;
   const emptyHeader = <div className="note-option-navigation">{navigation}</div>;
   return <section ref={panel} className="review-note-controls" data-open={Boolean(note)} inert={!note} aria-label={t('Options for this note')}>

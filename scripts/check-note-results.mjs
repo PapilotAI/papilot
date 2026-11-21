@@ -397,7 +397,7 @@ try {
     new MutationObserver(records => {
       for (const record of records) for (const card of record.addedNodes) {
         if (card instanceof HTMLElement && card.matches('.submitted-note-flight')) {
-          window.submittedNoteFlights.push([card.getAnimations()[0].effect.getTiming().direction, card.dataset.noteKey, card.querySelector('svg path:last-child')?.getAttribute('d')]);
+          window.submittedNoteFlights.push([card.getAnimations()[0].effect.getTiming().direction, card.dataset.noteKey, card.querySelector('blockquote')?.textContent, card.querySelector('.sent-note-location')?.textContent, Boolean(card.querySelector('button'))]);
         }
       }
     }).observe(document, { childList: true, subtree: true });
@@ -428,7 +428,8 @@ try {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await toggle(controls()).focus();
   await page.keyboard.press('Enter');
-  const outward = ['normal', 'request-1:1', check];
+  const card = ['request-1:1', originals[1].quote, originals[1].where, false];
+  const outward = ['normal', ...card];
   await expect.poll(flights).toEqual([outward]);
   await expect(page.locator('[data-notes-home="manuscript"].notes-received')).toBeVisible();
   await expect(toggle(controls())).toHaveAccessibleName('Note 2 · Undo return to manuscript');
@@ -446,7 +447,7 @@ try {
   failUndo = false;
   await toggle(controls()).focus();
   await page.keyboard.press('Space');
-  await expect.poll(flights).toEqual([outward, ['reverse', 'request-1:1', mutedIcon]]);
+  await expect.poll(flights).toEqual([outward, ['reverse', ...card]]);
   await expect(toggle(controls())).toHaveAccessibleName('Note 2 · Return to manuscript');
   await expect(toggle(controls()).locator('svg:visible path').last()).toHaveAttribute('d', check);
   await expect(toggle(controls())).toBeFocused();

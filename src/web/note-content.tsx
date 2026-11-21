@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { t } from './i18n.ts';
-import type { MarkKind } from '../shared.ts';
+import { Icon } from './icons.tsx';
+import { noteLocation } from './note-location.ts';
+import type { MarkKind, NoteSummary } from '../shared.ts';
 
 // A delete mark's text says what happens to the marked passage.
 export const markText = (note: { kind?: MarkKind; comment: string }) => note.kind === 'delete' ? note.comment.trim() ? t('Replace with: {text}', { text: note.comment.trim() }) : t('Delete this text') : note.comment;
@@ -14,4 +16,15 @@ export function NoteBody({ children }: { children: ReactNode }) {
   return <div className="note-body" role="group" aria-label={t('Your note')}>
     {children}
   </div>;
+}
+
+export function SubmittedNoteContent({ note, index, children }: { note: NoteSummary; index: number; children?: ReactNode }) {
+  return <>
+    <div className="sent-note-heading">
+      <span className="sent-note-where"><span className="sent-note-number" aria-hidden="true">{index + 1}</span><span className="sent-note-location">{noteLocation(note.where)}</span></span>
+      {children}
+    </div>
+    {note.quote ? <blockquote data-kind={note.kind}>{note.quote}</blockquote> : <span className="sent-note-region">{t('Marked region')}</span>}
+    {(note.comment || note.kind === 'delete') && <p>{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{markText(note)}</p>}
+  </>;
 }
