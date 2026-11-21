@@ -21,34 +21,100 @@ The JSON shape above illustrates two alternatives; use the requested range for t
 
 const fenceLine = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)/;
 
-// Share fence recognition between the visible reply and the options reader.
-// A marker inside an unrelated fenced block is example text.
+// Some agents omit the reserved fence or label it as ordinary JSON. Only
+// recognize a standalone object with the structure of prepared choices.
+function choiceObject(text: string) {
+  try {
+    const value = JSON.parse(text);
+    return Object.keys(value).length === 1 && Array.isArray(value.notes) && value.notes.length > 0 && value.notes.every((entry: any) =>
+      Number.isInteger(entry?.note) && typeof entry.current?.label === 'string' && typeof entry.current.reason === 'string'
+      && Array.isArray(entry.options) && entry.options.every((option: any) => typeof option?.label === 'string'
+        && typeof option.reason === 'string' && Array.isArray(option.edits)
+        && option.edits.every((edit: any) => typeof edit?.file === 'string' && typeof edit.find === 'string' && typeof edit.replace === 'string')));
+  } catch { return false; }
+}
+
+// Find the end without treating braces or escaped quotes in LaTeX edits as
+// delimiters. The rest of the assistant's message can follow the closing brace.
+function objectEnd(text: string, start: number) {
+  let depth = 0, quoted = false;
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+    if (quoted && char === '\\') i++;
+    else if (char === '"') quoted = !quoted;
+    else if (!quoted && (char === '{' || char === '[')) depth++;
+    else if (!quoted && (char === '}' || char === ']') && --depth === 0) return i + 1;
+  }
+  return -1;
+}
+
+function unmarkedOptions(text: string, streaming: boolean) {
+  let summary = '', cursor = 0, payload: string | undefined, hidden = false;
+  const objects = /^[ \t]*[[{]/gm;
+  for (let match; (match = objects.exec(text));) {
+    const start = objects.lastIndex - 1;
+    const tail = text.slice(start);
+    // Hold the ambiguous prefix until we know whether it is normal JSON.
+    const prefix = tail.slice(0, 80).replace(/\s/g, '');
+    const possible = /^\{\s*"notes"\s*:/.test(tail) || (streaming && '{"notes":'.startsWith(prefix));
+    // Skip ordinary JSON as a unit, including an array of example objects.
+    if (!possible && !/^\{\s*["}]|^\[\s*(?:["{[\]0-9-]|true|false|null)/.test(tail)) continue;
+    const end = objectEnd(text, start);
+    if (!possible) {
+      if (end === -1) break;
+      objects.lastIndex = end;
+      continue;
+    }
+    const candidate = end === -1 ? tail : text.slice(start, end);
+    if (end === -1 ? streaming || /^\{\s*"notes"\s*:\s*\[\s*\{\s*"note"\s*:\s*\d+[\s\S]*?"current"\s*:\s*\{[\s\S]*?"options"\s*:\s*\[/.test(candidate) : choiceObject(candidate)) {
+      hidden = true;
+      summary += text.slice(cursor, match.index);
+      cursor = end === -1 ? text.length : end;
+      if (end !== -1) payload ??= candidate;
+    }
+    if (end === -1) break;
+    objects.lastIndex = end;
+  }
+  return { summary: hidden ? (summary + text.slice(cursor)) : text, payload, hidden };
+}
+
 function scanNoteOptions(text: string, streaming: boolean) {
-  if (!text.includes('`') && !text.includes('~')) return { summary: text };
-  let summary = '', body = '', payload: string | undefined, hidden = false;
-  let fence: { delimiter: string; internal: boolean } | undefined;
+  if (!/[`~{]/.test(text)) return { summary: text };
+  let summary = '', payload: string | undefined, hidden = false, plain = '';
+  let fence: { delimiter: string; lang: string; opener: string; body: string } | undefined;
+  const flushPlain = (live: boolean) => {
+    const result = unmarkedOptions(plain, live);
+    summary += result.summary; payload ??= result.payload; hidden ||= result.hidden; plain = '';
+  };
+  const close = (closing: string) => {
+    if (!fence) return;
+    const { lang, opener, body } = fence;
+    if (lang === language) { hidden = true; if (closing) payload ??= body; }
+    else if (lang.toLowerCase() === 'json' || !lang) {
+      const candidate = !closing && streaming ? body.replace(/(?:^|\n) {0,3}[`~]{1,2}$/, '') : body;
+      const result = unmarkedOptions(candidate, !closing && streaming);
+      if (result.hidden && !result.summary.trim()) { hidden = true; payload ??= result.payload; }
+      else if (!closing && streaming && !candidate.trim()) hidden = true;
+      else summary += opener + body + closing;
+    } else summary += opener + body + closing;
+    fence = undefined;
+  };
   for (const line of text.match(/[^\n]*\n|[^\n]+$/g) || []) {
     const content = line.replace(/\r?\n$/, ''), opening = content.match(fenceLine);
     if (fence) {
-      const closing = opening && opening[1][0] === fence.delimiter[0]
-        && opening[1].length >= fence.delimiter.length && !opening[2].trim();
-      if (!fence.internal) summary += line;
-      else if (closing) payload ??= body;
-      else body += line;
-      if (closing) fence = undefined;
+      if (opening && opening[1][0] === fence.delimiter[0] && opening[1].length >= fence.delimiter.length && !opening[2].trim()) close(line);
+      else fence.body += line;
       continue;
     }
+    const partial = streaming && !line.endsWith('\n') && content.match(/^ {0,3}(?:`+|~+)[ \t]*([a-z-]*)$/i);
+    if (partial && (language.startsWith(partial[1]) || 'json'.startsWith(partial[1].toLowerCase()))) { hidden = true; continue; }
     if (opening && (opening[1][0] === '~' || !opening[2].includes('`'))) {
-      const internal = opening[2].trim().split(/[ \t]+/, 1)[0] === language;
-      fence = { delimiter: opening[1], internal };
-      if (internal) { hidden = true; body = ''; continue; }
-    }
-    // Hold a partial marker at the end of a stream. An ordinary code fence
-    // will appear as soon as the next chunk identifies its language.
-    const partial = streaming && !line.endsWith('\n') && content.match(/^ {0,3}(?:`+|~+)[ \t]*([a-z-]*)$/);
-    if (partial && language.startsWith(partial[1])) { hidden = true; continue; }
-    summary += line;
+      flushPlain(false);
+      fence = { delimiter: opening[1], lang: opening[2].trim().split(/[ \t]+/, 1)[0], opener: line, body: '' };
+    } else plain += line;
   }
+  if (fence) close('');
+  else flushPlain(streaming);
   return { summary: hidden ? summary.trimEnd() : summary, payload };
 }
 

@@ -73,6 +73,25 @@ test('internal fences preserve normal Markdown and prose on either side', () => 
   assert.equal(noteOptionsSummary('Ordinary marker sample\n```papilot-note-'), 'Ordinary marker sample\n```papilot-note-');
 });
 
+test('unmarked choice envelopes stay out of streamed and saved replies', () => {
+  const object = { notes: [prepared] }, raw = JSON.stringify(object, null, 2);
+  const intro = 'Revised the opening.';
+  for (const block of [raw, '```json\n' + raw + '\n```', '~~~JSON\n' + raw + '\n~~~', '```\n' + raw + '\n```']) {
+    for (let end = 1; end <= block.length; end++)
+      assert.equal(noteOptionsSummary(intro + '\n\n' + block.slice(0, end), true), intro, 'stream prefix ' + end);
+    assert.equal(noteOptionsSummary(intro + '\n\n' + block), intro);
+    assert.deepEqual(readPreparedNoteOptions(block, 1), [prepared]);
+    assert.match(noteOptionsSummary(intro + '\n' + block + '\n\n```tex\nX\n```'), /^Revised the opening\.\n+```tex/);
+  }
+  for (const ordinary of [{ notes: [] }, { notes: ['private'] }, { records: [object] }, [1, object], { ...object, example: true }]) {
+    const json = JSON.stringify(ordinary, null, 2);
+    assert.equal(noteOptionsSummary(json), json);
+    assert.equal(noteOptionsSummary('```json\n' + json + '\n```'), '```json\n' + json + '\n```');
+  }
+  assert.equal(noteOptionsSummary(raw.slice(0, raw.indexOf('"edits"') + 7)), '');
+  assert.equal(noteOptionsSummary('````text\n' + raw + '\n````'), '````text\n' + raw + '\n````');
+});
+
 test('prepared choice counts are guidance, with a bounded response size', () => {
   for (const count of [0, 1, 2, 3, 5, 6]) {
     const entry = { ...prepared, options: Array.from({ length: count }, (_, index) => ({ ...prepared.options[0], label: `Choice ${index}` })) };

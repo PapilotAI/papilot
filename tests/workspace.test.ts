@@ -140,7 +140,7 @@ test('the editing response carries prepared choices into publication without put
     assert.equal(assistant.rawText, reply);
   } finally { f.close(); }
 });
-test('plain follow-ups hide stale note choices while streaming and on completion', async () => {
+for (const format of ['reserved', 'bare'] as const) test(`plain follow-ups hide ${format} note choices while streaming and on completion`, async () => {
   const f = fixture();
   try {
     f.store.savePreference('note-alternatives', true);
@@ -154,7 +154,10 @@ test('plain follow-ups hide stale note choices while streaming and on completion
     (f.workspace as any).active.set(f.task.id, followUp);
     f.store.updateTask(f.task.id, { status: 'running', turnId: 'follow-up-turn' });
     const params = { threadId: 'thread', turnId: 'follow-up-turn', itemId: 'reply' };
-    const chunks = [
+    const chunks = format === 'bare' ? [
+      'Clarified the wording.\n\n{\n  "no', 'tes": [{ "note": 1, "current": { "label": "Short", "reason": "Clear" },',
+      ' "options": [] }]}', '\nThe references are unchanged.',
+    ] : [
       'Clarified the wording.\n\n```papilot-note-',
       'options\n{"notes":[',
       ']}\n```',

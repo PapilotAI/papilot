@@ -96,7 +96,8 @@ test('timeline reads redact internal alternatives from saved assistant replies',
     const first = await read();
     assert.deepEqual(first.items, [user, { id: assistant.id, taskId, type: 'assistant', text: 'Revised.', createdAt: 2 }, codeReply]);
     assert.equal(f.store.item(taskId, assistant.id)?.text, assistant.text, 'the original stored reply remains available to publication');
-    f.store.saveItem({ ...assistant, text: 'Checked.\n\n' + payload });
+    const raw = JSON.stringify({ notes: [{ note: 1, current: { label: 'First edit', reason: 'Clarify.' }, options: [] }] }, null, 2);
+    f.store.saveItem({ ...assistant, text: 'Checked.\n\n' + raw });
     const update = await read(first.revision);
     assert.equal(update.partial, true);
     assert.deepEqual(update.items, [{ id: assistant.id, taskId, type: 'assistant', text: 'Checked.', createdAt: 2 }]);
