@@ -1,9 +1,9 @@
 import type { RoundDetail } from '../../engine/src/types.ts';
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { NoteChange, NoteResult, NoteReturnState, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
+import type { Annotation, NoteChange, NoteResult, NoteReturnState, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
 import { readNotesInstructions } from '../notes.ts';
 import { NoteOptionDiff, NoteOptionSource } from './note-option-diff.tsx';
-import { returnSubmittedNote } from './note-flight.ts';
+import { animateSubmittedNote } from './note-flight.ts';
 import { Icon } from './icons.tsx';
 import { errorText, t } from './i18n.ts';
 import { reviewDraft, useReviewDraft } from './review-draft.ts';
@@ -87,14 +87,15 @@ interface Links {
   focusNote: (key: string) => void;
   returns: Record<string, { pending: boolean; error?: string }>;
   returnNote?: (key: string, source: HTMLElement) => void;
+  confirmReturn: (note: NoteResult, result: NonNullable<NoteOptions['noteReturn']>, source?: HTMLElement | null) => void;
   showChange: (key: string, change: NoteChange) => void; showNote: (key: string) => void;
 }
 const Context = createContext<Links | null>(null);
 export const useNoteResults = () => useContext(Context);
 
-export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, openReview, openChat, children }: {
+export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, onDecisionReturn, openReview, openChat, children }: {
   task?: Task; items: TimelineItem[]; read: (id: string) => Promise<{ notes: NoteResult[] }>;
-  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; openReview: () => void; openChat: () => void; children: ReactNode;
+  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; onDecisionReturn?: (note: Annotation) => boolean; openReview: () => void; openChat: () => void; children: ReactNode;
 }) {
   const [notes, setNotes] = useState<NoteResult[]>([]), [error, setError] = useState(false), [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(''), [focus, setFocus] = useState<NoteFocus | null>(null);
@@ -187,9 +188,15 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     })();
     return () => { cancelled = true; };
   }, [id, task?.status, task?.review?.round, task?.updatedAt, decisions, noteSignature]);
-  function confirmReturn(note: NoteResult, result: NoteReturnState, source?: HTMLElement | null) {
+  function confirmReturn(note: NoteResult, result: NonNullable<NoteOptions['noteReturn']>, source?: HTMLElement | null) {
+    const fresh = result.annotation && onDecisionReturn?.(result.annotation);
     if (activeTask.current !== id) return;
-    if (result.returned && !note.returned && source?.isConnected) returnSubmittedNote(source, note.note.quote || note.note.comment || note.note.where);
+    // An undo or a newer return may have reached this browser before the review response.
+    if (fresh === false) { reload(); return; }
+    const sourceKey = source?.dataset.noteResult ?? source?.dataset.noteKey;
+    if ((result.moved || result.returned !== note.returned) && source?.isConnected && sourceKey === note.key) {
+      animateSubmittedNote(note.key, source, result.returned);
+    }
     setNotes(current => current.map(item => item.note.id === note.note.id ? { ...item, returned: result.returned, undoReturnAt: result.undoReturnAt } : item));
     reload();
   }
@@ -212,7 +219,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     background ? () => { void previewRequest(id, key, round, option, retry, version, false).catch(() => {}); } : undefined)), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
     alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
-    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, returnNote: returnRequest && returnNote };
+    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, confirmReturn, returnNote: returnRequest && returnNote };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
@@ -229,7 +236,7 @@ export function NoteReturnAction({ noteKey }: { noteKey: string }) {
       onClick={event => {
         const source = event.currentTarget.closest<HTMLElement>('[data-note-result], .review-note-pager');
         if (source && !pending) links.returnNote!(noteKey, source);
-      }}><Icon name={note.returned ? 'fileOutput' : 'fileInput'} size={18}/></button>
+      }}><span className="note-return-symbol"><Icon name="check"/><Icon name="manuscriptNote"/></span></button>
   </span>;
 }
 
@@ -322,7 +329,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
       button?.focus({ preventScroll: true });
     });
   };
-  const navigation = <nav className="review-note-pager" aria-label={t('Notes')} onKeyDown={event => {
+  const navigation = <nav className="review-note-pager" data-note-key={displayed.key} aria-label={t('Notes')} onKeyDown={event => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault(); move(event.key === 'ArrowLeft' ? -1 : 1);
   }}>
@@ -456,7 +463,8 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
       const rejected = optionFeedback(option.id, 'reject'); if (rejected) draft.remove(rejected.id);
       browserStorage.removeItem(storageKey);
       if ('options' in result) { setData(result); setSelected(result.selected || 'current'); setApplying(false); }
-      if (action === 'reject') links.reload();
+      if ('noteReturn' in result && result.noteReturn) links.confirmReturn(note, result.noteReturn, container.current?.querySelector('.review-note-pager'));
+      else if (action === 'reject') links.reload();
       else links.decisionSaved({ key: note.key, round: data.round, units: option.edits.map(edit => edit.unit) });
     }
     catch (error) { setError((error as Error).message); setApplying(false); }

@@ -1322,11 +1322,14 @@ body.resizing iframe{pointer-events:none}
 .sent-notes li[data-note-result]:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
 .note-disposition { display: inline-flex; align-items: center; }
 .note-disposition .note-return-toggle { width: 28px; height: 28px; color: var(--text-2); }
-.note-disposition .note-return-toggle[data-returned] { color: var(--accent); }
+.note-disposition .note-return-toggle[data-returned] { color: var(--text-3); }
+.note-return-symbol { display: inline-flex; }
+.note-return-toggle:not([data-returned]) .note-return-symbol svg:last-child,
+.note-return-toggle[data-returned] .note-return-symbol svg:first-child { display: none; }
 .note-return-toggle[aria-disabled="true"] { opacity: .45; cursor: wait; }
 .sent-notes [data-returned] :is(blockquote,p,.sent-note-where,.sent-note-region) { color: var(--text-3); }
 .sent-notes [data-returned] .sent-note-number { background: var(--bg-muted); color: var(--text-3); }
-.submitted-note-flight { padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r); }
+.submitted-note-flight { display: grid; place-items: center; border-radius: var(--r); background: var(--bg); color: var(--accent); }
 @media (pointer:coarse) { .note-disposition .note-return-toggle { min-width: 36px; min-height: 36px; justify-content: center; } }
 @media (prefers-reduced-motion:reduce) { [data-notes-home].notes-received, [data-notes-home].notes-received::after, [data-notes-home].notes-received :is(.notes-count,.manuscript-note-count) { animation:none; } }
 .note-return-error{display:block}

@@ -38,7 +38,8 @@ try {
     const baselineGate = new Promise(resolve => { releaseBaseline = resolve; });
     const alternativeGate = new Promise(resolve => { releaseAlternative = resolve; });
     const changed = () => { task.updatedAt++; task.review.counts.pending = Object.values(decisions).filter(state => state === 'pending').length; };
-    const notes = () => noteUnits.map((unit, index) => ({ key: `run:${index}`, itemId: 'run', index, note: annotations[index], round: task.review.round, state: 'matched', returned: false, changes: [{ round: task.review.round, stop: ['a', 'b', 'c'].indexOf(unit), units: [unit], state: decisions[unit], match: 'source' }] }));
+    const returned = new Set();
+    const notes = () => noteUnits.map((unit, index) => ({ key: `run:${index}`, itemId: 'run', index, note: annotations[index], round: task.review.round, state: 'matched', returned: returned.has(index), undoReturnAt: returned.has(index) ? 1 : undefined, changes: [{ round: task.review.round, stop: ['a', 'b', 'c'].indexOf(unit), units: [unit], state: decisions[unit], match: 'source' }] }));
     const detail = (unit, option) => ({ task: 'flow', round: task.review.round, before: 'before', after: `${unit}-${option}-v${version}`, files: '', warnings: [], sections: [],
       units: ['a', 'b', 'c'].map((id, index) => ({ id, file: 'main.tex', kind: 'text', old_start: index + 1, old_end: index + 1, new_start: index + 1, new_end: index + 1, old_text: `Old ${id}`, new_text: `${id === unit ? option : selected[id]} ${id}` })),
       loose: ['a', 'b', 'c'].map(id => ({ kind: 'change', units: [id], before: [strip(id, `Old ${id}`)], after: [strip(id, `${id === unit ? option : selected[id]} ${id}`)] })) });
@@ -73,6 +74,11 @@ try {
       if (url.pathname === '/api/updates') return json({ currentVersion: 'test', phase: 'idle' });
       if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
       if (url.pathname === '/api/note-alternatives') return json({ noteAlternatives: true });
+      if (url.pathname.endsWith('/undo-return')) {
+        const index = annotations.findIndex(note => url.pathname.endsWith('/' + note.id + '/undo-return'));
+        assert.ok(returned.delete(index));
+        return json({ returned: false, removed: 'returned-' + index });
+      }
       if (url.pathname.endsWith('/items')) return json({ items });
       if (url.pathname.endsWith('/note-results')) return json({ notes: notes() });
       if (url.pathname.endsWith('/note-options/preview')) return route.continue();
@@ -83,7 +89,8 @@ try {
         if (saveFails) return route.fulfill({ status: 400, json: { error: 'The source changed. Try again.' } });
         if (body.accept && body.option !== selected[unit]) { pendingBuild = { unit, option: body.option }; task.status = 'building'; changed(); return json({ building: true }); }
         decisions[unit] = body.accept ? 'accepted' : 'rejected'; changed();
-        return json(options(body.key));
+        if (body.reject) returned.add(Number(body.key.split(':')[1]));
+        return json({ ...options(body.key), ...(body.reject ? { noteReturn: { returned: true, undoReturnAt: 1 } } : {}) });
       }
       if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
       if (url.pathname.endsWith('/skills')) return json({ skills: [] });
@@ -221,14 +228,20 @@ try {
       await expect(drawer.getByRole('alert')).toContainText('The source changed');
       await expect(drawer.locator('.review-note-position')).toHaveText('Note 4 / 4');
       assert.equal(decisions.c, 'pending');
+      assert.deepEqual([...returned], []);
       saveFails = false;
       await drawer.getByRole('button', { name: 'Reject Original c', exact: true }).click();
       await expect.poll(() => decisions.c).toBe('rejected');
-      await expect(drawer.getByRole('button', { name: 'Return to manuscript' })).toBeEnabled();
+      const undoReturn = drawer.getByRole('button', { name: 'Note 4 · Undo return to manuscript' });
+      await expect(undoReturn).toBeEnabled();
+      await expect(undoReturn).toHaveText('');
+      await expect(page.locator('[data-note-result="run:3"]')).toHaveAttribute('data-returned', 'true');
+      assert.deepEqual([...returned], [3]);
+      await undoReturn.click();
+      await expect(drawer.getByRole('button', { name: 'Note 4 · Return to manuscript' })).toBeEnabled();
       await expect(drawer.getByRole('button', { name: 'Continue in this task' })).toHaveCount(0);
       await expect(drawer.getByRole('button', { name: 'New task', exact: true })).toHaveCount(0);
       await expect(page.locator('[data-note-result="run:3"]')).not.toHaveAttribute('data-returned', 'true');
-      await expect(page.locator('.submitted-note-flight')).toHaveCount(0);
       await drawer.getByRole('button', { name: 'Comment on Original c' }).click();
       const followUp = drawer.getByRole('textbox', { name: 'Comment on Original c' });
       await followUp.fill('Keep working on this sentence here.');

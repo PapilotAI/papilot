@@ -23,7 +23,7 @@ function receive(target: HTMLElement, count: number) {
 }
 
 // A copy of a card shrinks onto `destination` along a shallow arc.
-function fly(ghost: HTMLElement, box: DOMRect, destination: DOMRect, delay = 0) {
+function fly(ghost: HTMLElement, box: DOMRect, destination: DOMRect, delay = 0, direction: PlaybackDirection = 'normal') {
   const duration = 680;
   ghost.classList.add('note-flight');
   ghost.setAttribute('aria-hidden', 'true'); ghost.inert = true;
@@ -40,7 +40,7 @@ function fly(ghost: HTMLElement, box: DOMRect, destination: DOMRect, delay = 0) 
     const y = Math.max(4, start.y + (end.y - start.y) * travel - Math.sin(travel * Math.PI) * arc);
     return { offset: progress, transform: `translate(${x}px, ${y}px) rotate(${-4 * Math.sin(travel * Math.PI)}deg) scale(${1 + (scale - 1) * shrink})`, opacity: 1 - .85 * Math.pow(travel, 5) };
   });
-  const animation = ghost.animate(frames, { duration, delay, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'both' });
+  const animation = ghost.animate(frames, { duration, delay, direction, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'both' });
   const land = () => ghost.remove();
   void animation.finished.then(land, land);
   // A hidden tab can hold the animation; never leave a card on screen.
@@ -113,16 +113,31 @@ export function returnNotes(cards: HTMLElement[]) {
   void flights[0].finished.then(arrive, arrive);
 }
 
-// The review drawer has no copy of the original card. Carry the passage
-// itself from the note pager so the flight still identifies the annotation.
-export function returnSubmittedNote(source: HTMLElement, passage: string) {
+const submittedFlights = new Map<string, Animation>();
+
+// Both directions carry the annotation icon between the original note
+// and the manuscript count, including when the review drawer shows the note.
+export function animateSubmittedNote(key: string, source: HTMLElement, returned: boolean) {
+  submittedFlights.get(key)?.cancel();
   const target = [...document.querySelectorAll<HTMLElement>('[data-notes-home="manuscript"]')].find(visible);
   if (!target || !visible(source)) return;
-  if (still()) { receive(target, 1); return; }
+  if (still()) { if (returned) receive(target, 1); return; }
+  const symbol = source.querySelector('.note-return-symbol');
+  const icon = symbol?.querySelector(returned ? 'svg:first-child' : 'svg:last-child');
+  if (!symbol || !icon) return;
   const card = document.createElement('div');
   card.className = 'submitted-note-flight';
-  card.textContent = passage;
-  const rect = source.getBoundingClientRect();
-  const box = new DOMRect(rect.x, rect.y, Math.min(rect.width, 280), Math.min(Math.max(36, rect.height), 85));
-  void fly(card, box, target.getBoundingClientRect()).finished.then(() => receive(target, 1), () => {});
+  card.dataset.noteKey = key;
+  card.append(icon.cloneNode(true));
+  const rect = symbol.getBoundingClientRect();
+  const box = new DOMRect(rect.left - 5, rect.top - 5, rect.width + 10, rect.height + 10);
+  const count = target.querySelector('.manuscript-note-count') ?? target;
+  const flight = fly(card, box, count.getBoundingClientRect(), 0, returned ? 'normal' : 'reverse');
+  // Reveal the updated icon in its place when the moving copy arrives.
+  const inTransit = symbol.animate({ opacity: [0, 0] }, { duration: flight.effect!.getTiming().duration });
+  submittedFlights.set(key, flight);
+  void flight.finished.then(() => { if (returned && target.isConnected) receive(target, 1); }, () => {}).finally(() => {
+    inTransit.cancel();
+    if (submittedFlights.get(key) === flight) submittedFlights.delete(key);
+  });
 }

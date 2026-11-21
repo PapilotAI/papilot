@@ -1,7 +1,6 @@
 import { editorIcons } from '../../engine/src/web/editor-icons.tsx';
 import type { SkillIcon } from '../skill-icons.ts';
 
-const transferPage = <path d="M18 8l-5-5H4.5A1.5 1.5 0 0 0 3 4.5v15A1.5 1.5 0 0 0 4.5 21h12a1.5 1.5 0 0 0 1.5-1.5V17M13 3v5h5"/>;
 const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode> = {
   ...editorIcons,
   crop: <><path d="M6 3v13a2 2 0 0 0 2 2h13M3 6h13a2 2 0 0 1 2 2v13"/></>,
@@ -35,8 +34,7 @@ const paths: Record<string, React.ReactNode> & Record<SkillIcon, React.ReactNode
   external: <><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></>,
   share: <><path d="M12 3v12M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></>,
   download: <><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></>,
-  fileInput: <>{transferPage}<path d="M23 12.5H10m4-4-4 4 4 4"/></>,
-  fileOutput: <>{transferPage}<path d="M10 12.5h13m-4-4 4 4-4 4"/></>,
+  manuscriptNote: <><path d="M5 3.5h14a1.5 1.5 0 0 1 1.5 1.5v10.5l-5 5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5Z"/><path d="M8 9h8M8 13h4m3.5 7.5v-5h5"/></>,
   paper: <><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5M16 13H8M16 17H8M10 9H8"/></>,
   compile: <path d="M6 3.5 21 12 6 20.5Z" fill="currentColor" stroke="none"/>,
   pdf: <><path d="M4 9V4a2 2 0 0 1 2-2h9l5 5v2M14 2v5h6M4 20a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2"/><path strokeWidth="1.5" d="M2.5 18v-6h2a2 2 0 0 1 0 4h-2M9.5 12v6h1.5a3 3 0 0 0 0-6ZM17 18v-6h4m-4 3h3"/></>,

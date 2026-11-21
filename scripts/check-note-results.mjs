@@ -387,9 +387,22 @@ try {
   const originals = items[0].meta.notes;
   ['accepted', 'rejected', 'missed'].forEach((id, index) => { originals[index].id = id; });
   Object.assign(originals[1], { group: 'yellow', comment: '' });
+  originals.push({ ...note('Expand the abbreviation.', 120, ''), id: 'abbreviation' });
   items[0].meta.groupInstructions = { yellow: 'Clarify the contribution.' };
   decisions[1].c1 = 'accepted';
   const preserved = structuredClone(decisions);
+  // Record flights at insertion so the assertions also work on a busy runner.
+  await page.addInitScript(() => {
+    window.submittedNoteFlights = [];
+    new MutationObserver(records => {
+      for (const record of records) for (const card of record.addedNodes) {
+        if (card instanceof HTMLElement && card.matches('.submitted-note-flight')) {
+          window.submittedNoteFlights.push([card.getAnimations()[0].effect.getTiming().direction, card.dataset.noteKey, card.querySelector('svg path:last-child')?.getAttribute('d')]);
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  const flights = () => page.evaluate(() => window.submittedNoteFlights);
   await page.reload();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
   const originalRow = index => page.locator(`[data-note-result="request-1:${index}"]`);
@@ -399,7 +412,8 @@ try {
   const takeBack = container => container.getByRole('button', { name: / · Return to manuscript$/ }).click();
   const undoReturn = container => container.getByRole('button', { name: / · Undo return to manuscript$/ }).click();
   await expect(toggle(originalRow(1))).toHaveText('');
-  const arrowIn = await toggle(originalRow(1)).locator('svg path').last().getAttribute('d');
+  const check = 'M20 6 9 17l-5-5';
+  await expect(toggle(originalRow(1)).locator('svg:visible path')).toHaveAttribute('d', check);
   await expect(originalRow(1).locator('[aria-haspopup]')).toHaveCount(0);
   failReturn = true;
   await takeBack(originalRow(1));
@@ -411,21 +425,26 @@ try {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await toggle(controls()).focus();
   await page.keyboard.press('Enter');
-  await expect(page.locator('.submitted-note-flight')).toHaveText(originals[1].quote);
+  const outward = ['normal', 'request-1:1', check];
+  await expect.poll(flights).toEqual([outward]);
   await expect(page.locator('[data-notes-home="manuscript"].notes-received')).toBeVisible();
   await expect(toggle(controls())).toHaveAccessibleName('Note 2 · Undo return to manuscript');
   await expect(toggle(controls())).toBeFocused();
   await expect(toggle(controls())).toHaveText('');
-  await expect(toggle(controls()).locator('svg path').last()).not.toHaveAttribute('d', arrowIn);
+  const mutedIcon = await toggle(controls()).locator('svg:visible path').last().getAttribute('d');
+  assert.ok(mutedIcon && mutedIcon !== check);
   await page.screenshot({ path: 'test-results/note-return-undo-mobile.png', animations: 'disabled' });
   await expect(count()).toHaveText('1');
   failUndo = true;
   await undoReturn(controls());
   await expect(controls().getByRole('alert')).toHaveText('Retry the undo.');
+  assert.deepEqual(await flights(), [outward]);
   failUndo = false;
   await toggle(controls()).focus();
   await page.keyboard.press('Space');
+  await expect.poll(flights).toEqual([outward, ['reverse', 'request-1:1', mutedIcon]]);
   await expect(toggle(controls())).toHaveAccessibleName('Note 2 · Return to manuscript');
+  await expect(toggle(controls()).locator('svg:visible path')).toHaveAttribute('d', check);
   await expect(toggle(controls())).toBeFocused();
   await expect(controls().getByRole('alert')).toHaveCount(0);
   await expect(count()).toHaveText('0');
@@ -436,7 +455,10 @@ try {
   await page.reload();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
   await expect(originalRow(1)).toHaveAttribute('data-returned', 'true');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await undoReturn(originalRow(1));
+  await expect(count()).toHaveText('0');
+  assert.deepEqual(await flights(), []);
   await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => localStorage.getItem('papilot:selected-notes'))).toBeNull();
   await takeBack(originalRow(1));
@@ -467,6 +489,27 @@ try {
   assert.deepEqual(decisions, preserved);
   assert.equal(optionWrites.length, 2, 'Returning a note sends no review decision');
   await page.screenshot({ path: 'test-results/note-return-desktop.png', animations: 'disabled' });
+  // A slow undo must not fly to a different annotation now showing in the drawer.
+  await originalRow(2).click();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const delayedUndo = Promise.withResolvers();
+  await page.route('**/notes/missed/undo-return', async route => {
+    await delayedUndo.promise;
+    await route.fallback();
+  }, { times: 1 });
+  try {
+    await undoReturn(controls());
+    await expect(toggle(controls())).toBeDisabled();
+    await controls().getByRole('button', { name: 'Next note' }).click();
+    await expect(toggle(controls())).toHaveAccessibleName('Note 4 · Return to manuscript');
+  } finally { delayedUndo.resolve(); }
+  await expect(count()).toHaveText('1');
+  await expect(originalRow(2)).not.toHaveAttribute('data-returned', 'true');
+  assert.deepEqual(await flights(), [], 'Undo does not fly to the next note');
+  await controls().getByRole('button', { name: 'Previous note' }).click();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await takeBack(controls());
+  await expect(count()).toHaveText('2');
   await page.locator('.manuscript-link').click();
   await expect.poll(() => documentName).toBe('appendix.tex');
   await expect(count()).toHaveText('2');

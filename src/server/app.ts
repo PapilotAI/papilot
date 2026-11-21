@@ -555,6 +555,15 @@ export async function buildApp(options: AppOptions) {
     if (!copy || copy.deletedAt !== undefined) return { returned: false };
     return { returned: true, undoReturnAt: copy.taskId ? undefined : copy.createdAt };
   };
+  function observeReturn(copy?: Annotation) {
+    if (!copy) return;
+    const previous = noteReturnState(store.findAnnotation(copy.projectId, copy.id)).undoReturnAt;
+    return () => {
+      const annotation = store.findAnnotation(copy.projectId, copy.id);
+      const state = noteReturnState(annotation);
+      return state.undoReturnAt !== undefined ? { ...state, annotation, moved: state.undoReturnAt !== previous } : state;
+    };
+  }
   app.get<{ Params: { id: string } }>('/api/tasks/:id/note-results', task, async request => {
     const task = store.task(request.params.id), client = await connectReview(store.project(task.projectId).path);
     const notes = await taskNoteResults(task, store.items(task.id), store.runs().filter(run => run.taskId === task.id), client);
@@ -664,15 +673,19 @@ export async function buildApp(options: AppOptions) {
       if (body.reject || option.id === context.options.selected) {
         if (!body.accept && !body.reject) return context.options;
         const route = `${taskRoute(current.name)}/decide`, input = { id: string(body.id, 'Review action ID', 80), round: body.round, changes: option.edits.map(edit => edit.unit), action: body.reject ? 'reject' : 'accept', ...(body.reject ? { noteKey: body.key } : {}) };
+        const copy = body.reject && context.note.note.id && !context.note.note.anchor?.round ? returnCopy(current, context.note.note.id) : undefined;
+        const readReturn = observeReturn(copy);
         const result = await workspace.reviewWrite(current.id, true, async () => {
           const response = await fetch(client.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': client.token }, body: JSON.stringify(input), signal: AbortSignal.timeout(120000) });
           const value = await response.json() as { error?: string };
           if (!confirmedReviewResponse(response.status, value, current.name)) throw new Error('The review action could not be confirmed. Check task status before retrying.');
           return value;
-        }, { route, body: input });
+        }, { route, body: input, ...(copy ? { returnNote: copy } : {}) });
         if (result.error) throw new Error(result.error);
+        const noteReturn = readReturn?.();
         await workspace.refresh(current.id);
-        return (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
+        const options = (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
+        return noteReturn ? { ...options, noteReturn } : options;
       }
       const route = `${taskRoute(current.name)}/source/options`, input = { id: string(body.id, 'Option request ID', 80), round: body.round, edits: option.edits, ...(body.accept ? { accept: true } : {}) };
       // Keep the annotation's original association before the engine starts
@@ -844,7 +857,11 @@ export async function buildApp(options: AppOptions) {
     if ((request.body as any)?.confirm !== true) throw new Error('Confirm permanent task deletion before continuing.');
     return workspace.deleteTask(request.params.id);
   });
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/reconcile', task, request => workspace.reconcile(request.params.id));
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/reconcile', task, async request => {
+    const readReturn = observeReturn(store.task(request.params.id).pendingReview?.returnNote);
+    const result = await workspace.reconcile(request.params.id);
+    return readReturn ? { ...result, noteReturn: readReturn() } : result;
+  });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/publish', task, request => {
     const task = store.task(request.params.id); if (task.preparation || ['running', 'waiting_input', 'building'].includes(task.status)) throw new Error('This task is busy. Wait for it to finish or pause it first.');
     void workspace.publish(task.id); return { ok: true };
@@ -1257,11 +1274,13 @@ export async function buildApp(options: AppOptions) {
           .then(state => state.undo?.id === (request.body as any)?.id && (state.undo?.kind !== 'reject' || Boolean(state.undo?.queued)) && !state.undo?.republish, () => false));
       if (besideAgent && route.endsWith('/decide') && (request.body as any)?.action === 'reject') (request.body as any).queue = true;
       const input = request.body as { noteKey?: string; action?: string; changes?: string[]; round?: number } | undefined;
+      let returnNote: Annotation | undefined;
       if (reviewTask && route.endsWith('/decide') && input?.action === 'reject' && input.noteKey) {
         const notes = await taskNoteResults(reviewTask, store.items(reviewTask.id), store.runs().filter(run => run.taskId === reviewTask.id), client);
         const note = notes.find(note => note.key === input.noteKey);
         const units = new Set(note?.changes.filter(change => change.round === input.round).flatMap(change => change.units));
         if (!units.size || !Array.isArray(input.changes) || !input.changes.length || !input.changes.every(id => units.has(id))) throw new Error('The review changed. Reload the options.');
+        if (note?.note.id && !note.note.anchor?.round) returnNote = returnCopy(reviewTask, note.note.id);
       }
       let settles: string | undefined;
       const forward = async () => {
@@ -1303,9 +1322,12 @@ export async function buildApp(options: AppOptions) {
         return Buffer.from(await response.arrayBuffer());
       };
       if (request.method === 'POST' && !reviewTask) throw new Error('This review task does not belong to this workspace.');
+      const readReturn = observeReturn(returnNote);
       let result: unknown;
-      try { result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown> } : undefined, besideAgent) : forward()); }
+      try { result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown>, returnNote } : undefined, besideAgent) : forward()); }
       finally { if (settles) settle(workspace, settles); }
+      if (readReturn && result && typeof result === 'object' && confirmedReviewResponse(200, result, reviewTask!.name))
+        Object.assign(result, { noteReturn: readReturn() });
       return annotateReviewState(result, store.tasks().filter(task => task.projectId === project.id));
     },
   });

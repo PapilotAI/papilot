@@ -153,12 +153,13 @@ export class Store extends EventEmitter {
     return note;
   }
   saveAnnotation(a: Annotation) { this.db.prepare('INSERT INTO annotations VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(a.id, a.projectId, JSON.stringify(a)); this.emit('change'); return a; }
-  returnAnnotation(copy: Annotation) {
+  returnAnnotation(copy: Annotation, decision?: string) {
     const existing = this.findAnnotation(copy.projectId, copy.id);
-    if (!existing) return this.saveAnnotation(copy);
-    if (existing.taskId || existing.deletedAt === undefined) return existing;
-    // A late undo of the previous return must not retire this generation.
-    return this.restoreAnnotation({ ...existing, createdAt: Math.max(copy.createdAt, existing.createdAt + 1) });
+    if (existing && (existing.taskId || (decision && existing.returnDecisions?.includes(decision)))) return existing;
+    if (existing && existing.deletedAt === undefined && !decision) return existing;
+    const note = existing ?? copy;
+    return this.restoreAnnotation({ ...note, createdAt: existing?.deletedAt !== undefined ? Math.max(copy.createdAt, existing.createdAt + 1) : note.createdAt,
+      ...(decision ? { returnDecisions: [...(note.returnDecisions ?? []), decision] } : {}) });
   }
   deleteAnnotation(projectId: string, id: string) {
     const note = this.annotation(projectId, id);

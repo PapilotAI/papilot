@@ -1319,6 +1319,14 @@ function App() {
   const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
   const lastReturned = useRef(new Map<string, Annotation>());
+  const seenReturns = useRef(new Map<string, number>());
+  function rememberReturn(copy: Annotation) {
+    if ((seenReturns.current.get(copy.id) ?? -1) >= copy.createdAt) return false;
+    seenReturns.current.set(copy.id, copy.createdAt);
+    const last = lastReturned.current.get(copy.projectId);
+    if (!last || last.createdAt <= copy.createdAt) lastReturned.current.set(copy.projectId, copy);
+    return true;
+  }
   const [returnedPlace, setReturnedPlace] = useState('');
   const [noteGroup, setNoteGroup] = useState<NoteGroup | null>(null);
   const [marking, setMarking] = useState(0);
@@ -1722,7 +1730,12 @@ function App() {
     const key = route.startsWith('/tasks/') ? route.split('/').slice(0, 3).join('/') : route;
     if (actionRequests.current.has(key)) return;
     actionRequests.current.add(key); setPendingActions(new Set(actionRequests.current));
-    try { await api(route, body); if (refreshAfter) await refresh(true); return true; } catch (e) { reportError(e); }
+    try {
+      const result = await api<{ noteReturn?: { annotation?: Annotation } } | null>(route, body);
+      if (result?.noteReturn?.annotation) rememberReturn(result.noteReturn.annotation);
+      if (refreshAfter) await refresh(true);
+      return true;
+    } catch (e) { reportError(e); }
     finally { actionRequests.current.delete(key); setPendingActions(new Set(actionRequests.current)); }
   }
   const taskActionBusy = Boolean(task && pendingActions.has('/tasks/' + task.id));
@@ -2349,17 +2362,23 @@ function App() {
     </div>
   </section>;
 
-  return <NoteResultsProvider task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} returnRequest={isPlayground ? undefined : async (id, note, undoReturnAt) => {
+  return <NoteResultsProvider onDecisionReturn={copy => {
+    const fresh = rememberReturn(copy);
+    void refresh(true);
+    window.dispatchEvent(new Event('papilot:manuscript'));
+    return fresh;
+  }} task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} returnRequest={isPlayground ? undefined : async (id, note, undoReturnAt) => {
     const route = `/tasks/${id}/notes/${encodeURIComponent(note)}`;
     let result: NoteReturnState;
     if (undoReturnAt === undefined) {
       const copy = await api<Annotation>(route + '/return', {});
       result = copy.deletedAt === undefined ? { returned: true, undoReturnAt: copy.taskId ? undefined : copy.createdAt } : { returned: false };
-      if (result.undoReturnAt !== undefined) lastReturned.current.set(copy.projectId, copy);
+      if (result.undoReturnAt !== undefined) rememberReturn(copy);
     } else {
       const response = await api<NoteReturnState & { removed?: string }>(route + '/undo-return', { createdAt: undoReturnAt });
       if (response.removed) {
         const removed = response.removed;
+        seenReturns.current.set(removed, Math.max(undoReturnAt, seenReturns.current.get(removed) ?? -1));
         const last = project && lastReturned.current.get(project.id);
         if (last && last.id === removed && last.createdAt === undoReturnAt) lastReturned.current.delete(last.projectId);
         reviewDraft(id).forgetReturn(note, undoReturnAt);
