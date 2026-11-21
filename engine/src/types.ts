@@ -125,6 +125,8 @@ export interface ActionDetail {
   accepted_before?: string;
   accepted_after?: string;
   not_reverted?: string[];
+  /** The submitted note whose scoped changes the author rejected. */
+  noteKey?: string;
   /** A decision that named an earlier round, applied to the latest one. */
   requested?: { round: number; changes: string[] };
   /** The comparison each change was decided with, when it came from another

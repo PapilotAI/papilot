@@ -10,7 +10,7 @@ function visible(element: HTMLElement) {
 }
 
 function home() {
-  return ['library', 'pdf'].map(place => document.querySelector<HTMLElement>(`[data-notes-home="${place}"]`)).find(element => element && visible(element)) || null;
+  return ['library', 'pdf'].flatMap(place => [...document.querySelectorAll<HTMLElement>(`[data-notes-home="${place}"]`)]).find(visible) || null;
 }
 
 function receive(target: HTMLElement, count: number) {
@@ -111,4 +111,18 @@ export function returnNotes(cards: HTMLElement[]) {
   if (!flights.length) { receive(target, cards.length); return; }
   const arrive = () => receive(target, cards.length);
   void flights[0].finished.then(arrive, arrive);
+}
+
+// The review drawer has no copy of the original card. Carry the passage
+// itself from the note pager so the flight still identifies the annotation.
+export function returnSubmittedNote(source: HTMLElement, passage: string) {
+  const target = home();
+  if (!target || !visible(source)) return;
+  if (still()) { receive(target, 1); return; }
+  const card = document.createElement('div');
+  card.className = 'submitted-note-flight';
+  card.textContent = passage;
+  const rect = source.getBoundingClientRect();
+  const box = new DOMRect(rect.x, rect.y, Math.min(rect.width, 280), Math.min(Math.max(36, rect.height), 85));
+  void fly(card, box, target.getBoundingClientRect()).finished.then(() => receive(target, 1), () => {});
 }

@@ -8,7 +8,7 @@ import { browserStorage } from './storage.ts';
 // A passage commented on a whole page rather than a change's strip: the PDF it
 // was on (a review round's, the manuscript preview's or a build's) and where.
 export type PaperPlace = { page: number; rects: Rect[]; round?: number; key?: string; build?: string };
-export type ReviewMark = { paper?: PaperPlace; group?: NoteGroup; kind?: MarkKind; stamp?: string; strip: string; round: number; stop?: number; where: string; quote: string; rects: Rect[]; region: boolean; whole?: boolean; changes?: string[]; option?: { note: string; id: string; label: string; kind: 'comment' | 'reject' } };
+export type ReviewMark = { returned?: { sourceTask?: string; original: string; createdAt: number; groupInstruction?: string; anchor?: NoteSummary['anchor'] }; paper?: PaperPlace; group?: NoteGroup; kind?: MarkKind; stamp?: string; strip: string; round: number; stop?: number; where: string; quote: string; rects: Rect[]; region: boolean; whole?: boolean; changes?: string[]; option?: { note: string; id: string; label: string; kind: 'comment' | 'reject' } };
 export type ReviewNote = ReviewMark & { id: string; comment: string };
 export type ReviewComment = { round: number; stop: number; changes?: string[]; scope?: { where: string; quote: string } };
 export function reviewCommentMark(base: ReviewMark, detail: ReviewComment, wholeQuote: string): ReviewMark {
@@ -31,9 +31,10 @@ export class ReviewDraft {
   private history: { action: 'add' | 'remove'; note: ReviewNote; index: number }[] = [];
   private future: typeof this.history = [];
   private sequence = 0;
+  private stored: string | null = null;
   constructor(private key: string, private storage: Pick<Storage, 'getItem' | 'setItem'> = browserStorage) {
     let saved: any;
-    try { saved = JSON.parse(storage.getItem(key) || 'null'); } catch { /* Invalid local draft. */ }
+    try { this.stored = storage.getItem(key); saved = JSON.parse(this.stored || 'null'); } catch { /* Invalid local draft. */ }
     this.history = Array.isArray(saved?.deleted) ? saved.deleted.map((entry: { note: ReviewNote; index: number }) => ({ ...entry, action: 'remove' })) : [];
     const notes: ReviewNote[] = Array.isArray(saved?.notes) ? saved.notes : [];
     // Recover an unfinished note from the former floating editor.
@@ -55,16 +56,27 @@ export class ReviewDraft {
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   getSnapshot = () => this.value;
+  refreshFromStorage() {
+    if (this.storage.getItem(this.key) === this.stored) return this;
+    const latest = new ReviewDraft(this.key, this.storage);
+    this.stored = latest.stored;
+    this.history = latest.history; this.future = [];
+    this.value = { ...latest.value, busy: this.value.busy };
+    this.listeners.forEach(listener => listener());
+    return this;
+  }
   private update(next: Partial<Snapshot>) {
     this.value = { ...this.value, ...next, canUndo: Boolean(this.history.length), canRedo: Boolean(this.future.length) };
-    this.storage.setItem(this.key, JSON.stringify({ notes: this.value.notes, instructions: this.value.instructions, deleted: this.history.filter(entry => entry.action === 'remove') }));
+    this.stored = JSON.stringify({ notes: this.value.notes, instructions: this.value.instructions, deleted: this.history.filter(entry => entry.action === 'remove') });
+    this.storage.setItem(this.key, this.stored);
     this.listeners.forEach(listener => listener());
   }
   add(mark: ReviewMark, focus = true, comment = '') {
+    if (mark.returned) this.refreshFromStorage();
     if (this.value.busy) return;
     // Comment is an entry point to this change's overall discussion. Repeated
     // clicks reopen that draft; distinct quotations can still have separate notes.
-    const existing = this.value.notes.find(note => note.round === mark.round && (mark.option
+    const existing = this.value.notes.find(note => note.round === mark.round && (mark.returned ? note.returned?.original === mark.returned.original && note.returned.createdAt === mark.returned.createdAt : mark.option
       ? note.option?.note === mark.option.note && note.option.id === mark.option.id && note.option.kind === mark.option.kind
       : mark.changes ? note.stop === mark.stop && sameChanges(note.changes, mark.changes)
       : mark.whole && note.whole && note.stop === mark.stop));
@@ -93,6 +105,14 @@ export class ReviewDraft {
     this.history.push({ action: 'remove', note: this.value.notes[index], index }); this.future = [];
     this.update({ notes: this.value.notes.filter(note => note.id !== id), ...(this.value.reveal?.note.id === id ? { reveal: undefined } : {}) });
   }
+  forgetReturn(original: string, createdAt: number) {
+    this.refreshFromStorage();
+    const keep = (note: ReviewNote) => note.returned?.original !== original || note.returned.createdAt !== createdAt;
+    if (this.value.notes.every(keep) && this.history.every(entry => keep(entry.note)) && this.future.every(entry => keep(entry.note))) return;
+    this.history = this.history.filter(entry => keep(entry.note));
+    this.future = this.future.filter(entry => keep(entry.note));
+    this.update({ notes: this.value.notes.filter(keep) });
+  }
   private travel(from: typeof this.history, to: typeof this.history) {
     if (this.value.busy) return false;
     const entry = from.pop(); if (!entry) return false;
@@ -119,6 +139,10 @@ export class ReviewDraft {
   }
 }
 const drafts = new Map<string, ReviewDraft>();
+if (typeof window !== 'undefined') window.addEventListener('storage', event => {
+  const task = event.key?.match(/^(?:playground:)?papilot:review-notes:(.+)$/)?.[1];
+  if (task) drafts.get(task)?.refreshFromStorage();
+});
 export function reviewDraft(taskId: string) {
   let draft = drafts.get(taskId);
   if (!draft) { draft = new ReviewDraft(`papilot:review-notes:${taskId}`); drafts.set(taskId, draft); }
@@ -129,9 +153,9 @@ export const useReviewDraft = (taskId: string) => {
   return useSyncExternalStore(draft.subscribe, draft.getSnapshot);
 };
 export const reviewNoteSummary = (note: ReviewNote): NoteSummary => ({
-  id: note.id, ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(note.stamp ? { stamp: note.stamp } : {}),
+  id: note.id, ...(note.returned ? { returnedFrom: { taskId: note.returned.sourceTask, original: note.returned.original, createdAt: note.returned.createdAt } } : {}), ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(note.stamp ? { stamp: note.stamp } : {}),
   where: note.where + (note.region ? ` · Region in displayed strip: ${note.rects[0].map(v => `${Math.round(v * 100)}%`).join(', ')}` : ''),
-  quote: note.quote, comment: note.comment.trim(), anchor: { ...noteAnchor(note), ...(note.round ? { round: note.round } : {}) },
+  quote: note.quote, comment: note.comment.trim(), anchor: note.returned?.anchor ?? { ...noteAnchor(note), ...(note.round ? { round: note.round } : {}) },
   ...(note.paper ? { paper: note.paper } : {}),
 });
 
@@ -140,5 +164,5 @@ export const reviewNoteSummary = (note: ReviewNote): NoteSummary => ({
 export function reviewSubmission(draft: Snapshot, text = '', skill?: string): Snapshot {
   const directedGroups = new Set(draft.notes.filter(note => note.group && note.comment.trim()).map(note => canonicalGroup(note.group!)));
   const shared = Boolean(text.trim() || draft.instructions.trim() || skill);
-  return { ...draft, notes: draft.notes.filter(note => note.kind === 'delete' || note.comment.trim() || (note.group && (shared || directedGroups.has(canonicalGroup(note.group))))) };
+  return { ...draft, notes: draft.notes.filter(note => note.kind === 'delete' || note.comment.trim() || note.returned?.groupInstruction || (note.group && (shared || directedGroups.has(canonicalGroup(note.group))))) };
 }

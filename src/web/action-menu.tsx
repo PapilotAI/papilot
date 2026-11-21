@@ -20,7 +20,10 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
     // Close when a scrolling ancestor moves the trigger, but leave independent
     // panes (including a PDF finishing its load) and the menu itself alone.
     const scroll = (event: Event) => { if (event.target instanceof Node && event.target.contains(trigger.current) && !menu.current?.contains(event.target)) dismiss(); };
-    window.addEventListener('resize', dismiss); document.addEventListener('scroll', scroll, true);
+    window.addEventListener('resize', dismiss);
+    // The phone menu is a fixed bottom sheet. Scrolling the content behind
+    // it (including Chat following its latest message) does not move it.
+    if (!window.matchMedia('(max-width: 680px)').matches) document.addEventListener('scroll', scroll, true);
     return () => { window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
   }, [open]);
   function position() {
@@ -42,7 +45,7 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
   function show(last = false) {
     menu.current?.showPopover(); position(); setOpen(true);
     const items = choices();
-    (last ? items[items.length - 1] : items.find(item => item.getAttribute('aria-checked') === 'true') || items[0])?.focus();
+    (last ? items[items.length - 1] : items.find(item => item.getAttribute('aria-checked') === 'true') || items[0])?.focus({ preventScroll: true });
   }
   const radio = actions.some(action => action.checked !== undefined);
   return <span className="menu-anchor">

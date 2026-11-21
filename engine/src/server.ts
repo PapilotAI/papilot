@@ -518,6 +518,7 @@ export function createServer(app: App) {
         round: number;
         body?: string;
         queue?: boolean;
+        noteKey?: string;
       };
     }>(
       "/api/tasks/:name/decide",
@@ -533,6 +534,7 @@ export function createServer(app: App) {
               round: { type: "integer", minimum: 1 },
               body: { type: "string" },
               queue: { type: "boolean" },
+              noteKey: { type: "string", minLength: 1, maxLength: 200 },
             },
           },
         },

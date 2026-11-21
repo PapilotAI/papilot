@@ -107,13 +107,13 @@ try {
       if (mobile) await page.setViewportSize({ width: 320, height: 740 });
       const picker = header.getByRole('button', { name: 'Add to task', exact: true });
       const close = header.getByRole('button', { name: 'Close notes', exact: true });
-      await expect(picker).toHaveText('');
+      await expect(picker).toHaveText('Add to task');
       await expect(picker).toHaveAttribute('title', 'Add to task');
       await expect(picker).toHaveAttribute('aria-haspopup', 'menu');
       for (const button of [trigger, picker, close]) await expect(button).toBeInViewport();
       const clearAction = await trigger.boundingBox(), addToTask = await picker.boundingBox(), closeNotes = await close.boundingBox();
       assert.ok(clearAction.width >= (mobile ? 36 : 28) && clearAction.height >= (mobile ? 36 : 28));
-      assert.equal(addToTask.width, clearAction.width);
+      assert.ok(addToTask.width > clearAction.width);
       assert.equal(addToTask.height, clearAction.height);
       assert.ok(clearAction.x + clearAction.width <= addToTask.x && addToTask.x + addToTask.width <= closeNotes.x);
       await page.screenshot({ animations: 'disabled', path: `test-results/clear-annotations-action-${mobile ? 'mobile-dark' : 'desktop-light'}.png` });

@@ -152,7 +152,7 @@ test("focusing a note and switching options preserves unrelated resolved groups"
   const visibleGroups = () => page.locator('.change > .change-head:visible').count();
   const originalCount = await visibleGroups();
   const show = (units: string[] | null, preview = false) => page.evaluate(({ round, units, preview }) => {
-    window.dispatchEvent(new CustomEvent('papilot:note-focus', { detail: { round, units } }));
+    window.dispatchEvent(new CustomEvent('papilot:note-focus', { detail: { key: 'note:0', round, units } }));
     window.dispatchEvent(new CustomEvent('papilot:option-preview', { detail: preview ? { key: 'note:0', round } : null }));
   }, { round, units, preview });
   for (const preview of [false, true, false]) {
@@ -170,6 +170,19 @@ test("focusing a note and switching options preserves unrelated resolved groups"
   await show(focused);
   await expect(resolved.locator('.change-head')).toBeHidden();
   expect(await visibleGroups()).toBe(originalCount);
+  await page.route('**/decide', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response });
+  });
+  const sent = page.waitForRequest(request => request.url().endsWith('/decide') && request.method() === 'POST');
+  await page.keyboard.press('r');
+  const payload = (await sent).postDataJSON();
+  expect(payload.noteKey).toBe('note:0');
+  expect(payload.changes.length).toBeGreaterThan(0);
+  expect(payload.changes.every((id: string) => focused.includes(id))).toBeTruthy();
+  await expect(page.locator('.change[data-state="rejected"]').first()).toBeVisible();
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+  await expect(page.locator('.change[data-state="rejected"]')).toHaveCount(0);
 });
 test("renders vectors and selectable text without browser errors", async ({
   page,

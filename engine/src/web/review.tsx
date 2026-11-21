@@ -108,7 +108,7 @@ type Composer = {
 };
 // A decision shown at once and confirmed later: the change it was made on,
 // the toast for the review it completed, and a comment's stored draft.
-type Queued = QueuedDecision & { kind: Kind; stop: number; done: string; draft?: string };
+type Queued = QueuedDecision & { kind: Kind; stop: number; done: string; noteKey?: string; draft?: string };
 const actionId = () =>
   crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), byte => byte.toString(16).padStart(2, '0')).join('');
 function readStorage<T>(key: string, fallback: T): T {
@@ -185,7 +185,7 @@ export function ReviewApp({
     [online, setOnline] = useState(true),
     [error, setError] = useState(""),
     [toast, setToast] = useState(""),
-    [noteFocus, setNoteFocus] = useState<{ round: number; units: string[] | null } | null>(null),
+    [noteFocus, setNoteFocus] = useState<{ key?: string; round: number; units: string[] | null } | null>(null),
     [openSource, setOpenSource] = useState<Set<number>>(new Set()),
     [retryingComparison, setRetryingComparison] = useState(false),
     [hostRetry, setHostRetry] = useState<string>(
@@ -270,7 +270,7 @@ export function ReviewApp({
           method: "POST",
           keepalive: true,
           headers: { "Content-Type": "application/json", "X-Review-Token": csrf },
-          body: JSON.stringify({ id: entry.id, action: entry.kind, round: entry.round, changes: entry.changes, body: entry.body }),
+          body: JSON.stringify({ id: entry.id, action: entry.kind, round: entry.round, changes: entry.changes, body: entry.body, noteKey: entry.noteKey }),
         }).catch(() => undefined);
       });
     };
@@ -869,7 +869,7 @@ export function ReviewApp({
       }
     }
     // The review moves on at once; the server confirms decisions in order.
-    const entry: Queued = { id: actionId(), kind, round: detail.round, changes: chosen, body, stop: current, done: "" };
+    const entry: Queued = { id: actionId(), kind, round: detail.round, changes: chosen, body, stop: current, done: "", ...(kind === "reject" && focused && noteFocus?.key ? { noteKey: noteFocus.key } : {}) };
     // A comment's draft stays stored until the server has the comment.
     if (kind === "comment" && composer) {
       entry.draft = composer.key;
@@ -895,7 +895,7 @@ export function ReviewApp({
         action: entry.kind,
         round: entry.round,
         changes: entry.changes,
-        body: entry.body,
+        body: entry.body, noteKey: entry.noteKey,
       }),
     confirmed(entry, next, remaining) {
       epoch.current++;
@@ -904,7 +904,7 @@ export function ReviewApp({
       setState(next);
       setQueued(remaining);
       // The host refreshes what depends on the decision, such as Git status.
-      window.dispatchEvent(new CustomEvent("papilot:review:decided"));
+      window.dispatchEvent(new CustomEvent("papilot:review:decided", { detail: { key: entry.noteKey, noteReturn: (next as PageState & { noteReturn?: unknown }).noteReturn } }));
       if (entry.draft) store(entry.draft, "");
       if (!remaining.length) {
         if (entry.done) setToast(entry.done);

@@ -304,6 +304,11 @@
     "textHash": "fc44b5f3d1978b1db69c5021a5176684d2e18a5ab8815d7a978d954b30b5346d",
     "model": "gemini-4-argon-medium"
   },
+  "Another task…": {
+    "revision": "c6c60bbe154d7739a64c2c2a023e0d57e339760fc76d5d63ed9a2ebdd2281741",
+    "textHash": "472991e96504fa285a74a2f13fedf9f5558bb25f5d354d586fc6d9ecfaf59a97",
+    "model": "codex"
+  },
   "Antigravity opens images through its file tools. For direct image input, choose Codex or Claude.": {
     "revision": "6a908f49cc4b78c16acc9730cd2ca45006b0a6a9de160e094b9749c6a72303d3",
     "textHash": "1b97917e30fc4ab082aa268a53267beabc93bf77078df448b793a534c40abef4",
@@ -1178,6 +1183,11 @@
     "revision": "c5326d8307324c6942166a586edb044838427138b63ca62f310913dbd9f6bf95",
     "textHash": "c6ae3d87945290dd50d8df0490fb48597048a189c8b14783f75b6a75bc98d903",
     "model": "gemini-4-argon-medium"
+  },
+  "Continue in this task": {
+    "revision": "1c9d11eefd52ac3ca5d94ca9ef77e5acc5dae507dd8a644ffa4145ec669a3a45",
+    "textHash": "e2afd3015130176f9d9bc4e8be838edf6ee143cd1537413412b70cbf1d1dadbb",
+    "model": "codex"
   },
   "Continue later": {
     "revision": "b7e9104ad65e65db2e16108b8e56a3eb1309e0fd4ed4cba5f6b61b8dbb88df39",
@@ -2605,7 +2615,7 @@
     "model": "gemini-4-argon-medium"
   },
   "My notes": {
-    "revision": "9e08b9d4c8173415ac12969f8402359c3a9d4d97d183523a3a625b4ffbe08328",
+    "revision": "58f87f4313925cfad194606d0a09b3bffc30545ea306791f247e3c3680894744",
     "textHash": "419125d6700444e800cbc68a5df0bb3d3e49526f4fa51011373f94690b5662ee",
     "model": "gemini-4-argon-medium"
   },
@@ -2635,7 +2645,7 @@
     "model": "gemini-4-argon-medium"
   },
   "New task": {
-    "revision": "b896a1a2e2558b3495e3daf101748299e8ea1c538a050da304aaddcc93565ee4",
+    "revision": "08c83eb9c15865ba4e70e4b2156f4da24f4243d95c680b2381ec4b4ee66e4f60",
     "textHash": "158d042fef6fbfd49b76fe78d3dadd31ee09c6364b3521b616c6de201addea31",
     "model": "gemini-4-argon-medium"
   },

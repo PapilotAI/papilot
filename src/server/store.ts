@@ -143,6 +143,14 @@ export class Store extends EventEmitter {
     return note;
   }
   saveAnnotation(a: Annotation) { this.db.prepare('INSERT INTO annotations VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(a.id, a.projectId, JSON.stringify(a)); this.emit('change'); return a; }
+  returnAnnotation(copy: Annotation, decision?: string) {
+    const existing = this.findAnnotation(copy.projectId, copy.id);
+    if (existing && (existing.taskId || (decision && existing.returnDecisions?.includes(decision)))) return existing;
+    if (existing && existing.deletedAt === undefined && !decision) return existing;
+    const note = existing ?? copy;
+    return this.restoreAnnotation({ ...note, createdAt: existing?.deletedAt !== undefined ? Math.max(copy.createdAt, existing.createdAt + 1) : note.createdAt,
+      ...(decision ? { returnDecisions: [...(note.returnDecisions ?? []), decision] } : {}) });
+  }
   deleteAnnotation(projectId: string, id: string) {
     const note = this.annotation(projectId, id);
     if (note.taskId) throw new Error('This note has already been sent.');

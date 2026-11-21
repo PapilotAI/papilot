@@ -75,6 +75,7 @@ await page.route('**/api/**', async route => {
   const returning = url.pathname.match(/\/tasks\/[^/]+\/notes\/([^/]+)\/(return|undo-return)$/);
   if (returning) {
     const [, id, operation] = returning;
+    if (route.request().method() === 'GET') return route.fulfill({ json: returned.get(id) });
     if (operation === 'undo-return') {
       const { createdAt } = route.request().postDataJSON();
       undoWrites.push({ id, createdAt });
@@ -94,6 +95,12 @@ await page.route('**/api/**', async route => {
         source: null, createdAt: returnWrites.length, ...(original.group ? { groupInstruction: items[0].meta.groupInstructions[original.group] } : {}) });
     }
     return route.fulfill({ json: returned.get(id) });
+  }
+  if (url.pathname === '/api/tasks/other-session/items') return route.fulfill({ json: { items: [] } });
+  if (url.pathname === '/api/projects/paper/annotations/returned-rejected' && route.request().method() === 'POST') {
+    const copy = returned.get('rejected');
+    copy.comment = route.request().postDataJSON().comment;
+    return route.fulfill({ json: copy });
   }
   if (url.pathname === '/api/tasks') {
     const body = route.request().postDataJSON();
@@ -389,56 +396,63 @@ try {
   await page.reload();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
   const originalRow = index => page.locator(`[data-note-result="request-1:${index}"]`);
-  const returnButton = container => container.getByRole('button', { name: 'Return to My notes', exact: true });
-  const undoButton = container => container.getByRole('button', { name: 'Undo return to My notes', exact: true });
-  await expect(returnButton(originalRow(1).locator('.sent-note-heading'))).toHaveText('');
-  await expect(returnButton(originalRow(1))).toHaveAttribute('title', 'Return to My notes');
+  const menu = container => container.locator('.note-disposition button[aria-haspopup="menu"]');
+  const chooseAction = async (container, name) => {
+    await menu(container).click();
+    await container.getByRole('menuitem', { name, exact: true }).click();
+  };
+  const takeBack = container => chooseAction(container, 'Return to My notes');
+  const undoReturn = container => chooseAction(container, 'Undo return to My notes');
+  await expect(originalRow(1).getByRole('button', { name: 'Return to My notes' })).toHaveCount(0);
   failReturn = true;
-  await returnButton(originalRow(1)).click();
+  await takeBack(originalRow(1));
   await expect(originalRow(1).getByRole('alert')).toHaveText('Retry the return.');
+  await expect(originalRow(1)).not.toHaveAttribute('data-returned', 'true');
   failReturn = false;
   await originalRow(1).click();
-  await expect(returnButton(controls().locator('.note-option-navigation'))).toBeVisible();
-  await expect(controls().getByText('Loading PDF comparison…', { exact: true })).toHaveCount(0);
-  await returnButton(controls()).click();
-  await expect(undoButton(controls())).toBeFocused();
-  await expect(undoButton(controls())).toHaveText('');
+  await expect(menu(controls())).toBeVisible();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await takeBack(controls());
+  await expect(page.locator('.submitted-note-flight')).toHaveText(originals[1].quote);
+  await expect(page.locator('[data-notes-home="library"].notes-received')).toBeVisible();
+  await expect(controls().locator('.note-next-task')).toBeVisible();
   await page.screenshot({ path: 'test-results/note-return-undo-mobile.png', animations: 'disabled' });
   failUndo = true;
-  await undoButton(controls()).click();
+  await undoReturn(controls());
   await expect(controls().getByRole('alert')).toHaveText('Retry the undo.');
   failUndo = false;
-  await undoButton(controls()).click();
-  await expect(returnButton(controls())).toBeFocused();
+  await undoReturn(controls());
+  await expect(controls().locator('.note-next-task')).toHaveCount(0);
   await expect(controls().getByRole('alert')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/note-return-mobile.png', animations: 'disabled' });
-  await returnButton(controls()).click();
-  await expect(undoButton(controls())).toBeEnabled();
-
-  // A previously added copy also leaves the task draft when the return is undone.
+  await takeBack(controls());
+  await controls().getByRole('button', { name: 'Continue in this task' }).click();
+  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveValue('');
+  await expect(page.locator('.review-draft-note .group-instruction-sent')).toContainText('Clarify the contribution.');
+  assert.equal(taskWrites.length, 0, 'Continuing here prepares an editable draft');
   await page.evaluate(() => localStorage.setItem('papilot:selected-notes', JSON.stringify({ paper: ['returned-rejected'] })));
   await page.reload();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
-  await expect(undoButton(originalRow(1))).toBeEnabled();
-  await undoButton(originalRow(1)).press('Enter');
-  await expect(returnButton(originalRow(1))).toBeFocused();
+  await expect(originalRow(1)).toHaveAttribute('data-returned', 'true');
+  await undoReturn(originalRow(1));
+  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => localStorage.getItem('papilot:selected-notes'))).toBeNull();
-  await returnButton(originalRow(1)).click();
-  await expect(undoButton(originalRow(1))).toBeEnabled();
+  await takeBack(originalRow(1));
+  await expect(originalRow(1)).toHaveAttribute('data-returned', 'true');
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.emulateMedia({ colorScheme: 'light' });
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
   await page.evaluate(() => localStorage.setItem('papilot:group-instructions', JSON.stringify({ paper: { yellow: 'An unrelated draft.' } })));
   await page.reload();
-  await expect(undoButton(originalRow(1).locator('.sent-note-heading'))).toBeEnabled();
-  await returnButton(originalRow(2)).click();
-  const returning = originalRow(2).getByRole('button', { name: 'Returning…', exact: true });
-  await expect(returning).toBeDisabled();
+  await expect(originalRow(1)).toHaveAttribute('data-returned', 'true');
+  await takeBack(originalRow(2));
+  await expect(menu(originalRow(2))).toBeDisabled();
   await page.locator('.manuscript-link').click();
   await page.getByRole('button', { name: /^Revise the introduction/ }).click();
-  await expect(returning).toBeDisabled();
+  await expect(menu(originalRow(2))).toBeDisabled();
   releaseMissed();
-  await expect(undoButton(originalRow(2))).toBeEnabled();
-  await expect(returnButton(originalRow(0))).toBeEnabled();
+  await expect(originalRow(2)).toHaveAttribute('data-returned', 'true');
+  await expect(page.locator('.submitted-note-flight')).toHaveCount(0);
+  await expect(originalRow(0)).not.toHaveAttribute('data-returned', 'true');
   assert.deepEqual(returnWrites, ['rejected', 'rejected', 'rejected', 'rejected', 'missed']);
   assert.deepEqual(undoWrites, [
     { id: 'rejected', createdAt: 2 }, { id: 'rejected', createdAt: 2 }, { id: 'rejected', createdAt: 3 },
@@ -446,12 +460,26 @@ try {
   assert.deepEqual(decisions, preserved);
   assert.equal(optionWrites.length, 2, 'Returning a note sends no review decision');
   await page.screenshot({ path: 'test-results/note-return-desktop.png', animations: 'disabled' });
-  await page.locator('.manuscript-link').click();
+  snapshot.tasks.push({ ...task, id: 'other-session', name: 'other-session', title: 'Separate wording pass', status: 'idle', review: null });
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await originalRow(1).click();
+  await controls().getByRole('button', { name: 'Another task…' }).click();
+  await expect(controls().getByRole('menuitem', { name: 'Separate wording pass' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/note-return-destinations.png', animations: 'disabled' });
+  await controls().getByRole('menuitem', { name: 'Separate wording pass' }).click();
+  const moved = page.getByRole('textbox', { name: 'Comment 1', exact: true });
+  await expect(moved).toHaveValue('');
+  await moved.fill('Keep my follow-up wording.');
+  await page.getByRole('button', { name: /^Revise the introduction/ }).click();
+  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveCount(0);
+  await chooseAction(originalRow(1), 'New task');
+  await expect(page.locator('.task-notes-panel')).toContainText('Keep my follow-up wording.');
+  await expect(page.locator('.task-notes-panel')).toContainText('Clarify the contribution.');
+  assert.equal(taskWrites.length, 0, 'Opening the new task keeps it as a draft');
   await page.getByRole('button', { name: /^My notes/ }).click();
   const library = page.getByRole('complementary', { name: 'PDF note library' });
   await expect(library.locator('[data-note="returned-missed"]')).toContainText('Position needs confirmation');
   await expect(library.locator('[data-note="returned-accepted"]')).toHaveCount(0);
-  await library.locator('[data-note="returned-rejected"]').getByRole('button', { name: /^Include note/ }).click();
   await library.locator('[data-note="returned-missed"]').getByRole('button', { name: /^Include note/ }).click();
   await library.getByRole('button', { name: 'Close notes', exact: true }).click();
   await expect(page.locator('.task-notes-panel')).toContainText('Clarify the contribution.');

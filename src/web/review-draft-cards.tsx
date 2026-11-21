@@ -11,13 +11,14 @@ function version(note: ReviewNote) {
   return note.strip.startsWith('paper:') ? 'paper' : note.whole ? 'whole' : / · Before(?: ·|$)/.test(note.where) ? 'before' : / · After(?: ·|$)/.test(note.where) ? 'after' : 'unchanged';
 }
 function place(note: ReviewNote) {
+  if (note.returned) return <span>{note.where}</span>;
   if (note.option) return <span className="review-draft-side">{t('Option: {label}', { label: note.option.label })}</span>;
   const side = version(note);
   const label = side === 'paper' ? t('Paper') : side === 'whole' ? t('Whole change') : side === 'before' ? t('Before revision') : side === 'after' ? t('After revision') : t('Unchanged text');
   const page = note.where.match(/PDF page ([^·]+)/)?.[1].trim();
   return <><span className="review-draft-side">{label}</span>{page && <span className="review-draft-page">· {t('Page {page}', { page })}</span>}</>;
 }
-export function ReviewDraftCards({ task, feedbackCount, onReveal }: { task: Task; feedbackCount: number; onReveal: () => void }) {
+export function ReviewDraftCards({ task, feedbackCount, onReveal, onOpenTask }: { task: Task; feedbackCount: number; onReveal: () => void; onOpenTask: (id: string) => void }) {
   const draft = reviewDraft(task.id), state = useReviewDraft(task.id), box = useRef<HTMLDivElement>(null);
   const links = useNoteResults();
   const [expanded, setExpanded] = useState(true);
@@ -37,10 +38,19 @@ export function ReviewDraftCards({ task, feedbackCount, onReveal }: { task: Task
     {expanded && <div className="review-draft-list">
       {feedbackCount > 0 && <p className="review-draft-decisions">{tn(feedbackCount, '{n} review update included', '{n} review updates included')}</p>}
       {state.notes.map((note, index) => <div key={note.id} className="review-draft-note" style={groupStyle(note.group)} data-note={note.id} data-version={version(note)}>
-        <div className="review-draft-location"><button type="button" onClick={() => { links?.clearFocus(); draft.reveal(note); onReveal(); }} title={t('Show quoted passage')}><span className="review-draft-number">{index + 1}</span>{place(note)}{note.group && <i className="group-dot"/>}<Icon name="arrowRight" size={12}/></button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={state.busy} onClick={() => draft.remove(note.id)}><Icon name="close" size={13}/></button></div>
+        <div className="review-draft-location"><button type="button" onClick={() => { if (note.returned) {
+          if (note.returned.sourceTask && note.returned.sourceTask !== task.id) {
+            if (links?.otherTasks.some(other => other.id === note.returned!.sourceTask)) onOpenTask(note.returned.sourceTask);
+            else links?.openLibrary();
+            return;
+          }
+          const original = links?.notes.find(item => item.note.id === note.returned!.original);
+          if (original) links?.focusNote(original.key);
+        } else { links?.clearFocus(); draft.reveal(note); onReveal(); } }} title={t('Show quoted passage')}><span className="review-draft-number">{index + 1}</span>{place(note)}{note.group && <i className="group-dot"/>}<Icon name="arrowRight" size={12}/></button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={state.busy} onClick={() => draft.remove(note.id)}><Icon name="close" size={13}/></button></div>
         {note.stamp && <span className="pdf-note-stamp">{note.stamp}</span>}
+        {note.group && note.returned?.groupInstruction && <p className="group-instruction-sent">{groupName(note.group)} · {note.returned.groupInstruction}</p>}
         {note.quote && <blockquote data-kind={note.kind}>{note.quote}</blockquote>}
-        {!note.strip.startsWith('paper:') && note.round !== task.review?.round && <small>{t('From review round {n}', { n: note.round })}</small>}
+        {!note.returned && !note.strip.startsWith('paper:') && note.round !== task.review?.round && <small>{t('From review round {n}', { n: note.round })}</small>}
         <textarea data-note-id={note.id} aria-label={t('Comment {n}', { n: index + 1 })} placeholder={note.kind === 'delete' ? t('Replace with… (leave empty to delete)') : note.group ? t('Comment for {group} (optional)', { group: groupName(note.group) }) : t('What should change here?')} rows={2} value={note.comment} readOnly={state.busy} onChange={event => draft.edit(note.id, event.target.value)} onKeyDown={event => { event.stopPropagation(); }}/>
       </div>)}
       {state.notes.some(note => note.group) && <textarea className="review-group-instructions" aria-label={t('Instructions for color groups')} placeholder={t('What should change in each color group?')} rows={2} value={state.instructions} readOnly={state.busy} onChange={event => draft.instructions(event.target.value)}/>}

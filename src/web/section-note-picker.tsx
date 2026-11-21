@@ -11,10 +11,10 @@ export function SectionNotePicker({ sections, notes, disabled, has, select, onAd
   const add = (ids: string[]) => { select(ids, true); onAdded(); };
   if (!available.length && !notes.length) return null;
   // Without an outline, retain the ordinary bulk action without an empty menu.
-  if (!available.length) return <button type="button" className="icon-button" aria-label={t('Select all notes for this task')} title={bulkLabel}
-    aria-pressed={allSelected ? true : notes.some(has) ? 'mixed' : false} disabled={disabled} onClick={() => select(notes, !allSelected)}><Icon name={allSelected ? 'listMinus' : 'listPlus'}/></button>;
+  if (!available.length) return <button type="button" className="button ghost compact section-note-trigger" aria-label={t('Select all notes for this task')} title={bulkLabel}
+    aria-pressed={allSelected ? true : notes.some(has) ? 'mixed' : false} disabled={disabled} onClick={() => select(notes, !allSelected)}>{bulkLabel}</button>;
   const level = Math.min(...available.map(section => section.level));
-  return <ActionMenu label={t('Add to task')} className="icon-button" menuClassName="section-note-menu" disabled={disabled} actions={[
+  return <ActionMenu label={t('Add to task')} className="button ghost compact section-note-trigger" menuClassName="section-note-menu" disabled={disabled} actions={[
     ...(notes.length ? [{ label: bulkLabel, select: () => allSelected ? select(notes, false) : add(notes) }] : []),
     ...available.map((section, index) => {
       const selected = section.notes.filter(has).length, total = section.notes.length;
@@ -23,5 +23,5 @@ export function SectionNotePicker({ sections, notes, disabled, has, select, onAd
         indent: Math.max(0, Math.min(6, section.level - level)), divider: index === 0 && notes.length > 0,
         disabled: disabled || selected === total, select: () => add(section.notes) };
     }),
-  ]}><Icon name="listPlus"/></ActionMenu>;
+  ]}>{t('Add to task')}<Icon name="chevronDown" size={13}/></ActionMenu>;
 }

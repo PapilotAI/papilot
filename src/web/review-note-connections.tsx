@@ -79,7 +79,7 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
       const shown = Number(doc.documentElement.dataset.papilotRound) || round;
       const units = [...new Set(selected?.changes.filter(change => change.round === shown).flatMap(change => change.units) || [])];
       target.dispatchEvent(new CustomEvent('papilot:option-preview', { detail: current?.preview ? { key: current.preview.key, round: current.preview.round } : null }));
-      target.dispatchEvent(new CustomEvent('papilot:note-focus', { detail: current?.focus && units.length ? { round: shown, units: current.scope === 'all' ? null : units } : null }));
+      target.dispatchEvent(new CustomEvent('papilot:note-focus', { detail: current?.focus && selected && units.length ? { key: selected.key, round: shown, units: current.scope === 'all' ? null : units } : null }));
     };
     send(); target.addEventListener('papilot:round', send); target.addEventListener('papilot:note-focus-ready', send);
     return () => { target.removeEventListener('papilot:round', send); target.removeEventListener('papilot:note-focus-ready', send); };

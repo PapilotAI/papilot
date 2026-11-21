@@ -834,7 +834,7 @@ test('return unresolved task annotations without changing the original submissio
       comment: group ? '' : 'Revisit this request.', quote: `Original passage ${id}.`, createdAt: 1,
       source: { file: 'main.tex', lines: [line, line], excerpt: `Original passage ${id}.` },
     });
-    const accepted = makeNote('accepted', 10), missed = makeNote('missed', 90);
+    const accepted = { ...makeNote('accepted', 10, 'purple'), comment: 'Shorten this definition.' }, missed = makeNote('missed', 90);
     const rejected: Annotation = { ...makeNote('rejected', 20, 'purple'), kind: 'point', stamp: 'Clarify', aiReview: { taskId: 'agent-review', agent: 'codex', sourceId: 'suggestion' } };
     const originals = [accepted, rejected, missed].map(note => f.store.saveAnnotation(note));
     f.store.saveAnnotation({ ...makeNote('foreign', 30), projectId: 'grant' });
@@ -920,6 +920,35 @@ test('return unresolved task annotations without changing the original submissio
     assert.deepEqual(f.store.items(taskId), oldItems);
     assert.deepEqual(f.store.task(taskId), oldTask);
     assert.deepEqual(originals.map(note => f.store.annotation(projectId, note.id)), originals);
+    // Sending a returned annotation in the same session claims it together
+    // with the new message. A stale draft cannot claim another return.
+    const copy = (await returns('accepted')).json() as Annotation;
+    const messages = (generation: number) => f.local.inject({ method: 'POST', url: `/api/tasks/${taskId}/messages`, headers: f.as,
+      payload: { text: '', requestKey: 'continue-here', notes: [{ ...summarizeNotes([accepted])[0], comment: 'Try a shorter wording.', returnedFrom: { original: accepted.id, createdAt: generation } }] } });
+    f.review.get = async () => ({ feedback: [], cursor: 0 }) as any;
+    assert.equal((await messages(copy.createdAt - 1)).statusCode, 400);
+    assert.equal(f.store.annotation(projectId, copy.id).taskId, undefined);
+    const sameTask = await messages(copy.createdAt);
+    assert.equal(sameTask.statusCode, 200, sameTask.body);
+    assert.equal((await messages(copy.createdAt)).json().id, sameTask.json().id);
+    assert.equal(f.store.annotation(projectId, copy.id).taskId, taskId);
+    assert.equal(f.store.items(taskId).at(-1)?.meta?.notes?.[0].id, copy.id);
+    assert.equal(f.store.items(taskId).at(-1)?.meta?.notes?.[0].comment, 'Try a shorter wording.');
+    assert.match(sameTask.json().prompt, /Color group instruction: Clarify the definition\./);
+    const followup = (await returns(copy.id)).json() as Annotation;
+    assert.equal(followup.groupInstruction, 'Clarify the definition.');
+    const sendElsewhere = (id: string) => f.local.inject({ method: 'POST', url: `/api/tasks/${id}/messages`, headers: f.as,
+      payload: { text: '', requestKey: 'continue-elsewhere', notes: [{ ...summarizeNotes([copy])[0], comment: 'Same PDF, separate conversation.', returnedFrom: { taskId, original: copy.id, createdAt: followup.createdAt } }] } });
+    const other = f.store.saveTask({ ...oldTask, id: 'another-session', name: 'another-session', document: 'appendix.tex' });
+    assert.equal((await sendElsewhere('grant-task')).statusCode, 400);
+    assert.equal((await sendElsewhere(other.id)).statusCode, 400);
+    f.store.updateTask(other.id, { document: 'main.tex' });
+    f.store.deleteTask(taskId); // The editable library copy outlives its original conversation.
+    const elsewhere = await sendElsewhere(other.id);
+    assert.equal(elsewhere.statusCode, 200, elsewhere.body);
+    assert.equal(f.store.annotation(projectId, followup.id).taskId, other.id);
+    assert.equal(f.store.items(other.id).at(-1)?.meta?.notes?.[0].comment, 'Same PDF, separate conversation.');
+
   } finally { await f.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 

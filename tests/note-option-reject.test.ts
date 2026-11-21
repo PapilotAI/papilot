@@ -43,7 +43,10 @@ test('note decisions announce the final selection only at its boundary, and neve
   store.saveProject({ id: 'paper', name: 'Paper', path: f.root, createdAt: 1 });
   store.saveTask({ id: 'task', projectId: 'paper', name: task.name, title: task.title, worktree: task.worktree, instructions: '', deferred: true, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, review: { round: 1 }, error: null } as Task);
   store.saveRun({ id: 'run', taskId: 'task', requestKey: 'run', prompt: '', status: 'completed', createdAt: 1, finishedAt: 2, reviewRound: 1 });
-  store.saveItem({ id: 'run', taskId: 'task', type: 'user', text: '', createdAt: 1, meta: { notes: [{ where: `${METHOD} line ${note.old_start}`, quote: 'Method', comment: 'Improve wording.' }] } });
+  const originals = ['original', 'shared'].map(id => store.saveAnnotation({ id, projectId: 'paper', taskId: 'task', key: 'pdf', document: 'main.tex',
+    page: 0, rect: [0, 0, 1, 1], source: null, comment: id, quote: 'Method', createdAt: 1 }));
+  store.saveItem({ id: 'run', taskId: 'task', type: 'user', text: '', createdAt: 1, meta: { notes: originals.map(original => ({
+    id: original.id, where: `${METHOD} line ${note.old_start}`, quote: original.quote, comment: original.comment })) } });
   const local = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts, csrf: 'test-csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => client });
   const headers = { host: '127.0.0.1:7274', origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'test-csrf', 'x-review-token': engine.csrf };
   const proxy = (route: string, payload: Record<string, unknown>) => local.inject({ method: 'POST', url: `/review/paper/api/tasks/${task.name}/${route}`, headers, payload });
@@ -59,6 +62,20 @@ test('note decisions announce the final selection only at its boundary, and neve
     for (const [index, action] of ['accept', 'reject'].entries()) {
       const response = await choose({ id: `final-${action}`, [action]: true });
       assert.equal(response.statusCode, 200, response.body);
+      const copies = () => store.annotations('paper').filter(note => !note.taskId);
+      assert.deepEqual(copies().map(note => note.comment), action === 'reject' ? ['original'] : []);
+      if (action === 'reject') {
+        const siblingReplay = await choose({ key: 'run:1', id: 'final-reject', reject: true });
+        assert.equal(siblingReplay.statusCode, 400, 'An action ID is bound to the selected annotation, even when the edits match');
+        assert.equal(copies().length, 1);
+        const copy = copies()[0];
+        assert.equal(response.json().noteReturn.undoReturnAt, copy.createdAt);
+        // Separate decisions on a note's individual changes can be replayed in any order.
+        store.returnAnnotation(copy, 'second-scoped-rejection');
+        store.deleteAnnotation('paper', copy.id);
+        assert.equal((await choose({ id: 'final-reject', reject: true })).json().noteReturn.returned, false);
+        assert.deepEqual(copies(), [], 'A retried decision preserves an explicit undo of the return');
+      }
       assert.equal(store.task('task').review?.counts.pending, 0);
       assert.equal(announced, index + 1, 'the confirmed final drawer decision completes the selection');
       const invalid = await choose({ id: `new-${action}`, [action]: true });
@@ -78,6 +95,14 @@ test('note decisions announce the final selection only at its boundary, and neve
     assert.equal(store.task('task').status, 'reviewing');
     assert.equal(announced, 3, 'a confirmed option build completes the selection');
     assert.equal(refreshes, 0, 'deciding never compiles the manuscript; applying does');
+    await transport.post(`/api/tasks/${task.name}/undo`, { id: 'built-option' });
+    const scoped = { id: 'scope-reject', round: 1, changes: [note.id], action: 'reject', noteKey: 'run:1' };
+    assert.equal((await proxy('decide', { ...scoped, changes: [earlier.id] })).statusCode, 400);
+    const scopedResult = await proxy('decide', scoped);
+    assert.equal(scopedResult.statusCode, 200, scopedResult.body);
+    assert.equal(scopedResult.json().noteReturn?.returned, true);
+    assert.deepEqual(store.annotations('paper').filter(copy => !copy.taskId).map(copy => copy.comment), ['shared']);
+    assert.equal((await proxy('undo', { id: scoped.id })).statusCode, 200);
   } finally { releaseBuild(); await local.close(); workspace.close(); store.close(); await server.close(); await f.close(); }
 });
 test('rejecting a note restores its source even when previewing an alternative; neighboring edits and undo survive', async () => {

@@ -38,7 +38,8 @@ try {
     const baselineGate = new Promise(resolve => { releaseBaseline = resolve; });
     const alternativeGate = new Promise(resolve => { releaseAlternative = resolve; });
     const changed = () => { task.updatedAt++; task.review.counts.pending = Object.values(decisions).filter(state => state === 'pending').length; };
-    const notes = () => noteUnits.map((unit, index) => ({ key: `run:${index}`, itemId: 'run', index, note: annotations[index], round: task.review.round, state: 'matched', returned: false, changes: [{ round: task.review.round, stop: ['a', 'b', 'c'].indexOf(unit), units: [unit], state: decisions[unit], match: 'source' }] }));
+    const returned = new Set();
+    const notes = () => noteUnits.map((unit, index) => ({ key: `run:${index}`, itemId: 'run', index, note: annotations[index], round: task.review.round, state: 'matched', returned: returned.has(index), undoReturnAt: returned.has(index) ? 1 : undefined, changes: [{ round: task.review.round, stop: ['a', 'b', 'c'].indexOf(unit), units: [unit], state: decisions[unit], match: 'source' }] }));
     const detail = (unit, option) => ({ task: 'flow', round: task.review.round, before: 'before', after: `${unit}-${option}-v${version}`, files: '', warnings: [], sections: [],
       units: ['a', 'b', 'c'].map((id, index) => ({ id, file: 'main.tex', kind: 'text', old_start: index + 1, old_end: index + 1, new_start: index + 1, new_end: index + 1, old_text: `Old ${id}`, new_text: `${id === unit ? option : selected[id]} ${id}` })),
       loose: ['a', 'b', 'c'].map(id => ({ kind: 'change', units: [id], before: [strip(id, `Old ${id}`)], after: [strip(id, `${id === unit ? option : selected[id]} ${id}`)] })) });
@@ -82,7 +83,9 @@ try {
         if (undone.has(body.id)) return route.fulfill({ status: 400, json: { error: 'That decision was undone or failed. Make it again.' } });
         if (saveFails) return route.fulfill({ status: 400, json: { error: 'The source changed. Try again.' } });
         if (body.accept && body.option !== selected[unit]) { pendingBuild = { unit, option: body.option }; task.status = 'building'; changed(); return json({ building: true }); }
-        decisions[unit] = body.accept ? 'accepted' : 'rejected'; changed(); return json(options(body.key));
+        decisions[unit] = body.accept ? 'accepted' : 'rejected'; changed();
+        if (body.reject) returned.add(Number(body.key.split(':')[1]));
+        return json({ ...options(body.key), ...(body.reject ? { noteReturn: { returned: true, undoReturnAt: 1 } } : {}) });
       }
       if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
       if (url.pathname.endsWith('/skills')) return json({ skills: [] });
@@ -119,18 +122,11 @@ try {
       releaseBaseline();
       await expect(comparison('a-current-v1')).toBeVisible();
       const toolbar = drawer.locator('.note-option-navigation');
-      const returnNote = toolbar.getByRole('button', { name: 'Return to My notes', exact: true });
-      await expect(returnNote).toBeVisible();
-      const targetSize = width <= 390 ? 36 : 24;
-      const [action, tabs, pager, choices, header] = await Promise.all([
-        returnNote.boundingBox(), toolbar.getByRole('tablist').boundingBox(),
-        toolbar.locator('.review-note-pager').boundingBox(), toolbar.locator('.note-option-actions').boundingBox(), toolbar.boundingBox(),
-      ]);
-      const center = rect => rect.y + rect.height / 2;
-      assert.ok(action.width >= targetSize && action.height >= targetSize, 'the inline action keeps its input target size');
-      assert.ok(Math.abs(center(tabs) - center(action)) < 1, 'the return icon shares an existing toolbar row');
-      assert.ok(Math.abs(center(pager) - center(choices)) < 1, 'the pager and review actions share a row');
-      assert.ok(choices.x + choices.width <= header.x + header.width, 'review actions stay inside the toolbar');
+      await expect(toolbar.getByRole('button', { name: 'Return to My notes', exact: true })).toHaveCount(0);
+      const pager = await toolbar.locator('.review-note-pager').boundingBox();
+      const choices = await toolbar.locator('.note-option-actions').boundingBox();
+      const header = await toolbar.boundingBox();
+      assert.ok(pager.x >= header.x && choices.x + choices.width <= header.x + header.width + 1, 'note controls fit the toolbar');
       // Selected segments must rise above their groove in both themes, including
       // the host's scope switch beside the embedded viewer's controls.
       for (const colorScheme of ['dark', 'light']) {
@@ -229,6 +225,10 @@ try {
       saveFails = false;
       await drawer.getByRole('button', { name: 'Reject Original c', exact: true }).click();
       await expect.poll(() => decisions.c).toBe('rejected');
+      await expect(drawer.getByRole('button', { name: 'Continue in this task' })).toBeVisible();
+      await expect(drawer.getByRole('button', { name: 'New task', exact: true })).toBeVisible();
+      await expect(page.locator('[data-note-result="run:3"]')).toHaveAttribute('data-returned', 'true');
+      assert.deepEqual([...returned], [3]);
       await expect(drawer.locator('.review-note-position')).toHaveText('Note 4 / 4');
       await expect(drawer.getByRole('button', { name: 'Accept Original c', exact: true })).toBeDisabled();
       assert.equal(writes.at(-1).id, writes.at(-2).id, 'a failed decision keeps its retry identity');

@@ -3,6 +3,8 @@ import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffe
 import type { NoteChange, NoteResult, NoteReturnState, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
 import { readNotesInstructions } from '../notes.ts';
 import { NoteOptionDiff, NoteOptionSource } from './note-option-diff.tsx';
+import { ActionMenu } from './action-menu.tsx';
+import { returnSubmittedNote } from './note-flight.ts';
 import { Icon } from './icons.tsx';
 import { errorText, t } from './i18n.ts';
 import { reviewDraft, useReviewDraft } from './review-draft.ts';
@@ -85,15 +87,19 @@ interface Links {
   alternativeCounts: Record<string, number>;
   focusNote: (key: string) => void;
   returns: Record<string, { pending: boolean; error?: string }>;
-  returnNote?: (key: string) => void;
+  returnNote?: (key: string, source: HTMLElement) => void;
+  confirmReturn: (note: NoteResult, result: NoteReturnState, source?: HTMLElement | null) => void;
+  openLibrary: () => void;
+  otherTasks: Task[];
+  resumeNote?: (note: NoteResult, destination: string | null) => void;
   showChange: (key: string, change: NoteChange) => void; showNote: (key: string) => void;
 }
 const Context = createContext<Links | null>(null);
 export const useNoteResults = () => useContext(Context);
 
-export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, openReview, openChat, children }: {
+export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, openLibrary, otherTasks, resumeNote, openReview, openChat, children }: {
   task?: Task; items: TimelineItem[]; read: (id: string) => Promise<{ notes: NoteResult[] }>;
-  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; openReview: () => void; openChat: () => void; children: ReactNode;
+  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; openLibrary: () => void; otherTasks: Task[]; resumeNote?: Links['resumeNote']; openReview: () => void; openChat: () => void; children: ReactNode;
 }) {
   const [notes, setNotes] = useState<NoteResult[]>([]), [error, setError] = useState(false), [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(''), [focus, setFocus] = useState<NoteFocus | null>(null);
@@ -186,16 +192,21 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     })();
     return () => { cancelled = true; };
   }, [id, task?.status, task?.review?.round, task?.updatedAt, decisions, noteSignature]);
-  function returnNote(key: string) {
+  function confirmReturn(note: NoteResult, result: NoteReturnState, source?: HTMLElement | null) {
+    if (activeTask.current !== id) return;
+    if (result.returned && !note.returned && source?.isConnected) returnSubmittedNote(source, note.note.quote || note.note.comment || note.note.where);
+    setNotes(current => current.map(item => item.note.id === note.note.id ? { ...item, returned: result.returned, undoReturnAt: result.undoReturnAt } : item));
+    window.dispatchEvent(new Event('papilot:manuscript'));
+    reload();
+  }
+  function returnNote(key: string, source: HTMLElement) {
     const note = notes.find(note => note.key === key);
     if (!returnRequest || !id || !note?.note.id || note.returned === undefined || (note.returned && note.undoReturnAt === undefined) || runningReturns.current.has(key)) return;
     runningReturns.current.add(key);
     setReturns(current => ({ ...current, [key]: { pending: true } }));
     void returnRequest(id, note.note.id, note.returned ? note.undoReturnAt : undefined).then(result => {
       setReturns(current => { const next = { ...current }; delete next[key]; return next; });
-      if (activeTask.current !== id) return;
-      setNotes(current => current.map(item => item.note.id === note.note.id ? { ...item, returned: result.returned, undoReturnAt: result.undoReturnAt } : item));
-      reload();
+      confirmReturn(note, result, source);
     }, error => {
       setReturns(current => ({ ...current, [key]: { pending: false, error: optionError(error instanceof Error ? error.message : String(error)) } }));
     }).finally(() => runningReturns.current.delete(key));
@@ -207,27 +218,45 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     background ? () => { void previewRequest(id, key, round, option, retry, version, false).catch(() => {}); } : undefined)), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
     alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
-    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, returnNote: returnRequest && returnNote };
+    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, confirmReturn, openLibrary, otherTasks, resumeNote, returnNote: returnRequest && returnNote };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
-export function NoteReturnAction({ noteKey }: { noteKey: string }) {
+export function NoteLibraryLink() {
   const links = useNoteResults();
+  if (!links?.returnNote || !links.notes.some(note => note.returned !== undefined)) return null;
+  return <button type="button" className="icon-button" data-notes-home="library" title={t('My notes')} aria-label={t('My notes')} onClick={links.openLibrary}><Icon name="notes" size={16}/></button>;
+}
+
+function otherDestinations(links: Links, note: NoteResult) {
+  return [
+    { label: t('New task'), icon: 'plus', select: () => links.resumeNote!(note, null) },
+    ...links.otherTasks.map(task => ({ id: task.id, label: task.title, icon: 'chat', select: () => links.resumeNote!(note, task.id) })),
+  ];
+}
+
+export function NoteReturnAction({ noteKey, drawer = false }: { noteKey: string; drawer?: boolean }) {
+  const links = useNoteResults(), anchor = useRef<HTMLSpanElement>(null);
   const note = links?.notes.find(note => note.key === noteKey);
   if (!links?.returnNote || note?.returned === undefined) return null;
-  const state = links.returns[noteKey];
-  const canUndo = note.undoReturnAt !== undefined;
-  const disabled = Boolean(state?.pending || (note.returned && !canUndo));
-  const label = note.returned
-    ? canUndo ? t('Undo return to My notes') : t('Returned to My notes')
-    : state?.pending ? t('Returning…') : t('Return to My notes');
-  return <>
-    <button type="button" className="icon-button note-return-action" aria-label={label} title={label} aria-disabled={disabled} onClick={() => { if (!disabled) links.returnNote!(noteKey); }}>
-      <Icon name={state?.pending ? 'refresh' : note.returned ? canUndo ? 'undo' : 'check' : 'listReturn'}/>
-    </button>
-    <span className="sr-only" role="status">{note.returned ? t('Returned to My notes') : ''}</span>
-  </>;
+  const pending = Boolean(links.returns[noteKey]?.pending);
+  const returned = note.returned;
+  const select = () => {
+    const source = anchor.current?.closest<HTMLElement>('[data-note-result], .review-note-pager');
+    if (source) links.returnNote!(noteKey, source);
+  };
+  const actions = returned && note.undoReturnAt === undefined ? [] : [
+    ...(returned && !drawer && links.resumeNote ? [
+      { label: t('Continue in this task'), icon: 'chat', select: () => links.resumeNote!(note, links.task!.id) },
+      ...otherDestinations(links, note),
+    ] : []),
+    { label: returned ? t('Undo return to My notes') : t('Return to My notes'), icon: returned ? 'undo' : 'listReturn', select },
+  ];
+  return <span className="note-disposition" ref={anchor}>
+    <span role="status" className={drawer && returned ? "sr-only" : "note-disposition-status"}>{pending ? t('Returning…') : returned ? t('Returned to My notes') : ''}</span>
+    {actions.length > 0 && <ActionMenu label={t('Note {n}', { n: note.index + 1 })} actions={actions} disabled={pending}/>}
+  </span>;
 }
 
 export function NoteReturnError({ noteKey }: { noteKey: string }) {
@@ -264,6 +293,7 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     const outside = (event: MouseEvent) => {
       const target = event.target as Element | null;
       if (!event.isTrusted || !target || panel.current?.contains(target) || target.closest('[data-note-result], .papilot-note-links, .papilot-note-options, .note-review-scope')) return;
+      if (target.ownerDocument === doc && latest.current?.scope === 'note' && target.closest('button.reject')) return;
       latest.current?.clearFocus();
     };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) latest.current?.clearFocus(); };
@@ -325,17 +355,24 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     <button type="button" className="icon-button" data-direction="previous" aria-label={t('Previous note')} title={t('Previous note')} disabled={index <= 0} onClick={() => move(-1)}><Icon name="chevronLeft" size={14}/></button>
     <span className="review-note-position" aria-live="polite" aria-atomic="true" aria-label={t('Note {n} of {total}', { n: index + 1, total: siblings.length })}>{t('Note {n}', { n: index + 1 })}<span aria-hidden="true"> / </span>{siblings.length}</span>
     <button type="button" className="icon-button" data-direction="next" aria-label={t('Next note')} title={t('Next note')} disabled={index >= siblings.length - 1} onClick={() => move(1)}><Icon name="chevronRight" size={14}/></button>
+    <NoteReturnAction noteKey={displayed.key} drawer/>
   </nav>;
-  const emptyHeader = <div className="note-option-navigation">{navigation}<NoteReturnAction noteKey={displayed.key}/></div>;
+  const emptyHeader = <div className="note-option-navigation">{navigation}</div>;
   return <section ref={panel} className="review-note-controls" data-open={Boolean(note)} inert={!note} aria-label={t('Options for this note')}>
     {links.error ? <>{emptyHeader}<button type="button" className="note-result-retry" onClick={links.reload}><Icon name="refresh" size={12}/>{t('Retry linking changes')}</button></> : displayed.changes.length > 0 ? <NoteAlternatives key={displayed.key} note={displayed} navigation={navigation}/> : <>{emptyHeader}<p className="note-option-hint">{displayed.state === 'waiting' ? t('Awaiting changes') : t('No linked change')}</p></>}
+    {displayed.returned && displayed.undoReturnAt !== undefined && links.resumeNote && <div className="note-next-task">
+      <span><Icon name="notes" size={14}/>{t('Returned to My notes')}</span>
+      <button type="button" onClick={() => links.resumeNote!(displayed, links.task!.id)}>{t('Continue in this task')}</button>
+      {links.otherTasks.length ? <ActionMenu className="note-destination" label={t('Another task…')} actions={otherDestinations(links, displayed)}>{t('Another task…')}</ActionMenu>
+        : <button type="button" onClick={() => links.resumeNote!(displayed, null)}>{t('New task')}</button>}
+    </div>}
     <NoteReturnError noteKey={displayed.key}/>
   </section>;
 }
 
 function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: ReactNode }) {
   const links = useNoteResults()!, request = links.optionsRequest, task = links.task;
-  const tabsId = useId();
+  const tabsId = useId(), container = useRef<HTMLDivElement>(null);
   const tabs = useRef<HTMLDivElement>(null);
   const storageKey = `papilot:note-choice:${task?.id}:${note.key}`;
   const optionsKey = optionStateKey(task, links.notes, note);
@@ -451,7 +488,9 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
       const rejected = optionFeedback(option.id, 'reject'); if (rejected) draft.remove(rejected.id);
       browserStorage.removeItem(storageKey);
       if ('options' in result) { setData(result); setSelected(result.selected || 'current'); setApplying(false); }
-      links.decisionSaved({ key: note.key, round: data.round, units: option.edits.map(edit => edit.unit) });
+      if ('noteReturn' in result && result.noteReturn)
+        links.confirmReturn(note, result.noteReturn, container.current?.querySelector('.review-note-pager'));
+      if (!('noteReturn' in result && result.noteReturn?.returned)) links.decisionSaved({ key: note.key, round: data.round, units: option.edits.map(edit => edit.unit) });
     }
     catch (error) { setError((error as Error).message); setApplying(false); }
   };
@@ -474,7 +513,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const name = active ? label(active.id, active.label) : '';
   const commented = Boolean(active && optionFeedback(active.id, 'comment'));
   const multiple = (data?.options.length || 0) > 1;
-  return <div className="note-options" onClick={event => event.stopPropagation()}>
+  return <div ref={container} className="note-options" onClick={event => event.stopPropagation()}>
     <div className="note-option-navigation">
     <div className="note-option-choice">
     {data ? (multiple ? <div ref={tabs} className="note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
@@ -489,7 +528,6 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
         }}><span className="note-option-label">{name}{selected === option.id && previewBusy && <span className="spinner"/>}</span></button>;
       })}
     </div> : <span className="note-option-title" id={active ? `${tabsId}-${active.id}` : undefined} title={name}>{name}</span>) : <span className="note-option-title note-option-loading" role="status"><span className="spinner"/><span className="sr-only">{t('Loading PDF comparison…')}</span></span>}
-    <NoteReturnAction noteKey={note.key}/>
     </div>
     {navigation}
     {active && <div className="note-option-actions" role="group" aria-label={t('Review {label}', { label: name })}>

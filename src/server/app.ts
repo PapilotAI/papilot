@@ -566,24 +566,25 @@ export async function buildApp(options: AppOptions) {
     }
     return { notes };
   });
-  app.post<{ Params: { id: string; note: string } }>('/api/tasks/:id/notes/:note/return', task, request => {
-    const task = store.task(request.params.id), noteId = request.params.note;
+  function returnCopy(task: Task, noteId: string) {
     const note = submittedAnnotation(task, noteId);
     const snapshot = store.items(task.id).find(item => item.type === 'user' && item.meta?.notes?.some(summary => summary.id === noteId && !summary.anchor?.round));
-    if (!note || !snapshot) throw new Error('Only submitted manuscript annotations can be returned.');
-    const id = returnedAnnotationId(task.id, noteId), existing = store.findAnnotation(task.projectId, id);
-    if (existing) {
-      if (existing.deletedAt === undefined || existing.taskId) return existing;
-      // Keep any edits to the copy. A new timestamp fences off a late undo
-      // of the previous return, including when both happen in the same tick.
-      return store.restoreAnnotation({ ...existing, createdAt: Math.max(Date.now(), existing.createdAt + 1) });
-    }
-    // Only the copy belongs to My notes. Keep its original PDF key so the
-    // manuscript read can place it safely or show the existing location warning.
-    const { taskId: _, context: _context, groupInstruction: _oldInstruction, aiReview: _adoption, ...copy } = note;
+    if (!note || !snapshot) return;
+    const { taskId: _, context: _context, groupInstruction: _oldInstruction, aiReview: _adoption, returnDecisions: _decisions, ...copy } = note;
     const document = note.document ?? manuscripts.documentOf(note.projectId, note.key) ?? task.document;
-    const groupInstruction = note.group && snapshot.meta?.groupInstructions?.[canonicalGroup(note.group)];
-    return store.saveAnnotation({ ...copy, id, createdAt: Date.now(), ...(document ? { document } : {}), ...(groupInstruction ? { groupInstruction } : {}) });
+    const groupInstruction = note.group && (snapshot.meta?.groupInstructions?.[canonicalGroup(note.group)] ?? note.groupInstruction);
+    return { ...copy, id: returnedAnnotationId(task.id, noteId), createdAt: Date.now(), ...(document ? { document } : {}), ...(groupInstruction ? { groupInstruction } : {}) };
+  }
+  app.get<{ Params: { id: string; note: string } }>('/api/tasks/:id/notes/:note/return', task, request => {
+    const task = store.task(request.params.id);
+    const copy = store.findAnnotation(task.projectId, returnedAnnotationId(task.id, request.params.note));
+    if (!copy || copy.taskId || copy.deletedAt !== undefined) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
+    return copy;
+  });
+  app.post<{ Params: { id: string; note: string } }>('/api/tasks/:id/notes/:note/return', task, request => {
+    const copy = returnCopy(store.task(request.params.id), request.params.note);
+    if (!copy) throw new Error('Only submitted manuscript annotations can be returned.');
+    return store.returnAnnotation(copy);
   });
   app.post<{ Params: { id: string; note: string }; Body: { createdAt: number } }>('/api/tasks/:id/notes/:note/undo-return', task, request => {
     const task = store.task(request.params.id), noteId = request.params.note;
@@ -662,16 +663,18 @@ export async function buildApp(options: AppOptions) {
       // alternative is being previewed. No candidate build or feedback draft.
       if (body.reject || option.id === context.options.selected) {
         if (!body.accept && !body.reject) return context.options;
-        const route = `${taskRoute(current.name)}/decide`, input = { id: string(body.id, 'Review action ID', 80), round: body.round, changes: option.edits.map(edit => edit.unit), action: body.reject ? 'reject' : 'accept' };
+        const route = `${taskRoute(current.name)}/decide`, input = { id: string(body.id, 'Review action ID', 80), round: body.round, changes: option.edits.map(edit => edit.unit), action: body.reject ? 'reject' : 'accept', ...(body.reject ? { noteKey: body.key } : {}) };
+        const copy = body.reject && context.note.note.id && !context.note.note.anchor?.round ? returnCopy(current, context.note.note.id) : undefined;
         const result = await workspace.reviewWrite(current.id, true, async () => {
           const response = await fetch(client.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': client.token }, body: JSON.stringify(input), signal: AbortSignal.timeout(120000) });
           const value = await response.json() as { error?: string };
           if (!confirmedReviewResponse(response.status, value, current.name)) throw new Error('The review action could not be confirmed. Check task status before retrying.');
           return value;
-        }, { route, body: input });
+        }, { route, body: input, ...(copy ? { returnNote: copy } : {}) });
         if (result.error) throw new Error(result.error);
         await workspace.refresh(current.id);
-        return (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
+        const options = (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
+        return copy ? { ...options, noteReturn: noteReturnState(store.findAnnotation(copy.projectId, copy.id)) } : options;
       }
       const route = `${taskRoute(current.name)}/source/options`, input = { id: string(body.id, 'Option request ID', 80), round: body.round, edits: option.edits, ...(body.accept ? { accept: true } : {}) };
       // Keep the annotation's original association before the engine starts
@@ -747,6 +750,7 @@ export async function buildApp(options: AppOptions) {
     if (feedback && attachments.length) throw new Error('Send attachments with a message, separately from review feedback.');
     const skill = name ? findSkill(store.project(task.projectId).path, name) : undefined;
     let reviewNotes: NoteSummary[] | undefined;
+    const returnedNotes = new Map<string, number>();
     if (b.notes !== undefined) {
       if (!Array.isArray(b.notes) || !b.notes.length || feedback) throw new Error('Select valid review notes.');
       reviewNotes = b.notes.map((note: any) => {
@@ -756,6 +760,17 @@ export async function buildApp(options: AppOptions) {
         // Review marks carry the same actions and quick-note labels as manuscript annotations.
         const stamp = note.stamp === undefined ? '' : string(note.stamp, 'Quick note name', 40).replace(/[·\n]/g, ' ').trim();
         const comment = note.group || note.kind === 'delete' ? optional(note.comment, 'Note') : string(note.comment, 'Note');
+        let noteId = note.id, groupInstruction: string | undefined;
+        if (note.returnedFrom) {
+          const original = string(note.returnedFrom.original, 'Note ID', 100);
+          const sourceId = string(note.returnedFrom.taskId ?? task.id, 'Task ID', 100);
+          if (!Number.isSafeInteger(note.returnedFrom.createdAt)) throw new Error('Select valid review notes.');
+          noteId = returnedAnnotationId(sourceId, original);
+          const copy = store.findAnnotation(task.projectId, noteId);
+          if (!copy || (sourceId !== task.id && task.document && copy.document !== task.document)) throw new Error('Select valid review notes.');
+          groupInstruction = copy.groupInstruction;
+          returnedNotes.set(noteId, note.returnedFrom.createdAt);
+        }
         const anchor = note.anchor;
         if (anchor && (!Array.isArray(anchor.sources) || (anchor.round !== undefined && (!Number.isSafeInteger(anchor.round) || anchor.round < 1 || anchor.round > (task.review?.round || 0))))) throw new Error('Invalid note location.');
         const sources = anchor?.sources.map((source: any) => {
@@ -763,7 +778,7 @@ export async function buildApp(options: AppOptions) {
           return { file: string(source.file, 'Source file', 4096), lines: source.lines as [number, number] };
         });
         const paper = note.paper === undefined ? undefined : notePaper(note.paper, task.review?.round || 0);
-        return { ...(paper ? { paper } : {}), ...(note.id ? { id: string(note.id, 'Note ID', 100) } : {}), where: string(note.where, 'Note location'), quote: optional(note.quote, 'PDF text'), comment, ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(stamp ? { stamp } : {}), ...(anchor ? { anchor: { sources, ...(anchor.round ? { round: anchor.round } : {}) } } : {}) };
+        return { ...(groupInstruction ? { context: ['Color group instruction: ' + groupInstruction] } : {}), ...(paper ? { paper } : {}), ...(noteId ? { id: string(noteId, 'Note ID', 100) } : {}), where: string(note.where, 'Note location'), quote: optional(note.quote, 'PDF text'), comment, ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(stamp ? { stamp } : {}), ...(anchor ? { anchor: { sources, ...(anchor.round ? { round: anchor.round } : {}) } } : {}) };
       });
     }
     const text = feedback || skill || reviewNotes || attachments.length ? optional(b.text, 'Revision instructions') : string(b.text, 'Revision instructions');
@@ -783,7 +798,7 @@ export async function buildApp(options: AppOptions) {
       }, MAX_ATTACHMENTS - attachments.length);
       reviewNotes = pages.notes; attachments.push(...pages.attachments);
     }
-    return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, reviewNotes, attachments });
+    return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, reviewNotes, attachments, returnedNotes });
   });
   // Applying writes the manuscript only once its delivery is complete: not
   // for a confirmation, a merge suggestion, a pending delivery or a branch.
@@ -1235,6 +1250,15 @@ export async function buildApp(options: AppOptions) {
         : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean; queued?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
           .then(state => state.undo?.id === (request.body as any)?.id && (state.undo?.kind !== 'reject' || Boolean(state.undo?.queued)) && !state.undo?.republish, () => false));
       if (besideAgent && route.endsWith('/decide') && (request.body as any)?.action === 'reject') (request.body as any).queue = true;
+      const input = request.body as { noteKey?: string; action?: string; changes?: string[]; round?: number } | undefined;
+      let returnNote: Annotation | undefined;
+      if (reviewTask && route.endsWith('/decide') && input?.action === 'reject' && input.noteKey) {
+        const notes = await taskNoteResults(reviewTask, store.items(reviewTask.id), store.runs().filter(run => run.taskId === reviewTask.id), client);
+        const note = notes.find(note => note.key === input.noteKey);
+        const units = new Set(note?.changes.filter(change => change.round === input.round).flatMap(change => change.units));
+        if (!units.size || !Array.isArray(input.changes) || !input.changes.length || !input.changes.every(id => units.has(id))) throw new Error('The review changed. Reload the options.');
+        if (note?.note.id && !note.note.anchor?.round) returnNote = returnCopy(reviewTask, note.note.id);
+      }
       let settles: string | undefined;
       const forward = async () => {
         const search = new URL(request.url, 'http://localhost').search;
@@ -1276,8 +1300,10 @@ export async function buildApp(options: AppOptions) {
       };
       if (request.method === 'POST' && !reviewTask) throw new Error('This review task does not belong to this workspace.');
       let result: unknown;
-      try { result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown> } : undefined, besideAgent) : forward()); }
+      try { result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown>, returnNote } : undefined, besideAgent) : forward()); }
       finally { if (settles) settle(workspace, settles); }
+      if (returnNote && result && typeof result === 'object' && confirmedReviewResponse(200, result, reviewTask!.name))
+        Object.assign(result, { noteReturn: noteReturnState(store.findAnnotation(returnNote.projectId, returnNote.id)) });
       return annotateReviewState(result, store.tasks().filter(task => task.projectId === project.id));
     },
   });

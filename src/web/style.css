@@ -1273,6 +1273,7 @@ body.resizing iframe{pointer-events:none}
 .pdf-reading-notes-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:40px;padding:0 8px 0 16px;border-bottom:1px solid var(--line);font-size:12px;color:var(--text-2);flex:none}
 .pdf-reading-notes-head>strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--text)}
 .pdf-reading-notes-actions{display:flex;align-items:center;gap:2px;flex:none}
+.pdf-reading-notes-actions .section-note-trigger { min-height: 28px; padding-inline: 7px; color: var(--primary); }
 .pdf-reading-notes-actions :where(.icon-button){color:var(--text-2)}
 @media(pointer:fine){.pdf-reading-notes-head .icon-button{width:28px;height:28px}}
 .pdf-reading-notes .notes-panel{overflow:auto;padding:4px 8px 8px}
@@ -1292,6 +1293,7 @@ body.resizing iframe{pointer-events:none}
   .pdf-reading-notes::before{content:"";position:absolute;top:5px;left:50%;width:36px;height:4px;margin-left:-18px;border-radius:999px;background:var(--line-strong)}
   .pdf-reading-notes-head{min-height:48px;padding:0 8px 0 16px;font-size:15px}
   .pdf-reading-notes-head .icon-button{width:36px;height:36px}
+  .pdf-reading-notes-actions .section-note-trigger{min-height:36px}
   .notes-clear-status>.button{min-block-size:36px}
   .pdf-reading-notes .notes-panel{padding:4px 8px 12px}
 }
@@ -1314,9 +1316,21 @@ body.resizing iframe{pointer-events:none}
    the PDF workspace; the document keeps its width and native layout. */
 .sent-notes li[data-note-result] { cursor: pointer; }
 .sent-notes li[data-note-result]:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
-.icon-button.note-return-action{width:24px;height:24px;color:var(--text-2)}
-.icon-button.note-return-action[aria-disabled=true]{color:var(--text-3);cursor:default;background:transparent}
-@media(pointer:coarse){.icon-button.note-return-action{width:36px;height:36px}}
+.note-disposition { display: inline-flex; align-items: center; gap: 3px; min-width: 0; }
+@media (hover:hover) and (pointer:fine) {
+  .sent-notes li:not(:hover,:focus-within) .note-disposition .more-button { opacity: 0; }
+}
+.note-disposition-status { font-size: 11px; color: var(--text-2); }
+.note-disposition .more-button { width: 26px; height: 26px; color: var(--text-2); }
+.sent-notes [data-returned] :is(blockquote,p,.sent-note-where,.sent-note-region) { color: var(--text-3); }
+.sent-notes [data-returned] .sent-note-number { background: var(--bg-muted); color: var(--text-3); }
+.submitted-note-flight { padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r); }
+@media (pointer:coarse) { .note-disposition .more-button { width: 36px; height: 36px; } }
+@media (prefers-reduced-motion:reduce) { [data-notes-home].notes-received, [data-notes-home].notes-received::after, [data-notes-home].notes-received .notes-count { animation:none; } }
+.note-next-task { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; padding: 5px 12px; border-top: 1px solid var(--line); font-size: 11px; }
+.note-next-task > span:first-child { display: inline-flex; align-items: center; gap: 5px; margin-inline-end: auto; color: var(--text-2); }
+.note-next-task > button, .note-next-task .note-destination { padding: 5px 2px; background: transparent; color: var(--primary); font: inherit; }
+.note-next-task > button:hover, .note-next-task .note-destination:hover { text-decoration: underline; }
 .note-return-error{display:block}
 .review-note-controls>.note-return-error{flex-shrink:0;padding:4px 12px 8px}
 .review-note-controls { container-type: inline-size; position: absolute; z-index: 5; inset: auto 0 0; padding: 0 0 env(safe-area-inset-bottom, 0px); border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--bg); max-height: min(44%, 300px); display: flex; flex-direction: column; overflow: hidden; transform: translateY(100%); transition: transform .18s var(--ease); }
@@ -1358,9 +1372,9 @@ body.resizing iframe{pointer-events:none}
 .note-option-actions .icon-button { width: 28px; height: 28px; border-radius: 5px; }
 @container (max-width:520px){
   .note-option-navigation{flex-wrap:wrap;row-gap:4px;padding-block:6px}
-  .note-option-choice:has(.note-option-tabs),.note-option-choice:has(.note-return-action):has(~.note-option-actions){flex-basis:100%}
-  .note-option-choice:has(.note-option-tabs,.note-return-action)+.review-note-pager{margin-inline-start:0}
-  .note-option-choice:has(.note-option-tabs,.note-return-action)~.note-option-actions{margin-inline-start:auto}
+  .note-option-choice:has(.note-option-tabs){flex-basis:100%}
+  .note-option-choice:has(.note-option-tabs)+.review-note-pager{margin-inline-start:0}
+  .note-option-choice:has(.note-option-tabs)~.note-option-actions{margin-inline-start:auto}
 }
 @media(pointer:coarse){.note-option-tab{min-height:32px}.note-review-scope button{height:32px;font-size:13px}.note-option-actions .icon-button,.review-note-pager .icon-button{width:36px;height:36px}}
 .note-option-actions svg { stroke-width: 2.2; }

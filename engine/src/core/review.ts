@@ -539,6 +539,7 @@ export class Review {
       /** The agent is working in the task's files: a reject waits for its
        *  turn to end. */
       queue?: boolean;
+      noteKey?: string;
     },
     // A note option's checkmark was given with the option's own PDF preview.
     options: { previewed?: boolean } = {},
@@ -554,6 +555,7 @@ export class Review {
       round: number;
       body?: string;
       queue?: boolean;
+      noteKey?: string;
     },
     options: { previewed?: boolean },
   ) {
@@ -565,6 +567,8 @@ export class Review {
       throw new Error("Review the new merge suggestion before changing decisions.");
     if (!Object.hasOwn(DECIDED, kind))
       throw new Error("The action must be accept, reject or comment.");
+    if (data.noteKey !== undefined && (kind !== 'reject' || typeof data.noteKey !== 'string' || data.noteKey.length > 200))
+      throw new Error("Invalid note key.");
     const identity = data.id || randomUUID();
     if (!/^[A-Za-z0-9-]{1,80}$/.test(identity))
       throw new Error("Invalid action id.");
@@ -580,6 +584,7 @@ export class Review {
         previous.task !== name ||
         sent.round !== data.round ||
         previous.kind !== kind ||
+        previous.detail.noteKey !== data.noteKey ||
         (kind === "comment" && previous.body !== (data.body || "").trim()) ||
         JSON.stringify(sent.changes) !== JSON.stringify(chosen)
       )
@@ -620,7 +625,7 @@ export class Review {
         if (found) seen[id] = found;
       }
     }
-    const extra: ActionDetail = { ...(requested ? { requested } : {}), ...(Object.keys(seen).length ? { seen } : {}) };
+    const extra: ActionDetail = { ...(data.noteKey ? { noteKey: data.noteKey } : {}), ...(requested ? { requested } : {}), ...(Object.keys(seen).length ? { seen } : {}) };
     const selected = ids.map((c) => latest.units.find((u) => u.id === c)!);
     if (kind === "accept") await this.accept(task, latest, identity, selected, extra);
     else if (kind === "reject" && data.queue)

@@ -68,12 +68,12 @@ try {
   await expect(page.locator('.pdf-reading-notes [data-note]')).toHaveCount(5);
   const selectAll = page.getByRole('button', { name: 'Select all notes for this task', exact: true });
   await expect(selectAll).toBeVisible();
-  await expect(selectAll).toHaveText('');
+  await expect(selectAll).toHaveText('Add all to task');
   await expect(selectAll).toHaveAttribute('title', 'Add all to task');
   await expect(pick()).toHaveCount(0);
   scopeReady = true;
   await expect(pick()).toBeVisible();
-  await expect(pick()).toHaveText('');
+  await expect(pick()).toHaveText('Add to task');
   for (const id of ['outside', 'child-a']) await expect(included(id)).toHaveCount(1);
   await expect(menu()).not.toBeVisible();
   await pick().click();

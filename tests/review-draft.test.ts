@@ -3,6 +3,33 @@ import assert from 'node:assert/strict';
 import { ReviewDraft, reviewCommentMark, reviewNoteSummary, reviewSubmission, type ReviewMark } from '../src/web/review-draft.ts';
 const mark: ReviewMark = { strip: '1:before.svg', round: 1, stop: 0, where: 'Round 1 · PDF page 1 · Before · main.tex:2–4', quote: 'Original term', rects: [[0.1, 0.2, 0.4, 0.3]], region: false };
 const storage = () => { const values = new Map<string, string>(); return { getItem: (key: string) => values.get(key) || null, setItem: (key: string, value: string) => { values.set(key, value); } }; };
+test('returned group instructions leave deletion marks empty and retiring a return clears its draft history', () => {
+  const saved = storage(), draft = new ReviewDraft('task', saved);
+  const returned = { original: 'original', createdAt: 1, groupInstruction: 'Remove redundant wording.' };
+  const item = { ...mark, group: 'yellow' as const, returned, round: 0 };
+  const id = draft.add(item, false)!;
+  assert.deepEqual(reviewSubmission(draft.getSnapshot()).notes.map(note => note.comment), ['']);
+  draft.remove(id);
+  const other = draft.add({ ...item, returned: { ...returned, createdAt: 2 }, kind: 'delete' }, false)!;
+  draft.forgetReturn('original', 1);
+  assert.equal(draft.undo(), true);
+  assert.equal(draft.undo(), false);
+  assert.equal(draft.redo(), true);
+  assert.deepEqual(draft.getSnapshot().notes.map(note => [note.id, note.comment]), [[other, '']]);
+  assert.equal(new ReviewDraft('task', saved).getSnapshot().canUndo, false);
+});
+test('moving a returned note preserves draft edits from another tab', () => {
+  const saved = storage(), first = new ReviewDraft('task', saved);
+  const returned = { original: 'original', sourceTask: 'origin', createdAt: 1 };
+  const id = first.add({ ...mark, returned }, false)!;
+  const second = new ReviewDraft('task', saved);
+  second.edit(id, 'Latest wording');
+  second.add(mark, false, 'Unrelated note');
+  assert.equal(first.refreshFromStorage().getSnapshot().notes[0].comment, 'Latest wording');
+  first.forgetReturn(returned.original, returned.createdAt);
+  second.add({ ...mark, returned: { ...returned, original: 'another' } }, false, 'Another return');
+  assert.deepEqual(new ReviewDraft('task', saved).getSnapshot().notes.map(note => note.comment), ['Unrelated note', 'Another return']);
+});
 test('each alternative keeps its own comment and rejection in the unsent draft', () => {
   const saved = storage(), draft = new ReviewDraft('options', saved);
   const option = { ...mark, where: mark.where + ' · Option: Concise', option: { note: 'run:0', id: 'brief', label: 'Concise', kind: 'comment' as const } };
