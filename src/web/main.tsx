@@ -467,7 +467,7 @@ function Activity({ runtimes, relatedTasks, onOpenTask, onRestarted, source, onR
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
     <div className="composer-wrap">
       {connection}
-      <Composer reviewContent={<ReviewDraftCards task={task} feedbackCount={feedbackCount} onReveal={onRevealQuote} onOpenTask={onOpenTask}/>} attachments={task.mode === 'review' ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked || savingModel} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit()} placeholder={task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : notes.notes.length || feedbackCount ? t('Add overall instructions (optional)') : t('Ask a question or request changes…')} skills={task.mode === 'review' ? [] : skills.filter(skill => skill.output !== 'annotations')} skill={skill} onSkill={savingModel ? undefined : setSkill}
+      <Composer reviewContent={<ReviewDraftCards task={task} feedbackCount={feedbackCount} onReveal={onRevealQuote}/>} attachments={task.mode === 'review' ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked || savingModel} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit()} placeholder={task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : notes.notes.length || feedbackCount ? t('Add overall instructions (optional)') : t('Ask a question or request changes…')} skills={task.mode === 'review' ? [] : skills.filter(skill => skill.output !== 'annotations')} skill={skill} onSkill={savingModel ? undefined : setSkill}
         footer={attach => <div className="composer-options">
           {task.mode !== 'review' && <SkillPicker onAttach={attach} skills={skills.filter(skill => skill.output !== 'annotations')} selected={skill} disabled={sending || blocked || savingModel} onPick={value => { setSkill(value); input.current?.focus(); }}/>}
           <TaskModelPicker refreshUsage={refreshUsage} task={task} runtime={runtime} runtimes={runtimes} disabled={sending || blocked || savingPermissions || files.blocked || notes.busy} reconnecting={reconnecting} onReconnect={onReconnect} save={settings => api<Task>(`/tasks/${task.id}/model`, settings)} onSaving={setSavingModel} refresh={refresh} reportError={reportError}
@@ -2327,12 +2327,7 @@ function App() {
     </div>
   </section>;
 
-  const otherNoteTasks = tasks.filter(other => task && other.id !== task.id && other.document === task.document && !other.archivedAt
-    && other.mode !== 'review' && !other.preparation && !other.delivery?.pending && !['preparing', 'deleting', 'uncertain'].includes(other.status));
-  function draftsWithNotes() {
-    return tasks.filter(item => browserStorage.getItem('papilot:review-notes:' + item.id)).map(item => reviewDraft(item.id).refreshFromStorage());
-  }
-  async function resumeReturnedNote(result: NoteResult, destination: string | null) {
+  async function resumeReturnedNote(result: NoteResult, destination: 'current' | 'new') {
     if (!task || !result.note.id) return;
     const context = switchContext.current;
     let copy: Annotation;
@@ -2340,7 +2335,7 @@ function App() {
       copy = await api<Annotation>(`/tasks/${task.id}/notes/${encodeURIComponent(result.note.id)}/return`);
       if (copy.createdAt !== result.undoReturnAt) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
       if (context !== switchContext.current) return;
-      if (destination === null && copy.document && copy.document !== manuscriptDocument(manuscriptData.data)) {
+      if (destination === 'new' && copy.document && copy.document !== manuscriptDocument(manuscriptData.data)) {
         await api(`/projects/${task.projectId}/document`, { main: copy.document });
         if (context !== switchContext.current) return;
         await loadManuscript(task.projectId);
@@ -2348,30 +2343,28 @@ function App() {
     } catch (error) { reportError(error); return; }
     if (context !== switchContext.current) return;
     const original = result.note.id;
-    const draft = destination ? reviewDraft(destination) : null;
-    const previous = draftsWithNotes();
-    const staged = previous.map(item => item.getSnapshot().notes.find(note => note.returned?.original === original && note.returned.createdAt === copy.createdAt)).find(Boolean);
-    if (draft?.getSnapshot().busy || previous.some(item => item.getSnapshot().busy && item.getSnapshot().notes.some(note => note.returned?.original === original))) return;
-    if (!destination && staged && staged.comment !== copy.comment) {
-      try { await noteActions.edit(copy, staged.comment); } catch (error) { reportError(error); return; }
-      if (context !== switchContext.current) return;
-    }
-    for (const item of previous) if (item !== draft) item.forgetReturn(original, copy.createdAt);
-    if (destination === null) {
+    const draft = reviewDraft(task.id).refreshFromStorage();
+    if (draft.getSnapshot().busy) return;
+    if (destination === 'new') {
+      const staged = draft.getSnapshot().notes.find(note => note.returned?.original === original && note.returned.createdAt === copy.createdAt);
+      if (staged && staged.comment !== copy.comment) {
+        try { await noteActions.edit(copy, staged.comment); } catch (error) { reportError(error); return; }
+        if (context !== switchContext.current) return;
+      }
+      draft.forgetReturn(original, copy.createdAt);
       setNewSkill(current => current?.output === 'annotations' ? null : current);
       noteSelection.set([copy.id], true);
       setSelected(''); setPage('manuscript'); setManuscriptView('task'); setManuscriptCollapsed(false);
     } else {
       noteSelection.set([copy.id], false);
-      reviewDraft(destination).add({ returned: { original, sourceTask: task.id, createdAt: copy.createdAt, groupInstruction: copy.groupInstruction, anchor: result.note.anchor }, strip: '', round: 0,
+      draft.add({ returned: { original, createdAt: copy.createdAt, groupInstruction: copy.groupInstruction, anchor: result.note.anchor }, strip: '', round: 0,
         group: copy.group, stamp: copy.stamp, kind: copy.kind, where: result.note.where, quote: copy.quote, rects: [], region: false },
-        true, staged?.comment ?? copy.comment);
-      if (destination !== task.id) { setSelected(destination); setSidebar(false); }
+        true, copy.comment);
       setMobileTab('conversation'); setTaskSide('chat'); setLayout(current => current === 'review' ? 'split' : current);
     }
   }
 
-  return <NoteResultsProvider task={task} otherTasks={otherNoteTasks} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} openLibrary={() => {
+  return <NoteResultsProvider task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} openLibrary={() => {
     setSelected(''); setPage('manuscript'); setManuscriptView('pdf'); setLibraryRequest(value => value + 1);
   }} resumeNote={resumeReturnedNote} returnRequest={isPlayground ? undefined : async (id, note, undoReturnAt) => {
     const route = `/tasks/${id}/notes/${encodeURIComponent(note)}`;
@@ -2383,7 +2376,7 @@ function App() {
       const response = await api<NoteReturnState & { removed?: string }>(route + '/undo-return', { createdAt: undoReturnAt });
       if (response.removed) {
         const removed = response.removed;
-        for (const draft of draftsWithNotes()) draft.forgetReturn(note, undoReturnAt);
+        reviewDraft(id).forgetReturn(note, undoReturnAt);
         noteSelection.set([removed], false);
         if (annotationHistory.current === history) {
           // A retired copy must not leave a PDF history entry that can no longer be replayed.

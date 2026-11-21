@@ -20,7 +20,7 @@ test('returned group instructions leave deletion marks empty and retiring a retu
 });
 test('moving a returned note preserves draft edits from another tab', () => {
   const saved = storage(), first = new ReviewDraft('task', saved);
-  const returned = { original: 'original', sourceTask: 'origin', createdAt: 1 };
+  const returned = { original: 'original', createdAt: 1 };
   const id = first.add({ ...mark, returned }, false)!;
   const second = new ReviewDraft('task', saved);
   second.edit(id, 'Latest wording');

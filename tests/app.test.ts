@@ -937,18 +937,11 @@ test('return unresolved task annotations without changing the original submissio
     assert.match(sameTask.json().prompt, /Color group instruction: Clarify the definition\./);
     const followup = (await returns(copy.id)).json() as Annotation;
     assert.equal(followup.groupInstruction, 'Clarify the definition.');
-    const sendElsewhere = (id: string) => f.local.inject({ method: 'POST', url: `/api/tasks/${id}/messages`, headers: f.as,
-      payload: { text: '', requestKey: 'continue-elsewhere', notes: [{ ...summarizeNotes([copy])[0], comment: 'Same PDF, separate conversation.', returnedFrom: { taskId, original: copy.id, createdAt: followup.createdAt } }] } });
-    const other = f.store.saveTask({ ...oldTask, id: 'another-session', name: 'another-session', document: 'appendix.tex' });
-    assert.equal((await sendElsewhere('grant-task')).statusCode, 400);
-    assert.equal((await sendElsewhere(other.id)).statusCode, 400);
-    f.store.updateTask(other.id, { document: 'main.tex' });
-    f.store.deleteTask(taskId); // The editable library copy outlives its original conversation.
-    const elsewhere = await sendElsewhere(other.id);
-    assert.equal(elsewhere.statusCode, 200, elsewhere.body);
-    assert.equal(f.store.annotation(projectId, followup.id).taskId, other.id);
-    assert.equal(f.store.items(other.id).at(-1)?.meta?.notes?.[0].comment, 'Same PDF, separate conversation.');
-
+    const other = f.store.saveTask({ ...oldTask, id: 'another-session', name: 'another-session' });
+    const crossTask = await f.local.inject({ method: 'POST', url: `/api/tasks/${other.id}/messages`, headers: f.as,
+      payload: { text: '', requestKey: 'wrong-conversation', notes: [{ ...summarizeNotes([copy])[0], returnedFrom: { original: copy.id, createdAt: followup.createdAt } }] } });
+    assert.equal(crossTask.statusCode, 400);
+    assert.equal(f.store.annotation(projectId, followup.id).taskId, undefined);
   } finally { await f.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 

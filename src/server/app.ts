@@ -763,11 +763,10 @@ export async function buildApp(options: AppOptions) {
         let noteId = note.id, groupInstruction: string | undefined;
         if (note.returnedFrom) {
           const original = string(note.returnedFrom.original, 'Note ID', 100);
-          const sourceId = string(note.returnedFrom.taskId ?? task.id, 'Task ID', 100);
           if (!Number.isSafeInteger(note.returnedFrom.createdAt)) throw new Error('Select valid review notes.');
-          noteId = returnedAnnotationId(sourceId, original);
+          noteId = returnedAnnotationId(task.id, original);
           const copy = store.findAnnotation(task.projectId, noteId);
-          if (!copy || (sourceId !== task.id && task.document && copy.document !== task.document)) throw new Error('Select valid review notes.');
+          if (!copy) throw new Error('Select valid review notes.');
           groupInstruction = copy.groupInstruction;
           returnedNotes.set(noteId, note.returnedFrom.createdAt);
         }

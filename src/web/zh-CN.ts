@@ -216,7 +216,6 @@ export const zhCN: Record<string, string> = {
   'Generate task title': '生成任务标题', 'Generating task title…': '正在生成任务标题…', 'Retry title generation': '重新生成任务标题',
   "Pin task": "置顶任务",
   "Unpin task": "取消置顶任务",
-  "Another task…": "其他任务…",
   "Continue in this task": "在当前任务中继续",
   "Return to My notes": "退回我的批注",
   "Returned to My notes": "已退回我的批注",

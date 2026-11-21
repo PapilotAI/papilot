@@ -304,11 +304,6 @@
     "textHash": "81e5e12e5c4d4f669058e36fed7efe2a7f7821c21ef4f8359d12a06fc2059b80",
     "model": "gemini-4-argon-medium"
   },
-  "Another task…": {
-    "revision": "9433b75371c2dbaf954300182b8b4d69296159d599ae89f329eb8f38935d93aa",
-    "textHash": "459601849151db007f30192983ee56a9e15502bebbc783fed7abd49de7736a76",
-    "model": "codex"
-  },
   "Antigravity opens images through its file tools. For direct image input, choose Codex or Claude.": {
     "revision": "3d168da868b7625b9365c84964cf335b17aa2a3577fb071c459af7fb1d6bcc4e",
     "textHash": "a966bb796d6906a83b68a59837c1c4a9de6bb7b4e27f87c3f5e25516eb31b7bc",

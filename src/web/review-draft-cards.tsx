@@ -18,7 +18,7 @@ function place(note: ReviewNote) {
   const page = note.where.match(/PDF page ([^·]+)/)?.[1].trim();
   return <><span className="review-draft-side">{label}</span>{page && <span className="review-draft-page">· {t('Page {page}', { page })}</span>}</>;
 }
-export function ReviewDraftCards({ task, feedbackCount, onReveal, onOpenTask }: { task: Task; feedbackCount: number; onReveal: () => void; onOpenTask: (id: string) => void }) {
+export function ReviewDraftCards({ task, feedbackCount, onReveal }: { task: Task; feedbackCount: number; onReveal: () => void }) {
   const draft = reviewDraft(task.id), state = useReviewDraft(task.id), box = useRef<HTMLDivElement>(null);
   const links = useNoteResults();
   const [expanded, setExpanded] = useState(true);
@@ -39,11 +39,6 @@ export function ReviewDraftCards({ task, feedbackCount, onReveal, onOpenTask }: 
       {feedbackCount > 0 && <p className="review-draft-decisions">{tn(feedbackCount, '{n} review update included', '{n} review updates included')}</p>}
       {state.notes.map((note, index) => <div key={note.id} className="review-draft-note" style={groupStyle(note.group)} data-note={note.id} data-version={version(note)}>
         <div className="review-draft-location"><button type="button" onClick={() => { if (note.returned) {
-          if (note.returned.sourceTask && note.returned.sourceTask !== task.id) {
-            if (links?.otherTasks.some(other => other.id === note.returned!.sourceTask)) onOpenTask(note.returned.sourceTask);
-            else links?.openLibrary();
-            return;
-          }
           const original = links?.notes.find(item => item.note.id === note.returned!.original);
           if (original) links?.focusNote(original.key);
         } else { links?.clearFocus(); draft.reveal(note); onReveal(); } }} title={t('Show quoted passage')}><span className="review-draft-number">{index + 1}</span>{place(note)}{note.group && <i className="group-dot"/>}<Icon name="arrowRight" size={12}/></button><button type="button" aria-label={t('Delete review note {n}', { n: index + 1 })} disabled={state.busy} onClick={() => draft.remove(note.id)}><Icon name="close" size={13}/></button></div>

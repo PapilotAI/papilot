@@ -90,16 +90,15 @@ interface Links {
   returnNote?: (key: string, source: HTMLElement) => void;
   confirmReturn: (note: NoteResult, result: NoteReturnState, source?: HTMLElement | null) => void;
   openLibrary: () => void;
-  otherTasks: Task[];
-  resumeNote?: (note: NoteResult, destination: string | null) => void;
+  resumeNote?: (note: NoteResult, destination: 'current' | 'new') => void;
   showChange: (key: string, change: NoteChange) => void; showNote: (key: string) => void;
 }
 const Context = createContext<Links | null>(null);
 export const useNoteResults = () => useContext(Context);
 
-export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, openLibrary, otherTasks, resumeNote, openReview, openChat, children }: {
+export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, openLibrary, resumeNote, openReview, openChat, children }: {
   task?: Task; items: TimelineItem[]; read: (id: string) => Promise<{ notes: NoteResult[] }>;
-  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; openLibrary: () => void; otherTasks: Task[]; resumeNote?: Links['resumeNote']; openReview: () => void; openChat: () => void; children: ReactNode;
+  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; openLibrary: () => void; resumeNote?: Links['resumeNote']; openReview: () => void; openChat: () => void; children: ReactNode;
 }) {
   const [notes, setNotes] = useState<NoteResult[]>([]), [error, setError] = useState(false), [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(''), [focus, setFocus] = useState<NoteFocus | null>(null);
@@ -218,7 +217,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     background ? () => { void previewRequest(id, key, round, option, retry, version, false).catch(() => {}); } : undefined)), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
     alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
-    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, confirmReturn, openLibrary, otherTasks, resumeNote, returnNote: returnRequest && returnNote };
+    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, confirmReturn, openLibrary, resumeNote, returnNote: returnRequest && returnNote };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
@@ -227,13 +226,6 @@ export function NoteLibraryLink() {
   const links = useNoteResults();
   if (!links?.returnNote || !links.notes.some(note => note.returned !== undefined)) return null;
   return <button type="button" className="icon-button" data-notes-home="library" title={t('My notes')} aria-label={t('My notes')} onClick={links.openLibrary}><Icon name="notes" size={16}/></button>;
-}
-
-function otherDestinations(links: Links, note: NoteResult) {
-  return [
-    { label: t('New task'), icon: 'plus', select: () => links.resumeNote!(note, null) },
-    ...links.otherTasks.map(task => ({ id: task.id, label: task.title, icon: 'chat', select: () => links.resumeNote!(note, task.id) })),
-  ];
 }
 
 export function NoteReturnAction({ noteKey, drawer = false }: { noteKey: string; drawer?: boolean }) {
@@ -248,8 +240,8 @@ export function NoteReturnAction({ noteKey, drawer = false }: { noteKey: string;
   };
   const actions = returned && note.undoReturnAt === undefined ? [] : [
     ...(returned && !drawer && links.resumeNote ? [
-      { label: t('Continue in this task'), icon: 'chat', select: () => links.resumeNote!(note, links.task!.id) },
-      ...otherDestinations(links, note),
+      { label: t('Continue in this task'), icon: 'chat', select: () => links.resumeNote!(note, 'current') },
+      { label: t('New task'), icon: 'plus', select: () => links.resumeNote!(note, 'new') },
     ] : []),
     { label: returned ? t('Undo return to My notes') : t('Return to My notes'), icon: returned ? 'undo' : 'listReturn', select },
   ];
@@ -362,9 +354,8 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     {links.error ? <>{emptyHeader}<button type="button" className="note-result-retry" onClick={links.reload}><Icon name="refresh" size={12}/>{t('Retry linking changes')}</button></> : displayed.changes.length > 0 ? <NoteAlternatives key={displayed.key} note={displayed} navigation={navigation}/> : <>{emptyHeader}<p className="note-option-hint">{displayed.state === 'waiting' ? t('Awaiting changes') : t('No linked change')}</p></>}
     {displayed.returned && displayed.undoReturnAt !== undefined && links.resumeNote && <div className="note-next-task">
       <span><Icon name="notes" size={14}/>{t('Returned to My notes')}</span>
-      <button type="button" onClick={() => links.resumeNote!(displayed, links.task!.id)}>{t('Continue in this task')}</button>
-      {links.otherTasks.length ? <ActionMenu className="note-destination" label={t('Another task…')} actions={otherDestinations(links, displayed)}>{t('Another task…')}</ActionMenu>
-        : <button type="button" onClick={() => links.resumeNote!(displayed, null)}>{t('New task')}</button>}
+      <button type="button" onClick={() => links.resumeNote!(displayed, 'current')}>{t('Continue in this task')}</button>
+      <button type="button" onClick={() => links.resumeNote!(displayed, 'new')}>{t('New task')}</button>
     </div>}
     <NoteReturnError noteKey={displayed.key}/>
   </section>;

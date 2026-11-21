@@ -8,7 +8,7 @@ import { browserStorage } from './storage.ts';
 // A passage commented on a whole page rather than a change's strip: the PDF it
 // was on (a review round's, the manuscript preview's or a build's) and where.
 export type PaperPlace = { page: number; rects: Rect[]; round?: number; key?: string; build?: string };
-export type ReviewMark = { returned?: { sourceTask?: string; original: string; createdAt: number; groupInstruction?: string; anchor?: NoteSummary['anchor'] }; paper?: PaperPlace; group?: NoteGroup; kind?: MarkKind; stamp?: string; strip: string; round: number; stop?: number; where: string; quote: string; rects: Rect[]; region: boolean; whole?: boolean; changes?: string[]; option?: { note: string; id: string; label: string; kind: 'comment' | 'reject' } };
+export type ReviewMark = { returned?: { original: string; createdAt: number; groupInstruction?: string; anchor?: NoteSummary['anchor'] }; paper?: PaperPlace; group?: NoteGroup; kind?: MarkKind; stamp?: string; strip: string; round: number; stop?: number; where: string; quote: string; rects: Rect[]; region: boolean; whole?: boolean; changes?: string[]; option?: { note: string; id: string; label: string; kind: 'comment' | 'reject' } };
 export type ReviewNote = ReviewMark & { id: string; comment: string };
 export type ReviewComment = { round: number; stop: number; changes?: string[]; scope?: { where: string; quote: string } };
 export function reviewCommentMark(base: ReviewMark, detail: ReviewComment, wholeQuote: string): ReviewMark {
@@ -153,7 +153,7 @@ export const useReviewDraft = (taskId: string) => {
   return useSyncExternalStore(draft.subscribe, draft.getSnapshot);
 };
 export const reviewNoteSummary = (note: ReviewNote): NoteSummary => ({
-  id: note.id, ...(note.returned ? { returnedFrom: { taskId: note.returned.sourceTask, original: note.returned.original, createdAt: note.returned.createdAt } } : {}), ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(note.stamp ? { stamp: note.stamp } : {}),
+  id: note.id, ...(note.returned ? { returnedFrom: { original: note.returned.original, createdAt: note.returned.createdAt } } : {}), ...(note.group ? { group: note.group } : {}), ...(note.kind ? { kind: note.kind } : {}), ...(note.stamp ? { stamp: note.stamp } : {}),
   where: note.where + (note.region ? ` · Region in displayed strip: ${note.rects[0].map(v => `${Math.round(v * 100)}%`).join(', ')}` : ''),
   quote: note.quote, comment: note.comment.trim(), anchor: note.returned?.anchor ?? { ...noteAnchor(note), ...(note.round ? { round: note.round } : {}) },
   ...(note.paper ? { paper: note.paper } : {}),

@@ -96,7 +96,6 @@ await page.route('**/api/**', async route => {
     }
     return route.fulfill({ json: returned.get(id) });
   }
-  if (url.pathname === '/api/tasks/other-session/items') return route.fulfill({ json: { items: [] } });
   if (url.pathname === '/api/projects/paper/annotations/returned-rejected' && route.request().method() === 'POST') {
     const copy = returned.get('rejected');
     copy.comment = route.request().postDataJSON().comment;
@@ -463,15 +462,12 @@ try {
   snapshot.tasks.push({ ...task, id: 'other-session', name: 'other-session', title: 'Separate wording pass', status: 'idle', review: null });
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await originalRow(1).click();
-  await controls().getByRole('button', { name: 'Another task…' }).click();
-  await expect(controls().getByRole('menuitem', { name: 'Separate wording pass' })).toBeVisible();
+  const destinations = controls().locator('.note-next-task');
+  await expect(destinations.getByRole('button')).toHaveText(['Continue in this task', 'New task']);
   await page.screenshot({ path: 'test-results/note-return-destinations.png', animations: 'disabled' });
-  await controls().getByRole('menuitem', { name: 'Separate wording pass' }).click();
-  const moved = page.getByRole('textbox', { name: 'Comment 1', exact: true });
-  await expect(moved).toHaveValue('');
-  await moved.fill('Keep my follow-up wording.');
-  await page.getByRole('button', { name: /^Revise the introduction/ }).click();
-  await expect(page.getByRole('textbox', { name: 'Comment 1', exact: true })).toHaveCount(0);
+  await destinations.getByRole('button', { name: 'Continue in this task' }).click();
+  const draftComment = page.getByRole('textbox', { name: 'Comment 1', exact: true });
+  await draftComment.fill('Keep my follow-up wording.');
   await chooseAction(originalRow(1), 'New task');
   await expect(page.locator('.task-notes-panel')).toContainText('Keep my follow-up wording.');
   await expect(page.locator('.task-notes-panel')).toContainText('Clarify the contribution.');
