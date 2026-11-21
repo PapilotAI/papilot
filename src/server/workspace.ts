@@ -1353,6 +1353,30 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     }
     return this.store.task(taskId);
   }
+  private settleReviewNotes(task: Task, pending: Pick<PendingReview, 'returnNotes' | 'returnNote' | 'body' | 'route'>) {
+    if (pending.route.endsWith('/undo')) {
+      for (const note of this.store.reviewReturns(task.projectId, task.id, String(pending.body.id))) {
+        if (!note.returnAction || note.returnAction.undone) continue;
+        // Remember the undo even if the author already hid this copy. A lost
+        // reply retried after a manual restore must leave that restore alone.
+        this.store.saveAnnotation({ ...note, deletedAt: note.deletedAt ?? Date.now(), returnAction: { ...note.returnAction, undone: true } });
+      }
+      return;
+    }
+    const action = String(pending.body.id);
+    if (pending.returnNotes) {
+      for (const note of pending.returnNotes) this.store.returnAnnotation(note, action);
+    } else if (pending.returnNote) {
+      // A single-note journal from before return ownership used the same
+      // note key, so recovery can still bind the new copy to its decision.
+      const note = pending.returnNote, key = pending.body.noteKey;
+      const location = typeof key === 'string' ? /^(.*):(\d+)$/.exec(key) : null;
+      const originalId = location && this.store.items(task.id).find(item => item.id === location[1])?.meta?.notes?.[Number(location[2])]?.id;
+      this.store.returnAnnotation(!note.returnAction && typeof key === 'string' && originalId
+        ? { ...note, returnAction: { taskId: task.id, id: action, key, originalId } }
+        : note, action);
+    }
+  }
   private async reconcileReview(task: Task) {
     if (this.reviewWrites.has(task.id)) throw new Error('The review action is still being checked. Wait for it to finish.');
     this.reviewWrites.add(task.id);
@@ -1373,7 +1397,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         const going = this.active.has(task.id) || (this.publishing.has(task.id) && current.status === 'building');
         const status = going ? current.status : this.store.runs().some(r => r.taskId === task.id && r.status === 'queued') ? 'queued' : reached.previousStatus;
         this.store.updateTask(task.id, { pendingReview: null, status, error: !response.ok ? value.error || 'Check the review result before continuing.' : going ? null : reached.previousError ?? null });
-        if (response.ok && pending.returnNote) this.store.returnAnnotation(pending.returnNote, String(pending.body.id));
+        if (response.ok) this.settleReviewNotes(task, pending);
         if (sourceBuild) this.rememberSourceBuild(task.id, value, pending);
       });
       // So does the build held after the agent's turn for this action, and a
@@ -1417,7 +1441,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const result = await operation();
       const sourceBuild = Boolean(pending && startsBuild(pending.route, result)) && confirmedReviewResponse(200, result, task.name);
       this.store.transaction(() => {
-        if (pending?.returnNote && confirmedReviewResponse(200, result, task.name)) this.store.returnAnnotation(pending.returnNote, String(pending.body.id));
+        if (pending && confirmedReviewResponse(200, result, task.name)) this.settleReviewNotes(task, pending);
         if (pending) this.store.updateTask(taskId, { pendingReview: null });
         if (sourceBuild) this.rememberSourceBuild(taskId, result, pending);
       });

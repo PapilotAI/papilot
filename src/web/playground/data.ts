@@ -1,3 +1,4 @@
+import { regroupAnnotation } from '../../note-groups.ts';
 import type { Annotation, AnnotationBatch, AnnotationBatchResult, GitStatus, Manuscript, Snapshot, Task, TimelineItem, AgentId, Skill, NoteSummary, NoteResult, NoteOptions } from '../../shared.ts';
 import type { ActionKind, Decision, PageState, RoundDetail } from '../../../engine/src/types.ts';
 import plans from '../../../examples/playground-paper/edits.json';
@@ -236,7 +237,14 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
       if (!note) throw new Error('Note not found.');
       if (action === 'delete') { note.deletedAt = Date.now(); persist(); return { ok: true }; }
       if (action === 'restore') { delete note.deletedAt; delete note.deletedBatch; persist(); return { annotations: local.annotations.filter(note => !note.deletedAt) }; }
-      if (!action && typeof (body as Annotation).comment === 'string') { note.comment = (body as Annotation).comment; persist(); return note; }
+      const edit = body as { comment?: string; group?: unknown; groupInstruction?: string } | null;
+      if (!action && edit && (typeof edit.comment === 'string' || edit.group !== undefined)) {
+        if (note.deletedAt !== undefined) throw new Error('This note has been deleted. Undo the deletion first.');
+        const next = edit.group === undefined ? { ...note } : regroupAnnotation(note, edit.group, edit.groupInstruction);
+        if (typeof edit.comment === 'string') next.comment = edit.comment;
+        local.annotations[local.annotations.indexOf(note)] = next;
+        persist(); return next;
+      }
     }
     const copy = path.match(/^\/tasks\/example-review\/ai-review\/([^/]+)\/(copy|delete|restore)$/);
     if (copy && body !== undefined) {

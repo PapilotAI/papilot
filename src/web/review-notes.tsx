@@ -130,7 +130,9 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
   const origin = useRef<{ layer: Layer; x: number; y: number } | null>(null);
   const current = useRef({ region, busy, tool, markSelection }); current.current = { region, busy, tool, markSelection };
   const touch = useRef<ReturnType<typeof touchSelection> | null>(null);
-  useNoteUndo(() => !busy && store.undo(), doc, () => !busy && store.redo());
+  // The review drawer has its own decisions. Keep draft undo in the PDF
+  // marking tools and composer when those controls have focus.
+  useNoteUndo(() => !document.activeElement?.closest('.review-note-controls') && !busy && store.undo(), doc, () => !busy && store.redo());
   useEffect(() => {
     if (!region || !doc) return;
     const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); chooseTool('select'); setDrag(null); origin.current = null; } };

@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { t } from './i18n.ts';
 import { Icon } from './icons.tsx';
 import { noteLocation } from './note-location.ts';
@@ -27,4 +29,11 @@ export function SubmittedNoteContent({ note, index, children }: { note: NoteSumm
     {note.quote ? <blockquote data-kind={note.kind}>{note.quote}</blockquote> : <span className="sent-note-region">{t('Marked region')}</span>}
     {(note.comment || note.kind === 'delete') && <p>{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{markText(note)}</p>}
   </>;
+}
+
+// A PDF rejection can happen with both the drawer and the Chat row unmounted.
+export function renderSubmittedNote(card: HTMLElement, note: NoteSummary, index: number) {
+  const root = createRoot(card);
+  flushSync(() => root.render(<SubmittedNoteContent note={note} index={index}/>));
+  return () => root.unmount();
 }

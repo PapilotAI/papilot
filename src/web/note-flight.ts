@@ -1,3 +1,6 @@
+import type { NoteResult } from '../shared.ts';
+import { renderSubmittedNote } from './note-content.tsx';
+
 // Notes moving in and out of a task fly there, so the reader sees where they
 // went. Notes taken out of a task fly back to the My notes button, which then
 // shows how many it received; on a phone the PDF view's button stands in while
@@ -127,22 +130,30 @@ function visibleChatBox(row: HTMLElement) {
 }
 
 // The review drawer can be open while Chat and its original card are offscreen.
-export function animateSubmittedNote(key: string, source: HTMLElement, returned: boolean) {
-  submittedFlights.get(key)?.cancel();
+export function animateSubmittedNotes(notes: { note: NoteResult; source: HTMLElement; returned: boolean }[]) {
+  for (const { note } of notes) submittedFlights.get(note.key)?.cancel();
   const target = [...document.querySelectorAll<HTMLElement>('[data-notes-home="manuscript"]')].find(visible);
-  if (!target || !visible(source)) return;
-  if (still()) { if (returned) receive(target, 1); return; }
+  if (!target) return;
+  const count = notes.filter(note => note.returned).length;
+  const land = () => { if (count && target.isConnected) receive(target, count); };
+  if (still()) { land(); return; }
+  const flights = notes.filter(({ source }) => visible(source)).slice(0, 5).map(({ note, source, returned }, index) => ({
+    animation: animateSubmittedNote(note, source, target, returned, index * 90), returned,
+  }));
+  const arrivals = flights.flatMap(({ animation, returned }) => returned ? [animation.finished] : []);
+  if (arrivals.length) void Promise.any(arrivals).then(land, () => {});
+  else if (count) land();
+}
 
+function animateSubmittedNote(note: NoteResult, source: HTMLElement, target: HTMLElement, returned: boolean, delay: number) {
+  const key = note.key;
   const original = document.querySelector<HTMLElement>(`[data-note-result="${CSS.escape(key)}"]`);
-  const contents = original ?? source.querySelector('.submitted-note-source');
-  if (!contents) return;
   const card = document.createElement('div');
   card.className = 'sent-notes note-flight submitted-note-flight';
   card.dataset.noteKey = key;
   card.inert = true;
   card.setAttribute('aria-hidden', 'true');
-  for (const child of contents.children) card.append(child.cloneNode(true));
-  card.querySelectorAll('.note-disposition, .note-return-error').forEach(control => control.remove());
+  const unmount = renderSubmittedNote(card, note.note, note.index);
 
   const chatBox = original && visibleChatBox(original);
   const rect = chatBox || source.getBoundingClientRect();
@@ -150,12 +161,17 @@ export function animateSubmittedNote(key: string, source: HTMLElement, returned:
   card.style.width = `${width}px`;
   document.body.append(card);
   const height = card.offsetHeight;
-  const left = Math.max(8, Math.min(rect.left, innerWidth - width - 8));
-  const top = Math.max(4, Math.min(chatBox ? rect.top : rect.top - height, innerHeight - height - 4));
+  const inViewer = !chatBox && source instanceof HTMLIFrameElement;
+  const x = inViewer ? rect.left + (rect.width - width) / 2 : rect.left;
+  const y = chatBox ? rect.top : inViewer ? rect.top + (rect.height - height) / 2 : rect.top - height;
+  const left = Math.max(8, Math.min(x, innerWidth - width - 8));
+  const top = Math.max(4, Math.min(y, innerHeight - height - 4));
   const count = target.querySelector('.manuscript-note-count') ?? target;
-  const flight = fly(card, new DOMRect(left, top, width, height), count.getBoundingClientRect(), 0, returned ? 'normal' : 'reverse');
+  const flight = fly(card, new DOMRect(left, top, width, height), count.getBoundingClientRect(), delay, returned ? 'normal' : 'reverse');
   submittedFlights.set(key, flight);
-  void flight.finished.then(() => { if (returned && target.isConnected) receive(target, 1); }, () => {}).finally(() => {
+  void flight.finished.catch(() => {}).finally(() => {
+    unmount();
     if (submittedFlights.get(key) === flight) submittedFlights.delete(key);
   });
+  return flight;
 }

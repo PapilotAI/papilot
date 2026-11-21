@@ -5,7 +5,8 @@ import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
 import './pdf-suggestion.css';
 import './pdf-tools.css';
-import { groupName } from './note-groups.tsx';
+import { groupName, GroupPicker } from './note-groups.tsx';
+import type { NoteGroup } from '../note-groups.ts';
 import { markText } from './note-content.tsx';
 import { sendsMessage } from './composer.ts';
 import { noteFromTask, noteToTask } from './note-flight.ts';
@@ -17,6 +18,7 @@ export interface PdfNoteActions {
   remove: (note: Annotation) => Promise<void>;
   restore: (note: Annotation) => Promise<void>;
   edit: (note: Annotation, comment: string) => Promise<void>;
+  regroup?: (note: Annotation, group: NoteGroup | null) => Promise<void>;
   onEditing: (editing: boolean) => void;
   onBusy: (busy: boolean) => void;
   disabled: boolean;
@@ -81,6 +83,10 @@ function NoteSendButton({ number, ai, selected, disabled, busy, quiet = false, o
   </button>;
 }
 
+export function NoteEditButton({ number, disabled, grouped, onEdit }: { number: number; disabled: boolean; grouped?: boolean; onEdit: React.MouseEventHandler<HTMLButtonElement> }) {
+  return <button type="button" className={`icon-button pdf-note-edit-control${grouped ? ' group-note-edit' : ''}`} aria-label={t('Edit note {n}', { n: number })} title={t('Edit note')} disabled={disabled} onClick={onEdit}><Icon name="pencil" size={14}/></button>;
+}
+
 export function TaskRemoveButton({ number, ai, disabled, onClick }: { number: number; ai: boolean; disabled: boolean; onClick: () => void }) {
   const label = ai ? t('Remove suggestion {n} from task', { n: number }) : t('Remove note {n} from task', { n: number });
   return <button type="button" className="icon-button task-note-remove" aria-label={label} title={label} disabled={disabled} onClick={onClick}><Icon name="close" size={14}/></button>;
@@ -89,8 +95,9 @@ export function TaskRemoveButton({ number, ai, disabled, onClick }: { number: nu
 // The PDF popover and reading list share the editor and actions. Floating cards
 // also follow their text anchor and close when the reader clicks elsewhere.
 export interface PdfNoteHandle { save: () => Promise<boolean> }
-export function PdfNoteCard({ controller, note, number, index, total, selected, busy, error, draft, onDraftChange, onToggle, onDismiss, onClose, onPrevious, onNext, onSave, onEditing, destination, inline = false, inTask = false, header, children, anchorLayer }: {
+export function PdfNoteCard({ controller, note, number, index, total, selected, busy, error, draft, onDraftChange, onToggle, onDismiss, onClose, onPrevious, onNext, onSave, onGroupChange, onEditing, destination, inline = false, inTask = false, header, children, anchorLayer }: {
   controller?: Ref<PdfNoteHandle>;
+  onGroupChange?: (group: NoteGroup | null) => void;
   /** Cropped pages clip their marks; the card floats above them in the scroll host. */
   anchorLayer?: HTMLElement;
   destination?: 'manuscript'; inline?: boolean; inTask?: boolean; header?: ReactNode; children?: ReactNode;
@@ -102,8 +109,10 @@ export function PdfNoteCard({ controller, note, number, index, total, selected, 
   const card = useRef<HTMLElement>(null), saving = useRef<Promise<boolean> | null>(null);
   const text = useRef<HTMLParagraphElement>(null), input = useRef<HTMLTextAreaElement>(null);
   const editing = draft !== null, ai = Boolean(note.aiReview);
+  const editable = !ai || Boolean(onGroupChange);
   // A delete mark's text is an optional replacement; clearing it goes back to deleting.
   const deleting = note.kind === 'delete';
+  const commentOptional = deleting || Boolean(note.group);
   // A new note is one line with its send button beside it. Escape or a click
   // elsewhere closes it (keeping any text), so it shows a discard button only
   // once there is text to discard.
@@ -131,8 +140,8 @@ export function PdfNoteCard({ controller, note, number, index, total, selected, 
     if (busy) return false;
     const pending = (async () => {
       const comment = draft?.trim();
-      // A deletion needs no text: left empty, it stays a deletion.
-      if (editing && !comment && !deleting) { if (action === 'close') close(restoreFocus); return true; }
+      // A group highlight and a deletion mark can stand on their own.
+      if (editing && !comment && !commentOptional) { if (action === 'close') close(restoreFocus); return true; }
       // Adding a note to the task closes its popover, so the card itself seems
       // to fly there; taking one out keeps it open for the copy to land on.
       const adding = action === 'quote' && !destination && !selected;
@@ -188,14 +197,14 @@ export function PdfNoteCard({ controller, note, number, index, total, selected, 
   useLayoutEffect(() => { if (!inline && (!input.current || input.current.disabled)) card.current?.focus({ preventScroll: true }); }, [inline, note.id]);
 
   const deleteButton = <button type="button" className="icon-button pdf-note-delete" aria-label={ai ? t('Ignore suggestion {n}', { n: number }) : t('Delete note {n}', { n: number })} title={ai ? t('Ignore') : t('Delete note')} disabled={busy} onClick={onDismiss}><Icon name="trash" size={14}/></button>;
-  const sendButton = send && <NoteSendButton number={number} ai={ai} selected={selected} busy={busy} disabled={busy || (editing && !draft.trim() && !deleting)} onClick={() => void save('quote')}/>;
+  const sendButton = send && <NoteSendButton number={number} ai={ai} selected={selected} busy={busy} disabled={busy || (editing && !draft.trim() && !commentOptional)} onClick={() => void save('quote')}/>;
   const shown = deleting ? markText(note) : note.comment || (note.group ? t('Highlighted in {group}', { group: groupName(note.group) }) : '');
 
   const content = <section ref={card} className={'pdf-note-card ' + (ai ? 'pdf-suggestion' : 'pdf-personal-note') + (inline ? ' pdf-note-inline' : '') + (compose ? ' pdf-note-compose' : '')} role={inline ? 'group' : 'dialog'} aria-modal={inline ? undefined : false} aria-label={ai ? t('AI suggestion {n}', { n: number }) : t('PDF note {n}', { n: number })} tabIndex={inline ? undefined : -1}>
     {header}
     <div className="pdf-note-content"><div className="pdf-suggestion-body">{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{editing ?
       <textarea ref={input} id={typeless.inputId} className="pdf-note-input" aria-label={deleting ? t('Replacement for mark {n}', { n: number }) : t('Edit note {n}', { n: number })} placeholder={deleting ? t('Replace with… (leave empty to delete)') : t('Write a note…')} value={draft} rows={1} readOnly={busy} onChange={event => onDraftChange(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, window.matchMedia('(pointer: coarse)').matches)) { event.preventDefault(); void save(enterAction); } }}/>
-      : ai ? <p>{note.comment}</p> : <p ref={text} className="pdf-note-text note-edit-trigger" role="button" tabIndex={busy ? -1 : 0} aria-disabled={busy} aria-label={t('Edit note {n}: {comment}', { n: number, comment: shown })} title={deleting ? t('Give a replacement') : t('Edit note')} onClick={() => {
+      : !editable ? <p>{note.comment}</p> : <p ref={text} className="pdf-note-text note-edit-trigger" role="button" tabIndex={busy ? -1 : 0} aria-disabled={busy} aria-label={t('Edit note {n}: {comment}', { n: number, comment: shown })} title={deleting ? t('Give a replacement') : t('Edit note')} onClick={() => {
         const selection = window.getSelection();
         if (selection && !selection.isCollapsed && text.current?.contains(selection.anchorNode)) return;
         edit();
@@ -207,14 +216,15 @@ export function PdfNoteCard({ controller, note, number, index, total, selected, 
     {!compose && <div className="pdf-note-tools">
       {note.aiReview && !destination && <span className="pdf-note-origin" title={t('AI suggestion')}>{AGENT_NAMES[note.aiReview.agent]}</span>}
       <span className="pdf-note-tools-space"/>
+      {onGroupChange && <GroupPicker forNote value={note.group ?? null} onChange={onGroupChange} disabled={busy || editing}/>}
       {ai && total > 1 && <div className="pdf-suggestion-navigation"><button type="button" className="icon-button" aria-label={t('Previous suggestion')} title={t('Previous suggestion (←)')} aria-keyshortcuts="ArrowLeft" disabled={busy || index <= 0} onClick={onPrevious}><Icon name="chevronLeft" size={14}/></button><span aria-label={t('{current} of {total}', { current: index + 1, total })}>{index + 1}/{total}</span><button type="button" className="icon-button" aria-label={t('Next suggestion')} title={t('Next suggestion (→)')} aria-keyshortcuts="ArrowRight" disabled={busy || index >= total - 1} onClick={onNext}><Icon name="chevronRight" size={14}/></button></div>}
       {/* The text itself is the editor; ✏️ only says so. Editing saves like
           before: Enter, Escape or a click elsewhere. */}
-      {!ai && !editing && <button type="button" className="icon-button pdf-note-edit-control" aria-label={t('Edit note {n}', { n: number })} title={t('Edit note')} disabled={busy} onClick={edit}><Icon name="pencil" size={14}/></button>}
+      {editable && !editing && <NoteEditButton number={number} disabled={busy} onEdit={edit}/>}
       {deleteButton}
       {/* In the task every note is included, so its card only offers × to take it out. */}
-      {inTask ? <TaskRemoveButton number={number} ai={ai} disabled={busy || (editing && !draft.trim() && !deleting)} onClick={() => void save('quote')}/>
-        : send ? sendButton : <NoteAttachButton number={number} ai={ai} selected={selected} disabled={busy || (editing && !draft.trim() && !deleting)} destination={destination} onClick={() => {
+      {inTask ? <TaskRemoveButton number={number} ai={ai} disabled={busy || (editing && !draft.trim() && !commentOptional)} onClick={() => void save('quote')}/>
+        : send ? sendButton : <NoteAttachButton number={number} ai={ai} selected={selected} disabled={busy || (editing && !draft.trim() && !commentOptional)} destination={destination} onClick={() => {
         // Keep keyboard navigation available while this button becomes disabled.
         if (destination && !inline) card.current?.focus({ preventScroll: true });
         void save('quote');

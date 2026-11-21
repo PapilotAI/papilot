@@ -5,6 +5,21 @@ export type NoteGroup = typeof NOTE_GROUPS[number] | 'blue';
 export type GroupInstructions = Partial<Record<typeof NOTE_GROUPS[number], string>>;
 export const canonicalGroup = (group: NoteGroup): typeof NOTE_GROUPS[number] => group === 'blue' ? 'yellow' : group;
 export const isNoteGroup = (value: unknown): value is NoteGroup => value === 'blue' || NOTE_GROUPS.includes(value as typeof NOTE_GROUPS[number]);
+// A saved group instruction belongs to its color. Moving a mark preserves its
+// own comment, while Undo can restore the instruction with the original color.
+export function regroupAnnotation<T extends { group?: NoteGroup; groupInstruction?: string }>(note: T, group: unknown, instruction?: string): T {
+  if (group !== null && !isNoteGroup(group)) throw new Error('Invalid annotation group.');
+  const target = group === null ? undefined : canonicalGroup(group);
+  if ((note.group && canonicalGroup(note.group)) === target) return note;
+  const next = { ...note };
+  delete next.group;
+  delete next.groupInstruction;
+  if (target) {
+    next.group = target;
+    if (instruction) next.groupInstruction = instruction;
+  }
+  return next;
+}
 export function parseGroupInstructions(value: unknown): GroupInstructions {
   if (value === undefined) return {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Use valid instructions for each color group.');

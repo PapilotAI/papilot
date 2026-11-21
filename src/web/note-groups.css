@@ -1,4 +1,9 @@
 .group-picker{display:inline-flex;align-items:center;gap:2px;flex:none}
+.note-color-picker>.group-select,.group-note-edit{width:24px;height:24px;flex:none;color:var(--text-2)}
+.note-color-swatch{box-sizing:border-box;width:8px;height:8px;border-radius:50%;border:1px solid currentColor;background:transparent}
+.group-references{list-style:none;margin:0;padding:0}
+@media(pointer:coarse){.group-picker.note-color-picker>.group-select,.group-note-edit,.note-head .group-note-edit,.note-head .note-color-picker>.group-select{width:36px;height:36px}}
+.group-select[data-group] .note-color-swatch{background:var(--note-color);border-color:var(--note-color)}
 .group-highlight{position:relative;display:flex;justify-content:center;width:20px;height:22px}
 .group-highlight::after{content:"";position:absolute;bottom:0;left:3px;right:3px;height:2px;border-radius:2px;background:var(--text-3);opacity:.4}
 .group-select[data-group] .group-highlight::after{background:var(--note-color);opacity:1}

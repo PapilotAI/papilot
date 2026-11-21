@@ -876,6 +876,18 @@ test('return unresolved task annotations without changing the original submissio
     assert.equal(returned.quote, rejected.quote);
     assert.equal(returned.kind, 'point');
     assert.equal(returned.stamp, 'Clarify');
+    const recolor = (id: string, group: unknown, groupInstruction?: string) => f.local.inject({ method: 'POST',
+      url: '/api/projects/thesis/annotations/' + id, headers: f.as, payload: { group, groupInstruction } });
+    assert.equal((await recolor(rejected.id, 'red')).statusCode, 400, 'Submitted originals remain immutable');
+    assert.equal((await recolor(returned.id, 'cerulean')).statusCode, 400);
+    assert.equal(f.store.annotation(projectId, returned.id).group, 'purple');
+    const green = await recolor(returned.id, 'green');
+    assert.equal(green.statusCode, 200, green.body);
+    assert.deepEqual(green.json(), JSON.parse(JSON.stringify({ ...returned, group: 'green', groupInstruction: undefined })), 'preserve location, identity and comment');
+    const single = (await recolor(returned.id, null)).json();
+    assert.equal(single.group, undefined); assert.equal(single.groupInstruction, undefined);
+    assert.equal(single.comment, rejected.comment);
+    assert.equal((await recolor(returned.id, 'purple', returned.groupInstruction)).json().groupInstruction, returned.groupInstruction);
     const unplaced = (await returns('missed')).json() as Annotation;
     assert.deepEqual((await results()).json().notes.map((result: any) => [result.returned, result.undoReturnAt]), [
       [false, undefined], [true, returned.createdAt], [true, unplaced.createdAt],
@@ -1173,6 +1185,14 @@ test('deletions need no comment, quick notes keep their name, and a task of dele
     assert.equal(replaced.json().comment, 'a plain idea');
     const cleared = await f.local.inject({ method: 'POST', url: `/api/projects/thesis/annotations/${deletion.json().id}`, headers: f.as, payload: { comment: '' } });
     assert.equal(cleared.statusCode, 200, 'Clearing the replacement goes back to deleting');
+    const highlight = (await post({ group: 'green' })).json();
+    const editHighlight = (payload: object) => f.local.inject({
+      method: 'POST', url: `/api/projects/thesis/annotations/${highlight.id}`, headers: f.as, payload,
+    });
+    assert.equal((await editHighlight({ group: null })).json().group, undefined);
+    assert.equal((await editHighlight({ comment: 'My note' })).json().comment, 'My note');
+    assert.equal((await editHighlight({ group: null, comment: '' })).json().comment, '', 'Undo can restore a plain highlight');
+    assert.equal((await editHighlight({ group: 'green' })).json().group, 'green');
     const send = await f.local.inject({ method: 'POST', url: '/api/tasks', headers: f.as, payload: { id: 'deletions-only-task-01', projectId: 'thesis', title: 'Delete marked text', instructions: '', annotations: [deletion.json().id] } });
     assert.equal(send.statusCode, 200, send.body);
     assert.match(f.store.runByKey('initial-deletions-only-task-01')!.prompt, /· Delete\n {3}PDF text: "a very simple idea"\n {3}Note: Delete the marked text\./);

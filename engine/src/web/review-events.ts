@@ -46,6 +46,9 @@ export interface ReviewChanges {
 export const DECIDE_EVENT = "latex-review:decide";
 export interface DecideChange { round: number; changes: string[]; action: string }
 
+/** Undo the latest review decision, including ones made in the workspace drawer. */
+export const UNDO_EVENT = "latex-review:undo";
+
 /** The workspace saved a file of the task, sent on the viewer's `window`:
  *  `state` is the review after the save, and the viewer stays at `line`
  *  (0-based) of `file`, as after an edit made in the viewer. */

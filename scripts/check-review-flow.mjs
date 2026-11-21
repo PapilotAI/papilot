@@ -262,7 +262,10 @@ try {
     await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '1');
     await sync(); await wheelReview();
     await viewer().getByRole('button', { name: 'History', exact: true }).click();
-    await viewer().getByRole('button', { name: 'Undo last decision', exact: true }).click();
+    if (decision === 'reject') {
+      await page.locator('.review-host-bar button:visible:enabled').first().press('Control+z');
+      await expect.poll(() => rounds[1].first).toBe('pending');
+    } else await viewer().getByRole('button', { name: 'Undo last decision', exact: true }).click();
     await expect(viewer().locator('.change.current')).toHaveAttribute('data-stop', '0');
   }
   // The review scrolls natively: nothing in it cancels wheel events, which

@@ -29,6 +29,11 @@ test('playground notes survive reload, editing, deletion and undo without a serv
   assert.equal(created.source, null);
   assert.equal(created.kind, 'point');
   await api(`${base}/annotations/${created.id}`, { comment: 'Add evidence.' });
+  const purple = await api<Annotation>(`${base}/annotations/${created.id}`, { group: 'purple' });
+  assert.equal(purple.group, 'purple'); assert.equal(purple.comment, 'Add evidence.');
+  await assert.rejects(api(`${base}/annotations/${created.id}`, { group: 'unknown' }));
+  const single = await api<Annotation>(`${base}/annotations/${created.id}`, { group: null });
+  assert.equal(single.group, undefined); assert.equal(single.quote, created.quote);
   const reload = createPlaygroundData(storage, 'new-version', 'paper-hash', pages);
   assert.equal((await reload<Manuscript>(`${base}/manuscript`)).annotations.find(note => note.id === created.id)?.comment, 'Add evidence.');
   await reload(`${base}/annotations/${created.id}/delete`, {});

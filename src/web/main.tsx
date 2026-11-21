@@ -4,13 +4,13 @@ import { requestApi, requestState } from './api.ts';
 import { agentLabel, agentsSettled, chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
-import { GroupCard, GroupInstruction } from './note-groups.tsx';
+import { GroupCard, GroupInstruction, GroupPicker } from './note-groups.tsx';
 import { SectionNotePicker } from './section-note-picker.tsx';
 import { useNoteSelection } from './note-selection.tsx';
 import { ClearAnnotationsDialog } from './clear-annotations-dialog.tsx';
 import { useGroupInstructions } from './group-instructions.ts';
 import { markText, NoteQuote, SubmittedNoteContent } from './note-content.tsx';
-import { NoteAttachButton, PdfNoteCard, TaskRemoveButton } from './pdf-suggestion.tsx';
+import { NoteAttachButton, NoteEditButton, PdfNoteCard, TaskRemoveButton } from './pdf-suggestion.tsx';
 import { StrictMode, Suspense, lazy, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal, flushSync } from 'react-dom';
@@ -25,7 +25,7 @@ import { ReviewDraftCards } from './review-draft-cards.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, pendingReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
 import { AttachmentDraft, attachmentDrafts, type UploadAttachment } from './attachment-draft.ts';
-import type { Attachment, CollaborationSettings as CollaborationSettingsState, NoteReturnState } from '../shared.ts';
+import type { Attachment, CollaborationSettings as CollaborationSettingsState, NoteReturnReceipt, NoteReturnState, RemovedNoteReturn } from '../shared.ts';
 import { noteLocation } from './note-location.ts';
 import { ReadRequest, canStreamUpdates, mergeTimeline, visibleTimeline } from './refresh.ts';
 import { browserStorage } from './storage.ts';
@@ -826,7 +826,7 @@ function NotePlacementWarning() {
 
 const manuscriptDocument = (data: Manuscript | null) => data?.document ?? data?.build.document ?? null;
 
-type NoteChange = { note: Annotation; selected?: boolean } & ({ kind: 'add' | 'remove' } | { kind: 'edit'; comment: string });
+type NoteChange = { note: Annotation; selected?: boolean } & ({ kind: 'add' | 'remove' } | { kind: 'edit'; comment: string } | { kind: 'group'; group: NoteGroup | null });
 type ClearedNotes = { kind: 'clear'; target: AnnotationBatch; selected: string[] };
 type AnnotationChange = NoteChange | ClearedNotes;
 interface NoteActions {
@@ -846,6 +846,7 @@ interface NoteActions {
   setGroup: (group: NoteGroup | null) => void;
   add: (page: number, rect: Rect, rects: Rect[], quote: string, comment: string, group?: NoteGroup, options?: { reveal?: boolean; quote?: boolean; kind?: MarkKind; stamp?: string; key?: string }) => Promise<void>;
   edit: (note: Annotation, comment: string) => Promise<void>;
+  regroup: (note: Annotation, group: NoteGroup | null) => Promise<void>;
   remove: (note: Annotation) => Promise<void>;
   restore: (note: Annotation) => Promise<void>;
   onEditing: (editing: boolean) => void;
@@ -873,6 +874,19 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
     if (!notes) return;
     for (const [id, entry] of Object.entries(draftValues.current)) if (inProject(entry.note) && !notes.some(note => note.id === id)) draft(id, null);
   }, [notes, projectId]);
+  const editingRow = useRef<{ id: string; panel: Element } | null>(null);
+  useLayoutEffect(() => {
+    const row = editingRow.current;
+    if (!row || drafts[row.id]) return;
+    editingRow.current = null;
+    if (document.activeElement === document.body) row.panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(row.id)}"] .group-note-edit`)?.focus({ preventScroll: true });
+  }, [drafts]);
+  function editGrouped(note: Annotation, button: HTMLButtonElement) {
+    const panel = button.closest('.notes-panel, .task-notes-panel');
+    if (panel) editingRow.current = { id: note.id, panel };
+    clearError(note.id);
+    draft(note.id, note.comment);
+  }
   const clearError = (id: string) => setErrors(current => { const next = { ...current }; delete next[id]; return next; });
   function draft(id: string, value: string | null) {
     const next = { ...draftValues.current };
@@ -905,7 +919,7 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
     for (const [id, entry] of Object.entries(draftValues.current)) {
       if (!included(entry.note)) continue;
       const note = notes?.find(note => note.id === id) || entry.note, comment = entry.value.trim();
-      if (comment && comment !== note.comment) { if (!await save(note, comment)) return false; }
+      if (comment !== note.comment && (comment || note.group || note.kind === 'delete')) { if (!await save(note, comment)) return false; }
       else draft(id, null);
     }
     return true;
@@ -914,16 +928,24 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
   const remove = (note: Annotation) => change(note, async () => { await actions.remove(note); draft(note.id, null); setDismissed(note); });
   const undo = (disabled: boolean) => dismissed && <div className="note-dismissed" role="status">{dismissed.aiReview ? t('Suggestion ignored.') : t('Note deleted.')} <button type="button" disabled={disabled} onClick={() => void change(dismissed, async () => { await actions.restore(dismissed); setDismissed(null); })}>{t('Undo')}</button></div>;
   // The same card in both lists; `onToggle` adds the note to the task or takes it out.
+  async function regroup(note: Annotation, group: NoteGroup | null) {
+    const panel = document.activeElement?.closest('.notes-panel, .task-notes-panel');
+    await change(note, () => actions.regroup(note, group));
+    // Moving to another group can replace the row that held keyboard focus.
+    if (panel) requestAnimationFrame(() => {
+      if (document.activeElement === document.body) panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(note.id)}"] .group-select`)?.focus({ preventScroll: true });
+    });
+  }
   const card = (note: Annotation, index: number, { currentKey, active, inTask, onShow, onToggle }: { currentKey?: string; active?: string; inTask?: boolean; onShow: (note: Annotation) => void; onToggle: () => void }) => <li key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)} className={(note.aiReview ? 'review-suggestion ' : '') + (active === note.id ? 'active ' : '') + (note.key !== currentKey ? 'stale' : '')}>
     <PdfNoteCard inline inTask={inTask} note={note} number={index + 1} index={0} total={1} selected={actions.selection.has(note.id)} busy={actions.sending || busyNotes.some(item => item.id === note.id)} error={errors[note.id] || ''}
       draft={drafts[note.id]?.value ?? null} onDraftChange={value => { draft(note.id, value); if (value !== null && drafts[note.id] === undefined) clearError(note.id); }}
       header={<div className="note-card-context"><div className="note-head"><button type="button" className="note-number" aria-label={note.aiReview ? t('Show suggestion {n} on the page', { n: index + 1 }) : t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}{note.aiReview ? ' · ' + agentLabel(note.aiReview.agent) : note.author ? ' · ' + t('from {name}', { name: note.author.name }) : ''}</span></div><NoteQuote text={note.quote} kind={note.kind}/></div>}
-      onToggle={onToggle} onDismiss={() => void remove(note)}
+      onGroupChange={isTaskReviewNote(note) ? undefined : group => void regroup(note, group)} onToggle={onToggle} onDismiss={() => void remove(note)}
       onSave={(comment, action) => save(note, comment, action === 'quote' ? onToggle : undefined)}>
       {note.key !== currentKey && <NotePlacementWarning/>}
     </PdfNoteCard>
   </li>;
-  return { editing, busy, errors, dismissed, saveAll, remove, undo, forget: () => setDismissed(current => current && inProject(current) ? null : current), card };
+  return { editing, busy, errors, dismissed, saveAll, remove, regroup, undo, drafts, editGrouped, forget: () => setDismissed(current => current && inProject(current) ? null : current), card };
 }
 
 function useSaveNotesOnLeave(save: () => Promise<boolean>) {
@@ -944,6 +966,7 @@ function NotesPanel({ notes, sections = [], currentKey, active, actions, onShow,
   const toggle = (note: Annotation) => actions.selection.set([note.id], !actions.selection.has(note.id));
   const selectCard = (note: Annotation, index: number) => <NoteAttachButton number={index + 1} ai={Boolean(note.aiReview)} selected={actions.selection.has(note.id)} disabled={selectionLocked} onClick={() => toggle(note)}/>;
   const ownNotes = notes.filter(note => !note.aiReview);
+  const groups = noteGroups(notes.filter(note => !isTaskReviewNote(note)));
   const clearable = notes.filter(note => !isTaskReviewNote(note));
   const batch = actions.batch, clearDisabled = !batch || batch.disabled || selectionLocked || (!batch.uncertain && !clearable.length);
   const clearLabel = batch?.uncertain ? t('Retry clearing annotations…') : t('Clear all annotations…');
@@ -967,16 +990,18 @@ function NotesPanel({ notes, sections = [], currentKey, active, actions, onShow,
     </div>}
     <section ref={list} className="notes-panel" aria-label={t('PDF notes')}>
     {currentKey && notes.some(note => note.key !== currentKey) && <p className="note-placement-summary" role="status">{t('Some note positions need confirmation. Their original text and comments are kept.')}</p>}
-    {ownNotes.length > 0 && <section className="note-section" aria-label={t('My notes')}>
-    {noteGroups(notes).map(({ group, entries }) => {
+    {(ownNotes.length > 0 || groups.length > 0) && <section className="note-section" aria-label={t('My notes')}>
+    {groups.map(({ group, entries }) => {
       const count = entries.filter(({ note }) => actions.selection.has(note.id)).length;
       return <GroupCard key={group} group={group} count={entries.length} active={actions.group === group || entries.some(({ note }) => note.id === active)} selection={{ count, disabled: selectionLocked, toggle: () => actions.selection.set(entries.map(({ note }) => note.id), count !== entries.length) }}>
-      <div className="group-references">{entries.map(({ note, index }) => <div className={'group-location note-card' + (note.id === active ? ' active' : '')} key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)}>
+      <ol className="group-references">{entries.map(({ note, index }) => cards.drafts[note.id] ? renderNote(note, index) : <li className={'group-location note-card' + (note.id === active ? ' active' : '')} key={note.id} data-note={note.id} data-selected={actions.selection.has(note.id)}>
         <button type="button" className="note-number" aria-label={t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button>
-        <div className="group-location-target"><blockquote>{note.quote || t('Marked region')}</blockquote><span>{noteWhere(note)}</span>{note.key !== currentKey && <NotePlacementWarning/>}</div>
+        <div className="group-location-target"><blockquote>{note.quote || t('Marked region')}</blockquote>{(note.comment || note.kind === 'delete') && <p className="task-note-comment">{markText(note)}</p>}<span>{noteWhere(note)}</span>{note.key !== currentKey && <NotePlacementWarning/>}</div>
+        <NoteEditButton grouped number={index + 1} disabled={selectionLocked} onEdit={event => cards.editGrouped(note, event.currentTarget)}/>
+        <GroupPicker forNote value={note.group ?? null} onChange={next => void cards.regroup(note, next)} disabled={selectionLocked}/>
         <button type="button" className="icon-button group-location-remove" aria-label={t('Delete note {n}', { n: index + 1 })} disabled={locked} onClick={() => void cards.remove(note)}><Icon name="trash" size={14}/></button>
         {selectCard(note, index)}
-      </div>)}</div>
+      </li>)}</ol>
     </GroupCard>; })}
     <ol className="note-list">{notes.map((note, index) => !note.aiReview && !note.group && renderNote(note, index))}</ol>
     </section>}
@@ -1008,10 +1033,12 @@ function TaskNotes({ notes, currentKey, actions, onShow, controller, cards, head
     returnNotes(list.filter(note => !note.aiReview || note.key !== currentKey).flatMap(note => panel.current?.querySelector<HTMLElement>(`[data-note="${CSS.escape(note.id)}"]`) || []));
     actions.selection.set(list.map(note => note.id), false);
   };
-  // A location in a color group carries the group's instruction, not its own;
-  // × sits top right, as on the cards below.
-  const reference = (note: Annotation, index: number) => <li key={note.id} data-note={note.id} className="task-note-reference">
-    <div className="note-head"><button type="button" className="note-number" aria-label={note.aiReview ? t('Show suggestion {n} on the page', { n: index + 1 }) : t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}</span><TaskRemoveButton number={index + 1} ai={Boolean(note.aiReview)} disabled={selectionLocked} onClick={() => putBack([note])}/></div>
+  // Show each selected passage with its individual comment and group context.
+  const reference = (note: Annotation, index: number) => cards.drafts[note.id] ? cards.card(note, index, { currentKey, inTask: true, onShow, onToggle: () => putBack([note]) }) : <li key={note.id} data-note={note.id} className="task-note-reference">
+    <div className="note-head"><button type="button" className="note-number" aria-label={note.aiReview ? t('Show suggestion {n} on the page', { n: index + 1 }) : t('Show note {n} on the page', { n: index + 1 })} disabled={note.key !== currentKey} onClick={() => onShow(note)}>{index + 1}</button><span className="note-where">{noteWhere(note)}</span>{!isTaskReviewNote(note) && <>
+      <NoteEditButton grouped number={index + 1} disabled={selectionLocked} onEdit={event => cards.editGrouped(note, event.currentTarget)}/>
+      <GroupPicker forNote value={note.group ?? null} disabled={selectionLocked} onChange={next => void cards.regroup(note, next)}/>
+    </>}<TaskRemoveButton number={index + 1} ai={Boolean(note.aiReview)} disabled={selectionLocked} onClick={() => putBack([note])}/></div>
     <NoteQuote text={note.quote} kind={note.kind}/>
     {(note.comment || note.kind === 'delete' || note.stamp) && <p className="task-note-comment">{note.stamp && <span className="pdf-note-stamp"><Icon name="spark" size={12}/>{note.stamp}</span>}{markText(note)}</p>}
     {note.key !== currentKey && <NotePlacementWarning/>}
@@ -1201,7 +1228,7 @@ function ManuscriptView({ onOpenTask, returnedPlace, onPlaceShown, notesRequest,
       {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView key={place} ref={pdf} place={place} pdfKey={build.key} url={pdfAsset(`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`)} words={wordAsset(`/api/projects/${project.id}/manuscript/words?key=${build.key}`)} keyedNotes revealNote={returnedPlace} onNoteShown={onPlaceShown} notes={numbered} active={active} region={region} setRegion={setRegion} group={actions.group} onGroupChange={actions.setGroup} markingDisabled={actions.sending}
           inFlightMarks={data?.inFlightMarks} onOpenTask={onOpenTask}
           anchorApi={(action, body) => api(`/projects/${project.id}/manuscript/anchors${action === 'resolve' ? '/resolve' : ''}`, body)}
-          history={actions.history} noteActions={{ has: actions.selection.has, toggle: note => actions.selection.set([note.id], !actions.selection.has(note.id)), remove: actions.remove, restore: actions.restore, edit: actions.edit, onEditing: actions.onEditing, onBusy: actions.onReviewBusy, disabled: actions.sending }} onDeselect={() => setActive('')}
+          history={actions.history} noteActions={{ has: actions.selection.has, toggle: note => actions.selection.set([note.id], !actions.selection.has(note.id)), remove: actions.remove, restore: actions.restore, edit: actions.edit, regroup: actions.regroup, onEditing: actions.onEditing, onBusy: actions.onReviewBusy, disabled: actions.sending }} onDeselect={() => setActive('')}
           onCreate={actions.add} onSelect={async note => { if (await closeReadingNotes()) setActive(note.id); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={pdfTools}
           onSource={async (target, key) => { if (!await closeReadingNotes()) return; setActive(''); setView('source'); setCollapsed(false); void source.open(target, key); }} passage={source.passage}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
@@ -1726,8 +1753,8 @@ function App() {
     if (actionRequests.current.has(key)) return;
     actionRequests.current.add(key); setPendingActions(new Set(actionRequests.current));
     try {
-      const result = await api<{ noteReturn?: { annotation?: Annotation } } | null>(route, body);
-      if (result?.noteReturn?.annotation) rememberReturn(result.noteReturn.annotation);
+      const result = await api<{ noteReturns?: Omit<NoteReturnReceipt, 'key'>[] } | null>(route, body);
+      if (result?.noteReturns?.length && route.startsWith('/tasks/')) applyReviewReturns(route.split('/')[2], result.noteReturns);
       if (refreshAfter) await refresh(true);
       return true;
     } catch (e) { reportError(e); }
@@ -1989,6 +2016,25 @@ function App() {
     setManuscript(current => current.projectId === project?.id && current.data && (document === undefined || manuscriptDocument(current.data) === document)
       ? { ...current, data: { ...current.data, annotations: update(current.data.annotations || []) } } : current);
   };
+  async function writeNote(note: Annotation, edit: { comment: string } | { group: NoteGroup | null }) {
+    const queue = noteWrites.current.get(note.id) || { saved: savedNotes?.find(item => item.id === note.id) || note, tail: Promise.resolve() };
+    const write = queue.tail.then(async () => {
+      const before = queue.saved;
+      const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, edit);
+      queue.saved = saved;
+      if (annotationHistory.current !== history) return;
+      withNotes(list => list.map(item => item.id === note.id ? saved : item));
+      if ('group' in edit && before.group !== saved.group) recordAnnotation({ kind: 'group', note: before, group: saved.group ?? null });
+      if ('comment' in edit && before.comment !== saved.comment) recordAnnotation({ kind: 'edit', note: before, comment: saved.comment });
+    });
+    // Later writes may proceed after a failure; this caller still receives it.
+    const tail = write.catch(() => undefined);
+    queue.tail = tail; noteWrites.current.set(note.id, queue);
+    try { await write; }
+    finally {
+      if (noteWrites.current.get(note.id) === queue && queue.tail === tail) noteWrites.current.delete(note.id);
+    }
+  }
   const noteActions: NoteActions = {
     selection: { ...noteSelection, set(ids, checked) {
       // Every deselection entry point (PDF, library and task) waits for the
@@ -2021,27 +2067,15 @@ function App() {
     async edit(note, comment) {
       const version = ++noteEditVersion.current;
       setPendingComments(current => ({ ...current, [note.id]: { comment, version } }));
-      const queue = noteWrites.current.get(note.id) || { saved: savedNotes?.find(item => item.id === note.id) || note, tail: Promise.resolve() };
-      const write = queue.tail.then(async () => {
-        const before = queue.saved;
-        const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, { comment });
-        queue.saved = saved;
-        if (annotationHistory.current !== history) return;
-        withNotes(list => list.map(item => item.id === note.id ? saved : item));
-        if (before.comment !== saved.comment) recordAnnotation({ kind: 'edit', note: before, comment: saved.comment });
-      });
-      // Later writes may proceed after a failure; this caller still receives it.
-      const tail = write.catch(() => undefined);
-      queue.tail = tail; noteWrites.current.set(note.id, queue);
-      try { await write; }
+      try { await writeNote(note, { comment }); }
       finally {
-        if (noteWrites.current.get(note.id) === queue && queue.tail === tail) noteWrites.current.delete(note.id);
         setPendingComments(current => {
           if (current[note.id]?.version !== version) return current;
           const next = { ...current }; delete next[note.id]; return next;
         });
       }
     },
+    regroup: (note, group) => writeNote(note, { group }),
     async remove(note) {
       const selected = noteSelection.has(note.id);
       await api(`/projects/${note.projectId}/annotations/${note.id}/delete`, {});
@@ -2140,8 +2174,10 @@ function App() {
     const { note } = entry;
     void (async () => {
       try {
-        if (entry.kind === 'edit') {
-          const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, { comment: direction === 'undo' ? note.comment : entry.comment });
+        if (entry.kind === 'edit' || entry.kind === 'group') {
+          const edit = entry.kind === 'edit' ? direction === 'undo' ? { comment: note.comment, ...(!note.comment && !note.group ? { group: null } : {}) } : { comment: entry.comment }
+            : direction === 'undo' ? { group: note.group ?? null, groupInstruction: note.groupInstruction } : { group: entry.group };
+          const saved = await api<Annotation>(`/projects/${note.projectId}/annotations/${note.id}`, edit);
           if (annotationHistory.current !== history) return;
           withNotes(list => list.map(item => item.id === note.id ? saved : item));
         } else if ((entry.kind === 'add') === (direction === 'undo')) {
@@ -2357,51 +2393,64 @@ function App() {
     </div>
   </section>;
 
-  return <NoteResultsProvider onDecisionReturn={copy => {
-    const fresh = rememberReturn(copy);
-    void refresh(true);
-    window.dispatchEvent(new Event('papilot:manuscript'));
+  function forgetReturnedNote(taskId: string, removed: RemovedNoteReturn) {
+    const { id, projectId, createdAt, originalId } = removed;
+    if ((seenReturns.current.get(id) ?? -1) > createdAt) return false;
+    seenReturns.current.set(id, createdAt);
+    const last = lastReturned.current.get(projectId);
+    if (last?.id === id && last.createdAt === createdAt) lastReturned.current.delete(projectId);
+    reviewDraft(taskId).forgetReturn(originalId, createdAt);
+    const loaded = latestManuscript.current;
+    const displayed = loaded.projectId === projectId && loaded.data?.annotations.find(copy => copy.id === id);
+    if ([last, displayed].some(copy => copy && copy.id === id && copy.createdAt > createdAt)) return false;
+    if (annotationHistory.current === history && projectId === history.projectId) {
+      // Discard history entries and draft selections for this return generation.
+      noteSelection.set([id], false);
+      const keep = (entry: AnnotationChange) => {
+        if (entry.kind !== 'clear') return entry.note.id !== id;
+        entry.target.ids = entry.target.ids.filter(note => note !== id);
+        entry.selected = entry.selected.filter(note => note !== id);
+        return entry.target.ids.length > 0;
+      };
+      history.undo = history.undo.filter(keep);
+      history.redo = history.redo.filter(keep);
+      historyChanged();
+      withNotes(list => list.filter(note => note.id !== id || note.createdAt !== createdAt));
+      setActiveNote(current => current === id ? '' : current);
+    }
+    return true;
+  }
+  function applyReviewReturns(taskId: string, receipts: (Omit<NoteReturnReceipt, 'key'>)[]) {
+    const affected = new Set<string>();
+    for (const { annotation, removed } of receipts) {
+      if (annotation && rememberReturn(annotation)) affected.add(annotation.id);
+      if (removed && forgetReturnedNote(taskId, removed)) affected.add(removed.id);
+    }
+    if (affected.size) window.dispatchEvent(new Event('papilot:manuscript'));
+    return affected;
+  }
+  return <NoteResultsProvider onDecisionReturns={receipts => {
+    const fresh = task ? applyReviewReturns(task.id, receipts) : new Set<string>();
+    if (fresh.size) void refresh(true);
     return fresh;
   }} task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} returnRequest={isPlayground ? undefined : async (id, note, undoReturnAt) => {
     const route = `/tasks/${id}/notes/${encodeURIComponent(note)}`;
-    let result: NoteReturnState;
+    let result: NoteReturnState | undefined;
     if (undoReturnAt === undefined) {
       const copy = await api<Annotation>(route + '/return', {});
       result = copy.deletedAt === undefined ? { returned: true, undoReturnAt: copy.taskId ? undefined : copy.createdAt } : { returned: false };
       if (result.undoReturnAt !== undefined) rememberReturn(copy);
     } else {
-      const response = await api<NoteReturnState & { removed?: string }>(route + '/undo-return', { createdAt: undoReturnAt });
-      if (response.removed) {
-        const removed = response.removed;
-        seenReturns.current.set(removed, Math.max(undoReturnAt, seenReturns.current.get(removed) ?? -1));
-        const last = project && lastReturned.current.get(project.id);
-        if (last && last.id === removed && last.createdAt === undoReturnAt) lastReturned.current.delete(last.projectId);
-        reviewDraft(id).forgetReturn(note, undoReturnAt);
-        const loaded = latestManuscript.current;
-        const current = loaded.projectId === project?.id && loaded.data?.annotations.find(copy => copy.id === removed);
-        const replacement = [last, current].find(copy => copy && copy.id === removed && copy.createdAt > undoReturnAt);
-        if (replacement) {
-          void refresh(true);
-          window.dispatchEvent(new Event('papilot:manuscript'));
-          return { returned: true, undoReturnAt: replacement.createdAt };
-        }
-        noteSelection.set([removed], false);
-        if (annotationHistory.current === history) {
-          // A retired copy must not leave a PDF history entry that can no longer be replayed.
-          const keep = (entry: AnnotationChange) => {
-            if (entry.kind !== 'clear') return entry.note.id !== removed;
-            entry.target.ids = entry.target.ids.filter(id => id !== removed);
-            entry.selected = entry.selected.filter(id => id !== removed);
-            return entry.target.ids.length > 0;
-          };
-          history.undo = history.undo.filter(keep);
-          history.redo = history.redo.filter(keep);
-          historyChanged();
-          withNotes(list => list.filter(note => note.id !== removed || note.createdAt !== undoReturnAt));
-          setActiveNote(current => current === removed ? '' : current);
-        }
+      const { removed, ...state } = await api<NoteReturnState & { removed?: string }>(route + '/undo-return', { createdAt: undoReturnAt });
+      if (removed && project && !forgetReturnedNote(id, {
+        id: removed, projectId: project.id, originalId: note, createdAt: undoReturnAt,
+      })) {
+        const displayed = latestManuscript.current.data?.annotations.find(copy => copy.id === removed);
+        const last = lastReturned.current.get(project.id);
+        const newer = Math.max(seenReturns.current.get(removed) ?? -1, displayed?.createdAt ?? -1, last?.id === removed ? last.createdAt : -1);
+        if (newer > undoReturnAt) result = { returned: true, undoReturnAt: newer };
       }
-      result = response;
+      result ??= state;
     }
     void refresh(true);
     window.dispatchEvent(new Event('papilot:manuscript'));

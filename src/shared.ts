@@ -26,7 +26,7 @@ export interface ReviewSummary { ready?: number; state: string; round: number | 
 export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
 // previousStatus and previousError are where Check status returns the task
 // once the engine confirms the action.
-export interface PendingReview { returnNote?: Annotation; route: string; body: Record<string, unknown>; previousStatus: TaskStatus; previousError?: string | null }
+export interface PendingReview { returnNote?: Annotation; returnNotes?: Annotation[]; route: string; body: Record<string, unknown>; previousStatus: TaskStatus; previousError?: string | null }
 // A task is saved with its first message queued before its manuscript copy
 // exists, and prepared in the background: the review engine checks out the
 // copy, and an AI review also compiles its PDF. A failed preparation keeps
@@ -109,6 +109,8 @@ export interface NoteAnchor { sources: { file: string; lines: [number, number] }
 export interface NoteSummary { group?: NoteGroup; kind?: MarkKind; stamp?: string; where: string; quote: string; comment: string; id?: string; anchor?: NoteAnchor; context?: string[]; paper?: { page: number; rects: [number, number, number, number][]; round?: number; key?: string; build?: string } }
 export interface NoteChange { round: number; stop: number; units: string[]; state: 'pending' | 'accepted' | 'rejected' | 'commented' | 'mixed'; match: 'source' | 'quote' }
 export interface NoteReturnState { returned: boolean; undoReturnAt?: number }
+export interface RemovedNoteReturn { id: string; projectId: string; createdAt: number; originalId: string }
+export interface NoteReturnReceipt extends NoteReturnState { key: string; annotation?: Annotation; removed?: RemovedNoteReturn; moved?: boolean }
 export interface NoteResult extends Partial<NoteReturnState> { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
 export interface NoteOption { id: string; label: string; reason?: string; previewError?: string; edits: { unit: string; text: string }[] }
 export const NOTE_ALTERNATIVE_RANGES = { few: [1, 2], balanced: [2, 3], many: [3, 5] } as const;
@@ -290,7 +292,7 @@ export const isMarkKind = (value: unknown): value is MarkKind => value === 'dele
 export interface QuickNote { id: string; label?: string; instruction?: string; icon?: string }
 export const QUICK_NOTE_LIMIT = 8;
 export const PRESET_QUICK_NOTES = ['polish', 'tighten', 'runt', 'connect', 'verify'];
-export interface Annotation { returnDecisions?: string[]; agentAnnotation?: { taskId: string; request: string }; context?: string[]; groupInstruction?: string; /** The root document whose PDF it is on; absent on notes from before a paper could compile several. */ document?: string; aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; kind?: MarkKind; stamp?: string; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number; deletedBatch?: string }
+export interface Annotation { returnAction?: { taskId: string; id: string; key: string; originalId: string; undone?: boolean }; returnDecisions?: string[]; agentAnnotation?: { taskId: string; request: string }; context?: string[]; groupInstruction?: string; /** The root document whose PDF it is on; absent on notes from before a paper could compile several. */ document?: string; aiReview?: { taskId: string; agent: AgentId; sourceId?: string; copiedTo?: string }; group?: NoteGroup; kind?: MarkKind; stamp?: string; id: string; projectId: string; key: string; page: number; rect: [number, number, number, number]; rects?: [number, number, number, number][]; comment: string; quote: string; source: { file: string; lines: [number, number]; excerpt?: string } | null; createdAt: number; taskId?: string; author?: Author; deletedAt?: number; deletedBatch?: string }
 // Review findings stay with their task; only explicit copies belong to the manuscript.
 export const isTaskReviewNote = (note: Annotation) => Boolean(note.aiReview && !note.aiReview.sourceId);
 export interface NoteSection { id: string; title: string; level: number; notes: string[] }

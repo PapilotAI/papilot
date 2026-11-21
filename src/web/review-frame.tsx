@@ -21,7 +21,7 @@ import { ModeSwitch } from './mode-switch.tsx';
 import { PdfContents, PdfPageControls, PdfFind, PdfFindButton } from './pdf-controls.tsx';
 import { PDF_READER_COMMAND, PDF_READER_STATE, type PdfReaderCommand, type PdfReaderState } from '../../engine/src/web/pdf-reader.ts';
 import { VIEW_CHOSEN_EVENT } from '../../engine/src/web/view-preferences.ts';
-import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SourceSaved } from '../../engine/src/web/review-events.ts';
+import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, UNDO_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SourceSaved } from '../../engine/src/web/review-events.ts';
 
 // The viewer reads the interface language from its address.
 export const reviewUrl = (task: Pick<Task, 'projectId' | 'name'>, round?: number, change?: number) => `${isPlayground ? import.meta.env.BASE_URL + 'src/web/playground/review.html' : `/review/${task.projectId}/`}?task=${task.name}${round ? `&round=${round}${change === undefined ? '&history=1' : `&change=${change}`}` : ''}${language() === 'en' ? '' : `&lang=${language()}`}`;
@@ -525,12 +525,11 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
       compactReviewFrame(doc, reserve, leadWidth, Boolean(changesOf));
       setDocument(doc);
       frame.current?.contentWindow?.addEventListener('papilot:review:decided', event => {
+        if (frame.current?.contentDocument !== doc) return;
         decided.current?.();
         const links = linksRef.current, detail = (event as CustomEvent).detail;
-        const note = links?.notes.find(note => note.key === detail?.key);
-        if (note && detail.noteReturn) links!.confirmReturn(note, detail.noteReturn,
-          links!.focus?.key === note.key ? window.document.querySelector('.review-note-controls[data-open="true"] .review-note-pager') : null);
-        else links?.reload();
+        if (!links || !Array.isArray(detail?.noteReturns) || !detail.noteReturns.length) { links?.reload(); return; }
+        links.confirmReturns(detail.noteReturns, frame.current);
       });
       // The viewer scrolls only its paper. Revealing or focusing something can
       // scroll its document or #root too, overflow hidden or not, which slides
@@ -622,7 +621,14 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     sync(); paper.addEventListener('scroll', sync, { passive: true });
     return () => { paper.removeEventListener('scroll', sync); root.removeAttribute('data-papilot-scrolled'); };
   }, [document, slot]);
-  return <div className={'review-viewport' + (ready ? '' : ' review-pending') + (keepPdf ? ' keeps-pdf' : '')} aria-busy={!ready} aria-hidden={!ready && keepPdf && phase === 'loading' ? true : undefined}>
+  return <div onKeyDown={event => {
+    if (!ready || !task || !document?.body || event.defaultPrevented || event.repeat || event.nativeEvent.isComposing ||
+        !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'z') return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target.isContentEditable || target.closest('input, textarea, select, [role="menu"], [role="textbox"]')) return;
+    event.preventDefault();
+    if (!event.currentTarget.querySelector('.note-options[aria-busy="true"]')) document.defaultView?.dispatchEvent(new Event(UNDO_EVENT));
+  }} className={'review-viewport' + (ready ? '' : ' review-pending') + (keepPdf ? ' keeps-pdf' : '')} aria-busy={!ready} aria-hidden={!ready && keepPdf && phase === 'loading' ? true : undefined}>
     <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}:${focusSequence || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound, linkedChange) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
     {task && ready && <NoteReviewControls doc={document}/>}

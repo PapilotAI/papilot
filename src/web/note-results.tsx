@@ -1,10 +1,9 @@
 import type { RoundDetail } from '../../engine/src/types.ts';
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { Annotation, NoteChange, NoteResult, NoteReturnState, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
+import type { Annotation, NoteChange, NoteResult, NoteReturnReceipt, NoteReturnState, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
 import { readNotesInstructions } from '../notes.ts';
 import { NoteOptionDiff, NoteOptionSource } from './note-option-diff.tsx';
-import { SubmittedNoteContent } from './note-content.tsx';
-import { animateSubmittedNote } from './note-flight.ts';
+import { animateSubmittedNotes } from './note-flight.ts';
 import { Icon } from './icons.tsx';
 import { errorText, t } from './i18n.ts';
 import { reviewDraft, useReviewDraft } from './review-draft.ts';
@@ -88,15 +87,15 @@ interface Links {
   focusNote: (key: string) => void;
   returns: Record<string, { pending: boolean; error?: string }>;
   returnNote?: (key: string, source: HTMLElement) => void;
-  confirmReturn: (note: NoteResult, result: NonNullable<NoteOptions['noteReturn']>, source?: HTMLElement | null) => void;
+  confirmReturns: (receipts: NoteReturnReceipt[], source?: HTMLElement | null) => void;
   showChange: (key: string, change: NoteChange) => void; showNote: (key: string) => void;
 }
 const Context = createContext<Links | null>(null);
 export const useNoteResults = () => useContext(Context);
 
-export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, onDecisionReturn, openReview, openChat, children }: {
+export function NoteResultsProvider({ task, items, read, optionsRequest, previewRequest, returnRequest, onDecisionReturns, openReview, openChat, children }: {
   task?: Task; items: TimelineItem[]; read: (id: string) => Promise<{ notes: NoteResult[] }>;
-  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; onDecisionReturn?: (note: Annotation) => boolean; openReview: () => void; openChat: () => void; children: ReactNode;
+  optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; returnRequest?: ReturnRequest; onDecisionReturns?: (receipts: NoteReturnReceipt[]) => Set<string>; openReview: () => void; openChat: () => void; children: ReactNode;
 }) {
   const [notes, setNotes] = useState<NoteResult[]>([]), [error, setError] = useState(false), [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(''), [focus, setFocus] = useState<NoteFocus | null>(null);
@@ -189,16 +188,30 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     })();
     return () => { cancelled = true; };
   }, [id, task?.status, task?.review?.round, task?.updatedAt, decisions, noteSignature]);
-  function confirmReturn(note: NoteResult, result: NonNullable<NoteOptions['noteReturn']>, source?: HTMLElement | null) {
-    const fresh = result.annotation && onDecisionReturn?.(result.annotation);
+  function confirmReturns(receipts: NoteReturnReceipt[], source?: HTMLElement | null) {
+    const fresh = onDecisionReturns?.(receipts);
     if (activeTask.current !== id) return;
-    // An undo or a newer return may have reached this browser before the review response.
-    if (fresh === false) { reload(); return; }
-    const sourceKey = source?.dataset.noteResult ?? source?.dataset.noteKey;
-    if ((result.moved || result.returned !== note.returned) && source?.isConnected && sourceKey === note.key) {
-      animateSubmittedNote(note.key, source, result.returned);
+    const updates = new Map<string, NoteReturnReceipt>();
+    const flights: Parameters<typeof animateSubmittedNotes>[0] = [];
+    for (const receipt of receipts) {
+      const note = notes.find(item => item.key === receipt.key);
+      // An undo or a newer return may already have reached this browser.
+      const copy = receipt.annotation || receipt.removed;
+      if (!note?.note.id || (copy && fresh && !fresh.has(copy.id))) continue;
+      updates.set(note.note.id, receipt);
+      const origin = source instanceof HTMLIFrameElement
+        ? document.querySelector<HTMLElement>(`.review-note-controls[data-open="true"] .review-note-pager[data-note-key="${CSS.escape(note.key)}"]`) || source
+        : source;
+      if ((receipt.moved || receipt.returned !== note.returned) && origin?.isConnected &&
+          (origin instanceof HTMLIFrameElement || (origin.dataset.noteResult ?? origin.dataset.noteKey) === note.key)) {
+        flights.push({ note, source: origin, returned: receipt.returned });
+      }
     }
-    setNotes(current => current.map(item => item.note.id === note.note.id ? { ...item, returned: result.returned, undoReturnAt: result.undoReturnAt } : item));
+    if (flights.length) animateSubmittedNotes(flights);
+    if (updates.size) setNotes(current => current.map(note => {
+      const update = note.note.id && updates.get(note.note.id);
+      return update ? { ...note, returned: update.returned, undoReturnAt: update.undoReturnAt } : note;
+    }));
     reload();
   }
   function returnNote(key: string, source: HTMLElement) {
@@ -208,7 +221,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     setReturns(current => ({ ...current, [key]: { pending: true } }));
     void returnRequest(id, note.note.id, note.returned ? note.undoReturnAt : undefined).then(result => {
       setReturns(current => { const next = { ...current }; delete next[key]; return next; });
-      confirmReturn(note, result, source);
+      confirmReturns([{ ...result, key }], source);
     }, error => {
       setReturns(current => ({ ...current, [key]: { pending: false, error: optionError(error instanceof Error ? error.message : String(error)) } }));
     }).finally(() => runningReturns.current.delete(key));
@@ -220,7 +233,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     background ? () => { void previewRequest(id, key, round, option, retry, version, false).catch(() => {}); } : undefined)), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.key === focus?.key && preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
     alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
     clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
-    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, confirmReturn, returnNote: returnRequest && returnNote };
+    decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, confirmReturns, returnNote: returnRequest && returnNote };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
@@ -338,10 +351,9 @@ export function NoteReviewControls({ doc }: { doc: Document | null }) {
     <span className="review-note-position" aria-live="polite" aria-atomic="true" aria-label={t('Note {n} of {total}', { n: index + 1, total: siblings.length })}>{t('Note {n}', { n: index + 1 })}<span aria-hidden="true"> / </span>{siblings.length}</span>
     <button type="button" className="icon-button" data-direction="next" aria-label={t('Next note')} title={t('Next note')} disabled={index >= siblings.length - 1} onClick={() => move(1)}><Icon name="chevronRight" size={14}/></button>
     <NoteReturnAction noteKey={displayed.key}/>
-    <div hidden className="submitted-note-source"><SubmittedNoteContent note={displayed.note} index={displayed.index}/></div>
   </nav>;
   const emptyHeader = <div className="note-option-navigation">{navigation}</div>;
-  return <section ref={panel} className="review-note-controls" data-open={Boolean(note)} inert={!note} aria-label={t('Options for this note')}>
+  return <section ref={panel} className="review-note-controls" data-open={Boolean(note)} inert={!note} tabIndex={-1} aria-label={t('Options for this note')}>
     {links.error ? <>{emptyHeader}<button type="button" className="note-result-retry" onClick={links.reload}><Icon name="refresh" size={12}/>{t('Retry linking changes')}</button></> : displayed.changes.length > 0 ? <NoteAlternatives key={displayed.key} note={displayed} navigation={navigation}/> : <>{emptyHeader}<p className="note-option-hint">{displayed.state === 'waiting' ? t('Awaiting changes') : t('No linked change')}</p></>}
     <NoteReturnError noteKey={displayed.key}/>
   </section>;
@@ -451,6 +463,8 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const decide = async (option: NoteOption, action: 'accept' | 'reject') => {
     if (!data || applying || locked || !links.previewRequest) return;
     if (selected !== option.id) choose(option.id);
+    // The decision disables its button. Keep focus in Review for Ctrl+Z.
+    container.current?.closest<HTMLElement>('.review-note-controls')?.focus({ preventScroll: true });
     setApplying(true); setActingOption(option.id); setActingKind(action); setError('');
     try {
       // HTTP tailnet addresses provide random bytes without randomUUID.
@@ -465,7 +479,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
       const rejected = optionFeedback(option.id, 'reject'); if (rejected) draft.remove(rejected.id);
       browserStorage.removeItem(storageKey);
       if ('options' in result) { setData(result); setSelected(result.selected || 'current'); setApplying(false); }
-      if ('noteReturn' in result && result.noteReturn) links.confirmReturn(note, result.noteReturn, container.current?.querySelector('.review-note-pager'));
+      if ('noteReturn' in result && result.noteReturn) links.confirmReturns([{ ...result.noteReturn, key: note.key }], container.current?.querySelector('.review-note-pager'));
       else if (action === 'reject') links.reload();
       else links.decisionSaved({ key: note.key, round: data.round, units: option.edits.map(edit => edit.unit) });
     }
@@ -490,7 +504,7 @@ function NoteAlternatives({ note, navigation }: { note: NoteResult; navigation: 
   const name = active ? label(active.id, active.label) : '';
   const commented = Boolean(active && optionFeedback(active.id, 'comment'));
   const multiple = (data?.options.length || 0) > 1;
-  return <div ref={container} className="note-options" onClick={event => event.stopPropagation()}>
+  return <div ref={container} className="note-options" aria-busy={applying} onClick={event => event.stopPropagation()}>
     <div className="note-option-navigation">
     <div className="note-option-choice">
     {data ? (multiple ? <div ref={tabs} className="note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>

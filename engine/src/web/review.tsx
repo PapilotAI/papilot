@@ -48,7 +48,7 @@ import {
 } from "./references.tsx";
 import { bindingLabel, readShortcuts, resolveShortcuts, shortcutAction, SHORTCUT_EVENT, SHORTCUT_STORAGE } from "./shortcuts.ts";
 import { sendsMessage } from "./send-key.ts";
-import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SelectSource, type SourceSaved } from "./review-events.ts";
+import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, UNDO_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SelectSource, type SourceSaved } from "./review-events.ts";
 import { DecisionQueue, Unreachable, withQueued, type QueuedDecision } from "./decision-queue.ts";
 import {
   STATE,
@@ -904,7 +904,7 @@ export function ReviewApp({
       setState(next);
       setQueued(remaining);
       // The host refreshes what depends on the decision, such as Git status.
-      window.dispatchEvent(new CustomEvent("papilot:review:decided", { detail: { key: entry.noteKey, noteReturn: (next as PageState & { noteReturn?: unknown }).noteReturn } }));
+      window.dispatchEvent(new CustomEvent("papilot:review:decided", { detail: { noteReturns: (next as PageState & { noteReturns?: unknown }).noteReturns } }));
       if (entry.draft) store(entry.draft, "");
       if (!remaining.length) {
         if (entry.done) setToast(entry.done);
@@ -925,10 +925,10 @@ export function ReviewApp({
       pollNow.current();
     },
   };
-  async function undo() {
+  async function undo(refreshBefore = false) {
     // The snapshot has the decision confirmed a moment ago, before this
     // render's state does: Undo pressed right after a decision takes it back.
-    if ((!snapshot.current.state?.undo && !queue.current!.pending.length) || !latest || snapshot.current.busy)
+    if ((!refreshBefore && !snapshot.current.state?.undo && !queue.current!.pending.length) || !latest || snapshot.current.busy)
       return;
     // The latest decision has not been sent yet: it is simply dropped, and
     // nothing reaches the server or compiles.
@@ -950,13 +950,19 @@ export function ReviewApp({
       // one fails, the decision Undo was meant for was never made.
       const failed = failures.current;
       await queue.current!.drained();
+      if (refreshBefore) {
+        const current = await api<PageState>(stateRoute());
+        if (current.latest !== snapshot.current.detail?.round) { pollNow.current(); return; }
+        snapshot.current.state = current;
+        setState(current);
+      }
       const last = snapshot.current.state?.undo;
       if (failures.current !== failed || !last || blocked(undoKind(snapshot.current.state))) return;
-      const next = await api<PageState & { restored: string[] }>("/undo", {
+      const next = await api<PageState & { restored: string[]; noteReturns?: unknown }>("/undo", {
         id: last.id,
       });
       setState(next);
-      window.dispatchEvent(new CustomEvent("papilot:review:decided"));
+      window.dispatchEvent(new CustomEvent("papilot:review:decided", { detail: { noteReturns: next.noteReturns } }));
       // An undo of an earlier round's accept inserted the next round.
       if (next.latest !== snapshot.current.detail?.round) pollNow.current();
       const target = stops.findIndex((s) =>
@@ -977,6 +983,11 @@ export function ReviewApp({
       snapshot.current.busy = false;
     }
   }
+  useEffect(() => {
+    const undoFromWorkspace = () => void undo(true);
+    window.addEventListener(UNDO_EVENT, undoFromWorkspace);
+    return () => window.removeEventListener(UNDO_EVENT, undoFromWorkspace);
+  });
   async function submitComposer() {
     if (!composer || !draft.trim() || busy) return;
     await decide("comment", composer.changes, draft.trim());

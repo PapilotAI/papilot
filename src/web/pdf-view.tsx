@@ -7,7 +7,7 @@ import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy } from 'pdf
 import { EventBus, FindState, LinkTarget, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import viewerStyles from 'pdfjs-dist/web/pdf_viewer.css?inline';
 import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import type { Annotation, InFlightMark, MarkKind, SourcePlace } from '../shared.ts';
+import { isTaskReviewNote, type Annotation, type InFlightMark, type MarkKind, type SourcePlace } from '../shared.ts';
 import { loadStamps, useStamps, type Stamp } from './stamps.ts';
 import { StampWheel } from './stamp-wheel.tsx';
 import { PdfToolRail, TOOL_KEYS, type PdfTool, type PdfToolRailHandle } from './pdf-tool-rail.tsx';
@@ -1066,6 +1066,12 @@ export const PdfView = forwardRef<PdfHandle, {
           if (draft === null) delete next[activeNote.note.id]; else next[activeNote.note.id] = draft;
           return next;
         })}
+        onGroupChange={props.noteActions.regroup && !isTaskReviewNote(activeNote.note) ? async group => {
+          setNoteBusy(true); setNoteError('');
+          try { await props.noteActions!.regroup!(activeNote.note, group); }
+          catch (error) { setNoteError(error instanceof Error ? error.message : String(error)); }
+          finally { setNoteBusy(false); }
+        } : undefined}
         destination={props.noteActions.copy ? 'manuscript' : undefined}
         onToggle={() => props.noteActions!.copy ? void copyNote(activeNote.note) : props.noteActions!.toggle(activeNote.note)} onDismiss={() => void dismissNote(activeNote.note)} onClose={closeNote}
         onEditing={props.noteActions.onEditing} onSave={async (comment, action) => {

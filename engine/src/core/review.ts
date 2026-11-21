@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { applyUnits, revertUnits, withHashesAsync } from "./changes.ts";
+import { applyUnits, revertUnits, versionHash, withHashesAsync } from "./changes.ts";
 import { comparable, fingerprint, origin, rendered } from "./carry.ts";
 import { groupFormattingChanges } from "./formatting-changes.ts";
 import { now, readBytes, readJson, same, writeOrDelete } from "./files.ts";
@@ -353,11 +353,17 @@ export class Review {
       block.kind = "change";
     }
     const next = proposedFor && proposedFor > number ? this.round(name, proposedFor) : undefined;
+    const blobs = new Map<string, Buffer | null>();
+    const blob = (revision: string, file: string) => {
+      const key = `${revision}:${file}`;
+      if (!blobs.has(key)) blobs.set(key, this.app.repo.blob(revision, file));
+      return blobs.get(key)!;
+    };
     const sources = new Map<string, { text: string; hash?: string }>();
     const source = (revision: string, file: string) => {
       const key = `${revision}:${file}`;
       if (!sources.has(key)) {
-        const data = this.app.repo.blob(revision, file);
+        const data = blob(revision, file);
         sources.set(key, { text: data?.toString("utf8") || "", ...(data ? { hash: createHash("sha256").update(data).digest("hex") } : {}) });
       }
       return sources.get(key)!;
@@ -398,6 +404,7 @@ export class Review {
       ...(round.summary.job ? { renderJob: round.summary.job } : {}),
       units: round.units.map((u) => ({
         ...u,
+        hash: u.hash ?? versionHash(u, blob(round.before, u.file), blob(round.after, u.file)),
         old_context: context(u, false),
         ...(next ? { new_context: context(u, true), continued_ranges: continued(u) } : {}),
         ...render.units[u.id],
@@ -996,9 +1003,13 @@ export class Review {
       task = app.tasks.get(name),
       action = this.undoEntry(name);
     if (!action || action.id !== identity) {
-      // A lost reply to an undo that inserted a round is answered again.
+      // Retrying an undone rejection lets Papilot finish retracting its returned notes.
       const done = app.store.one<Action>("SELECT * FROM actions WHERE id=? AND task=?", identity, name);
       if (done?.status === "undone" && done.detail.republish) return { ...this.pageState(name), restored: done.changes, republished: true as const };
+      if (done?.status === "undone" && done.kind === "reject") {
+        const state = this.pageState(name);
+        return { ...state, restored: state.round === done.round ? done.changes.filter(id => state.decisions[id] === "pending") : [] };
+      }
       throw new Error("Nothing to undo here any more. Reload the page.");
     }
     // A reject still queued never touched the task's files: it is dropped.

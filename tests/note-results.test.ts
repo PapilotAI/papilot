@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { matchNoteChanges, taskNoteResults, type NoteRound } from '../src/server/note-results.ts';
+import { matchNoteChanges, notesForRejection, taskNoteResults, type NoteRound } from '../src/server/note-results.ts';
 import { noteAnchor, reviewNotesInstructions } from '../src/notes.ts';
 import type { NoteSummary, Run, Task, TimelineItem } from '../src/shared.ts';
 import type { ReviewClient } from '../src/server/review.ts';
@@ -85,6 +85,24 @@ test('note links stay with the published run, never the queued follow-up or late
   const old = await taskNoteResults({ ...task, review: { ...task.review!, round: 1 } }, [legacy], [], client);
   assert.equal(old[0].state, 'matched');
   await assert.rejects(taskNoteResults(task, [items[0]], [run], { get: async () => ({}) } as unknown as ReviewClient), /could not be loaded/, 'missing review data is not reported as an unmatched note');
+});
+
+test('rejection in a follow-up round finds the same pending edit using its version hash', async () => {
+  const task = { id: 'task', name: 'follow-up-reject', status: 'reviewing', review: { round: 2 } } as Task;
+  const original = { ...detail.units[0], hash: 'original-proposal' };
+  const rounds = [
+    { ...detail, units: [original], sections: [], loose: [{ kind: 'change', units: ['c1'] }] },
+    { ...detail, round: 2, units: [{ ...original, id: 'c2' }, { ...original, hash: 'unrelated' }], sections: [], loose: [] },
+  ];
+  const run = { id: 'r1', taskId: task.id, reviewRound: 1, status: 'completed' } as Run;
+  const items: TimelineItem[] = [{ id: run.id, taskId: task.id, type: 'user', text: '', meta: { notes: [note] }, createdAt: 1 }];
+  let state = 'pending';
+  const client = { url: 'follow-up-reject', get: async (route: string) => route.includes('/rounds/') ? rounds[Number(route.at(-1)) - 1] : { decisions: { c1: state } } } as unknown as ReviewClient;
+  const notes = await taskNoteResults(task, items, [run], client);
+  assert.deepEqual(await notesForRejection(task, client, notes, 2, ['c2']), notes);
+  assert.deepEqual(await notesForRejection(task, client, notes, 2, ['c1']), [], 'identical IDs across rounds are unrelated');
+  state = 'accepted';
+  assert.deepEqual(await notesForRejection(task, client, notes, 2, ['c2']), []);
 });
 
 test('option rebuilds retain accepted shared edits and follow pending fragments into the new round', async () => {

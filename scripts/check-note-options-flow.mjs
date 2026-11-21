@@ -247,6 +247,7 @@ try {
       });
       await drawer.getByRole('button', { name: 'Reject Original c', exact: true }).click();
       await expect.poll(() => decisions.c).toBe('rejected');
+      await expect(drawer).toBeFocused();
       const undoReturn = drawer.getByRole('button', { name: 'Note 4 · Undo return to manuscript' });
       await expect(undoReturn).toBeEnabled();
       await expect(undoReturn).toHaveText('');

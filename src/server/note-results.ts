@@ -18,6 +18,7 @@ type NoteContext = { text: string; start: number; source_hash?: string };
 interface NoteBlock { kind: string; units?: string[]; before?: NoteStrip[]; after?: NoteStrip[]; identical?: boolean }
 interface NoteUnit {
   id: string;
+  hash?: string;
   file: string;
   old_start: number;
   old_end: number;
@@ -378,4 +379,37 @@ export async function taskNoteResults(task: Task, items: TimelineItem[], runs: R
     result.state = result.changes.length ? 'matched' : 'unmatched';
   }));
   return results;
+}
+
+// Unit IDs belong to a single round. For a pending change the engine carried
+// forward, its version hash identifies the same text and surrounding context.
+export async function notesForRejection(task: Task, client: ReviewClient, notes: NoteResult[], round: number, changes: string[], key?: string) {
+  const rejected = new Set(changes);
+  if (key) {
+    const note = notes.find(note => note.key === key);
+    const units = new Set(note?.changes.filter(change => change.round === round).flatMap(change => change.units));
+    if (!note || !rejected.size || changes.some(id => !units.has(id))) throw new Error('The review changed. Reload the options.');
+    return [note];
+  }
+  const originals = notes.filter(note => note.note.id && !note.note.anchor?.round);
+  const linked = new Set(originals.filter(note => note.changes.some(change => change.round === round && change.units.some(id => rejected.has(id)))));
+  const historical = originals.filter(note => !linked.has(note));
+  const earlier = new Set(historical.flatMap(note => note.changes.filter(change => change.round < round && ['pending', 'mixed'].includes(change.state)).map(change => change.round)));
+  if (earlier.size && rejected.size) {
+    const uniqueHashes = (detail: NoteRound) => {
+      const hashes = new Map<string, string | null>();
+      for (const { id, hash } of detail.units) if (hash) hashes.set(hash, hashes.has(hash) ? null : id);
+      return hashes;
+    };
+    const target = uniqueHashes(await readRound(client, task, round));
+    const hashes = [...target].filter(([, id]) => id && rejected.has(id)).map(([hash]) => hash);
+    await Promise.all([...earlier].map(async number => {
+      const [origin, state] = await Promise.all([readRound(client, task, number),
+        client.get<{ decisions: Record<string, string> }>(`${taskRoute(task.name)}/state?round=${number}`)]);
+      const byHash = uniqueHashes(origin);
+      const ids = new Set(hashes.map(hash => byHash.get(hash)).filter(id => id && state.decisions[id] === 'pending'));
+      for (const note of historical) if (note.changes.some(change => change.round === number && change.units.some(id => ids.has(id)))) linked.add(note);
+    }));
+  }
+  return originals.filter(note => linked.has(note));
 }

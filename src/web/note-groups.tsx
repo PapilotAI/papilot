@@ -13,7 +13,7 @@ export function GroupAction({ group }: { group?: NoteGroup | null }) {
 // picker, like an image editor's brush: its icon shows the color, the first
 // click picks the tool and a click on the chosen tool opens the colors beside it.
 export interface PickerTool { label: string; pressed: boolean; keys: string; content: ReactNode; onPress: () => boolean }
-export function GroupPicker({ value, onChange, disabled, tool }: { value: NoteGroup | null; onChange: (value: NoteGroup | null) => void; disabled?: boolean; tool?: PickerTool }) {
+export function GroupPicker({ value, onChange, disabled, tool, forNote }: { value: NoteGroup | null; onChange: (value: NoteGroup | null) => void; disabled?: boolean; tool?: PickerTool; forNote?: boolean }) {
   const rail = Boolean(tool);
   const id = useId(), trigger = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -37,7 +37,7 @@ export function GroupPicker({ value, onChange, disabled, tool }: { value: NoteGr
   function choose(next: NoteGroup | null) {
     menu.current?.hidePopover(); trigger.current?.focus(); onChange(next);
   }
-  return <div className={'group-picker' + (rail ? ' rail' : '')} style={groupStyle(value || undefined)}>
+  return <div className={'group-picker' + (rail ? ' rail' : forNote ? ' note-color-picker' : '')} style={groupStyle(value || undefined)}>
     <button ref={trigger} type="button" className={tool ? 'rail-tool group-select has-menu' : 'icon-button group-select'} data-group={value || undefined} aria-label={tool ? tool.label : t('Annotation group color')} title={tool ? undefined : t('Annotation groups')}
       aria-pressed={tool?.pressed} aria-keyshortcuts={tool?.keys} aria-haspopup="menu" aria-expanded={open} popoverTarget={id} disabled={disabled} onClick={event => {
       event.preventDefault();
@@ -45,7 +45,7 @@ export function GroupPicker({ value, onChange, disabled, tool }: { value: NoteGr
     }} onKeyDown={event => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); show(); }
     }}>
-      {tool ? tool.content : <span className="group-highlight" aria-hidden="true"><Icon name="pen" size={18}/></span>}
+      {tool ? tool.content : forNote ? <span className="note-color-swatch" aria-hidden="true"/> : <span className="group-highlight" aria-hidden="true"><Icon name="pen" size={18}/></span>}
     </button>
     <div ref={menu} id={id} popover="auto" role="menu" aria-label={t('Annotation group color')} className="group-palette" onToggle={event => setOpen((event.nativeEvent as ToggleEvent).newState === 'open')} onKeyDown={event => {
       if (event.key === 'Tab') { menu.current?.hidePopover(); trigger.current?.focus(); return; }

@@ -108,7 +108,42 @@ test('note decisions announce the final selection only at its boundary, and neve
     assert.equal(scopedResult.statusCode, 200, scopedResult.body);
     assert.equal(scopedResult.json().noteReturn?.returned, true);
     assert.deepEqual(store.annotations('paper').filter(copy => !copy.taskId).map(copy => copy.comment), ['shared']);
-    assert.equal((await proxy('undo', { id: scoped.id })).statusCode, 200);
+    const undoneScoped = await proxy('undo', { id: scoped.id });
+    assert.equal(undoneScoped.statusCode, 200, undoneScoped.body);
+    assert.equal(undoneScoped.json().noteReturns[0].key, 'run:1');
+    assert.equal(undoneScoped.json().noteReturns[0].removed.originalId, 'shared');
+    assert.match(f.read(METHOD, task.worktree), /Approach sentence 2\./, 'Undo restores the actual proposal in the task files');
+    assert.equal(store.annotations('paper').filter(copy => !copy.taskId).length, 0);
+    const manuallyReturned = (await local.inject({ method: 'POST', url: '/api/tasks/task/notes/shared/return', headers, payload: {} })).json();
+    assert.equal(manuallyReturned.comment, 'shared');
+    const all = { id: 'whole-review-reject', round: 1, changes: [note.id], action: 'reject' };
+    const rejected = await proxy('decide', all);
+    assert.equal(rejected.statusCode, 200, rejected.body);
+    assert.deepEqual(rejected.json().noteReturns.map(({ key, annotation, moved }: any) => [key, annotation.comment, moved]),
+      [['run:0', 'original', true], ['run:1', 'shared', false]]);
+    const restored = store.annotations('paper').filter(note => !note.taskId);
+    assert.deepEqual(restored.map(note => note.comment).sort(), ['original', 'shared']);
+    store.deleteAnnotation('paper', restored.find(note => note.comment === 'original')!.id);
+    const replay = await proxy('decide', all);
+    assert.equal(replay.statusCode, 200, replay.body);
+    assert.deepEqual(replay.json().noteReturns.map(({ key, returned }: any) => [key, returned]), [['run:0', false], ['run:1', true]]);
+    const undoAll = await proxy('undo', { id: all.id });
+    assert.equal(undoAll.statusCode, 200, undoAll.body);
+    assert.deepEqual(undoAll.json().noteReturns.map(({ key, moved }: any) => [key, moved]), [['run:0', false]]);
+    assert.equal((await proxy('undo', { id: all.id })).statusCode, 200, 'Undo can recover its receipt after losing its response');
+    const previouslyHidden = restored.find(note => note.comment === 'original')!;
+    const manualRestore = await local.inject({ method: 'POST', url: '/api/projects/paper/annotations/' + previouslyHidden.id + '/restore', headers, payload: {} });
+    assert.equal(manualRestore.statusCode, 200, manualRestore.body);
+    assert.equal((await proxy('undo', { id: all.id })).json().noteReturns, undefined, 'A delayed duplicate must not retract a manually restored copy');
+    assert.equal(store.annotation('paper', previouslyHidden.id).deletedAt, undefined);
+    store.deleteAnnotation('paper', previouslyHidden.id);
+    assert.equal(store.annotation('paper', manuallyReturned.id).createdAt, manuallyReturned.createdAt);
+    assert.equal(store.annotation('paper', manuallyReturned.id).deletedAt, undefined, 'Undo leaves a manual return in the manuscript');
+    assert.equal((await proxy('undo', { id: 'earlier' })).statusCode, 200);
+    const unrelated = await proxy('decide', { ...all, id: 'unrelated', changes: [earlier.id] });
+    assert.equal(unrelated.statusCode, 200, unrelated.body);
+    assert.equal(unrelated.json().noteReturns, undefined);
+    assert.deepEqual(store.annotations('paper').filter(note => !note.taskId).map(note => note.comment), ['shared']);
   } finally { releaseBuild(); await local.close(); workspace.close(); store.close(); await server.close(); await f.close(); }
 });
 test('rejecting a note restores its source even when previewing an alternative; neighboring edits and undo survive', async () => {
