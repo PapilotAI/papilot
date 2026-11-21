@@ -412,8 +412,11 @@ try {
   const takeBack = container => container.getByRole('button', { name: / · Return to manuscript$/ }).click();
   const undoReturn = container => container.getByRole('button', { name: / · Undo return to manuscript$/ }).click();
   await expect(toggle(originalRow(1))).toHaveText('');
-  const check = 'M20 6 9 17l-5-5';
-  await expect(toggle(originalRow(1)).locator('svg:visible path')).toHaveAttribute('d', check);
+  const check = 'm7.5 11.5 3 3 6-6';
+  const initialGlyph = toggle(originalRow(1)).locator('svg:visible path');
+  await expect(initialGlyph).toHaveCount(2);
+  const outline = await initialGlyph.first().getAttribute('d');
+  await expect(initialGlyph.last()).toHaveAttribute('d', check);
   await expect(originalRow(1).locator('[aria-haspopup]')).toHaveCount(0);
   failReturn = true;
   await takeBack(originalRow(1));
@@ -433,6 +436,7 @@ try {
   await expect(toggle(controls())).toHaveText('');
   const mutedIcon = await toggle(controls()).locator('svg:visible path').last().getAttribute('d');
   assert.ok(mutedIcon && mutedIcon !== check);
+  await expect(toggle(controls()).locator('svg:visible path').first()).toHaveAttribute('d', outline);
   await page.screenshot({ path: 'test-results/note-return-undo-mobile.png', animations: 'disabled' });
   await expect(count()).toHaveText('1');
   failUndo = true;
@@ -444,7 +448,7 @@ try {
   await page.keyboard.press('Space');
   await expect.poll(flights).toEqual([outward, ['reverse', 'request-1:1', mutedIcon]]);
   await expect(toggle(controls())).toHaveAccessibleName('Note 2 · Return to manuscript');
-  await expect(toggle(controls()).locator('svg:visible path')).toHaveAttribute('d', check);
+  await expect(toggle(controls()).locator('svg:visible path').last()).toHaveAttribute('d', check);
   await expect(toggle(controls())).toBeFocused();
   await expect(controls().getByRole('alert')).toHaveCount(0);
   await expect(count()).toHaveText('0');

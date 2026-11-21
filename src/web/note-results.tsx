@@ -236,7 +236,7 @@ export function NoteReturnAction({ noteKey }: { noteKey: string }) {
       onClick={event => {
         const source = event.currentTarget.closest<HTMLElement>('[data-note-result], .review-note-pager');
         if (source && !pending) links.returnNote!(noteKey, source);
-      }}><span className="note-return-symbol"><Icon name="check"/><Icon name="manuscriptNote"/></span></button>
+      }}><span className="note-return-symbol"><Icon name="checkedManuscriptNote"/><Icon name="manuscriptNote"/></span></button>
   </span>;
 }
 
