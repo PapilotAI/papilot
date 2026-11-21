@@ -20,30 +20,30 @@
     "format": "prettier --write src tests scripts examples/demo.ts *.ts *.json"
   },
   "dependencies": {
-    "@fastify/compress": "^9.2.2",
-    "@fastify/static": "^10.1.9",
-    "commander": "^15.0.0",
+    "@fastify/compress": "^9.3.0",
+    "@fastify/static": "^10.1.11",
+    "commander": "^15.1.0",
     "cross-spawn": "^7.0.6",
     "diff": "^9.0.0",
-    "fastify": "^5.12.7",
-    "mupdf": "^1.28.1",
+    "fastify": "^5.12.8",
+    "mupdf": "^1.28.6",
     "proper-lockfile": "^4.1.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tsx": "^4.23.15"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^22.20.5",
     "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.2",
-    "fast-check": "^4.10.2",
-    "pdfjs-dist": "^6.4.299",
-    "prettier": "^3.9.10",
+    "@vitejs/plugin-react": "^6.3.0",
+    "fast-check": "^4.10.3",
+    "pdfjs-dist": "^6.5.438",
+    "prettier": "^3.10.1",
     "typescript": "^7.0.2",
-    "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
   }
 }
