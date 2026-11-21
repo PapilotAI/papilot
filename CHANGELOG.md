@@ -4,35 +4,45 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
-### Fixed
-
-- Keep internal note-alternative data out of live and saved Chat replies, including plain follow-ups and alternatives sent as bare JSON or ordinary JSON code blocks. ([#271](https://github.com/PapilotAI/papilot/issues/271))
-
-- Link PDF annotations through citations, inline math, hyperlinks, headings and captions. Follow-up notes on pending proposals link to the revised change when the original source range can still be identified. ([#270](https://github.com/PapilotAI/papilot/issues/270))
-
-- Generate initial task-review commit drafts in the selected commit-message language instead of copying the task title. Manual edits and preserved reconciliation messages remain intact. ([#255](https://github.com/PapilotAI/papilot/issues/255))
-- Keep the manuscript PDF marking toolbar in place when selecting the Note tool or opening a note. ([#256](https://github.com/PapilotAI/papilot/issues/256))
-- Keep PDF reference previews aligned with their links as the PDF scrolls, zooms or resizes. Previews stay inside the visible viewport and close when the reference leaves view. ([#260](https://github.com/PapilotAI/papilot/issues/260))
-- Open Settings from the macOS Papilot menu or with Command–Comma. Repeating the shortcut keeps the current settings page and edits. ([#262](https://github.com/PapilotAI/papilot/issues/262))
-- Keep PDF review crops near the edit in single- and two-column ACM papers with review line numbers. The full PDF retains the original rulers. ([#266](https://github.com/PapilotAI/papilot/issues/266), [#272](https://github.com/PapilotAI/papilot/issues/272))
-
-### Changed
-
-- Keep the Typeless microphone at the mouse's release point when creating a PDF note. Once the draft has text, its quote arrow uses the same position, so stopping dictation and confirming the note need no mouse movement. Transcription still requires explicit confirmation; touch and keyboard entry retain the regular controls. See [Typeless voice notes](docs/typeless.md).
-- Pin and unpin tasks directly from the task list with a pushpin button. The **My notes** header labels **Add to task** and uses a trash icon for clearing annotations. **Undo** appears below the header after clearing.
-- Rejecting a change while reviewing an annotation returns that annotation to **Manuscript**. The annotation card flies to the count and its checked note icon becomes a muted note icon. Click the muted icon to bring the annotation back to the current task. Rejecting an edit in **All changes** returns every original annotation linked to that edit. Returned annotations keep their original group and comment. Use the swatch to change or remove colors for one annotation or a whole group, and the pencil to edit a grouped comment. Undo restores an entire group or takes back a manual annotation return. Undo a rejection to restore the proposed text and the annotations it returned.
-- Store new task worktrees under `~/.papilot/worktrees` by default. Existing tasks retain their stored paths, and project-specific overrides still apply. ([#273](https://github.com/PapilotAI/papilot/issues/273))
-
-- Refresh the website's GitHub star count with a 15-minute edge cache. Keep the last successful count during GitHub failures and show the deployment-time count without JavaScript. ([#257](https://github.com/PapilotAI/papilot/issues/257))
-
 ### Added
 
 - Prepare automatic signed APT distribution for stable amd64 desktop releases. Debian packages use system-managed app upgrades and retain agent setup. ([#268](https://github.com/PapilotAI/papilot/issues/268))
 - Add an Arch Linux package recipe for the official x86_64 desktop build and automate validation and publication from stable releases after maintainer setup. ([#267](https://github.com/PapilotAI/papilot/issues/267))
-- Clear a document’s annotations from **My notes** with a confirmation and batch undo. The confirmation fixes which annotations will be cleared, including retained positions and agent-authored notes. ([#261](https://github.com/PapilotAI/papilot/issues/261))
-- Return an original task annotation to **My notes** from Chat or the PDF note drawer. The returned copy retains its mark and instructions for another task, while the original conversation and review decisions stay in place. ([#264](https://github.com/PapilotAI/papilot/issues/264))
-- Pin several tasks at the top of a paper's current task list. Pins keep their order across replies, reloads and connected clients, and return when an archived task is restored. ([#265](https://github.com/PapilotAI/papilot/issues/265))
 - Choose a dedicated agent in **Settings → Git** for conflict resolution, with the current conversation as the default. Review the resolution before committing the merge. ([#269](https://github.com/PapilotAI/papilot/issues/269))
+
+### Changed
+
+- Keep the Typeless microphone at the mouse's release point when creating a PDF note. Once the draft has text, its quote arrow uses the same position, so stopping dictation and confirming the note need no mouse movement. Transcription still requires explicit confirmation; touch and keyboard entry retain the regular controls. See [Typeless voice notes](docs/typeless.md). ([#253](https://github.com/PapilotAI/papilot/pull/253))
+- Store new task worktrees under `~/.papilot/worktrees` by default. Existing tasks retain their stored paths, and project-specific overrides still apply. ([#273](https://github.com/PapilotAI/papilot/issues/273))
+- Refresh the website's GitHub star count with a 15-minute edge cache. Keep the last successful count during GitHub failures and show the deployment-time count without JavaScript. ([#257](https://github.com/PapilotAI/papilot/issues/257))
+
+### Fixed
+
+- Generate initial task-review commit drafts in the selected commit-message language instead of copying the task title. Manual edits and preserved reconciliation messages remain intact. ([#255](https://github.com/PapilotAI/papilot/issues/255))
+- Keep PDF reference previews aligned with their links as the PDF scrolls, zooms or resizes. Previews stay inside the visible viewport and close when the reference leaves view. ([#260](https://github.com/PapilotAI/papilot/issues/260))
+- Open Settings from the macOS Papilot menu or with Command–Comma. Repeating the shortcut keeps the current settings page and edits. ([#262](https://github.com/PapilotAI/papilot/issues/262))
+
+## [0.12.1] - 2026-11-21
+
+Return annotations to the manuscript, undo review decisions and color changes, and pin the tasks you use most. See the [release notes](docs/releases/0.12.1/release-notes.md) for update instructions.
+
+### Added
+
+- Return a submitted annotation from Chat or PDF Review. Rejecting an edit returns the original annotations linked to it, with the scope limited to the selected annotation in a focused review. The original comment, mark, and color remain available for editing and reuse. Undo a manual return or undo a rejection and its automatic returns together. ([#264](https://github.com/PapilotAI/papilot/issues/264), [#290](https://github.com/PapilotAI/papilot/pull/290))
+- Pin several tasks directly in the task list. Pins keep their order across task activity, reloads, and connected clients. ([#265](https://github.com/PapilotAI/papilot/issues/265), [#290](https://github.com/PapilotAI/papilot/pull/290))
+- Edit grouped comments with the pencil and change the color of one annotation or a whole group. Choose **Individual notes** to remove a color. Undo restores the entire group in one step. ([#290](https://github.com/PapilotAI/papilot/pull/290))
+- Clear annotations from the current manuscript document with confirmation and batch undo. ([#261](https://github.com/PapilotAI/papilot/issues/261))
+
+### Fixed
+
+- Keep the PDF marking toolbar in place when selecting the Note tool or opening a note. ([#256](https://github.com/PapilotAI/papilot/issues/256))
+- Keep small ACM review changes near the edit in single- and two-column layouts with line rulers. ([#266](https://github.com/PapilotAI/papilot/issues/266), [#272](https://github.com/PapilotAI/papilot/issues/272))
+- Link notes through citations, inline math, hyperlinks, headings, and captions. Link follow-ups to pending proposals when the underlying source range can still be identified. ([#270](https://github.com/PapilotAI/papilot/issues/270))
+- Keep internal note-option data out of live and saved Chat replies, including when the agent emits bare JSON. ([#271](https://github.com/PapilotAI/papilot/issues/271), [#290](https://github.com/PapilotAI/papilot/pull/290))
+
+### Updates
+
+Official Desktop 0.12.0 installations can update in place from **Settings → Updates**. The update keeps your papers, tasks, and settings.
 
 ## [0.12.0] - 2026-11-20
 
@@ -695,7 +705,8 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/PapilotAI/papilot/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/PapilotAI/papilot/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/PapilotAI/papilot/compare/v0.10.4...v0.11.0
 [0.10.4]: https://github.com/PapilotAI/papilot/compare/v0.10.3...v0.10.4
