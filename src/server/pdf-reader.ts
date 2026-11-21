@@ -1,5 +1,5 @@
 import { Worker } from 'node:worker_threads';
-import type { Annotation } from '../shared.ts';
+import type { Annotation, PageReadingLayout } from '../shared.ts';
 import type { AnnotationPlacement } from './annotation-placement.ts';
 import type { Located, MarkRequest } from './note-location.ts';
 import type { NoteSections, SectionHeading } from './note-sections.ts';
@@ -10,6 +10,7 @@ interface SectionAssignment { sections: string[]; context?: string[] }
 interface SectionDocument {
   headings: Promise<SectionHeading[]>;
   notes: Map<string, { mark: string; assignment: Promise<SectionAssignment> }>;
+  layouts: Map<number, Promise<PageReadingLayout | null>>;
 }
 
 /** Reads notes' places on manuscript PDFs in a worker thread. Opening a long
@@ -46,7 +47,7 @@ export class PdfReader {
     const identity = JSON.stringify([compiled.pdf, compiled.root, compiled.sourceDir, key]);
     let document = this.sectionDocuments.get(identity);
     if (!document) {
-      document = { headings: this.call<SectionHeading[]>('sectionHeadings', compiled), notes: new Map() };
+      document = { headings: this.call<SectionHeading[]>('sectionHeadings', compiled), notes: new Map(), layouts: new Map() };
       const created = document;
       void document.headings.catch(() => { if (this.sectionDocuments.get(identity) === created) this.sectionDocuments.delete(identity); });
     }
@@ -57,24 +58,48 @@ export class PdfReader {
     // Working-source lines, comment text, colour and selection do not change
     // where a mark sits in the compiled PDF. Only geometry invalidates it.
     const mark = (note: Annotation) => JSON.stringify([note.page, note.rects?.length ? note.rects : [note.rect]]);
-    const fresh = headings.length ? notes.filter(note => note.key === key && document.notes.get(note.id)?.mark !== mark(note)) : [];
-    if (fresh.length) {
-      const pending = this.call<NoteSections>('sectionNotes', { compiled, key, notes: fresh, headings }).then(result => {
-        const assignments = new Map<string, SectionAssignment>();
-        for (const note of fresh) assignments.set(note.id, { sections: [], context: result.contexts[note.id] });
-        for (const section of result.sections) for (const id of section.notes) assignments.get(id)!.sections.push(section.id);
-        return assignments;
-      });
-      for (const note of fresh) {
-        const entry = { mark: mark(note), assignment: pending.then(assignments => assignments.get(note.id)!) };
-        document.notes.set(note.id, entry);
-        void entry.assignment.catch(() => { if (document.notes.get(note.id) === entry) document.notes.delete(note.id); });
+    const currentNotes = notes.filter(note => note.key === key);
+    const freshNotes = headings.length ? currentNotes.filter(note => document.notes.get(note.id)?.mark !== mark(note)) : [];
+    const seenPages = new Set(freshNotes.map(note => note.page));
+    const layoutProbes: Annotation[] = [];
+    for (const note of currentNotes) {
+      if (seenPages.has(note.page) || document.layouts.has(note.page)) continue;
+      seenPages.add(note.page);
+      layoutProbes.push(note);
+    }
+    const batch = [...freshNotes, ...layoutProbes];
+    if (batch.length) {
+      const raw = this.call<NoteSections>('sectionNotes', { compiled, key, notes: batch, headings });
+      for (const page of new Set(batch.map(note => note.page))) {
+        if (document.layouts.has(page)) continue;
+        const promise = raw.then(result => result.pageLayouts?.[page] ?? null);
+        document.layouts.set(page, promise);
+        void promise.catch(() => { if (document.layouts.get(page) === promise) document.layouts.delete(page); });
+      }
+      if (freshNotes.length) {
+        const assignmentsPromise = raw.then(result => {
+          const map = new Map<string, SectionAssignment>();
+          for (const note of freshNotes) map.set(note.id, { sections: [], context: result.contexts[note.id] });
+          for (const section of result.sections) for (const id of section.notes) map.get(id)?.sections.push(section.id);
+          return map;
+        });
+        for (const note of freshNotes) {
+          const entry = { mark: mark(note), assignment: assignmentsPromise.then(map => map.get(note.id)!) };
+          document.notes.set(note.id, entry);
+          void entry.assignment.catch(() => { if (document.notes.get(note.id) === entry) document.notes.delete(note.id); });
+        }
       }
     }
-    const assignments = await Promise.all(notes.map(note => note.key === key ? document.notes.get(note.id)?.assignment : undefined));
+    const currentPages = [...new Set(currentNotes.map(note => note.page))];
+    const [assignments, resolvedLayouts] = await Promise.all([
+      Promise.all(notes.map(note => note.key === key ? document.notes.get(note.id)?.assignment : undefined)),
+      Promise.all(currentPages.map(async page => [page, await document.layouts.get(page)] as const)),
+    ]);
     const sections = headings.map(({ id, title, level }) => ({ id, title, level, notes: [] as string[] }));
     const byId = new Map(sections.map(section => [section.id, section]));
     const contexts: NoteSections['contexts'] = {};
+    const pageLayouts: Record<number, PageReadingLayout> = {};
+    for (const [page, layout] of resolvedLayouts) if (layout) pageLayouts[page] = layout;
     let unplaced = 0;
     notes.forEach((note, index) => {
       const assignment = assignments[index];
@@ -82,7 +107,7 @@ export class PdfReader {
       for (const id of assignment.sections) byId.get(id)!.notes.push(note.id);
       if (assignment.context) contexts[note.id] = assignment.context;
     });
-    return { sections, contexts, unplaced };
+    return { sections, contexts, unplaced, ...(Object.keys(pageLayouts).length ? { pageLayouts } : {}) };
   }
 
   private call<T>(op: string, args: unknown): Promise<T> {

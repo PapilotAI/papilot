@@ -4,6 +4,7 @@ import { requestApi, requestState } from './api.ts';
 import { agentLabel, agentsSettled, chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { annotationGroupState, canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
+import { groupNoteEntries, isNoteSortMode, sortNoteEntries, type NoteSortMode } from '../note-sort.ts';
 import { GroupCard, GroupInstruction, GroupPicker } from './note-groups.tsx';
 import { SectionNotePicker } from './section-note-picker.tsx';
 import { useNoteSelection } from './note-selection.tsx';
@@ -18,7 +19,7 @@ import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { aiReviewSummary, isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
 import { AGENT_IDS, isAgentId, isTaskReviewNote, taskFinished } from '../shared.ts';
-import type { TaskCommitReview, CompilerChoice, LatexInstallation, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
+import type { TaskCommitReview, CompilerChoice, LatexInstallation, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { reviewDraft, useReviewDraft, reviewNoteSummary, reviewSubmission } from './review-draft.ts';
 import { ReviewDraftCards } from './review-draft-cards.tsx';
@@ -978,11 +979,26 @@ function useSaveNotesOnLeave(save: () => Promise<boolean>) {
   useEffect(() => () => { void saveOnLeave.current(); }, []);
 }
 
+const NOTE_SORT_STORAGE = 'papilot:note-sort';
+function readNoteSort(): NoteSortMode {
+  const saved = browserStorage.getItem(NOTE_SORT_STORAGE);
+  return isNoteSortMode(saved) ? saved : 'original';
+}
+function noteSortLabel(mode: NoteSortMode) {
+  switch (mode) {
+    case 'position': return t('PDF position');
+    case 'newest': return t('Newest first');
+    default: return t('Original order');
+  }
+}
+
 interface NotesHandle { save: () => Promise<boolean> }
-function NotesPanel({ notes, sections = [], currentKey, active, actions, onShow, onAdded, onClose, controller }: { sections?: NoteSection[]; notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void; onAdded: () => void; onClose: () => void; controller: React.Ref<NotesHandle> }) {
+function NotesPanel({ notes, sections = [], pageLayouts, currentKey, active, actions, onShow, onAdded, onClose, controller }: { sections?: NoteSection[]; pageLayouts?: Record<number, PageReadingLayout>; notes: Annotation[]; currentKey?: string; active: string; actions: NoteActions; onShow: (note: Annotation) => void; onAdded: () => void; onClose: () => void; controller: React.Ref<NotesHandle> }) {
   const list = useRef<HTMLElement>(null);
   const cards = useNoteCards(notes, actions, actions.onEditing);
   const [clearTarget, setClearTarget] = useState<AnnotationBatch | null>(null);
+  const [sortMode, setSortMode] = useState<NoteSortMode>(readNoteSort);
+  const [sortAnnouncement, setSortAnnouncement] = useState('');
   useSaveNotesOnLeave(cards.saveAll);
   const { editing, errors } = cards, locked = cards.busy || actions.sending;
   useEffect(() => { if (active) list.current?.querySelector(`[data-note="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active]);
@@ -990,8 +1006,17 @@ function NotesPanel({ notes, sections = [], currentKey, active, actions, onShow,
   const selectionLocked = locked || editing;
   const toggle = (note: Annotation) => actions.selection.set([note.id], !actions.selection.has(note.id));
   const selectCard = (note: Annotation, index: number) => <NoteAttachButton number={index + 1} ai={Boolean(note.aiReview)} selected={actions.selection.has(note.id)} disabled={selectionLocked} onClick={() => toggle(note)}/>;
+  const chooseSort = (next: NoteSortMode) => {
+    const changed = next !== sortMode;
+    setSortMode(next);
+    if (next === 'original') browserStorage.removeItem(NOTE_SORT_STORAGE);
+    else browserStorage.setItem(NOTE_SORT_STORAGE, next);
+    if (changed) setSortAnnouncement(t('Notes sorted by {order}.', { order: noteSortLabel(next) }));
+  };
+  const indexed = notes.map((note, index) => ({ note, index }));
   const ownNotes = notes.filter(note => !note.aiReview);
-  const groups = noteGroups(notes.filter(note => !isTaskReviewNote(note)));
+  const groups = groupNoteEntries(indexed.filter(({ note }) => !isTaskReviewNote(note)), sortMode, currentKey, pageLayouts);
+  const individualNotes = sortNoteEntries(indexed.filter(({ note }) => !note.aiReview && !note.group), sortMode, currentKey, pageLayouts);
   const clearable = notes.filter(note => !isTaskReviewNote(note));
   const batch = actions.batch, clearDisabled = !batch || batch.disabled || selectionLocked || (!batch.uncertain && !clearable.length);
   const clearLabel = batch?.uncertain ? t('Retry clearing annotations…') : t('Clear all annotations…');
@@ -1001,6 +1026,14 @@ function NotesPanel({ notes, sections = [], currentKey, active, actions, onShow,
     <div className="pdf-reading-notes-head">
       <strong>{t('My notes')}</strong>
       <div className="pdf-reading-notes-actions">
+        <ActionMenu label={t('Sort notes: {order}', { order: noteSortLabel(sortMode) })}
+          className={'icon-button notes-sort-trigger' + (sortMode !== 'original' ? ' active' : '')}
+          menuClassName="notes-sort-menu"
+          actions={[
+            { id: 'original', label: t('Original order'), checked: sortMode === 'original', select: () => chooseSort('original') },
+            { id: 'position', label: t('PDF position'), checked: sortMode === 'position', select: () => chooseSort('position') },
+            { id: 'newest', label: t('Newest first'), checked: sortMode === 'newest', select: () => chooseSort('newest') },
+          ]}><Icon name="sort" size={16}/></ActionMenu>
         {batch && <button type="button" className="icon-button notes-clear-trigger" aria-label={clearLabel} title={clearLabel}
           aria-disabled={clearDisabled} aria-haspopup="dialog" onClick={() => {
             if (!clearDisabled) setClearTarget(batch.uncertain || { document: batch.document, batch: uuid(), ids: clearable.map(note => note.id) });
@@ -1009,6 +1042,7 @@ function NotesPanel({ notes, sections = [], currentKey, active, actions, onShow,
         <button type="button" className="icon-button" aria-label={t('Close notes')} onClick={onClose}><Icon name="close" size={16}/></button>
       </div>
     </div>
+    <p className="sr-only" role="status" aria-atomic="true">{sortAnnouncement}</p>
     {batch && batch.clearedCount > 0 && <div className="notes-clear-status">
       <span role="status">{tn(batch.clearedCount, '{n} annotation cleared.', '{n} annotations cleared.')}</span>
       <button type="button" className="button ghost compact" disabled={batch.disabled || selectionLocked || Boolean(batch.uncertain)} onClick={batch.undo}>{t('Undo')}</button>
@@ -1030,7 +1064,7 @@ function NotesPanel({ notes, sections = [], currentKey, active, actions, onShow,
         </div>
       </li>)}</ol>
     </GroupCard>; })}
-    <ol className="note-list">{notes.map((note, index) => !note.aiReview && !note.group && renderNote(note, index))}</ol>
+    <ol className="note-list">{individualNotes.map(({ note, index }) => renderNote(note, index))}</ol>
     </section>}
     {unplacedSuggestions.length > 0 && <section className="note-section" aria-label={t('Unplaced suggestions')}><h3>{t('Unplaced suggestions')}</h3><ol className="note-list">{notes.map((note, index) => note.aiReview && note.key !== currentKey && renderNote(note, index))}</ol></section>}
     {cards.undo(selectionLocked)}
@@ -1260,7 +1294,7 @@ function ManuscriptView({ onOpenTask, returnedPlace, onPlaceShown, notesRequest,
           onSource={async (target, key) => { if (!await closeReadingNotes()) return; setActive(''); setView('source'); setCollapsed(false); void source.open(target, key); }} passage={source.passage}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
       {returnedPlace && active === returnedPlace && notes.some(note => note.id === returnedPlace && note.key !== build?.key) && <div className="manuscript-note" role="status"><NotePlacementWarning/></div>}
-      {readingNotes && <><div aria-hidden="true" className="pdf-reading-notes-scrim" onClick={() => void closeReadingNotes()}/><aside className="pdf-reading-notes" aria-label={t('PDF note library')}><NotesPanel key={project.id + ':' + (manuscriptDocument(data) || '')} controller={notesPanel} notes={notes} sections={data?.noteSections} currentKey={build?.key} active={active} actions={actions} onShow={show} onAdded={() => void reviewAddedNotes()} onClose={() => void closeReadingNotes()}/></aside></>}
+      {readingNotes && <><div aria-hidden="true" className="pdf-reading-notes-scrim" onClick={() => void closeReadingNotes()}/><aside className="pdf-reading-notes" aria-label={t('PDF note library')}><NotesPanel key={project.id + ':' + (manuscriptDocument(data) || '')} controller={notesPanel} notes={notes} sections={data?.noteSections} pageLayouts={data?.notePageLayouts} currentKey={build?.key} active={active} actions={actions} onShow={show} onAdded={() => void reviewAddedNotes()} onClose={() => void closeReadingNotes()}/></aside></>}
     </section>}
     <aside id={panelId} className="manuscript-side" aria-label={t('Manuscript panels')} hidden={hidden}>
       <div className="manuscript-side-header">

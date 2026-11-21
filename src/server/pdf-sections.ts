@@ -65,5 +65,6 @@ export async function readSectionNotes(document: PdfDocument, compiled: Compiled
     }
     layouts.set(number, { gutter: 0.5, spanning: spanning.map(([start, end]) => [(start - page.bounds[1]) / page.height, (end - page.bounds[1]) / page.height]) });
   }
-  return groupSectionNotes(anchored, key, headings, layouts);
+  const grouped = groupSectionNotes(anchored, key, headings, layouts);
+  return layouts.size ? { ...grouped, pageLayouts: Object.fromEntries(layouts) } : grouped;
 }

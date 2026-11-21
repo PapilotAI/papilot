@@ -1279,6 +1279,9 @@ body.resizing iframe{pointer-events:none}
 .pdf-reading-notes-actions{display:flex;align-items:center;gap:2px;flex:none}
 .pdf-reading-notes-actions .section-note-trigger { min-height: 28px; padding-inline: 7px; color: var(--primary); }
 .pdf-reading-notes-actions :where(.icon-button){color:var(--text-2)}
+.pdf-reading-notes-actions .notes-sort-trigger.active{color:var(--accent);background:var(--accent-soft)}
+.pdf-reading-notes-actions .notes-sort-trigger.active:hover:not(:disabled),.pdf-reading-notes-actions .notes-sort-trigger.active[aria-expanded=true]{color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent)}
+.action-menu.notes-sort-menu{min-width:170px}
 @media(pointer:fine){.pdf-reading-notes-head .icon-button{width:28px;height:28px}}
 .pdf-reading-notes .notes-panel{overflow:auto;padding:4px 8px 8px}
 .notes-clear-trigger[aria-disabled=true]{opacity:.45;cursor:default;background:transparent}

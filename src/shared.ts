@@ -296,6 +296,8 @@ export interface Annotation { returnAction?: { taskId: string; id: string; key: 
 // Review findings stay with their task; only explicit copies belong to the manuscript.
 export const isTaskReviewNote = (note: Annotation) => Boolean(note.aiReview && !note.aiReview.sourceId);
 export interface NoteSection { id: string; title: string; level: number; notes: string[] }
+/** Normalized gutter and full-width bands on a page with two columns. */
+export interface PageReadingLayout { gutter: number; spanning: [number, number][] }
 // The repository's files, as Git sees them, with the TeX files that are root
 // documents, and the one the paper compiles (null when none is chosen yet).
 export interface RepositoryFile { path: string; root?: true }
@@ -306,7 +308,7 @@ export interface AnnotationGroupState { id: string; createdAt: number; group: No
 export interface AnnotationGroupEdit extends AnnotationGroupState { from: Pick<AnnotationGroupState, 'group' | 'groupInstruction'> }
 export interface AnnotationBatch { document: string | null; batch: string; ids: string[] }
 export interface AnnotationBatchResult { changed: string[]; restoredIds?: string[]; failed: { id: string; error: string }[]; annotations: Annotation[] }
-export interface Manuscript { git: GitStatus; build: ManuscriptBuild; document?: string; annotations: Annotation[]; inFlightMarks?: InFlightMark[]; noteSections?: NoteSection[]; unplacedSectionNotes?: number }
+export interface Manuscript { git: GitStatus; build: ManuscriptBuild; document?: string; annotations: Annotation[]; inFlightMarks?: InFlightMark[]; noteSections?: NoteSection[]; unplacedSectionNotes?: number; notePageLayouts?: Record<number, PageReadingLayout> }
 // A source file for manual editing, as it is on disk: `revision` names its
 // bytes, so a save refuses when the file changed meanwhile, and `base` is the
 // file at the last commit (null when it has none), to show what changed.

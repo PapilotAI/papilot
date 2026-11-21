@@ -114,3 +114,60 @@ test('section assignments survive the real PDF worker going idle', async t => {
     assert.equal(dispatch.mock.callCount(), 3, 'only the new mark is read after idle');
   } finally { await reader.stop(); }
 });
+
+test('pageLayouts are populated, cached, and retried for two-column PDFs both with and without headings', async t => {
+  const twoColLayout = { gutter: 0.5, spanning: [[0.06, 0.14]] as [number, number][] };
+
+  // 1. Without headings/bookmarks: probes one representative note per uncached page and caches layouts.
+  {
+    const reader = new PdfReader();
+    const calls: string[][] = [];
+    let failOnce = true;
+    t.mock.method(reader as any, 'call', async (op: string, args: any) => {
+      if (op === 'sectionHeadings') return [];
+      assert.equal(op, 'sectionNotes');
+      calls.push(args.notes.map((item: Annotation) => item.id));
+      if (failOnce) { failOnce = false; throw Error('Temporary layout read failure'); }
+      const pageLayouts = Object.fromEntries(
+        [...new Set<number>(args.notes.map((item: Annotation) => item.page))]
+          .filter(page => page === 0)
+          .map(page => [page, twoColLayout]),
+      );
+      return { ...groupSectionNotes(args.notes, args.key, args.headings), ...(Object.keys(pageLayouts).length ? { pageLayouts } : {}) };
+    });
+    try {
+      const p0a = note('p0a', { page: 0 }), p0b = note('p0b', { page: 0 }), p1 = note('p1', { page: 1 }), stale = note('stale', { key: 'old', page: 2 });
+      await assert.rejects(reader.sections(compiled, 'pdf', [p0a, p0b]), /Temporary layout read failure/);
+      const first = await reader.sections(compiled, 'pdf', [p0a, p0b, p1, stale]);
+      assert.deepEqual(first.sections, []);
+      assert.equal(first.unplaced, 4);
+      assert.deepEqual(first.pageLayouts, { 0: twoColLayout });
+      // Second call with another note on page 0 and page 1 must reuse cached page layouts with zero worker calls.
+      const second = await reader.sections(compiled, 'pdf', [p0a, p0b, note('p0c', { page: 0 }), p1]);
+      assert.deepEqual(second.pageLayouts, { 0: twoColLayout });
+      assert.deepEqual(calls, [['p0a'], ['p0a', 'p1']], 'only one representative note per uncached page is inspected, and failed reads retry');
+    } finally { await reader.stop(); }
+  }
+
+  // 2. With headings: returns cached pageLayouts alongside section assignments without re-reading inspected pages.
+  {
+    const reader = new PdfReader();
+    const calls: string[][] = [];
+    t.mock.method(reader as any, 'call', async (op: string, args: any) => {
+      if (op === 'sectionHeadings') return headings;
+      calls.push(args.notes.map((item: Annotation) => item.id));
+      const pageLayouts = Object.fromEntries(
+        [...new Set<number>(args.notes.map((item: Annotation) => item.page))].map(page => [page, twoColLayout]),
+      );
+      return { ...groupSectionNotes(args.notes, args.key, args.headings), pageLayouts };
+    });
+    try {
+      const a = note('a', { page: 0 });
+      const first = await reader.sections(compiled, 'pdf', [a]);
+      assert.deepEqual(first.pageLayouts, { 0: twoColLayout });
+      const cached = await reader.sections(compiled, 'pdf', [{ ...a, comment: 'Edited' }]);
+      assert.deepEqual(cached.pageLayouts, { 0: twoColLayout });
+      assert.deepEqual(calls, [['a']], 'cached hits retain pageLayouts without re-reading the PDF');
+    } finally { await reader.stop(); }
+  }
+});

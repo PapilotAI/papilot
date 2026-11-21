@@ -1,4 +1,4 @@
-import type { Annotation, NoteSection } from '../shared.ts';
+import type { Annotation, NoteSection, PageReadingLayout } from '../shared.ts';
 
 export interface SectionHeading {
   id: string; title: string; level: number;
@@ -7,8 +7,8 @@ export interface SectionHeading {
   position?: { page: number; top: number; left?: number };
 }
 /** Normalized gutter and full-width bands on a page with two columns. */
-export interface SectionPageLayout { gutter: number; spanning: [number, number][] }
-export interface NoteSections { sections: NoteSection[]; contexts: Record<string, string[]>; unplaced: number }
+export type SectionPageLayout = PageReadingLayout;
+export interface NoteSections { sections: NoteSection[]; contexts: Record<string, string[]>; unplaced: number; pageLayouts?: Record<number, PageReadingLayout> }
 
 /** Source ranges are authoritative (including columns and included files).
  * Without a source anchor, use exact bookmark destinations, never page-only

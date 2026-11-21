@@ -75,6 +75,8 @@ export const zhCN: Record<string, string> = {
   'Highlighted in {group}': '{group}高亮',
   'Notes in this task': '已加入任务的批注', 'Remove note {n} from task': '从任务中移除批注 {n}',
   'PDF note library': 'PDF 批注列表', 'Close notes': '关闭批注列表',
+  'Original order': '原始顺序', 'PDF position': 'PDF 位置', 'Newest first': '最新优先',
+  'Sort notes: {order}': '批注排序：{order}', 'Notes sorted by {order}.': '批注已按{order}排序。',
   'My notes': '我的批注', 'AI suggestions': 'AI 审阅建议',
   'Write a note…': '写下你的想法…',
   'Quote in chat': '引用到对话',

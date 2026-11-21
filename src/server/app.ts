@@ -307,7 +307,7 @@ export async function buildApp(options: AppOptions) {
       return current.deletedAt === undefined && task && current.taskId === note.taskId
         ? [{ note, taskId: task.id, title: task.title, status: task.status, ...(task.status === 'building' && task.review?.ready ? { ready: true as const } : {}) }] : [];
     });
-    return { ...state, document, annotations, inFlightMarks, ...(scope ? { noteSections: scope.sections, unplacedSectionNotes: scope.unplaced } : {}) };
+    return { ...state, document, annotations, inFlightMarks, ...(scope ? { noteSections: scope.sections, unplacedSectionNotes: scope.unplaced, ...(scope.pageLayouts && Object.keys(scope.pageLayouts).length ? { notePageLayouts: scope.pageLayouts } : {}) } : {}) };
   }
 
   app.get('/api/health', () => ({ ok: true, name: 'Papilot', version: options.version, ...(options.desktopInstance ? { desktopInstance: options.desktopInstance } : {}), ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) }));

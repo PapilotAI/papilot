@@ -245,6 +245,9 @@ jobs:
       - name: note-selection
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-note-selection.mjs
+      - name: note-sort
+        if: ${{ !cancelled() }}
+        run: node scripts/check-note-sort.mjs
       - name: in-flight-marks
         if: ${{ !cancelled() }}
         run: node scripts/check-in-flight-marks.mjs
@@ -386,6 +389,7 @@ jobs:
             test-results/bulk-tasks-*.png
             test-results/task-pins-*.png
             test-results/note-groups-*.png
+            test-results/note-sort-*.png
             test-results/note-return-*.png
             test-results/pdf-tools-note-open.png
             test-results/typeless-*.png
