@@ -129,6 +129,8 @@ const mergeInstructions = 'You resolve Git merge conflicts in the repository of 
 const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [] });
 
 export interface TaskNoteContext { note: Annotation; context: string[] }
+// The agent and model settings a task switches to; stop confirms stopping a turn in progress.
+export interface AgentSwitch { agent: AgentId; model?: string; effort?: string; serviceTier?: string; permissions?: unknown; stop?: boolean }
 const noteLocation = (note: Annotation) => JSON.stringify([note.key, note.page, note.rect, note.rects, note.source]);
 
 export class Workspace extends EventEmitter {
@@ -209,7 +211,8 @@ export class Workspace extends EventEmitter {
   indirectChanges: () => boolean = () => false;
   // Preparations in progress, by task (see createTask).
   private preparing = new Map<string, Promise<Task>>();
-  private restarting = new Map<string, { id: string; promise: Promise<Task> }>();
+  // Agent switches in progress, by task, with the request they answer.
+  private switching = new Map<string, { key: string; promise: Promise<Task> }>();
   // Each AI review created here compiles its copy with the function its
   // request passed; one resumed after a restart uses prepareReview.
   private reviewCopies = new Map<string, (worktree: string, document?: string) => Promise<ReviewSnapshot>>();
@@ -294,6 +297,7 @@ export class Workspace extends EventEmitter {
       if (task.threadId) this.loaded.delete(task.threadId);
       this.earlyCompletions.delete(taskId); this.earlyRequests.delete(taskId); this.active.delete(taskId);
       this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
+      this.settleHandoff(task, task.turnId, false);
       this.holdForReview(taskId, { status: 'interrupted', turnId: null, error: `${AGENT_NAMES[id]} disconnected. You can resume the same task.` });
     }
     if (usesCodex(id)) this.loaded.clear();
@@ -417,7 +421,7 @@ export class Workspace extends EventEmitter {
     // The first message of a task whose preparation failed waits for Retry.
     const ids = new Set(tasks.filter(task => !task.preparation).map(task => task.id));
     if (this.projectChanges.has(id) || this.projectRequests.has(id) || this.committing.has(id) || this.preparing.size
-      || tasks.some(task => BUSY.has(task.status) || task.status === 'queued' || task.pendingReview || this.restarting.has(task.id) || this.active.has(task.id) || this.publishing.has(task.id) || this.reviewWrites.has(task.id) || this.commentWrites.has(task.id) || this.deletions.has(task.id) || this.titles.has(task.id))
+      || tasks.some(task => BUSY.has(task.status) || task.status === 'queued' || task.pendingReview || this.switching.has(task.id) || this.active.has(task.id) || this.publishing.has(task.id) || this.reviewWrites.has(task.id) || this.commentWrites.has(task.id) || this.deletions.has(task.id) || this.titles.has(task.id))
       || this.store.runs().some(run => ids.has(run.taskId) && ['queued', 'running', 'uncertain'].includes(run.status))) {
       throw Object.assign(new Error('Pause this paper’s active tasks and wait for current work to finish before changing its path or removing it. Resolve any uncertain action first.'), { statusCode: 409 });
     }
@@ -450,7 +454,8 @@ export class Workspace extends EventEmitter {
           const worktree = worktrees.get(task.id)!;
           if (worktree !== pathIdentity(task.worktree)) {
             if (task.threadId) this.loaded.delete(task.threadId);
-            this.store.updateTask(task.id, { worktree, threadId: null, turnId: null });
+            // A session in the old folder cannot continue; the next one is given its conversation.
+            this.store.updateTask(task.id, { worktree, threadId: null, turnId: null, ...(task.threadId ? { handoff: true } : {}) });
           }
         }
         this.store.saveProject(project);
@@ -540,101 +545,112 @@ export class Workspace extends EventEmitter {
     void this.prepareTask(task.id);
       return this.store.task(task.id);
   }
-  restartTask(taskId: string, input: { id: string; agent: AgentId; model?: string; effort?: string; serviceTier?: string; permissions?: unknown; stop?: boolean; draftAttachments?: string[] }): Promise<Task> {
-    const pending = this.restarting.get(taskId);
-    if (pending) return pending.id === input.id ? pending.promise : Promise.reject(new Error('This task is already being restarted.'));
-    const promise = this.restart(taskId, input).finally(() => { this.restarting.delete(taskId); this.schedule(); });
-    this.restarting.set(taskId, { id: input.id, promise });
+  // Moves a task to another agent. The task keeps its conversation, worktree,
+  // notes and review; the next turn starts a session of the destination agent,
+  // which is given the conversation so far (see handoffPrompt), because one
+  // agent cannot resume another's session. A turn in progress stops first.
+  switchTaskAgent(taskId: string, input: AgentSwitch): Promise<Task> {
+    const key = JSON.stringify([input.agent, input.model, input.effort, input.serviceTier, input.permissions]);
+    const pending = this.switching.get(taskId);
+    if (pending) return pending.key === key ? pending.promise : Promise.reject(new Error('This task is already switching agents.'));
+    const promise = this.switchAgent(taskId, input).finally(() => { this.switching.delete(taskId); this.schedule(); });
+    this.switching.set(taskId, { key, promise });
     return promise;
   }
-  private async restart(taskId: string, input: { id: string; agent: AgentId; model?: string; effort?: string; serviceTier?: string; permissions?: unknown; stop?: boolean; draftAttachments?: string[] }): Promise<Task> {
-    if (!/^[\w-]{16,64}$/.test(input.id) || input.id === taskId || this.store.taskDeleted(input.id)) throw new Error('Invalid replacement task ID.');
-    const original = this.store.task(taskId), existing = this.store.findTask(input.id);
-    if (existing) {
-      if (existing.restart?.taskId !== taskId || existing.projectId !== original.projectId) throw new Error('Invalid replacement task ID.');
-      return this.retryTask(existing.id);
-    }
-    if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode before selecting it.');
-    if (input.agent === 'collaboration' && original.mode === 'review') throw new Error('Choose Codex for an AI review. Collaboration mode edits annotations.');
-    if (original.mode === 'review') this.requireReviewAgent(input.agent);
-    const runtime = this.runtimes[input.agent];
-    if (!runtime?.connected || !runtime.authenticated) throw new Error('Connect and sign in to the destination agent before restarting.');
-    const model = runtime.models.find(model => input.model ? model.id === input.model : model.isDefault);
-    if (!model) throw new Error('Choose an available model for the destination agent.');
-    if (input.effort && !model.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
-    if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+  private async switchAgent(taskId: string, input: AgentSwitch): Promise<Task> {
+    const task = this.store.task(taskId), from = this.agentOf(task);
     const permissions = input.permissions ?? 'workspace';
-    this.validateTaskPermissions(permissions, input.agent, original.mode === 'review');
-    const initial = this.store.runByKey('initial-' + taskId), message = initial && this.store.item(taskId, initial.id);
-    if (!initial || !message) throw new Error('The original request is unavailable. Open the original conversation to create a new task.');
-    const blocked = () => {
+    // A request retried after its switch was made, or sent from a tab that
+    // missed it, applies its settings as a choice from the same agent does.
+    if (input.agent === from) {
+      const saved = this.updateTaskModel(taskId, { model: input.model ?? '', effort: input.effort ?? '', ...(from === 'codex' ? { serviceTier: input.serviceTier || 'default' } : {}) });
+      return (saved.permissions || 'workspace') === permissions ? saved : this.updateTaskPermissions(taskId, permissions);
+    }
+    const destination = () => {
+      if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode before selecting it.');
+      if (input.agent === 'collaboration' && task.mode === 'review') throw new Error('Choose Codex for an AI review. Collaboration mode edits annotations.');
+      if (task.mode === 'review') this.requireReviewAgent(input.agent);
+      const runtime = this.runtimes[input.agent];
+      if (!runtime?.connected || !runtime.authenticated) throw new Error('Connect and sign in to the destination agent before switching.');
+      const model = runtime.models.find(model => input.model ? model.id === input.model : model.isDefault);
+      if (!model) throw new Error('Choose an available model for the destination agent.');
+      if (input.effort && !model.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
+      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+      this.validateTaskPermissions(permissions, input.agent, task.mode === 'review');
+      return model;
+    };
+    const current = () => {
       const current = this.store.task(taskId);
-      if (['uncertain', 'deleting'].includes(current.status) || current.pendingReview || current.delivery?.pending) throw new Error('Resolve the pending task action before restarting.');
+      if (['uncertain', 'deleting'].includes(current.status) || current.pendingReview || current.delivery?.pending) throw new Error('Resolve the pending task action before switching agents.');
       return current;
     };
-    const busy = () => {
-      const current = blocked();
-      return Boolean(current.preparation && current.status !== 'failed') || this.preparing.has(taskId) || this.active.has(taskId) || this.publishing.has(taskId) || this.reviewWrites.has(taskId) || this.commentWrites.has(taskId)
-        || ['running', 'waiting_input', 'queued', 'building'].includes(current.status) || this.store.runs().some(run => run.taskId === taskId && run.status === 'queued');
-    };
-    if (busy()) {
-      if (!input.stop) throw new Error('Confirm stopping the original task before restarting.');
+    // Only a turn uses the agent's session; preparing, building and saving do not.
+    const working = () => this.active.has(taskId) || ['running', 'waiting_input'].includes(current().status);
+    destination();
+    if (working()) {
+      if (!input.stop) throw new Error('Confirm stopping the current turn before switching agents.');
       const deadline = Date.now() + 20_000;
       let interrupted = false;
-      while (busy()) {
-        const current = blocked();
-        if (current.preparation && current.status === 'failed' && !this.preparing.has(taskId)) {
-          for (const run of this.store.runs().filter(run => run.taskId === taskId && run.status === 'queued')) this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
+      while (working()) {
+        // An agent still starting its turn can only be stopped once it has one,
+        // and a review's turn only once its PDF has built. Unlike pausing,
+        // this keeps instructions queued behind the turn for the new agent.
+        const stopping = current();
+        if (!interrupted && stopping.status !== 'building' && (!this.active.has(taskId) || stopping.turnId)) {
+          if (!this.active.has(taskId)) this.store.updateTask(taskId, { status: 'interrupted' });
+          else { this.stopWorkflow(taskId); await this.agents[from].request('turn/interrupt', { threadId: stopping.threadId, turnId: stopping.turnId }); }
+          interrupted = true;
         }
-        if (!interrupted && !current.preparation && current.status !== 'building' && (!this.active.has(taskId) || current.turnId)) {
-          await this.interrupt(taskId); interrupted = true;
-        }
-        if (!busy()) break;
-        if (Date.now() >= deadline) throw new Error('The original task is still stopping or preparing. Wait for it to finish, then retry.');
+        if (!working()) break;
+        if (Date.now() >= deadline) throw new Error('The current turn is still stopping. Wait for it to finish, then retry.');
         await delay(100);
       }
     }
-    // A failed preparation has no agent session to stop; cancel its saved queue.
-    for (const run of this.store.runs().filter(run => run.taskId === taskId && run.status === 'queued')) this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
-    const copies: import('../shared.ts').Attachment[] = [];
-    let admitted = false;
-    try {
-      const originalFiles = message.meta?.attachments || initial.attachments || [];
-      const files = await this.attachments.copy(original.projectId, originalFiles.map(file => file.id), taskId); copies.push(...files);
-      const drafts = await this.attachments.copy(original.projectId, input.draftAttachments || [], taskId); copies.push(...drafts);
-      blocked();
-      if (busy()) throw new Error('The original task is still working. Wait for it to finish, then retry.');
-      const currentRuntime = this.runtimes[input.agent], currentModel = currentRuntime.models.find(item => item.id === model.id);
-      if (!currentRuntime.connected || !currentRuntime.authenticated) throw new Error('The destination agent disconnected. Reconnect and retry.');
-      if (!currentModel || (input.effort && !currentModel.efforts.includes(input.effort)) || (input.serviceTier && input.serviceTier !== 'default' && input.serviceTier !== currentModel.fastMode?.serviceTier)) throw new Error('The destination model settings changed. Choose an available model and retry.');
-      this.validateTaskPermissions(permissions, input.agent, original.mode === 'review');
-      if (this.store.findTask(input.id) || this.store.taskDeleted(input.id)) throw new Error('Invalid replacement task ID.');
-      let prompt = original.mode === 'review' ? original.instructions : initial.prompt;
-      for (let i = 0; i < originalFiles.length; i++) {
-        prompt = prompt.replaceAll(JSON.stringify(this.attachments.path(originalFiles[i])), JSON.stringify(this.attachments.path(files[i])))
-          .replaceAll(this.attachments.path(originalFiles[i]), this.attachments.path(files[i]));
-      }
-      const now = Date.now(), id = input.id;
-      const replacement: Task = { id, projectId: original.projectId, name: 'p-' + id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48), title: original.title, titleSource: 'prompt',
-        instructions: original.instructions, ...(original.mode === 'review' ? { mode: 'review' } : {}), restart: { taskId, ...(drafts.length ? { draftAttachments: drafts } : {}) },
-        permissions: permissions as string, worktree: '', deferred: true, threadId: null, turnId: null, agent: input.agent, model: model.id, effort: input.effort || null,
-        ...(input.agent === 'codex' ? { serviceTier: input.serviceTier || 'default' } : {}), status: 'preparing', preparation: {}, createdAt: now, updatedAt: now, feedbackCursor: 0, error: null, review: null };
-      const run: Run = { id: randomUUID(), taskId: id, requestKey: 'initial-' + id, prompt, ...(files.length ? { attachments: files } : {}),
-        ...(initial.noteOptionsRequested ? { noteOptionsRequested: true } : {}), status: 'queued', createdAt: now, finishedAt: null, reviewRound: 0 };
-      this.store.transaction(() => {
-        this.store.saveTask(replacement);
-        // Each message has its own attachment limit; draft and request may each contain ten.
-        this.attachments.claim(original.projectId, files.map(file => file.id), id);
-        this.attachments.claim(original.projectId, drafts.map(file => file.id), id);
-        this.store.saveRun(run);
-        this.store.saveItem({ ...message, id: run.id, taskId: id, createdAt: now, meta: { ...message.meta, ...(files.length ? { attachments: files } : {}) } });
-      });
-      admitted = true;
-      void this.prepareTask(id);
-      return this.store.task(id);
-    } finally {
-      if (!admitted) for (const file of copies) this.attachments.discard(original.projectId, file.id);
+    // Settings may have changed while the turn stopped.
+    const model = destination(), saved = current();
+    const conversation = saved.handoff || this.store.runs().some(run => run.taskId === taskId && run.status !== 'queued');
+    // The old session is no longer used; let its agent release it and the worktree.
+    if (saved.threadId) { this.loaded.delete(saved.threadId); void this.agents[from].closeThread?.(saved.threadId).catch(() => {}); }
+    if (saved.worktree) void this.agents[from].closeWorktree?.(saved.worktree).catch(() => {});
+    return this.store.updateTask(taskId, { agent: input.agent, model: model.id, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined,
+      permissions: permissions as string, threadId: null, turnId: null, viewPdf: undefined, context: null, ...(conversation ? { handoff: true } : {}) });
+  }
+  // The earlier conversation, for the first turn of a session that did not
+  // take part in it: each request an agent received, with the replies it
+  // gave, oldest first. Tool activity is left out; its edits are in the
+  // worktree. Runs take turns, so a reply belongs to the first run that had
+  // not finished when it appeared.
+  private handoffPrompt(task: Task, current: Run) {
+    const runs = this.store.runs().filter(run => run.taskId === task.id && run.id !== current.id && run.status !== 'queued').sort((a, b) => a.createdAt - b.createdAt);
+    const replies = new Map<string, string[]>();
+    for (const item of this.store.items(task.id)) {
+      if (item.type === 'user') continue;
+      const run = runs.find(run => item.createdAt <= (run.finishedAt ?? Infinity));
+      if (!run) continue;
+      const texts = replies.get(run.id) || [];
+      if ((item.type === 'assistant' || item.type === 'reviewOutput') && !item.parent && item.text.trim()) texts.push(item.text.trim());
+      replies.set(run.id, texts);
     }
+    // A message cancelled before it ran has nothing after it; its agent never saw it.
+    const turns = runs.filter(run => replies.has(run.id)).map((run, index) => {
+      const reply = replies.get(run.id)!;
+      return `Earlier turn ${index + 1}, request:\n${run.prompt}\n\nEarlier turn ${index + 1}, ${reply.length ? 'reply:\n' + reply.join('\n\n') : 'no reply.'}`;
+    });
+    if (!turns.length) return '';
+    return 'Papilot handoff: earlier turns of this task ran in another agent session, which you cannot see. Its conversation follows, oldest first. '
+      + 'Your worktree already contains the files as that session left them; read them rather than relying on this record. The author\'s new message comes after it.\n\n'
+      + turns.join('\n\n') + '\n\nNew message from the author:\n';
+  }
+  // Whether the turn that carried the earlier conversation reached the agent.
+  // A turn/start acknowledgement does not show it: most adapters answer before
+  // their agent starts. A completed turn, or anything the agent produced, does.
+  // Otherwise the next turn starts another session and is given it again.
+  private settleHandoff(task: Task, turnId: string | null | undefined, completed: boolean) {
+    const current = this.store.task(task.id);
+    if (!current.handoff) return;
+    if (completed || (turnId && this.store.items(task.id).some(item => item.id.startsWith(`${task.id}:${turnId}:`)))) { this.store.updateTask(task.id, { handoff: undefined }); return; }
+    if (current.threadId) { this.loaded.delete(current.threadId); void this.agents[this.agentOf(current)].closeThread?.(current.threadId).catch(() => {}); }
+    this.store.updateTask(task.id, { threadId: null });
   }
   // Retry after a failed preparation; any other task is returned as it is.
   retryTask(taskId: string) {
@@ -714,7 +730,7 @@ export class Workspace extends EventEmitter {
   // the agent gets the prompt.
   // admit is a new task, saved with its first message (see createTask).
   async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { attachments?: string[]; skill?: SkillFile; notes?: Annotation[]; groupInstructions?: GroupInstructions; reviewNotes?: NoteSummary[]; returnedNotes?: Map<string, number>; feedback?: boolean; build?: BuildFailure; merge?: TaskReconciliation; admit?: Task } = {}) {
-    if (this.restarting.has(taskId)) throw new Error('Wait for this task to restart before sending more instructions.');
+    if (this.switching.has(taskId)) throw new Error('Wait for this task to switch agents before sending more instructions.');
     const task = options.admit ?? this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     if (task.mode === 'review' && ((options.skill && options.skill.output !== 'annotations') || options.notes?.length || options.reviewNotes?.length || options.attachments?.length || options.feedback || options.build)) throw new Error('AI review accepts review instructions only. Start an editing task to send notes, skills or attachments.');
@@ -764,7 +780,7 @@ export class Workspace extends EventEmitter {
       }
       if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
       const current = options.admit ? this.store.saveTask(options.admit) : this.store.task(taskId);
-      if (this.restarting.has(taskId)) throw new Error('Wait for this task to restart before sending more instructions.');
+      if (this.switching.has(taskId)) throw new Error('Wait for this task to switch agents before sending more instructions.');
       if (this.committing.has(current.projectId) || current.delivery?.pending) throw new Error('Wait for the current delivery before sending more instructions.');
       if (current.status === 'deleting') throw new Error('This task is being deleted. Your instructions were not queued.');
       if ((current.pauseVersion || 0) !== pauseVersion) throw new Error('The task was paused before these instructions were queued. Your draft has been kept.');
@@ -808,7 +824,7 @@ export class Workspace extends EventEmitter {
     for (const run of this.store.runs().filter(r => r.status === 'queued')) {
       const agent = this.agentOf(this.store.task(run.taskId));
       if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) continue;
-      if (this.restarting.has(run.taskId) || this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status) || this.store.task(run.taskId).preparation) continue;
+      if (this.switching.has(run.taskId) || this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status) || this.store.task(run.taskId).preparation) continue;
       this.active.set(run.taskId, run);
       void this.startRun(run).catch(e => this.failRun(run, e));
     }
@@ -896,9 +912,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // "file tools only" conversation can use newly selected permissions.
     const permissionMode = task.mode !== 'review' && !['codex', 'collaboration', 'claude', 'glm', 'papilot'].includes(this.agentOf(task))
       ? agent.permissionOptions?.().find(option => option.value === (task.permissions || 'workspace')) : undefined;
+    const message = (task.handoff ? this.handoffPrompt(task, run) : '') + run.prompt;
     const prompt = permissionMode
-      ? `Papilot settings update: current permissions are ${permissionMode.label}. This supersedes earlier Papilot messages fixing the access mode, including claims that shell commands are unavailable. ${taskAccessInstructions}\n\n${run.prompt}`
-      : run.prompt;
+      ? `Papilot settings update: current permissions are ${permissionMode.label}. This supersedes earlier Papilot messages fixing the access mode, including claims that shell commands are unavailable. ${taskAccessInstructions}\n\n${message}`
+      : message;
     let paperInstructions = '';
     if (this.paperTools && task.mode !== 'review' && !(this.agentOf(task) === 'cursor' && task.permissions !== 'full')) {
       const epoch = this.connectionEpochs.get(this.agentOf(task));
@@ -1115,6 +1132,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       for (const [key, r] of this.requests) if (r.taskId === task.id) this.requests.delete(key);
       const status = p.turn.status === 'completed' ? 'completed' : p.turn.status === 'interrupted' ? 'interrupted' : 'failed';
       this.store.saveRun({ ...run, ...(agent === 'collaboration' ? { workflowAudit: this.store.runByKey(run.requestKey)?.workflowAudit } : {}), status, finishedAt: Date.now() });
+      this.settleHandoff(task, eventTurn, status === 'completed');
       const ended = { turnId: null, pendingRunId: null, error: p.turn.error?.message || null };
       // A completed turn builds; publish() holds that build for the action.
       if (status === 'completed') this.store.updateTask(task.id, { ...ended, status: 'building' });
@@ -2024,7 +2042,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     return this.store.updateTask(taskId, { archivedAt: archived ? Date.now() : null });
   }
   async deleteTask(taskId: string): Promise<{ ok: true }> {
-    if (this.restarting.has(taskId)) throw new Error('Wait for this task to restart before deleting it.');
+    if (this.switching.has(taskId)) throw new Error('Wait for this task to switch agents before deleting it.');
     if (this.preparing.has(taskId)) throw new Error('Wait for task creation to finish before deleting it.');
     if (this.deletions.has(taskId)) throw new Error('Deletion is already in progress. Wait for it to finish.');
     const task = this.store.findTask(taskId);

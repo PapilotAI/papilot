@@ -265,7 +265,6 @@ try {
   await expect(modelName).toHaveText('Default model');
   await composer.getByRole('button', { name: 'Agent settings', exact: true }).click();
   const unknown = composer.getByRole('dialog', { name: 'Agent settings', exact: true });
-  await expect(unknown.locator('.model-option-restart')).toHaveCount(0); // New tasks have no conversation to restart.
   await expect(unknown.getByRole('option', { name: 'Default model · Codex', exact: true })).toHaveAttribute('aria-selected', 'true');
   await composer.keyboard.press('Escape');
   await composer.getByRole('button', { name: 'Settings', exact: true }).click();

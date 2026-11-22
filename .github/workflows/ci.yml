@@ -343,9 +343,9 @@ jobs:
       - name: task-model
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-task-model.mjs
-      - name: task-restart
+      - name: task-agent-switch
         if: ${{ !cancelled() }}
-        run: node --import tsx scripts/check-task-restart.mjs
+        run: node --import tsx scripts/check-task-agent-switch.mjs
       - name: antigravity-usage
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-antigravity-usage.mjs
@@ -382,7 +382,7 @@ jobs:
             test-results/create-paper-*.png
             test-results/import-*.png
             test-results/overleaf-*.png
-            test-results/task-restart-*.png
+            test-results/task-agent-switch-*.png
             test-results/task-commit-*.png
             test-results/section-comments-*.png
             test-results/anchors-*.png

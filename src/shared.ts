@@ -43,8 +43,12 @@ export interface TaskReconciliation {
 export type TaskPermissions = string;
 export interface TaskPermissionOption { value: TaskPermissions; label: string; detail: string }
 export interface Task {
-  // A fresh session replaying another task's original request. Provider sessions are never reused.
+  // Papilot 0.13 and earlier switched agents by replaying a task's original
+  // request in a new task; such a task links to the one it replaced.
   restart?: { taskId: string; draftAttachments?: Attachment[] };
+  // The agent's session has not seen the task's earlier conversation, as
+  // after switching agents; its next turn is given it.
+  handoff?: boolean;
   permissions?: TaskPermissions;
   mode?: 'edit' | 'review';
   aiReview?: { key: string; notes?: number; revision?: number };
