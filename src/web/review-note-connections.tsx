@@ -24,35 +24,6 @@ type Place = {
   round: number;
 };
 
-function StateGlyph({ state }: { state: string }) {
-  if (state === 'accepted') {
-    return (
-      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <path d="M1.8 5.3 4 7.5 8.2 2.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-  if (state === 'rejected') {
-    return (
-      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <path d="M2.5 2.5 7.5 7.5M7.5 2.5 2.5 7.5" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  if (state === 'commented') {
-    return (
-      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <circle cx="5" cy="5" r="2.7" fill="currentColor" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-      <circle cx="5" cy="5" r="2.8" fill="none" stroke="currentColor" strokeWidth="1.45" />
-    </svg>
-  );
-}
-
 export function ReviewNoteConnections({ doc, round }: { doc: Document | null; round: number }) {
   const links = useNoteResults(), latest = useRef(links); latest.current = links;
   const [places, setPlaces] = useState<Place[]>([]);
@@ -240,24 +211,22 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
 
   return <>
     {createPortal(<style>{`
-      /* On annotated multi-edit cards, replace bare edit numbers with #note labels
-         on annotated chips and show clean state glyphs on unannotated companion edits
-         so bare digits are never mistaken for annotation numbers. */
-      .change[data-papilot-has-notes="true"] .unit-chip .unit-chip-label{display:none}
-      .unit-chip[data-state="rejected"] .papilot-chip-note{text-decoration:line-through;text-decoration-thickness:1px}
-      .papilot-note-links{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:3px;order:5;flex-shrink:0;padding:1px 0;background:transparent}
-      .papilot-note-links>span{display:flex;gap:3px;min-width:0;max-width:140px;overflow-x:auto;scrollbar-width:none}
+      /* Keep sequential edit numbers (1, 2, 3, 4) visible on every chip, with a
+         compact #note tag beside annotated edits; states use fills, borders and
+         strikethrough instead of icon-only placeholders. */
+      .papilot-chip-note{font-size:10px;font-weight:500;opacity:.78;letter-spacing:-.01em}
+      .papilot-note-links{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:4px;order:5;flex-shrink:0;padding:1px 0;background:transparent}
+      .papilot-note-links>span{display:flex;gap:4px;min-width:0;max-width:140px;overflow-x:auto;scrollbar-width:none}
       .papilot-note-links>span::-webkit-scrollbar{display:none}
-      .papilot-note-links button{display:inline-flex;align-items:center;justify-content:center;gap:3px;flex:none;min-width:22px;height:22px;padding:0 6px;border:0;border-radius:5px;background:color-mix(in srgb,var(--text) 6%,transparent);color:var(--text-2);font:500 11.5px/1 var(--sans);font-variant-numeric:tabular-nums;cursor:pointer;transition:background-color .15s,color .15s,box-shadow .15s}
-      .papilot-note-links button:hover{color:var(--text);background:color-mix(in srgb,var(--text) 11%,transparent)}
-      .papilot-note-links button[data-state="pending"][data-unit-match="true"]{color:var(--primary);background:color-mix(in srgb,var(--primary) 14%,transparent);box-shadow:inset 0 0 0 1.5px var(--primary);font-weight:600}
-      .papilot-note-links button[data-state="accepted"]{color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent)}
-      .papilot-note-links button[data-state="accepted"][data-unit-match="true"]{box-shadow:inset 0 0 0 1.5px var(--green);font-weight:600}
-      .papilot-note-links button[data-state="rejected"]{color:var(--red);background:color-mix(in srgb,var(--red) 14%,transparent)}
-      .papilot-note-links button[data-state="rejected"] .papilot-note-num{text-decoration:line-through;text-decoration-thickness:1px}
-      .papilot-note-links button[data-state="rejected"][data-unit-match="true"]{box-shadow:inset 0 0 0 1.5px var(--red);font-weight:600}
-      .papilot-note-links button[data-state="commented"]{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
-      .papilot-note-links button[data-state="commented"][data-unit-match="true"]{box-shadow:inset 0 0 0 1.5px var(--accent);font-weight:600}
+      .papilot-note-links button{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px;height:22px;padding:0 7px;border:1px dashed color-mix(in srgb,var(--text) 24%,transparent);border-radius:5px;background:transparent;color:var(--text-2);font:500 11.5px/20px var(--sans);font-variant-numeric:tabular-nums;cursor:pointer;transition:background-color .15s,border-color .15s,color .15s,box-shadow .15s}
+      .papilot-note-links button:hover{color:var(--text);background:color-mix(in srgb,var(--text) 7%,transparent);border-color:color-mix(in srgb,var(--text) 38%,transparent)}
+      .papilot-note-links button[data-state="pending"][data-unit-match="true"]{color:var(--primary);background:color-mix(in srgb,var(--primary) 12%,transparent);border-color:transparent;box-shadow:inset 0 0 0 1.5px var(--primary);font-weight:600}
+      .papilot-note-links button[data-state="accepted"]{color:var(--green);background:color-mix(in srgb,var(--green) 15%,transparent);border:1px solid color-mix(in srgb,var(--green) 32%,transparent);font-weight:600}
+      .papilot-note-links button[data-state="accepted"][data-unit-match="true"]{border-color:transparent;box-shadow:inset 0 0 0 1.5px var(--green)}
+      .papilot-note-links button[data-state="rejected"]{color:var(--red);background:color-mix(in srgb,var(--red) 12%,transparent);border:1px solid color-mix(in srgb,var(--red) 30%,transparent);text-decoration:line-through;text-decoration-thickness:1.25px}
+      .papilot-note-links button[data-state="rejected"][data-unit-match="true"]{border-color:transparent;box-shadow:inset 0 0 0 1.5px var(--red);font-weight:600}
+      .papilot-note-links button[data-state="commented"]{color:var(--accent);background:color-mix(in srgb,var(--accent) 15%,transparent);border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);border-bottom-width:2px}
+      .papilot-note-links button[data-state="commented"][data-unit-match="true"]{border-color:transparent;box-shadow:inset 0 0 0 1.5px var(--accent);font-weight:600}
       .papilot-note-links button:focus-visible{outline:2px solid var(--primary);outline-offset:-1px}
       .papilot-unit-notes{display:flex;flex-direction:column;gap:6px;padding:7px 12px 6px;border-bottom:1px solid var(--line);background:var(--bg-subtle,var(--bg));font:12px/1.45 var(--sans);color:var(--text-2)}
       :root[data-papilot-reader] .change.inline .papilot-unit-notes{padding-right:22px}
@@ -319,7 +288,6 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
               aria-label={t('Show note {n}: {comment}', { n: note.index + 1, comment: note.note.comment })}
               onClick={event => { event.stopPropagation(); focusAt(place, note); }}
             >
-              <span className="unit-chip-icon" aria-hidden="true"><StateGlyph state={place.cardState}/></span>
               <span className="papilot-note-num">#{note.index + 1}</span>
             </button>
           ))}

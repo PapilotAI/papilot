@@ -153,35 +153,6 @@ function unitSnippet(unit: Unit | undefined) {
   return "";
 }
 
-function unitStateGlyph(state: Decision | "mixed") {
-  if (state === "accepted") {
-    return (
-      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <path d="M1.8 5.3 4 7.5 8.2 2.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-  if (state === "rejected") {
-    return (
-      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <path d="M2.5 2.5 7.5 7.5M7.5 2.5 2.5 7.5" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  if (state === "commented") {
-    return (
-      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <circle cx="5" cy="5" r="2.7" fill="currentColor" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-      <circle cx="5" cy="5" r="2.8" fill="none" stroke="currentColor" strokeWidth="1.45" />
-    </svg>
-  );
-}
-
 function ReviewProgress({ value, total, label }: { value: number; total: number; label: string }) {
   if (total === 0) return null;
   return (
@@ -1540,7 +1511,6 @@ export function ReviewApp({
                 <span className="unit-focus-sep" aria-hidden="true" />
                 {unitStatus !== "pending" && (
                   <span className="unit-focus-state" data-state={unitStatus}>
-                    {unitStateGlyph(unitStatus)}
                     {stateLabel(unitStatus)}
                   </span>
                 )}
@@ -1917,9 +1887,6 @@ export function ReviewApp({
                       setSelectedUnit({ stop: index, unit: id });
                     }}
                   >
-                    <span className="unit-chip-icon" aria-hidden="true">
-                      {unitStateGlyph(uState)}
-                    </span>
                     <span className="unit-chip-label">{pos + 1}</span>
                   </button>
                 );
