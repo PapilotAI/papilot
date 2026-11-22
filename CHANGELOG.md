@@ -4,30 +4,43 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-22
+
+Review changes directly in place on the full PDF, decide individual annotations that share a paragraph, sort and organize manuscript notes, and choose a dedicated Git conflict-resolution agent. See the [release notes](docs/releases/0.13.0/release-notes.md) for update instructions.
+
 ### Added
 
-- Review individual edits directly on the PDF inside multi-edit change cards using numbered per-edit chips (`1 #5`, `2`, `3`, `4 #6`) with distinct pending, active, accepted, rejected, and commented states. Once every edit in a block is decided with a mix of accepts and rejects, the review compiles that block once and shows the resulting clean PDF in place. ([#316](https://github.com/PapilotAI/papilot/pull/316))
-- Sort annotations in **My notes** by **Original order**, **PDF position**, or **Newest first** across color groups and individual notes. Notes whose positions need confirmation stay visible at the end in PDF position order, and note numbers continue matching their PDF markers. ([#291](https://github.com/PapilotAI/papilot/issues/291))
-- Support optional color `group` (`yellow`, `green`, `purple`, `orange`, `red`) and quick-note `stamp` labels in the agent `annotation_create` and `annotation_update` tools, including setting, changing, or clearing (`null`) either field without resending `comment`, and show stamps on grouped notes in **My notes** and colored marks on the PDF. ([#292](https://github.com/PapilotAI/papilot/issues/292))
-- Prepare automatic signed APT distribution for stable amd64 desktop releases. Debian packages use system-managed app upgrades and retain agent setup. ([#268](https://github.com/PapilotAI/papilot/issues/268))
-- Add an Arch Linux package recipe for the official x86_64 desktop build and automate validation and publication from stable releases after maintainer setup. ([#267](https://github.com/PapilotAI/papilot/issues/267))
-- Choose a dedicated agent in **Settings → Git** for conflict resolution, with the current conversation as the default. Review the resolution before committing the merge. ([#269](https://github.com/PapilotAI/papilot/issues/269))
+- Review individual annotation edits directly on the PDF when annotations divide a single change block, using numbered per-group chips (`1 #5`, `2`, `3`, `4 #6`) with distinct pending, active, accepted, rejected, and commented states, horizontal overflow scrolling, and LaTeX source sync. Unannotated blocks and single-annotation blocks remain one-click decisions. Once every edit in a split block is decided with a mix of accepts and rejects, the review compiles that block once and shows the resulting clean PDF in place. ([#316](https://github.com/PapilotAI/papilot/pull/316), [#317](https://github.com/PapilotAI/papilot/pull/317))
+- Sort annotations in **My notes** by **Original order**, **PDF position**, or **Newest first** across color groups and individual notes. Notes whose positions need confirmation stay visible at the end in PDF position order, and note numbers continue matching their PDF markers. ([#291](https://github.com/PapilotAI/papilot/issues/291), [#311](https://github.com/PapilotAI/papilot/pull/311))
+- Support optional color `group` (`yellow`, `green`, `purple`, `orange`, `red`) and quick-note `stamp` labels in the agent `annotation_create` and `annotation_update` tools, including setting, changing, or clearing (`null`) either field without resending `comment`, and show stamps on grouped notes in **My notes** and colored marks on the PDF. ([#292](https://github.com/PapilotAI/papilot/issues/292), [#312](https://github.com/PapilotAI/papilot/pull/312))
+- Prepare automatic signed APT distribution for stable amd64 desktop releases. Debian packages use system-managed app upgrades and retain agent setup. ([#268](https://github.com/PapilotAI/papilot/issues/268), [#284](https://github.com/PapilotAI/papilot/pull/284))
+- Add an Arch Linux package recipe for the official x86_64 desktop build and automate validation and publication from stable releases after maintainer setup. ([#267](https://github.com/PapilotAI/papilot/issues/267), [#283](https://github.com/PapilotAI/papilot/pull/283))
+- Choose a dedicated agent in **Settings → Git** for conflict resolution, with the current conversation as the default. Review the resolution before committing the merge. ([#269](https://github.com/PapilotAI/papilot/issues/269), [#285](https://github.com/PapilotAI/papilot/pull/285))
 
 ### Changed
 
 - Show review changes directly in place on the full PDF with a single-row review toolbar, top-bar change navigator, and full-paper ChangeMap scrollbar, removing the `PDF | Changes` toggle and intermediate `AppliedPaper` compilations — built on the full-document review prototype and discussion by [@RIvance](https://github.com/RIvance). ([#263](https://github.com/PapilotAI/papilot/pull/263), [#310](https://github.com/PapilotAI/papilot/pull/310))
 - Consolidate linked annotations and alternative-option previews inline inside each change card beneath its header, removing the separate bottom note drawer and scope switcher while routing the card's single Accept/Reject/Comment controls directly to the active option. ([#316](https://github.com/PapilotAI/papilot/pull/316))
 - Keep the Typeless microphone at the mouse's release point when creating a PDF note. Once the draft has text, its quote arrow uses the same position, so stopping dictation and confirming the note need no mouse movement. Transcription still requires explicit confirmation; touch and keyboard entry retain the regular controls. See [Typeless voice notes](docs/typeless.md). ([#253](https://github.com/PapilotAI/papilot/pull/253))
-- Store new task worktrees under `~/.papilot/worktrees` by default. Existing tasks retain their stored paths, and project-specific overrides still apply. ([#273](https://github.com/PapilotAI/papilot/issues/273))
-- Refresh the website's GitHub star count with a 15-minute edge cache. Keep the last successful count during GitHub failures and show the deployment-time count without JavaScript. ([#257](https://github.com/PapilotAI/papilot/issues/257))
+- Store new task worktrees under `~/.papilot/worktrees` by default. Existing tasks retain their stored paths, and project-specific overrides still apply. ([#273](https://github.com/PapilotAI/papilot/issues/273), [#288](https://github.com/PapilotAI/papilot/pull/288))
+- Refresh the website's GitHub star count with a 15-minute edge cache. Keep the last successful count during GitHub failures and show the deployment-time count without JavaScript. ([#257](https://github.com/PapilotAI/papilot/issues/257), [#276](https://github.com/PapilotAI/papilot/pull/276))
 
 ### Fixed
 
+- Consolidate heavily rewritten prose passages into clean review units, exclude running headers and page numbers from body diffs and crops unless directly edited, and sort merged strips in reading order. ([#317](https://github.com/PapilotAI/papilot/pull/317))
 - Fix PDF/source diff alignment across hyphenated words, prose line rewraps, and split-word boundaries, and merge consecutive word highlights smoothly across justified LaTeX spaces without overlapping math and prose marks. ([#310](https://github.com/PapilotAI/papilot/pull/310), [#316](https://github.com/PapilotAI/papilot/pull/316))
-- Allow wheel scrolling over annotation cards and inline editors in **My notes** and **Notes in this task**, while keeping overscroll contained inside the list and floating PDF note popovers. ([#293](https://github.com/PapilotAI/papilot/issues/293))
-- Generate initial task-review commit drafts in the selected commit-message language instead of copying the task title. Manual edits and preserved reconciliation messages remain intact. ([#255](https://github.com/PapilotAI/papilot/issues/255))
-- Keep PDF reference previews aligned with their links as the PDF scrolls, zooms or resizes. Previews stay inside the visible viewport and close when the reference leaves view. ([#260](https://github.com/PapilotAI/papilot/issues/260))
-- Open Settings from the macOS Papilot menu or with Command–Comma. Repeating the shortcut keeps the current settings page and edits. ([#262](https://github.com/PapilotAI/papilot/issues/262))
+- Allow wheel scrolling over annotation cards and inline editors in **My notes** and **Notes in this task**, while keeping overscroll contained inside the list and floating PDF note popovers. ([#293](https://github.com/PapilotAI/papilot/issues/293), [#294](https://github.com/PapilotAI/papilot/pull/294))
+- Generate initial task-review commit drafts in the selected commit-message language instead of copying the task title. Manual edits and preserved reconciliation messages remain intact. ([#255](https://github.com/PapilotAI/papilot/issues/255), [#274](https://github.com/PapilotAI/papilot/pull/274))
+- Keep PDF reference previews aligned with their links as the PDF scrolls, zooms or resizes. Previews stay inside the visible viewport and close when the reference leaves view. ([#260](https://github.com/PapilotAI/papilot/issues/260), [#277](https://github.com/PapilotAI/papilot/pull/277))
+- Open Settings from the macOS Papilot menu or with Command–Comma. Repeating the shortcut keeps the current settings page and edits. ([#262](https://github.com/PapilotAI/papilot/issues/262), [#279](https://github.com/PapilotAI/papilot/pull/279))
+
+### Contributors
+
+Thanks to [@RIvance](https://github.com/RIvance) for the full-document review prototype and discussion ([#263](https://github.com/PapilotAI/papilot/pull/263)) and [@iyuzhang](https://github.com/iyuzhang) for fixing wheel scrolling in **My notes** and **Notes in this task** ([#294](https://github.com/PapilotAI/papilot/pull/294)).
+
+### Updates
+
+Upgrading the desktop app from 0.12.1 requires a new desktop installer/package because the desktop shell and bundled dependencies changed. Download the matching release asset or use **Settings → Updates** to open the release downloads; your existing papers, tasks, and settings remain intact. CLI/server installations update separately with `npm install -g papilot@0.13.0`; APT, AUR, and other managed installations update through their package manager.
 
 ## [0.12.1] - 2026-11-21
 
@@ -712,7 +725,8 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/PapilotAI/papilot/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/PapilotAI/papilot/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/PapilotAI/papilot/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/PapilotAI/papilot/compare/v0.10.4...v0.11.0
