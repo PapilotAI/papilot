@@ -12,7 +12,7 @@ import { buildActivityReport } from '../src/server/activity.ts';
 
 // Exercises Settings -> Statistics against a real SQLite Store + buildActivityReport
 // across desktop and phone widths, light and dark themes, English and Simplified
-// Chinese: insights, calendar paging, details rows, sharing, range and paper
+// Chinese: insights, calendar paging, cards, sharing, range and paper
 // filters, empty state and error recovery.
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-activity-ui-'));
 const store = new Store(path.join(tempDir, 'papilot.sqlite'));
@@ -197,22 +197,28 @@ try {
   await page.locator('[data-settings-page="statistics"]').click();
   await page.locator('.activity-settings').waitFor();
 
-  // Insights open on all time: time saved, accepted and rejected changes, agent time.
+  // Insights open on all time: accepted and rejected changes, agent time, tasks started.
   const all = expected('all');
   await expect(page.locator('.activity-range-button[data-range="all"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.activity-insight')).toHaveCount(4);
   await expect(page.locator(figure('Accepted changes'))).toHaveText(number(all.totals.accepted));
   await expect(page.locator(figure('Rejected changes'))).toHaveText(number(all.totals.rejected));
-  await expect(page.locator(figure('Time saved'))).toHaveText(/^~\d/);
-  await expect(page.locator('.activity-insight:has(dt:text-is("Time saved")) .activity-figure-unit')).toHaveText('hours');
+  await expect(page.locator(figure('Tasks started'))).toHaveText(number(all.totals.tasksStarted));
+  await expect(page.locator('.activity-insight:has(dt:text-is("Tasks started")) .activity-figure-unit')).toHaveText('tasks');
   await expect(page.locator(figure('Agent time'))).not.toHaveText('0');
+  await expect(page.getByText('Time saved')).toHaveCount(0);
   await expect(page.locator(figure('Active days'))).toHaveText(number(all.totals.activeDays));
   await expect(page.locator(figure('Longest streak'))).toHaveText(/^\d+$/);
-  // Details wait behind closed rows, each with a one-line headline.
-  await expect(page.locator('.activity-detail')).toHaveCount(5);
-  await expect(page.locator('.activity-detail[open]')).toHaveCount(0);
-  await expect(page.locator('.activity-detail-headline').first()).toHaveText(/% accepted/);
-  await expect(page.locator('.activity-table').first()).toBeHidden();
+  // Cards show the rest directly: no collapsed rows, no daily table.
+  await expect(page.locator('.activity-card')).toHaveCount(4);
+  await expect(page.locator('details, .activity-table')).toHaveCount(0);
+  const rate = Math.round((all.totals.accepted / (all.totals.accepted + all.totals.rejected)) * 100);
+  await expect(page.locator('.activity-ring-chart strong')).toHaveText(`${rate}%`);
+  await expect(page.locator('.activity-legend-row:has(dt:text-is("Annotations")) dd')).toHaveText(number(all.totals.annotationsCreated));
+  await expect(page.locator('.activity-token-total')).toHaveText(/M$/);
+  await expect(page.locator('.activity-token-bar > span')).toHaveCount(4);
+  await expect(page.locator('.activity-hour-grid .activity-heat-cell')).toHaveCount(168);
+  await expect(page.locator('.activity-ranking-row')).toHaveCount(all.agents.length + all.models.length);
 
   // Calendar: as many weeks as fit, the latest week last, one tab stop.
   const heatmap = page.locator('.activity-heatmap');
@@ -255,28 +261,17 @@ try {
   await page.getByRole('button', { name: 'Later weeks' }).click();
   await expect(period).toHaveText(latestPeriod);
 
-  // Details: reviews with the time-saved basis, tokens, agents, hours and the daily table.
-  const reviews = page.locator('.activity-detail').filter({ hasText: 'Reviews & notes' });
-  await reviews.locator(':scope > summary').click();
-  await expect(reviews.locator('.activity-fact:has(dt:text-is("Time saved")) .activity-fact-note')).toHaveText(`${number(all.totals.accepted)} changes × 2 min`);
-  const tokens = page.locator('.activity-detail').filter({ hasText: 'Tokens & spend' });
-  await tokens.locator(':scope > summary').click();
-  await expect(tokens.locator('.activity-token-bar > span')).toHaveCount(4);
-  await page.locator('.activity-details').scrollIntoViewIfNeeded();
+  // The cards below the calendar: review ring, tokens, hours and rankings.
+  await page.locator('.activity-cards').scrollIntoViewIfNeeded();
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-details.png' });
-  const hours = page.locator('.activity-detail').filter({ hasText: 'Active hours' });
-  await hours.locator(':scope > summary').click();
-  await expect(hours.locator('.activity-hour-grid .activity-heat-cell')).toHaveCount(168);
+  const hours = page.locator('.activity-card').filter({ hasText: 'Active hours' });
+  await expect(hours.locator('.activity-card-headline')).toHaveText(/^Peak \d{2}:00–\d{2}:00$/);
   await hours.locator('.activity-hour-grid .activity-heat-cell[data-level="4"]').first().hover();
   await expect(hours.locator('.activity-heat-tip')).toContainText(/\d+ actions?.*\d+ runs?.+ tokens/);
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-hours.png' });
   await page.mouse.move(0, 0);
-  const daily = page.locator('.activity-detail').filter({ hasText: 'Daily breakdown' });
-  await daily.locator(':scope > summary').click();
-  await expect(daily.locator('.activity-table').first()).toBeVisible();
-  await expect(daily.locator('.activity-more-days')).toBeVisible();
+  await page.locator('.activity-rankings').scrollIntoViewIfNeeded();
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-detail.png' });
-  while (await page.locator('.activity-detail[open]').count()) await page.locator('.activity-detail[open] > summary').first().click();
 
   // Sharing draws the figures and the latest weeks into a PNG to copy or save.
   await page.locator('.settings-content').evaluate(el => { el.scrollTop = 0; });
@@ -369,17 +364,19 @@ try {
   await zhPage.locator('.activity-calendar').scrollIntoViewIfNeeded();
   await zhPage.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-mobile-zh-heatmap.png' });
   await zhPage.emulateMedia({ colorScheme: 'dark' });
-  const zhDaily = zhPage.locator('.activity-detail').filter({ hasText: '每日明细' });
-  await zhDaily.locator(':scope > summary').click();
-  await zhDaily.scrollIntoViewIfNeeded();
-  await zhPage.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-mobile-zh-dark-table.png' });
+  await expect(zhPage.locator('.activity-ring figcaption')).toHaveText('采纳率');
+  await zhPage.locator('.activity-cards').scrollIntoViewIfNeeded();
+  await zhPage.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-mobile-zh-dark-cards.png' });
   await zhPage.setViewportSize({ width: 320, height: 640 });
-  const hasOverflow = await zhPage.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth + 2);
-  assert.equal(hasOverflow, false, '320px statistics pane has no horizontal overflow');
+  const overflow = await zhPage.locator('.settings-content').evaluate(root => {
+    const edge = root.getBoundingClientRect().right + 1;
+    return root.scrollWidth > root.clientWidth + 2 ? [...root.querySelectorAll('*')].filter(element => element.getBoundingClientRect().right > edge).map(element => `${element.className || element.tagName}: ${element.textContent.slice(0, 40)}`).slice(0, 5) : [];
+  });
+  assert.deepEqual(overflow, [], '320px statistics pane has no horizontal overflow');
   await zhContext.close();
 
   assert.deepEqual(errors, []);
-  console.log('PASS: Statistics insights, calendar paging, details, sharing, filters, empty and error states across desktop/phone, light/dark, en/zh-Hans');
+  console.log('PASS: Statistics insights, calendar paging, cards, sharing, filters, empty and error states across desktop/phone, light/dark, en/zh-Hans');
 } finally {
   await browser.close();
   await server.close();

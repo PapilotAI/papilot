@@ -242,26 +242,35 @@ export class Store extends EventEmitter {
   undoActivity(key: string, undoneAt = Date.now()) {
     return this.db.prepare('UPDATE activity_events SET undone_at=? WHERE key=? AND undone_at IS NULL').run(Math.round(undoneAt), key).changes > 0;
   }
-  clearActivity(key: string) {
+  // Removes an event and returns it, so a reversible action can put it back.
+  clearActivity(key: string): ActivityEventRow | null {
+    const event = this.activityEvent(key);
     this.db.prepare('DELETE FROM activity_events WHERE key=?').run(key);
+    return event;
+  }
+  activityEvent(key: string): ActivityEventRow | null {
+    const row = this.db.prepare(`${ACTIVITY_COLUMNS} WHERE key=?`).get(key) as ActivityRow | undefined;
+    return row ? activityEventRow(row) : null;
   }
   activityEvents(projectId?: string): ActivityEventRow[] {
     const rows = (projectId
-      ? this.db.prepare('SELECT key, at, kind, project_id, task_id, agent, model, undone_at, data FROM activity_events WHERE project_id=? ORDER BY at ASC, rowid ASC').all(projectId)
-      : this.db.prepare('SELECT key, at, kind, project_id, task_id, agent, model, undone_at, data FROM activity_events ORDER BY at ASC, rowid ASC').all()) as {
-      key: string; at: number; kind: ActivityEventKind; project_id: string | null; task_id: string | null; agent: string | null; model: string | null; undone_at: number | null; data: string;
-    }[];
-    return rows.map(row => ({
-      key: row.key,
-      at: Number(row.at),
-      kind: row.kind,
-      projectId: row.project_id,
-      taskId: row.task_id,
-      agent: row.agent,
-      model: row.model,
-      undoneAt: row.undone_at === null ? null : Number(row.undone_at),
-      data: JSON.parse(row.data),
-    }));
+      ? this.db.prepare(`${ACTIVITY_COLUMNS} WHERE project_id=? ORDER BY at ASC, rowid ASC`).all(projectId)
+      : this.db.prepare(`${ACTIVITY_COLUMNS} ORDER BY at ASC, rowid ASC`).all()) as ActivityRow[];
+    return rows.map(activityEventRow);
   }
   close() { this.db.close(); }
 }
+
+const ACTIVITY_COLUMNS = 'SELECT key, at, kind, project_id, task_id, agent, model, undone_at, data FROM activity_events';
+type ActivityRow = { key: string; at: number; kind: ActivityEventKind; project_id: string | null; task_id: string | null; agent: string | null; model: string | null; undone_at: number | null; data: string };
+const activityEventRow = (row: ActivityRow): ActivityEventRow => ({
+  key: row.key,
+  at: Number(row.at),
+  kind: row.kind,
+  projectId: row.project_id,
+  taskId: row.task_id,
+  agent: row.agent,
+  model: row.model,
+  undoneAt: row.undone_at === null ? null : Number(row.undone_at),
+  data: JSON.parse(row.data),
+});

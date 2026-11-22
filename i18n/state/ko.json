@@ -115,9 +115,9 @@
     "model": "gemini-4-argon-medium"
   },
   "Accept / Reject": {
-    "revision": "2bc6d813f6e48fe1f3e5afe12b52d4b4a9807eae82c49f25e002a3dc40ba506b",
-    "textHash": "2d43e624ecbdc5db97b15438d0f64f89bbc2ef18ca742e05c2f420bdbe6b6796",
-    "model": "manual"
+    "revision": "0386c41023476826a46fcbf63ecb9dd496b6f971d49bb12b21fa287c533fd9cb",
+    "textHash": "4f57b74052b2c685f31df2dc58a7f49fe10bf6ef8fe998cd3eeae72a47a7959f",
+    "model": "gemini-4-argon-medium"
   },
   "Accept change": {
     "revision": "e5a8f2d3069bda120fa8361916bd3df005a2999ad6086eec82811ecdbb7a6ed3",
@@ -127,6 +127,11 @@
   "Accept the current proposal. In Changes, stage or unstage it.": {
     "revision": "f5b1694a8d6801f33948b8beea1f8b2f3106aab1391d5cafe48d5d1458346d9b",
     "textHash": "ae3e9bbfe9b2c29339a6a6c510842c023b3f8257c66c048f604135e4425ebf30",
+    "model": "gemini-4-argon-medium"
+  },
+  "Acceptance rate": {
+    "revision": "38050a04f6bdfe7c47127bc73d5155356da0093c7756e30f5f758bde6f898397",
+    "textHash": "5b2610b58daca25b32879b1d6b8b367296b485c286c15a26e93d4ef5f2bfd995",
     "model": "gemini-4-argon-medium"
   },
   "Accepted changes": {
@@ -280,9 +285,9 @@
     "model": "gemini-4-argon-medium"
   },
   "Agent runs": {
-    "revision": "fe8a239c8bc445729329c40133a61ad59e0ac21cd7996f8aa7f866465904ecf3",
+    "revision": "424e630a2b78e450f3bb867896782c3c3a4d9a14744cec2014cc4d1281f96fed",
     "textHash": "f715b3e313975dd029fd1673769c10046117bd0abaec060eadd087d5ae957eaf",
-    "model": "manual"
+    "model": "gemini-4-argon-medium"
   },
   "Agent settings": {
     "revision": "303178b9da8747c2d16320fa95d9a05250821834fda3e8ff52bfb8700a215a57",
@@ -1510,9 +1515,9 @@
     "model": "gemini-4-argon-medium"
   },
   "Daily breakdown": {
-    "revision": "1377d233e3a924fb10fe0fca5bf031df4d3803ec59afe740a3bc15ca184d253d",
-    "textHash": "9c5e33e4c931f2aa7ed52b65052e8da9e0beec149ca2d7423acf82fd987afb2f",
-    "model": "manual"
+    "revision": "222377ae1857f166630a1214224cae96f2c905553ec275277e8e81ae6193d0b5",
+    "textHash": "b67090b2b2dcbdf973806bf3725cb66e9dc26ae5ef10d28e1a867156c9398168",
+    "model": "gemini-4-argon-medium"
   },
   "Daily limit": {
     "revision": "0966ae4ad8fc84f7139d034dc20305f9704dffe3b60b4bba3b71a1bff588eb99",
@@ -1523,11 +1528,6 @@
     "revision": "4c58a7d5753bf927153223a3fc9d2d5c5b8c24a5713a87152d25dda0c39f4c9b",
     "textHash": "f1c3b57377016c9c29076b3c776831f89ebac35f4a37a7785427763ae9eea5b6",
     "model": "gemini-4-argon-medium"
-  },
-  "Date": {
-    "revision": "7d82b15cca2b8d65e132828f30de05a821376ed5f3e11896c8531d8cabb9da44",
-    "textHash": "09f76a1b7a6712eeafef23fe0e17136e76ce2ed4cf511d099cd08b89f345bcc0",
-    "model": "manual"
   },
   "Decline": {
     "revision": "4ae93835aaa20041a9e400f7afa35f096e44aa14d56201d031c567619d60e4f9",
@@ -1849,11 +1849,6 @@
     "textHash": "da5111cc2e6dee82dc160c8dcca6bf823c59594cf0ca24e27f01d107f5389dbf",
     "model": "gemini-4-argon-high"
   },
-  "Earlier active days": {
-    "revision": "860015c4170ccbed6e95899f69f85f6f41ec5b3a9ff9f508ecda7fe10be49bff",
-    "textHash": "57819747417e0c638190eab7550e3129faaae28e6a865e1c09acd02de4c25a68",
-    "model": "manual"
-  },
   "Earlier weeks": {
     "revision": "60fdf737a59c377a050453d2ca034d2d91771846480bcd8a7bd4fcbc317d6931",
     "textHash": "7c3d8bdc27fb8085a88342eba9e25fb356c6bbdbe5a34bd8d828b17a13fd9cf2",
@@ -2162,11 +2157,6 @@
   "Get started and make Papilot your own.": {
     "revision": "ea7dfb5e1aaa2532e0a1d9b9c71d272db8f4a0ea488c14be0f0d041ca3c7a054",
     "textHash": "bd6ef5fb2839294cf765837df3c6ca4c54fb24eec96ec30ecc432c2f9c3af308",
-    "model": "gemini-4-argon-medium"
-  },
-  "Git commits": {
-    "revision": "aa3ff4ffafe74d43b2347a4feaae65ac50dd5b20dad06cc20754222337e2d301",
-    "textHash": "30f63b42055affb52e76852c90b3b2e87f61b814d3b8d212b9311450c741f782",
     "model": "gemini-4-argon-medium"
   },
   "GitHub repository": {
@@ -2644,11 +2634,6 @@
     "textHash": "8bf609c884cab593bf97920607df7164e47b6f00d1c28bd6fb0d9d87ed425da2",
     "model": "gemini-4-argon-medium"
   },
-  "Local time ({timezone})": {
-    "revision": "d9c5e650bd6da3d96e6158c3460269cfc6033e573c726e8d01f0f9eb61a10289",
-    "textHash": "1afff228a975363b8ba0ccc6c52a5405b45bc4eb86154e75bdeb2a1c6bb1c59f",
-    "model": "manual"
-  },
   "Location": {
     "revision": "dc62b4ed889066c3e2878f032d57e59e978056abcc0558e70d6f4bc7535172ed",
     "textHash": "6c0b9dd710ab0fde0a72b7e27e9e8eedd48f92b9dc0a01ef0a0eb3e55a73df19",
@@ -2953,11 +2938,6 @@
     "revision": "2471697685b3e58d5efe830bf7171431e02590616ccc2b032a80c66c5233e940",
     "textHash": "94d36c9590e6b3fe22b094f4a8374e369c17bc658e37faca6b3b99933b50179f",
     "model": "gemini-4-argon-medium"
-  },
-  "No changes decided yet": {
-    "revision": "2d88bf81b440f0c35e186e9cea433a71ec4ee12ff7179ccf7dbec2389be412ad",
-    "textHash": "2b2159c6121be0148a07e62991f9cd10e3cd51d64d165d6055403903224069c4",
-    "model": "manual"
   },
   "No commits yet": {
     "revision": "9d43f6bfab96a0e9ba08d8867d46aed0fe44dd3efc3cb1167079c50f36ba0b5b",
@@ -3639,11 +3619,6 @@
     "textHash": "4fb8dc1486f4f57c29818cb8c1804e27c477e58d582577de562484179a2b6a4f",
     "model": "gemini-4-argon-medium"
   },
-  "Peak hour": {
-    "revision": "6cad77299c12e7c6fcc5d0fd3fd4a2554a49f0ec7d74c072afc79299c3546e5e",
-    "textHash": "6a2af28c52aa657359999ae8aad7839f9bdd07d140086769066a0c85681bd4d9",
-    "model": "manual"
-  },
   "Peak {window}": {
     "revision": "61571554bd45ed51cefe1c4debddf8877ba669db1f854f6a20e5fffb876afae9",
     "textHash": "a54431a38a51169f555b9d0aaf1ba5a7bea4b179b3279f92324abfc92551002b",
@@ -3799,11 +3774,6 @@
     "textHash": "c13c3ea39afb46bcc06f9d0c33cb4d14ba4b014552d270c3e416d9bd1b3f3021",
     "model": "gemini-4-argon-medium"
   },
-  "Provider-reported spend": {
-    "revision": "31a488b75cf0b7a6476b9262c4f28a317fff21e33d0bb5f929d2c1bd88f0145c",
-    "textHash": "fffac2545ce6dd7c6e59b46e1029c8ede4cf41a110a5575b52affdaff0effe8d",
-    "model": "manual"
-  },
   "Publish branch": {
     "revision": "f844f962053b4b00612222520d276bf653b9a7348911467f95a5f8a7e0d30065",
     "textHash": "67291cfabddfa37e7c648ed18471bea8f60684f78e07c7104a54f8ffa896e9ea",
@@ -3937,11 +3907,6 @@
   "Ready to check for updates": {
     "revision": "2f058e3bbbfb512dc7d601ce43aa93c40a7605ea392cc8d4915cff725f296338",
     "textHash": "def0fd3d851befa3c85e13e0c56989f67fb495264df88edb99e193dd4d2eca5d",
-    "model": "gemini-4-argon-medium"
-  },
-  "Reasoning": {
-    "revision": "8cc608fa1f95550dc94df1c68a5bf504766c24904b30c1aa2e38362de246b5de",
-    "textHash": "d7e8fd043c6427a334ad30b5941d7b756443a2bbe9b3f5944be30e961035c21d",
     "model": "gemini-4-argon-medium"
   },
   "Reasoning effort": {
@@ -4509,11 +4474,6 @@
     "textHash": "8474d8f4cb46899331199ffb44ea860ec49429e46940b0d12a927221d6c38d05",
     "model": "manual"
   },
-  "Saved tasks": {
-    "revision": "3366afd47d24e788a62cf9199791553f2c2f45caf7857ecb8f713bed7d0a900f",
-    "textHash": "8337bb8952481dc272adbf1b1b44dd76b3e8f6e9f4588daba48ecd8ac591688e",
-    "model": "gemini-4-argon-medium"
-  },
   "Saving…": {
     "revision": "5b5bfd12bf2db3be36dc2e49cc2d02fff9545c27da5de0774e81998b0ebf0fa6",
     "textHash": "88daaeedfe4c69c68eeda01631b0508074020419598dc25d2df198704dce36ed",
@@ -4809,16 +4769,6 @@
     "textHash": "b3665618f8c85869996e8e67e5d9236fed4937f34b9d7e040a563b32c0861074",
     "model": "gemini-4-argon-medium"
   },
-  "Show {n} earlier active day": {
-    "revision": "cb2838755c0764c8f8665c151d6d93acb7668279f7859e1e90793a7faae51cb7",
-    "textHash": "2b1525033f2e5e4aa221aeb95440f76f15e01a2a5b361dfc46ddd5b1c4ba9b86",
-    "model": "manual"
-  },
-  "Show {n} earlier active days": {
-    "revision": "31fadd25d42c1122c4bb54542d4c024a5d0b6737c3d6342b14a689adb689917e",
-    "textHash": "2b1525033f2e5e4aa221aeb95440f76f15e01a2a5b361dfc46ddd5b1c4ba9b86",
-    "model": "manual"
-  },
   "Show {n} more models": {
     "revision": "b7e04d797f4a02194bd2a5a79bd2ecb894fd50c99e9b95cd8a6900cca9ae7a74",
     "textHash": "c03ac6c9a51610103d64bfbeeeff09f0ab1d280ef9898692c902295fced7578b",
@@ -4975,9 +4925,9 @@
     "model": "gemini-4-argon-medium"
   },
   "Spend": {
-    "revision": "be886d408d84d30177e8d0638055afa53fd454ec5f314c18a32f3083cd4928bd",
-    "textHash": "24423dd67b3a782699d9bcaed69bcb46571258d67a75d337eae9b12b2d6b3984",
-    "model": "manual"
+    "revision": "e23112db0432d9dcd2f6c2c0ba280d73f84e6d768b79a0ced022f767ac9ed03b",
+    "textHash": "1ed4f1ad1c21e9b65d0ddd039eea7163330c272dec61cb461f040d858364594b",
+    "model": "gemini-4-argon-medium"
   },
   "Split": {
     "revision": "fdd51567f7a94d839acaaecde345385ee4aed666ceac07400c4dd5289cab1f67",
@@ -5192,6 +5142,11 @@
   "Tasks": {
     "revision": "191590f26485c0edcb292675b9eec2031f7bc804585ccc5d38d2ae8197261040",
     "textHash": "01dfd369cfa718dda5f1906bbfe64d4dbd50dd2c62251854cd300a6c0d1e789e",
+    "model": "gemini-4-argon-medium"
+  },
+  "Tasks started": {
+    "revision": "7ba8d94e66f03e15d370f6a4f9d4ad4801dcf4c25d29680a05b01f319ff32bb5",
+    "textHash": "3e1f278d287deb73435eac646033dbb2036b6ad2e648c824a486b9331ae1069e",
     "model": "gemini-4-argon-medium"
   },
   "Template type": {
@@ -5509,11 +5464,6 @@
     "textHash": "b918d5af77b8733a489218cf90ec744604ce4966780baaef23f3d1950a23813a",
     "model": "manual"
   },
-  "Time saved": {
-    "revision": "2c1974fdbbf2f4e01fb90d9f1993fc9723db96c0211301d5e0cd338961ccc210",
-    "textHash": "75e20d189f1c5980136e37f5c4a5ad043e4dbb92c51c68a7c76e20a5b5731d26",
-    "model": "gemini-4-argon-medium"
-  },
   "Title": {
     "revision": "982c89b7db5f44102badfd23428230a7f73cd92a8688eb2bdb392272325814cc",
     "textHash": "08b17e433630742bc70022e9e0e1e11a91bd43383b33226afab9a5bdaf778bbf",
@@ -5528,11 +5478,6 @@
     "revision": "842c363199238bbe9c22a519a4a7591d83e381fd514f6a870b5d094da2dd03e8",
     "textHash": "eb540501fb3127bf2a14e8872361b25a6b1efba30b2fdacdb8f3dbbb3c6b3ce9",
     "model": "manual"
-  },
-  "Tokens & spend": {
-    "revision": "043725a2f45a3ca6f03a60fd1a5fecf7e3432fe7907136d6c54ea487b7d5b501",
-    "textHash": "33580fc6c4a0fb11f4f83ea9c029097a513a3a3cea37dcb35b2c9628ad1762aa",
-    "model": "gemini-4-argon-medium"
   },
   "Tools": {
     "revision": "acf8931be8920ede860d9e8a25180a34d413cebe2989f8dfe629a6631441421d",
@@ -5917,11 +5862,6 @@
   "Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.": {
     "revision": "6c56315684c82c309705768b091d6cebf4891fa7a4620c48e224a34b0053f6c6",
     "textHash": "38bcaf3a637ccb4d36130dac2f395fa2e6231db58051eda28f55383afc725a8d",
-    "model": "manual"
-  },
-  "Values marked with ~ are estimated from exact model API rates when an agent reports tokens without billing totals. Subscription plans may include this usage at no extra charge.": {
-    "revision": "f439c8d8421ab3f33eb47864d1891f1616ce0a1dc71934dcc9191ad5f4df4e22",
-    "textHash": "0fdffa9e760f94ad684248b755ef74592bea3b2f5873ad9b0243f8d66f2d6844",
     "model": "manual"
   },
   "Verified": {
@@ -6484,25 +6424,10 @@
     "textHash": "e477d1ab12b371a00a6830904648cffab05a335a35962b00f72e55a3a0f7d606",
     "model": "gemini-4-argon-medium"
   },
-  "{count} changes × {minutes} min": {
-    "revision": "c38ec6e9910a80063b8ab4f1569ab3f68dc10db36e3918d66374d7387914f37b",
-    "textHash": "be9d99f9c7d83c5eca521f738df0dde02114c7e0e75c1918f2ebf3103c4d948e",
-    "model": "gemini-4-argon-medium"
-  },
   "{count} of {limit}": {
     "revision": "b9a6a54e4585f23a749944d0b34b3080d498452f296db52cca4cbef358df0f97",
     "textHash": "e8506477ec016b5fc71b1bb0e78b779e95e770a574851ba6f7653ce43063ff99",
     "model": "gemini-4-argon-medium"
-  },
-  "{count} saved": {
-    "revision": "6442d123fb98ac0996e7780a898504a62bf71660617f104b9a198d79a0745916",
-    "textHash": "0f9e72e98b193cc81be699d4c5b05989dfd10280cd3590623413caf9246a20b5",
-    "model": "manual"
-  },
-  "{count} sent": {
-    "revision": "b78f92705f3b3533cfae12ef4b06f4bdb8fdf1c9e9e2a0db8785206520bbb8c4",
-    "textHash": "2c9853109ae9b20c139edbe376c82b16cda2b49b5a0c54870d04740c5cf0acc9",
-    "model": "manual"
   },
   "{current} of {total}": {
     "revision": "00fc34222006bdf526dd70b594d5ee4f18c39550768dc404ab759a34be5a8bf9",
@@ -6528,11 +6453,6 @@
     "revision": "933f3a56248ccc39a57b70ba9c413deb3ce8563871de3ebc2cb72294c3e63684",
     "textHash": "f450762a9c6eed28f10f50037695347110f75226931456d6df9dfecfbb9344f6",
     "model": "gemini-4-argon-medium"
-  },
-  "{input} in · {cached} cached · {output} out": {
-    "revision": "c5bb587db7655adadf5670fc9c27854680b965d98b3e7d122a53a961002d7f72",
-    "textHash": "5cedfeaec5ca538feb665b29354915d74df5206b4938cee20baaae79749a9704",
-    "model": "manual"
   },
   "{key} ({place}): {problems}": {
     "revision": "5d38eca73861b3da25cc3c2852c5b8a384bb07bc948168eaf5f8ca9d6ed6263e",
@@ -6573,16 +6493,6 @@
     "revision": "6cc7ee7660b702f3367751a4daea2f41c7cefb90c941323fd11272c8e3e37a73",
     "textHash": "2a3b90880ba5ebb95a65dfdfe2cfcfde180c5179fc4f80bd02760d295d4c60dd",
     "model": "gemini-4-argon-medium"
-  },
-  "{n} active day": {
-    "revision": "b5bcf4439a13038951a3a342e44320198dd98b63bb3f443492c7d534f9066bd2",
-    "textHash": "a336cd9e33da13825a97a62be2843ac9486d296a2b7993b5dc97b978c9fcb1b9",
-    "model": "manual"
-  },
-  "{n} active days": {
-    "revision": "12a01fb75df7705811a392b4c45635cb05dba862e7271ae025b58f846621867d",
-    "textHash": "a336cd9e33da13825a97a62be2843ac9486d296a2b7993b5dc97b978c9fcb1b9",
-    "model": "manual"
   },
   "{n} active task": {
     "revision": "6ea346c56026a5aa3550bc5f208710c34cd9fd5cf4fc635502aa853dd5e859d5",
@@ -6645,14 +6555,14 @@
     "model": "gemini-4-argon-medium"
   },
   "{n} comment": {
-    "revision": "785c55e5e72b41a20c0fbe8654b56bc6ee2bb06eb03b34c8b69de3f692dc31c3",
+    "revision": "32da39fc81fbba59fac736f3ba11925d0396cac8334fb04e1ae4066af509872b",
     "textHash": "c4fa3176f2dfe9d31223642e9ff84884073920cdf09db6bcec6cf01b20ab1e5a",
-    "model": "codex-reviewed"
+    "model": "gemini-4-argon-medium"
   },
   "{n} comments": {
-    "revision": "248c35e3742553ff6e2627a8e787dd682ab30326280e697124f15a0444333ded",
+    "revision": "6acf0d397155d47226d68eec5f1c19cfa9bc7fefbd34981efee75a624c1ef848",
     "textHash": "c4fa3176f2dfe9d31223642e9ff84884073920cdf09db6bcec6cf01b20ab1e5a",
-    "model": "codex-reviewed"
+    "model": "gemini-4-argon-medium"
   },
   "{n} compilation error": {
     "revision": "5218b9a79e9e7772b16ab571fa79d82922f44bf570b6872d9e42331007b55645",
@@ -6900,34 +6810,24 @@
     "model": "gemini-4-argon-medium"
   },
   "{n} task": {
-    "revision": "6563d7bffe57567c87f6c2181ef3fa91604be6f62879d643449fe3c548c37719",
+    "revision": "7deb4bd68fa96a790922c35d3faf8b20d5743d47b110cfda5b48d6c77a7ae6ad",
     "textHash": "44c9de58447c05804c6b0ac6e9103b936edf776481de58a8ce7e890ac53d6319",
-    "model": "codex"
+    "model": "gemini-4-argon-medium"
   },
   "{n} task failed.": {
     "revision": "e3661f93f6c18f1954911b236c5b84fca3c925dc9e7c6296bac30cd45f9c1d76",
     "textHash": "479d227a0855462735b77b16959ba5410d35bf8cb67718b326c69e59a37e3ef2",
     "model": "codex"
   },
-  "{n} task started": {
-    "revision": "2ae19da41d8a850e1e5b1bfcaa29c05880c5ffd39403a0d965944442edd93560",
-    "textHash": "70862ab0ce8c0529f6ed09c747be8476051771a419562f6010ba5a465d684743",
-    "model": "manual"
-  },
   "{n} tasks": {
-    "revision": "1b3293768a43c7b3e45fa1fdf9c28e21970a9692aed04f85caa63e80a08bff23",
+    "revision": "65c6335e53cedc133e6874239b523b2675a6d56766e6ff6eaa15575dfb92a7fb",
     "textHash": "44c9de58447c05804c6b0ac6e9103b936edf776481de58a8ce7e890ac53d6319",
-    "model": "codex"
+    "model": "gemini-4-argon-medium"
   },
   "{n} tasks failed.": {
     "revision": "c34046695cc93bfc93a84e2224f92a435dc5ab0e818c66e11333ea0b2775fef8",
     "textHash": "479d227a0855462735b77b16959ba5410d35bf8cb67718b326c69e59a37e3ef2",
     "model": "codex"
-  },
-  "{n} tasks started": {
-    "revision": "503575a88d34e5920454b8c28162414ceeb58991ca676cf7176906e75ab0a523",
-    "textHash": "70862ab0ce8c0529f6ed09c747be8476051771a419562f6010ba5a465d684743",
-    "model": "manual"
   },
   "{n} undone": {
     "revision": "23bbcd9167f51a33139b62420a6348615ed903d45e292b5e8ed1e28c2fc69ae4",
@@ -6989,11 +6889,6 @@
     "textHash": "4b9a1f6b063f0c6bcc00304c12a79c2298b40859de47d8ba93b3237e19c37fd7",
     "model": "gemini-4-argon-medium"
   },
-  "{rate}% accepted": {
-    "revision": "be98424eacb62c7e700e80e89a14e3e0ccd9804e574b9fe122b81319937068d4",
-    "textHash": "33e77ce021b900aeefa4e4fc9b4748440dfacd1ebcb9330b4a8930308f7d6215",
-    "model": "manual"
-  },
   "{selected} / {total} locations selected": {
     "revision": "94c0eed73cf274e066af164f64e278bb2eb9b5ee0b15f644203504e07563ddba",
     "textHash": "a3fb98b58c58faae9d013fede9a13c9508c29b84188078217d36f23043d91206",
@@ -7024,20 +6919,10 @@
     "textHash": "9d444af5658ec44871b4dfab1e5e15e6d88d86aab41f444fb984840bcde8674f",
     "model": "gemini-4-argon-medium"
   },
-  "{tokens} cache write": {
-    "revision": "f49d2a01b6b6f138420719f62c203329ac6a3d618f99533723c3b26795c15c49",
-    "textHash": "bf9e891da97eed80f6aa6134b70318696e2de28b1529939abaf9fd7117581b42",
-    "model": "manual"
-  },
   "{tokens} tokens": {
     "revision": "4b76834b9bf8542f997b34e25f18a1aba819bd31063637f94f9f7989e00665a1",
     "textHash": "5d00beb6fbd5ba4c89cbd108ce81637550c22cc7319389db9a4ccfd0b1a9fcbc",
     "model": "gemini-4-argon-medium"
-  },
-  "{tokens} unpriced": {
-    "revision": "fe79a92a32bf77518592b6bb509fccd8ee019746ee1a7c6e0008c6adfd36d60e",
-    "textHash": "ab04292e1c9c56e209eba14af195966f1bfe1dfc224a1c890ded9946495cb353",
-    "model": "manual"
   },
   "{used}% used": {
     "revision": "4aea5815630ef0edefdec055854ab78280b8b3fa7dfba78b071883d3b0004f28",

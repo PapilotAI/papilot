@@ -8,6 +8,9 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { Store } from '../src/server/store.ts';
 import { Workspace } from '../src/server/workspace.ts';
+import { Manuscripts } from '../src/server/manuscript.ts';
+import { buildApp, gitQueue } from '../src/server/app.ts';
+import type { Changes } from '../src/server/changes.ts';
 import { ClaudeAgent, GlmAgent, type AgentRuntime } from '../src/server/agents.ts';
 import {
   CodexUsageTracker,
@@ -554,6 +557,45 @@ test('the upgrade backfill adds unsent decisions of a later review round without
     assert.equal(report.totals.commented, 1 + 1);
     store.close();
   } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('undoing a revert in Changes restores the acceptances the revert removed', async () => {
+  const dir = tempDir('papilot-activity-changes-');
+  const store = new Store(path.join(dir, 'papilot.sqlite'));
+  class Agent extends EventEmitter {
+    ready = false;
+    async request() { return {}; }
+    start = async () => {}; respond() {} reject() {} close() {}
+  }
+  const workspace = new Workspace(store, new Agent() as unknown as AgentRuntime, async () => ({ url: 'http://unused', token: '', get: async () => ({}), post: async () => ({}) }) as any);
+  // The engine side of Changes is stubbed: each action reports what it applied.
+  const changes = {
+    act: async (_project: string, _path: string, _csrf: string, action: string, _round: number, ids: string[], applied: (info: { base: string; signatures: string[]; revertId?: string }) => void) => {
+      applied({ base: 'base-1', signatures: ids, ...(action === 'revert' ? { revertId: 'revert-1' } : {}) });
+      return { undo: action === 'revert' ? { id: 'revert-1' } : null };
+    },
+    undo: async () => ({}),
+  } as unknown as Changes;
+  store.saveProject({ id: 'paper', name: 'Paper', path: dir, createdAt: 1 });
+  const app = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts: new Manuscripts(), changes, csrf: 'csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => ({}) as any });
+  const post = async (route: string, payload: unknown) => {
+    const response = await app.inject({ method: 'POST', url: `/review/paper/api/changes/${route}`, headers: { host: '127.0.0.1:7274', origin: 'http://127.0.0.1:7274', 'x-review-token': 'csrf' }, payload: payload as any });
+    assert.equal(response.statusCode, 200, response.body);
+  };
+  const totals = () => buildActivityReport(store, { tz: 'UTC', range: 'all' }).totals;
+  try {
+    await post('decide', { action: 'accept', changes: ['c1', 'c2'], round: 1 });
+    assert.deepEqual([totals().accepted, totals().rejected], [2, 0]);
+    await post('decide', { action: 'reject', changes: ['c1', 'c2'], round: 1 });
+    assert.deepEqual([totals().accepted, totals().rejected], [0, 2], 'Reverting staged changes replaces their acceptances with a rejection');
+    await post('undo', { id: 'revert-1' });
+    assert.deepEqual([totals().accepted, totals().rejected, totals().undone], [2, 0, 2], 'Undoing the revert brings the acceptances back');
+  } finally {
+    await app.close();
+    workspace.close();
+    store.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

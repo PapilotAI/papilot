@@ -6,7 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
-- Add **Settings → Statistics**, which shows what Papilot has done for you across all papers or per paper. Big figures for estimated time saved, accepted and rejected changes, and agent working time sit above an activity calendar with active days and streaks that pages back through history. Details open on demand: review decisions and annotations, token usage and provider-reported or API-equivalent spend, agents and models, a weekday-by-hour heatmap of active hours, and a daily breakdown. **Share** turns the figures and recent activity into an image to save or copy. Activity records are stored locally in SQLite, backfilled from existing workspace history on upgrade, and preserved when tasks or papers are removed.
+- Add **Settings → Statistics**, which shows what Papilot has done for you across all papers or per paper. Big figures for accepted and rejected changes, agent working time, and tasks started sit above an activity calendar with active days and streaks that pages back through history. Cards follow with your acceptance rate, token usage and provider-reported or API-equivalent spend, a weekday-by-hour heatmap of active hours, and agents and models. **Share** turns the figures and recent activity into an image to save or copy. Activity records are stored locally in SQLite, backfilled from existing workspace history on upgrade, and preserved when tasks or papers are removed.
 
 ## [0.13.0] - 2026-11-22
 

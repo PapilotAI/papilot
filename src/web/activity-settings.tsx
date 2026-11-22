@@ -24,10 +24,6 @@ import './activity-settings.css';
 
 export type LoadActivity = (params: { tz: string; range: ActivityRange; projectId?: string }, signal: AbortSignal) => Promise<ActivityReport>;
 
-// Time saved counts each accepted change as the minutes it would take by hand:
-// finding the passage in the source, rewriting it, rebuilding and checking the PDF.
-const MINUTES_PER_CHANGE = 2;
-
 const EMPTY_TOKENS: ActivityTokenTotals = { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 };
 
 const EMPTY_TOTALS: ActivityTotals = {
@@ -160,13 +156,10 @@ function formatUsd(value: number | null, prefix = ''): string {
   return `${prefix}$${value.toLocaleString(locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function formatDateLabel(date: string, short = false): string {
+function formatDateLabel(date: string): string {
   const [y, m, d] = date.split('-').map(Number);
   if (!y || !m || !d) return date;
-  const utc = new Date(Date.UTC(y, m - 1, d, 12));
-  return new Intl.DateTimeFormat(locale(), short
-    ? { month: 'short', day: 'numeric', timeZone: 'UTC' }
-    : { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short', timeZone: 'UTC' }).format(utc);
+  return new Intl.DateTimeFormat(locale(), { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, d, 12)));
 }
 
 function hourLabel(hour: number): string {
@@ -182,21 +175,6 @@ function peakHourIndex(hours: number[]): number | null {
     }
   }
   return best >= 0 ? best : null;
-}
-
-function hasAnyActivity(day: ActivityDay): boolean {
-  return day.tokens.total > 0 ||
-    day.tasksStarted > 0 ||
-    day.turns > 0 ||
-    day.accepted > 0 ||
-    day.rejected > 0 ||
-    day.commented > 0 ||
-    day.undone > 0 ||
-    day.tasksApplied > 0 ||
-    day.tasksCommitted > 0 ||
-    day.gitCommits > 0 ||
-    day.annotationsCreated > 0 ||
-    day.annotationsSent > 0;
 }
 
 function spendPrefix(figures: Pick<ActivityMetrics, 'costUsd' | 'reportedCostUsd' | 'estimatedCostUsd'>): string {
@@ -218,19 +196,23 @@ function daysFigure(count: number, label: string) {
   return figure(formatExactNumber(count), tn(count, '{n} day', '{n} days', { n: MARK }), label);
 }
 
+function tasksFigure(count: number, label: string) {
+  return figure(formatExactNumber(count), tn(count, '{n} task', '{n} tasks', { n: MARK }), label);
+}
+
 function changesFigure(count: number, label: string) {
   return figure(formatExactNumber(count), tn(count, '{n} change', '{n} changes', { n: MARK }), label);
 }
 
 // Minutes below an hour; hours with one decimal below ten, whole hours above.
-function durationFigure(ms: number, label: string, estimate = false) {
-  const minutes = ms / 60_000, prefix = estimate && ms > 0 ? '~' : '';
+function durationFigure(ms: number, label: string) {
+  const minutes = ms / 60_000;
   if (minutes < 60) {
     const count = Math.round(minutes);
-    return figure(prefix + formatExactNumber(count), tn(count, '{n} minute', '{n} minutes', { n: MARK }), label);
+    return figure(formatExactNumber(count), tn(count, '{n} minute', '{n} minutes', { n: MARK }), label);
   }
   const hours = minutes / 60, count = hours < 10 ? Math.round(hours * 10) / 10 : Math.round(hours);
-  return figure(prefix + count.toLocaleString(locale()), tn(count, '{n} hour', '{n} hours', { n: MARK }), label);
+  return figure(count.toLocaleString(locale()), tn(count, '{n} hour', '{n} hours', { n: MARK }), label);
 }
 
 function Figure({ shown }: { shown: ShareFigure }) {
@@ -249,10 +231,11 @@ function Stat({ shown, className }: { shown: ShareFigure; className?: string }) 
   </div>;
 }
 
-function Fact({ label, children, note }: { label: string; children: ReactNode; note?: string }) {
-  return <div className="activity-fact">
-    <dt>{label}</dt>
-    <dd>{children}{note && <span className="activity-fact-note">{note}</span>}</dd>
+// A row of a card's legend: an optional colour key, a label and its value.
+function LegendRow({ label, value, part }: { label: string; value: string; part?: string }) {
+  return <div className="activity-legend-row">
+    <dt>{part && <i className="activity-key" data-part={part} aria-hidden="true"/>}{label}</dt>
+    <dd>{value}</dd>
   </div>;
 }
 
@@ -359,7 +342,9 @@ function placeTip(card: HTMLElement | null, cell: Element, title: string[], deta
   const box = card.getBoundingClientRect();
   const rect = cell.getBoundingClientRect();
   const x = rect.left + rect.width / 2 - box.left;
-  return { x, y: rect.top - box.top, align: x < box.width * 0.2 ? 'start' : x > box.width * 0.8 ? 'end' : 'center', title, detail };
+  // The tip is at most two thirds of the card wide (CSS), so anchoring it by
+  // thirds keeps it inside the card wherever the cell is.
+  return { x, y: rect.top - box.top, align: x < box.width / 3 ? 'start' : x > (box.width * 2) / 3 ? 'end' : 'center', title, detail };
 }
 
 function HeatTooltip({ tip }: { tip: HeatTip | null }) {
@@ -393,7 +378,8 @@ function ActivityCalendar({ calendar, today, from, children }: { calendar: Activ
   useEffect(() => {
     const grid = gridRef.current;
     if (!grid) return;
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    // A tip placed for the old layout would point at the wrong cell.
+    const observer = new ResizeObserver(([entry]) => { setWidth(entry.contentRect.width); setTip(null); });
     observer.observe(grid);
     return () => observer.disconnect();
   }, []);
@@ -567,15 +553,29 @@ function HourHeatmap({ days, summary }: { days: ActivityDay[]; summary: string }
   </div>;
 }
 
-function Detail({ title, headline, children }: { title: string; headline: ReactNode; children: ReactNode }) {
-  return <details className="activity-detail">
-    <summary>
-      <Icon name="chevronRight" size={14}/>
-      <span className="activity-detail-title">{title}</span>
-      <span className="activity-detail-headline">{headline}</span>
-    </summary>
-    <div className="activity-detail-body">{children}</div>
-  </details>;
+function Card({ title, headline, wide, children }: { title: string; headline?: ReactNode; wide?: boolean; children: ReactNode }) {
+  return <section className={wide ? 'activity-card wide' : 'activity-card'} aria-label={title}>
+    <header className="activity-card-head">
+      <h3>{title}</h3>
+      {headline && <span className="activity-card-headline">{headline}</span>}
+    </header>
+    {children}
+  </section>;
+}
+
+// Kept against rejected changes: the accepted share in green, the rest in red.
+function AcceptanceRing({ accepted, rejected }: { accepted: number; rejected: number }) {
+  const total = accepted + rejected, rate = total ? accepted / total : 0, circumference = 2 * Math.PI * 42;
+  return <figure className="activity-ring">
+    <div className="activity-ring-chart">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <circle className={total ? 'activity-ring-reject' : 'activity-ring-track'} cx="50" cy="50" r="42"/>
+        {total > 0 && <circle className="activity-ring-accept" cx="50" cy="50" r="42" strokeDasharray={`${rate * circumference} ${circumference}`}/>}
+      </svg>
+      <strong>{total ? `${Math.round(rate * 100)}%` : '—'}</strong>
+    </div>
+    <figcaption>{t('Acceptance rate')}</figcaption>
+  </figure>;
 }
 
 function ShareBar({ value, max }: { value: number; max: number }) {
@@ -586,59 +586,6 @@ function AgentAvatar({ agent }: { agent: AgentId }) {
   if (agent === 'papilot') return <PapilotMark size={15}/>;
   if (agent === 'collaboration') return <Icon name="workflow" size={15}/>;
   return <BrandIcon name={agent} size={15}/>;
-}
-
-function DayRows({ days }: { days: ActivityDay[] }) {
-  return <>
-    {days.map(day => {
-      const peak = peakHourIndex(day.hours);
-      return <tr key={day.date}>
-        <th scope="row">
-          {formatDateLabel(day.date, true)}
-          <span className="activity-cell-sub">{day.date}</span>
-        </th>
-        <td className="num" data-label={t('Tokens')} title={formatExactNumber(day.tokens.total)}>
-          {formatCompactTokens(day.tokens.total)}
-          {day.tokens.total > 0 && <span className="activity-cell-sub">
-            {t('{input} in · {cached} cached · {output} out', {
-              input: formatCompactTokens(day.tokens.input),
-              cached: formatCompactTokens(day.tokens.cached),
-              output: formatCompactTokens(day.tokens.output),
-            })}
-            {day.tokens.cacheWrite > 0 ? ` · ${t('{tokens} cache write', { tokens: formatCompactTokens(day.tokens.cacheWrite) })}` : ''}
-          </span>}
-        </td>
-        <td className="num" data-label={t('Spend')}>
-          {formatUsd(day.costUsd, spendPrefix(day))}
-          {day.unpricedTokens > 0 && <span className="activity-cell-sub">{t('{tokens} unpriced', { tokens: formatCompactTokens(day.unpricedTokens) })}</span>}
-        </td>
-        <td className="num" data-label={t('Agent runs')}>
-          {formatExactNumber(day.turns)}
-          {day.tasksStarted > 0 && <span className="activity-cell-sub">{tn(day.tasksStarted, '{n} task started', '{n} tasks started')}</span>}
-        </td>
-        <td className="num" data-label={t('Accept / Reject')}>
-          <span className="activity-decision-pair">
-            <span className="activity-kpi-accept">+{formatExactNumber(day.accepted)}</span>
-            <span aria-hidden="true">/</span>
-            <span className="activity-kpi-reject">−{formatExactNumber(day.rejected)}</span>
-          </span>
-          {(day.commented > 0 || day.tasksApplied + day.tasksCommitted > 0) && <span className="activity-cell-sub">
-            {[
-              day.commented > 0 ? tn(day.commented, '{n} comment', '{n} comments') : '',
-              day.tasksApplied + day.tasksCommitted > 0 ? t('{count} saved', { count: day.tasksApplied + day.tasksCommitted }) : '',
-            ].filter(Boolean).join(' · ')}
-          </span>}
-        </td>
-        <td className="num" data-label={t('Annotations')}>
-          {formatExactNumber(day.annotationsCreated)}
-          {day.annotationsSent > 0 && <span className="activity-cell-sub">{t('{count} sent', { count: formatExactNumber(day.annotationsSent) })}</span>}
-        </td>
-        <td className="num activity-peak-cell" data-label={t('Peak hour')}>
-          {peak !== null ? `${hourLabel(peak)}–${hourLabel((peak + 1) % 24)}` : '—'}
-        </td>
-      </tr>;
-    })}
-  </>;
 }
 
 export function ActivitySettings({ load, initialProjectId }: { load: LoadActivity; initialProjectId?: string }) {
@@ -682,7 +629,6 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
   const totals = current.totals;
   const language = locale();
 
-  const activeDaysDesc = useMemo(() => [...current.days].filter(hasAnyActivity).reverse(), [current.days]);
   const peakHour = useMemo(() => peakHourIndex(current.hours), [current.hours]);
   const peakWindow = peakHour !== null ? `${hourLabel(peakHour)}–${hourLabel((peakHour + 1) % 24)}` : null;
 
@@ -710,13 +656,11 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
   const decisionTotal = totals.accepted + totals.rejected;
   const acceptRate = decisionTotal > 0 ? Math.round((totals.accepted / decisionTotal) * 100) : null;
   const emptyWorkspace = totals.activeDays === 0 && totals.tokens.total === 0 && totals.turns === 0 && decisionTotal === 0 && totals.annotationsCreated === 0;
-  const savedMs = totals.accepted * MINUTES_PER_CHANGE * 60_000;
-
   const insights = [
-    durationFigure(savedMs, t('Time saved'), true),
     changesFigure(totals.accepted, t('Accepted changes')),
     changesFigure(totals.rejected, t('Rejected changes')),
     durationFigure(totals.agentMs, t('Agent time')),
+    tasksFigure(totals.tasksStarted, t('Tasks started')),
   ];
   const calendarStats = [
     daysFigure(totals.activeDays, t('Active days')),
@@ -730,11 +674,11 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
     const { end, first } = calendarWindow(current.today, weekStart, weeks, 0);
     const byDay = new Map(current.calendar.map(day => [dayNumber(day.date), day]));
     const level = heatLevels(current.calendar.map(day => day.actions));
-    const [saved, ...figures] = insights;
+    const [accepted, ...figures] = insights;
     return {
       period: rangeLabels[current.range],
       date: formatDateLabel(current.today),
-      hero: saved,
+      hero: accepted,
       figures: [...figures, calendarStats[0]],
       streaks: calendarStats.slice(1),
       weekdays: Array.from({ length: 7 }, (_, row) => weekdayName((weekStart + row) % 7, 'narrow')),
@@ -745,7 +689,7 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
       })),
       less: t('Less'),
       more: t('More'),
-      alt: [saved, ...figures, ...calendarStats].map(shown => `${shown.label} ${figureText(shown)}`).join(', '),
+      alt: [accepted, ...figures, ...calendarStats].map(shown => `${shown.label} ${figureText(shown)}`).join(', '),
       fileName: `papilot-${current.today}.png`,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -757,23 +701,8 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
     { id: 'cacheWrite', label: t('Cache write'), value: totals.tokens.cacheWrite },
     { id: 'output', label: t('Output'), value: totals.tokens.output },
   ].filter(part => part.value > 0);
-  const topAgent = current.agents[0];
-  const maxAgentTokens = Math.max(0, ...current.agents.map(entry => entry.tokens.total));
-  const maxModelTokens = Math.max(0, ...current.models.map(entry => entry.tokens.total));
-  const primaryDays = activeDaysDesc.slice(0, 14);
-  const olderDays = activeDaysDesc.slice(14);
-  const tableHead = <thead>
-    <tr>
-      <th scope="col">{t('Date')}</th>
-      <th scope="col" className="num">{t('Tokens')}</th>
-      <th scope="col" className="num">{t('Spend')}</th>
-      <th scope="col" className="num">{t('Agent runs')}</th>
-      <th scope="col" className="num">{t('Accept / Reject')}</th>
-      <th scope="col" className="num">{t('Annotations')}</th>
-      <th scope="col" className="num">{t('Peak hour')}</th>
-    </tr>
-  </thead>;
-
+  const maxAgent = Math.max(0, ...current.agents.map(entry => entry.tokens.total || entry.turns));
+  const maxModel = Math.max(0, ...current.models.map(entry => entry.tokens.total || entry.turns));
   return <div ref={pageRef} className="settings-page activity-settings">
     <div className="activity-toolbar">
       <div className="activity-range-group" role="group" aria-label={t('Time range')}>
@@ -844,139 +773,69 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
       </dl>
     </ActivityCalendar>
 
-    <div className="activity-details">
-      <Detail title={t('Reviews & notes')} headline={acceptRate !== null ? t('{rate}% accepted', { rate: acceptRate }) : t('No changes decided yet')}>
-        <dl className="activity-facts">
-          <Fact label={t('Accepted changes')}>{formatExactNumber(totals.accepted)}</Fact>
-          <Fact label={t('Rejected changes')}>{formatExactNumber(totals.rejected)}</Fact>
-          <Fact label={t('Review comments')}>{formatExactNumber(totals.commented)}</Fact>
-          <Fact label={t('Undone')}>{formatExactNumber(totals.undone)}</Fact>
-          <Fact label={t('Saved tasks')}>{formatExactNumber(totals.tasksApplied + totals.tasksCommitted)}</Fact>
-          <Fact label={t('Git commits')}>{formatExactNumber(totals.gitCommits)}</Fact>
-          <Fact label={t('Annotations')}>{formatExactNumber(totals.annotationsCreated)}</Fact>
-          <Fact label={t('Sent to tasks')}>{formatExactNumber(totals.annotationsSent)}</Fact>
-          <Fact label={t('Time saved')} note={t('{count} changes × {minutes} min', { count: formatExactNumber(totals.accepted), minutes: MINUTES_PER_CHANGE })}>{figureText(insights[0])}</Fact>
-        </dl>
-      </Detail>
+    <div className="activity-cards">
+      <Card title={t('Reviews & notes')}>
+        <div className="activity-review">
+          <AcceptanceRing accepted={totals.accepted} rejected={totals.rejected}/>
+          <dl className="activity-legend">
+            <LegendRow label={t('Review comments')} value={formatExactNumber(totals.commented)}/>
+            <LegendRow label={t('Undone')} value={formatExactNumber(totals.undone)}/>
+            <LegendRow label={t('Annotations')} value={formatExactNumber(totals.annotationsCreated)}/>
+            <LegendRow label={t('Sent to tasks')} value={formatExactNumber(totals.annotationsSent)}/>
+          </dl>
+        </div>
+      </Card>
 
-      <Detail title={t('Tokens & spend')} headline={<>
-        <span>{formatCompactTokens(totals.tokens.total)}</span>
-        <span>{formatUsd(totals.costUsd, spendPrefix(totals))}</span>
-      </>}>
-        {tokenParts.length > 0 && <div className="activity-token-bar" aria-hidden="true">
+      <Card title={t('Tokens')} headline={<span title={spendPrefix(totals) ? t('API-equivalent model rates') : undefined}>{formatUsd(totals.costUsd, spendPrefix(totals))}</span>}>
+        <div className="activity-token-total">{formatCompactTokens(totals.tokens.total)}</div>
+        <div className="activity-token-bar" aria-hidden="true">
           {tokenParts.map(part => <span key={part.id} data-part={part.id} style={{ flexGrow: part.value }}/>)}
-        </div>}
-        <dl className="activity-facts">
-          {tokenParts.map(part => <Fact key={part.id} label={part.label}>
-            <i className="activity-token-key" data-part={part.id} aria-hidden="true"/>{formatCompactTokens(part.value)}
-          </Fact>)}
-          {totals.tokens.reasoning > 0 && <Fact label={t('Reasoning')}>{formatCompactTokens(totals.tokens.reasoning)}</Fact>}
-          <Fact label={t('Provider-reported spend')}>{formatUsd(totals.reportedCostUsd)}</Fact>
-          <Fact label={t('API-equivalent model rates')} note={totals.unpricedTokens > 0 ? t('{tokens} unpriced', { tokens: formatCompactTokens(totals.unpricedTokens) }) : undefined}>
-            {formatUsd(totals.estimatedCostUsd, totals.estimatedCostUsd > 0 ? '~' : '')}
-          </Fact>
+        </div>
+        <dl className="activity-legend">
+          {tokenParts.map(part => <LegendRow key={part.id} part={part.id} label={part.label} value={formatCompactTokens(part.value)}/>)}
         </dl>
-        <p className="activity-footnote">
-          {t('Values marked with ~ are estimated from exact model API rates when an agent reports tokens without billing totals. Subscription plans may include this usage at no extra charge.')}
-        </p>
-      </Detail>
+      </Card>
 
-      {(current.agents.length > 0 || current.models.length > 0) && (
-        <Detail title={t('Agents & models')} headline={topAgent ? <span className="activity-detail-agent"><AgentAvatar agent={topAgent.agent}/>{agentLabel(topAgent.agent)}</span> : null}>
-          <div className="activity-breakdown-grid">
-            {current.agents.length > 0 && (
-              <div className="activity-list-card">
-                <h4>{t('By agent')}</h4>
-                <ul className="activity-breakdown-list" role="list">
-                  {current.agents.map((entry: ActivityAgentSummary) => (
-                    <li key={entry.agent} className="activity-breakdown-row">
-                      <div className="activity-breakdown-name">
-                        <AgentAvatar agent={entry.agent}/>
-                        <span className="activity-truncate" title={agentLabel(entry.agent)}>{agentLabel(entry.agent)}</span>
-                      </div>
-                      <span className="activity-breakdown-stat">
-                        {entry.tokens.total > 0 ? formatCompactTokens(entry.tokens.total) : tn(entry.turns, '{n} run', '{n} runs')}
-                      </span>
-                      <ShareBar value={entry.tokens.total} max={maxAgentTokens}/>
-                      <span className="activity-breakdown-sub">
-                        {[
-                          tn(entry.turns, '{n} run', '{n} runs'),
-                          entry.tasksStarted > 0 ? tn(entry.tasksStarted, '{n} task started', '{n} tasks started') : '',
-                          entry.costUsd !== null ? formatUsd(entry.costUsd, spendPrefix(entry)) : '',
-                        ].filter(Boolean).join(' · ')}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {current.models.length > 0 && (
-              <div className="activity-list-card">
-                <h4>{t('By model')}</h4>
-                <ul className="activity-breakdown-list" role="list">
-                  {current.models.map((entry: ActivityModelSummary) => (
-                    <li key={`${entry.agent}:${entry.model}`} className="activity-breakdown-row">
-                      <div className="activity-breakdown-name">
-                        <AgentAvatar agent={entry.agent}/>
-                        <span className="activity-truncate" title={entry.model}>{entry.model}</span>
-                      </div>
-                      <span className="activity-breakdown-stat">
-                        {entry.tokens.total > 0 ? formatCompactTokens(entry.tokens.total) : tn(entry.turns, '{n} run', '{n} runs')}
-                      </span>
-                      <ShareBar value={entry.tokens.total} max={maxModelTokens}/>
-                      <span className="activity-breakdown-sub">
-                        {[
-                          agentLabel(entry.agent),
-                          tn(entry.turns, '{n} run', '{n} runs'),
-                          entry.costUsd !== null ? formatUsd(entry.costUsd, entry.costSource === 'estimated' ? '~' : '') : '',
-                        ].filter(Boolean).join(' · ')}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </Detail>
-      )}
-
-      <Detail title={t('Active hours')} headline={peakWindow ? t('Peak {window}', { window: peakWindow }) : null}>
-        <p className="activity-detail-caption">{t('Local time ({timezone})', { timezone: current.timezone })}</p>
+      <Card wide title={t('Active hours')} headline={peakWindow ? t('Peak {window}', { window: peakWindow }) : null}>
         <HourHeatmap
           days={current.days}
           summary={peakWindow ? t('Active hours, peak {window}', { window: peakWindow }) : t('Active hours')}
         />
-      </Detail>
+      </Card>
 
-      {activeDaysDesc.length > 0 && (
-        <Detail title={t('Daily breakdown')} headline={tn(totals.activeDays, '{n} active day', '{n} active days')}>
-          <div className="activity-table-container">
-            <table className="activity-table">
-              <caption className="sr-only">{t('Daily breakdown')}</caption>
-              {tableHead}
-              <tbody>
-                <DayRows days={primaryDays}/>
-              </tbody>
-            </table>
+      {(current.agents.length > 0 || current.models.length > 0) && (
+        <Card wide title={t('Agents & models')}>
+          <div className="activity-rankings">
+            {current.agents.length > 0 && (
+              <ul className="activity-ranking" role="list" aria-label={t('By agent')}>
+                {current.agents.map((entry: ActivityAgentSummary) => (
+                  <li key={entry.agent} className="activity-ranking-row">
+                    <span className="activity-ranking-name">
+                      <AgentAvatar agent={entry.agent}/>
+                      <span className="activity-truncate" title={agentLabel(entry.agent)}>{agentLabel(entry.agent)}</span>
+                    </span>
+                    <span className="activity-ranking-value">{entry.tokens.total > 0 ? formatCompactTokens(entry.tokens.total) : tn(entry.turns, '{n} run', '{n} runs')}</span>
+                    <ShareBar value={entry.tokens.total || entry.turns} max={maxAgent}/>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {current.models.length > 0 && (
+              <ul className="activity-ranking" role="list" aria-label={t('By model')}>
+                {current.models.map((entry: ActivityModelSummary) => (
+                  <li key={`${entry.agent}:${entry.model}`} className="activity-ranking-row">
+                    <span className="activity-ranking-name">
+                      <AgentAvatar agent={entry.agent}/>
+                      <span className="activity-truncate" title={entry.model}>{entry.model}</span>
+                    </span>
+                    <span className="activity-ranking-value">{entry.tokens.total > 0 ? formatCompactTokens(entry.tokens.total) : tn(entry.turns, '{n} run', '{n} runs')}</span>
+                    <ShareBar value={entry.tokens.total || entry.turns} max={maxModel}/>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          {olderDays.length > 0 && (
-            <details className="activity-more-days">
-              <summary>
-                <Icon name="chevronDown" size={14}/>
-                <span>{tn(olderDays.length, 'Show {n} earlier active day', 'Show {n} earlier active days')}</span>
-              </summary>
-              <div className="activity-table-container">
-                <table className="activity-table">
-                  <caption className="sr-only">{t('Earlier active days')}</caption>
-                  {tableHead}
-                  <tbody>
-                    <DayRows days={olderDays}/>
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          )}
-        </Detail>
+        </Card>
       )}
     </div>
 

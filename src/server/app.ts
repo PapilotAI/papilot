@@ -1,5 +1,5 @@
 import { PaperTools } from './paper-tools.ts';
-import { buildActivityReport } from './activity.ts';
+import { buildActivityReport, type ActivityEventRow } from './activity.ts';
 import { canonicalGroup, isNoteGroup, regroupAnnotation, sameAnnotationGroup } from '../note-groups.ts';
 import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
 import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validRoutes, taskFinished, type InFlightMark } from '../shared.ts';
@@ -1303,13 +1303,15 @@ export async function buildApp(options: AppOptions) {
         } else if (action === 'unstage') {
           for (const sig of applied.signatures) store.clearActivity(`decision:changes:${project.id}:${applied.base}:${sig}`);
         } else if (action === 'revert') {
-          for (const sig of applied.signatures) store.clearActivity(`decision:changes:${project.id}:${applied.base}:${sig}`);
+          // The revert keeps the acceptances it removes, to restore them if it is undone.
+          const base = applied.base;
+          const restores = applied.signatures.flatMap(sig => store.clearActivity(`decision:changes:${project.id}:${base}:${sig}`) ?? []);
           store.recordActivity({
             key: `decision:changes:${project.id}:${String(applied.revertId || result.undo?.id || randomUUID())}`,
             at: Date.now(),
             kind: 'review_decision',
             projectId: project.id,
-            data: { action: 'reject', count: Math.max(1, applied.signatures.length), source: 'changes', projectName: project.name },
+            data: { action: 'reject', count: Math.max(1, applied.signatures.length), source: 'changes', projectName: project.name, ...(restores.length ? { restores } : {}) },
           });
         }
       }
@@ -1322,7 +1324,12 @@ export async function buildApp(options: AppOptions) {
     const project = store.project(request.params.projectId), id = string((request.body as any)?.id, 'Revert ID', 80);
     return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
       const result = await changes.undo(project.id, project.path, options.csrf, id);
-      store.undoActivity(`decision:changes:${project.id}:${id}`);
+      const key = `decision:changes:${project.id}:${id}`, revert = store.activityEvent(key);
+      store.undoActivity(key);
+      // Undoing a revert stages its changes again, and with them their acceptances.
+      for (const event of Array.isArray(revert?.data.restores) ? revert.data.restores as ActivityEventRow[] : []) {
+        store.recordActivity({ key: event.key, at: event.at, kind: event.kind, projectId: event.projectId, taskId: event.taskId, agent: event.agent, model: event.model, data: event.data }, true);
+      }
       return result;
     }));
   });
