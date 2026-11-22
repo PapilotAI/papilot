@@ -242,6 +242,7 @@
       </div>
     </div>
     <p class="hero-note">
+      <a class="hero-overleaf" href="#overleaf"><i class="leaf" aria-hidden="true"></i><span lang="en">Live sync with Overleaf</span><span lang="zh-CN">与 Overleaf 实时同步</span></a>
       <a class="hero-universe" href="https://papilot.ai/universe/"><span lang="en">Browse LaTeX templates in Universe</span><span lang="zh-CN">在 Universe 浏览 LaTeX 模板</span></a>
       <a class="hero-star" href="https://github.com/PapilotAI/papilot"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01Z"/></svg><span lang="en">Star on GitHub</span><span lang="zh-CN">在 GitHub 点 Star</span></a>
       <span lang="en">Version {{version}} · Free and open source · <a href="https://github.com/PapilotAI/papilot/blob/main/LICENSE">MIT License</a></span><span lang="zh-CN">版本 {{version}} · 免费开源 · <a href="https://github.com/PapilotAI/papilot/blob/main/LICENSE">MIT 许可证</a></span>
@@ -278,102 +279,29 @@
   </div>
 </section>
 
-<!-- Three ways to work on a LaTeX paper, each drawn as a small window: the
-     two older ways side by side, Papilot's on a wide row of its own below,
-     drawn as a change with a comment on it. Scrolling on, the older two lose
-     their colour gradually as they pass the top of the window, and Papilot's
-     comes in on the same scroll.
-     The drawings are decoration: the cards' text carries the comparison. -->
-<section class="section" id="why">
-  <div class="wrap">
-    <header class="section-head">
-      <h2><span lang="en">What Matters in a Paper Is the Idea and the Story</span><span lang="zh-CN">写文档，重要的是想法和故事</span></h2>
-      <p><span lang="en">Rewording and layout shouldn't take attention away from them.</span><span lang="zh-CN">字句怎么改、版面怎么排，不该分走注意力。</span></p>
-    </header>
-    <div class="eras">
-      <article class="era old">
-        <div class="era-art" aria-hidden="true">
-          <div class="mini">
-            <div class="mini-bar"><i></i><i></i><i></i></div>
-            <div class="mini-body split">
-              <div class="mini-source"><span class="mini-tab">main.tex</span><pre><b>\subsection</b>{Typing}
-A lambda <em>$\lambda x.\,e$</em> has a
-function type when its
-body does:
-<b>\begin</b>{mathpar}
-  <b>\inferrule</b>
-    {\Gamma, x{:}\tau_1 <b>\vdash</b> e : \tau_2}
-    {\Gamma <b>\vdash</b> \lambda x.\, e
-       : \tau_1 \to \tau_2}
-<b>\end</b>{mathpar}
-Application is typed
-in the same way.</pre></div>
-              <div class="mini-pdf"><div class="mini-page"><strong>3.2 Typing</strong><span class="bar"></span><span class="bar"></span><span class="bar short"></span><span class="mini-eq"><span class="rule"><span class="rule-premises"><span>Γ, <i>x</i> : <i>τ</i>₁ ⊢ <i>e</i> : <i>τ</i>₂</span></span><span class="rule-name">T-Abs</span><span class="rule-conclusion">Γ ⊢ λ<i>x</i>. <i>e</i> : <i>τ</i>₁ → <i>τ</i>₂</span></span></span><span class="bar"></span><span class="bar"></span><span class="bar short"></span></div></div>
-            </div>
-          </div>
-        </div>
-        <div class="era-text">
-          <p class="era-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg><span lang="en">Before AI</span><span lang="zh-CN">AI 之前</span></p>
-          <h3><span lang="en">Writing <span class="latex">L<sup>a</sup>T<sub>e</sub>X</span> by Hand</span><span lang="zh-CN">手写 <span class="latex">L<sup>a</sup>T<sub>e</sub>X</span></span></h3>
-          <p><span lang="en">Source on the left, preview on the right, every line typed by hand.</span><span lang="zh-CN">源码在左、预览在右，每一行都得亲手敲。</span></p>
-        </div>
-      </article>
-      <article class="era old">
-        <div class="era-art" aria-hidden="true">
-          <div class="mini">
-            <div class="mini-bar"><i></i><i></i><i></i></div>
-            <div class="mini-body diff">
-              <div class="mini-source"><span class="mini-tab">main.tex</span><span class="mini-tab mini-ai"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5c.5 4.6 2.9 7 7.5 7.5-4.6.5-7 2.9-7.5 7.5-.5-4.6-2.9-7-7.5-7.5 4.6-.5 7-2.9 7.5-7.5Z"/></svg>+5 −2</span><pre>The rule for application
-<del>is the obvious one:</del><del>$e_1\,e_2 : \tau_2$.</del><ins><b>\begin</b>{mathpar}</ins><ins>  <b>\inferrule</b>{\Gamma <b>\vdash</b> e_1 : \tau_1 \to \tau_2</ins><ins>    <b>\\</b> \Gamma <b>\vdash</b> e_2 : \tau_1}</ins><ins>   {\Gamma <b>\vdash</b> e_1\, e_2 : \tau_2}</ins><ins><b>\end</b>{mathpar}</ins>Soundness follows from
-progress and preservation.</pre></div>
-              <div class="mini-pdf"><div class="mini-page"><span class="bar"></span><span class="bar short"></span><span class="bar"></span><span class="bar"></span><span class="bar short"></span></div></div>
-            </div>
-          </div>
-        </div>
-        <div class="era-text">
-          <p class="era-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg><span lang="en">AI added to the editor</span><span lang="zh-CN">AI 加进编辑器</span></p>
-          <h3><span lang="en">Checking <span class="latex">L<sup>a</sup>T<sub>e</sub>X</span> Diffs</span><span lang="zh-CN">核对 <span class="latex">L<sup>a</sup>T<sub>e</sub>X</span> 差异</span></h3>
-          <p><span lang="en">The AI edits the source. Once the diffs pile up, they go unread and the AI decides.</span><span lang="zh-CN">AI 改了源码，差异一多就看不过来，最后只能由它说了算。</span></p>
-        </div>
-      </article>
-      <article class="era ours">
-        <div class="era-art" aria-hidden="true">
-          <div class="mini">
-            <div class="mini-bar"><i></i><i></i><i></i><span class="mini-seg"><b></b><b class="on"></b></span><span class="mini-run"></span></div>
-            <div class="mini-body only">
-              <div class="mini-pdf"><div class="mini-page"><span class="mini-heading"><b>3.2</b><span class="bar"></span></span><span class="bar"></span><span class="bar short"></span><span class="mini-review"><span class="mini-head"><span class="mini-step">‹</span><span class="bar"></span><span class="mini-step">›</span><span class="mini-acts"><i class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></i><i class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 6 12 12M18 6 6 18"/></svg></i><i class="talk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg></i><i class="src"><svg class="ic"><use href="#i-code"/></svg></i></span></span><span class="mini-side before"><span class="bar"></span><span class="bar mid"></span></span><span class="mini-side after"><span class="bar"></span><span class="bar short"></span></span></span><span class="mini-comment"><span><span class="bar"></span><span class="bar short"></span></span><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></i></span><span class="bar"></span><span class="bar"></span><span class="bar short"></span></div></div>
-            </div>
-          </div>
-        </div>
-        <div class="era-text">
-          <p class="era-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Papilot</p>
-          <h3><span lang="en">Reviewing the PDF</span><span lang="zh-CN">审阅 PDF</span></h3>
-          <p><span lang="en">The AI edits the source, and each change is reviewed on the typeset page.</span><span lang="zh-CN">AI 改源码，改动排好版后在页面上逐条审阅。</span></p>
-        </div>
-      </article>
-    </div>
-    <p class="why-links">
-      <a href="/blog/overleaf-source-ides-and-papilot/"><span lang="en">Compare Overleaf, source IDEs and Papilot</span><span lang="zh-CN">对比 Overleaf、源码 IDE 与 Papilot</span></a>
-      <a href="/blog/how-papilot-builds-typeset-pdf-diffs/"><span lang="en">How typeset PDF diffs work</span><span lang="zh-CN">排版级 PDF 对比是如何实现的</span></a>
-    </p>
-  </div>
-</section>
-
 <section class="section features" id="features">
   <div class="wrap">
-    <!-- Each feature is drawn like the opening window, with the rest of the
-         app as bars, and plays what the opening round leaves out: two notes
-         added to a task and sent together, a comment that sends a change
-         back for another round, and the accepted change committed and synced
+    <header class="section-head">
+      <h2><span lang="en">Why Papilot</span><span lang="zh-CN">为什么用 Papilot</span></h2>
+    </header>
+    <!-- The README's reasons, in its order: pointing at the page and
+         reviewing typeset changes here, then live Overleaf sync in a section
+         of its own, then any agent and model and the record, then the phone
+         and templates. Each feature is drawn like the opening window, with
+         the rest of the app as bars, and plays what the opening round leaves
+         out: two notes added to a task and sent together, a comment that
+         sends a change back for another round, another agent's model picked
+         and the request rerun, and the accepted change committed and synced
          in Version Management. On a phone the PDF and the chat take turns,
          switched in the navigation bar, as in the phone app. Each round plays
          while its window is on screen and not under the mouse. Without script
          or motion a window shows where its round ends. -->
     <article class="feature">
       <div class="feature-text">
-        <p class="step"><span class="num">01</span><span lang="en">Annotate</span><span lang="zh-CN">批注</span></p>
-        <h3><span lang="en">Point at What Should Change</span><span lang="zh-CN">在页面上指出要改什么</span></h3>
+        <p class="step"><span lang="en">Annotate</span><span lang="zh-CN">批注</span></p>
+        <h3><span lang="en">Point at the Page</span><span lang="zh-CN">在页面上指出要改什么</span></h3>
         <p><span lang="en">Select a sentence, or box an equation or a figure, and write what should change. The agent gets the exact source lines, with no need to know which file they are in.</span><span lang="zh-CN">选中一句话，或框出一个公式、一张图，写下修改意见。智能体拿到的是对应的源码位置，不需要知道它在哪个文件里。</span></p>
+        <p class="feature-link"><a href="/demo"><span lang="en">Try it in the online demo</span><span lang="zh-CN">在在线演示里试一试</span></a></p>
       </div>
       <figure class="app-window scene" data-scene="notes" role="img" aria-label="A sentence and a figure boxed on the PDF, each with a note, sent to the agent together" data-zh-aria-label="在 PDF 上框出一句话和一张图，各写一条批注，一起发给智能体">
         <div class="scene-art" aria-hidden="true" inert>
@@ -421,9 +349,10 @@ progress and preservation.</pre></div>
 
     <article class="feature flip">
       <div class="feature-text">
-        <p class="step"><span class="num">02</span><span lang="en">Review</span><span lang="zh-CN">审阅</span></p>
-        <h3><span lang="en">Every Change, Decided One by One</span><span lang="zh-CN">每一处改动，逐条拍板</span></h3>
+        <p class="step"><span lang="en">Review</span><span lang="zh-CN">审阅</span></p>
+        <h3><span lang="en">Review Every Change Typeset</span><span lang="zh-CN">看着排版结果审改动</span></h3>
         <p><span lang="en">A paper is written to be read, so every change has to be right. However many there are, each one is shown typeset, and nothing that hasn't been accepted reaches the paper. If one isn't right yet, comment on it and the agent revises it.</span><span lang="zh-CN">文档是写给人读的，每一处都得准确。改动再多，也一条条排好版过目，没接受的不会进入文档。还不满意的，写条评论让它再改一轮。</span></p>
+        <p class="feature-link"><a href="/blog/how-papilot-builds-typeset-pdf-diffs/"><span lang="en">How typeset PDF diffs work</span><span lang="zh-CN">排版级 PDF 对比是如何实现的</span></a></p>
       </div>
       <figure class="app-window scene" data-scene="revise" role="img" aria-label="A comment on a change goes back to the agent, which rewrites it as the T-Abs typing rule before it is accepted" data-zh-aria-label="对一处改动写下评论发回给智能体，它改写成推导规则后再接受">
         <div class="scene-art" aria-hidden="true" inert>
@@ -480,12 +409,190 @@ progress and preservation.</pre></div>
         </div>
       </figure>
     </article>
+  </div>
+</section>
 
+<!-- Live sync with Overleaf: Papilot and a coauthor's browser on the same
+     Overleaf project, side by side, joined at the height of the paragraph
+     they share. A change is accepted on the PDF and committed from the chat;
+     its words cross the bridge and land in the coauthor's editor. Then Ada
+     types a sentence on Overleaf, beside her cursor and name, and it crosses
+     back into the PDF as it rebuilds. Faces, cursor flags and the save step
+     are the app's own (src/web/overleaf.css, source-codemirror.ts,
+     task-apply.tsx). Below 1200px the windows stack and the words travel
+     down and up; on a phone the save step is on the Chat tab, as in the
+     phone app. Without script or motion the scene shows where the round
+     ends: both edits on both sides. -->
+<section class="section sync" id="overleaf">
+  <div class="wrap">
+    <header class="section-head">
+      <p class="sync-eyebrow"><i class="leaf" aria-hidden="true"></i><span lang="en">Live sync with Overleaf</span><span lang="zh-CN">与 Overleaf 实时同步</span></p>
+      <h2><span lang="en">Your Coauthors Keep Writing in Overleaf</span><span lang="zh-CN">合作者不用离开 Overleaf</span></h2>
+      <p><span lang="en">Link the paper to its Overleaf project. Changes you apply or commit reach coauthors in about a second, and what they write lands in your files and PDF.</span><span lang="zh-CN">把文档关联到 Overleaf 项目后，你应用或提交的改动，大约一秒就出现在合作者的编辑器里；他们写的内容也会同步到你的文件和 PDF。</span></p>
+    </header>
+    <figure class="sync-stage" data-scene="overleaf" data-step="synced" role="img" aria-label="A change accepted and committed in Papilot appears in a coauthor's Overleaf editor, and a sentence the coauthor types on Overleaf appears in Papilot's PDF" data-zh-aria-label="在 Papilot 里接受并提交的改动出现在合作者的 Overleaf 编辑器里，合作者在 Overleaf 上写的一句话出现在 Papilot 的 PDF 里">
+      <div class="scene-art" aria-hidden="true" inert>
+        <p class="sync-who who-you"><img src="assets/logo.svg" alt="" width="18" height="18"><span lang="en">You, in Papilot</span><span lang="zh-CN">你用 Papilot</span></p>
+        <p class="sync-who who-them"><span class="sync-faces"><i style="--hue:265">AL</i><i style="--hue:28">GH</i></span><span lang="en">Your coauthors, on Overleaf</span><span lang="zh-CN">合作者用 Overleaf</span></p>
+        <div class="app-window sync-app">
+          <div class="app-bar"><span class="lights"><i></i><i></i><i></i></span></div>
+          <div class="m-nav"><i class="tb-icon"><svg class="ic"><use href="#i-menu"/></svg></i><span class="tb-seg"><b class="seg-pdf"><svg class="ic"><use href="#i-paper"/></svg><span lang="en">Review</span><span lang="zh-CN">审阅</span></b><b class="seg-side"><svg class="ic"><use href="#i-chat"/></svg><span lang="en">Chat</span><span lang="zh-CN">对话</span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+          <div class="sync-cols">
+            <div class="sync-main">
+              <div class="sync-tb"><span class="tb-seg"><b><svg class="ic"><use href="#i-paper"/></svg><span class="tb-label">PDF</span></b><b class="on"><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b></span><span class="tb-space"></span><span class="tb-count"><span class="count-0">0</span><span class="count-1">1</span> <small>/ 1</small></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+              <div class="app-pdf sync-pdf">
+                <div class="review-page">
+                  <p class="sync-heading"><b>1</b><span lang="en">Introduction</span><span lang="zh-CN">引言</span></p>
+                  <article class="review-change current" data-state="accepted">
+                    <div class="review-head">
+                      <span class="review-number"><span lang="en">Change 1</span><span lang="zh-CN">修改 1</span></span>
+                      <i class="review-accept"><svg class="ic"><use href="#i-check"/></svg></i><i class="review-reject"><svg class="ic"><use href="#i-close"/></svg></i><i class="review-comment"><svg class="ic"><use href="#i-chat"/></svg></i><i class="review-latex"><svg class="ic"><use href="#i-code"/></svg></i>
+                    </div>
+                    <div class="review-side before">
+                      <span class="review-label"><span lang="en">Before</span><span lang="zh-CN">修改前</span></span>
+                      <p class="review-body"><span lang="en">Type systems catch mistakes before a program runs. Ours <del>is much more expressive</del>.</span><span lang="zh-CN">类型系统在程序运行之前就能发现错误。我们的系统<del>表达能力强得多</del>。</span></p>
+                    </div>
+                    <div class="review-side after">
+                      <span class="review-label"><span lang="en">After</span><span lang="zh-CN">修改后</span></span>
+                      <p class="review-body"><span lang="en">Type systems catch mistakes before a program runs. Ours <ins>accepts every program that System&nbsp;F accepts</ins>.</span><span lang="zh-CN">类型系统在程序运行之前就能发现错误。我们的系统<ins>接受 System&nbsp;F 能接受的所有程序</ins>。</span><span class="theirs"> <span lang="en">All proofs are mechanized in Rocq.</span><span lang="zh-CN">所有证明都已在 Rocq 中机械化。</span></span></p>
+                    </div>
+                  </article>
+                  <p class="sync-theorem"><b><span lang="en">Theorem 1</span><span lang="zh-CN">定理 1</span></b> <span lang="en">(Soundness).</span><span lang="zh-CN">（可靠性）</span> <em><span lang="en">Well-typed programs do not go wrong.</span><span lang="zh-CN">类型正确的程序不会出错。</span></em></p>
+                  <p class="sync-theorem sync-proof"><em><span lang="en">Proof.</span><span lang="zh-CN">证明</span></em> <span lang="en">By progress and preservation.</span><span lang="zh-CN">由进展性和保持性可得。</span> <span class="qed">∎</span></p>
+                  <span class="sheet-lines fill"><i style="width:100%"></i><i style="width:82%"></i><i style="width:100%"></i><i style="width:64%"></i></span>
+                </div>
+                <div class="m-decide"><i><svg class="ic"><use href="#i-chevron-left"/></svg></i><span>1 / 1</span><i class="m-accept"><svg class="ic"><use href="#i-check"/></svg></i><i class="m-reject"><svg class="ic"><use href="#i-close"/></svg></i><i class="m-talk"><svg class="ic"><use href="#i-chat"/></svg></i><i><svg class="ic"><use href="#i-chevron-right"/></svg></i></div>
+              </div>
+            </div>
+            <div class="sync-chat">
+              <div class="sync-tb"><span class="tb-seg icons"><b><svg class="ic"><use href="#i-paper"/></svg></b><b class="on"><svg class="ic"><use href="#i-split"/></svg></b><b><svg class="ic"><use href="#i-chat"/></svg></b></span><span class="tb-space"></span><i class="tb-icon"><svg class="ic"><use href="#i-external"/></svg></i></div>
+              <div class="app-chat">
+                <div class="chat-thread">
+                  <span class="chat-bubble chat-old"><i style="width:100%"></i><i style="width:58%"></i></span>
+                  <div class="chat-reply chat-old"><span class="chat-lines"><i style="width:100%"></i><i style="width:90%"></i><i style="width:40%"></i></span></div>
+                </div>
+                <div class="sync-commit">
+                  <p class="sync-message"><span lang="en">Sharpen the claim in the introduction</span><span lang="zh-CN">收紧引言里的说法</span></p>
+                  <p class="sync-actions"><span class="sync-branch"><svg class="ic"><use href="#i-branch"/></svg>main</span><i class="sync-spark"><svg class="ic"><use href="#i-spark"/></svg></i><b class="sync-apply"><span lang="en">Apply</span><span lang="zh-CN">应用</span></b><b class="sync-commit-button"><span lang="en">Commit</span><span lang="zh-CN">提交</span><svg class="ic"><use href="#i-chevron-right"/></svg></b></p>
+                </div>
+                <p class="sync-committed"><svg class="ic"><use href="#i-check"/></svg><span lang="en">Committed to main</span><span lang="zh-CN">已提交到 main</span></p>
+                <div class="chat-composer">
+                  <span class="chat-input"><i></i></span>
+                  <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent claude"><i></i><b>Claude</b><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sync-bridge">
+          <span class="bridge-line"><span class="bridge-trail"></span></span>
+          <span class="bridge-hub"><img src="assets/logo.svg" alt="" width="18" height="18"><svg class="bridge-arrows" viewBox="0 0 24 24"><path d="M4 9h15m-4-4 4 4-4 4M20 15H5m4-4-4 4 4 4"/></svg><i class="leaf"></i></span>
+          <span class="bridge-live"><i></i><span lang="en">Live</span><span lang="zh-CN">实时</span></span>
+        </div>
+        <div class="app-window ol-window">
+          <div class="ol-chrome"><span class="lights"><i></i><i></i><i></i></span><span class="ol-url"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>overleaf.com/project</span></div>
+          <div class="ol-head"><i class="leaf"></i><b><span lang="en">Thesis draft</span><span lang="zh-CN">学位论文初稿</span></b><span class="tb-space"></span><span class="sync-faces"><i style="--hue:265">AL</i><i style="--hue:28">GH</i></span></div>
+          <div class="ol-body">
+            <div class="ol-files"><p><svg class="ic"><use href="#i-chevron-down"/></svg>sections</p><p class="ol-indent">results.tex</p><p class="on">main.tex</p><p>refs.bib</p></div>
+            <div class="ol-code">
+              <p><b>\section</b>{<span lang="en">Introduction</span><span lang="zh-CN">引言</span>}</p>
+              <p><span lang="en">Type systems catch mistakes before a program runs.</span><span lang="zh-CN">类型系统在程序运行之前就能发现错误。</span></p>
+              <p class="ol-mine"><span lang="en">Ours <span class="ol-old">is much more expressive</span><span class="ol-new">accepts every program that System F accepts</span>.</span><span lang="zh-CN">我们的系统<span class="ol-old">表达能力强得多</span><span class="ol-new">接受 System F 能接受的所有程序</span>。</span></p>
+              <p class="ol-ada"><span class="ol-typed"><span lang="en">All proofs are mechanized in Rocq.</span><span lang="zh-CN">所有证明都已在 Rocq 中机械化。</span></span><span class="ol-cursor" style="--hue:265"><span>Ada Lovelace</span></span></p>
+              <p></p>
+              <p><b>\begin</b>{theorem}[<span lang="en">Soundness</span><span lang="zh-CN">可靠性</span>]<span class="ol-cursor" style="--hue:28"><span>Grace Hopper</span></span></p>
+              <p>&nbsp;&nbsp;<span lang="en">Well-typed programs do not go wrong.</span><span lang="zh-CN">类型正确的程序不会出错。</span></p>
+              <p><b>\end</b>{theorem}</p>
+              <p><b>\begin</b>{proof}</p>
+              <p>&nbsp;&nbsp;<span lang="en">By progress and preservation.</span><span lang="zh-CN">由进展性和保持性可得。</span></p>
+              <p><b>\end</b>{proof}</p>
+              <p></p>
+              <p></p>
+              <p></p>
+            </div>
+          </div>
+        </div>
+        <span class="sync-chip chip-out"><span class="chip-label"><img src="assets/logo.svg" alt="" width="16" height="16"><span class="chip-text"></span></span><span class="chip-dot"><img src="assets/logo.svg" alt="" width="16" height="16"></span></span>
+        <span class="sync-chip chip-in"><span class="chip-label"><i style="--hue:265">AL</i><span class="chip-text"></span></span><span class="chip-dot"><i style="--hue:265">AL</i></span></span>
+        <span class="app-cursor"><svg viewBox="0 0 24 24"><path d="M5.5 2.5v17.2l4.3-4.1 2.9 6.6 3.1-1.3-2.9-6.5h6z"/></svg></span>
+      </div>
+    </figure>
+    <ul class="sync-points" role="list">
+      <li><h3><span lang="en">Nothing changes for coauthors</span><span lang="zh-CN">合作者不用改习惯</span></h3><p><span lang="en">They keep the Overleaf editor they know. A free Overleaf account is enough, without Overleaf’s Git integration.</span><span lang="zh-CN">他们还在 Overleaf 里写。免费账号就行，也不用开 Overleaf 的 Git 集成。</span></p></li>
+      <li><h3><span lang="en">Edits merge as you type</span><span lang="zh-CN">同时改也不会互相覆盖</span></h3><p><span lang="en">Edits to the same paragraph merge character by character. Where both sides changed a passage offline, you choose which to keep.</span><span lang="zh-CN">两边同时改同一段，会逐字合并。离线期间改到同一处的，由你选留哪一版。</span></p></li>
+      <li><h3><span lang="en">See who wrote what</span><span lang="zh-CN">知道每句话是谁写的</span></h3><p><span lang="en">In Papilot’s source editor, coauthors’ new words carry their colour, and their cursors show as on Overleaf.</span><span lang="zh-CN">在 Papilot 的源码编辑器里，合作者新写的内容标着各自的颜色，也能看到他们的光标。</span></p></li>
+      <li><h3><span lang="en">Keep in sync, or import a copy</span><span lang="zh-CN">一直同步，或者只导入一次</span></h3><p><span lang="en">Paste a project link to keep it in sync. A read-only link imports a one-time copy instead.</span><span lang="zh-CN">粘贴项目链接就会一直同步；用只读链接则只导入一份副本，之后不再同步。</span></p></li>
+    </ul>
+    <p class="section-links"><a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#sync-with-overleaf"><span lang="en">Set up Overleaf sync</span><span lang="zh-CN">设置 Overleaf 同步（英文）</span></a></p>
+  </div>
+</section>
+
+<!-- The rest of the reasons after the sync: any agent and model, then the
+     record of every change. -->
+<section class="section features features-more" id="record">
+  <div class="wrap">
     <article class="feature">
       <div class="feature-text">
-        <p class="step"><span class="num">03</span><span lang="en">Commit</span><span lang="zh-CN">提交</span></p>
+        <p class="step"><span lang="en">Agents</span><span lang="zh-CN">智能体</span></p>
+        <h3><span lang="en">Any Agent, Any Model</span><span lang="zh-CN">用你顺手的智能体和模型</span></h3>
+        <p><span lang="en">Pick a model from any connected agent below the chat. Switch to another agent and Papilot reruns your request with it, with the same notes. Bring the login or API key you already have, or use the built-in Papilot Writer.</span><span lang="zh-CN">对话框下方能选所有已连接智能体的模型。换成另一个智能体的模型，Papilot 会带着同样的批注重新做一遍。登录和 API Key 用你现有的就行，也可以用内置的 Papilot Writer。</span></p>
+        <p class="feature-link"><a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#agents"><span lang="en">Set up an agent</span><span lang="zh-CN">配置智能体（英文）</span></a></p>
+      </div>
+      <figure class="app-window scene" data-scene="models" data-tab="side" data-step="rerun" role="img" aria-label="The model menu below the chat: choosing Claude's Opus 5.5 instead of Codex reruns the request with the same notes" data-zh-aria-label="对话框下方的模型菜单：把 Codex 换成 Claude 的 Opus 5.5，同样的批注重新做一遍">
+        <div class="scene-art" aria-hidden="true" inert>
+          <div class="app-bar"><span class="lights"><i></i><i></i><i></i></span></div>
+          <div class="app-top">
+            <div class="m-nav"><i class="tb-icon"><svg class="ic"><use href="#i-menu"/></svg></i><span class="tb-seg"><b class="seg-pdf"><svg class="ic"><use href="#i-paper"/></svg><span lang="en">Review</span><span lang="zh-CN">审阅</span></b><b class="seg-side"><svg class="ic"><use href="#i-chat"/></svg><span lang="en">Chat</span><span lang="zh-CN">对话</span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+            <div class="app-tb"><i class="tb-icon tb-sidebar"><svg class="ic"><use href="#i-sidebar"/></svg></i><span class="tb-seg"><b class="on"><svg class="ic"><use href="#i-paper"/></svg><span class="tb-label">PDF</span></b><b><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+            <div class="app-tb side"><span class="tb-seg icons"><b><svg class="ic"><use href="#i-paper"/></svg></b><b class="on"><svg class="ic"><use href="#i-split"/></svg></b><b><svg class="ic"><use href="#i-chat"/></svg></b></span><span class="tb-space"></span><i class="tb-icon"><svg class="ic"><use href="#i-external"/></svg></i></div>
+          </div>
+          <div class="app-body">
+            <div class="app-rail"><i class="rail-collapse"><svg class="ic"><use href="#i-chevron-up"/></svg></i><i><svg class="ic"><use href="#i-tool-magic"/></svg></i><i><svg class="ic"><use href="#i-tool-note"/></svg></i><i class="rail-region"><svg class="ic"><use href="#i-tool-region"/></svg></i><i><svg class="ic"><use href="#i-tool-sticky"/></svg></i><i><svg class="ic"><use href="#i-tool-strike"/></svg></i><i class="rail-select on"><svg class="ic"><use href="#i-tool-select"/></svg></i><i><svg class="ic"><use href="#i-tool-hand"/></svg></i></div>
+            <div class="app-pdf">
+              <div class="review-page">
+                <span class="sheet-head"><b>2</b><i style="width:30%"></i></span>
+                <span class="sheet-lines"><i style="width:100%"></i><i style="width:64%"></i></span>
+                <p class="scene-text models-noted"><b class="note-n">1</b><span lang="en">The type system markedly increases the expressiveness of the language while keeping type checking decidable.</span><span lang="zh-CN">该类型系统在保持类型检查可判定的同时，显著提升了语言的表达能力。</span></p>
+                <span class="sheet-lines fill"><i style="width:100%"></i><i style="width:88%"></i><span class="sheet-eq"><i style="width:30px"></i>=<span class="frac"><i style="width:56px"></i><b></b><i style="width:44px"></i></span>+<i style="width:28px"></i><em>(4)</em></span><i style="width:100%"></i><i style="width:72%"></i><i style="width:100%"></i></span>
+              </div>
+            </div>
+            <div class="app-chat">
+              <div class="chat-thread">
+                <p class="models-restart"><svg class="ic"><use href="#i-refresh"/></svg><span><span lang="en">Restarted from</span><span lang="zh-CN">原任务</span>: <b><span lang="en">Say it more plainly</span><span lang="zh-CN">说得直白一点</span></b></span></p>
+                <div class="chat-bubble">
+                  <span class="chat-note-head"><svg class="ic"><use href="#i-notes"/></svg><span lang="en">Note on the PDF</span><span lang="zh-CN">PDF 上的批注</span></span>
+                  <span class="chat-quote"><b>1</b><em><span lang="en">Page 2 · main.tex:24</span><span lang="zh-CN">第 2 页 · main.tex:24</span></em></span>
+                  <p class="chat-comment"><span lang="en">Say it more plainly</span><span lang="zh-CN">说得直白一点</span></p>
+                </div>
+                <div class="chat-reply"><span class="chat-dots"><i></i><i></i><i></i></span><span class="chat-lines"><i style="width:100%"></i><i style="width:86%"></i><i style="width:52%"></i></span></div>
+              </div>
+              <div class="chat-composer">
+                <span class="chat-input"><i></i></span>
+                <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent claude models-chip"><i></i><b>Claude</b><small>Opus 5.5</small><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
+              </div>
+            </div>
+          </div>
+          <div class="model-menu">
+            <p class="model-search"><svg class="ic"><use href="#i-search"/></svg><span lang="en">Search models</span><span lang="zh-CN">搜索模型</span></p>
+            <p class="model-group agent codex"><i></i>Codex</p>
+            <p class="model-option model-codex"><span lang="en">Default model</span><span lang="zh-CN">默认模型</span><small><span lang="en">Default</span><span lang="zh-CN">默认</span></small><svg class="ic model-check"><use href="#i-check"/></svg></p>
+            <p class="model-group agent claude"><i></i>Claude</p>
+            <p class="model-option model-opus">Opus 5.5<svg class="ic model-restart"><use href="#i-refresh"/></svg><svg class="ic model-check"><use href="#i-check"/></svg></p>
+            <p class="model-option">Sonnet 5.5<svg class="ic model-restart"><use href="#i-refresh"/></svg></p>
+            <p class="model-group agent glm"><i></i>GLM</p>
+            <p class="model-option">GLM-5.3<svg class="ic model-restart"><use href="#i-refresh"/></svg></p>
+          </div>
+          <span class="app-cursor"><svg viewBox="0 0 24 24"><path d="M5.5 2.5v17.2l4.3-4.1 2.9 6.6 3.1-1.3-2.9-6.5h6z"/></svg></span>
+        </div>
+      </figure>
+    </article>
+
+    <article class="feature flip">
+      <div class="feature-text">
+        <p class="step"><span lang="en">Commit</span><span lang="zh-CN">提交</span></p>
         <h3><span lang="en">Every Change on the Record</span><span lang="zh-CN">每一处改动都有记录</span></h3>
         <p><span lang="en">Each task runs in its own Git worktree, and committing and pushing accepted changes is a separate step. Every change to the paper stays in its Git history.</span><span lang="zh-CN">每个任务都在独立的 Git 工作树里进行，接受之后，提交和推送是单独的一步。文档的每一次变化都留在 Git 历史里。</span></p>
+        <p class="feature-link"><a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#workflow"><span lang="en">Review, apply and commit in the guide</span><span lang="zh-CN">指南：审阅、应用与提交（英文）</span></a></p>
       </div>
       <figure class="app-window scene" data-scene="record" data-step="pushed" role="img" aria-label="The accepted rule, with a commit message written by the agent, committed and pushed" data-zh-aria-label="接受的规则由智能体写好提交信息，提交并推送">
         <div class="scene-art" aria-hidden="true" inert>
@@ -519,6 +626,55 @@ progress and preservation.</pre></div>
         </div>
       </figure>
     </article>
+  </div>
+</section>
+
+<!-- Two ways in and out of the desk: a paper started from a Universe
+     template, and a review finished on a phone. Each card's drawing is
+     decoration; the card's text carries the claim and its next step. -->
+<section class="section more" id="anywhere">
+  <div class="wrap">
+    <header class="section-head">
+      <h2><span lang="en">Start from a Template, Review from Anywhere</span><span lang="zh-CN">从模板开始写，在手机上也能审</span></h2>
+    </header>
+    <div class="more-cards">
+      <article class="more-card">
+        <div class="more-art universe-art" aria-hidden="true">
+          <span class="tpl-venues"><b>400+</b><span lang="en">conferences mapped to their template</span><span lang="zh-CN">个会议已对应模板</span></span>
+          <span class="tpl-shelf">
+            <span class="tpl tpl-thesis"><span class="tpl-page"><i class="crest"></i><b></b><i class="t-line"></i><i class="t-line short"></i></span><em><span lang="en">Thesis</span><span lang="zh-CN">学位论文</span></em></span>
+            <span class="tpl tpl-conf chosen"><span class="tpl-page"><b></b><i class="t-line short"></i><span class="cols"><span><i></i><i></i><i></i><i class="fig"></i><i></i></span><span><i></i><i></i><i class="eq"></i><i></i><i></i></span></span></span><em><span lang="en">Conference</span><span lang="zh-CN">会议</span></em></span>
+            <span class="tpl tpl-journal"><span class="tpl-page"><b></b><i class="t-line short"></i><i class="abstract"></i><i></i><i></i><i></i><i class="short"></i></span><em><span lang="en">Journal</span><span lang="zh-CN">期刊</span></em></span>
+            <span class="tpl tpl-slides"><span class="tpl-page"><b></b><span class="slide-body"><i></i><i></i><i class="short"></i></span><i class="slide-fig"></i></span><em><span lang="en">Slides</span><span lang="zh-CN">幻灯片</span></em></span>
+            <span class="tpl tpl-poster"><span class="tpl-page"><b></b><span class="cols three"><span><i class="block"></i><i></i></span><span><i></i><i class="block tall"></i></span><span><i class="block"></i><i></i></span></span></span><em><span lang="en">Poster</span><span lang="zh-CN">海报</span></em></span>
+            <span class="tpl tpl-cv"><span class="tpl-page"><b></b><i class="t-line short"></i><span class="cv-row"><i></i><i></i></span><span class="cv-row"><i></i><i></i></span><span class="cv-row"><i></i><i></i></span></span><em><span lang="en">CV</span><span lang="zh-CN">简历</span></em></span>
+          </span>
+        </div>
+        <h3><span lang="en">Start from a Template</span><span lang="zh-CN">从模板开始</span></h3>
+        <p><span lang="en">Papilot Universe has theses, journal and conference kits, slides, posters, CVs and books, and points more than 400 conferences to the template their call for papers asks for. Choose one and Papilot creates the paper, ready to compile.</span><span lang="zh-CN">Papilot Universe 里有学位论文、期刊和会议模板，也有幻灯片、海报、简历和书籍；400 多个会议都标好了征稿要求用哪个模板。选好后 Papilot 会建好文档，马上就能编译。</span></p>
+        <footer><a href="https://papilot.ai/universe/"><span lang="en">Browse Papilot Universe</span><span lang="zh-CN">浏览 Papilot Universe</span></a></footer>
+      </article>
+      <article class="more-card">
+        <div class="more-art phone-art" aria-hidden="true">
+          <span class="phone">
+            <span class="phone-island"></span>
+            <span class="phone-nav"><span class="phone-seg"><b class="on"><svg class="ic"><use href="#i-paper"/></svg><span lang="en">Review</span><span lang="zh-CN">审阅</span></b><b><svg class="ic"><use href="#i-chat"/></svg><span lang="en">Chat</span><span lang="zh-CN">对话</span></b></span></span>
+            <span class="phone-page">
+              <span class="phone-head"><b>3.2</b><i></i></span>
+              <i class="p-line"></i><i class="p-line short"></i>
+              <span class="phone-change"><span class="phone-side before"><i></i><i class="mid"></i></span><span class="phone-side after"><i></i><i class="short"></i></span></span>
+              <i class="p-line"></i><i class="p-line"></i><i class="p-line short"></i>
+              <span class="phone-eq"><i></i>=<span class="frac"><i></i><b></b><i></i></span></span>
+              <i class="p-line"></i><i class="p-line short"></i>
+            </span>
+            <span class="phone-decide"><i class="ok"><svg class="ic"><use href="#i-check"/></svg></i><i class="no"><svg class="ic"><use href="#i-close"/></svg></i><i class="talk"><svg class="ic"><use href="#i-chat"/></svg></i></span>
+          </span>
+        </div>
+        <h3><span lang="en">Review from Your Phone</span><span lang="zh-CN">在手机上审阅</span></h3>
+        <p><span lang="en">Open Papilot on your phone or tablet over Tailscale, then read the PDF, mark it up and accept changes away from your desk.</span><span lang="zh-CN">通过 Tailscale 在手机或平板上打开 Papilot，不在电脑前也能看 PDF、写批注、接受改动。</span></p>
+        <footer><a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#remote-access-with-tailscale"><span lang="en">Set up remote access</span><span lang="zh-CN">设置远程访问（英文）</span></a></footer>
+      </article>
+    </div>
   </div>
 </section>
 
@@ -561,6 +717,7 @@ progress and preservation.</pre></div>
         </div>
       </div>
       <p class="get-links">
+        <a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md"><span lang="en">Read the guide</span><span lang="zh-CN">阅读指南（英文）</span></a>
         <a href="https://github.com/PapilotAI/papilot"><span lang="en">Star on GitHub</span><span lang="zh-CN">在 GitHub 点 Star</span></a>
         <a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#agents"><span lang="en">Setting up an agent</span><span lang="zh-CN">配置智能体（英文）</span></a>
         <a href="https://github.com/PapilotAI/papilot/blob/main/CHANGELOG.md"><span lang="en">Changelog</span><span lang="zh-CN">更新日志</span></a>
@@ -1123,6 +1280,45 @@ const pick = (chat, texts) => {
   });
 }
 
+// Any agent, any model: the pointer opens the model menu below the chat and
+// picks another agent's model; the request reruns in a task that says where
+// it was restarted from, and the agent answers again.
+{
+  const app = document.querySelector('[data-scene=models]'), play = player(app);
+  const chat = app.querySelector('.app-chat'), chip = app.querySelector('.models-chip');
+  const name = chip.querySelector('b'), model = chip.querySelector('small');
+  const menu = app.querySelector('.model-menu'), opus = menu.querySelector('.model-opus');
+  const standard = menu.querySelector('.model-codex > span').textContent;
+  const agent = (id, label, choice) => { chip.className = `chat-agent agent ${id} models-chip`; name.textContent = label; model.textContent = choice; };
+  const begin = () => instantly([app, chat], () => {
+    agent('codex', 'Codex', standard); menu.classList.remove('open'); opus.classList.remove('hover');
+    app.dataset.step = 'codex'; chat.dataset.step = 'done';
+  });
+  play.loop(begin, async () => {
+    await play.sleep(1300);
+    play.show(chat);
+    await play.glide(() => play.point(chip, .35, .6), 750);
+    await play.press(chip);
+    menu.classList.add('open'); app.dataset.step = 'menu';
+    await play.sleep(550);
+    await play.glide(() => play.point(opus, .3, .6), 800);
+    opus.classList.add('hover');
+    await play.sleep(400);
+    await play.press(opus);
+    menu.classList.remove('open'); opus.classList.remove('hover');
+    await chip.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-6px)' }], { duration: 140, easing: 'ease-in' }).finished;
+    agent('claude', 'Claude', 'Opus 5.5');
+    chip.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'ease-out' });
+    app.dataset.step = 'rerun'; chat.dataset.step = 'sent';
+    await play.sleep(1700);
+    chat.dataset.step = 'done';
+    await play.sleep(500);
+    play.cursor.classList.remove('shown');
+    await play.sleep(2600);
+    await play.restart([chat.querySelector('.chat-thread'), chip], begin);
+  });
+}
+
 // Feature 3: Version Management. The agent writes the commit message, Commit
 // takes what is staged into the history, and the same button then syncs it
 // with the remote.
@@ -1161,6 +1357,147 @@ const pick = (chat, texts) => {
   });
 }
 
+// Live sync with Overleaf. The change is accepted on the PDF and committed
+// from the chat; its words cross the bridge into the coauthor's editor. Then
+// Ada types on Overleaf, and her sentence crosses back into the PDF as it
+// rebuilds. On a phone the save step is on the Chat tab.
+{
+  const stage = document.querySelector('[data-scene=overleaf]'), play = player(stage);
+  const change = stage.querySelector('.review-change'), decide = review(change);
+  const save = stage.querySelector('.sync-commit'), commit = save.querySelector('.sync-commit-button');
+  const typed = stage.querySelector('.ol-typed'), sentence = typed.textContent;
+  const mine = change.querySelector('.after ins'), old = stage.querySelector('.ol-mine .ol-old');
+  const chipOut = stage.querySelector('.chip-out'), chipIn = stage.querySelector('.chip-in');
+  chipOut.querySelector('.chip-text').textContent = stage.querySelector('.ol-mine .ol-new').textContent;
+  chipIn.querySelector('.chip-text').textContent = sentence;
+  const chatTab = stage.querySelector('.seg-side'), reviewTab = stage.querySelector('.seg-pdf');
+  const tap = async el => { await play.glide(() => play.point(el), 550); await play.press(el); };
+  // Words travel through the pipe between the windows in one glide along a
+  // single curve: off the page, into the pipe's mouth, along the pipe and
+  // out into the other page, with one easing for the whole trip. The label
+  // folds into a token while it is in the pipe, and the pipe fills behind
+  // the token in its colour.
+  const pipe = stage.querySelector('.bridge-line'), trail = pipe.querySelector('.bridge-trail'), hub = stage.querySelector('.bridge-hub');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '0'); svg.setAttribute('height', '0'); svg.style.position = 'absolute';
+  const route = svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'path'));
+  stage.querySelector('.scene-art').append(svg);
+  const length = d => { route.setAttribute('d', d); return route.getTotalLength(); };
+  const smooth = (from, to, x) => { const t = Math.min(1, Math.max(0, (x - from) / (to - from))); return t * t * (3 - 2 * t); };
+  // Distance along the route over time: still at both ends, and a steady
+  // pace through the pipe, which takes the middle of the trip. A monotone
+  // cubic through the knots keeps the speed continuous.
+  const pace = (opened, closed) => {
+    const xs = [0, .28, .72, 1], ys = [0, opened, closed, 1];
+    const d = xs.slice(1).map((x, i) => (ys[i + 1] - ys[i]) / (x - xs[i]));
+    const m = [0, (d[0] + d[1]) / 2, (d[1] + d[2]) / 2, 0];
+    for (let i = 0; i < 3; i++) {
+      const a = m[i] / d[i], b = m[i + 1] / d[i], h = Math.hypot(a, b);
+      if (h > 3) { m[i] = 3 * a / h * d[i]; m[i + 1] = 3 * b / h * d[i]; }
+    }
+    return t => {
+      const i = t < xs[1] ? 0 : t < xs[2] ? 1 : 2, w = xs[i + 1] - xs[i], u = (t - xs[i]) / w;
+      return (2 * u ** 3 - 3 * u ** 2 + 1) * ys[i] + (u ** 3 - 2 * u ** 2 + u) * w * m[i] + (-2 * u ** 3 + 3 * u ** 2) * ys[i + 1] + (u ** 3 - u ** 2) * w * m[i + 1];
+    };
+  };
+  const fly = (chip, from, to) => new Promise(resolve => {
+    const box = stage.getBoundingClientRect(), a = from.getBoundingClientRect(), b = to.getBoundingClientRect(), p = pipe.getBoundingClientRect();
+    const label = chip.querySelector('.chip-label'), dot = chip.querySelector('.chip-dot');
+    chip.classList.add('flying');
+    const width = chip.offsetWidth, height = chip.offsetHeight;
+    const local = (x, y) => [x - box.left, y - box.top];
+    const lift = local(a.left + Math.min(a.width / 2, 60), a.top + a.height / 2);
+    const land = local(b.left + Math.min(width / 2 - 8, 110), b.top + b.height / 2);
+    const across = p.width > p.height, inset = 16;
+    const ends = across
+      ? [local(p.left + inset, p.top + p.height / 2), local(p.right - inset, p.top + p.height / 2)]
+      : [local(p.left + p.width / 2, p.top + inset), local(p.left + p.width / 2, p.bottom - inset)];
+    const near = end => Math.hypot(lift[0] - end[0], lift[1] - end[1]);
+    const [mouth, exit] = near(ends[0]) < near(ends[1]) ? ends : [ends[1], ends[0]];
+    // Tangents run along the pipe at both of its ends, so the curve enters and
+    // leaves it without a kink.
+    const axis = across ? [Math.sign(exit[0] - mouth[0]), 0] : [0, Math.sign(exit[1] - mouth[1])];
+    const pull = (from, to) => Math.min(90, Math.hypot(to[0] - from[0], to[1] - from[1]) * .55);
+    const k1 = pull(lift, mouth), k2 = pull(exit, land);
+    const pt = ([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`;
+    const into = `M${pt(lift)} C${pt([lift[0] + axis[0] * k1 * .6, lift[1] + axis[1] * k1 * .6])} ${pt([mouth[0] - axis[0] * k1, mouth[1] - axis[1] * k1])} ${pt(mouth)}`;
+    const d = `${into} L${pt(exit)} C${pt([exit[0] + axis[0] * k2, exit[1] + axis[1] * k2])} ${pt([land[0] - axis[0] * k2 * .6, land[1] - axis[1] * k2 * .6])} ${pt(land)}`;
+    const enter = length(into), inside = Math.hypot(exit[0] - mouth[0], exit[1] - mouth[1]), total = length(d);
+    const opened = enter / total, closed = (enter + inside) / total;
+    const duration = 2700, along = pace(opened, closed);
+    trail.style.setProperty('--flow', getComputedStyle(chip).getPropertyValue('--chip'));
+    trail.style.opacity = 1;
+    let elapsed = 0, last, pulsed = false;
+    const frame = now => {
+      // A hidden tab pauses the glide instead of skipping it.
+      elapsed += last === undefined ? 0 : Math.min(48, now - last); last = now;
+      const t = Math.min(1, elapsed / duration), f = Math.min(1, Math.max(0, along(t)));
+      const at = route.getPointAtLength(f * total);
+      // The label folds into the token before the pipe and opens after it.
+      const shown = t < .5 ? 1 - smooth(.09, .24, t) : smooth(.76, .9, t);
+      chip.style.transform = `translate(${at.x - width / 2}px,${at.y - height / 2}px)`;
+      chip.style.opacity = Math.min(smooth(0, .06, t), 1 - smooth(.9, 1, t));
+      label.style.opacity = shown; label.style.transform = `scale(${.72 + .28 * shown})`;
+      dot.style.opacity = 1 - shown; dot.style.transform = `scale(${.6 + .4 * (1 - shown)})`;
+      const run = Math.min(1, Math.max(0, (f - opened) / (closed - opened)));
+      const rest = `${(1 - run) * 100}%`;
+      trail.style.clipPath = across
+        ? (axis[0] > 0 ? `inset(-8px ${rest} -8px 0)` : `inset(-8px 0 -8px ${rest})`)
+        : (axis[1] > 0 ? `inset(0 -8px ${rest} -8px)` : `inset(${rest} -8px 0 -8px)`);
+      if (!pulsed && run > .5) { pulsed = true; hub.animate([{ transform: 'none' }, { transform: 'scale(1.08)' }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.4,0,.2,1)' }); }
+      if (t < 1) requestAnimationFrame(frame);
+      else {
+        chip.classList.remove('flying');
+        trail.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 600, easing: 'ease-out' }).finished.then(() => { trail.style.opacity = 0; });
+        resolve();
+      }
+    };
+    requestAnimationFrame(frame);
+  });
+  // Where a sentence ends on the page: the end of the paragraph's last line.
+  const end = el => ({ getBoundingClientRect: () => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const lines = range.getClientRects(), last = lines[lines.length - 1];
+    return { left: last.right, top: last.top, width: 0, height: last.height };
+  } });
+  const begin = () => instantly([stage], () => {
+    change.dataset.state = 'pending'; stage.dataset.step = 'review'; typed.textContent = ''; delete stage.dataset.tab;
+    for (const chip of [chipOut, chipIn]) chip.classList.remove('flying');
+    trail.style.opacity = 0;
+  });
+  play.loop(begin, async () => {
+    await play.sleep(1200);
+    play.show(stage.querySelector('.sync-pdf'));
+    const accept = phone.matches ? stage.querySelector('.m-accept') : change.querySelector('.review-accept');
+    await play.glide(() => play.point(accept, .45, .6), 750);
+    await play.press(accept);
+    decide('accepted');
+    stage.dataset.step = 'accepted';
+    if (!still.matches) opening(save);
+    await play.sleep(800);
+    if (phone.matches) { await tap(chatTab); stage.dataset.tab = 'side'; await play.sleep(500); }
+    await play.glide(() => play.point(commit, .4, .6), 650);
+    await play.press(commit);
+    const close = closing(save);
+    stage.dataset.step = 'sending'; close();
+    play.cursor.classList.remove('shown');
+    if (phone.matches) { delete stage.dataset.tab; await play.sleep(350); }
+    else await play.sleep(250);
+    await fly(chipOut, mine, old);
+    stage.dataset.step = 'sent';
+    await play.sleep(1600);
+    stage.dataset.step = 'typing';
+    await play.type(typed, sentence, 1700);
+    await play.sleep(500);
+    stage.dataset.step = 'arriving';
+    await fly(chipIn, typed, end(change.querySelector('.after .review-body')));
+    stage.dataset.step = 'synced';
+    await play.sleep(3600);
+    await play.restart([stage.querySelector('.sync-app'), stage.querySelector('.ol-window')], begin);
+  });
+}
+
 // The agents arrive one after another the first time they come on screen.
 {
   const grid = document.querySelector('.agent-grid');
@@ -1171,33 +1508,6 @@ const pick = (chat, texts) => {
       if (entry.isIntersecting) { grid.classList.add('arrived'); seen.disconnect(); }
     }, { threshold: .4 });
     seen.observe(grid);
-  }
-}
-
-// The older ways lose their colour gradually as they scroll up past the top
-// of the window, and Papilot's comes in on the same scroll, so the reader
-// sets the pace. Under reduced motion they are simply grey.
-{
-  const eras = document.querySelector('.eras'), old = [...eras.querySelectorAll('.era.old')];
-  const ours = eras.querySelector('.era.ours');
-  const clamp = value => Math.min(1, Math.max(0, value));
-  if (still.matches) for (const card of old) card.style.setProperty('--old', 1);
-  else {
-    eras.classList.add('staged');
-    let queued = false;
-    const paint = () => {
-      queued = false;
-      let last = 0;
-      for (const card of old) {
-        const box = card.getBoundingClientRect(), start = innerHeight * .22, end = -box.height * .45;
-        last = clamp((start - box.top) / (start - end));
-        card.style.setProperty('--old', last.toFixed(3));
-      }
-      ours.style.setProperty('--new', clamp((last - .25) / .5).toFixed(3));
-    };
-    addEventListener('scroll', () => { if (!queued) { queued = true; requestAnimationFrame(paint); } }, { passive: true });
-    addEventListener('resize', paint);
-    paint();
   }
 }
 

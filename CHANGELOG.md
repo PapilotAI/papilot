@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Changed
+
+- Lead the homepage with the README's reasons to use Papilot, in its order, in place of the three-eras comparison. Live Overleaf sync gets a section of its own: Papilot and a coauthor's Overleaf editor side by side, with a committed change travelling through the pipe between them into Overleaf and the coauthor's sentence travelling back into the PDF. A new window shows another agent's model picked below the chat and the request rerun. Cards cover Universe templates and phone review, and each reason links to the demo or the guide. ([#259](https://github.com/PapilotAI/papilot/issues/259))
+
 ## [0.13.0] - 2026-11-22
 
 Review changes directly in place on the full PDF, decide individual annotations that share a paragraph, sort and organize manuscript notes, and choose a dedicated Git conflict-resolution agent. See the [release notes](docs/releases/0.13.0/release-notes.md) for update instructions.

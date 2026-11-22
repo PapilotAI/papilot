@@ -109,24 +109,12 @@ try {
   const view = await page.evaluate(() => innerHeight);
   for (const box of await grid.locator('li').evaluateAll(items => items.map(item => item.getBoundingClientRect().toJSON()))) assert.ok(box.top > 0 && box.bottom < view, 'every agent is in view at once');
 
-  // The older ways keep their colour while they are read, lose it as they
-  // scroll past, and Papilot's comes in on the same scroll.
-  const progress = () => page.evaluate(() => [...document.querySelectorAll('.era')].map(card => +(card.style.getPropertyValue(card.classList.contains('ours') ? '--new' : '--old') || 0)));
-  const scrollEras = fraction => page.evaluate(f => scrollTo(0, document.querySelector('.era.old').getBoundingClientRect().top + scrollY - innerHeight * f), fraction);
-  await scrollEras(.3);
-  await page.waitForTimeout(300);
-  assert.deepEqual(await progress(), [0, 0, 0], 'colour while the older ways are read');
-  await scrollEras(-.25);
-  await page.waitForTimeout(300);
-  const [first, second, ours] = await progress();
-  assert.ok(first > .9 && second > .9 && ours > .9, 'grey once scrolled past, with Papilot\'s in view');
-
   // The feature windows are pictures: named, with nothing to focus inside,
   // and each plays its round once on screen, at a fixed height.
   const scenes = page.locator('.scene');
-  assert.equal(await scenes.count(), 3);
+  assert.equal(await scenes.count(), 4);
   assert.equal(await page.locator('.scene-art :is(a, button, input, textarea, [tabindex])').evaluateAll(nodes => nodes.filter(node => !node.closest('[inert]')).length), 0);
-  for (const name of ['notes', 'revise', 'record']) {
+  for (const name of ['notes', 'revise', 'models', 'record']) {
     const scene = page.locator(`[data-scene=${name}]`);
     assert.equal(await scene.getAttribute('role'), 'img');
     assert.ok(await scene.getAttribute('aria-label'));
@@ -140,6 +128,56 @@ try {
     await scene.screenshot({ path: `test-results/site/${name}-desktop.png` });
   }
 
+  // Live sync with Overleaf plays both ways: the change committed in Papilot
+  // reaches the coauthor's editor, then the sentence typed there reaches the
+  // PDF, without the stage changing height.
+  const sync = page.locator('[data-scene=overleaf]'), syncStep = step => page.waitForFunction(value => document.querySelector('[data-scene=overleaf]').dataset.step === value, step);
+  assert.equal(await sync.getAttribute('role'), 'img');
+  assert.ok(await sync.getAttribute('aria-label'));
+  await sync.scrollIntoViewIfNeeded();
+  await page.mouse.move(1, 1);
+  const syncHeight = (await sync.boundingBox()).height;
+  await syncStep('review');
+  assert.equal(await sync.locator('.ol-new').isVisible(), false, 'Overleaf has the old sentence while the change waits');
+  assert.equal(await sync.locator('.theirs').isVisible(), false);
+  await syncStep('sent');
+  assert.equal(await sync.locator('.ol-new').isVisible(), true, 'the committed change reaches Overleaf');
+  assert.equal(await sync.locator('.sync-committed').isVisible(), true, 'the change was committed before it was sent');
+  await syncStep('synced');
+  assert.equal(await sync.locator('.theirs').isVisible(), true, "the coauthor's sentence reaches the PDF");
+  assert.equal((await sync.boundingBox()).height, syncHeight, 'the sync stage keeps its height');
+  await sync.screenshot({ path: 'test-results/site/overleaf-desktop.png' });
+
+  // The README's reasons follow the agents in its order, then the downloads.
+  const order = await page.evaluate(() => ['#agents', '#features', '#overleaf', '#record', '#anywhere', '#download'].map(id => document.querySelector(id).getBoundingClientRect().top));
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'the reasons, in order, then the downloads');
+
+  // Picking another agent's model in the menu reruns the request, in a task
+  // that says where it was restarted from.
+  const models = page.locator('[data-scene=models]'), modelsStep = step => page.waitForFunction(value => document.querySelector('[data-scene=models]').dataset.step === value, step);
+  await models.scrollIntoViewIfNeeded();
+  await page.mouse.move(1, 1);
+  await modelsStep('menu');
+  assert.equal(await models.locator('.model-menu').isVisible(), true, 'the model menu opens below the chat');
+  await modelsStep('rerun');
+  assert.equal(await models.locator('.models-restart').isVisible(), true, 'the rerun says where it restarted from');
+  assert.equal(await models.locator('.models-chip b').innerText(), 'Claude');
+
+  // Every reason to use Papilot leads somewhere: the agents' setup, a next
+  // step for each feature, Overleaf sync, templates and remote access, and
+  // each guide link names a section the guide has.
+  const guide = 'https://github.com/PapilotAI/papilot/blob/main/docs/guide.md';
+  for (const [selector, href] of [['.feature:has([data-scene=models]) .feature-link a', `${guide}#agents`], ['.hero-overleaf', '#overleaf'], ['#overleaf .section-links a', `${guide}#sync-with-overleaf`], ['.get-links a:first-child', guide]]) {
+    assert.equal(await page.locator(selector).getAttribute('href'), href, selector);
+  }
+  assert.equal(await page.locator('.feature-link a').count(), 4, 'each feature has a next step');
+  assert.deepEqual(await page.locator('#anywhere footer a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [universe, `${guide}#remote-access-with-tailscale`]);
+  const slug = heading => heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s/g, '-');
+  const sections = new Set(fs.readFileSync('docs/guide.md', 'utf8').split('\n').filter(line => /^#{1,6} /.test(line)).map(line => slug(line.replace(/^#+ /, ''))));
+  for (const href of await page.locator(`a[href^="${guide}#"]`).evaluateAll(links => links.map(link => link.getAttribute('href')))) {
+    assert.ok(sections.has(href.split('#')[1]), `the guide has a section for ${href}`);
+  }
+
   // Reduced motion: nothing plays; the hero shows the sent note and the
   // diff, and the ticker stands still.
   const calm = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
@@ -150,7 +188,8 @@ try {
   assert.equal(await calmPage.locator('.playing').count(), 0);
   assert.equal(await stateOf(calmPage), 'pending');
   assert.equal(await calmPage.locator('.agent-grid.waiting').count(), 0, 'the agents stand in colour');
-  assert.equal(await calmPage.locator('.era.old').evaluateAll(cards => cards.every(card => card.style.getPropertyValue('--old') === '1')), true, 'the older ways are simply grey');
+  assert.equal(await calmPage.locator('[data-scene=overleaf]').getAttribute('data-step'), 'synced', 'the sync shows where its round ends');
+  for (const selector of ['.ol-new', '.theirs', '.sync-committed']) assert.equal(await calmPage.locator(`[data-scene=overleaf] ${selector}`).isVisible(), true, selector);
   await calmPage.locator(`${change} .review-accept`).click();
   assert.equal(await calmPage.locator(`${change} .before`).isVisible(), false, 'decisions are immediate');
   for (const width of [1440, 390]) for (const colorScheme of ['light', 'dark']) for (const locale of ['en', 'zh-CN']) {
@@ -179,7 +218,7 @@ try {
   const noJs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1440, height: 900 } });
   const staticPage = await noJs.newPage();
   await staticPage.goto(origin);
-  for (const selector of [`${change} .before`, `${change} .after`, `${hero} .chat-bubble`, '[data-scene=record] .git-pushed']) assert.equal(await staticPage.locator(selector).isVisible(), true, selector);
+  for (const selector of [`${change} .before`, `${change} .after`, `${hero} .chat-bubble`, '[data-scene=record] .git-pushed', '[data-scene=overleaf] .ol-new', '[data-scene=overleaf] .theirs', '[data-scene=models] .models-restart']) assert.equal(await staticPage.locator(selector).isVisible(), true, selector);
   await staticPage.locator(hero).screenshot({ path: 'test-results/site/no-js.png' });
   await noJs.close();
 
@@ -305,7 +344,7 @@ try {
       await page.evaluate(() => document.fonts.ready);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${locale}/${width}: no sideways scroll`);
       await page.locator('#download-button').click();
-      for (const selector of ['.topbar-inner', '.topbar .brand', '.nav', '.topbar-universe', '.topbar-demo', '.topbar .github-link', '.hero-universe', '.hero-star', '#download-button', '#download-list', '.agent-grid', '.agent-grid li', '.era', '.app-window']) {
+      for (const selector of ['.topbar-inner', '.topbar .brand', '.nav', '.topbar-universe', '.topbar-demo', '.topbar .github-link', '.hero-universe', '.hero-star', '#download-button', '#download-list', '.agent-grid', '.agent-grid li', '.app-window', '.sync-stage', '.sync-points li', '.more-card', '.tpl-shelf']) {
         const boxes = await page.locator(selector).evaluateAll(nodes => nodes.map(el => ({ width: el.clientWidth, scroll: el.scrollWidth, left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })));
         for (const box of boxes) {
           assert.ok(box.scroll <= box.width + 1, `${locale}/${width}: ${selector} contents fit`);
@@ -314,14 +353,14 @@ try {
       }
       await page.keyboard.press('Escape');
       const panels = await page.locator('.scene').evaluateAll(apps => apps.map(app => {
-        const pane = app.querySelector(app.dataset.scene === 'record' ? '.app-history' : '.app-pdf').getBoundingClientRect();
-        const target = app.querySelector(app.dataset.scene === 'notes' ? '.scene-figure' : app.dataset.scene === 'revise' ? '.review-change' : '.git-new').getBoundingClientRect();
+        const [paneSelector, targetSelector] = { notes: ['.app-pdf', '.scene-figure'], revise: ['.app-pdf', '.review-change'], models: ['.app-chat', '.chat-composer'], record: ['.app-history', '.git-new'] }[app.dataset.scene];
+        const pane = app.querySelector(paneSelector).getBoundingClientRect(), target = app.querySelector(targetSelector).getBoundingClientRect();
         return { scene: app.dataset.scene, bottom: target.bottom - pane.top, height: pane.height };
       }));
       for (const panel of panels) assert.ok(panel.bottom <= panel.height - 6, `${locale}/${width}: ${panel.scene} content stays inside its pane`);
       if (width === 390 || width === 1440) {
         await page.screenshot({ path: `test-results/site/${locale}-${width}-hero.png` });
-        await page.locator('#why').screenshot({ style: '.topbar{visibility:hidden!important}', path: `test-results/site/${locale}-${width}-why.png` });
+        for (const section of ['features', 'overleaf', 'anywhere']) await page.locator(`#${section}`).screenshot({ style: '.topbar{visibility:hidden!important}', path: `test-results/site/${locale}-${width}-${section}.png` });
       }
     }
   }
@@ -337,7 +376,7 @@ try {
   assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationName), 'none');
   assert.deepEqual(errors, []);
   assert.equal(requests.some(url => /\.(mp4|gif|jpe?g)|feature-.*\.png/.test(url)), false);
-  console.log('Site checks passed: annotations during scroll and resize, first screen, the hero round and takeover, feature windows, reduced motion, no-JS, Universe links and keyboard navigation, all language URLs and SEO, saved language, both download menus, and layouts from 320px to 1440px including header breakpoints.');
+  console.log('Site checks passed: annotations during scroll and resize, first screen, the hero round and takeover, feature windows, Overleaf sync both ways, the rerun from the model menu, next steps and guide anchors, reduced motion, no-JS, Universe links and keyboard navigation, all language URLs and SEO, saved language, both download menus, and layouts from 320px to 1440px including header breakpoints.');
 } finally {
   await browser.close();
   await server.close();
