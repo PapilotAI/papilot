@@ -429,6 +429,31 @@ test('task model settings persist, validate capabilities and clear incompatible 
   } finally { f.close(); }
 });
 
+test('a turn records its usage and completion under the model it started with when the model changes mid-turn', async () => {
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/unused' } : summary);
+  try {
+    f.workspace.runtime.models = taskModels;
+    f.codex.ready = true;
+    f.store.updateTask(f.task.id, { model: 'deep', status: 'queued' });
+    const run: Run = { id: 'model-snapshot-run', taskId: f.task.id, requestKey: 'model-snapshot', prompt: 'Revise.', status: 'queued', createdAt: Date.now(), finishedAt: null };
+    f.store.saveRun(run);
+    (f.workspace as any).active.set(f.task.id, run);
+    await (f.workspace as any).startRun(run);
+    f.workspace.updateTaskModel(f.task.id, { model: 'small' });
+    const usage = { total: { totalTokens: 1200, inputTokens: 1000, cachedInputTokens: 400, outputTokens: 200, reasoningOutputTokens: 50 }, last: { totalTokens: 1200, inputTokens: 1000, cachedInputTokens: 400, outputTokens: 200, reasoningOutputTokens: 50 } };
+    f.codex.emit('notification', { method: 'thread/tokenUsage/updated', params: { threadId: 'thread', turnId: 'turn-new', tokenUsage: usage } });
+    f.codex.emit('notification', { method: 'turn/usage', params: { threadId: 'thread', usage: { input: 300, output: 40, total: 340 } } });
+    f.codex.emit('notification', { method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } });
+    for (let i = 0; i < 5; i++) await tick();
+    const events = f.store.activityEvents().filter(event => event.taskId === f.task.id);
+    assert.deepEqual(events.filter(event => event.kind === 'token_usage').map(event => event.model), ['deep', 'deep']);
+    const turn = events.find(event => event.kind === 'agent_turn');
+    assert.equal(turn?.data.status, 'completed');
+    assert.equal(turn?.model, 'deep');
+    assert.equal(f.store.task(f.task.id).model, 'small', 'the next turn uses the new choice');
+  } finally { f.close(); }
+});
+
 test('a task cannot reset to an unknown default and silently keep its previous model', () => {
   const f = fixture();
   try {

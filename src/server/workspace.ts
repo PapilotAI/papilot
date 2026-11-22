@@ -127,6 +127,9 @@ function commitInstructions(language: CommitMessageLanguage = 'auto') {
 }
 // A merge's agent edits the conflicted files in the manuscript checkout and nothing else.
 const mergeInstructions = 'You resolve Git merge conflicts in the repository of a LaTeX paper. Edit only the files listed as conflicted, and in each one remove every conflict marker (<<<<<<<, ||||||| , =======, >>>>>>>) so that the text reads as one coherent version. Keep the changes from both sides wherever they are compatible; where both sides rewrote the same passage, combine their intent, and where they truly contradict each other, prefer the version that is more complete and correct and say so. Keep the LaTeX valid: balanced environments and braces, labels, references and citations. You may read any file to understand the context. Do not edit other files, and do not run Git commands that change the repository, such as add, commit, merge, checkout, reset, restore or stash: the author reviews the result and commits the merge.';
+// The model a task's turn runs on: the one it started with, while the task's
+// own model may already be the user's choice for the next turn.
+const turnModel = (run: Run | undefined, task: Task) => run && run.model !== undefined ? run.model : task.model;
 const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [] });
 
 export interface TaskNoteContext { note: Annotation; context: string[] }
@@ -1030,6 +1033,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (this.paperTools && task.mode !== 'review' && this.agentOf(task) === 'cursor' && task.permissions !== 'full') paperInstructions = '\n\nThe current Cursor sandbox blocks local network tools, so annotation operations are unavailable in this turn. Explain this limitation if asked to save annotations; never claim to have saved them.';
     const input = [{ type: 'text', text: prompt + paperInstructions + (this.agentOf(task) === 'collaboration' ? '\n\nWorkflow annotation ledger (use these IDs in delegation and audit):\n' + JSON.stringify(this.workflowNotesFor(task, run)) : '') }, ...(run.attachments || []).filter(file => file.mime.startsWith('image/')).map(file => ({ type: 'localImage', path: this.attachments.path(file) }))];
     let result: any;
+    run = { ...run, model: task.model };
+    this.active.set(task.id, run);
     const models = this.runtimes[this.agentOf(task)].models;
     const model = task.model ? models.find(model => model.id === task.model) : models.find(model => model.isDefault);
     // Explicit defaults replace a previous turn's reasoning override.
@@ -1056,7 +1061,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (completion) await this.notification(completion, this.agentOf(task));
   }
   private failRun(run: Run, error: unknown) {
-    if (this.active.get(run.taskId)?.id !== run.id) return;
+    const active = this.active.get(run.taskId);
+    if (active?.id !== run.id) return;
     this.stopWorkflow(run.taskId);
     this.active.delete(run.taskId);
     this.earlyCompletions.delete(run.taskId); this.earlyRequests.delete(run.taskId);
@@ -1069,7 +1075,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       projectId: task.projectId,
       taskId: task.id,
       agent: id,
-      model: task.model,
+      model: turnModel(active, task),
       data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'failed', finishedAt, ...(this.projectName(task.projectId) ? { projectName: this.projectName(task.projectId) } : {}) },
     }, true);
     this.holdForReview(run.taskId, { status: 'failed', turnId: null, pendingRunId: null, error: errorText(error) });
@@ -1175,7 +1181,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const task = this.store.taskByThread(p.threadId);
     if (!task || task.status === 'deleting') return;
     if (method === 'turn/usage') {
-      const normalized = normalizeTurnUsage(agent, task.model, p.usage, p.model);
+      const normalized = normalizeTurnUsage(agent, turnModel(this.active.get(task.id), task), p.usage, p.model);
       if (normalized) {
         const projectName = this.projectName(task.projectId);
         this.store.recordActivity({
@@ -1199,7 +1205,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           this.codexUsage.seedBaseline(String(p.threadId || ''), p.tokenUsage);
         } else {
           const delta = this.codexUsage.consume(String(p.threadId || ''), p.tokenUsage);
-          const normalized = delta ? normalizeCodexUsage(agent, task.model, delta) : null;
+          const normalized = delta ? normalizeCodexUsage(agent, turnModel(this.active.get(task.id), task), delta) : null;
           if (normalized) {
             const projectName = this.projectName(task.projectId);
             this.store.recordActivity({
@@ -1287,7 +1293,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         projectId: latestTask.projectId,
         taskId: latestTask.id,
         agent,
-        model: latestTask.model,
+        model: turnModel(run, latestTask),
         data: { role: latestTask.mode === 'review' ? 'review' : 'edit', status, finishedAt, ...(this.projectName(latestTask.projectId) ? { projectName: this.projectName(latestTask.projectId) } : {}) },
       }, true);
       const ended = { turnId: null, pendingRunId: null, error: p.turn.error?.message || null };

@@ -513,6 +513,47 @@ test('upgrading an existing workspace database backfills tasks, runs, feedback d
   }
 });
 
+test('the upgrade backfill adds unsent decisions of a later review round without recounting sent feedback', () => {
+  const dir = tempDir('papilot-activity-rounds-');
+  const dbFile = path.join(dir, 'legacy.sqlite');
+  try {
+    const raw = new DatabaseSync(dbFile);
+    const created = Date.UTC(2026, 10, 20, 14, 0, 0);
+    raw.exec(`
+      CREATE TABLE projects(id TEXT PRIMARY KEY, path TEXT UNIQUE NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE tasks(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE runs(id TEXT PRIMARY KEY, task_id TEXT NOT NULL, request_key TEXT UNIQUE NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE items(id TEXT PRIMARY KEY, task_id TEXT NOT NULL, created INTEGER NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE annotations(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE settings(key TEXT PRIMARY KEY, data TEXT NOT NULL);
+    `);
+    raw.prepare('INSERT INTO projects VALUES(?,?,?)').run('p1', '/papers/p1', JSON.stringify({ id: 'p1', name: 'Legacy Paper', path: '/papers/p1', createdAt: created }));
+    const task = (id: string, review: unknown) => raw.prepare('INSERT INTO tasks VALUES(?,?,?)').run(id, 'p1', JSON.stringify({
+      id, projectId: 'p1', name: `p-${id}`, title: 'Polish', instructions: 'Polish', worktree: `/wt/${id}`, threadId: `th-${id}`, turnId: null,
+      agent: 'codex', model: 'gpt-5.4', status: 'reviewing', createdAt: created, updatedAt: created + 10000, feedbackCursor: 0, error: null, review,
+    }));
+    const feedback = (id: string, taskId: string, summary: unknown) => raw.prepare('INSERT INTO items VALUES(?,?,?,?)').run(id, taskId, created + 5000, JSON.stringify({
+      id, taskId, type: 'user', text: 'Continue', createdAt: created + 5000, meta: { feedback: summary },
+    }));
+    // Round 1 was sent back (2 accepted, 1 comment); round 2 is decided but not sent yet.
+    task('later', { state: 'done', round: 2, counts: { pending: 0, accepted: 3, rejected: 1, commented: 0 } });
+    feedback('later-feedback', 'later', { round: 1, accepted: 2, rejected: 0, undone: 0, comments: [{ where: 'p. 1', text: 'Shorter' }] });
+    // The latest round was sent back after 2 accepts, then 1 more accept and 1 comment followed.
+    task('partial', { state: 'done', round: 1, counts: { pending: 0, accepted: 3, rejected: 0, commented: 1 } });
+    feedback('partial-feedback', 'partial', { round: 1, accepted: 2, rejected: 0, undone: 0, comments: [] });
+    raw.close();
+
+    const store = new Store(dbFile);
+    const report = buildActivityReport(store, { tz: 'UTC', range: 'all', now: created + 20000 });
+    assert.equal(report.totals.accepted, (2 + 3) + 3, 'Round 1 feedback plus round 2, and the latest round once');
+    assert.equal(report.totals.rejected, 1);
+    assert.equal(report.totals.commented, 1 + 1);
+    store.close();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('Workspace records Codex thread token deltas and helper turns without emitting redundant state broadcasts', async () => {
   const dir = tempDir('papilot-workspace-activity-');
   const store = new Store(path.join(dir, 'papilot.sqlite'));

@@ -290,10 +290,11 @@ export function backfillActivity(store: Store) {
   const projects = new Map(store.projects().map(project => [project.id, project.name]));
   const tasks = store.tasks();
   const tasksById = new Map(tasks.map(task => [task.id, task]));
-  const tasksWithFeedbackItems = new Set<string>();
 
   for (const task of tasks) {
     const projectName = projects.get(task.projectId);
+    // Decisions of the latest round that feedback already sent back.
+    const sent = { accepted: 0, rejected: 0, commented: 0 };
     store.recordActivity({
       key: `task:${task.id}`,
       at: task.createdAt || Date.now(),
@@ -332,7 +333,11 @@ export function backfillActivity(store: Store) {
       }
       const feedback = item.meta?.feedback;
       if (feedback) {
-        tasksWithFeedbackItems.add(task.id);
+        if (task.review && feedback.round === task.review.round) {
+          sent.accepted += feedback.accepted;
+          sent.rejected += feedback.rejected;
+          sent.commented += feedback.comments?.length || 0;
+        }
         if (feedback.accepted > 0) {
           store.recordActivity({
             key: `backfill:feedback:${item.id}:accept`,
@@ -371,11 +376,12 @@ export function backfillActivity(store: Store) {
         }
       }
     }
-    // Single-round tasks whose decisions were never sent back in a follow-up prompt.
-    if (!tasksWithFeedbackItems.has(task.id) && task.review?.counts) {
+    // Review counts cover only the latest round: add the decisions no feedback
+    // has sent back yet, whether the task had one round or later ones.
+    if (task.review?.counts) {
       for (const [field, action] of [['accepted', 'accept'], ['rejected', 'reject'], ['commented', 'comment']] as const) {
-        const count = safeInt(task.review.counts[field]);
-        if (!count) continue;
+        const count = safeInt(task.review.counts[field]) - sent[field];
+        if (count <= 0) continue;
         store.recordActivity({
           key: `backfill:review:${task.id}:${action}`,
           at: task.updatedAt || task.createdAt || Date.now(),
